@@ -2082,6 +2082,12 @@ type AutomationStatusSummary struct {
 	RunningMembers int      `json:"running_members,omitempty"`
 	WaitingForSlot []string `json:"waiting_for_slot,omitempty"`
 
+	// WaitingForOperator lists, in member order, the decision_wait members that
+	// hold their cursor for an operator answer. They are not blocked, and the
+	// Automation is not either: only their own branch waits. Omitted when none
+	// waits.
+	WaitingForOperator []string `json:"waiting_for_operator,omitempty"`
+
 	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
 	// member Automaton held for operator review. Both are omitted when none is
 	// held.
@@ -2107,7 +2113,16 @@ type ActiveCursorSummary struct {
 	// CursorStatusWaitingForSlot and WaitReason reads "waiting for a free slot".
 	// It is never a blocked state.
 	WaitReason string `json:"wait_reason,omitempty"`
+	// QuestionID names the open operator question a decision_wait member waits
+	// on; Status is then CursorStatusWaitingForOperator and WaitReason reads
+	// "waiting for you".
+	QuestionID string `json:"question_id,omitempty"`
 }
+
+// CursorStatusWaitingForOperator is the ActiveCursorSummary status of a
+// decision_wait member that waits for an operator answer. It is never a blocked
+// state.
+const CursorStatusWaitingForOperator = "waiting_for_operator"
 
 // CursorStatusWaitingForSlot is the ActiveCursorSummary status of a member that
 // waits for a free slot under a max_parallel limit.

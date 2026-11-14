@@ -47,6 +47,11 @@ const (
 	// carries pending_item_id; attaching an Automaton converts it in place into
 	// an ordinary Automaton member.
 	MemberKindPending = "pending_item"
+	// MemberKindDecisionWait asks the operator a question and waits for the
+	// answer. It runs nothing: it holds only its own branch (or, outside a
+	// fork, the Automation's single path) until the question is answered, then
+	// completes along on_complete. It carries question and on_complete only.
+	MemberKindDecisionWait = "decision_wait"
 )
 
 // Branch failure rules for a join (AutomationMember.OnBranchFailure). The
@@ -182,6 +187,17 @@ type AutomationMember struct {
 	// reached. It is meaningful only while the member has not started; the
 	// status views read it through memberWaitingForSlot.
 	WaitingForSlot bool `json:"waiting_for_slot,omitempty"`
+
+	// Question is the text a kind decision_wait member asks the operator; it is
+	// required on that kind and valid on no other. QuestionID and
+	// WaitingForOperator are runtime state written only by the coordinator: the
+	// open operator question the member waits on, and the flag that the member
+	// holds its cursor for that answer. They are meaningful only on kind
+	// decision_wait; the status views read them through
+	// memberWaitingForOperator.
+	Question           string `json:"question,omitempty"`
+	QuestionID         string `json:"question_id,omitempty"`
+	WaitingForOperator bool   `json:"waiting_for_operator,omitempty"`
 
 	AddedAt     time.Time `json:"added_at"`
 	AddedBy     string    `json:"added_by"`               // "operator" | "session:<id>" | "agent:<id>" | "import:bl117:<graph>"
@@ -504,7 +520,7 @@ func validateAutomation(a *Automation) error {
 // not check PRD existence or edges; those belong to validateAutomation.
 func validateMemberKind(a *Automation, m AutomationMember) error {
 	switch m.Kind {
-	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin, MemberKindPending:
+	case "", MemberKindPRD, MemberKindAutomation, MemberKindFork, MemberKindJoin, MemberKindPending, MemberKindDecisionWait:
 	default:
 		return fmt.Errorf("automation invalid: member %s has unknown kind %q", m.ID, m.Kind)
 	}
@@ -539,6 +555,9 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	if k != MemberKindPending && k != MemberKindPRD && m.PendingItemID != "" {
 		return fmt.Errorf("automation invalid: member %s: pending_item_id is only valid on kind pending_item or on a member that had an Automaton attached", m.ID)
 	}
+	if err := validateDecisionWaitMember(m, k); err != nil {
+		return err
+	}
 	if k == MemberKindAutomation {
 		if strings.TrimSpace(m.AutomationID) == "" {
 			return fmt.Errorf("automation invalid: member %s: kind automation needs automation_id", m.ID)
@@ -553,6 +572,36 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 		default:
 			return fmt.Errorf("automation invalid: member %s: unknown on_branch_failure %q", m.ID, m.OnBranchFailure)
 		}
+	}
+	return nil
+}
+
+// decisionWaitQuestionMaxBytes caps a decision_wait member's question text, so
+// the question the coordinator raises (this text plus a short context line)
+// always fits the question store's own text cap.
+const decisionWaitQuestionMaxBytes = 4096
+
+// validateDecisionWaitMember checks the fields of a decision_wait member and
+// that no other kind carries them. A decision_wait member asks one question; it
+// has no PRD, no fork or join fields (checked by validateMemberKind for every
+// kind) and may carry on_complete only: when its question is withdrawn there is
+// no edge to take, so its branch fails (or, outside a fork, the Automation
+// blocks with that reason). Edges are checked in validateAutomation.
+func validateDecisionWaitMember(m AutomationMember, k string) error {
+	if k != MemberKindDecisionWait {
+		if m.Question != "" || m.QuestionID != "" || m.WaitingForOperator {
+			return fmt.Errorf("automation invalid: member %s: question, question_id and waiting_for_operator are only valid on kind decision_wait", m.ID)
+		}
+		return nil
+	}
+	if strings.TrimSpace(m.Question) == "" {
+		return fmt.Errorf("automation invalid: member %s: kind decision_wait needs a question", m.ID)
+	}
+	if len(m.Question) > decisionWaitQuestionMaxBytes {
+		return fmt.Errorf("automation invalid: member %s: question is %d bytes; the cap is %d", m.ID, len(m.Question), decisionWaitQuestionMaxBytes)
+	}
+	if m.OnBlocked != "" || m.OnFailed != "" {
+		return fmt.Errorf("automation invalid: member %s: a decision_wait member may carry on_complete only; a withdrawn question fails its branch", m.ID)
 	}
 	return nil
 }
@@ -645,8 +694,8 @@ func checkJoinTails(m AutomationMember, byID map[string]AutomationMember, claims
 		if !found {
 			return fmt.Errorf("automation invalid: join %s names unknown branch member %s", m.ID, b)
 		}
-		if k := target.kind(); k != MemberKindPRD && k != MemberKindAutomation {
-			return fmt.Errorf("automation invalid: join %s branch member %s is a %s member; branches must be prd or automation members", m.ID, b, k)
+		if k := target.kind(); !isBranchMemberKind(k) {
+			return fmt.Errorf("automation invalid: join %s branch member %s is a %s member; branches must be prd or automation members (or decision_wait)", m.ID, b, k)
 		}
 		if target.OnComplete != "" || target.OnBlocked != "" || target.OnFailed != "" {
 			return fmt.Errorf("automation invalid: join %s names %s, which is not a branch tail; a join names the last member of each chain (the member with an empty on_complete)", m.ID, b)
@@ -657,6 +706,12 @@ func checkJoinTails(m AutomationMember, byID map[string]AutomationMember, claims
 		claims[b] = m.ID
 	}
 	return nil
+}
+
+// isBranchMemberKind reports whether a member of kind k may sit on a fork branch
+// chain: a PRD, a nested Automation, or a decision_wait member.
+func isBranchMemberKind(k string) bool {
+	return k == MemberKindPRD || k == MemberKindAutomation || k == MemberKindDecisionWait
 }
 
 // sameMemberSet reports whether x and y hold the same member IDs. Both lists

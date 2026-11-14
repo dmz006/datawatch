@@ -1157,11 +1157,12 @@ and `kind` defaults to `prd` when omitted or empty.
 
 | Field | Used by `kind` | Meaning |
 |---|---|---|
-| `kind` | all | `""` or `prd` (default): a member Automaton named by `prd_id`. `automation`: a nested Automation named by `automation_id`. `fork`: starts its branches together. `join`: collects its branches. |
+| `kind` | all | `""` or `prd` (default): a member Automaton named by `prd_id`. `automation`: a nested Automation named by `automation_id`. `fork`: starts its branches together. `join`: collects its branches. `pending_item`: named work with no Automaton yet. `decision_wait`: asks the operator `question` and holds only its own branch until it is answered. |
 | `automation_id` | `automation` | The child Automation's ID. |
 | `fork_members` | `fork` | Branch member IDs started together. At least two, distinct, each a `prd` or `automation` member. |
 | `join_members` | `join` | Branch member IDs the join collects. Must be the same set as the paired fork's `fork_members`. |
 | `on_branch_failure` | `join` | `all_must_succeed` (default when omitted), `any_one_is_enough` or `continue_anyway`. See the join rules below. |
+| `question` | `decision_wait` | The text the member asks the operator. Required on that kind, at most 4096 bytes, valid on no other. See "Decision wait" below. |
 | `max_parallel` | `fork` | Most of the fork's branch members that run at once. `0` or omitted: no fork limit. Never negative. See "Parallel limit" below. |
 
 Set only the fields that belong to a member's kind. Any other field is
@@ -1246,6 +1247,31 @@ starts them as slots free. On create and update, `max_parallel` on the
 request body sets the Automation limit; an update that omits it keeps the
 stored value, and `0` clears it.
 
+**Decision wait.** A `decision_wait` member asks the operator one question and
+waits for the answer. It carries `question` and `on_complete` only: no
+`prd_id`, no fork or join fields, and no `on_blocked` or `on_failed` (each is
+a `400` naming the member ID). It may sit anywhere on a fork branch chain, as
+the head, in the middle or as the tail. When the cursor reaches it the daemon
+raises an operator question through the same question store the decision
+assistant uses (asker `decision-wait`, label `decision`), marks the member
+waiting for the operator, and holds only that member's own cursor: the other
+branches keep running, the Automation is not blocked, and under
+`all_must_succeed` the join stays pending instead of failing. The member
+records the question in `question_id` (read-only), and one alert, "Automation
+waiting for you", names it. Any answer to the question completes the member
+and the chain moves on along `on_complete`; the answer is linked on the
+Automation's decision log. A withdrawn question fails the member's branch with
+the reason on the decision log (the members behind it are skipped, and the join
+rule decides what that means); outside a fork, where there is no branch to
+fail, the Automation blocks with that reason. Skipping the member, cancelling
+the Automation, or a join that no longer waits for the branch withdraws the
+open question. The question needs the operator question channel
+(`autonomous.questions.enabled`): with it off the member fails at once with
+that reason rather than waiting where no one can see it. A daemon restart
+re-links the open question to its member, raises it if the restart fell before
+it was raised, and applies an answer or withdrawal that came while the daemon
+was down; exactly one question is ever open for one wait.
+
 **Concurrency.** A stale `expected_version` on update returns `409`, and
 the record is left unchanged. Inside the daemon, a write that races
 another one re-reads the Automation, re-evaluates, and does nothing if
@@ -1267,6 +1293,11 @@ the state has already moved.
   `active_cursors`, a waiting member has `status` `waiting_for_slot` and
   `wait_reason` `waiting for a free slot`. Waiting is never reported as
   blocked, and the Automation stays `active`.
+- `waiting_for_operator`: the `decision_wait` member IDs that hold their cursor
+  for an operator answer, in member order; omitted when none waits. On
+  `active_cursors`, such a member has `kind` `decision_wait`, `status`
+  `waiting_for_operator`, `wait_reason` `waiting for you` and `question_id`.
+  The Automation stays `active`; it is waiting for you, not blocked.
 - `join_wait`: present only while a join waits on its branches. It has
   `join_member_id`, `rule`, `pending_branches` (still live) and
   `failed_branches` (ended without success). A branch is named by its chain
