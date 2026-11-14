@@ -85,9 +85,6 @@ jobs:
       - name: dockerfile soupsieve floor check
         run: bash scripts/check-dockerfile-soupsieve.sh && bash scripts/check-dockerfile-soupsieve.sh --self-test
 
-      - name: go test
-        run: go test ./... -count=1 -timeout 12m
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

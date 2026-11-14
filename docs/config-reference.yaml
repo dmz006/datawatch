@@ -143,6 +143,10 @@ session:
   # 0 = legacy single send-keys (triggers missed-Enter bug on React Ink TUIs).
   # 200 (default) fixes claude-code and other Ink-based TUIs.
   # Applies to ALL send sources (schedule, MCP, CLI, API) since v8.12.9.
+  # After this settle the daemon also waits (fixed 1.5 s max) for the pasted
+  # text or its [Pasted text #N] placeholder to show in the pane, sends Enter,
+  # and for pasted/multi-line/long input re-sends Enter at most twice while the
+  # text is still unsent (paste_submit.go). Those timings are not config keys.
   schedule_settle_ms: 200
 
   # UI prompt handling — every value below is read live from this config,

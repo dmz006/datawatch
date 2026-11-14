@@ -568,6 +568,8 @@ if you use 2-factor authentication:
 - Email is notification-only; combine with a bidirectional backend for full control
 - Notifications are sent for: session started, session complete, waiting for input, session failed
 - Long session output is truncated in email notifications; use the PWA for full output
+- **Recipient fallback:** when a send names no recipient, the message goes to the configured `email.to` address. A recipient or sender containing a newline is rejected before any network connection is made.
+- **Testing:** the email backend's unit tests (including the empty-recipient fallback) run against a local in-process fake SMTP server, so they need no network access and do not wait on a connection timeout.
 
 ---
 

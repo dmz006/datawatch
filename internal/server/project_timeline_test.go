@@ -87,11 +87,11 @@ func TestProjectTimeline_ArcsSpanEarliestToLatest(t *testing.T) {
 	if r.Kind != "arc" || r.ID != "arc1" || r.State != "active" || r.Title != "arc arc1" {
 		t.Errorf("row = %+v", r)
 	}
-	if r.First == nil || !r.First.Equal(*tlTime(-50)) {
-		t.Errorf("first = %v, want -50h", r.First)
+	if r.First == nil || !r.First.Equal(*tlTime(-40)) {
+		t.Errorf("first = %v, want -40h (a1's first task start; its -50h created time is ignored)", r.First)
 	}
-	if r.Last == nil || !r.Last.Equal(*tlTime(-15)) {
-		t.Errorf("last = %v, want -15h (latest member end; tasks never widen the arc)", r.Last)
+	if r.Last == nil || !r.Last.Equal(*tlTime(-10)) {
+		t.Errorf("last = %v, want -10h (a1's last task end)", r.Last)
 	}
 	if r.Running || !r.HasChildren || r.ChildrenCount != 2 {
 		t.Errorf("row = %+v", r)
@@ -530,5 +530,125 @@ func TestProjectTimeline_GanttRunningStatusAndCompletedRelease(t *testing.T) {
 	}
 	if l.Status != "running" || l.End != nil || !l.Running {
 		t.Errorf("live = %+v", l)
+	}
+}
+
+// The Automaton bar spans the first task start to the last task end, created
+// and updated times are ignored once any task has started, running work has a
+// null end, an Automaton with no started task falls back to created/updated,
+// and a shipped Automaton reads completed even when its status is cancelled.
+func TestProjectTimeline_GanttAutomatonSpanFirstTaskStartToLastTaskEnd(t *testing.T) {
+	shippedCancelled := tlPRD("shipped", autonomous.PRDCancelled, -30, -20, "/x",
+		tlTask("k1", autonomous.TaskCompleted, tlTime(-28), tlTime(-22)))
+	shippedCancelled.MergedInRelease = "v9.9.0"
+	cases := []struct {
+		name        string
+		p           *autonomous.PRD
+		wantStart   *time.Time
+		wantEnd     *time.Time
+		wantRunning bool
+		wantStatus  string
+	}{{
+		name: "bar spans first task start to last task end",
+		p: tlPRD("a", autonomous.PRDCompleted, -400, -200, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-18)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-15), tlTime(-10))),
+		wantStart:  tlTime(-20),
+		wantEnd:    tlTime(-10),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "created and updated times far outside the task times are ignored",
+		p: tlPRD("b", autonomous.PRDCompleted, -9000, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-30), tlTime(-25))),
+		wantStart:  tlTime(-30),
+		wantEnd:    tlTime(-25),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "running automaton has a null end",
+		p: tlPRD("c", autonomous.PRDRunning, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskInProgress, tlTime(-12), nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "running automaton between tasks has a null end",
+		p: tlPRD("c", autonomous.PRDRunning, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskPending, tlTime(-12), nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "active automaton between completed tasks has a null end",
+		p: tlPRD("g", autonomous.PRDActive, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-14), tlTime(-10)),
+			tlTask("k3", autonomous.TaskPending, nil, nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "no started task falls back to created and updated",
+		p: tlPRD("d", autonomous.PRDCompleted, -40, -35, "/x",
+			tlTask("k1", autonomous.TaskPending, nil, nil)),
+		wantStart:  tlTime(-40),
+		wantEnd:    tlTime(-35),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name:       "shipped but cancelled reports completed",
+		p:          shippedCancelled,
+		wantStart:  tlTime(-28),
+		wantEnd:    tlTime(-22),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "cancelled and unshipped stays cancelled",
+		p: tlPRD("f", autonomous.PRDCancelled, -30, -10, "/x",
+			tlTask("k1", autonomous.TaskCancelled, tlTime(-28), tlTime(-22))),
+		wantStart:  tlTime(-28),
+		wantEnd:    tlTime(-22),
+		wantStatus: tlStatusCancelled,
+	}}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := timelineAutomatonRow(c.p)
+			if r.Kind != timelineKindAutomaton || r.Status != c.wantStatus {
+				t.Errorf("row = %+v, want status %q", r, c.wantStatus)
+			}
+			if (r.Start == nil) != (c.wantStart == nil) || (c.wantStart != nil && !r.Start.Equal(*c.wantStart)) {
+				t.Errorf("start = %v, want %v", r.Start, c.wantStart)
+			}
+			if (r.End == nil) != (c.wantEnd == nil) || (c.wantEnd != nil && !r.End.Equal(*c.wantEnd)) {
+				t.Errorf("end = %v, want %v", r.End, c.wantEnd)
+			}
+			if r.First != r.Start || r.Last != r.End {
+				t.Errorf("first/last = %v/%v, start/end = %v/%v; the pairs must be identical", r.First, r.Last, r.Start, r.End)
+			}
+			if r.Running != c.wantRunning {
+				t.Errorf("running = %v, want %v", r.Running, c.wantRunning)
+			}
+		})
+	}
+}
+
+// Arc and group rows aggregate their members' task-time spans through
+// timelineSpan, so they pick up the tighter bounds instead of created/updated.
+func TestProjectTimeline_GanttArcPicksUpTighterTaskBounds(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("a", autonomous.PRDCompleted, -400, -200, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-18)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-15), tlTime(-10))),
+	}
+	out := tlBuild(t, timelineInput{
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		PRDs:        prds,
+		Automations: []*autonomous.Automation{tlAutomation("arc1", "a")},
+	})
+	r := tlRow(t, out.Rows, "arc1")
+	if r.Start == nil || !r.Start.Equal(*tlTime(-20)) || r.End == nil || !r.End.Equal(*tlTime(-10)) {
+		t.Errorf("arc span = %v..%v, want -20h..-10h", r.Start, r.End)
+	}
+	if r.Running {
+		t.Errorf("arc = %+v", r)
 	}
 }

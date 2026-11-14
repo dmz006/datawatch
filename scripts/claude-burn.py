@@ -27,10 +27,17 @@ def main():
     root = os.path.expanduser("~/.claude/projects")
     tok = collections.defaultdict(lambda: [0, 0, 0, 0])
     seen = set()
-    for f in glob.glob(root + "/*/*.jsonl"):
+    # Top-level session files plus the subagent transcripts that Claude Code keeps
+    # under <project>/<session>/subagents/: helper agents (merge, repair, audit) used
+    # real tokens that the first version of this script did not count.
+    files = glob.glob(root + "/*/*.jsonl") + glob.glob(root + "/*/*/subagents/*.jsonl")
+    for f in files:
         if os.path.getmtime(f) < since.timestamp():
             continue
-        kind = "workers/verifiers" if "prd-worktrees" in os.path.basename(os.path.dirname(f)) else "supervisor/other"
+        if "/subagents/" in f:
+            kind = "helper agents (subagents)"
+        else:
+            kind = "workers/verifiers" if "prd-worktrees" in os.path.basename(os.path.dirname(f)) else "supervisor/other"
         for line in open(f, errors="ignore"):
             try:
                 d = json.loads(line)

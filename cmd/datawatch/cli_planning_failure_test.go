@@ -23,14 +23,19 @@ func TestPlanningFailureCLIGetAndListShowReasonAndPhrases(t *testing.T) {
 	t.Cleanup(func() { serverURL = old })
 
 	get := newAutonomousPRDGetCmd()
-	var out bytes.Buffer
+	var out, notes bytes.Buffer
 	get.SetOut(&out)
+	get.SetErr(&notes)
 	if err := get.RunE(get, []string{"p1"}); err != nil {
 		t.Fatalf("prd-get: %v", err)
 	}
+	// The planning-failure block is a note: standard error, never the JSON stream.
 	for _, want := range []string{"Planning failed", "reason:   spec holds a fixed version number", "category: content", "rule:     release-version-fixed", "phrases:  v9.1.0", "1 of 3"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("get output missing %q:\n%s", want, out.String())
+		if !strings.Contains(notes.String(), want) {
+			t.Errorf("get notes missing %q:\n%s", want, notes.String())
+		}
+		if strings.Contains(out.String(), want) {
+			t.Errorf("get stdout must stay pure JSON, found %q:\n%s", want, out.String())
 		}
 	}
 }

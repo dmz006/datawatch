@@ -26,7 +26,9 @@ commit that adds it, same as any other rule change.
 - [ ] `go build ./...` clean.
 - [ ] `go test ./...` clean — the **full** suite, not just the touched
   package. A change in a shared resolution/cascade function can break
-  an unrelated caller.
+  an unrelated caller. CI no longer runs `go test` (removed from `ci.yaml`
+  and `release.yaml`); the only place the full suite runs before a tag is
+  `make pre-tag` (section 4a), so a failure here is found on the build host.
 - [ ] If a test fails in a way that looks unrelated to this change,
   don't assume flake — rerun it in isolation 3-5x locally first. Only
   write it off as a pre-existing flake if it passes consistently
@@ -86,6 +88,37 @@ commit that adds it, same as any other rule change.
 - [ ] Binary-build cadence: patch releases (`X.Y.Z`, Z>0) only need the
   host-arch binary; minor (`X.Y.0`) and major (`X.0.0`) need the full
   cross-compiled set with all 5 assets attached to the GitHub release.
+
+## 4a. Pre-tag run (local gates before the tag)
+
+- [ ] Run `make pre-tag` (or `bash scripts/pre-tag.sh`) on the build host
+  **before** tagging. It runs the CI gates in CI order and stops at the
+  first failure, so a code failure is found locally instead of after the
+  tag push. Steps: fmt, vet, golangci-lint, build, `go mod tidy`, `go test`,
+  PWA tests, docs sync, howto coverage, internal-ref and local-leak
+  checks, version bump, unscoped-tmux, Dockerfile/toolchain/trivy/certifi
+  pins, accepted risks, `.trivyignore` regeneration, govulncheck, gosec
+  (against `.gosec-baseline.json`), gitleaks, goreleaser snapshot, the
+  slow opt-in set (`test-tmp-guard`, `test-cross-build`, perf rollup and
+  busy-loop checks, niced and time-capped) and the agent-base image build.
+- [ ] A step whose tool is not installed prints `SKIP [step]: <tool> not
+  found` and does not fail. Read the SKIP lines: a skipped gate was not
+  checked. `docker-agent-base` skips itself when no Dockerfile, containers
+  workflow or `security/accepted-risks.yml` changed since the last tag.
+- [ ] Each run appends one line to `.datawatch/pre-tag-record` (git-ignored):
+  `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>`. Tag only
+  when the last line is for the commit being tagged and says `result=pass`.
+- [ ] Knobs: `PRE_TAG_DRY_RUN=1` lists the steps and runs nothing;
+  `PRE_TAG_ONLY=a,b` runs only the named steps; `PRE_TAG_RECORD_FILE`
+  moves the record; `PRE_TAG_SLOW_TIMEOUT` caps each slow command
+  (seconds, default 21600).
+- [ ] **CI no longer runs `go test`.** The `go test` step was removed from
+  `ci.yaml` and `release.yaml`, and the release job is now named
+  `lint + build` (it was `go test + lint`). `make pre-tag` is the only gate
+  that runs the Go test suite, so a tag pushed without a passing pre-tag
+  record for that commit ships untested Go code. Branch protection or
+  status checks that required the old `go test + lint` job name must be
+  updated to `lint + build`.
 
 ## 5. Git
 

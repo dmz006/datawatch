@@ -157,3 +157,147 @@ func confirmPromptSubmitted(tmux TmuxAPI, tmuxSession string, assistantActive fu
 		pasteSleep(poll)
 	}
 }
+
+// Timing for the web-input delivery (submitPastedInput). These are fixed
+// internal constants, not operator settings: they only bound how long the
+// daemon watches the pane for its own keystrokes, and the per-send settle
+// that IS operator-tunable (session.schedule_settle_ms) is applied before
+// this runs.
+const (
+	// pasteVisibleTimeout bounds the wait for the pasted placeholder (or
+	// the pasted tail text) to show up near the input prompt.
+	pasteVisibleTimeout = 1500 * time.Millisecond
+	// pasteVisiblePoll is the pane re-read interval while waiting.
+	pasteVisiblePoll = 50 * time.Millisecond
+	// pasteRetrySettle is the pause after an Enter before re-reading the
+	// pane to see whether the input was accepted.
+	pasteRetrySettle = 400 * time.Millisecond
+	// pasteMaxEnterRetries is the most extra Enters sent after the first
+	// one when the pane still shows the unsent input.
+	pasteMaxEnterRetries = 2
+	// pasteTailRunes is how much of the last pasted line is used to
+	// recognise the text in the pane.
+	pasteTailRunes = 24
+	// pasteInputRegionLines is how many non-empty bottom lines count as
+	// "the input area" when looking for unsent text.
+	pasteInputRegionLines = 6
+)
+
+// pasteDeliverer is the slice of the tmux layer submitPastedInput needs.
+// Both TmuxManager and FakeTmux satisfy it.
+type pasteDeliverer interface {
+	SendEnter(session string) error
+	CapturePaneVisible(session string) (string, error)
+}
+
+// pastedTail returns the recognisable end of the pasted text: the last
+// non-empty line, trimmed, cut to its final pasteTailRunes runes.
+func pastedTail(keys string) string {
+	lines := strings.Split(keys, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "" {
+			continue
+		}
+		r := []rune(l)
+		if len(r) > pasteTailRunes {
+			r = r[len(r)-pasteTailRunes:]
+		}
+		return string(r)
+	}
+	return ""
+}
+
+// inputHoldsText reports whether the pasted tail text is still sitting in
+// the input area: it appears on a prompt-affordance line among the last
+// few non-empty pane lines, with no assistant output after it.
+func inputHoldsText(pane, tail string) bool {
+	if tail == "" {
+		return false
+	}
+	lines := strings.Split(StripANSI(pane), "\n")
+	var idx []int
+	for i, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) > pasteInputRegionLines {
+		idx = idx[len(idx)-pasteInputRegionLines:]
+	}
+	for k := len(idx) - 1; k >= 0; k-- {
+		l := lines[idx[k]]
+		if !strings.Contains(l, tail) {
+			continue
+		}
+		if !promptAffordance(l) && !strings.Contains(l, "│") {
+			return false
+		}
+		for _, j := range idx[k+1:] {
+			if looksLikeAssistantOutput(lines[j]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// submitPastedInput presses Enter for text already pushed literally into
+// the pane. It (1) polls the pane, bounded, until the pasted placeholder or
+// the pasted tail is visible; (2) sends Enter; (3) for pasted/long/multi-line
+// input re-reads the pane after a short settle and, only while the input
+// is still unsent (placeholder or text in the input box, no assistant
+// activity), sends one more Enter, at most pasteMaxEnterRetries times; and
+// (4) never sends another Enter once the placeholder is gone or the
+// assistant is active, so a first Enter that worked is exactly one submit.
+// Short single-line input without a placeholder keeps the fast path: one
+// Enter after the bounded poll, no verification wait. Empty input is a bare
+// Enter with no polling. Uses the injectable pasteSleep/pasteNow clock.
+func submitPastedInput(tm pasteDeliverer, session, keys string) error {
+	tail := pastedTail(keys)
+	if tail == "" {
+		return tm.SendEnter(session)
+	}
+
+	sawPlaceholder := false
+	deadline := pasteNow().Add(pasteVisibleTimeout)
+	for {
+		pane, err := tm.CapturePaneVisible(session)
+		if err != nil {
+			break // pane unreadable: do not stall, just submit
+		}
+		if pastePending(pane) {
+			sawPlaceholder = true
+			break
+		}
+		if strings.Contains(StripANSI(pane), tail) {
+			break
+		}
+		if !pasteNow().Add(pasteVisiblePoll).Before(deadline) {
+			break
+		}
+		pasteSleep(pasteVisiblePoll)
+	}
+
+	if err := tm.SendEnter(session); err != nil {
+		return err
+	}
+	if !sawPlaceholder && !strings.Contains(keys, "\n") && len(keys) <= 200 {
+		return nil
+	}
+	for retry := 0; retry < pasteMaxEnterRetries; retry++ {
+		pasteSleep(pasteRetrySettle)
+		pane, err := tm.CapturePaneVisible(session)
+		if err != nil {
+			return nil
+		}
+		if !pastePending(pane) && !inputHoldsText(pane, tail) {
+			return nil
+		}
+		if err := tm.SendEnter(session); err != nil {
+			return err
+		}
+	}
+	return nil
+}

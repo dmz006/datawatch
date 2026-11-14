@@ -1331,6 +1331,8 @@ Send text input directly to a session via the dedicated `POST /api/sessions/send
 datawatch session send a3f2 "yes, proceed"
 ```
 
+The text is typed into the session and then submitted with Enter. For a long or multi-line message the daemon first waits for the terminal to take in the paste and, if the text is still sitting in the input box after the Enter, presses Enter again (at most twice more). See [message submission](operations.md#message-submission-to-a-session-paste-wait-and-enter-retry).
+
 ### `datawatch cmd add <name> <command>`
 
 Add a named command to the saved command library.

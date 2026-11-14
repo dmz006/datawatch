@@ -72,6 +72,22 @@ Bottom nav → ⊞ Dashboard
 
 Or from any session card / Automata card via the `⊞` icon button.
 
+## On a phone
+
+At 600px wide or less the Dashboard changes layout so nothing is out of reach:
+
+- **Stat bar wraps.** The stat bar at the top flows onto a second row instead of
+  running off the edge, so the **+ Card** and **Edit** buttons stay on screen.
+- **One page scroll.** The whole Dashboard scrolls as a single page inside the
+  view, not in a short scroll box of its own. The card grid grows to fit its
+  cards, so every card can be reached. The bottom padding that keeps the last
+  card clear of the new-session button is kept.
+- **Columns.** Cards sit in two columns up to 600px and one column at 480px or
+  less. A card marked full-width spans both columns.
+
+No setting controls this; it is layout only (`style.css`, no `app.js` change).
+Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`.
+
 ## Two happy paths
 
 ### 3a. Happy path — PWA

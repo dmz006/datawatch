@@ -4320,3 +4320,39 @@ entries:
     expires: "2026-12-13"
     validated_by: "claude-session"
     reason: "The Release scan of agent-base 9.171.1 lists CVE-2026-114466 (HIGH) on git and git-man 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm, bookworm-security, trixie, forky and sid as vulnerable with no fix; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or build git from source in a pinned stage."
+
+  - id: cve/CVE-2026-126190
+    kind: container
+    package: "soupsieve"
+    version: "2.10"
+    severity: high
+    images:
+      - agent-aider
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on the local dw-verify-agent-aider:test image (Python 3.11.2, aider-chat 0.86.0, beautifulsoup4 4.13.4, soupsieve 2.10; the same pins as docker/dockerfiles/Dockerfile.agent-aider, but this local image was not built from main today): grep of the aider package in the aider-chat venv site-packages for .select(, select_one, soupsieve and .css. finds no call; the only users of soupsieve in the venv outside its own package are bs4 itself (bs4/css.py, element.py, builder/_lxml.py) and bs4's tests."
+      analysis: "CVE-2026-126190 is a polynomial-time denial of service (ReDoS) in Soup Sieve's CSS selector handling, so it is only triggered when an attacker controls the selector string passed to soupsieve (through bs4's select or select_one). Aider uses beautifulsoup4 only to scrape pages it fetches itself and its own code contains no select, select_one or soupsieve call, so no selector string, attacker-controlled or not, reaches soupsieve from aider. Page content cannot supply a selector. Not patched because the fixed soupsieve (4.0.0) requires Python >=3.11.5, as does every release from 3.0.2 on, and the image runs Debian 12's Python 3.11.2, so pip refuses it. Forcing it with --ignore-requires-python is not done because upstream yanked 3.0 and 3.0.1 for breakage on older Pythons. Cleared by moving the aider venv to Python >=3.11.5 (follow-up filed separately), after which soupsieve can be upgraded and this entry removed."
+    first_added: "2026-11-13"
+    added: "2026-11-13"
+    expires: "2026-12-13"
+    validated_by: "claude-session"
+    reason: "The Release scan of agent-aider lists CVE-2026-126190 (HIGH) on soupsieve 2.10, fixed in 4.0.0, which needs Python >=3.11.5 while the image has 3.11.2; accepted for 30 days; remove when the aider venv moves to Python >=3.11.5 and soupsieve is upgraded."
+
+  - id: cve/CVE-2026-126191
+    kind: container
+    package: "soupsieve"
+    version: "2.10"
+    severity: high
+    images:
+      - agent-aider
+    impact:
+      traced: false
+      reachable: "no"
+      method: "Not re-traced. Reused from CVE-2026-126190, which grepped the aider package in the aider-chat venv (Python 3.11.2, aider-chat 0.86.0, beautifulsoup4 4.13.4, soupsieve 2.10) for .select(, select_one, soupsieve and .css. and found no call; the same pins are in docker/dockerfiles/Dockerfile.agent-aider."
+      analysis: "CVE-2026-126191 is an exponential-time denial of service (ReDoS) in Soup Sieve's selector compilation, so it is only triggered when an attacker controls the selector string passed to soupsieve (through bs4's select or select_one). The earlier trace for CVE-2026-126190 found no select, select_one or soupsieve call in aider; that finding is reused here and was not re-traced, so this entry is untraced and the 30-day cap applies. Not patched because the fixed soupsieve (3.0.2) requires Python >=3.11.5, as does every release from 3.0.2 on, and the image runs Debian 12's Python 3.11.2, so pip refuses it. Cleared by moving the aider venv to Python >=3.11.5 (Automaton 66dd0001), after which soupsieve can be upgraded and this entry removed."
+    first_added: "2026-11-13"
+    added: "2026-11-13"
+    expires: "2026-12-13"
+    validated_by: "claude-session"
+    reason: "The Release scan of agent-aider lists CVE-2026-126191 (HIGH, exponential ReDoS in selector compilation) on soupsieve 2.10, fixed in 3.0.2, which needs Python >=3.11.5 while the image has 3.11.2; accepted for 30 days, untraced (impact reused from CVE-2026-126190); remove when the aider venv moves to Python >=3.11.5 (Automaton 66dd0001) and soupsieve is upgraded."

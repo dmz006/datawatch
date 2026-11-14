@@ -112,3 +112,6 @@ tmp-sandbox/
 # Daily plans tidy (scripts/plans-tidy-daily.sh) scratch and reports
 .datawatch/scratch/
 .datawatch/reports/
+
+# pre-tag runner record (scripts/pre-tag.sh)
+.datawatch/pre-tag-record

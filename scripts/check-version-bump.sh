@@ -45,7 +45,7 @@
 #           difference passes.
 #
 # Exempt (recognized zero-behavior-change) paths, regex:
-#   _test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/v10-status\.py$
+#   _test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/claude-burn\.py$|^scripts/v10-status\.py$
 # A range where every changed file matches this passes without a bump.
 #
 # Dependabot exemption (AGENT.md, Versioning):
@@ -83,7 +83,7 @@ cd "$ROOT"
 
 MAIN_FILE="cmd/datawatch/main.go"
 API_FILE="internal/server/api.go"
-EXEMPT_RE='_test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/v10-status\.py$'
+EXEMPT_RE='_test\.go$|_test\.js$|\.test\.js$|^docs/plans/|\.github/workflows/|^\.golangci|^\.gosec-exclude$|^scripts/supervisor-watch\.py$|^scripts/claude-burn\.py$|^scripts/v10-status\.py$'
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 # --- mode selection -------------------------------------------------------

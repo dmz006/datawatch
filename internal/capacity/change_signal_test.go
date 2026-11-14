@@ -86,7 +86,8 @@ func TestLedgerChangedIgnoresWaiterRemoval(t *testing.T) {
 	}
 	ch := l.Changed()
 	cancel()
-	<-done
+	err := <-done
+	_ = err
 	if csFired(ch) {
 		t.Fatal("removing a waiter that frees nothing is not a change")
 	}
