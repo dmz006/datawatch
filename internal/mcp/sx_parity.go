@@ -329,21 +329,29 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 	if err := applyProjectRecordArgs(args, body); err != nil {
 		return toolErrorf("project_upsert", "%v", err), nil
 	}
-	// Omitted description must not be forwarded as an empty string: the
-	// daemon's upsert overwrites description — and default_backend — whenever
-	// they are absent or empty, so a partial update that left the field out
-	// silently wiped the description the operator had saved. When the caller
-	// omits the description, read the stored record once and carry the stored
-	// value for every omitted field (including default_backend's) — the same
+	// An omitted field must not be forwarded as an empty string (or dropped
+	// from the body): the daemon's upsert overwrites description and
+	// default_backend whenever they are absent or empty, so a partial update
+	// that leaves either field out silently wipes the stored value. The
+	// readback fires for either field being omitted — not only the description
+	// — and carries the stored value back for every omitted field, the same
 	// read-back that `datawatch projects set` and the comm channel's
-	// `project set` do. A read failure (for a new registration the GET 404s)
-	// leaves the fields out of the body; the POST's own response is
-	// authoritative in that case.
-	if _, descPresent := args["description"]; !descPresent || args["description"] == nil {
+	// `project set` do. A provided empty string still forwards as a clear
+	// (that is the documented way to blank a field), and a read failure (for a
+	// new registration the GET 404s) simply leaves the field out of the body —
+	// there is no stored value to lose in that case.
+	anyOmitted := false
+	for _, k := range []string{"description", "default_backend"} {
+		if v, present := args[k]; !present || v == nil {
+			anyOmitted = true
+			break
+		}
+	}
+	if anyOmitted {
 		if stored, err := storedProjectRecordFields(s, name, "description", "default_backend"); err == nil {
 			for _, k := range []string{"description", "default_backend"} {
 				if v, present := args[k]; present && v != nil {
-					continue
+					continue // provided (even "" to clear) → keep it in the body
 				}
 				if w, ok := stored[k]; ok {
 					body[k] = w

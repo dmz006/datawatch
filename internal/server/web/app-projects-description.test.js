@@ -100,6 +100,26 @@ test('editing another field keeps the saved description in the posted body', asy
   assert.equal(body.description, 'the billing service of the Automata', 'the saved description is posted back unchanged, not blanked');
   assert.equal(body.policy.max_concurrent_tasks, 3, 'policy is carried over');
   assert.equal(body.arcs.length, 1, 'arcs are carried over');
+  assert.equal(body.default_backend, 'claude-code', 'the saved default_backend is posted back unchanged, not blanked');
+});
+
+test('editing the backend keeps the saved description in the posted body', async () => {
+  const { sb } = load([ACME]);
+  await open(sb);
+
+  sb.projectsManageStartEdit('acme');
+  const draft = vm.runInContext('_projectsManage.draft', sb);
+  assert.equal(draft.default_backend, 'claude-code', 'edit form pre-fills the saved backend');
+
+  sb.projectsManageInput('default_backend', 'pi');
+  await sb.projectsManageSave();
+  await flushAsync();
+
+  const posts = writes(sb).filter(c => c.url === '/api/projects' && c.body && c.body.name === 'acme');
+  assert.equal(posts.length, 1, 'one POST for the edit');
+  const body = posts[0].body;
+  assert.equal(body.default_backend, 'pi', 'the edited backend is posted');
+  assert.equal(body.description, 'the billing service of the Automata', 'the saved description is posted back unchanged, not blanked by a backend edit');
 });
 
 test('the project page displays the saved description', async () => {
