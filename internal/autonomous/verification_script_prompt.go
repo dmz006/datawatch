@@ -85,13 +85,13 @@ func (m *Manager) verificationScriptText(list string) string {
 		" pyproject.toml, go.mod + standard go tooling, etc.) and script" +
 		" from those.\n" +
 		VerificationScriptHelperText() +
-		"10. Do not generate a per-story gate. Story-level checks are plain" +
+		"14. Do not generate a per-story gate. Story-level checks are plain" +
 		" task verification. Plan exactly one real final gate for the whole" +
 		" Automaton, as the last task, with kind final_gate.\n" +
-		"11. A final_gate task always carries a verification_script (also" +
+		"15. A final_gate task always carries a verification_script (also" +
 		" listed in files_generated) or an explicit verification_script_reason;" +
 		" never emit one with neither.\n" +
-		"12. Use Automaton wording in user-facing text.\n" +
+		"16. Use Automaton wording in user-facing text.\n" +
 		"Do NOT inline any file content (scripts, rules files, source) in" +
 		" your response — only the verification_script path goes in the" +
 		" JSON; write script bodies to disk with your own tools."

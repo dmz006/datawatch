@@ -380,6 +380,42 @@ func TestVerifyStable_SuffixCarriesHelperAndPlannerRules(t *testing.T) {
 	}
 }
 
+func TestVerifyStable_PlannerRulesInBothPlanningPrompts(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"PlanningPrompt":        PlanningPrompt,
+		"PlanningPromptSession": PlanningPromptSession,
+	} {
+		flat := strings.Join(strings.Fields(prompt), " ")
+		for _, want := range []string{
+			"A read-only task is never planned with a file to write",
+			`"report_path" under .datawatch/reports/`,
+			"No spec line names a path outside the project directory",
+			"Keep the version numbers of other things (Python, libraries, tools) exactly as written",
+			"for the release version only",
+		} {
+			if !strings.Contains(flat, strings.Join(strings.Fields(want), " ")) {
+				t.Errorf("%s missing rule %q", name, want)
+			}
+		}
+	}
+}
+
+func TestVerifyStable_SuffixSizeCap(t *testing.T) {
+	m := &Manager{cfg: Config{}}
+	got := m.verificationScriptSuffix(&PRD{ProjectDir: t.TempDir()})
+	if len(got) >= 5000 {
+		t.Errorf("suffix %d bytes, want under 5000", len(got))
+	}
+	if len(VerificationScriptHelperText()) > verificationScriptHelperMaxBytes {
+		t.Errorf("helper text over its cap")
+	}
+	for _, want := range []string{"#!/usr/bin/env bash", "Never pipe into `grep -q`", "CSS hex colours"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("suffix missing %q", want)
+		}
+	}
+}
+
 func TestVerifyStable_HeadlessSuffixStillEmpty(t *testing.T) {
 	m := &Manager{cfg: Config{}}
 	if got := m.verificationScriptSuffix(&PRD{}); got != "" {
