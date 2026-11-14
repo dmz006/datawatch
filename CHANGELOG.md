@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.3 — Projects cards and Gantt fix
+
+### Fixed
+
+- The Projects view draws its project list and its Unassigned and History boards as cards, with a Cards, Tiles and Compact switch that is remembered in the browser; a phone width starts in Compact.
+- The Unassigned board now has Assign (set the project from the card), Open and Dismiss per Automaton, with an Undo link. Dismiss hides the card in this browser only; the daemon keeps tracking the Automaton.
+- The Policy page was removed from a project's sub-tabs. The link next to the project name opens the policy in Settings, and an old stored or addressed `policy` choice opens Overview.
+- The Projects Gantt now draws an Automaton from its first task start to its last task end, and a shipped Automaton always reads completed, whatever its record says.
+
 ## v9.173.2 — Workers stop writing rules-file checkpoints
 
 ### Fixed

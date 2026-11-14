@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.173.2 (2026-11-13).** Automaton task workers no longer write checkpoint entries into AGENT.md or CLAUDE.md, and a checkpoint-only change to the rules file is reverted automatically. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.173.3 (2026-11-13).** The Projects view shows cards (Cards, Tiles, Compact) with Assign, Open and Dismiss on the Unassigned board, the Policy sub-tab is replaced by a link to Settings, and the Gantt spans each Automaton from its first task start to its last task end. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
