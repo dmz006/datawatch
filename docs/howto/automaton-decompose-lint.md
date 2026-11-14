@@ -732,11 +732,15 @@ with zero stories and no explanation.
 
 **1. The daemon corrects fixed release numbers itself.** When the
 `release-version-fixed` check is the **only** content failure of a plan,
-the daemon rewrites each fixed three-part number in a release story or
-release task (title, description or spec) instead of sending the plan back
+the daemon rewrites each fixed three-part number that is the Automaton's
+own release version, in a release story or release task (title, description
+or spec), instead of sending the plan back
 to the planner: a number introduced by the word "version" or "release" is
 replaced together with that word by "the release", and a bare number
-becomes "the next patch above main". It only does this when every other
+becomes "the next patch above main". A version of something else (a Python,
+Go or Node version, a library pin such as `requests==2.31.0`, a path, URL or
+image tag) is never rewritten and never counts as a release number. It only
+does this when every other
 plan check passes on the corrected plan; otherwise the plan takes the
 ordinary path (retry or failure) untouched. Each correction is written to
 the Automaton's decision log as one `auto_correct` line that lists every
