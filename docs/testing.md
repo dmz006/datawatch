@@ -99,6 +99,31 @@ the responsible package — if any scratch directory is left behind.
 repository; the ordinary `go test ./...` run of the same test keeps a small
 default list so a local run stays fast.
 
+## Performance budget checks are part of the local pre-tag run
+
+`scripts/perf-budget.sh` is a local pre-tag check, not a CI step: it is
+run on the release host before a tag is cut (alongside `make test-tmp-guard`
+and `make test-cross-build`). It enforces two budgets in one command:
+
+- the web UI load budget (the seeded-server Go test and the optional
+  slow-4G tab timing pass), and
+- the roll-up and Automata list budget at 700 Automata,
+  `scripts/perf-rollup-check.sh`
+  (`TestPerfRollup*` / `TestPerfAutomata*` in `internal/server` and
+  `TestSummaryIndexMemory*` in `internal/autonomous`).
+
+The roll-up and list checks run against a deterministic temp-dir fixture
+(no network, no git, never the operator's data directory). The byte limits
+and the "no full record read" assertions are ordinary Go tests and run in a
+plain `go test` run. **Only the time-limit assertions are gated** behind
+`PERF_ROLLUP_CHECK=1`, which `scripts/perf-rollup-check.sh` sets; in a normal
+`go test` run those time limits are skipped with the assertions that a
+miss would be reported. `PERF_ROLLUP_MULTIPLIER` (a number >= 1, default
+1) scales every time limit for a slow host; the byte limits never scale.
+The script runs the tests niced (`nice -n 19`) with workers capped at a
+quarter of the cores, under a hard timeout (`PERF_ROLLUP_TIMEOUT`, default
+600 s) and a cleanup trap, and exits non-zero on any miss.
+
 ## Smoke checks: the no-config-copy rule (smoke-check-task)
 
 A smoke check is the live verification of a build or an installation: it
