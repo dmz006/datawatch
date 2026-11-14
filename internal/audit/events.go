@@ -427,4 +427,12 @@ const (
 	// is not audited). Subject: the project alias. Details: project, source,
 	// policy, created, unchanged, changed, conflicts, skipped, actor.
 	ActionPlanRecordImported = "plan_record_imported"
+	// ActionPlanRecordArchived — a plan was archived: taken out of the default
+	// lists, search and counts, with its file and links kept. Subject: the plan
+	// title. Details: uid, id, kind, project, actor, reason, automata_held, order.
+	ActionPlanRecordArchived = "plan_record_archived"
+	// ActionPlanRecordRestored — an archived plan was restored to the lists in
+	// its old order. Subject: the plan title. Details: uid, id, kind, project,
+	// actor, automata_held, order.
+	ActionPlanRecordRestored = "plan_record_restored"
 )

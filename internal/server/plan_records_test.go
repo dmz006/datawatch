@@ -547,3 +547,27 @@ func TestPlanRecordResponsesCarryNoTrackerIDs(t *testing.T) {
 }
 
 var trackerIDRe = regexp.MustCompile(`\b(BL|B|GH)[0-9]{2,}\b`)
+
+func TestPlanRecordArchiveAndRestoreAuditActions(t *testing.T) {
+	r := newPlanRecordsRig(t)
+	p, err := r.store.Create(planrecords.Record{Kind: planrecords.KindPlan, Project: "datawatch", Title: "Audited plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.store.Archive(p.ID, "tidy", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.store.Archive(p.ID, "tidy", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.store.Restore(p.ID, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	got := prAuditActions(t, r.audit)
+	if len(got) != 3 || got[1].Action != audit.ActionPlanRecordArchived || got[2].Action != audit.ActionPlanRecordRestored {
+		t.Fatalf("want created, archived, restored once each: %+v", got)
+	}
+	if got[1].Actor != "operator" || got[1].Subject != "Audited plan" || got[1].Details["reason"] != "tidy" {
+		t.Fatalf("archived entry: %+v", got[1])
+	}
+}

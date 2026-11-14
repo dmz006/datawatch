@@ -400,6 +400,9 @@ func (s *Store) Create(in Record) (Record, error) {
 	if len(rec.Themes) > 0 {
 		return Record{}, invalid("themes are added with the theme methods, not at creation")
 	}
+	if rec.Archived || rec.ArchivedAt != "" || rec.ArchiveReason != "" {
+		return Record{}, invalid("a plan is archived with Archive, not at creation")
+	}
 	rec.Release = strings.TrimSpace(rec.Release)
 	if err := rec.validate(); err != nil {
 		return Record{}, err

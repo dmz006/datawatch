@@ -288,6 +288,10 @@ func cefSignature(action string) (int, string, int) {
 		return 94, "PlanRecordUpdated", 3
 	case ActionPlanRecordImported:
 		return 95, "PlanRecordImported", 3
+	case ActionPlanRecordArchived:
+		return 96, "PlanRecordArchived", 3
+	case ActionPlanRecordRestored:
+		return 97, "PlanRecordRestored", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

@@ -133,12 +133,18 @@ type PlansView struct {
 
 // ProjectPlans returns one page of the project's plans and one page of its
 // backlog. The Automaton lists of the plans outside the pages are not built.
+// Archived plans are left out; ProjectPlansIn asks for them.
 func (s *Store) ProjectPlans(project string, plans, backlog Page) PlansView {
+	return s.ProjectPlansIn(project, plans, backlog, ArchiveScope{})
+}
+
+// ProjectPlansIn is ProjectPlans with an explicit archive scope.
+func (s *Store) ProjectPlansIn(project string, plans, backlog Page, scope ArchiveScope) PlansView {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var active, back []Summary
 	for _, sm := range s.planSummariesLocked() {
-		if project != "" && sm.Project != project {
+		if (project != "" && sm.Project != project) || !scope.allows(sm.Archived) {
 			continue
 		}
 		if sm.AutomatonCount == 0 {
@@ -200,6 +206,9 @@ type ProjectOverview struct {
 	PlansTotal int
 	// Backlog is the number of plans with no Automaton yet.
 	Backlog int
+	// ArchivedPlans counts the project's archived plans. They are not part of
+	// the counts above unless the overview was asked to include them.
+	ArchivedPlans int
 	// Rows and Findings count registry rows and findings by state.
 	Rows          StateCount
 	RowsTotal     int
@@ -211,12 +220,24 @@ type ProjectOverview struct {
 
 // Overview reads the project's plans and record counts from the index. The
 // Active list holds at most maxActive plans (all of them when maxActive <= 0).
+// Archived plans are not counted; OverviewIn asks for them.
 func (s *Store) Overview(project string, maxActive int) ProjectOverview {
+	return s.OverviewIn(project, maxActive, ArchiveScope{})
+}
+
+// OverviewIn is Overview with an explicit archive scope.
+func (s *Store) OverviewIn(project string, maxActive int, scope ArchiveScope) ProjectOverview {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ov := ProjectOverview{Plans: StateCount{}, Rows: StateCount{}, Findings: StateCount{}}
 	for _, sm := range s.planSummariesLocked() {
 		if project != "" && sm.Project != project {
+			continue
+		}
+		if sm.Archived {
+			ov.ArchivedPlans++
+		}
+		if !scope.allows(sm.Archived) {
 			continue
 		}
 		ov.PlansTotal++

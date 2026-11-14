@@ -84,13 +84,19 @@ func (s *Store) ReleasePlan(project, release string) (Record, bool) {
 }
 
 // ReleasePlans lists the release plans, in priority order. A non-empty project
-// keeps only that project's.
+// keeps only that project's. Archived plans are left out; ReleasePlansIn asks
+// for them.
 func (s *Store) ReleasePlans(project string) []Summary {
+	return s.ReleasePlansIn(project, ArchiveScope{})
+}
+
+// ReleasePlansIn is ReleasePlans with an explicit archive scope.
+func (s *Store) ReleasePlansIn(project string, scope ArchiveScope) []Summary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Summary
 	for _, sm := range s.planSummariesLocked() {
-		if sm.PlanKind == PlanKindRelease && (project == "" || sm.Project == project) {
+		if sm.PlanKind == PlanKindRelease && (project == "" || sm.Project == project) && scope.allows(sm.Archived) {
 			out = append(out, sm)
 		}
 	}
