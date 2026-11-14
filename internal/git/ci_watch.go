@@ -44,7 +44,7 @@ func LatestRuns(ctx context.Context, host GitHostConfig, repo, ref string) (runs
 
 	switch host.Kind {
 	case "github":
-		out, err := runCICmd(cctx, "gh", "run", "list",
+		out, err := runCICmd(cctx, host, "gh", "run", "list",
 			"--repo", repo,
 			"--branch", ref,
 			"--json", "databaseId,name,status,conclusion,headSha,url")
@@ -54,7 +54,7 @@ func LatestRuns(ctx context.Context, host GitHostConfig, repo, ref string) (runs
 		return parseGitHubRuns(out)
 	case "gitlab":
 		path := "projects/" + url.PathEscape(repo) + "/pipelines?ref=" + url.QueryEscape(ref)
-		out, err := runCICmd(cctx, "glab", "api", path)
+		out, err := runCICmd(cctx, host, "glab", "api", path)
 		if err != nil {
 			return nil, ciCmdError("glab api pipelines", err)
 		}
@@ -64,19 +64,16 @@ func LatestRuns(ctx context.Context, host GitHostConfig, repo, ref string) (runs
 	}
 }
 
-// runCICmd runs name with args under ctx and returns stdout. Stderr is kept
-// out of the result so a CLI error message cannot leak into the caller's data.
-func runCICmd(ctx context.Context, name string, args ...string) ([]byte, error) {
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return nil, err
-	}
-	cmd := exec.CommandContext(ctx, path, args...) // #nosec G204 -- fixed binary names, args built from validated config
-	out, err := cmd.Output()
+// runCICmd runs name with args for host under ctx and returns stdout. Stderr is
+// kept out of the result so a CLI error message cannot leak into the caller's
+// data. The host's credential source decides the child's environment (see
+// runHostCommand).
+func runCICmd(ctx context.Context, host GitHostConfig, name string, args ...string) ([]byte, error) {
+	so, _, err := runHostCommand(ctx, host, HostCmd{Name: name, Args: args}, false)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return out, err
+	return []byte(so), err
 }
 
 func ciCmdError(what string, err error) error {

@@ -4227,6 +4227,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
+			// Git host token fallback: a git.hosts entry whose credential
+			// source is a vault secret name (or that names a fallback secret)
+			// has the secret read here, by name, inside the host command
+			// runner and passed only to that child process. The value is
+			// never returned to a caller, logged or stored.
+			gitpkg.SetHostSecretResolver(func(name string) (string, error) {
+				sec, err := secretsStore.Get(name)
+				if err != nil {
+					return "", err
+				}
+				return sec.Value, nil
+			})
 			// Call-time ${secret:name} API-key resolution in the inference
 			// dispatcher: the dispatcher was created above, before the
 			// secrets store existed, with its creation block already closed,

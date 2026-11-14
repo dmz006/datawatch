@@ -60,7 +60,7 @@ func probeGitHub(ctx context.Context, host GitHostConfig, r HostReadiness) Conne
 	if base != "" {
 		args = append(args, "--hostname", base)
 	}
-	out, err := runHostCmd(ctx, "gh", args...)
+	out, err := runHostCmd(ctx, host, "gh", args...)
 	fix := "gh auth login --hostname " + loginHost
 	if err != nil {
 		return ConnectionResult{
@@ -84,7 +84,7 @@ func probeGitHub(ctx context.Context, host GitHostConfig, r HostReadiness) Conne
 // probeGitLab runs glab api user against the configured hostname.
 func probeGitLab(ctx context.Context, host GitHostConfig, r HostReadiness) ConnectionResult {
 	loginHost := hostLoginName(host, "gitlab.com")
-	out, err := runHostCmd(ctx, "glab", "api", "user", "--hostname", loginHost)
+	out, err := runHostCmd(ctx, host, "glab", "api", "user", "--hostname", loginHost)
 	fix := "glab auth login --hostname " + loginHost
 	if err != nil {
 		return ConnectionResult{
@@ -109,7 +109,7 @@ func probeGitLab(ctx context.Context, host GitHostConfig, r HostReadiness) Conne
 // The "--" stops the URL being read as an option.
 func probePlainRemote(ctx context.Context, host GitHostConfig) ConnectionResult {
 	target := redactHostText(strings.TrimSpace(host.BaseURL))
-	_, err := runHostCmd(ctx, "git", "ls-remote", "--heads", "--", host.BaseURL)
+	_, err := runHostCmd(ctx, host, "git", "ls-remote", "--heads", "--", host.BaseURL)
 	if err != nil {
 		return ConnectionResult{
 			Ok:      false,
@@ -136,6 +136,10 @@ func parseProbeAccount(out, field string) string {
 // probeFailureMessage turns a probe error into plain language. The provider
 // label is empty for plain remotes, which name the target directly.
 func probeFailureMessage(err error, provider, target, tool string) string {
+	var ce *HostCredentialError
+	if errors.As(err, &ce) {
+		return redactHostText(ce.Error())
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "The check on " + target + " timed out after 15 seconds."
 	}

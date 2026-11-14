@@ -50,11 +50,17 @@ var forgeFactory = defaultForgeFactory
 func defaultForgeFactory(host GitHostConfig) hostForge {
 	switch host.Kind {
 	case hostKindGitHub:
-		return NewGitHub()
+		g := NewGitHub()
+		g.Host = host
+		return g
 	case hostKindGitLab:
-		return NewGitLab()
+		g := NewGitLab()
+		g.Host = host
+		return g
 	default:
-		return NewGenericGit(host.Kind, host.BaseURL)
+		g := NewGenericGit(host.Kind, host.BaseURL)
+		g.Host = host
+		return g
 	}
 }
 
