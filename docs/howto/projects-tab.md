@@ -857,7 +857,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
-| The saved description is gone after a change | Which surface is doing the writing decides. The **Manage projects** form keeps the stored description (it pre-fills it and re-sends it) unless you change it, and CLI `projects upsert` and `projects set` and the comm channel carry the stored one forward when the change sends none. MCP `project_upsert` and a plain REST `POST /api/projects` forward the description they are sent, blank when the field is missing — so an update that omits it overwrote the stored one; keep it by sending it in the call (or restore it, for example with comm `project set <name> description …`), and an explicit empty description clears it on purpose |
+| The saved description is gone after a change | Which surface is doing the writing decides. The **Manage projects** form keeps the stored description (it pre-fills it and re-sends it) unless you change it, and CLI `projects set` and the comm channel carry the stored one forward when the change sends none. CLI `projects upsert`, MCP `project_upsert` and a plain REST `POST /api/projects` forward the description they are sent, blank when the field is missing — so an update that omits it overwrote the stored one; keep it by sending it in the call (or restore it, for example with comm `project set <name> description …`), and an explicit empty description clears it on purpose |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
 | Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
@@ -938,18 +938,18 @@ the lane defaults. Use REST, MCP or the CLI for those.
   Saving a new description from the **Manage projects** form updates the stored
   one, and the Manage projects list and the project page show it; a form change
   of the directory or backend never blanks the stored description, because the
-  form pre-fills it and re-sends it. The CLI (an `upsert` without
-  `--description` and every `set`) and the comm channel read the stored record
-  and carry the description forward when the change sends none. MCP
-  `project_upsert` and a plain REST `POST /api/projects` do the opposite for
+  form pre-fills it and re-sends it. The CLI's `set` command and the comm channel read
+  the stored record and carry the description forward when the change sends none. CLI
+  `projects upsert`, MCP `project_upsert` and a plain REST `POST /api/projects` do the
+  opposite for
   the description and the default backend: they accept exactly what is sent, so
   a call without the field overwrites the stored value with an empty one while
   every other record field keeps its stored value when omitted. Note the
-  asymmetry with owner and repository, which both these write surfaces keep on
+  asymmetry with owner and repository, which the REST and MCP write surfaces keep on
   omission. The repository ships an MCP test that expects an omitted
   description to survive the update; that test currently fails against the
-  shipped handler, so the alignment is outstanding. Until it lands, treat MCP
-  and plain REST as replace-what-is-sent. Confirm per surface
+  shipped handler, so the alignment is outstanding. Until it lands, treat CLI
+  `upsert`, MCP and plain REST as replace-what-is-sent. Confirm per surface
   that this is what you want, and that a saved description survives the update
   patterns that write your projects.
 
