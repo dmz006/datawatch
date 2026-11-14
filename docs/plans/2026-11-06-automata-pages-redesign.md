@@ -250,7 +250,7 @@ work in there to use!!"
 
 Decision: A, with the review of the 77 unlanded branches done first (the C step), so the list starts sorted and any
 useful work is recovered before anything is deleted. The review result is recorded in
-`2026-11-06-unlanded-branch-review.md`.
+`historical-plans/2026-11-06-unlanded-branch-review.md`.
 
 Status (2026-11-11): built. The Housekeeping sub-tab now carries the **Unlanded work** card (recommendation plus Keep,
 Archive branch and Delete worktree per row; Delete worktree writes a verified backup bundle first), a **Commit**
@@ -283,7 +283,7 @@ which keeps an Automaton with unmerged commits from that fix on, but does nothin
 Automata that failed or were replaced were archived without a recorded outcome.
 
 Fix in three parts: (1) the one-time review of the 77 (running, results in
-`2026-11-06-unlanded-branch-review.md`); (2) the "Unlanded work" action list on the Housekeeping tab (decision 6),
+`historical-plans/2026-11-06-unlanded-branch-review.md`); (2) the "Unlanded work" action list on the Housekeeping tab (decision 6),
 so each one gets an outcome (land, keep as reference, delete after classification); (3) the registry audit rule and
 `branch-audit.py` treat "other" as a finding to be resolved, and the cleaner reports the skipped worktrees by
 reason with the unlanded ones named.
