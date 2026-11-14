@@ -156,9 +156,9 @@ After a save or a remove the list and the picker reload and the page shows
 change, its message is shown above the form and nothing is changed. Removing the
 project you are viewing returns the picker to **Overview**.
 
-Editing sends the project's whole record back with only these three fields
-changed, so its policy, plans, owner, target and other record fields keep their
-stored values. The block is the web form of `POST /api/projects` and
+Editing changes only the directory, default backend and
+description, so its policy, plans, owner, target and other record fields keep
+their stored values. The block is the web form of `POST /api/projects` and
 `DELETE /api/projects/{name}`; the same actions are on the CLI, MCP and comm
 channel below.
 
@@ -857,7 +857,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
-| The saved description is gone after a change | Every operator surface keeps a stored description the change does not mention: the **Manage projects** form pre-fills and re-sends it, and CLI `projects upsert`, CLI `projects set`, MCP `project_upsert` and the comm channel carry the stored one forward. The one writer that still replaces it is a raw REST `POST /api/projects` — it writes the description it is sent, blank when the field is missing — so a script of yours that updated the alias that way is the usual suspect; restore it from the form, with `projects upsert --description`, comm `project set <name> description …` or MCP, and an explicit empty description clears it on purpose |
+| The saved description is gone after a change | Every operator surface keeps a stored description the change does not mention: the **Manage projects** form pre-fills and re-sends it, and CLI `projects upsert`, CLI `projects set`, MCP `project_upsert` and the comm channel carry the stored one forward, and a raw REST `POST /api/projects` behaves the same — an unsent field keeps its stored value, and an explicit empty description is the only way it clears — so the usual suspect is a change that sent an empty value on purpose; restore it from the form, with `projects upsert --description`, comm `project set <name> description …` or MCP |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
 | Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
@@ -940,11 +940,9 @@ the lane defaults. Use REST, MCP or the CLI for those.
   directory or backend never blanks the stored description, because the form
   pre-fills it and re-sends it. The CLI's `projects upsert` and `projects set`,
   MCP `project_upsert` and the comm channel all carry a stored description
-  forward when a change sends none, and an explicit empty value is an
-  intentional clear from every surface. The one writer that still replaces
-  what is sent is a raw REST `POST /api/projects` (its description and default
-  backend are written as sent, missing or empty), so a script of yours that
-  updates the alias that way must now send the description to keep it. The
+  forward when a change sends none, and a raw REST `POST /api/projects`
+  keeps it the same way: no surface blanks a field it does not send, and an
+  explicit empty value is the intentional clear from every surface. The
   `policy` field is unchanged by this: it is still written as sent, and a CLI
   `upsert` or MCP `project_upsert` call without one still clears the tier.
   Confirm your update patterns against that.
