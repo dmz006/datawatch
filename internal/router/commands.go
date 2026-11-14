@@ -2036,6 +2036,10 @@ dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (w
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
+autonomous hold <id> <reason words> [until=<value>] [condition=<words>]   put an Automaton on hold; until is a time, a date or a duration like 72h; quote a multi-word value
+autonomous release-hold <id> [note]   release a hold; the Automaton returns to the status it had
+autonomous held   the Held group: Automata on hold, with reason, condition and look-again line
+autonomous held-migrate [dry_run=true] [id=<id>]... [reason=<words>]   list blocked or failed look-alikes, or hold the chosen ids (a real run needs id= and reason=)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
