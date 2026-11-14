@@ -44,3 +44,4 @@ if ((${#offenders[@]} > 0)); then
 fi
 
 echo "OK: all Go files under cmd/ and internal/ are gofmt-formatted"
+exit 0
