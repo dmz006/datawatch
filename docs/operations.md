@@ -1081,7 +1081,7 @@ path under `.datawatch/reports/`. "Read-only" means the `read_only` flag,
 or a spec whose first non-empty line begins with `READ-ONLY:`; no task kind is
 exempt:
 
-- The **decompose lint rule `read_only_unverifiable`** (`block`): it fires
+- The **decompose lint rule `read_only_unverifiable`** (`block`; the pack is twenty-one rules and the lint runs in `enforce` mode by default, so operators who relied on the old `shadow` default should review their projects): it fires
   during decompose and, in `enforce` mode, blocks the decompose and feeds
   the message back to the decomposer — give the task a verification script
   (its own checks, without modifying the tree) or a report path under

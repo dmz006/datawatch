@@ -125,10 +125,12 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: sixteen rules —
-the eleven `block` rules first (the six boundary rules, the two spec-line
-rules, then the three verification-script stability rules), then the five
-`warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: twenty-one rules —
+the sixteen `block` rules first (the six boundary rules, the two spec-line
+rules, then the eight verification-script rules), then the five `warn`
+rules. The pack runs in `enforce` mode by default, so a `block` finding sends
+the decompose back to the planner with the finding's message; review any
+project that relied on the old `shadow` default. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -539,11 +541,14 @@ writes keep passing after earlier tasks land. A generated script must:
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose
-lint enforces the same three rules on what comes back — see
-`verify_script_task_files_only`, `verify_script_docs_without_sync` and
-`final_gate_without_script` in the rule table above. All three block; the
-two script-content rules read the script file from the project directory and
-are skipped when it does not exist yet.
+lint enforces those rules on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+`final_gate_without_script` and the five script-content rules
+(`verify_script_rejects_own_files`, `verify_script_needs_later_task_output`,
+`verify_script_sh_for_bash`, `verify_script_pipe_grep_q`,
+`verify_script_hex_pattern`) in the rule table above. All block; every rule
+that reads the script file from the project directory is skipped when it does
+not exist yet.
 
 **Correcting a script after decompose.** When a finding names a task's
 verification script (`no_verification_script`, `unexecutable_verification_script`,
