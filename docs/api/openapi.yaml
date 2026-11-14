@@ -10216,9 +10216,13 @@ paths:
         Automata or no timestamps has `first` and `last` null.
 
         Every row also carries `start`, `end` and `status`. An Automaton spans
-        its created time to its completion time, a task spans its start to its
-        completion, and an arc spans the earliest Automaton start to the latest
-        Automaton end. Rows inside an arc are ordered by completion, then
+        its first task start to its last task end across its tasks (its `end`
+        stays null while it runs, so a client draws it to now; an Automaton
+        with no started task is read from its created time to its completion
+        time), a task spans its start to its completion, and an arc spans the
+        earliest Automaton start to the latest Automaton end. A shipped
+        Automaton reads `completed` whatever its record says, and `release`
+        carries the release it merged into. Rows inside an arc are ordered by completion, then
         adjusted so a dependency sits above its dependent. Task rows carry
         `depends_on`; `level=automata` and `focus` replies carry `edges` taken
         from the Automation's member order and its on-complete, on-blocked and

@@ -3204,9 +3204,11 @@ function _projectsPaint() {
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
-    // #view, so the picker goes back on top of it afterwards.
+    // #view, so the picker goes back on top of it afterwards. The card
+    // renderer (shared Cards / Tiles / Compact sub-tab) sits between the
+    // picker and the automation board.
     _projectsOverviewRestoreSubtab();
-    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML({ projectsStyle: true }) + '</div>';
+    view.innerHTML = '<div id="projectsOverviewBody">' + _projectsCardSectionHTML(list || []) + _automationBodyHTML({ projectsStyle: true }) + '</div>';
     _automationMount();
     view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err));
   } else {
@@ -3217,6 +3219,352 @@ function _projectsPaint() {
   }
   _tabStripsRevealAll();
 }
+
+// ── Projects cards: shared Cards / Tiles / Compact renderer ───────────────────
+// One shared card renderer for the Projects view, modelled on the Sessions
+// view modes: the three modes (cards, tiles, compact) draw the same items,
+// the choice is remembered on this device in one localStorage key (every
+// read/write in try/catch), and phone widths default to the compact mode.
+// The toggle reuses the Sessions .sessions-mode-toggle / .sessions-mode-btn
+// CSS; only the card bodies below get new rules in style.css.
+//
+// An item is a plain object: {id, title, badge, badgeKind, status, age,
+// details[], actions[], link}. badge/badgeKind win over status; shipped and
+// merged work never get a cancelled badge. actions[].onclick is
+// caller-escaped (the renderWorkTile convention); every other free value is
+// escHtml-escaped by the renderer.
+const PROJECTS_CARD_MODES = ['cards', 'tiles', 'compact'];
+const PROJECTS_CARD_MODE_KEY = 'cs_projects_view_mode';
+const PROJECTS_CARD_PHONE_WIDTH = 600;   // matches the window.innerWidth < 600 convention elsewhere
+const PROJECTS_CARD_TEXT_MAX = 100;      // long titles/details are cut here, full value kept in title="..."
+const PROJECTS_BADGE_KINDS = ['ok', 'info', 'neutral', 'warn', 'error', 'cancelled'];
+
+// status → badge for records that report a status instead of an explicit badge.
+const PROJECTS_STATUS_BADGES = {
+  shipped: { key: 'projects_badge_shipped', kind: 'ok' },
+  merged: { key: 'projects_badge_merged', kind: 'ok' },
+  active: { key: 'projects_badge_active', kind: 'info' },
+  planned: { key: 'projects_badge_planned', kind: 'neutral' },
+  failed: { key: 'projects_badge_failed', kind: 'error' },
+  cancelled: { key: 'projects_badge_cancelled', kind: 'cancelled' },
+};
+
+function _projectsCardModeNormalize(mode) {
+  return PROJECTS_CARD_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+// _projectsCardModeDefault picks the first-visit mode from the viewport:
+// phones open compact, wider screens open the full cards. An unknown width
+// (no window metrics) keeps the full cards rather than the phone layout.
+function _projectsCardModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'cards';
+  return w < PROJECTS_CARD_PHONE_WIDTH ? 'compact' : 'cards';
+}
+
+function _projectsCardModeRead(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(PROJECTS_CARD_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _projectsCardModeStore(mode, lse) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(PROJECTS_CARD_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _projectsCardMode() {
+  if (PROJECTS_CARD_MODES.indexOf(state.projectsCardMode) >= 0) return state.projectsCardMode;
+  const stored = _projectsCardModeNormalize(_projectsCardModeRead());
+  if (stored) { state.projectsCardMode = stored; return stored; }
+  state.projectsCardMode = _projectsCardModeDefault(_tileViewportWidth());
+  return state.projectsCardMode;
+}
+
+// _projectsCardSetMode remembers the choice (try/catch) and repaints the
+// Projects page only while it is the active tab, like the Sessions switch.
+function _projectsCardSetMode(mode) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return false;
+  state.projectsCardMode = m;
+  _projectsCardModeStore(m);
+  if (_projectsActive()) _projectsPaint();
+  return true;
+}
+
+// _projectsCardShipped: shipped or merged, by status or by an explicit flag.
+function _projectsCardShipped(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const st = String(it.status === undefined || it.status === null ? '' : it.status).trim().toLowerCase();
+  return st === 'shipped' || st === 'merged' || it.shipped === true || it.merged === true;
+}
+
+// _projectsCardBadgeInfo resolves the one badge for an item. An explicit
+// badge (badge/badgeKind) wins; status fills the gap. Shipped or merged
+// work never gets the cancelled badge: the rule drops it entirely rather
+// than restyling it.
+function _projectsCardBadgeInfo(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  let key = null, kind = '';
+  if (it.badge !== undefined && it.badge !== null && String(it.badge) !== '') {
+    key = String(it.badge);
+    if (it.badgeKind !== undefined && it.badgeKind !== null && String(it.badgeKind) !== '') kind = String(it.badgeKind);
+  } else if (it.status !== undefined && it.status !== null && String(it.status) !== '') {
+    const def = PROJECTS_STATUS_BADGES[String(it.status).trim().toLowerCase()];
+    if (def) { key = def.key; kind = def.kind; }
+  }
+  if (!key) return null;
+  if (PROJECTS_BADGE_KINDS.indexOf(kind) < 0) kind = 'neutral';
+  if (_projectsCardShipped(it) && kind === 'cancelled') return null;
+  return { key, kind };
+}
+
+function _projectsCardBadgeHTML(info) {
+  if (!info) return '';
+  return `<span class="project-card-badge project-card-badge-${info.kind}">${escHtml(_stx(info.key, info.key))}</span>`;
+}
+
+// _projectsCardText cuts long values with an ellipsis; the full value stays
+// available for the title attribute.
+function _projectsCardText(value) {
+  const s = String(value === undefined || value === null ? '' : value).trim();
+  if (!s || s.length <= PROJECTS_CARD_TEXT_MAX) return { text: s, full: s, truncated: false };
+  return { text: s.slice(0, PROJECTS_CARD_TEXT_MAX - 1).replace(/[\s,.;:]+$/, '') + '…', full: s, truncated: true };
+}
+
+// _projectsCardAgeInfo splits a moment (number ms or seconds, or a
+// parseable date string) into its relative parts. Falsy or unparseable ages
+// read as none, and a future one reads as "just now".
+function _projectsCardAgeInfo(age, nowMs) {
+  const n = Number(nowMs) || Date.now();
+  let at = NaN;
+  if (age !== undefined && age !== null && age !== '') {
+    if (typeof age === 'number' || /^-?\d+(\.\d+)?$/.test(String(age).trim())) {
+      const v = Number(age);
+      at = v >= 1e12 ? v : v * 1000;
+    } else {
+      at = Date.parse(age);
+    }
+  }
+  if (!Number.isFinite(at)) return null;
+  const secs = Math.round((n - at) / 1000);
+  if (secs < 60) return { unit: 'now' };
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return { unit: 'minutes', count: mins };
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return { unit: 'hours', count: hours };
+  return { unit: 'days', count: Math.round(hours / 24) };
+}
+
+function _projectsCardAgeText(age, nowMs) {
+  const a = _projectsCardAgeInfo(age, nowMs);
+  if (!a) return '';
+  if (a.unit === 'now') return _stx('projects_age_now', 'just now');
+  const def = {
+    minutes: ['projects_age_minutes', 'm ago'],
+    hours: ['projects_age_hours', 'h ago'],
+    days: ['projects_age_days', 'd ago'],
+  }[a.unit] || ['projects_age_minutes', 'm ago'];
+  const s = t(def[0], [a.count]);
+  if (s === def[0]) return a.count + def[1]; // no bundle loaded: fall back to the English label
+  return s;
+}
+
+// _projectsCardDetailInfo normalizes one detail: a string, or {label, value}
+// (a {text} alias is accepted). Blank details are dropped.
+function _projectsCardDetailInfo(d) {
+  if (d === undefined || d === null) return null;
+  if (typeof d === 'string') {
+    const text = d.trim();
+    return text ? { label: '', value: text } : null;
+  }
+  if (typeof d === 'object') {
+    const label = String(d.label === undefined || d.label === null ? '' : d.label).trim();
+    const raw = (d.value === undefined || d.value === null) ? d.text : d.value;
+    const value = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (!label && !value) return null;
+    return { label, value };
+  }
+  const s = String(d);
+  return s ? { label: '', value: s } : null;
+}
+
+// _projectsCardActionInfo: {label, onclick, kind?}. onclick stays
+// caller-escaped (inline handlers are compiled after the HTML-decode, so the
+// caller owns that string — the same convention as renderWorkTile's onOpen).
+function _projectsCardActionInfo(a) {
+  if (!a || typeof a !== 'object') return null;
+  const label = String(a.label === undefined || a.label === null ? '' : a.label).trim();
+  if (!label) return null;
+  const onclick = String(a.onclick === undefined || a.onclick === null ? '' : a.onclick);
+  const kind = String(a.kind === undefined || a.kind === null ? '' : a.kind).trim();
+  return { label, onclick, kind };
+}
+
+// _projectsCardLink: a safe link for the title. Scheme URLs (http/https),
+// site-relative paths and in-page anchors qualify; anything else (incl.
+// javascript: and bare words) is not rendered as a link.
+function _projectsCardLink(link) {
+  const s = String(link === undefined || link === null ? '' : link).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.charAt(0) === '/' || s.charAt(0) === '#') return s;
+  return '';
+}
+
+// renderProjectCard draws one item in one mode:
+//   cards    — title row with badge and age, the detail list, an actions row;
+//   tiles    — a dense grid tile: title + badge, the first two details inline
+//              (the rest behind a +N chip), age, actions;
+//   compact  — one line: badge, truncated title, age.
+// All three modes draw the same item; only the layout weight changes.
+function renderProjectCard(item, mode) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const idAttr = id ? ` data-project-id="${escHtml(id)}"` : '';
+  const title = _projectsCardText(it.title);
+  const badge = _projectsCardBadgeHTML(_projectsCardBadgeInfo(it));
+  const age = _projectsCardAgeText(it.age, it.nowMs);
+  const ageHTML = age ? `<span class="project-card-age">${escHtml(age)}</span>` : '';
+  const url = _projectsCardLink(it.link);
+  const titleHTML = title.text
+    ? (url
+      ? `<a class="project-card-title" href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escHtml(title.full)}">${escHtml(title.text)}</a>`
+      : `<span class="project-card-title" title="${escHtml(title.full)}">${escHtml(title.text)}</span>`)
+    : '';
+  // Detail rows, shared by all three modes (full kept for the title attr).
+  const src = Array.isArray(it.details) ? it.details : [];
+  const rows = [];
+  for (const d of src) {
+    const info = _projectsCardDetailInfo(d);
+    if (!info) continue;
+    const shown = _projectsCardText(info.value);
+    const prefix = info.label ? escHtml(info.label) + ': ' : '';
+    rows.push({ full: (info.label ? info.label + ': ' : '') + info.value, text: prefix + escHtml(shown.text) });
+  }
+  // Actions, shared by all three modes (rendering differs slightly).
+  const actions = Array.isArray(it.actions) ? it.actions : [];
+  const buttons = [];
+  for (const a of actions) {
+    const info = _projectsCardActionInfo(a);
+    if (!info) continue;
+    buttons.push(`<button type="button" class="project-card-action${info.kind ? ' project-card-action-' + info.kind : ''}" onclick="${info.onclick}">${escHtml(info.label)}</button>`);
+  }
+  const actionsHTML = buttons.join('');
+  if (m === 'tiles') {
+    const shown = rows.slice(0, 2).map(r => `<span class="project-card-detail-inline" title="${escHtml(r.full)}">${r.text}</span>`).join('');
+    const more = rows.length > 2 ? `<span class="project-card-detail-more">+${rows.length - 2}</span>` : '';
+    return `<div class="project-card project-card-tile"${idAttr}>` +
+      `<div class="project-card-tile-line">${titleHTML}${badge}</div>` +
+      (ageHTML ? `<div class="project-card-tile-age">${ageHTML}</div>` : '') +
+      (shown || more ? `<div class="project-card-tile-details">${shown}${more}</div>` : '') +
+      (actionsHTML ? `<div class="project-card-tile-actions">${actionsHTML}</div>` : '') +
+    `</div>`;
+  }
+  if (m === 'compact') {
+    return `<div class="project-card project-card-compact"${idAttr}>` + badge + titleHTML + ageHTML + `</div>`;
+  }
+  // Cards (the full layout).
+  const detailsHTML = rows.length ? `<ul class="project-card-details">` + rows.map(r => `<li class="project-card-detail" title="${escHtml(r.full)}">${r.text}</li>`).join('') + `</ul>` : '';
+  return `<article class="project-card project-card-card"${idAttr}>` +
+    `<header class="project-card-head">${titleHTML}${badge}${ageHTML}</header>` +
+    detailsHTML +
+    (actionsHTML ? `<footer class="project-card-card-actions">${actionsHTML}</footer>` : '') +
+  `</article>`;
+}
+
+// renderProjectCards lays out a list in one mode; the container carries the
+// mode so the CSS (and a live switch) can style each grid differently.
+function renderProjectCards(items, mode) {
+  const list = Array.isArray(items) ? items : [];
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const body = list.map(it => renderProjectCard(it, m)).join('');
+  return `<div class="project-cards project-cards-${m}" data-project-mode="${m}">${body}</div>`;
+}
+
+// renderProjectsCardToggle: the three-mode switch. It reuses the Sessions
+// toggle CSS classes (.sessions-mode-toggle / .sessions-mode-btn); only the
+// project-scoped aria/label text is new.
+function renderProjectsCardToggle(mode) {
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const defs = [
+    { key: 'cards', label: _stx('projects_view_cards', 'Cards'), icon: '▭' },
+    { key: 'tiles', label: _stx('projects_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('projects_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${m === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="projectsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('projects_view_toggle', 'Projects view mode'))}">${btns}</div>`;
+}
+
+// _projectCardItemsFromList maps the picker's project records to card items:
+// the name is the title, dir / backend / description are read-only details.
+function _projectCardItemsFromList(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const out = [];
+  for (const p of rows) {
+    if (!p || !p.name) continue;
+    const details = [];
+    const dir = String(p.dir || '').trim();
+    if (dir) details.push({ label: t('projects_manage_field_dir'), value: dir });
+    const backend = String(p.default_backend || '').trim();
+    if (backend) details.push({ label: t('projects_manage_field_backend'), value: backend });
+    const desc = String(p.description || '').trim();
+    if (desc) details.push(desc);
+    out.push({ id: p.name, title: p.name, details });
+  }
+  return out;
+}
+
+// _projectsCardSectionHTML: the cards sub-tab block for the Projects Overview
+// (mode toggle + cards). An empty list draws nothing, so a first visit is
+// unchanged apart from the new switch.
+function _projectsCardSectionHTML(list) {
+  const items = _projectCardItemsFromList(list);
+  if (!items.length) return '';
+  const m = _projectsCardMode();
+  return `<div id="projectsCards" data-projects-cards="block" style="margin:4px 0 14px;">` +
+    renderProjectsCardToggle(m) +
+    renderProjectCards(items, m) +
+  `</div>`;
+}
+
+window.PROJECTS_CARD_MODES = PROJECTS_CARD_MODES;
+window.PROJECTS_CARD_MODE_KEY = PROJECTS_CARD_MODE_KEY;
+window.PROJECTS_CARD_PHONE_WIDTH = PROJECTS_CARD_PHONE_WIDTH;
+window.PROJECTS_CARD_TEXT_MAX = PROJECTS_CARD_TEXT_MAX;
+window.PROJECTS_BADGE_KINDS = PROJECTS_BADGE_KINDS;
+window.PROJECTS_STATUS_BADGES = PROJECTS_STATUS_BADGES;
+window._projectsCardModeNormalize = _projectsCardModeNormalize;
+window._projectsCardModeDefault = _projectsCardModeDefault;
+window._projectsCardModeRead = _projectsCardModeRead;
+window._projectsCardModeStore = _projectsCardModeStore;
+window._projectsCardMode = _projectsCardMode;
+window._projectsCardSetMode = _projectsCardSetMode;
+window.projectsSetViewMode = _projectsCardSetMode;
+window._projectsCardShipped = _projectsCardShipped;
+window._projectsCardBadgeInfo = _projectsCardBadgeInfo;
+window._projectsCardBadgeHTML = _projectsCardBadgeHTML;
+window._projectsCardText = _projectsCardText;
+window._projectsCardAgeInfo = _projectsCardAgeInfo;
+window._projectsCardAgeText = _projectsCardAgeText;
+window._projectsCardDetailInfo = _projectsCardDetailInfo;
+window._projectsCardActionInfo = _projectsCardActionInfo;
+window._projectsCardLink = _projectsCardLink;
+window.renderProjectCard = renderProjectCard;
+window.renderProjectCards = renderProjectCards;
+window.renderProjectsCardToggle = renderProjectsCardToggle;
+window._projectCardItemsFromList = _projectCardItemsFromList;
+window._projectsCardSectionHTML = _projectsCardSectionHTML;
 
 function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
@@ -3488,13 +3836,24 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else {
+    const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
+      lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
+        renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
+    const hidden = _projectsUnassignedHiddenLoad();
+    const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
+    const hiddenCount = un.length - shownUn.length;
+    if (un.length) {
+      const undo = hiddenCount
+        ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
+        : '';
+      const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
+      unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
+    } else {
       events.push(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
+    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`;
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
@@ -3510,12 +3869,17 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
-    policy: _projectLinksHTML(p),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
   const strip = _projectsSubtabStripHTML(active, hasEvents);
+  // A stored or hashed sub-tab that no longer exists (the old Policy page)
+  // falls back to Overview, the one body that is always renderable.
+  const bodyHTML = (bodies[active] !== undefined && bodies[active] !== '') ? bodies[active] : (bodies.overview || '');
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <span style="font-weight:600;font-size:16px;">${escHtml(p.name)}</span>
+      ${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}
+    </div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodyHTML}</div></div></div>`;
 }
 
 // ── Projects sub-tab strip ──────────────────────────────────────────────────
@@ -3523,11 +3887,14 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+// The former Policy sub-tab is gone: its only setting link now sits next to
+// the project name in the header row, and a stored or hashed 'policy' value
+// falls back to Overview.
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
   overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', records: 'projects_subtab_records', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
-  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+  events: 'projects_subtab_events',
 };
 // 'arcs' is the old name of the Plans sub-tab; the #arcs deep link and a value
 // remembered by an older version still land on Plans.
@@ -3738,9 +4105,23 @@ function _projectEventStreamHTML(ev, err) {
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
-          const when = e.at ? new Date(e.at).toLocaleString() : '';
-          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
-          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+          const ev = (e && typeof e === 'object') ? e : {};
+          const kind = String(ev.kind || '');
+          const human = kind ? kind.replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase()) : t('projects_links_events_heading');
+          const lv = String(ev.level || '').trim().toLowerCase();
+          const lvKind = { info: 'info', warn: 'warn', warning: 'warn', error: 'error', success: 'ok' }[lv] || 'neutral';
+          const details = [];
+          if (ev.automation_id) details.push({ label: t('projects_links_event_automation'), value: String(ev.automation_id) });
+          if (ev.task_id) details.push({ label: t('projects_links_event_task'), value: String(ev.task_id) });
+          const innerCard = renderProjectCard({
+            id: ev.id || '',
+            title: human,
+            badge: kind || null,
+            badgeKind: lvKind,
+            age: ev.at || ev.time || '',
+            details,
+          }, _projectsCardMode());
+          return `<div class="project-event-row" style="margin:2px 0;" data-kind="${escHtml(kind)}" data-automation="${escHtml(ev.automation_id || '')}" data-task="${escHtml(ev.task_id || '')}">${innerCard}</div>`;
         }).join('')
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
   }
@@ -3839,22 +4220,135 @@ function _projectDate(v) {
   return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
 }
 
-// _projectHistoryRowHTML is one entry of the history list: a finished or
-// archived Automaton (linked to its view) or a daily progress snapshot.
-// Other kinds are left out.
+// ── Unassigned Automaton cards: assign, open, dismiss (per browser) ────────
+// Dismiss only hides the card in this browser: the list is saved to
+// localStorage and Undo clears it. It does not touch the daemon state.
+const _PROJECTS_UNASSIGNED_HIDDEN_KEY = 'cs_projects_unassigned_hidden';
+
+function _projectsUnassignedHiddenLoad() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+  } catch (_) { return []; }
+}
+function _projectsUnassignedHiddenSave(ids) {
+  try {
+    const list = Array.isArray(ids) ? ids.filter(x => typeof x === 'string' && x) : [];
+    localStorage.setItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY, JSON.stringify(list));
+  } catch (_) { /* not remembered */ }
+}
+function projectsUnassignedDismiss(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  const ids = _projectsUnassignedHiddenLoad();
+  if (ids.indexOf(id) < 0) ids.push(id);
+  _projectsUnassignedHiddenSave(ids);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+function projectsUnassignedUndo() {
+  _projectsUnassignedHiddenSave([]);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+// projectsUnassignedAssign asks for a project name (offering the configured
+// ones) and saves it with the same call the Automaton settings use:
+// POST /api/autonomous/prds/{id}/set_project.
+async function projectsUnassignedAssign(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  let names = [];
+  if (typeof _automatonProjectNames === 'function') {
+    try { names = (await _automatonProjectNames()).filter(Boolean); } catch (_) { names = []; }
+  }
+  let name = '';
+  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+    name = String(window.prompt(t('projects_unassigned_assign_prompt'), names[0] || '') || '').trim();
+  } else if (names.length === 1) {
+    name = String(names[0]);
+  }
+  if (!name) { showToast(t('projects_unassigned_assign_cancelled'), 'info', 2500); return; }
+  try {
+    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/set_project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: name }),
+    });
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _projectsLoadSelected === 'function') {
+      const r = _projectsLoadSelected();
+      if (r && typeof r.then === 'function') await r.catch(() => {});
+    } else if (typeof _projectsPaint === 'function') _projectsPaint();
+  } catch (err) {
+    showToast(t('automaton_project_error') + ': ' + (((err && err.message) || String(err))), 'error', 6000);
+  }
+}
+window.projectsUnassignedDismiss = projectsUnassignedDismiss;
+window.projectsUnassignedUndo = projectsUnassignedUndo;
+window.projectsUnassignedAssign = projectsUnassignedAssign;
+
+// _projectUnassignedCard is one unassigned (or without-project) Automaton as
+// a shared card item: plain title, badge, age from the created time, the
+// project directory as a detail (the full path stays in the title attribute)
+// and the actions. Unassigned Automata get Assign, Open and Dismiss;
+// without-project ones are read-only and get Open.
+function _projectUnassignedCard(a, group) {
+  const it = (a && typeof a === 'object') ? a : {};
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const st = String(it.status || '').trim().toLowerCase();
+  const badge = st ? (PROJECTS_STATUS_BADGES[st] ? {} : { badge: String(it.status), badgeKind: 'neutral' }) : {};
+  const actions = [];
+  if (group === 'unassigned') {
+    actions.push({ label: t('projects_unassigned_assign'), onclick: escHtml(`projectsUnassignedAssign(${JSON.stringify(id)});return false;`) });
+  }
+  actions.push({ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) });
+  if (group === 'unassigned') {
+    actions.push({ label: t('action_dismiss'), onclick: escHtml(`projectsUnassignedDismiss(${JSON.stringify(id)});return false;`) });
+  }
+  const details = [];
+  const dir = String(it.project_dir === undefined || it.project_dir === null ? '' : it.project_dir).trim();
+  if (dir) details.push({ label: t('projects_unassigned_dir'), value: dir });
+  if (group === 'unassigned') {
+    details.push({ label: t('action_dismiss'), value: t('projects_unassigned_hidden_note') });
+  }
+  return Object.assign({
+    id,
+    title: String(it.title || it.name || id),
+    status: it.status || '',
+    age: it.created_at || it.started_at || it.last || it.first || '',
+    details,
+    actions,
+  }, badge);
+}
+
+// _projectHistoryRowHTML is one entry of the history list as a shared card:
+// a finished or archived Automaton (status badge, plain title, the finished
+// moment as the age, its task counts and an Open action) or a daily
+// snapshot's progress line. The wrapper keeps the data-kind/data-automaton
+// attributes the page and tests rely on. Other kinds are left out.
 function _projectHistoryRowHTML(e) {
   if (!e || typeof e !== 'object') return '';
   if (e.kind === 'automaton') {
-    const tk = e.tasks || {};
-    const when = _projectDate(e.finished_at || e.time);
-    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
-      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
-      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+    const id = String(e.id || '');
+    const tk = (e.tasks && typeof e.tasks === 'object') ? e.tasks : {};
+    const st = String(e.status || '').trim().toLowerCase();
+    const badge = st ? (PROJECTS_STATUS_BADGES[st] ? { status: e.status } : { badge: String(e.status), badgeKind: 'neutral' }) : {};
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(id)}" style="margin:6px 0;">` +
+      renderProjectCard(Object.assign({
+        id,
+        title: String(e.title || id),
+        age: e.finished_at || e.time || '',
+        details: [String(tk.done || 0) + '/' + String(tk.total || 0) + ' ' + t('projects_page_tasks')],
+        actions: [{ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) }],
+      }, badge), _projectsCardMode()) + `</div>`;
   }
   if (e.kind === 'snapshot' && e.progress) {
     const p = e.progress;
     const when = _projectDate(e.taken_at || e.time);
-    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;">` +
+      renderProjectCard({
+        title: String(e.taken_at || e.time || ''),
+        badge: 'snapshot', badgeKind: 'neutral',
+        age: e.taken_at || e.time || '',
+        details: [t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0])],
+      }, _projectsCardMode()) + `</div>`;
   }
   return '';
 }
@@ -3925,7 +4419,9 @@ function _projectsGanttKey(row) {
 }
 
 // _projectsGanttSpan returns { a, b, running } in ms for a timeline row, or null
-// when the row has nothing to draw (planned). Running work draws to now.
+// when the row has nothing to draw (planned). Running work with no end draws to
+// now; a bar never outgrows the row's own start..end, and a non-running row
+// never reaches now.
 function _projectsGanttSpan(r, now) {
   if (!r) return null;
   // span = start..end; first and last stand in on a reply without the new fields.
@@ -3936,7 +4432,8 @@ function _projectsGanttSpan(r, now) {
   const running = !!r.running || r.status === 'running';
   if (isNaN(f) && isNaN(l) && !running) return null;
   const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
-  const b = running ? now : (isNaN(l) ? a : l);
+  let b = running ? Math.max(a, now) : (isNaN(l) ? a : l);
+  if (!isNaN(l) && b > l) b = l;
   return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
@@ -3944,9 +4441,14 @@ function _projectsGanttSpan(r, now) {
 // range, as a fraction of the visible range (2 percent).
 const _PROJECTS_GANTT_MARGIN = 0.02;
 
-// _projectsGanttStatusKey maps a row status to the literal i18n key of its word:
-// Completed, Running, Waiting, Blocked, Failed, Cancelled. Empty when unknown.
-function _projectsGanttStatusKey(status) {
+// _projectsGanttStatusKey maps a row to the literal i18n key of its status
+// word: Completed, Running, Waiting, Blocked, Failed, Cancelled. A row whose
+// release field is set and whose status is cancelled is shipped work and reads
+// as completed. A bare status string still maps. Empty when unknown.
+function _projectsGanttStatusKey(row) {
+  const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : { status: row };
+  let status = r.status || '';
+  if (status === 'cancelled' && r.release) status = 'completed';
   return ({ completed: 'projects_gantt_status_completed', running: 'projects_gantt_status_running', waiting: 'projects_gantt_status_waiting', blocked: 'projects_gantt_status_blocked', failed: 'projects_gantt_status_failed', cancelled: 'projects_gantt_status_cancelled' })[status] || '';
 }
 
@@ -4312,7 +4814,7 @@ function _projectGanttInnerHTML(g, ui) {
     } else {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
-      const stKey = _projectsGanttStatusKey(r.status);
+      const stKey = _projectsGanttStatusKey(r);
       const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + t('projects_gantt_release_detail', [r.release]) : ''}`;
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" tabindex="0" data-id="${escHtml(r.id || '')}" onmouseenter="${ui.edge}(this,1)" onmouseleave="${ui.edge}(this,0)" onfocus="${ui.edge}(this,1)" onblur="${ui.edge}(this,0)" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
