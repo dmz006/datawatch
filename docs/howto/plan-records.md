@@ -70,6 +70,7 @@ candidates so you can repeat the call with an id.
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Release plans | `GET` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme`, `archive`, `restore`, `unattributed`, `attach`, `migrate --release`, `row-plans`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|migrate release`. See *Release plans and themes* below. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a state filter, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
 
@@ -214,6 +215,34 @@ Automata are attached to.
   `plan_record_theme_changed` audit event whose `theme_op` says which. That is
   the store-level name; the server maps it to `plan_record_updated` (see the
   review section).
+
+### Working with release plans from any surface
+
+Every surface calls the same server code, so a release plan behaves the same
+from REST, MCP, the CLI and chat:
+
+```
+datawatch plan theme add "Release 2" Plans            # add an empty theme
+datawatch plan attach "Release 2" --automaton a1 --automaton a2 --theme Plans
+datawatch plan theme list "Release 2"                 # themes, items, unplaced
+datawatch plan unattributed --project datawatch       # Automata no release plan holds
+datawatch plan migrate --release --project datawatch  # preview; prints a preview id
+datawatch plan migrate --release --project datawatch --apply --preview-id <id>
+datawatch plan archive "Old plan" --reason "shipped"  # a mark; nothing is deleted
+datawatch plan restore "Old plan"
+```
+
+- **A bulk attach reports each id.** An Automaton attached to another plan is
+  refused and the plan holding it is named; the other ids still go through. The
+  CLI exits non-zero when any id was not attached.
+- **The migrations preview first.** The release migration and the row-plan
+  conversion (`datawatch plan row-plans convert`) print what they would do and a
+  preview id. They write only when asked again with that id, on the CLI
+  `--apply --preview-id`, in chat `plan migrate release approve <preview-id>`,
+  over MCP `apply` with `preview_id`. Without the id the CLI prints the preview
+  and refuses, chat and MCP refuse before anything is sent, and the daemon
+  refuses a stale id (the plans changed since the preview): preview again.
+- **In chat**, a theme is named by its id, or by its name when it is one word.
 
 ## Registry rows and backlog items in a plan
 

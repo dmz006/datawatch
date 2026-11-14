@@ -160,13 +160,22 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/plans/{ref}/tasks` | — | Not in MCP | a plan's tasks, read when the plan is expanded; paged |
 | `GET /api/plan-records/browse` | — | Not in MCP | all registry rows and findings with plan and Automaton links; `q`, `kind`, `state`, `project`; paged |
 | `GET /api/projects/{name}/arcs` | — | Not in MCP | deprecated alias of the roll-up plans, with plans added |
-| `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?}`; the plan goes last in the plan order; a taken title is 409 |
+| `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?, plan_kind?, release?}`; `plan_kind` `release` with a `release` label makes a release plan; the plan goes last in the plan order; a taken title is 409 |
 | `PUT /api/plans/order` | `plan_reorder` | Complete | body `{plans[]}`; the listed plans take positions 1 to n, the rest follow in their old order; a missing or repeated plan fails the whole call |
 | `PUT /api/plans/{ref}/automata/order` | `plan_reorder_automata` | Complete | body `{automata[]}` naming every Automaton of the plan once; the answer is the run view whose next marker skips blocked and held Automata |
 | `POST /api/plans/{ref}/attach` | `plan_attach` | Complete | body `{kind: automaton\|automation\|finding, id}`; the id is checked first (404 when unknown); an item linked or attached elsewhere is 409 naming the holder |
+| `POST /api/plans/{ref}/attach` (the `ids` form) | `plan_attach_bulk` | Complete | body `{kind: automaton\|automation, ids[], theme?}`; one result line per id (attached, already_attached, refused with the holder named, not_found, placement_failed, failed); a refused id never stops the others |
 | `POST /api/plans/{ref}/detach` | `plan_detach` | Complete | same body; the item must belong to the plan in the path, else 409 naming the plan it is in |
+| `GET /api/plans/{ref}/themes` | `plan_theme_list` | Complete | a release plan's themes in order with their items, then the unplaced items |
+| `POST /api/plans/{ref}/themes` | `plan_theme_set` | Complete | body `{action: create\|rename\|delete\|place\|unplace\|reorder\|reorder_items, ...}`; one action per call; answers the themes after the change |
+| `PUT /api/plans/{ref}/themes` | — | Not in MCP | sets the whole theme layout in one call; the MCP tool changes one thing at a time with `plan_theme_set` |
+| `POST /api/plans/{ref}/archive` | `plan_archive` | Complete | body `{reason?, protected_plan?}`; a mark only, nothing is deleted; a protected plan that holds Automata is 409 |
+| `POST /api/plans/{ref}/restore` | `plan_restore` | Complete | clears the archive mark; restoring a plan that is not archived changes nothing |
+| `GET /api/plans/unattributed` | `plan_unattributed_list` | Complete | the Automata no release plan holds, with the suggested release and theme; an Automaton held by an ordinary plan names it; `project`, `current_release`, `next_release`, `limit`, `offset` |
+| `GET /api/plans/migrate/row-plans` | `plan_row_plan_list` | Complete | the plans the plans migration made from registry rows; `project` |
+| `POST /api/plans/migrate/row-plans` | `plan_row_plan_convert` | Complete | previews unless `apply` is `true`; a write needs the `preview_id` of the preview that was read (400 without it, 409 when stale); each converted plan is archived, not deleted |
 | `PUT /api/projects/{name}/arcs` | `project_set_arcs` | Complete | deprecated alias kept for the older plan list (arcs); the registry plan records replace it |
-| `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from the older project plan lists (arcs) and registry rows; never changes an existing plan or link |
+| `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; mode `arcs` (the default) builds plans from the older project plan lists (arcs) and registry rows and never changes an existing plan or link; mode `release` files a project's Automata under release plans and themes, needs `project`, and writes only with the `preview_id` of the preview that was read (400 without it, 409 when stale) |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |
 | `POST /api/autonomous/prds/{id}/set_tags` | `autonomous_prd_set_tags` | Complete | body `{tag_ids[], primary_tag_id?}`, MCP args `tag_ids_json` and `primary_tag_id`; replaces the list (empty clears), and `primary_tag_id` alone keeps the tags |

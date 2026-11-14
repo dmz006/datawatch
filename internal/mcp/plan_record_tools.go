@@ -498,10 +498,12 @@ func planRefArg(op string, req mcpsdk.CallToolRequest) (string, *mcpsdk.CallTool
 
 func (s *Server) toolPlanCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("plan_create",
-		mcpsdk.WithDescription("Create a plan in a registered project. A plan groups work to come and links down to Automata, Automations and findings. The daemon gives it its id and puts it last in the plan order. The title must be unique within the project; a taken title is refused with the plan that holds it. Returns the stored plan, title first."),
+		mcpsdk.WithDescription("Create a plan in a registered project. A plan groups work to come and links down to Automata, Automations and findings. The daemon gives it its id and puts it last in the plan order. The title must be unique within the project; a taken title is refused with the plan that holds it. Pass plan_kind release and a release label to make a release plan: the plan one release stands for, whose themes group its Automata; a project has one release plan per release label. Returns the stored plan, title first. See docs/howto/plan-records.md (Release plans and themes)."),
 		mcpsdk.WithString("project", mcpsdk.Required(), mcpsdk.Description("A registered project alias")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("The plan's title, unique within the project")),
 		mcpsdk.WithString("goal", mcpsdk.Description("What the plan is for (optional)")),
+		mcpsdk.WithString("plan_kind", mcpsdk.Enum("ordinary", "release"), mcpsdk.Description("ordinary (the default) or release")),
+		mcpsdk.WithString("release", mcpsdk.Description("The release label of a release plan, for example the version it stands for; required with plan_kind release")),
 		mcpsdk.WithReadOnlyHintAnnotation(false),
 	)
 }
@@ -519,6 +521,9 @@ func (s *Server) handlePlanCreate(_ context.Context, req mcpsdk.CallToolRequest)
 	body := map[string]any{"project": project, "title": title}
 	if g := strings.TrimSpace(req.GetString("goal", "")); g != "" {
 		body["goal"] = g
+	}
+	if bad := planCreateReleaseFields(op, req, body); bad != nil {
+		return bad, nil
 	}
 	out, err := s.proxyJSON(http.MethodPost, plansBase, body)
 	if err != nil {
