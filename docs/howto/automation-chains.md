@@ -256,6 +256,40 @@ While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.
 Same call over MCP: `automation_create` with the same members in `members_json`.
 
+### A plan with three chains
+
+One plan that uses all three run-shape controls together: two check chains and a sign-off chain under a single fork, a two-member limit, and a `check` before `ship` stage gate:
+
+```bash
+datawatch automation create --name ship-check --stage-gate=true --max-parallel 2 --members '[
+  {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
+  {"id":"split","kind":"fork","fork_members":["check-a","test-suite","sign-off"],
+   "max_parallel":2},
+  {"id":"check-a","prd_id":"<automaton-2>","stage":"check","on_complete":"package"},
+  {"id":"package","prd_id":"<automaton-5>","stage":"ship"},
+  {"id":"test-suite","prd_id":"<automaton-3>","stage":"check"},
+  {"id":"sign-off","kind":"decision_wait","question":"Ship this build?","stage":"check","on_complete":"tag"},
+  {"id":"tag","prd_id":"<automaton-4>","stage":"ship"},
+  {"id":"merge","kind":"join","join_members":["package","test-suite","tag"],
+   "on_branch_failure":"all_must_succeed","on_complete":"finish"},
+  {"id":"finish","prd_id":"<automaton-6>"}
+]'
+```
+
+The same shape is created with `automation_create` over MCP: the same members in `members_json`, with `max_parallel` set to `2` and `stage_gate` to `true`.
+
+What happens next, in order:
+
+1. `start` finishes and the fork releases its three branch heads in member order. With the limit at 2, `check-a` and `test-suite` start and `sign-off` waits with `waiting_for_slot`. The gate holds nothing yet: all three are in `check`, the first stage, and `start` has no stage, so it was never held and holds nothing.
+2. `check-a` finishes. Chain A moves to `package`, but the `check` stage is still not finished — `test-suite` is still running and `sign-off` has not completed — so `package` waits with `waiting_for_stage`, reason `waiting for stage check`. `sign-off` takes the free slot, raises the question "Ship this build?" and holds only its own branch with `waiting_for_operator`.
+3. You answer the question in the Inbox (or with `datawatch question answer`). The answer completes `sign-off` and chain C moves to `tag`, which the gate still holds because `test-suite` is still in `check`.
+4. `test-suite` finishes. The `check` stage is now finished — members completed, failed or skipped count — so `package` and `tag` are released and start together. That is exactly the two Automation-wide slots; nothing can start a third.
+5. `package` and `tag` both finish. All three tails the join waits on (`package`, `test-suite`, `tag`) have finished, the join passes under `all_must_succeed`, and `finish` runs.
+
+If you withdraw that question in step 3 instead of answering it, that branch fails with the reason on the decision log; the gate keeps holding `package`, and under `all_must_succeed` the failed branch fails the join, whose `on_failed` edge decides what runs next.
+
+In the web UI you can watch each step: `sign-off` reads **Waiting for the operator**, `package` reads **Waiting for the stage** and names the stage it waits on, and the line above the strip counts each kind of wait and shows the max parallel of 2 and the stage gate.
+
 ## 4. Nest an Automation inside another
 
 A member with `kind` `automation` runs a whole child Automation as one step of
@@ -357,6 +391,8 @@ Pause, Resume and Cancel buttons (Cancel always asks the in-flight question);
 each member card carries Skip, Insert, Remove, Edit edges and Approve insert.
 Anything changed by someone else while you look is flagged before you save.
 See [automation-tab.md](automation-tab.md) for the full tour.
+
+The Inbox cards carry their own **?** help entries: the needs-attention card and the held-questions card each have a **?** help entry that opens its section in the tab guide — ([the needs-attention card](automation-tab.md#the-needs-attention-card), [the held-questions card](automation-tab.md#the-held-questions-card)) — and the behaviour behind the waits those cards list is section 3 here.
 
 The strip shows what the run shape does. A fork branch is drawn as its chain of
 members in order, joined at the end by the join. A member waiting for your answer
@@ -475,3 +511,5 @@ active again is visible in the history.
 - [automation-queue-advance.md](automation-queue-advance.md): how the hand-off, idle alert and restart recovery work
 - [automation-tab.md](automation-tab.md): the web UI in detail
 - [automata-orchestrator.md](automata-orchestrator.md): the older graph orchestrator
+- [datawatch-definitions.md](../datawatch-definitions.md): the entries for branch chain, max parallel, decision wait and stage gate
+- [operations.md](../operations.md#automation-parallelism-decision-waits-and-stage-gating): the four run-shape features side by side
