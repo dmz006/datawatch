@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Run-shape settings of an Automation are reachable from every non-web surface.** The limit on members running at once (`max_parallel`), the stage gate (`stage_gate`) and the decision wait member (a question the operator answers) can now be set over REST, MCP, the CLI and chat, not only in the member JSON. `max_parallel` and `stage_gate` are accepted on create and update (MCP `automation_create` / `automation_update`, CLI `datawatch automation create|update --max-parallel --stage-gate`).
+- **Change the limit or the gate on a running Automation without resending the record.** New `POST /api/automations/{id}/set_max_parallel` (with `member_id` for one fork) and `.../set_stage_gate`, MCP `automation_set_max_parallel` and `automation_set_stage_gate`, CLI `datawatch automation set-max-parallel` and `set-stage-gate`, and the chat verbs `automation set-max-parallel <id> <n>` and `automation set-stage-gate <id> on|off`. They change only their own field (an update replaces the description and budget it is not given), and on an active Automation raising the limit or turning the gate off starts the waiting members at once.
+- **Add a decision wait to an Automation.** `insert_member` takes a `question` (REST `member.question`, MCP `question`, CLI `automation insert --kind decision-wait --question`, chat `automation insert <id> decision-wait <question> | <reason>`) and adds a member that asks the operator and holds only its own branch until answered.
+- `datawatch automation get` shows the limit, the gate and why a member waits (for a slot, a stage or you); `automation status` adds a WAITING column; the chat `automation status` reply adds a `run shape:` line. The embedded OpenAPI spec now documents these fields, and `docs/howto/automation-chains.md`, `docs/api/autonomous.md` and `docs/mcp.md` describe each surface.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed

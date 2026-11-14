@@ -2598,6 +2598,20 @@ func (a *API) SetAutomationDecisionAssistant(id, memberID, actor string, da *Dec
 	return controlResult(got, err)
 }
 
+// SetAutomationMaxParallel sets the most members of an Automation that run at
+// once (memberID ""), or the most branches of one fork that run at once (the
+// fork's ID); 0 clears the limit.
+func (a *API) SetAutomationMaxParallel(id, memberID string, limit int, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SetMaxParallel(id, memberID, limit, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// SetAutomationStageGate turns the Automation's stage gate on or off.
+func (a *API) SetAutomationStageGate(id string, on bool, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SetStageGate(id, on, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
 // ResumeAutomation moves a paused Automation back to active.
 func (a *API) ResumeAutomation(id, actor string, expectedVersion int64) (any, error) {
 	got, err := a.M.ResumeAutomation(id, actor, expectedVersion)
