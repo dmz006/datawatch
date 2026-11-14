@@ -5024,6 +5024,7 @@
   "merge_blocked_age_hours": "%1$s h",
   "merge_blocked_age_days": "%1$s j",
   "merge_blocked_help_link": "Que signifie une fusion bloquée ? Ouvrir l'aide sur la fusion de l'Automate",
+  "merge_state_help_link": "Que signifie une branche non fusionnée ? Ouvrir l'aide sur l'état de fusion de l'Automate",
   "sessions_auto_story_root": "Sans storyline",
   "sessions_auto_ungrouped": "Sans automate",
   "sessions_group_automaton": "Automate",

@@ -92,6 +92,11 @@ type rollupAutomaton struct {
 	Tasks        rollupTasks `json:"tasks"`
 	Points       float64     `json:"points"`
 	SessionIDs   []string    `json:"session_ids"`
+	// MergeState is the derived, read-only merge state of the Automaton
+	// (autonomous.MergeStateFinishedNotMerged when a finished record's
+	// branch still holds commits that never landed on the base branch).
+	// Omitted when the record has no derived merge state.
+	MergeState string `json:"merge_state,omitempty"`
 }
 
 // rollupGroup is one arc, the unassigned bucket, or the whole-project total.
@@ -149,6 +154,9 @@ type rollupInput struct {
 	// landed (zero time = unknown). It is asked only for a cancelled or
 	// archived Automaton with no shipped record. Nil means not merged.
 	Merged func(p *autonomous.PRD) (merged bool, at time.Time)
+	// MergeState returns the derived merge_state of one Automaton (the same
+	// read-only value the list and detail views show). Nil hides the field.
+	MergeState func(p *autonomous.PRD) string
 
 	// seenTasks keeps a task from being counted twice in the throughput.
 	seenTasks map[string]bool
@@ -273,6 +281,9 @@ func rollupAutomatonFor(p *autonomous.PRD, auto string, in rollupInput, inWindow
 	ra := rollupAutomaton{
 		ID: p.ID, Title: p.Title, Status: display,
 		AutomationID: auto, SessionIDs: []string{},
+	}
+	if in.MergeState != nil {
+		ra.MergeState = in.MergeState(p)
 	}
 	if in.SessionIDs != nil {
 		if ids := in.SessionIDs(p.ID); ids != nil {
@@ -456,6 +467,7 @@ func (s *Server) projectRollupFor(w http.ResponseWriter, r *http.Request, name s
 		Projects:       rollupProjectDirs(s.cfg.Projects),
 		ArcHeld:        rollupArcHeld(s.cfg.Projects),
 		Merged:         s.rollupMergedFn(mgr),
+		MergeState:     s.mergeStateOf,
 		ShippedEnabled: s.shippedSettings().EffectiveEnabled(),
 	}), true
 }

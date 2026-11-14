@@ -532,3 +532,55 @@ func TestProjectTimeline_GanttRunningStatusAndCompletedRelease(t *testing.T) {
 		t.Errorf("live = %+v", l)
 	}
 }
+
+// TestProjectTimeline_AutomatonFinishedNotMergedMergeState: the Automaton row
+// (and hence the Gantt row drawn from it) keeps the daemon-derived, read-only
+// merge_state. A finished Automaton whose branch work never landed reads
+// finished_not_merged; the field is omitted (omitempty) for the merged ones.
+func TestProjectTimeline_AutomatonFinishedNotMergedMergeState(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("f1", autonomous.PRDCompleted, -5, -1, "/x"),
+		tlPRD("f2", autonomous.PRDCompleted, -4, -3, "/x"),
+	}
+	in := timelineInput{
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		PRDs:        prds,
+		Automations: []*autonomous.Automation{tlAutomation("arc1", "f1", "f2")},
+		// The same derivation the handler wires (mergeStateOf): only f1's
+		// branch still holds work that never landed on the base branch.
+		MergeState: func(prd *autonomous.PRD) string {
+			if prd != nil && prd.ID == "f1" {
+				return autonomous.MergeStateFinishedNotMerged
+			}
+			return ""
+		},
+	}
+	in.Level, in.Parent = "automata", "arc1"
+	rows := tlBuild(t, in).Rows
+
+	f1 := tlRow(t, rows, "f1")
+	if got, want := f1.MergeState, autonomous.MergeStateFinishedNotMerged; got != want {
+		t.Errorf("f1 merge_state = %q, want %q", got, want)
+	}
+	f2 := tlRow(t, rows, "f2")
+	if got := f2.MergeState; got != "" {
+		t.Errorf("f2 merge_state = %q, want empty (only the unmerged ones carry the value)", got)
+	}
+
+	b, _ := json.Marshal(f1)
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := m["merge_state"]; !ok || v != "finished_not_merged" {
+		t.Errorf("f1 JSON merge_state = %v (present=%v), want finished_not_merged", v, ok)
+	}
+	b2, _ := json.Marshal(f2)
+	var m2 map[string]any
+	if err := json.Unmarshal(b2, &m2); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m2["merge_state"]; ok {
+		t.Errorf("f2 JSON %s must omit merge_state (omitempty)", b2)
+	}
+}

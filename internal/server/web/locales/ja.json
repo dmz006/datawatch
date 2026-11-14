@@ -5024,6 +5024,7 @@
   "merge_blocked_age_hours": "%1$s時間",
   "merge_blocked_age_days": "%1$s日",
   "merge_blocked_help_link": "マージのブロックとは? オートマトンのマージ ヘルプを開く",
+  "merge_state_help_link": "ブランチ未マージとは? オートマトンのマージ状態のヘルプを開く",
   "sessions_auto_story_root": "ストーリーなし",
   "sessions_auto_ungrouped": "オートマトンなし",
   "sessions_group_automaton": "オートマトン",

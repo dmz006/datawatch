@@ -77,6 +77,12 @@ type timelineRow struct {
 	Status    string     `json:"status"`
 	Release   string     `json:"release,omitempty"`
 	DependsOn []string   `json:"depends_on,omitempty"`
+
+	// MergeState is the derived, read-only merge state of an Automaton row
+	// (autonomous.MergeStateFinishedNotMerged when a finished record's
+	// branch still holds commits that never landed on the base branch).
+	// Omitted when the record has no derived merge state.
+	MergeState string `json:"merge_state,omitempty"`
 }
 
 // timelineEdge is one dependency between two Automata of an arc: From finishes
@@ -129,6 +135,10 @@ type timelineInput struct {
 	Limit       int
 	Cursor      *historyCursor
 	Now         time.Time
+	// MergeState returns the derived merge_state of one Automaton (the same
+	// read-only value the roll-up and the Automaton list and detail views
+	// show). Nil hides the field.
+	MergeState func(p *autonomous.PRD) string
 }
 
 // timelineError says which client mistake or missing record stopped a build.
@@ -302,14 +312,18 @@ func timelineTaskCount(p *autonomous.PRD) int {
 	return n
 }
 
-func timelineAutomatonRow(p *autonomous.PRD) timelineRow {
+func timelineAutomatonRow(p *autonomous.PRD, mergeState func(p *autonomous.PRD) string) timelineRow {
 	sp := timelineAutomatonSpan(p)
 	first, last := sp.done()
 	n := timelineTaskCount(p)
-	return timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
+	row := timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
 		First: first, Last: last, Running: sp.running,
 		HasChildren: n > 0, ChildrenCount: n,
 		Start: first, End: last, Status: timelineAutomatonStatus(p), Release: p.MergedInRelease}
+	if mergeState != nil {
+		row.MergeState = mergeState(p)
+	}
+	return row
 }
 
 // timelineArcStatus derives an arc or group status from its members.
@@ -553,11 +567,11 @@ func timelineOrderedTasks(p *autonomous.PRD) []timelineRow {
 
 // timelineOrderedAutomata returns the rows of list ordered inside the arc, and
 // the chain edges among them drawn from the given Automations.
-func timelineOrderedAutomata(list []*autonomous.PRD, autos []*autonomous.Automation) ([]timelineRow, []timelineEdge) {
+func timelineOrderedAutomata(list []*autonomous.PRD, autos []*autonomous.Automation, mergeState func(p *autonomous.PRD) string) ([]timelineRow, []timelineEdge) {
 	rows := make([]timelineRow, 0, len(list))
 	ids := map[string]bool{}
 	for _, p := range list {
-		rows = append(rows, timelineAutomatonRow(p))
+		rows = append(rows, timelineAutomatonRow(p, mergeState))
 		ids[p.ID] = true
 	}
 	edges := timelineEdgesAmong(autos, ids)
@@ -630,7 +644,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		for _, p := range list {
 			byID[p.ID] = p
 		}
-		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations))
+		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations), in.MergeState)
 		out.Edges = edges
 		for _, ar := range autoRows {
 			rows = append(rows, ar)
@@ -693,7 +707,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		default:
 			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
-		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations))
+		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations), in.MergeState)
 	case level == timelineLevelTasks:
 		out.Parent = in.Automaton
 		if in.Automaton == "" {
@@ -800,6 +814,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 		Limit:       limit,
 		Cursor:      cursor,
 		Now:         time.Now(),
+		MergeState:  s.mergeStateOf,
 	})
 	if terr != nil {
 		http.Error(w, terr.Msg, terr.Status)

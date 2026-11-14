@@ -917,6 +917,14 @@ body {
 .automata-filter-badge.status-cancelled.active     { background: #6b7280; }
 .automata-filter-badge.type-badge.active           { background: var(--accent2); }
 
+/* Merge-state badge: one badge on a finished Automaton whose working branch
+   still holds commits that never landed on the base branch
+   (merge_state: finished_not_merged, derived by the daemon and never
+   persisted). Keep the text inline and unwrapped so it stays in the narrowest
+   tile width without overflowing or breaking the phone layout. */
+.merge-state-badge { white-space: nowrap; }
+.merge-state-badge .docs-link { margin-left: 4px; font-weight: 700; text-decoration: none; }
+
 /* Progress bar inside card */
 .automata-progress-wrap {
   height: 4px;
