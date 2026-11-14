@@ -2768,6 +2768,41 @@ protected paths decision, a run that could not start, or an updated Automaton
 waiting for review). See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
+### gofmt format check
+
+`scripts/check-gofmt.sh` audits the Go tree before it is formatted, not after.
+
+- **What it checks.** `gofmt -l cmd internal` lists the Go files under `cmd/`
+  and `internal/` that are not gofmt-formatted. Files with a `Code generated`
+  header (first five lines) and anything under a `testdata/` or `vendor/`
+  path are excluded from the report.
+- **Outcome.** Any remaining offender is listed with its fix command
+  (`gofmt -w <file>`) and the script exits 1. A clean tree prints OK and
+  exits 0. `gofmt` missing from `PATH` is a FAIL telling the operator to
+  install the Go toolchain.
+- **Read-only.** The script never writes or formats; fixing is separate
+  (`gofmt -w <file>`, or `make fmt` for the whole tree).
+- **Where it runs.** As the `check-gofmt` target in the `Makefile`, and as
+  one of the checks in the `lint` target (after `check-plans-links` and the
+  other `check-*` guards, before `golangci-lint run`). `make help` lists it
+  among the local pre-tag checks that run on the build host before a tag is
+  pushed. It is not a step in any workflow under `.github/workflows/` and
+  not part of `make test` (no test script in `tests/` covers it yet); the
+  `release.yaml` `go test + lint` job still runs the full `go test ./...`
+  step, so removing the CI step only affects the push/PR `test + lint` job
+  in `ci.yaml`.
+- **Not configurable.** The audited trees (`cmd`, `internal`) and the
+  exclusions are fixed in the script, not in a daemon setting. No REST, MCP,
+  CLI, chat or PWA surface exists for it.
+
+**Operator review:** (1) the merge that landed the check also removed the
+`go test ./...` step from the `test + lint` job in
+`.github/workflows/ci.yaml`, even though the commit message says a "CI step"
+was added — confirm that removal is intended and decide whether to add
+`scripts/check-gofmt.sh` as its own CI step. (2) the check only audits
+`cmd/` and `internal/`; extend the `gofmt -l` argument list if new top-level
+trees appear. See [howto/gofmt-check.md](howto/gofmt-check.md).
+
 ---
 
 ## 8. Web UI Features
