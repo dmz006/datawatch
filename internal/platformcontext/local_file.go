@@ -72,14 +72,14 @@ func ensureExcluded(dir string) error {
 	return f.Close()
 }
 
-// WritePlatformContextLocalFile writes the marked platform context block into
-// projectDir/CLAUDE.local.md. written is true only when the file content
-// changed. In a git repository the file is excluded locally first, and a
-// tracked CLAUDE.local.md is refused with an error.
-func WritePlatformContextLocalFile(projectDir, body string, version int) (written bool, err error) {
+// mutateLocalFile applies mutate to the current content of
+// projectDir/CLAUDE.local.md and writes the result when it differs. In a git
+// repository the file is excluded locally first, and a tracked CLAUDE.local.md
+// is refused with an error. written is true only when the content changed.
+func mutateLocalFile(projectDir string, mutate func(existing string) string) (written bool, err error) {
 	if isGitRepo(projectDir) {
 		if localFileTracked(projectDir) {
-			return false, fmt.Errorf("%s is tracked by git; refusing to write platform context into it", platformContextLocalFileName)
+			return false, fmt.Errorf("%s is tracked by git; refusing to write into it", platformContextLocalFileName)
 		}
 		if err := ensureExcluded(projectDir); err != nil {
 			return false, err
@@ -91,7 +91,7 @@ func WritePlatformContextLocalFile(projectDir, body string, version int) (writte
 		return false, err
 	}
 	existing := string(data)
-	next := UpsertSection(existing, body, version)
+	next := mutate(existing)
 	if next == existing && err == nil {
 		return false, nil
 	}
@@ -101,10 +101,63 @@ func WritePlatformContextLocalFile(projectDir, body string, version int) (writte
 	return true, nil
 }
 
-// RemovePlatformContextLocalFile strips the marked block from CLAUDE.local.md
-// and deletes the file when nothing else is left. removed is true when the file
-// changed or was deleted.
-func RemovePlatformContextLocalFile(projectDir string) (removed bool, err error) {
+// WritePlatformContextLocalFile writes the marked platform context block into
+// projectDir/CLAUDE.local.md. written is true only when the file content
+// changed. In a git repository the file is excluded locally first, and a
+// tracked CLAUDE.local.md is refused with an error.
+func WritePlatformContextLocalFile(projectDir, body string, version int) (written bool, err error) {
+	return mutateLocalFile(projectDir, func(existing string) string {
+		return UpsertSection(existing, body, version)
+	})
+}
+
+// upsertMarkerBlock replaces the begin..end marker block in existing with
+// block, or appends block (separated by one blank line) when absent. Text
+// outside the markers is never modified.
+func upsertMarkerBlock(existing, begin, end, block string) string {
+	lines := strings.Split(existing, "\n")
+	for i, l := range lines {
+		if trimCR(l) != begin {
+			continue
+		}
+		for j := i + 1; j < len(lines); j++ {
+			if trimCR(lines[j]) == end {
+				out := append([]string{}, lines[:i]...)
+				out = append(out, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
+				out = append(out, lines[j+1:]...)
+				return strings.Join(out, "\n")
+			}
+		}
+		break
+	}
+	block = strings.TrimRight(block, "\n") + "\n"
+	if existing == "" {
+		return block
+	}
+	sep := ""
+	switch {
+	case strings.HasSuffix(existing, "\n\n"):
+	case strings.HasSuffix(existing, "\n"):
+		sep = "\n"
+	default:
+		sep = "\n\n"
+	}
+	return existing + sep + block
+}
+
+// WriteRTKLocalFile writes the RTK instructions block (delimited by the
+// rtk-instructions marker lines already inside block) into the untracked
+// projectDir/CLAUDE.local.md, beside any platform context block. It never
+// touches a tracked file: see mutateLocalFile.
+func WriteRTKLocalFile(projectDir, block string) (written bool, err error) {
+	return mutateLocalFile(projectDir, func(existing string) string {
+		return upsertMarkerBlock(existing, rtkBegin, rtkEnd, block)
+	})
+}
+
+// removeLocalFileBlock strips the begin..end block from CLAUDE.local.md and
+// deletes the file when nothing else is left.
+func removeLocalFileBlock(projectDir string, strip func(string) string) (removed bool, err error) {
 	path := filepath.Join(projectDir, platformContextLocalFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -114,7 +167,7 @@ func RemovePlatformContextLocalFile(projectDir string) (removed bool, err error)
 		return false, err
 	}
 	existing := string(data)
-	next := RemoveSection(existing)
+	next := strip(existing)
 	if next == existing {
 		return false, nil
 	}
@@ -128,4 +181,19 @@ func RemovePlatformContextLocalFile(projectDir string) (removed bool, err error)
 		return false, err
 	}
 	return true, nil
+}
+
+// RemovePlatformContextLocalFile strips the marked block from CLAUDE.local.md
+// and deletes the file when nothing else is left. removed is true when the file
+// changed or was deleted.
+func RemovePlatformContextLocalFile(projectDir string) (removed bool, err error) {
+	return removeLocalFileBlock(projectDir, RemoveSection)
+}
+
+// RemoveRTKLocalFile strips the RTK instructions block from CLAUDE.local.md
+// and deletes the file when nothing else is left.
+func RemoveRTKLocalFile(projectDir string) (removed bool, err error) {
+	return removeLocalFileBlock(projectDir, func(s string) string {
+		return removeMarkerBlock(s, rtkBegin, rtkEnd)
+	})
 }

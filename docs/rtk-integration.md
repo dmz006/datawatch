@@ -38,7 +38,27 @@ rtk:
   show_savings: true       # Display savings in stats dashboard
   auto_init: true          # Auto-run 'rtk init -g' on startup if hooks missing
   discover_interval: 0     # Seconds between discover checks (0 = disabled)
+  write_rules_files: false # Also append the RTK text to the tracked AGENT.md/CLAUDE.md (legacy)
 ```
+
+### Where the RTK instructions go
+
+At session start datawatch gives a claude-code session the RTK instructions through the
+untracked `CLAUDE.local.md` in the project directory (the same file that carries the
+platform context). In a git repository that file is excluded locally, so a session start
+leaves no change in `git status` and the text cannot reach a commit. The session record
+keeps `rtk_instructions_delivered: true` once the text is in place.
+
+Set `rtk.write_rules_files: true` (Settings → General → **RTK (Token Savings)** →
+*Also write RTK text into tracked AGENT.md/CLAUDE.md*, `PUT /api/config` with
+`{"rtk.write_rules_files": true}`, or `configure rtk.write_rules_files=true`) to restore the
+old behaviour of appending the block to the project's own rules file.
+
+At daemon start a cleanup pass looks at the project directory of each stored session. If
+`AGENT.md` or `CLAUDE.md` still carries an old `rtk-instructions` block, it removes the block
+only when the file is tracked, has no staged change, and the file without the block is
+byte-identical to the committed version (`git show HEAD:<file>`). In every other case the file
+is left untouched and one alert per worktree names the file so you can decide.
 
 ### Where to see RTK stats
 

@@ -993,6 +993,10 @@ rtk:
   auto_update: false
   # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
   update_check_interval: 86400
+  # Append the RTK instructions block to the project's tracked AGENT.md / CLAUDE.md
+  # at session start (legacy behaviour). Default false: the text is delivered through
+  # the untracked CLAUDE.local.md, leaving no change in git status.
+  write_rules_files: false
 
 # ── Pipelines (Session Chaining) ──
 # Chain tasks in a DAG with parallel execution and dependency tracking.

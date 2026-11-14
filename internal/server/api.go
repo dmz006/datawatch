@@ -6625,6 +6625,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"discover_interval":     s.cfg.RTK.DiscoverInterval,
 			"auto_update":           s.cfg.RTK.AutoUpdate,
 			"update_check_interval": s.cfg.RTK.UpdateCheckInterval,
+			"write_rules_files":     s.cfg.RTK.WriteRulesFiles,
 		},
 		"pipeline": map[string]interface{}{
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
@@ -9748,6 +9749,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.RTK.UpdateCheckInterval = n
 			}
+		case "rtk.write_rules_files":
+			cfg.RTK.WriteRulesFiles = toBool(v)
 		case "pipeline.max_parallel":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Pipeline.MaxParallel = n
