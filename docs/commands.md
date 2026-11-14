@@ -1671,6 +1671,28 @@ Order and link plans (the registry records of what you are working on).
 
 Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`; `arcs` still works in place of `plan`). See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
 
+### `datawatch plan` release plan commands
+
+`datawatch plan` is the same command as `datawatch plans`. A release plan stands
+for one release and holds that release's Automata, grouped in themes.
+
+| Subcommand | Description |
+|---|---|
+| `theme list <plan> [--json]` | A release plan's themes in order, the items in each, then the unplaced items |
+| `theme add <plan> <name>` / `rename <plan> <theme> <new-name>` / `remove <plan> <theme>` | Add an empty theme, rename one, or remove one (its items stay in the plan, unplaced) |
+| `theme place <plan> <theme> (--automaton ID \| --automation ID)` / `unplace <plan> (--automaton ID \| --automation ID)` | Put an item the plan holds into a theme, or take it out of its theme |
+| `theme reorder <plan> <theme>...` / `reorder-items <plan> <theme> --kind automaton\|automation <id>...` | Set the theme order, or the order of one kind of item inside a theme; list every one once |
+| `archive <plan> [--reason TEXT] [--protect PLAN]` | Archive a plan; a mark only, nothing is deleted. A protected plan that holds Automata is refused |
+| `restore <plan>` | Clear the archive mark |
+| `unattributed [--project P] [--current-release R] [--next-release R] [--limit N] [--offset N] [--json]` | The Automata no release plan holds, with the release and theme the rules suggest; one held by an ordinary plan names it |
+| `attach <plan> --automaton ID... \| --automation ID... [--theme THEME]` | Attach several (repeat the flag or separate ids with commas), each with its own result line; an item attached to another plan is refused with the holder named and the command exits non-zero. One id and no theme is the older single attach |
+| `migrate --release --project P [--current-release R] [--next-release R] [--marks JSON]` | File a project's Automata under release plans and themes. Previews and prints a preview id; writes nothing |
+| `migrate --release --project P --apply --preview-id ID` | Write exactly that preview. With `--apply` and no `--preview-id` it prints the preview and refuses to write; a stale id is refused by the daemon |
+| `row-plans list [--project P] [--json]` | The plans the plans migration made from registry rows |
+| `row-plans convert [--project P] [--current-release R] [--apply --preview-id ID]` | Convert them into release plan items; previews, and writes only with `--apply` and the preview id. Each converted plan is archived, not deleted |
+
+Same calls on REST (`GET` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive|restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`), MCP (`plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_migrate`, `plan_row_plan_list`, `plan_row_plan_convert`) and chat (`autonomous plan themes <plan>`, `plan theme add|rename|remove|place|unplace|reorder|reorder-items <plan> ...`, `plan archive <plan> [protect=<plan>] [reason...]`, `plan restore <plan>`, `plan unattributed [project=P] [current=R] [next=R]`, `plan migrate release project=P [current=R] [next=R]`, `plan migrate release approve <preview-id> project=P`, `plan attach <plan> automaton|automation <id> <id>... [theme=T]`). The chat approve step carries the preview id and is refused without it. See [howto/plan-records](howto/plan-records.md#release-plans-and-themes).
+
 ### `datawatch cooldown <subcommand>`
 
 | Subcommand | Description |
