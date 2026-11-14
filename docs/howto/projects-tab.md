@@ -270,7 +270,7 @@ group of the same Automata settings card.
 | Gantt | Gantt | One expandable timeline. It opens with one row per plan and a bar from the plan's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled; a shipped Automaton reads Completed, whatever its record says). Each bar runs the row's own span — an Automaton from its first task start to its last task end — and work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the plan, and an Automaton's arrow to open its tasks; a plan with no activity yet reads **Planned** with no bar. Automata that no plan holds sit in the **Automata with no plan** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each plan row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned | Unassigned Automata, Automata without a project | One card per Automaton: the plain title, a badge from its status (shipped and merged read a green **shipped**/**merged** badge; **active** blue, **planned** neutral, **failed** red; shipped and merged work never shows a cancelled badge), the time it was created as its age, and the project directory as a detail line, cut at 100 characters with the full path in a tooltip. The unassigned cards carry three actions: **Assign** (asks for a project name, suggesting the first configured one, and saves it to the Automaton with the same call the Automaton settings use, then reloads the roll-up), **Open** (the Automaton view) and **Dismiss** (hides just this card in this browser; it is remembered in the browser's local storage, key `cs_projects_unassigned_hidden`, not by the daemon, and the daemon keeps tracking the Automaton; a small **Undo** link below the list clears the hidden list). Below them, Automata with no project link and no directory match are listed once in a separate **Automata without a project** group (`without_project`), the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)); those cards are read-only and keep **Open** only |
 | History | History | Finished and archived Automata and daily progress snapshots, newest first, one card each. An Automaton card has a badge from its status (never cancelled for shipped or merged work), the plain title, the finished moment as its age, a "done/total tasks" detail and an **Open** action that opens the Automaton. A snapshot card has a neutral **snapshot** badge, the taken time as its title and age, and a "Progress on …: n of m tasks done" line. **Load more** at the foot pages the rest |
-| Events | Notes, event stream | Notes for empty sections (no plans, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share; below them, the event stream filtered to this project (the section's own note names the queue it reads) drawn as one card per event: a badge from the event kind, a readable title from the kind, the event time as the age, and the automation id and task id as detail lines when the event carries them. This page sub-tab is not in the strip while the project has no notes |
+| Events | Notes, event stream | Notes for empty sections (no plans, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share; below them, the event stream filtered to this project (the section's own note names the queue it reads) drawn as one card per event: a badge from the event kind, a readable title from the kind, the event time as the age, and the automation id and task id as detail lines when the event carries them. With **Show empty lines and sections** off, the empty or never-state notes are grouped into one summary line with a count; tick the checkbox to list them one per line (see [The show-empty checkbox](#the-show-empty-checkbox)). This page sub-tab is not in the strip while the project has no notes |
 
 A page sub-tab that holds one block (Plans, Gantt, Unassigned, History) shows
 that block directly, with no card around it. A page sub-tab that holds more than
@@ -381,9 +381,34 @@ left out. Tick it to see every line and section, with
 remembered per viewer in the browser, not by the daemon, so it has no REST,
 MCP, CLI, chat or configuration form, and a browser that blocks storage starts
 hidden each time. Nothing is lost while it is off: a section that needs
-attention still appears, and a missing weekly share is reported in the page's
-Events list whenever the project has a plan or an unassigned Automaton that
-needs one.
+attention still appears, and a missing weekly share is still counted in the
+page's Events list whenever the project has a plan or an unassigned Automaton
+that needs one.
+
+**Empty lines in Events are grouped.** Some **Events** lines say only that
+something is empty or has never happened: an Automaton with no sessions yet, a
+plan with no Automata, no plans, no unassigned Automata, or a missing weekly
+share. While the checkbox is off, the page does not list them one by one.
+It folds them into a single summary line with a count, for example "3 empty or
+not-started items hidden. Check Show empty lines and sections to list them."
+The summary comes after the other lines. Tick the checkbox and each of those
+lines is listed on its own, in the order it was found, with no summary line.
+Lines that report something real, such as a roll-up that failed to load, are
+always listed one per line and are never folded into the count. If a project
+has only empty lines and the box is off, the **Events** page sub-tab shows just
+the summary line.
+
+#### Phone width
+
+The Projects page fits the phone width on every page sub-tab, and on the
+**Overview** cross-project view too. Nothing makes the page itself scroll
+sideways: long lines (event lines, paths, titles and card text) wrap onto the
+next line instead of running off the screen. The strip of page sub-tabs is the
+one row that is wider than the screen, and it scrolls sideways inside its own
+box, so every sub-tab stays reachable without moving the page. Wide content such
+as the Gantt chart or a code block likewise scrolls inside its own frame. This is
+a display rule of the web app only, with no setting and no REST, MCP, CLI, chat
+or configuration form.
 
 #### Cards, tiles and compact
 

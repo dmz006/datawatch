@@ -109,6 +109,19 @@ GET /api/autonomous/event-log?kind=watch,retry&project=datawatch&q=lane
 datawatch autonomous event-log --kind retry --limit 10
 ```
 
+## Empty lines on a project's Events page
+
+The **Events** page sub-tab of a project on the Projects sub-tab (not this
+stream) also lists short notes about the project. Notes that say only that
+something is empty or has never happened, for example an Automaton with no
+sessions yet, a plan with no Automata or a project with no plans, are grouped
+into one summary line with a count while **Show empty lines and sections** is
+off. Tick that checkbox to list them one per line. Notes that report something
+real, such as a roll-up that failed to load, are always listed one per line.
+The checkbox is remembered in this browser only. See
+[The show-empty checkbox](projects-tab.md#the-show-empty-checkbox) for the full
+rule.
+
 ## The weekly dependency update
 
 A weekly dependency update run that updated something, or needs attention, shows as one `check` row naming the run and a one-line summary such as "2 updated, 1 dropped, 0 skipped". A run with nothing to update writes no row. Only a run that needs attention raises an alert, once per run: a dropped or failed update, a major waiting on a protected paths decision, or a run that could not start. An updated run alerts only while its Automaton waits for you.
