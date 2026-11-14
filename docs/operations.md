@@ -7721,6 +7721,7 @@ Bridge first, then typed text: if the target session has a channel bridge with a
 - **One-shot** — removed only after *successful* delivery; failure → one retry → log + drop (the daemon never blocks on a dead target).
 - **Expiry** — `expires_at` is enforced by the janitor; the record stops matching once the timestamp elapses.
 - **Coalesce** — human-facing sink deliveries (comm/alert) are batched in quiet windows rather than one message per event.
+- **Delivery** — each subscription has its own bounded in-memory queue and goroutine; emitting an event never blocks on a subscriber. A subscriber whose queue is full misses events of its own (per-subscriber dropped counter, rate-limited log warning); every other subscriber keeps receiving, and the emitting Automaton is unaffected.
 - **Update** — `PUT` replaces filter, sink, action, `coalesce`, `one_shot` and `expires_at` wholesale: a field left out is cleared, so send the full desired configuration. The id and creation time are kept, and the engine re-attaches immediately.
 - **Test-fire** — delivers one synthetic `prd.updated` event whose text starts with `[test] ` to just that subscription's sink, through the same sink wiring a real event uses. It never types the `send_input` action text, never consumes a one-shot and bypasses coalescing, so it is safe to run against a live rule. The reply is `{"ok":true,"sink":"<type>"}` or `{"ok":false,"sink":"<type>","error":"…"}` (for example `sink not available` when that delivery path is not wired in this daemon). Test-fire is audit-logged.
 

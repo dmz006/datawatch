@@ -479,6 +479,12 @@ holds a one-shot hostage to a dead target).
 - **`coalesce`** — for human-facing sinks (comm/alert) deliveries are
   batched within a quiet window instead of firing one message per
   event.
+- **`delivery`** — each subscription consumes from its own bounded
+  in-memory queue on its own goroutine; emitting an event never waits on
+  any subscriber. A subscriber whose queue is full misses events of its
+  own (its own dropped counter rises and the daemon logs a rate-limited
+  warning) while every other subscriber keeps receiving — one slow sink
+  can never stall the others, the emitting Automaton or the event itself.
 
 ## Choosing which events notify
 

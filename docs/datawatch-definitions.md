@@ -2017,7 +2017,13 @@ tagged `lifecycle-sub`), a push topic, the in-app alert store, or a named
 **pending events queue** (`mcp_queue` sink) that a client polls. Options:
 `one_shot` (removed after first *successful* delivery — one retry, then
 log + drop), `expires_at` TTL (pruned by the engine's janitor),
-`coalesce` quiet-window batching for human-facing sinks. Manageable from
+`coalesce` quiet-window batching for human-facing sinks. Delivery: each
+subscription consumes from its own bounded in-memory queue on its own
+goroutine; emitting an event never waits on any subscriber, and a
+subscriber whose queue is full misses events of its own (per-subscriber
+dropped counter, rate-limited log warning) while every other subscriber
+keeps receiving — one slow sink can never stall the Automaton or another
+subscriber. Manageable from
 every surface — CLI `datawatch autonomous subscribe | unsubscribe |
 subscriptions | subscription-update | subscription-test | events`, MCP
 `autonomous_subscribe | autonomous_unsubscribe | autonomous_subscriptions |
