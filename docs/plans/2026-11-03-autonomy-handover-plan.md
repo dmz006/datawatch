@@ -387,3 +387,5 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 - 2026-11-14 00:14 Operator, on the six parked evaluation, tiering and matrix Automata (fea73c82, 049f4713, f6a38c29, 3be9c0e5, 9a1a8666, 38b69678): "The effort and tiered and matrix are all held but blocker until after 10.0" and then "Held not blocked". Decision: they stay untouched until after 10.0; filed Automaton 89e70001 (priority 70) to add a held state so they stop showing as blocked.
 
 - 2026-11-14 00:33 Operator, shown the proposed fix for Plans (a plan is a release, 10.0 and later 11.0, with themes inside; registry rows are items that link in, not plans; attach Automata by release; the 389 row-plans become links) and asked whether themes inside the 10.0 plan are wanted: "Yes you have exactly what i wanted". Filed Automaton 80930001 (priority 85).
+
+- 2026-11-14 00:50 Operator, shown the header redesign (server selector and project/plan selector as header icons opening modals, second Sessions server selector removed, filed as draft 1d470001 and held unapproved): "yes". To be approved when decomposed.
