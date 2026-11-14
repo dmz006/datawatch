@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - **The Sessions Filters button toggles the sheet.** Clicking the button opens the Filters sheet, and clicking it again closes it. While the sheet is open it also closes on its close button, a tap on the backdrop, a click anywhere outside the sheet, or the Escape key — on the phone sheet and the desktop panel alike. A click on the button itself toggles, it never closes the sheet and reopens it, and a refresh while the sheet is open keeps the sheet open. No new setting and nothing new remembered on the device.
+- **Sessions: the docs set for the fix.** The Sessions how-to (the toolbar row, the Filters sheet, the controls table and a Still-to-review note), the glossary **Controls** entry and the list/tiles cross-references describe the same toggle and close paths this build ships.
 
 ## v9.172.0 — Plans replace Arcs, with an ordered Plans browser
 

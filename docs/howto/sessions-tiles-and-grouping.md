@@ -795,6 +795,19 @@ in your tag registry.
   it groups the **Model on** fact on the web page and is not an API/CLI value.
 - **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
+## Still to review
+
+- **The Filters button's close paths (this fix).** Client-side PWA
+  behaviour (`sessionsFiltersToggle` / `sessionsFiltersClose` in
+  `internal/server/web/app.js`), confirmed by code and pinned by the PWA
+  tests `app-sessions-filters-toggle.test.js` and
+  `app-sessions-filters-sheet.test.js`. Confirm on the build in use: one
+  click on the **Filters** button opens the sheet, the same button closes
+  it again, and the sheet also closes on the close button, a tap on the
+  backdrop or anywhere outside, or **Escape** — none of these touches the
+  picks you made or the badge count, and a refresh with the sheet open
+  keeps it open.
+
 ## Related guides
 
 - [`sessions-deep-dive.md`](sessions-deep-dive.md) — session anatomy,
