@@ -49,6 +49,11 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 		if a.DecisionAssistant.enabled() {
 			s.DecisionAssistant = cloneDecisionAssistant(a.DecisionAssistant)
 		}
+		s.MaxParallel = a.MaxParallel
+		if anyMaxParallel(a) {
+			s.RunningMembers = runningMembers(a)
+		}
+		s.WaitingForSlot = slotWaiters(a)
 		if automationIsLinear(a) {
 			s.CurrentMemberID = a.CurrentMemberID
 		}
@@ -111,6 +116,10 @@ func activeCursorSummaries(a *Automation, itemOf func(id string) (*PendingItem, 
 			continue
 		}
 		c := ActiveCursorSummary{MemberID: mem.ID, Status: string(mem.Status)}
+		if memberWaitingForSlot(mem) {
+			c.Status = CursorStatusWaitingForSlot
+			c.WaitReason = SlotWaitReason
+		}
 		switch mem.kind() {
 		case MemberKindAutomation:
 			c.AutomationID = mem.AutomationID

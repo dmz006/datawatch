@@ -1162,11 +1162,13 @@ and `kind` defaults to `prd` when omitted or empty.
 | `fork_members` | `fork` | Branch member IDs started together. At least two, distinct, each a `prd` or `automation` member. |
 | `join_members` | `join` | Branch member IDs the join collects. Must be the same set as the paired fork's `fork_members`. |
 | `on_branch_failure` | `join` | `all_must_succeed` (default when omitted), `any_one_is_enough` or `continue_anyway`. See the join rules below. |
+| `max_parallel` | `fork` | Most of the fork's branch members that run at once. `0` or omitted: no fork limit. Never negative. See "Parallel limit" below. |
 
 Set only the fields that belong to a member's kind. Any other field is
 a `400` that names the member ID: a `prd` member cannot carry
 `fork_members`, `join_members` or `on_branch_failure`, and a `fork` or
-`join` member cannot carry `prd_id`.
+`join` member cannot carry `prd_id`. `max_parallel` is valid on a `fork`
+member only.
 
 **Fork and branches.** When a fork is reached, through an incoming edge
 or as the entry member, every branch starts at once, in sorted member-ID
@@ -1228,6 +1230,22 @@ selects the nested member's edge:
   pairings, so a loop through a fork is rejected too. The error names the
   member ID.
 
+**Parallel limit.** `max_parallel` is an integer on the Automation and on
+a `fork` member; `0` or omitted means no limit, which is the behavior
+before the field existed, and a negative value is a `400`. The Automation's
+limit caps the members running at once across the whole Automation, and a
+fork's limit caps the running members of that fork's branches. When both
+are set, the smaller one applies to the fork's branches. A member that
+would start while its scope is full is not started and not blocked: it
+keeps its cursor, shows `waiting_for_slot` in the status, and starts when
+a running member finishes, whatever way it ended. Waiting members start
+in member order, the order of the `members` array, and the fork hands out
+its first slots in that order too. The waiting state is stored with the
+Automation, so a daemon restart finds the members still waiting and
+starts them as slots free. On create and update, `max_parallel` on the
+request body sets the Automation limit; an update that omits it keeps the
+stored value, and `0` clears it.
+
 **Concurrency.** A stale `expected_version` on update returns `409`, and
 the record is left unchanged. Inside the daemon, a write that races
 another one re-reads the Automation, re-evaluates, and does nothing if
@@ -1240,6 +1258,15 @@ the state has already moved.
   `member_id`. Each entry has `member_id`, `prd_id` for a `prd` member or
   `automation_id` for an `automation` member, and `status`. The list is
   always present, and it is `[]` when the Automation is idle.
+- `max_parallel`, `running_members` and `waiting_for_slot`: present when a
+  parallel limit is in play. `max_parallel` is the Automation's own limit
+  and is omitted when unset. `running_members` counts the members running
+  now and is reported while the Automation or a fork has a limit.
+  `waiting_for_slot` lists, in member order, the members that hold their
+  cursor and wait for a free slot; it is omitted when none waits. On
+  `active_cursors`, a waiting member has `status` `waiting_for_slot` and
+  `wait_reason` `waiting for a free slot`. Waiting is never reported as
+  blocked, and the Automation stays `active`.
 - `join_wait`: present only while a join waits on its branches. It has
   `join_member_id`, `rule`, `pending_branches` (still live) and
   `failed_branches` (ended without success). A branch is named by its chain

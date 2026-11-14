@@ -2072,6 +2072,16 @@ type AutomationStatusSummary struct {
 	// Omitted when the Automation has no fork.
 	BranchChains []BranchChain `json:"branch_chains,omitempty"`
 
+	// MaxParallel is the Automation's own max_parallel limit, omitted when
+	// unset. RunningMembers counts the members running now and is reported only
+	// while a limit (the Automation's or a fork's) is set. WaitingForSlot lists,
+	// in member order, the members that hold their cursor and wait for a free
+	// slot: they are not blocked, and the Automation is not either. Omitted
+	// when none waits.
+	MaxParallel    int      `json:"max_parallel,omitempty"`
+	RunningMembers int      `json:"running_members,omitempty"`
+	WaitingForSlot []string `json:"waiting_for_slot,omitempty"`
+
 	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
 	// member Automaton held for operator review. Both are omitted when none is
 	// held.
@@ -2092,7 +2102,16 @@ type ActiveCursorSummary struct {
 	PendingItemTitle string `json:"pending_item_title,omitempty"`
 	Waiting          bool   `json:"waiting,omitempty"`
 	Status           string `json:"status"`
+	// WaitReason is set while the member holds its cursor without running
+	// because a max_parallel limit is reached; Status is then
+	// CursorStatusWaitingForSlot and WaitReason reads "waiting for a free slot".
+	// It is never a blocked state.
+	WaitReason string `json:"wait_reason,omitempty"`
 }
+
+// CursorStatusWaitingForSlot is the ActiveCursorSummary status of a member that
+// waits for a free slot under a max_parallel limit.
+const CursorStatusWaitingForSlot = "waiting_for_slot"
 
 // JoinWaitSummary describes the join an Automation waits on: the rule it applies,
 // the branches still live, and the branches that ended without success. Each

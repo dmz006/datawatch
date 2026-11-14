@@ -131,6 +131,30 @@ decides what that means. A member belongs to one chain, a chain stays between it
 fork and join, and chain members must be Automaton or nested Automation members.
 Status shows each chain under `branch_chains`.
 
+### Limit how many run at once
+
+A fork over many branches starts them all by default. To cap that, set
+`max_parallel` on the Automation (the most members running at once across the
+whole Automation) or on the fork (the most of that fork's branch members running
+at once). Zero or unset means no limit. When both are set, the smaller one wins
+for that fork's branches.
+
+Set the Automation limit with `max_parallel` in the body of `POST
+/api/automations` (an update that omits it keeps the stored value, and `0`
+clears it). Set a fork's limit inside its member JSON, which works the same from
+the CLI `--members` array and the MCP `members` array:
+
+```json
+{"id":"split","kind":"fork","fork_members":["a","b","c","d","e"],"max_parallel":2}
+```
+
+With a limit of 2 over five branches, the first two in member order start, and
+the other three wait. A waiting member shows `waiting_for_slot` in status; it is
+not blocked, and the Automation stays active. When a running member finishes,
+completed, failed or cancelled, the next waiting member starts, again in member
+order. A daemon restart keeps the waiting members waiting and starts them as
+slots free. No member kind other than a fork takes the field.
+
 While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.
 Same call over MCP: `automation_create` with the same `members` array.
