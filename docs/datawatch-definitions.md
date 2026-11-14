@@ -3127,7 +3127,7 @@ Infrastructure:
 - [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
 - [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password + Vault backends
 - [`howto/federated-observer.md`](howto/federated-observer.md) — push-based multi-host stats aggregation
-- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, header server dropdown (selecting a host re-renders the current view in place; the chosen entry is remembered per browser), all-servers aggregation
+- [`howto/multi-servers.md`](howto/multi-servers.md) — register remote instances, header server button (opens the server picker window; selecting a host re-renders the current view in place; the chosen entry is remembered per browser), all-servers aggregation
 - [`howto/compute-nodes.md`](howto/compute-nodes.md) — GPU/CPU node registry, kind taxonomy, observer peer binding
 - [`howto/compute-placement-ask.md`](howto/compute-placement-ask.md) — missing-model policy (`ask` / `auto_load` / `refuse`), headroom and size settings, the one-shot placement ask queue and its five surfaces
 - [`howto/v7-compute-migration.md`](howto/v7-compute-migration.md) — migrate deprecated compute node kinds to ollama/openai-compat
