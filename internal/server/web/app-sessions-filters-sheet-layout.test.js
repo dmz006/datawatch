@@ -133,11 +133,11 @@ test('the sessions page toolbar (top bar + toolbar rows) has no grouping control
   assert.ok(!toolbar.includes('sessions-group-select'), 'no Group by picker in the toolbar');
   assert.ok(!toolbar.includes('group-axis-control'), 'no legacy placement control in the toolbar');
   assert.ok(!toolbar.includes('setSessionGroupBy('), 'nothing in the toolbar writes the grouping choice');
-  // The toolbar carries exactly its two native selects — the server picker
-  // and the view-mode control — and no third one for grouping.
-  assert.equal(countSelects(toolbar), 2, 'only the server picker + view mode are selects in the toolbar');
+  // The toolbar carries exactly one native select — the server picker.
+  // The view-mode control is a role=group of three icon buttons, not a select.
+  assert.equal(countSelects(toolbar), 1, 'only the server picker is a select in the toolbar');
   assert.ok(toolbar.includes('id="sessionsServerDropdown"'), 'server picker instance is painted');
-  assert.ok(toolbar.includes('id="sessionsViewSelect"'), 'view-mode select is painted');
+  assert.ok(toolbar.includes('class="sessions-view-buttons"'), 'view-mode button group is painted');
   // The toolbar still carries its real controls.
   assert.ok(toolbar.includes('class="sessions-topbar"'), 'the toolbar itself is painted (audit is against a non-empty region)');
 });

@@ -2,12 +2,15 @@
 // Sessions page one-line toolbar: the topbar is ONE non-splitting flex row
 // (no separate fold row, no server-chip slot) at phone (≤640px) and wide
 // widths. Contents in DOM order: server dropdown → search → Filters →
-// Fold all (only while grouping is active) → the single view-mode <select>.
+// Fold all (only while grouping is active) → the three view-mode buttons.
 // The Fold all is a compact icon button carrying a tooltip, an aria-label
 // and an aria-pressed that reflect collapsed vs expanded. The view control
-// is a native <select> (List / Tiles / Compact) with an accessible label,
-// showing the current mode, driving the shared setter, persisting through
+// is a role=group of three icon buttons (List / Tiles / Compact), each
+// with its own accessible label, the current mode marked on the active
+// button, and all driving the shared setter, persisting through
 // the stored-mode key cs_sessions_view_mode and restoring on a fresh paint.
+// On touch, holding a button ~500 ms shows its label hint instead of
+// changing the mode (the synthetic click is cancelled).
 // All the new locale keys must ship in en, de, es, fr and ja.
 //
 // This test never signals or kills a session: it only renders markup and
@@ -148,7 +151,7 @@ test('the toolbar is a single non-splittable flex row at every width in the CSS'
   assert.ok(search.length, 'a .sessions-topbar .sessions-search-row rule exists');
   assert.match(search[0].body, /flex:\s*1 1 auto/, 'the search row flexes');
   assert.match(search[0].body, /min-width:\s*0/, '... and may shrink below its content size');
-  for (const name of ['sessions-server-select', 'sessions-fold-all', 'sessions-view-select']) {
+  for (const name of ['sessions-server-select', 'sessions-fold-all', 'sessions-view-buttons']) {
     const r = ruleForDesc(rules, name);
     assert.ok(r.length, 'a .sessions-topbar .' + name + ' rule exists');
     assert.match(r[0].body, /flex:\s*0 0 auto/, '.sessions-topbar .' + name + ' stays fixed-size');
@@ -168,7 +171,7 @@ test('there is no separate fold row: not in the CSS, not in the rendered markup'
 
 // ── (a)+(b) rendered row: one row, correct parts, correct order ─────────────
 
-test('at phone AND wide width the toolbar is one row: server, search, Filters, Fold all, view select — in that order', () => {
+test('at phone AND wide width the toolbar is one row: server, search, Filters, Fold all, view buttons — in that order', () => {
   for (const [label, phone] of [['phone', true], ['wide', false]]) {
     const sb = loadApp({ phone });
     seed(sb);
@@ -185,7 +188,7 @@ test('at phone AND wide width the toolbar is one row: server, search, Filters, F
       'class="sessions-filters-slot"',         // (4) Filters
       'id="sessionsFiltersBtn"',
       'class="sessions-fold-all"',             // (5) Fold all (grouping is active)
-      'id="sessionsViewSelect"',               // (6) view control
+      'class="sessions-view-buttons"',         // (6) view control
     ].map(k => top.indexOf(k));
     assert.ok(order.every(i => i >= 0), label + ': every toolbar part is in the one row: ' + order.join(','));
     assert.deepEqual(order, [...order].sort((a, b) => a - b), label + ': parts appear in the stated DOM order');
@@ -259,33 +262,71 @@ test('toggling folds every group, flips the button, and un-folds again — all t
   assert.match(html, /class="sessions-fold-all"[\s\S]*?aria-pressed="false"/);
 });
 
-// ── (d) view control: one <select>, accessible, drives the shared path ──────
+// ── (d) view control: one button group, accessible, drives the shared path
 
-test('the view control is a native select with List/Tiles/Compact, an accessible label, the current mode and the shared setter', () => {
+test('the view control is a button group with List/Tiles/Compact, an accessible label, the current mode and the shared setter', () => {
   const sb = loadApp();
   const html = sb._sessionsViewSelectHTML('tiles');
-  assert.match(html, /<select id="sessionsViewSelect" class="sessions-view-select"/);
-  assert.match(html, /aria-label="Sessions view mode"/, 'the select has its own accessible label');
-  assert.match(html, /onchange="_sessionsSetViewMode\(this\.value\)"/, 'changing it calls the shared mode setter');
+  assert.match(html, /<div class="sessions-view-buttons" role="group"/);
+  assert.match(html, /aria-label="Sessions view mode"/, 'the group has its own accessible label');
   for (const [m, label] of [['list', 'List'], ['tiles', 'Tiles'], ['compact', 'Compact']]) {
-    if (m === 'tiles') assert.match(html, /<option value="tiles" selected>/, 'the active mode is marked selected');
-    else assert.match(html, new RegExp('<option value="' + m + '">'), `option ${m} present`);
-    assert.match(html, new RegExp('>' + label + '</option>'), `option label for ${m}`);
+    assert.match(html, new RegExp('data-mode="' + m + '"'), `button ${m} present`);
+    assert.match(html, new RegExp('aria-label="' + label + '"'), `label for ${m}`);
+    assert.match(html, new RegExp('title="' + label + '"'), `hover text for ${m}`);
+    assert.ok(html.includes('onclick="_sessionsSetViewMode(\'' + m + '\')"'), `${m} drives the shared mode setter`);
   }
-  assert.equal((html.match(/<option/g) || []).length, 3, 'exactly the three modes, nothing more');
+  assert.equal((html.match(/<button type="button" class="sessions-view-btn( active)?" data-mode/g) || []).length, 3, 'exactly the three modes, nothing more');
+  assert.match(html, /class="sessions-view-btn active" data-mode="tiles" aria-pressed="true"/, 'the active mode is marked active');
+  assert.match(html, /data-mode="list" aria-pressed="false"/);
+  assert.match(html, /data-mode="compact" aria-pressed="false"/);
+  assert.match(html, /aria-hidden="true"/, 'the icon glyph is decorative-only');
+  // DOM order: list, tiles, compact.
+  const pos = ['list', 'tiles', 'compact'].map(m => html.indexOf('data-mode="' + m + '"'));
+  assert.ok(pos.every(i => i >= 0), 'all three buttons are painted');
+  assert.deepEqual(pos, [...pos].sort((a, b) => a - b), 'buttons appear in list, tiles, compact order');
   for (const k of ['sessions_view_toggle', 'sessions_view_dropdown', 'sessions_view_list', 'sessions_view_tiles', 'sessions_view_compact']) {
     assert.equal(html.includes(k), false, 'raw i18n key leaks out: ' + k);
   }
 });
 
-test('the select shows the current mode as selected in a real paint', () => {
+test('the group marks the current mode as the active button in a real paint', () => {
   const sb = loadApp({ phone: true });
   seed(sb);
   sb._sessionsSetViewMode('compact');
   const top = topbarSlice(sb.__box.html);
-  assert.match(top, /<option value="compact" selected>/, 'the painted select marks the active mode');
-  assert.match(top, /<option value="list">/);
-  assert.match(top, /<option value="tiles">/);
+  assert.match(top, /class="sessions-view-btn active" data-mode="compact" aria-pressed="true"/, 'the painted group marks the active button');
+  assert.match(top, /data-mode="list" aria-pressed="false"/);
+  assert.match(top, /data-mode="tiles" aria-pressed="false"/);
+});
+
+test('long-press on a view button: a quick tap keeps its click; a ~500 ms hold shows the label hint and swallows the click', () => {
+  const sb = loadApp();
+  const reg = [];
+  sb.setTimeout = (fn, ms) => { reg.push({ fn, ms }); return reg.length; };
+  const cleared = new Set();
+  sb.clearTimeout = (id) => cleared.add(id);
+  const mkBtn = (label) => ({ _svbTimer: null, _svbLong: false, getAttribute() { return label; } });
+  const mkEv = () => { const e = {}; e.preventDefault = () => { e.prevented = true; }; return e; };
+
+  // Quick tap: the finger lifts before the ~500 ms long-press timer fires.
+  const quick = mkBtn('Tiles');
+  sb._svbPressStart(quick);
+  assert.equal(reg.length, 1, 'touchstart arms the long-press timer');
+  assert.equal(reg[0].ms, sb.SESSIONS_VIEW_BTN_LONG_PRESS_MS, 'the deadline is the long-press constant');
+  const evQ = mkEv();
+  sb._svbPressEnd(evQ, quick);
+  assert.equal(evQ.prevented, undefined, 'a quick tap never cancels the synthetic click (the mode change still runs)');
+  assert.ok(cleared.has(1), 'a quick tap clears the pending timer');
+
+  // Held: the finger is still down when the deadline fires.
+  const held = mkBtn('Compact');
+  sb._svbPressStart(held);
+  reg[1].fn(); // the long-press deadline passes with the finger still down
+  assert.equal(held._svbLong, true, 'holding past the deadline marks the long press');
+  const evH = mkEv();
+  sb._svbPressEnd(evH, held);
+  assert.equal(evH.prevented, true, 'lifting the finger on a long press cancels the synthetic click (no mode change)');
+  assert.equal(held._svbLong, false, '... and the hint state goes away');
 });
 
 test('choosing a mode stores it under the stored-mode key and the invalid choice is refused', () => {
@@ -311,7 +352,7 @@ test('a fresh paint restores the stored mode into the select, and a blocked stor
   vm.runInContext('state.sessionsViewMode = null;', fresh); // nothing in memory yet: the stored choice must surface
   const h = render(fresh);
   assert.equal(fresh._sessionsViewMode(), 'compact', 'the stored choice wins over the viewport');
-  assert.match(topbarSlice(h), /<option value="compact" selected>/, 'the fresh paint marks it as the current mode');
+  assert.match(topbarSlice(h), /class="sessions-view-btn active" data-mode="compact" aria-pressed="true"/, 'the fresh paint marks it as the current mode');
 
   const blocked = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } };
   const b = loadApp({ phone: true });
@@ -326,7 +367,7 @@ test('an ungrouped Sessions page keeps the one-line toolbar without the fold con
   seed(sb, { grouped: false });
   const html = render(sb);
   const top = topbarSlice(html);
-  for (const k of ['sessionsServerDropdown', 'sessions-search-row', 'sessionsFiltersBtn', 'sessionsViewSelect']) {
+  for (const k of ['sessionsServerDropdown', 'sessions-search-row', 'sessionsFiltersBtn', 'sessions-view-buttons']) {
     assert.ok(top.includes(k), 'toolbar keeps its parts on an ungrouped page: ' + k);
   }
   assert.ok(!top.includes('sessions-fold-all'), 'no grouping means nothing is foldable');

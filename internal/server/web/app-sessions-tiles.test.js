@@ -221,15 +221,16 @@ test('the summary counts group by state in a fixed order and keep unknown states
 
 // ── mode toggle ─────────────────────────────────────────────────────────────
 
-test('the view select offers all three modes with the current one selected', () => {
+test('the view control offers all three modes with the current one active', () => {
   const sb = loadApp();
   const html = sb._sessionsViewSelectHTML('tiles');
-  assert.match(html, /<select id="sessionsViewSelect"/);
+  assert.match(html, /<div class="sessions-view-buttons" role="group"/);
   for (const m of ['list', 'tiles', 'compact']) {
-    assert.match(html, new RegExp('<option value="' + m + '"'), `offers ${m}`);
+    assert.match(html, new RegExp('data-mode="' + m + '"'), `offers ${m}`);
+    assert.ok(html.includes('onclick="_sessionsSetViewMode(\'' + m + '\')"'), `${m} drives the shared setter`);
   }
-  assert.match(html, /<option value="tiles" selected>/);
-  assert.match(html, /onchange="_sessionsSetViewMode\(this\.value\)"/);
+  assert.match(html, /class="sessions-view-btn active" data-mode="tiles" aria-pressed="true"/, 'the current mode is marked active');
+  assert.match(html, /data-mode="list" aria-pressed="false"/);
   for (const k of ['sessions_view_toggle', 'sessions_view_list', 'sessions_view_tiles', 'sessions_view_compact']) {
     assert.equal(html.includes(k), false, `the rendered labels never expose the raw i18n key ${k}`);
   }
@@ -459,7 +460,7 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
   assert.ok(!html.includes('session-tile-grid-compact'), 'default tiles grid is not the compact variant');
   assert.equal(countTiles(html), 60, 'page one renders 60 tiles');
   assert.match(html, />Show more \(60\/300\)/);
-  assert.match(html, /sessionsViewSelect/, 'the one-line toolbar view select is painted');
+  assert.match(html, /class="sessions-view-buttons"/, 'the one-line toolbar view buttons are painted');
   assert.ok(!html.includes('sessions-summary'), 'no state count line above the tiles');
 
   // Show-more grows the page until the whole pool fits; paging is per-filter-state.
