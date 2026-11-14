@@ -1081,6 +1081,40 @@ func (a *API) Resume(id, actor string) (any, error) {
 	return updated, nil
 }
 
+// Hold puts an Automaton on hold through Manager.Hold. A held Automaton waits
+// by operator decision; nothing here starts an executor.
+func (a *API) Hold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.Hold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ExtendHold changes the hold on a held Automaton through Manager.ExtendHold.
+// It does not start an executor.
+func (a *API) ExtendHold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.ExtendHold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ReleaseHold ends a hold through Manager.ReleaseHold and restores the status
+// the Automaton had. It does not start an executor; the operator runs the
+// Automaton afterwards if it should run.
+func (a *API) ReleaseHold(id, actor, note string) (any, error) {
+	updated, err := a.M.ReleaseHold(id, actor, note)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
 // ResumeParked is the operator action that resumes a PRD the boot-resume
 // gate parked. Manager.ResumeParked validates and flips it back to running;
 // the executor then starts through runLocked with the same prep as boot
