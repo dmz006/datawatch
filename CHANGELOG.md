@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A session start no longer writes into `AGENT.md` or `CLAUDE.md` by default.** The earlier change covered only the RTK block; the tracker still created a missing rules file, rewrote its `# Session Guardrails` header, and appended the memory instructions and the cross-session communication rule. One setting, `rtk.write_rules_files` (default off), now gates all of it. With it off the RTK, memory and cross-session text goes to the untracked `CLAUDE.local.md`, each in its own marked block, and the rules files stay byte-identical. The key keeps its name for compatibility; its help text and the docs now say it governs every tracker write into the rules files.
+- **The startup cleanup now removes the cross-session and memory blocks as well as the RTK block.** It tries each combination of leftover blocks and removes them when the result is byte-identical to the committed file, so a worktree that carries both an RTK block and a cross-session block is restored instead of only alerted on. A file with any other uncommitted change is still left alone and raises one alert per worktree.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed

@@ -108,7 +108,7 @@ func TestRTKSessionStart_DisabledWritesNothingAndRemovesStaleBlock(t *testing.T)
 
 func TestRTKSessionStart_WriteRulesFilesTrueRestoresAppend(t *testing.T) {
 	dir := t.TempDir()
-	s, before, after := rtkSessionStart(t, dir, GuardrailsOptions{RTKEnabled: true, RTKWriteRulesFiles: true})
+	s, before, after := rtkSessionStart(t, dir, GuardrailsOptions{RTKEnabled: true, WriteRulesFiles: true})
 	// The target is AGENT.md when it exists; CLAUDE.md is the fallback.
 	if after["AGENT.md"] != before["AGENT.md"]+"\n\n"+rtkInstructions() {
 		t.Errorf("AGENT.md is not the old append:\n%s", after["AGENT.md"])
@@ -348,7 +348,7 @@ func TestRTKSessionStart_WriteRulesFilesTrueBlockAlreadyPresent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr.WriteSessionGuardrails("", s, GuardrailsOptions{RTKEnabled: true, RTKWriteRulesFiles: true}); err != nil {
+	if err := tr.WriteSessionGuardrails("", s, GuardrailsOptions{RTKEnabled: true, WriteRulesFiles: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := pcRead(t, filepath.Join(dir, "AGENT.md")); got != body {

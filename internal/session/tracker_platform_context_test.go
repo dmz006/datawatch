@@ -79,7 +79,9 @@ func TestWriteSessionGuardrails_PlatformContext_CreatePathLeavesTrackedFileClean
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{PlatformContextEnabled: true}); err != nil {
+	// Legacy create path (rtk.write_rules_files on): the created file carries
+	// no platform context block. By default no file is created at all.
+	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{PlatformContextEnabled: true, WriteRulesFiles: true}); err != nil {
 		t.Fatal(err)
 	}
 	if b := pcRead(t, filepath.Join(projectDir, "CLAUDE.md")); strings.Contains(b, "datawatch:platform-context") {
