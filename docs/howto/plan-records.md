@@ -211,7 +211,9 @@ Automata are attached to.
 - **Themes are created empty.** They are added with the theme calls, not when the
   plan is created. Limits: 50 themes per plan and 100 characters per theme name.
 - Each theme change (create, rename, remove, place, unplace, reorder) writes a
-  `plan_record_theme_changed` audit event whose `theme_op` says which.
+  `plan_record_theme_changed` audit event whose `theme_op` says which. That is
+  the store-level name; the server maps it to `plan_record_updated` (see the
+  review section).
 
 ## Registry rows and backlog items in a plan
 
@@ -327,12 +329,26 @@ Nothing here turns on by itself. These are yours to settle:
   yet pass the archive options. Until they are added, nothing in the product
   archives a plan or builds a release plan. Decide the surface order before the
   next release.
-- **Re-attaching Automata by release.** Nothing yet moves Automata onto a release
-  plan; the plans migration still builds plans from arcs and rows. Decide how
-  the Automata are re-attached to their release plans.
-- **Theme audit name.** The server writes a theme change under the generic
-  `plan_record_updated` action, not `plan_record_theme_changed`; read `theme_op`
-  in the details. Decide whether theme changes should get their own audit action.
+- **Re-attaching Automata by release.** The release migration engine
+  (`internal/planrecords/release_migrate.go`, `ReleaseMigrate`) is merged at
+  store level, but nothing in REST, MCP, CLI, chat or the PWA runs it yet, so
+  no Automaton is moved until an operator surface exists. It attaches
+  Automata and Automations to two release plans (default labels `10.0` and
+  `11.0`), creating the plans and their themes as needed, placing items in a
+  theme by rule or by an operator mark, and never deleting anything. An item
+  already held by another plan is reported as a conflict and not moved; items
+  outside the two releases are skipped; items no rule matched stay unplaced.
+  It is preview-first: the default run writes nothing and returns a report
+  with a `preview_id` (a stable hash of the report). A written run needs
+  `Apply` plus the `preview_id` of the preview you approved; a missing or
+  stale id is refused before anything is written. A second written run with
+  the same inputs changes nothing. Each written change is audited as
+  `plan_record_release_migrated` (details: actor, op, project). Review the
+  preview's conflicts and unplaced lists before approving.
+- **Theme audit name.** The store writes a theme change as
+  `plan_record_theme_changed`; the server maps it to the generic
+  `plan_record_updated` action, so in the audit log read `theme_op` in the
+  details. Decide whether theme changes should get their own audit action.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 

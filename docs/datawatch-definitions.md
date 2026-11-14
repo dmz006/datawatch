@@ -3297,7 +3297,7 @@ A **plan record** of kind `plan` is the registry record of what you are working 
 
 ### Release plan
 
-A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A project has one release plan per label. It links down like any plan, and groups its items with themes. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
+A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A project has one release plan per label. It links down like any plan, and groups its items with themes. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes). The release migration engine attaches Automata and Automations to release plans (default labels `10.0` and `11.0`); it previews first and a written run needs the preview id you approved (audit action `plan_record_release_migrated`). It has no operator surface yet.
 
 ### Theme
 
