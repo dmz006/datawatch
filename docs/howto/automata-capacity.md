@@ -352,6 +352,8 @@ unstarted or paused Automaton, a tree lock) does not use up the timeout.
 
 ### Pool fall-through
 
+> **Operator review:** fall-through is off by default. Before turning it on, review which LLM entries you mark as **Allowed fall-through target**, since a waiting worker may then run on any of them. The glossary entries are in [glossary.md](../glossary.md#pool-fall-through).
+
 By default a task always waits for its own pool, explicit backend or not.
 Turn on `autonomous.capacity_fallthrough` (default off) and a worker task
 whose requested pool cannot be granted right now is admitted on another
