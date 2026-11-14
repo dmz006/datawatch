@@ -1571,6 +1571,7 @@
   "header_scope_all_plans": "すべてのプラン",
   "header_scope_badge_label": "フィルター適用中",
   "header_scope_banner": "%1$s で絞り込み中",
+  "projects_scope_unassigned_not_in_plan": "未割り当ての Automata はどのプランにも属さないため、このプランには表示されません。",
   "header_scope_clear": "クリア",
   "header_scope_help_label": "ヘルプ: スコープ",
   "header_scope_templates_note": "テンプレートはすべてのプロジェクトとプランで表示されます。",
