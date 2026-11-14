@@ -678,6 +678,13 @@ It refuses, writes one decision-log line (found, done, how to undo) and raises e
 | "Task merge stalled" alert | A verified task's merge has been pending past `stalled_merge_minutes` and lane fill is in `on` mode. The merge is retried. If the merge is held for the operator (a merge block, a hold or a review), it is alerted and never retried: clear the hold. |
 | A stalled merge raised no alert | The mode is `shadow` or `off`, or `stalled_merge_minutes` is `0`. In shadow the stall is only a recorded decision. |
 
+## For the operator to review
+
+- **Lanes read idle more often than before.** An Automaton with no live work no longer holds a lane, so the Lane fill card can show an idle lane while an Automaton is still `running`. Check the `waiting` list before calling that a fault.
+- **`stalled_merge_minutes` (default `30`) is a judgement call.** A lower value frees lanes sooner but alerts (in `on` mode) on slow, healthy merges; `0` turns the rule off and keeps the old hold-the-lane behaviour for pending merges.
+- **The first-seen-pending clock is in memory only.** After a daemon restart, a merge with no recorded merge time starts its stalled-merge age again from zero.
+- **Shadow mode is still the default.** Nothing starts in a freed lane until the lane kind is set to `on`; compare the recorded decisions first.
+
 ## See also
 
 - [Automation queue advance](automation-queue-advance.md): how an Automation starts its next Automaton.
