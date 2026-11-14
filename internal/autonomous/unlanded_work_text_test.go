@@ -6,13 +6,14 @@ import (
 )
 
 func TestUnlandedWorkListTextRoundTrip(t *testing.T) {
-	l, err := ParseUnlandedWorkList([]byte(`{"branches":[{"automaton_id":"a1","branch":"automaton/a1","title":"Add paging","commits":3,"last_activity":"2026-11-01T12:00:00Z","recommendation":"merge","reason":"nothing conflicts"},{"automaton_id":"a2","branch":"automaton/a2","commits":1}]}`))
+	l, err := ParseUnlandedWorkList([]byte(`{"branches":[{"automaton_id":"a1","branch":"automaton/a1","title":"Add paging","commits":3,"last_activity":"2026-11-01T12:00:00Z","merge_state":"needs_decision","recommendation":"merge","reason":"nothing conflicts"},{"automaton_id":"a2","branch":"automaton/a2","commits":1,"merge_state":"landed","recommendation":"delete worktree","reason":"every commit is already on main by content"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := RenderUnlandedWorkList(l)
 	for _, want := range []string{"(2):", "Add paging (automaton/a1)", "3 commits, last activity 2026-11-01 12:00 UTC",
-		"recommended: merge (nothing conflicts)", "a2 (automaton/a2)", "1 commit\n"} {
+		"merge state: needs_decision", "recommended: merge (nothing conflicts)",
+		"a2 (automaton/a2)", "1 commit\n", "merge state: landed", "recommended: delete worktree (every commit is already on main by content)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("text lacks %q:\n%s", want, got)
 		}

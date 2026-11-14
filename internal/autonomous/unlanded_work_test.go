@@ -42,19 +42,22 @@ func TestListUnlandedBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []struct {
-		id, rec, title string
-		commits        int
+		id, state, rec, title string
+		commits               int
 	}{
-		{"bbbb0002", UnlandedNeedsDecision, "Unlanded work", 1},
-		{"cccc0003", UnlandedSuperseded, "Superseded work", 1},
-		{"aaaa0001", UnlandedLanded, "Landed work", 0},
+		// No PRD in this fixture carries a completion-verdict, so the
+		// needs_decision row re-judges before merging; a passing review gets the
+		// "merge" recommendation (TestListUnlandedBranchesMergeStates…).
+		{"bbbb0002", UnlandedNeedsDecision, "re-judge first", "Unlanded work", 1},
+		{"cccc0003", UnlandedSuperseded, "archive branch", "Superseded work", 1},
+		{"aaaa0001", UnlandedLanded, "delete worktree", "Landed work", 0},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d: %+v", len(got), len(want), got)
 	}
 	for i, w := range want {
 		g := got[i]
-		if g.AutomatonID != w.id || g.Recommendation != w.rec || g.Title != w.title || g.Commits != w.commits {
+		if g.AutomatonID != w.id || g.MergeState != w.state || g.Recommendation != w.rec || g.Title != w.title || g.Commits != w.commits {
 			t.Errorf("entry %d = %+v, want %+v", i, g, w)
 		}
 		if g.Reason == "" || g.LastActivity.IsZero() {

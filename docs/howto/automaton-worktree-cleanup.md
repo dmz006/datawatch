@@ -362,22 +362,24 @@ The cleanup never removes a branch whose commits are not on the default branch,
 so a finished Automaton whose work was never merged keeps its branch forever.
 The **unlanded work** list is the review of exactly those branches. It looks at
 the archived Automata whose `automaton/<id>` branch has commits not on the
-default branch, and recommends one of three things for each. It is strictly
-read-only, and it compares by commit content (so a merge that rewrote commits,
-by rebase or renumbering, still counts as landed). Running Automata are left out
-because their commits are expected to be ahead.
+default branch, and gives each one a merge state, a recommended action and the
+reason. It is strictly read-only, and it compares by commit content (so a merge
+that rewrote commits, by rebase or renumbering, still counts as landed). Running
+Automata are left out because their commits are expected to be ahead.
 
-| Recommendation | Meaning |
-|---|---|
-| `landed` | Every commit is already on the default branch by content: the branch is a leftover |
-| `superseded` | Some commits are not on the default branch, but every file they change was changed on the default branch since the branch forked, so later work replaced them |
-| `needs_decision` | Commits are not on the default branch and nothing shows they were replaced: you decide |
+Each entry carries a **merge state** and a **recommendation** for that state:
+
+| Merge state | Meaning | Recommendation |
+|---|---|---|
+| `needs_decision` | Commits are not on the default branch and nothing shows they were replaced: you decide | `re-judge first` while the newest completion review is a block or reached no verdict (the re-judge settles the direction), `merge` once it has passed |
+| `landed` | Every commit is already on the default branch by content: the branch is a leftover | `delete worktree` (the bundle backup is written first) |
+| `superseded` | Some commits are not on the default branch, but every file they change was changed on the default branch since the branch forked, so later work replaced them | `archive branch` |
 
 Each entry shows the Automaton, its title, the branch, the number of commits not
-landed, the last activity, the recommendation and a one-line reason. The list is
-ordered least settled first (needs a decision, superseded, landed), then newest
-activity first. Branches with nothing ahead, branches that no longer exist and
-Automata that are not archived are not listed.
+landed, the last activity, the merge state, the recommendation and a one-line
+reason. The list is ordered least settled first (needs a decision, superseded,
+landed), then newest activity first. Branches with nothing ahead, branches that
+no longer exist and Automata that are not archived are not listed.
 
 ### The actions on an unlanded branch
 
@@ -388,7 +390,7 @@ Automata that are not archived are not listed.
 | **Delete worktree** | Writes a git bundle backup of the branch under the `backups` folder of the worktree base, then removes the worktree and the branch | Yes |
 
 Delete is the only destructive action and it is guarded: it refuses unless the
-entry carries a recommendation from the list above, a base repository and a
+entry carries a recommendation, a base repository and a
 worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
 returns the branch, the bundle path and the worktree path it removed.

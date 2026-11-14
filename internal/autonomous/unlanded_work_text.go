@@ -29,8 +29,9 @@ func ParseUnlandedWorkList(body []byte) (UnlandedWorkList, error) {
 
 // RenderUnlandedWorkList formats the unlanded-work read: one block per
 // archived Automaton branch whose commits are not on the default branch, with
-// the title, the commit count, the last activity and the recommendation. It
-// only describes; the operator keeps, archives or deletes a branch with the
+// the title, the commit count, the last activity, the merge state (which of
+// the three cases the branch is in) and the recommendation. It only
+// describes; the operator keeps, archives or deletes a branch with the
 // action commands.
 func RenderUnlandedWorkList(l UnlandedWorkList) string {
 	var b strings.Builder
@@ -54,6 +55,9 @@ func RenderUnlandedWorkList(l UnlandedWorkList) string {
 			line += ", last activity " + u.LastActivity.UTC().Format("2006-01-02 15:04") + " UTC"
 		}
 		b.WriteString("      " + line + "\n")
+		if u.MergeState != "" {
+			b.WriteString("      merge state: " + u.MergeState + "\n")
+		}
 		if u.Recommendation != "" {
 			rec := "recommended: " + u.Recommendation
 			if u.Reason != "" {

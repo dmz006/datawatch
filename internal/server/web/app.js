@@ -38568,8 +38568,18 @@ function _housekeepingHelpLink(key, labelKey) {
 // ── Unlanded work card ───────────────────────────────────────────────────────
 // unlandedWorkCardHtml(data) draws GET /api/autonomous/unlanded-work:
 // { branches: [{automaton_id, branch, title, commits, last_activity,
-// recommendation, reason}] }. An empty list reads as nothing to show.
-const UNLANDED_WORK_RECS = { needs_decision: 'unlanded_work_rec_decide', decide: 'unlanded_work_rec_decide', superseded: 'unlanded_work_rec_superseded', landed: 'unlanded_work_rec_landed' };
+// merge_state, recommendation, reason}] }. An empty list reads as nothing to
+// show. recommendation is the one-line action (merge / re-judge first /
+// delete worktree / archive branch); merge_state names the case behind it
+// (needs_decision / superseded / landed).
+const UNLANDED_WORK_RECS = {
+  merge: 'unlanded_work_rec_merge',
+  're-judge first': 'unlanded_work_rec_rejudge',
+  'delete worktree': 'unlanded_work_rec_delete',
+  'archive branch': 'unlanded_work_rec_archive',
+  needs_decision: 'unlanded_work_rec_decide', decide: 'unlanded_work_rec_decide',
+  superseded: 'unlanded_work_rec_superseded', landed: 'unlanded_work_rec_landed',
+};
 function _unlandedWorkBranches(data) {
   const b = data && typeof data === 'object' ? data.branches : null;
   return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
@@ -38579,8 +38589,8 @@ window.unlandedWorkCardHtml = function(data) {
   if (!list.length) return '';
   const btn = (act, key) => `<button type="button" class="btn-secondary unlanded-work-${act}" style="font-size:11px;padding:3px 10px;" onclick="window.unlandedWorkAct(this,'${act}')">${escHtml(t(key))}</button>`;
   const rows = list.map(e => {
-    const recKey = UNLANDED_WORK_RECS[String(e.recommendation || '')];
-    const rec = recKey ? t(recKey) : String(e.recommendation || '');
+    const rec = UNLANDED_WORK_RECS[String(e.recommendation || '')] || UNLANDED_WORK_RECS[String(e.merge_state || '')] || String(e.recommendation || '');
+    rec = t(rec);
     const when = _triageTime(e.last_activity);
     return `<div class="unlanded-work-row" data-branch="${escHtml(String(e.branch))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
       `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(String(e.title || e.branch))}</div>` +

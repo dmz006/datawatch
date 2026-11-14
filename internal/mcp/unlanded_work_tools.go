@@ -13,7 +13,7 @@ import (
 
 func (s *Server) toolAutonomousUnlandedWork() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_unlanded_work",
-		mcpsdk.WithDescription("Read the list of archived Automaton branches with work that is not on the default branch (\"branches\", an empty list when nothing is unlanded). Each entry names the Automaton (\"automaton_id\", \"title\"), the branch (\"branch\"), how many commits are not on the default branch (\"commits\"), the time of the last commit (\"last_activity\"), what is recommended (\"recommendation\") and why (\"reason\"). Read-only; the same object as GET /api/autonomous/unlanded-work. Nothing is kept, archived or deleted."),
+		mcpsdk.WithDescription("Read the list of archived Automaton branches with work that is not on the default branch (\"branches\", an empty list when nothing is unlanded). Each entry names the Automaton (\"automaton_id\", \"title\"), the branch (\"branch\"), how many commits are not on the default branch (\"commits\"), the time of the last commit (\"last_activity\"), the merge state (\"merge_state\": needs_decision, superseded or landed), the recommended action (\"recommendation\") and why (\"reason\"). Read-only; the same object as GET /api/autonomous/unlanded-work. Nothing is kept, archived or deleted."),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
