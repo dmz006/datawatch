@@ -6477,6 +6477,156 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "405": {description: "Method not allowed"}
         "503": {description: "autonomous disabled"}
+  /api/autonomous/prds/{id}/hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Put an Automaton on hold, or change its hold
+      description: |
+        Puts the Automaton in the `held` status: it waits by the operator's
+        decision, is not blocked, failed or waiting for review, and nothing
+        starts it. Its tasks keep their state. A hold is allowed from draft,
+        needs_review, approved, revisions_asked, paused, blocked and failed; it
+        is refused from planning, running, completed, rejected, cancelled and
+        archived. When the Automaton is already held, the same call extends the
+        hold: each field sent replaces the stored one and a field left out is
+        kept. `until` is the look-again time and may be an RFC 3339 time, a date
+        (YYYY-MM-DD, taken as the end of that day in UTC) or a duration such as
+        `72h`; any other value is a 400 that names these forms. When the time
+        passes the Automaton stays held and is shown as "hold expired, ready to
+        review"; only a release or a new `until` changes it. Audited as `hold`.
+      operationId: autonomousPRDHold
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 500, description: "Why the Automaton is waiting. Required to place a hold; optional when extending."}
+                condition: {type: string, description: "Free text shown to the operator, such as 'until after the release'. Never evaluated."}
+                until: {type: string, description: "Look-again time: an RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string, description: "Who is holding; defaults to operator."}
+      responses:
+        "200":
+          description: "The updated Automaton, status `held`, with its `hold` record (reason, condition, until, held_at, held_by, from, prior_blocked_reason, expired_at)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Missing or too long reason, a bad `until` (the message names the accepted forms), a time that is not in the future, or a status that cannot be held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/prds/{id}/release_hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Release a held Automaton back to the status it had
+      description: |
+        Ends the hold and restores the status the Automaton had when it was
+        held (a blocked Automaton gets its blocked reason back). It does not
+        start the Automaton; run it afterwards if it should run. Audited as
+        `release_hold`.
+      operationId: autonomousPRDReleaseHold
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Who is releasing; defaults to operator."}
+                note: {type: string, description: "Why the hold ended; kept in the Automaton's decision log."}
+      responses:
+        "200":
+          description: "The updated Automaton in its restored status, without a `hold` record"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "The Automaton is not held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/held:
+    get:
+      summary: List the Automata on hold
+      description: |
+        The held group: every Automaton in the `held` status with its reason,
+        condition, look-again time and the status it will return to. Expired
+        holds come first, then the soonest look-again time. An expired hold is
+        still held; its `next_look_text` reads "hold expired, ready to review".
+      operationId: autonomousHeldList
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: "The held group"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  held:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        project: {type: string}
+                        automation_id: {type: string}
+                        reason: {type: string}
+                        condition: {type: string}
+                        until: {type: string, format: date-time}
+                        held_at: {type: string, format: date-time}
+                        held_by: {type: string}
+                        from: {type: string, description: "The status a release restores"}
+                        expired: {type: boolean}
+                        next_look: {type: string, description: "Until in RFC 3339; empty when no date was set"}
+                        next_look_text: {type: string}
+                  total: {type: integer}
+                  expired: {type: integer}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous read capability"}
+        "405": {description: "Only GET is provided"}
+  /api/autonomous/held/migrate:
+    post:
+      summary: List look-alike blocked or failed Automata and hold the chosen ones
+      description: |
+        Lists the blocked or failed Automata whose notes look like they should
+        be on hold (an evaluation, a parked design, an operator hold note) and
+        puts the ones the operator names on hold. `dry_run` defaults to true
+        when `ids` is empty and only lists the candidates. A real run needs
+        `ids` and a non-empty `reason`, which is never generated; it applies the
+        same reason, condition and until to every chosen id and skips an id
+        that is missing, not blocked or failed, or already held. A real run is
+        refused with 409 while a final gate is running; a dry run still
+        reports. Audited as `hold_migrate`.
+      operationId: autonomousHeldMigrate
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, description: "List candidates without writing. True when ids is empty."}
+                ids: {type: array, items: {type: string}, description: "The Automata to hold"}
+                reason: {type: string, maxLength: 500, description: "Required for a real run"}
+                condition: {type: string}
+                until: {type: string, description: "An RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string}
+      responses:
+        "200":
+          description: "The run's report: `dry_run`, `busy`, `considered`, `candidates` (each with `why`), `held` and `skipped` (real run)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "A real run without ids or a reason, a bad `until`, or the run could not start"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "409": {description: "A final gate is running; try again when it has finished"}
   /api/autonomous/completed/migrate:
     post:
       summary: Move cancelled, merged Automata to Completed

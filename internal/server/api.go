@@ -869,6 +869,26 @@ func (s *Server) RegisterNativePlugin(p NativePlugin) {
 // internal/autonomous.Manager. Defining it as an interface keeps
 // server-package tests free of a hard dependency on the autonomous
 // package and lets us swap in a fake.
+// automatonHolder is the optional AutonomousAPI extension for the operator
+// hold: put an Automaton on hold, change the hold, release it. Fakes that do
+// not hold anything simply do not implement it.
+type automatonHolder interface {
+	Hold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ExtendHold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ReleaseHold(id, actor, note string) (any, error)
+}
+
+// heldGroupReader is the optional extension that returns the held group.
+type heldGroupReader interface {
+	HeldAutomata() autonomous.HeldGroup
+}
+
+// holdMigrator is the optional extension that lists look-alike blocked or
+// failed Automata and holds the chosen ones.
+type holdMigrator interface {
+	MigrateToHold(opts autonomous.HoldMigrationOpts) (autonomous.HoldMigrationReport, error)
+}
+
 type AutonomousAPI interface {
 	Config() any
 	SetConfig(any) error
