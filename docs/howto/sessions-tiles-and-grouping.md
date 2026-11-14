@@ -141,7 +141,8 @@ servers](multi-servers.md#switch-between-servers-header-dropdown).
   out of how many there are. The search text is remembered on this device,
   so it is still there when you come back to the page; clear the box to see
   everything again.
-- **Filters button** — opens the Filters sheet (below). A badge on the
+- **Filters button** — toggles the Filters sheet (below): it opens the sheet,
+  and clicking it again closes it. A badge on the
   button shows how many filters are active, so you can tell at a glance that
   the list is narrowed even with the sheet closed.
 - **Fold all** — an icon button (⊟ while at least one group can be folded, ⊞ once everything is folded; tooltip **Fold every group**, and **Unfold every group** after) that appears while a grouping is active and the visible list has foldable groups. It is a compact icon button, not a text button, and it folds or unfolds every group at once. It replaces the former separate fold row under the list, so there is no second row of controls for folding.
@@ -159,7 +160,8 @@ toggle. Described next under [View modes](#view-modes).
 ### The Filters sheet
 
 The **Filters** button opens a sheet that holds the controls you use less
-often than search:
+often than search. The same button toggles it closed again — and so does a
+tap outside the sheet, its close button, or Escape:
 
 - **Group by** — the axis picker described under [Grouping](#grouping).
 - **Views** — your saved views: save the current cut under a name, apply,
@@ -744,7 +746,7 @@ in your tag registry.
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
-| Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
+| Filters sheet (Group by, Views, status chips) | PWA Filters button | no | button toggles open/closed, also closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, **Fold all** button in the toolbar line | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | Fold all appears only while a grouping with openable groups is active; body still renders in the active mode |
