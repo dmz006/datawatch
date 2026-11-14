@@ -367,3 +367,5 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 - 2026-11-13 20:25 Operator, asked whether to file the route-at-admission Automaton (priority 95, Claude Sonnet, forbidding per-task backends in its own spec): "Yes route at admission". Filed as 2b340001.
 
 - 2026-11-13 20:32 Operator, asked whether to approve the ci.yaml change for the aider image soupsieve floor check (task 55430002 of 66dd0001), for this task only: "yes". Approved. Earlier the same session: cc29000b and e0060004 were rejected on the operator's recorded words (checks run locally before a tag) and their specs rewritten to forbid any .github change.
+
+- 2026-11-13 20:34 Operator, asked whether to keep the left-over investigation note from the Projects Overview Automaton (33490001) or discard it: "Keep it". Committed it as a plans doc.
