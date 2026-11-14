@@ -5763,5 +5763,7 @@
   "task_routing_export_failed": "Export fehlgeschlagen: %1$s",
   "task_routing_imported": "Profil importiert",
   "task_routing_detail_row": "Zeile %1$s",
-  "task_routing_detail_reason": "keine Zeile: %1$s"
+  "task_routing_detail_reason": "keine Zeile: %1$s",
+  "settings_rtk_write_rules_files": "RTK-Anweisungen in AGENT.md und CLAUDE.md schreiben",
+  "settings_rtk_write_rules_files_help": "Wenn aus (Standard), schreibt der Daemon niemals RTK-Anweisungen in AGENT.md oder CLAUDE.md; sie gehen stattdessen in eine nicht versionierte Datei pro Sitzung. Regeldateien werden nur von Menschen geschrieben."
 }

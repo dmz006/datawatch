@@ -5763,5 +5763,7 @@
   "records_tab_empty": "No registry row or finding matches.",
   "records_tab_status": "%1$s records; %2$s shown.",
   "records_tab_plan": "Plan",
-  "records_tab_automata": "Automata"
+  "records_tab_automata": "Automata",
+  "settings_rtk_write_rules_files": "Write RTK instructions into AGENT.md and CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes RTK instructions into AGENT.md or CLAUDE.md; they go to an untracked per-session file instead. Rules files are written by people only."
 }

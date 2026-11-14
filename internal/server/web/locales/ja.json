@@ -5763,5 +5763,7 @@
   "task_routing_export_failed": "エクスポートに失敗しました: %1$s",
   "task_routing_imported": "プロファイルをインポートしました",
   "task_routing_detail_row": "行 %1$s",
-  "task_routing_detail_reason": "行なし: %1$s"
+  "task_routing_detail_reason": "行なし: %1$s",
+  "settings_rtk_write_rules_files": "RTK の指示を AGENT.md と CLAUDE.md に書き込む",
+  "settings_rtk_write_rules_files_help": "オフ (既定) の場合、デーモンは RTK の指示を AGENT.md や CLAUDE.md に書き込みません。代わりにセッションごとの未追跡ファイルに入ります。ルールファイルは人だけが書きます。"
 }
