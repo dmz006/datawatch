@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
+const { pickerRows } = require('./testutil_fake_dom');
 
 const APP_JS = path.join(__dirname, 'app.js');
 const PEER = 'pi-node';
@@ -126,18 +127,18 @@ test('About showing a peer: selecting local re-renders About with the local chip
   s.selectServer(null);
   assert.deepEqual(s.__renders, ['renderSettingsView'], 'About (the Settings render) must re-render');
 
-  // The "local" option (value="") is the selected one; the peer option is not.
-  const bar = s._serverPickerBar({});
+  // The "local" row (data-server-name="") is the active one; the peer row is not.
+  const picker = pickerRows(s);
   const optFor = (name) => {
-    const marker = `value="${name == null ? '' : name}" data-base-label="`;
-    const start = bar.indexOf(marker);
-    assert.ok(start >= 0, `option for "${name}" must be rendered`);
-    return bar.slice(bar.lastIndexOf('<option ', start), bar.indexOf('</option>', start));
+    const row = picker.rowFor(name == null ? '' : name);
+    assert.ok(row, `row for "${name}" must be rendered`);
+    return row;
   };
-  const localOpt = optFor('');
-  assert.ok(localOpt.includes('selected'), `local option must be selected: ${localOpt}`);
-  assert.ok(localOpt.includes('aria-current="true"'), 'active local option must be aria-current');
-  assert.ok(!optFor(PEER).includes('selected'), 'peer option must not be selected');
+  const localRow = optFor('');
+  assert.ok(localRow.classList.contains('is-active'), 'local row must be active');
+  assert.equal(localRow.getAttribute('aria-current'), 'true', 'active local row must be aria-current');
+  assert.ok(!optFor(PEER).classList.contains('is-active'), 'peer row must not be active');
+  assert.equal(optFor(PEER).getAttribute('aria-current'), null, 'peer row must not be aria-current');
 
   // About's version read goes to the local path, not /api/proxy/<peer>/.
   s.loadVersionInfo();

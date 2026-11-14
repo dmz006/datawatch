@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "header dropdown", "switching servers", "Showing:"]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "header server button", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -23,12 +23,12 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by the one header dropdown in the fixed app header:
+Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by one header server picker in the fixed app header (a compact button that opens a picker window):
 
 | Surface | What was added |
 |---------|---------------|
 | PWA Settings → Comms → **Remote Servers** card | Add / edit / delete / test remote server connections |
-| PWA header dropdown | One server selector in the fixed app header, present on every page; it also remembers the entry this browser picked (see [Switch between servers (header dropdown)](#switch-between-servers-header-dropdown), below) |
+| PWA header server button | One compact server button (icon, status dot and short name) in the fixed app header, present on every page; it opens the server picker window and the app remembers the entry this browser picked (see [Switch between servers (header server button)](#switch-between-servers-header-server-button), below) |
 | REST | `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
@@ -53,7 +53,7 @@ Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-vi
 | **Auth** | Bearer token per server | Push token per peer |
 
 You can use both simultaneously: register a server for picking it in the
-header dropdown AND
+header server picker AND
 configure it as a federated peer for push stats.
 
 ## Register a remote server
@@ -70,7 +70,7 @@ configure it as a federated peer for push stats.
 5. Click **Save**.
 
 The server appears in the list immediately and is available in the
-header dropdown on every view.
+header server picker on every view.
 
 ### REST
 
@@ -136,26 +136,44 @@ servers:
 `${secret:nas-token}` resolves from the secrets store at startup so you don't
 store raw tokens in config files.
 
-## Switch between servers (header dropdown)
+## Switch between servers (header server button)
 
-Every page has a **server dropdown** in the fixed app header — a native
-`\<select\>` with `id="serverDropdown"`; on a phone it truncates long names
-with an ellipsis rather than wrapping a row of chips. The entries are:
+Every page has a **server button** in the fixed app header (`id="serverPickerBtn"`).
+It shows a server icon, a small status dot and — on screens wider than a
+phone — the selected server's short name (about 14 characters, then an
+ellipsis); on a phone only the icon and the dot show, so the header never
+wraps or pushes its other controls off screen. The dot tells the choices apart:
+one colour for this server, another for a remote peer, another for **All
+servers**, and the warning colour when the selected peer is not answering.
+The full name is always in the button's tooltip and its accessible name
+(**Server: \<name\>**). Pressing the button opens the **Servers** window — the
+same window the three-finger swipe up opens — with one row per choice:
 
 | Entry | Behaviour |
 |------|-----------|
-| **All servers** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
+| **All** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
 | **This server** (labelled with this daemon's real hostname once `/api/health` resolves it; the generic **This server** word until then — never the word "Local") | Show only this daemon's data (the boot default only while this browser has no saved choice) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-The dropdown is shared by all pages, so **All servers** can be chosen
+While a remote server is selected the window also offers **Back to
+\<hostname\>**, and it always has **+ Add server** (opens Settings → Comms →
+Remote Servers) and **Close**. A **?** link in its title row opens this page.
+
+The window is a proper dialog: keyboard focus moves into it (onto the active
+row, which is marked as the current one for screen readers), **Tab** stays inside
+it, **Escape** or a click outside closes it, and focus returns to the header
+button. Every row is a real button, so the keyboard reaches all of them.
+Picking a row switches server and closes the window.
+
+The button is shared by all pages, so **All servers** can be chosen
 anywhere — but the **Observer** and **Settings** views are the two that have
 no "all servers" form: while **All servers** is the active entry they are
 deliberately not re-rendered, so they keep showing the single server whose
-data they last rendered (operator decision, 2026-10-07).
+data they last rendered (operator decision, 2026-10-07). The Sessions page
+has no server selector of its own any more; use the header button.
 
 The active entry is remembered by the browser, per device (this browser's
-local storage): the dropdown follows you as you navigate between pages, and
+local storage): the button follows you as you navigate between pages, and
 when you reload the page or come back later the same entry is already
 selected — the boot round of data fetches runs against it, so restoring the
 choice costs no second refresh. A saved peer name is validated against the
@@ -167,13 +185,8 @@ daemon's `/api/servers` is down or slow), the PWA also starts on
 **All servers** rather than holding the page open, and keeps that. (With
 local storage blocked the choice simply lives in memory for the page's
 lifetime, as it did before the choice was saved.) It works with any number
-of registered peers — one native entry list, not a chip row, so a roster of
-two or of two hundred is the same control, with long names truncating to an
-ellipsis instead of wrapping the header. Being a native selection control,
-it is fully keyboard-operable (focus it, move through the entries with the
-arrow keys, pick with Enter) and readable by a screen reader, which
-announces it as a dropdown with the current entry and each option,
-including the ` (unreachable)` marker on a peer that is not answering.
+of registered peers — one scrolling list, so a roster of two or of two
+hundred is the same control, with long names truncating instead of wrapping.
 
 ### Switch in place
 
@@ -216,10 +229,12 @@ Behaviours worth knowing:
   contents until you leave them.
 - **\<label\> (unreachable).** A peer whose background reachability check
   failed (a 4-second-capped `/api/proxy/\<name\>/api/health` probe) keeps its
-  entry, suffixed ** (unreachable)** — the entry stays listed and selectable,
-  and choosing it is exactly how the authoritative error surfaces. The marker
-  patches the single entry in place (it never re-renders the whole dropdown
-  mid-interaction).
+  entry, suffixed ** (unreachable)** — the entry stays listed and selectable
+  (never disabled), and choosing it is exactly how the authoritative error
+  surfaces. The marker patches the single row of an open window in place (it
+  never re-renders the whole list mid-interaction, so keyboard focus is not
+  lost), and the header button's dot turns to the warning colour when the
+  selected peer is the one that is not answering.
 - **Back to \<hostname\>.** Extra one-tap ways to return to local data
   (where \<hostname\> is this daemon's own name), in addition to the
   always-present **This server** entry — they all perform the same "go back
@@ -228,10 +243,10 @@ to
   - the error panel, when a remote server cannot be reached and no
     sessions are loaded, offers an explicit **Back to \<hostname\>**
     button;
-  - the **Sessions toolbar** now carries a **server select** in its one-line
-    top bar (an **All servers** entry, **This server**, one entry per
-    peer) — picking **This server** (or any other entry) goes through the
-    same `selectServer()` path as the header dropdown;
+  - the header server button's window lists **This server** and, while a
+    remote server is active, a **Back to \<hostname\>** row — both go through
+    the same `selectServer()` path as every other control (the Sessions
+    toolbar no longer carries a server select of its own);
   - a clickable **🌐 \<name\>** indicator on the line below the Sessions toolbar,
     next to **Tree** and **History** (it lives on the Sessions page
     toolbar, not the one-line top bar) — it appears while a remote server
@@ -273,7 +288,7 @@ data.
 
 ## Proxy mode (specific server)
 
-When you select a named server in the header dropdown, the PWA routes
+When you select a named server in the header server picker, the PWA routes
 through the local
 daemon's proxy:
 

@@ -2961,7 +2961,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   renderServerHeaderLine(); // shared shell: every page gets the stable server line
-  renderServerDropdown();   // …and the header server dropdown stays in sync with every page
+  renderServerDropdown();   // …and the header server button stays in sync with every page
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     if (state.activeSession !== sessionId) _clearImageAttachment();
@@ -7889,21 +7889,18 @@ function renderSessionsSearchRow(filterVal) {
 }
 
 // The one-line toolbar directly under the page header, at every width:
-// [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode] —
-// one flex row that never wraps (flex-wrap: nowrap, the search row is the
-// only flexible member). The search-count line (role=status) stays its own
-// row below the toolbar and is painted fresh on every render, so the
-// sheet-kit's in-place re-paints while the Filters sheet is open never take
-// it away. The server <select> here is the toolbar's own instance
-// (#sessionsServerDropdown, a distinct id — the header's #serverDropdown is
-// never duplicated): same options body, same single onchange →
-// onServerDropdownChange() → selectServer() mutation path, and
-// renderServerDropdown() keeps both instances in lockstep.
+// [search box (flex:1)] [Filters] [fold-all] [view mode] — one flex row that
+// never wraps (flex-wrap: nowrap, the search row is the only flexible member).
+// The server picker is NOT repeated here: the header server button is the one
+// entry point on every page, so this page carries no server <select>. The
+// search-count line (role=status) stays its own row below the toolbar and is
+// painted fresh on every render, so the sheet-kit's in-place re-paints while
+// the Filters sheet is open never take it away.
 function renderSessionsToolbar(filterVal, filtersActive, pool, groupBy, viewMode, total) {
   const count = filtersActive
     ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(pool ? pool.length : 0, total))}</div>`
     : '';
-  return `<div class="sessions-topbar">${_sessionsServerSelectHTML()}${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
+  return `<div class="sessions-topbar">${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
 }
 window.renderSessionsToolbar = renderSessionsToolbar;
 
@@ -16983,9 +16980,9 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // The server picker now lives in the app header (#serverDropdown), so
+  // The server picker now lives in the app header (#serverPickerBtn), so
   // Settings can show/edit a selected remote peer's own config instead of
-  // always being local-only -- the header dropdown is the single picker
+  // always being local-only -- the header server button is the single picker
   // on this page.
 
   // Version-skew audit — fill the general/plugins/comms/compute/automata
@@ -29577,7 +29574,7 @@ function selectServer(name) {
     // Re-render the view the operator is on so its picker bar re-injects
     // with the new active chip highlighted (it used to redraw only Sessions).
     _rerenderActiveViewForServerSwitch();
-    renderServerDropdown(); // keep the header dropdown's highlighted entry on the new server
+    renderServerDropdown(); // keep the header server button on the new server
   }
 }
 
@@ -29738,27 +29735,164 @@ function testServerEntry(name, btnEl) {
     .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = t('server_test_btn')||'Test'; } });
 }
 
-// ── BL312 S3 — Header server dropdown ─────────────────────────────────────────
-// One native <select> in the app header (#serverDropdown) replaces the old
-// per-panel chip row (.server-picker-bar) and the Sessions topbar slot
-// (.sessions-topbar-servers): it shows the current server plus "All" and
-// every enabled peer on every page — phone and wide screen alike (the
-// native control truncates long names instead of wrapping a row of chips) —
-// and a single generic onchange covers every choice, so choosing an entry
-// goes through selectServer() exactly as the chips did.
+// ── Header server button ──────────────────────────────────────────────────────
+// One compact button in the app header (#serverPickerBtn: icon + status dot
+// #serverPickerDot + short name #serverPickerName) is the entry point to the
+// server picker on every page — phone and wide screen alike. It replaces the
+// old wide native server <select> and the Sessions toolbar's own
+// second <select>: the button shows the current server at a glance and opens
+// the one server picker modal (openServerPickerModal), the same modal the
+// three-finger swipe-up gesture opens. Choosing a row goes through
+// selectServer(), the single mutation path every other control also uses
+// (Back to local chips, the Settings servers list, the federated error panel).
 //
-// The server name travels in the option's value attribute (escHtml-escaped,
-// read by the one shared handler via this.value), so a hostile peer name
-// (quotes, <, >, …) can never truncate or break an inline handler.
-// Reachability status is patched onto the matching option by matching the
-// option's own value / dataset values -- never by building a CSS selector
-// from the server name.
+// renderServerDropdown() is the one sync entry point: navigate(),
+// selectServer() and the hostname / reachability callbacks all call it, and it
+// updates the button's dot, short name, title, aria-label and aria-expanded.
 //
-// The swipe-gesture modal (openServerPickerModal) still works off the same
-// state/endpoint and calls the same selectServer() as the dropdown. The
-// "Back to local" controls, the Settings servers-list button and the
-// federated error-panel button are unchanged -- every entry point goes
-// through the single selectServer().
+// Server names reach the DOM only through escHtml'd attributes and text, and
+// reachability is patched onto rows by comparing each row's own data attribute
+// to the name -- never by building a CSS selector from a server name.
+
+// ── Shared header modal helpers ───────────────────────────────────────────────
+// Every modal opened from a header button (the server picker today, the scope
+// modal built on the same helpers later) goes through _headerModalShow /
+// _headerModalHide so they all behave the same: an overlay on the existing
+// .confirm-modal-overlay / .confirm-modal classes with role="dialog",
+// aria-modal="true" and aria-labelledby; keyboard focus moves into the dialog
+// (the active row, else the first button); Tab is trapped inside; Escape and a
+// click on the backdrop close it; the document keydown listener is removed on
+// close; and focus returns to the opener button, whose aria-expanded is reset.
+const _headerModalState = {};   // id -> { overlay, onKey, openerId, onClose, prevFocus, initialFocus }
+const _headerModalStack = [];   // open modal ids, topmost last (only the topmost reacts to keys)
+const _HEADER_MODAL_FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function _headerModalIsOpen(id) { return !!_headerModalState[id]; }
+
+function _headerModalFocusables(overlay) {
+  if (!overlay || typeof overlay.querySelectorAll !== 'function') return [];
+  return Array.from(overlay.querySelectorAll(_HEADER_MODAL_FOCUSABLE));
+}
+
+// Moves focus to the active row (aria-current), else the first button, else
+// the dialog itself; returns the element focused (or null).
+function _headerModalFocusInitial(id) {
+  const st = _headerModalState[id];
+  if (!st || !st.overlay) return null;
+  const ov = st.overlay;
+  let el = null;
+  if (typeof ov.querySelector === 'function') {
+    el = ov.querySelector('[aria-current="true"]') || ov.querySelector('button')
+      || ov.querySelector('[role="dialog"]');
+  }
+  if (el && typeof el.focus === 'function') { try { el.focus(); } catch (_) { /* detached */ } }
+  st.initialFocus = el;
+  return el;
+}
+
+// After an async body paint (the server list arriving late): move focus to the
+// active row again, but only while focus is still where _headerModalShow put it
+// or has fallen out of the dialog -- never steal it from an operator who has
+// already tabbed somewhere inside.
+function _headerModalRefocus(id) {
+  const st = _headerModalState[id];
+  if (!st || !st.overlay) return;
+  const cur = (typeof document !== 'undefined') ? document.activeElement : null;
+  const inside = !!(cur && typeof st.overlay.contains === 'function' && st.overlay.contains(cur));
+  if (!cur || cur === st.initialFocus || !inside) _headerModalFocusInitial(id);
+}
+
+function _headerModalOnKey(id, e) {
+  const st = _headerModalState[id];
+  if (!st || _headerModalStack[_headerModalStack.length - 1] !== id || !e) return;
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    _headerModalHide(id);
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const items = _headerModalFocusables(st.overlay);
+  if (!items.length) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const cur = document.activeElement;
+  const inside = items.indexOf(cur) !== -1;
+  if (e.shiftKey) {
+    if (!inside || cur === first) { if (typeof e.preventDefault === 'function') e.preventDefault(); last.focus(); }
+  } else if (!inside || cur === last) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    first.focus();
+  }
+}
+
+// _headerModalShow({id, titleId, titleText, bodyHtml, openerId, onClose, ...})
+//   id          overlay element id (one open modal per id; re-showing replaces it)
+//   titleId     id of the title element (aria-labelledby target; default id+'Title')
+//   titleText   plain text title (escaped here)
+//   bodyHtml    trusted, already-escaped HTML for the dialog body
+//   openerId    id of the header button that opened it (aria-expanded + focus return)
+//   onClose     optional callback run after the modal is hidden
+//   titleExtraHtml / footerHtml / closeOnclick / maxWidth   optional extras
+// Returns the overlay element.
+function _headerModalShow(opts) {
+  opts = opts || {};
+  const id = opts.id;
+  if (!id || typeof document === 'undefined' || !document.createElement) return null;
+  if (_headerModalState[id]) _headerModalHide(id, { restoreFocus: false });
+  const titleId = opts.titleId || (id + 'Title');
+  const closeCode = opts.closeOnclick || ('_headerModalHide(' + JSON.stringify(id) + ')');
+  const overlay = document.createElement('div');
+  overlay.id = id;
+  overlay.className = 'confirm-modal-overlay';
+  overlay.innerHTML = `<div class="confirm-modal header-modal" role="dialog" aria-modal="true" aria-labelledby="${escHtml(titleId)}" tabindex="-1" style="max-width:${escHtml(opts.maxWidth || '320px')};">
+    <div class="header-modal-title-row"><span id="${escHtml(titleId)}" class="header-modal-title">${escHtml(opts.titleText || '')}</span>${opts.titleExtraHtml || ''}</div>
+    ${opts.bodyHtml || ''}
+    <div class="header-modal-footer">${opts.footerHtml || '<span></span>'}<button type="button" class="btn-secondary header-modal-btn header-modal-close" onclick="${escHtml(closeCode)}">${escHtml(t('header_modal_close') || 'Close')}</button></div>
+  </div>`;
+  const st = {
+    overlay, openerId: opts.openerId || '', onClose: opts.onClose,
+    prevFocus: document.activeElement || null, onKey: null, initialFocus: null,
+  };
+  st.onKey = (e) => _headerModalOnKey(id, e);
+  overlay.addEventListener('click', e => { if (e.target === overlay) _headerModalHide(id); });
+  document.addEventListener('keydown', st.onKey);
+  document.body.appendChild(overlay);
+  _headerModalState[id] = st;
+  _headerModalStack.push(id);
+  const opener = st.openerId ? document.getElementById(st.openerId) : null;
+  if (opener && typeof opener.setAttribute === 'function') opener.setAttribute('aria-expanded', 'true');
+  _headerModalFocusInitial(id);
+  return overlay;
+}
+
+// _headerModalHide(id) — closes the modal; idempotent. Removes the overlay and
+// the document keydown listener, resets the opener's aria-expanded and returns
+// focus to it (opts.restoreFocus === false skips the focus move).
+function _headerModalHide(id, opts) {
+  if (typeof document === 'undefined') return;
+  const st = _headerModalState[id];
+  const overlay = st ? st.overlay : (document.getElementById ? document.getElementById(id) : null);
+  if (st) {
+    try { document.removeEventListener('keydown', st.onKey); } catch (_) { /* detached */ }
+    delete _headerModalState[id];
+    const i = _headerModalStack.lastIndexOf(id);
+    if (i >= 0) _headerModalStack.splice(i, 1);
+  }
+  if (overlay && typeof overlay.remove === 'function') overlay.remove();
+  if (!st) return;
+  const opener = st.openerId ? document.getElementById(st.openerId) : null;
+  if (opener && typeof opener.setAttribute === 'function') opener.setAttribute('aria-expanded', 'false');
+  if (!(opts && opts.restoreFocus === false)) {
+    const target = opener || st.prevFocus;
+    if (target && typeof target.focus === 'function') { try { target.focus(); } catch (_) { /* detached */ } }
+  }
+  if (typeof st.onClose === 'function') { try { st.onClose(); } catch (_) { /* a callback must never break closing */ } }
+}
+window._headerModalShow = _headerModalShow;
+window._headerModalHide = _headerModalHide;
 
 function _pickerServers() {
   const raw = (state.servers && Array.isArray(state.servers.servers))
@@ -29858,44 +29992,6 @@ function _serverChoiceSettleBoot() {
   });
 }
 
-// Returns the <select id="serverDropdown"> markup for the header dropdown.
-// opts.hideAll (Settings/Observer parity) omits the "All" option; with
-// hideAll and no configured peers there is nothing to show at all.
-// Unreachable peers stay listed (never removed -- a temporarily down host
-// must not look like it doesn't exist) and stay selectable: choosing one is
-// exactly how the authoritative error surfaces.
-// Returns ONLY the inner <option>…</option> body for the header dropdown.
-// Kept separate from _serverPickerBar so a surface that already has a
-// <select id="serverDropdown"> in the DOM (index.html) can fill just the
-// options without nesting a select inside a select.
-function _serverOptionsHtml(opts) {
-  const servers = _pickerServers();
-  const selVal = state.activeServer === 'all' ? 'all' : (state.activeServer || '');
-  // GH#194 — the "this server" option shows the real hostname (lazy-resolved
-  // from /api/health by _ensureLocalHostname below), never the word "Local".
-  const localLabel = _localHostname || t('server_local_label') || 'This server';
-  const unreachableSuffix = ' ' + (t('server_dropdown_unreachable') || '(unreachable)');
-  const options = [];
-  if (!(opts && opts.hideAll)) options.push({ value: 'all', label: t('server_dropdown_all') || 'All servers' });
-  options.push({ value: '', label: localLabel });
-  servers.forEach(s => options.push({ value: s.name, label: s.label || s.name }));
-  return options.map(o => {
-    const unreachable = !!(o.value && o.value !== 'all' && _serverReachability[o.value] === false);
-    return `<option value="${escHtml(o.value)}" data-base-label="${escHtml(o.label)}" data-reachability="${unreachable ? 'down' : 'unknown'}"${o.value === selVal ? ' selected aria-current="true"' : ''}>${escHtml(o.label)}${unreachable ? escHtml(unreachableSuffix) : ''}</option>`;
-  }).join('');
-}
-
-// Returns the full <select id="serverDropdown"> markup for the header
-// dropdown. opts.hideAll (Settings/Observer parity) omits the "All"
-// option; with hideAll and no configured peers there is nothing to show at
-// all. Unreachable peers stay listed (never removed -- a temporarily down
-// host must not look like it doesn't exist) and stay selectable: choosing
-// one is exactly how the authoritative error surfaces.
-function _serverPickerBar(opts) {
-  if ((opts && opts.hideAll) && !_pickerServers().length) return '';
-  return '<select id="serverDropdown" class="server-dropdown" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml(opts) + '</select>';
-}
-
 // _serverReachability[name] is undefined (unknown/checking), true, or
 // false -- persists for the page session so re-rendering the dropdown
 // (e.g. switching views) doesn't re-probe hosts already resolved.
@@ -29922,44 +30018,26 @@ function _probePickerReachability(servers) {
       });
   });
 }
-// The two live picker instances: the header #serverDropdown and, when the
-// Sessions toolbar is painted, its own #sessionsServerDropdown. A missing
-// id drops out (an unpainted shell); a test stub stays a no-op.
-function _pickerDropdownEls() {
-  if (typeof document === 'undefined' || !document.getElementById) return [];
-  return ['serverDropdown', 'sessionsServerDropdown']
-    .map(id => { try { return document.getElementById(id); } catch (_) { return null; } })
-    .filter(el => el && typeof el.querySelectorAll === 'function');
-}
-window._pickerDropdownEls = _pickerDropdownEls;
-
-// The Sessions toolbar's own instance of the same server picker — a
-// distinct id (#sessionsServerDropdown; the header's #serverDropdown is
-// never duplicated), the same options body and the same single onchange →
-// onServerDropdownChange() → selectServer() mutation path.
-function _sessionsServerSelectHTML() {
-  return '<select id="sessionsServerDropdown" class="server-dropdown sessions-server-select" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml() + '</select>';
-}
-window._sessionsServerSelectHTML = _sessionsServerSelectHTML;
-
-// Patches ONLY the one option whose probe just resolved -- never a full
-// dropdown re-render, so an in-progress operator interaction is never
-// disturbed by a probe landing late. Matches on the option's own value /
-// dataset values -- never by building a CSS selector from the name.
+// Late reachability probe landed for `name`: refresh the header button (the
+// dot turns to the warning colour for an unreachable selected peer) and patch
+// ONLY the matching row of an open server picker modal -- never a re-render,
+// so a probe landing late never steals keyboard focus from the operator.
+// Rows are matched by comparing each row's own data-server-name attribute to
+// the name -- never by building a CSS selector from the name. Unreachable rows
+// get the "(unreachable)" suffix and data-reachability="down" and are NEVER
+// disabled: choosing one is exactly how the authoritative error surfaces.
 function _updatePickerOptionReachability(name) {
-  const sels = _pickerDropdownEls();
-  if (!sels.length) return;
+  renderServerDropdown();
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const listEl = document.getElementById('serverPickerModalList');
+  if (!listEl || typeof listEl.querySelectorAll !== 'function') return;
   const unreachable = _serverReachability[name] === false;
   const suffix = unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '';
-  sels.forEach(sel => {
-    Array.from(sel.querySelectorAll('option'))
-      .filter(o => o && o.value === name)
-      .forEach(o => {
-        const base = (o.dataset && o.dataset.baseLabel)
-          || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
-        o.textContent = base + suffix;
-        if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
-      });
+  Array.from(listEl.querySelectorAll('button')).forEach(row => {
+    if (!row || typeof row.getAttribute !== 'function' || row.getAttribute('data-server-name') !== name) return;
+    row.setAttribute('data-reachability', unreachable ? 'down' : 'unknown');
+    const suf = typeof row.querySelector === 'function' ? row.querySelector('[data-role="suffix"]') : null;
+    if (suf) suf.textContent = suffix;
   });
 }
 
@@ -30060,34 +30138,55 @@ function _onServerListReady(fn) {
   loadServerListEager();
 }
 
-// Renders (or re-renders) the header dropdown from current state and syncs
-// its value to state.activeServer ('all' / a peer name / '' = this server).
-// No-op when the select isn't in the DOM (e.g. an older cached shell or a
-// test harness without the header markup).
-function renderServerDropdown() {
-  if (typeof document === 'undefined' || !document.getElementById) return;
-  // Keep the two live picker instances (header #serverDropdown and the
-  // Sessions toolbar's #sessionsServerDropdown) in lockstep — every
-  // navigation, server-list refresh and reachability probe updates both.
-  _pickerDropdownEls().forEach(sel => {
-    try {
-      // Fill the existing <select> with its options only (never a nested
-      // <select> — one instance per slot, options rebuilt in place).
-      sel.innerHTML = _serverOptionsHtml();
-      if (sel.style) sel.style.display = '';
-      if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
-    } catch (_) { /* a partial shell must never break navigation */ }
-  });
+// Short label for the header button: about 14 characters with an ellipsis; the
+// full name always stays in the title and aria-label.
+const SERVER_BTN_NAME_MAX = 14;
+function _serverShortName(name) {
+  const s = String(name == null ? '' : name);
+  return s.length > SERVER_BTN_NAME_MAX ? s.slice(0, SERVER_BTN_NAME_MAX - 1) + '\u2026' : s;
 }
 
-// The single generic change handler: the selected name arrives in `value`
-// (never inline-built per server), so no hostile peer name can break it.
-// '' = this server (local), 'all' = federated aggregate, anything else =
-// that peer. Delegates to the one selectServer() every other entry point
-// uses.
-function onServerDropdownChange(value) {
-  selectServer(value === 'all' ? 'all' : (value || null));
+// The selected server as the header button describes it: kind ('all' | 'local'
+// | 'peer'), its full display name, and whether a selected peer is currently
+// unreachable (per _serverReachability).
+function _serverButtonInfo() {
+  const active = state.activeServer;
+  if (active === 'all') {
+    return { kind: 'all', name: t('server_dropdown_all') || 'All servers', short: t('server_all_label') || 'All', unreachable: false };
+  }
+  if (!active) {
+    const local = _localHostname || t('server_local_label') || 'This server';
+    return { kind: 'local', name: local, short: local, unreachable: false };
+  }
+  const peer = _pickerServers().find(s => s.name === active);
+  const label = (peer && (peer.label || peer.name)) || active;
+  return { kind: 'peer', name: label, short: label, unreachable: _serverReachability[active] === false };
 }
+
+// Syncs the header server button from current state (the one sync entry
+// point; idempotent). No-op when the button isn't in the DOM (an older cached
+// shell or a test harness without the header markup).
+function renderServerDropdown() {
+  if (typeof document === 'undefined' || !document.getElementById || typeof state === 'undefined') return;
+  try {
+    const btn = document.getElementById('serverPickerBtn');
+    if (!btn) return;
+    const info = _serverButtonInfo();
+    const full = info.name + (info.unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '');
+    const label = t('header_server_button_label', [full]) || ('Server: ' + full);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', full);
+    btn.setAttribute('aria-expanded', _headerModalIsOpen('serverPickerModal') ? 'true' : 'false');
+    const dot = document.getElementById('serverPickerDot');
+    if (dot) {
+      dot.className = 'header-server-dot is-' + (info.unreachable ? 'down' : (info.kind === 'peer' ? 'peer' : info.kind));
+      if (dot.dataset) dot.dataset.kind = info.kind;
+    }
+    const nm = document.getElementById('serverPickerName');
+    if (nm) nm.textContent = _serverShortName(info.short);
+  } catch (_) { /* a partial shell must never break navigation */ }
+}
+
 // ── Signal Device Linking ──────────────────────────────────────────────────────
 
 function loadLinkStatus() {
@@ -52258,27 +52357,39 @@ if (window.visualViewport) {
 // phone-specific shortcut to the same action set, now in a real overlay
 // instead of a scroll+pulse, and it no longer no-ops with zero
 // configured servers). Reuses the same selectServer()/state.servers
-// source _serverPickerBar() already uses -- no duplicate fetch, no
+// source the header server button uses -- no duplicate fetch, no
 // duplicate server-list logic.
 function openServerPickerModal() {
-  const existing = document.getElementById('serverPickerModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'serverPickerModal';
-  modal.className = 'confirm-modal-overlay';
-  modal.innerHTML = `<div class="confirm-modal" style="max-width:320px;">
-    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">${escHtml(t('server_picker_modal_title') || 'Servers')}</div>
-    <div id="serverPickerModalList" style="display:flex;flex-direction:column;gap:6px;">${loadingEyeBlock()}</div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px;">
-      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="_openAddServerFromPicker()">+ ${escHtml(t('server_picker_add') || 'Add server')}</button>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="document.getElementById('serverPickerModal').remove()">${escHtml(t('action_close') || 'Close')}</button>
-    </div>
-  </div>`;
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  document.body.appendChild(modal);
+  _headerModalShow({
+    id: 'serverPickerModal',
+    titleId: 'serverPickerModalTitle',
+    titleText: t('server_picker_modal_title') || 'Servers',
+    titleExtraHtml: _serverPickerHelpLink(),
+    bodyHtml: `<div id="serverPickerModalList" class="server-picker-list" role="group" aria-labelledby="serverPickerModalTitle">${loadingEyeBlock()}</div>`,
+    footerHtml: `<button type="button" class="btn-secondary header-modal-btn" onclick="_openAddServerFromPicker()">+ ${escHtml(t('server_picker_add') || 'Add server')}</button>`,
+    closeOnclick: 'closeServerPickerModal()',
+    openerId: 'serverPickerBtn',
+  });
   _loadServerPickerModalList();
 }
 window.openServerPickerModal = openServerPickerModal;
+
+// The one close path for the server picker modal: the Close button, a row
+// click, back-to-local, add-server, Escape and the backdrop all end here (the
+// last two via the shared helper), so focus always returns to the header
+// server button and aria-expanded is always reset.
+function closeServerPickerModal() {
+  _headerModalHide('serverPickerModal');
+}
+window.closeServerPickerModal = closeServerPickerModal;
+
+// The '?' help anchor in the modal title row. Follows the
+// automataEventsHelpLink pattern and opens the multi-servers how-to in the
+// in-app docs viewer; the label comes from the locale key.
+function _serverPickerHelpLink() {
+  const label = t('header_server_help_label') || 'Help';
+  return `<a class="header-modal-help" href="/diagrams.html#docs/howto/multi-servers.md" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}">?</a>`;
+}
 
 function _loadServerPickerModalList() {
   const listEl = document.getElementById('serverPickerModalList');
@@ -52291,30 +52402,53 @@ function _loadServerPickerModalList() {
       : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
     const active = state.activeServer || null;
     // Always offers All + this server, even with zero remote servers
-    // configured -- the one thing the old scroll+highlight approach
-    // could never do. GH#194 -- never literally "Local"; real hostname
-    // once _ensureLocalHostname resolves (kicked off below).
+    // configured. GH#194 -- never literally "Local"; real hostname once
+    // _ensureLocalHostname resolves (kicked off below).
     const chips = [
       { name: 'all', label: t('server_all_label') || 'All' },
       { name: null, label: _localHostname || t('server_local_label') || 'This server' },
       ...servers.map(s => ({ name: s.name, label: s.label || s.name })),
     ];
+    const unreachableText = ' ' + (t('server_dropdown_unreachable') || '(unreachable)');
+    // Remember which row holds keyboard focus so a repaint (the hostname
+    // arriving late) puts it back instead of dropping it to <body>.
+    let focusKey = null;
+    try {
+      const ae = document.activeElement;
+      if (ae && typeof ae.getAttribute === 'function' && typeof el.contains === 'function' && el.contains(ae)) {
+        focusKey = ae.getAttribute('data-back-to-local') ? '\u0000back' : ae.getAttribute('data-server-name');
+      }
+    } catch (_) { focusKey = null; }
+    // Rows are real <button>s (keyboard reachable) with aria-current on the
+    // active one. An unreachable peer stays listed and selectable (never
+    // disabled): choosing it is how the authoritative error surfaces.
     el.innerHTML = chips.map(c => {
       const isActive = c.name === active;
-      return `<button data-server-name="${escHtml(c.name || '')}" onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
+      const down = !!(c.name && c.name !== 'all' && _serverReachability[c.name] === false);
+      const call = `selectServer(${c.name ? JSON.stringify(c.name) : 'null'});closeServerPickerModal();`;
+      return `<button type="button" class="server-picker-row${isActive ? ' is-active' : ''}" data-server-name="${escHtml(c.name || '')}" data-reachability="${down ? 'down' : 'unknown'}"${isActive ? ' aria-current="true"' : ''} onclick="${escHtml(call)}"><span class="server-picker-row-mark" aria-hidden="true">${isActive ? '\u25CF' : '\u25CB'}</span><span class="server-picker-row-label">${escHtml(c.label)}</span><span class="server-picker-row-suffix" data-role="suffix">${down ? escHtml(unreachableText) : ''}</span></button>`;
     }).join('') + ((active && active !== 'all')
-      ? `<button data-back-to-local="1" onclick="${escHtml(`selectServer(null);document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--text);cursor:pointer;">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
+      ? `<button type="button" class="server-picker-row is-back" data-back-to-local="1" onclick="${escHtml('selectServer(null);closeServerPickerModal();')}">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
       : '');
+    // Put keyboard focus back on the row it was on (or, on first paint, on
+    // the active row).
+    let restored = false;
+    if (focusKey !== null && typeof el.querySelectorAll === 'function') {
+      const rows = Array.from(el.querySelectorAll('button'));
+      const hit = rows.find(r => (focusKey === '\u0000back')
+        ? !!r.getAttribute('data-back-to-local')
+        : (!r.getAttribute('data-back-to-local') && r.getAttribute('data-server-name') === focusKey));
+      if (hit && typeof hit.focus === 'function') { hit.focus(); restored = true; }
+    }
+    if (!restored) _headerModalRefocus('serverPickerModal');
     // GH#194 -- re-render (not a text-patch) once the real hostname
-    // resolves, so the "● "/"○ " active-marker prefix this modal's
-    // markup carries is rebuilt correctly rather than clobbered by a
-    // blind textContent overwrite. Only registers a waiter while the
-    // hostname is still unknown -- once known, render() already used
-    // it above, so there's nothing to wait for.
+    // resolves, so the active-marker prefix this modal's markup carries is
+    // rebuilt correctly rather than clobbered by a blind textContent
+    // overwrite. Only registers a waiter while the hostname is still unknown.
     if (!_localHostname) _ensureLocalHostname(render);
   };
   if (state.servers === undefined) {
-    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-dim,#888);padding:8px 10px;">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;
+    listEl.innerHTML = `<div class="server-picker-loading">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;
     _onServerListReady(render);
     loadServerListEager();
   } else {
@@ -52328,8 +52462,7 @@ function _loadServerPickerModalList() {
 // that form's DOM only exists on the Settings page, so it can't be
 // reused in place from an arbitrary other view.
 function _openAddServerFromPicker() {
-  const modal = document.getElementById('serverPickerModal');
-  if (modal) modal.remove();
+  closeServerPickerModal();
   _settingsTab = 'comms';
   localStorage.setItem('cs_settings_tab', 'comms');
   navigate('settings');

@@ -4,10 +4,11 @@
  * Dashboard pages.
  *
  * The Sessions page toolbar introduced the one-line toolbar pattern: a
- * page's server select, its search input (taking the free width) and the
- * page's compact controls sit on one non-wrapping line under the page
- * header (see .sessions-topbar in style.css; the Sessions page builds it
- * in app.js with id="sessionsServerDropdown").
+ * page's search input (taking the free width) and the page's compact
+ * controls sit on one non-wrapping line under the page header (see
+ * .sessions-topbar in style.css). The server picker is not part of that line:
+ * the shared header server button (#serverPickerBtn) is the one entry point on
+ * every page, so no page carries a server select of its own.
  *
  * The rule was inspected for the four other pages and its fallback applies
  * on each of them: when a page has no search/filter at the page level, or
@@ -15,9 +16,9 @@
  * the page is left unchanged and the reason is recorded in a code comment
  * next to the page's header render:
  *
- *   Alerts    — has the shared header server select and always-visible
+ *   Alerts    — has the shared header server button and always-visible
  *               search/filter controls, but the five labelled filter chips
- *               + search + sort + icon buttons + server select exceed one
+ *               + search + sort + icon buttons exceed one
  *               phone-width line → unchanged.
  *   Automata  — search/filter live only in the ⊞-toggled filter bar (a
  *               sheet, its logic unchanged); no always-visible
@@ -110,9 +111,9 @@ for (const p of PAGES) {
     assert.ok(commentIdx < headerIdx, `${p.page}: comment sits next to (above) the header render`);
   });
 
-  test(`${p.page}: page left unchanged (no Sessions topbar pattern, no new server select)`, () => {
+  test(`${p.page}: page left unchanged (no Sessions topbar pattern, no server select)`, () => {
     const body = fnBody(appSrc, p.fn);
-    for (const s of ['sessions-topbar', 'ServerDropdown', 'serverDropdown', '_sessionsServerSelectHTML']) {
+    for (const s of ['sessions-topbar', 'ServerDropdown', 'serverDropdown', '_sessionsServerSelectHTML', 'sessions-server-select']) {
       assert.ok(!body.includes(s), `${p.page}: no Sessions toolbar pattern/selector in the page render (found ${s})`);
     }
   });
@@ -136,23 +137,19 @@ test('Sessions topbar rule itself is intact in style.css', () => {
   assert.match(search[0], /flex:\s*1/, 'search takes the free width');
   assert.match(search[0], /min-width:\s*0/, 'search row may shrink, never wrap');
 
-  const select = cssSrc.match(/\.sessions-topbar \.sessions-server-select \{[^}]*\}/);
-  assert.ok(select, 'topbar server select rule present');
-  assert.match(select[0], /flex:\s*0\s*0\s*auto/, 'server select is icon-sized (fixed)');
-  assert.match(select[0], /max-width:\s*40%/, 'server select capped on phones');
+  // The Sessions page carries no server select, so no rule for one remains.
+  assert.ok(!/sessions-server-select/.test(cssSrc), 'no .sessions-server-select rule remains in style.css');
 });
 
 test('Sessions page still renders the one-line toolbar', () => {
-  assert.match(appSrc, /<select[^>]*id="sessionsServerDropdown"[^>]*>/, 'sessions server select present');
+  assert.ok(!/id="sessionsServerDropdown"/.test(appSrc), 'sessions page has no server select');
   const bar = fnBody(appSrc, 'renderSessionsToolbar');
   assert.match(bar, /<div class="sessions-topbar">/, 'sessions topbar line present');
   const divIdx = bar.indexOf('<div class="sessions-topbar">');
   const line = bar.slice(divIdx);
-  const selIdx = line.indexOf('_sessionsServerSelectHTML()');
   const searchIdx = line.indexOf('renderSessionsSearchRow');
   const viewIdx = line.indexOf('_sessionsViewSelectHTML');
-  assert.ok(selIdx !== -1 && searchIdx !== -1 && viewIdx !== -1,
-    'server select, search and view select all on the line');
-  assert.ok(selIdx < searchIdx && searchIdx < viewIdx,
-    'control order: server select, then search (free width), then compact controls');
+  assert.ok(searchIdx !== -1 && viewIdx !== -1, 'search and view select are on the line');
+  assert.ok(!line.includes('_sessionsServerSelectHTML'), 'the line carries no server select');
+  assert.ok(searchIdx < viewIdx, 'control order: search (free width), then compact controls');
 });

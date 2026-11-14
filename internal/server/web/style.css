@@ -179,35 +179,109 @@ body {
   padding-top: env(safe-area-inset-top, 0);
 }
 
-/* BL312 S3 (2026-11-12) — header server dropdown (successor to the per-panel
-   .server-picker-bar chip row + the Sessions topbar slot). Fits the fixed
-   flex header on every width: compact, truncates long peer names instead of
-   wrapping, and hands keyboard/selection to the native control. */
-.server-dropdown {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 40%;
-  width: auto;
-  height: calc(var(--header-h) - 14px);
-  max-height: 34px;
-  padding: 0 26px 0 10px;
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
+/* Header server button: icon + status dot + short name, opens the server
+   picker modal. The header stays on one non-wrapping line at every width:
+   the button is a fixed-content flex item (never grows, never shrinks below
+   its icon+dot), and #headerTitle takes all spare space. Below the phone
+   breakpoint only the icon and the dot show; the short name (capped at about
+   14 characters, ellipsis) shows on wider screens. Hit target matches the
+   other header controls (44px). */
+.header > .header-server-btn {
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 4px;
+  margin: 0;
+  background: transparent;
+  border: none;
   border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
+}
+.header-server-btn:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.header-server-btn[aria-expanded="true"] { background: var(--bg3, var(--bg)); }
+.header-server-icon { display: block; flex: none; }
+.header-server-name {
+  display: inline-block;
+  max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
-  appearance: auto;
+  white-space: nowrap;
 }
-.server-dropdown:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+/* Status dot — colour from theme tokens only. */
+.header-server-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.header-server-dot.is-local { background: var(--success); }
+.header-server-dot.is-peer { background: var(--accent); }
+.header-server-dot.is-all { background: var(--accent2); }
+.header-server-dot.is-down { background: var(--warning); }
+@media (max-width: 600px) {
+  .header-server-name { display: none; }
+}
+
+/* Shared header modal (server picker today; the scope modal reuses it): the
+   dialog sits on the existing .confirm-modal-overlay / .confirm-modal. */
+.header-modal:focus { outline: none; }
+.header-modal-title-row { display: flex; align-items: center; gap: 4px; margin-bottom: 10px; }
+.header-modal-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.header-modal-help {
+  color: var(--text2);
+  text-decoration: none;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin-left: 4px;
+}
+.header-modal-help:focus-visible,
+.header-modal-btn:focus-visible,
+.server-picker-row:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.header-modal-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.header-modal-btn { font-size: 12px; padding: 4px 12px; }
+.server-picker-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.server-picker-loading { font-size: 12px; color: var(--text2); padding: 8px 10px; }
+.server-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3, var(--bg));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.server-picker-row.is-active { background: var(--accent2); color: #fff; font-weight: 600; }
+.server-picker-row.is-back { border-style: dashed; background: transparent; }
+.server-picker-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server-picker-row-suffix { flex: none; font-size: 11px; color: var(--warning); white-space: nowrap; }
+.server-picker-row.is-active .server-picker-row-suffix { color: inherit; }
 
 .header-title {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   font-size: 16px;
   font-weight: 700;
@@ -8079,14 +8153,13 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @media (prefers-reduced-motion: reduce) { .sessions-sheet { animation: none !important; } }
 
 /* ── Sessions one-line toolbar: one row, never wraps at any width ──────
-   [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode]
+   [search box (flex:1)] [Filters] [fold-all] [view mode]
    — display:flex without flex-wrap at every width; the search row is the
    only flexible member (flex:1, min-width:0) so it absorbs the slack while
-   the four fixed controls keep a usable size (bounded max-widths +
+   the fixed controls keep a usable size (bounded max-widths +
    shrinking select text). The search + active-filter count stay on their
    own row below the toolbar. */
 .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
-.sessions-topbar .sessions-server-select { flex: 0 0 auto; min-width: 84px; max-width: 40%; font-size: 12px; }
 .sessions-topbar .sessions-search-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
 .sessions-topbar .sessions-search-row .session-filter-input { padding: 5px 26px 5px 8px; font-size: 12px; }
@@ -8100,7 +8173,6 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 
 @media (max-width: 640px) {
   .sessions-topbar { gap: 4px; padding: 4px 8px; }
-  .sessions-topbar .sessions-server-select { min-width: 64px; max-width: 34%; }
   .sessions-topbar .sessions-view-select { max-width: 30%; }
 }
 

@@ -39,7 +39,7 @@ a **view mode select** with the three modes **List / Tiles / Compact**. One
 line below the toolbar, the **Tree** and **History** buttons sit with the
 clickable **🌐 <name>** indicator that appears only while a federated server
 is the active one and returns you to this server when clicked (see
-[multi-servers](multi-servers.md#switch-between-servers-header-dropdown)). Behind the Filters
+[multi-servers](multi-servers.md#switch-between-servers-header-server-button)). Behind the Filters
 button sit the grouping and saved-view controls. Three independent dials come out
 of that:
 
@@ -102,8 +102,7 @@ per-device UI preference or a read-only API parameter.
 ## Setup
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
-one-line toolbar is already at the top of the list: the **server select**,
-the search box, the **Filters** button and the **view mode select** (List /
+one-line toolbar is already at the top of the list: the search box, the **Filters** button and the **view mode select** (List /
 Tiles / Compact), plus the **Fold all** button while a grouping is active. The
 **Tree** and **History** buttons sit on the line below the toolbar, with
 the 🌐 indicator while a federated server is the active one — that line
@@ -122,18 +121,16 @@ If you only need one of the three, jump to the matching section:
 ## The toolbar row
 
 Everything you need to find sessions sits in one non-splitting line at the
-top of the page, at any width, in this order: **server select**, **search**,
+top of the page, at any width, in this order: **search**,
 **Filters**, **Fold all** (while grouping) and the **view mode select**:
 
-- **Server select** — the line starts with the Sessions page's own server
-dropdown (an **All servers** entry, **This server**, and one entry per
-enabled peer; a peer whose reachability check failed is marked
-`(unreachable)`): picking an entry re-renders the page you're on against
-that server (its sessions, its counts, its search text), and picking the
-active one is a no-op. It is the same shared picker as the header dropdown
-— choosing an entry in one updates the other, and both ride on the one
-page-wide selection. See [multi-servers: Switch between
-servers](multi-servers.md#switch-between-servers-header-dropdown).
+- **No server select here** — the server picker is the header's server
+  button, on every page: it opens a window listing **All**, **This server**
+  and one row per enabled peer (a peer whose reachability check failed is
+  marked `(unreachable)`). Picking a row re-renders the page you're on against
+  that server (its sessions, its counts, its search text), and picking the
+  active one is a no-op. See [multi-servers: Switch between
+  servers](multi-servers.md#switch-between-servers-header-server-button).
 - **Search box** — type to narrow the list. It matches a session's name, its
   id, its backend, its tag text and its state, so `claude`, `a1f2`,
   `automation:` or `waiting` all work. While a search is active the page
@@ -151,7 +148,7 @@ toggle. Described next under [View modes](#view-modes).
 - **One line below the toolbar** — the **Tree** and **History** buttons sit
   on their own line, with the clickable **🌐 <name>** indicator while a
   federated server is the active one: clicking it returns you to this
-  server (picking **This server** in either server dropdown does the same).
+  server (picking **This server** in the header server picker does the same).
   That line is behind the header's 🔍 *search & filters* button (right side of
   the header bar): hidden by default, shown after you switch it on for
   this browser.
@@ -270,7 +267,7 @@ with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ### The one-line rule on the other pages
 
-The toolbar is an instance of a one-line rule: a page's server select, its
+The toolbar is an instance of a one-line rule: a page's
 search box (taking the free width) and its compact controls sit on one
 non-wrapping line under the page heading. When a page has no page-level
 search or filters, or its controls need more room than a phone-width
@@ -279,9 +276,9 @@ recorded in the code next to the page's header render. The rule was
 inspected for the four adjacent pages, and on each of them the fallback
 applied — their layouts are unchanged:
 
-- **Alerts** — it has the shared header server select and always-visible
+- **Alerts** — it has the shared header server button and always-visible
   search/filter controls, but the labelled filter chips, the search input,
-  the labelled sort toggle, the icon action buttons and the server select
+  the labelled sort toggle and the icon action buttons
   together exceed one phone-width non-wrapping line → the page keeps its
   current layout, filter logic and handlers.
 - **Automata** — its search and filter controls exist only inside the
@@ -558,8 +555,7 @@ same groups, the same counts and state mixes, wherever you read them:
 
 ### PWA (web UI)
 
-The Sessions page controls above: the one-line toolbar (server select,
-search, Filters with its badge, Fold all while grouping is active, view mode
+The Sessions page controls above: the one-line toolbar (search, Filters with its badge, Fold all while grouping is active, view mode
 select) and the Tree / History line (with the 🌐 indicator while a federated
 server is active), the Filters sheet (Group by with the
 tag-prefix entries, Views, status chips, and the grouped, searchable Tags
