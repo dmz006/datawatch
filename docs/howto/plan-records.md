@@ -345,6 +345,34 @@ Nothing here turns on by itself. These are yours to settle:
   the same inputs changes nothing. Each written change is audited as
   `plan_record_release_migrated` (details: actor, op, project). Review the
   preview's conflicts and unplaced lists before approving.
+- **Converting the registry-row plans.** The plans migration made one plan
+  per registry row (titled `Plan: <row text>`, with a `migrated-from` link
+  naming the row). Those row-plans were a stop-gap; the conversion
+  (`internal/planrecords/release_rowplans.go`, `ListRowPlans` and
+  `ConvertRowPlans`) replaces each with an item of a release plan. It has no
+  REST, MCP, CLI, chat or PWA surface yet, so nothing runs it until one
+  exists.
+  - A row-plan is recognised by its source marker plus the title form, never
+    by title alone, so an ordinary plan starting with `Plan: ` is left alone.
+  - A row-plan holding Automata becomes a **registry row link** on the
+    release plan that holds those Automata (the first by plan order when
+    they sit on several; the others are reported). A row-plan holding none
+    becomes a **backlog item** of the current release plan (default `10.0`).
+    The row-plan is then archived with a reason naming the conversion, so it
+    leaves the default plan lists; restore brings it back.
+  - A row-plan whose Automata are not all on a release plan yet **waits** and
+    is left alone, as is one that also holds Automations, findings or other
+    rows nothing else holds. Run the release migration first; the conversion
+    never moves an Automaton.
+  - It is preview-first like the release migration: a written run needs
+    `Apply` plus the `preview_id` of the approved preview, and a missing or
+    stale id is refused before anything is written. A second written run
+    finds the row-plans archived and changes nothing. Nothing is deleted:
+    rows, findings, Automata and the row-plan files stay. Each change is
+    audited as `plan_record_row_plans_converted` (details: actor, op
+    `link_row`, `add_backlog_item` or `archive`, row-plan, row, release plan).
+  - Review: the *waiting* list, the *other release plans* notes and the
+    chosen backlog release before approving.
 - **Theme audit name.** The store writes a theme change as
   `plan_record_theme_changed`; the server maps it to the generic
   `plan_record_updated` action, so in the audit log read `theme_op` in the

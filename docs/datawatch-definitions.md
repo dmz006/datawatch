@@ -3307,6 +3307,10 @@ A **theme** is a named group inside a release plan. It groups Automata and Autom
 
 A **backlog item** is a registry row or a finding with no Automaton yet that a plan holds. It is an item inside the plan, never a plan. Not the same as the plans *backlog* group, which lists plans with no Automaton.
 
+### Row-plan
+
+A **row-plan** is a plan the older plans migration made for one registry row (title `Plan: <row text>`, with a `migrated-from` link naming the row). The row-plan conversion replaces it with a registry row link, or a backlog item when it holds no Automaton, on a release plan, and archives it with a reason; nothing is deleted. A row-plan whose Automata are not all on a release plan yet waits. Preview first; a written run needs the approved preview id; audit action `plan_record_row_plans_converted`. No operator surface runs it yet. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
+
 ### Registry row link
 
 A **registry row link** ties a registry row to a plan. A row can be linked from more than one plan. A record is held by a plan as a row link or as a backlog item, not both.
