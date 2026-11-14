@@ -97,7 +97,9 @@ func (c *Coordinator) blockedTaskDetails(a *Automation) string {
 			continue
 		}
 		prd, ok := c.m.store.GetPRD(mem.PRDID)
-		if !ok {
+		if !ok || prd.Status == PRDHeld {
+			// A held member is waiting by decision: its old failure text is
+			// not a reason the Automation is blocked.
 			continue
 		}
 		if extra := triageFailedTaskLines(prd); extra != "" {

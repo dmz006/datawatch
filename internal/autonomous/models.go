@@ -1964,6 +1964,7 @@ type LoopStatus struct {
 	MaxDepthSeen   int            `json:"max_depth_seen,omitempty"`   // BL191 Q4: max(PRD.Depth) across the store
 	VerdictCounts  map[string]int `json:"verdict_counts,omitempty"`   // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
 	BlockedPRDs    int            `json:"blocked_prds,omitempty"`     // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
+	HeldPRDs       int            `json:"held_prds,omitempty"`        // count of Automata on hold by the operator; never included in BlockedPRDs
 
 	// BL367 — quality gate observability (surfaced via GET /api/autonomous/status + autonomous_status MCP).
 	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`        // tasks with a non-nil QualityGateResult

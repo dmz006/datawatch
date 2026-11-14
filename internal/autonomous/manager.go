@@ -7258,6 +7258,10 @@ func (m *Manager) Status() LoopStatus {
 		if p.Status == PRDBlocked {
 			st.BlockedPRDs++
 		}
+		if p.Status == PRDHeld {
+			// A hold is the operator's decision, not a stuck Automaton.
+			st.HeldPRDs++
+		}
 		// The Automaton overrides the global notify tier when its resolved
 		// set comes from the automaton or profile tier; finished Automata
 		// no longer running and never count as overrides.
