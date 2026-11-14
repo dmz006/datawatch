@@ -383,3 +383,5 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 - 2026-11-13 23:05 Operator, asked whether I may turn on autonomous.capacity_fallthrough (a full pool admits a worker task on another allowed backend with room; the Claude tasks were all waiting on the full pi pool while Claude sat idle): "yes". Turned on. The window guard stays the control on the week pace.
 
 - 2026-11-13 23:08 Capacity fall-through turned on at the operator's "yes" proved inert: the alternates resolver is never wired in the daemon (only defined and tested). Filed bug Automaton 2b580001 (priority 96, Claude Sonnet) to wire it and to find why a Claude-set task requests the pi pool.
+
+- 2026-11-14 00:14 Operator, on the six parked evaluation, tiering and matrix Automata (fea73c82, 049f4713, f6a38c29, 3be9c0e5, 9a1a8666, 38b69678): "The effort and tiered and matrix are all held but blocker until after 10.0" and then "Held not blocked". Decision: they stay untouched until after 10.0; filed Automaton 89e70001 (priority 70) to add a held state so they stop showing as blocked.
