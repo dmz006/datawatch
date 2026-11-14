@@ -908,6 +908,13 @@ the lane defaults. Use REST, MCP or the CLI for those.
   sub-tab strip scrolls. Confirm on a real phone (a project with long event lines,
   Events page sub-tab) that the page itself no longer scrolls sideways. Web app
   only; Android and iPhone are tracked in datawatch-app.
+- **Grouped empty lines (Events sub-tab).** With **Show empty lines and sections**
+  off, the empty or never-started notes on a project's Events page sub-tab are one
+  summary line with a count. Confirm on a project with several empty notes that the
+  summary count matches, that ticking the checkbox lists each note, and that a real
+  problem (a failed roll-up) is never folded into the count. The summary text is
+  translated in the German, Spanish, French and Japanese locales; have a native
+  reader check the wording.
 - **Mobile parity.** The Android and iPhone apps still show Projects as its own
   screen and a project as one screen. Moving Projects under Automata, matching
   page sub-tabs, and the Manage projects add, edit and remove controls are tracked
