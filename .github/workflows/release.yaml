@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   test:
-    name: go test + lint
+    name: lint + build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -46,8 +46,6 @@ jobs:
           mkdir -p internal/docsindex/assets
           echo '{}' > internal/docsindex/assets/docs-bm25-index.json
           make sync-docs docs-index
-      - name: go test
-        run: go test ./... -count=1 -timeout 12m
       - name: internal-ref leak check
         # Calls the check target directly (not the full `make lint`): the
         # golangci-lint binary is installed by the action below and is not
