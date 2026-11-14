@@ -220,6 +220,8 @@ Observer states today:
 | `1` | findings present — release failure |
 | `2` | browser or environment unavailable — `SKIP:` line on stderr; the release smoke records this as a skip, not a failure |
 
+The shared navigation bar is the same story one section over: `scripts/release-smoke.sh` section 79a ("Shared navigation bar fits phone widths in light and dark") runs the shared-nav scenario group (`node run-all.mjs --group shared-nav`) against the smoke daemon — the daemon at `DW_BASE` when it is set. `TEST_TOKEN` may be empty (the probe's no-auth default), `PROBE_OUT_DIR` and `PROBE_CHROME_PROFILE` are throwaway dirs the section removes on every path, `TMUX`/`TMUX_TMPDIR` are scrubbed, and the run is bounded by `SMOKE_SHARED_NAV_TIMEOUT` (default 600 s). A nav layout finding is a failure; no browser or daemon is a skip. `SMOKE_ONLY=79a` runs that section alone. Details and the report layout are in [howto/navigation-mobile-fit.md](navigation-mobile-fit.md#release-smoke).
+
 ## For other agents and integrations
 
 Both mechanisms are safe to drive from outside a human terminal — an
