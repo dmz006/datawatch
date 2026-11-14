@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The lifecycle queue-overflow test no longer flakes under full-suite load.** `TestLifecycle_QueueOverflowDropsNotBlocks` had counted drops with `droppedTotal()`, which sums the dropped counters of *every* live subscriber — including the Manager's built-in history recorder — so other subscribers' drops could move the total away from the expected count under load. The test now parks one dedicated subscriber inside the first delivery and asserts the expected count on *that* subscriber's own counter: `Subscribe` delegates to a same-package `subscribeCounted` whose extra return is the subscriber record (the public API is unchanged). Test-only change: the dispatcher's behavior is unchanged.
+- **The lifecycle slow-subscriber and session-push tests no longer judge delivery by wall-clock ceilings.** The 50 ms "emits must finish" ceiling and the 150 ms delivery sleeps are replaced with behaviour checks: the slow-subscriber test proves the burst completes while a parked subscriber holds its first event and the fast subscribers received all of it, and the session-push tests wait on deterministic completion signals (both delivery attempts failed the session lookup, or the engine's active set dropped the registration) before asserting. Test-only change.
+
+### Documentation
+
+- **The non-blocking delivery contract of lifecycle subscriptions is stated in the operator docs.** The lifecycle-subscriptions how-to, the operations guide and the glossary now state the behavior the tests pin: each subscription consumes from its own bounded in-memory queue on its own goroutine; emitting an event never waits on any subscriber; a subscriber whose queue is full misses events of its own (dropped count per subscriber, rate-limited log warning) while every other subscriber keeps receiving. No behavior change; no new setting, endpoint or field.
+
 ## v9.172.11 — Email empty-recipient test is instant and deterministic
 
 ### Fixed
