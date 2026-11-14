@@ -5099,6 +5099,10 @@ const (
 	// DefaultLaneFillHostDownAfterMinutes is how long a pool host may stay
 	// unreachable before lane fill treats it as down (0 = never).
 	DefaultLaneFillHostDownAfterMinutes = 10
+	// DefaultLaneFillStalledMergeMinutes is how long a task-branch merge may
+	// stay pending without progress before the Automaton stops holding its
+	// lane (0 = rule off).
+	DefaultLaneFillStalledMergeMinutes = 30
 )
 
 // AutonomousLaneFillConfig — autonomous.lane_fill sub-config: automatic lane
@@ -5137,6 +5141,11 @@ type AutonomousLaneFillConfig struct {
 	// (absent) means 10; an explicit 0 never treats an unreachable host as
 	// down, so every failed read blocks the lane builder.
 	HostDownAfterMinutes *int `yaml:"host_down_after_minutes,omitempty" json:"host_down_after_minutes,omitempty"`
+	// StalledMergeMinutes: whole minutes a task-branch merge may stay pending
+	// without progress before the Automaton stops holding its lane and the
+	// merge is alerted and retried. Nil (absent) means 30; an explicit 0
+	// turns the rule off; a negative value is rejected by validation.
+	StalledMergeMinutes *int `yaml:"stalled_merge_minutes,omitempty" json:"stalled_merge_minutes,omitempty"`
 	// RequireConfirmedProposal: when true (the default, nil) an Automaton
 	// created from a proposal is eligible only once the operator has confirmed
 	// that proposal.
@@ -5348,6 +5357,15 @@ func (c AutonomousLaneFillConfig) EffectiveHostDownAfterMinutes() int {
 	return *c.HostDownAfterMinutes
 }
 
+// EffectiveStalledMergeMinutes returns the stalled-merge threshold in effect:
+// nil means 30 and an explicit 0 turns the rule off.
+func (c AutonomousLaneFillConfig) EffectiveStalledMergeMinutes() int {
+	if c.StalledMergeMinutes == nil || *c.StalledMergeMinutes < 0 {
+		return DefaultLaneFillStalledMergeMinutes
+	}
+	return *c.StalledMergeMinutes
+}
+
 // laneFillBoolDefaultTrue reads a tri-state boolean: nil means true.
 func laneFillBoolDefaultTrue(b *bool) bool { return b == nil || *b }
 
@@ -5391,6 +5409,9 @@ func (c AutonomousLaneFillConfig) validate() error {
 	}
 	if c.HostDownAfterMinutes != nil && *c.HostDownAfterMinutes < 0 {
 		return fmt.Errorf("autonomous.lane_fill.host_down_after_minutes: %d must be >= 0", *c.HostDownAfterMinutes)
+	}
+	if c.StalledMergeMinutes != nil && *c.StalledMergeMinutes < 0 {
+		return fmt.Errorf("autonomous.lane_fill.stalled_merge_minutes: %d must be >= 0", *c.StalledMergeMinutes)
 	}
 	for k, v := range map[string]int{
 		"gpu_lanes":           c.GPULanes,
