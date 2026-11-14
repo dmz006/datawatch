@@ -60,7 +60,7 @@ type decomposeLintSettings struct {
 
 // decomposeLintSettingsSnapshot resolves the decompose_lint settings
 // in effect (m.cfg.DecomposeLint): the mode canonical (empty — the
-// shipped zero value — resolves to "shadow"; a value that fails
+// shipped zero value — resolves to "enforce"; a value that fails
 // normalization, which config.Load should already have refused but a
 // hand-built manager config can carry, resolves to the safe "shadow"
 // rather than "enforce"), the retry budget clamped to

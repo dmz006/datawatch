@@ -12,12 +12,12 @@ import (
 	"testing"
 )
 
-// TestDecomposeLintDefaults: a fresh DefaultConfig behaves as shadow
+// TestDecomposeLintDefaults: a fresh DefaultConfig behaves as enforce
 // mode, retry budget 2, templates enabled, no rules, no guidance.
 func TestDecomposeLintDefaults(t *testing.T) {
 	cfg := DefaultConfig()
-	if got := cfg.Autonomous.DecomposeLint.Mode; got != DecomposeLintModeShadow {
-		t.Fatalf("default mode = %q, want %q", got, DecomposeLintModeShadow)
+	if got := cfg.Autonomous.DecomposeLint.Mode; got != DecomposeLintModeEnforce {
+		t.Fatalf("default mode = %q, want %q", got, DecomposeLintModeEnforce)
 	}
 	if got := cfg.Autonomous.DecomposeLint.MaxRetries; got != DefaultDecomposeLintMaxRetries {
 		t.Fatalf("default max_retries = %d, want %d", got, DefaultDecomposeLintMaxRetries)
@@ -55,8 +55,8 @@ func TestDecomposeLintAbsentKeyKeepsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := cfg.Autonomous.DecomposeLint.Mode; got != "shadow" {
-		t.Fatalf("absent-key mode = %q, want shadow", got)
+	if got := cfg.Autonomous.DecomposeLint.Mode; got != "enforce" {
+		t.Fatalf("absent-key mode = %q, want enforce", got)
 	}
 	if got := cfg.Autonomous.DecomposeLint.MaxRetries; got != 2 {
 		t.Fatalf("absent-key max_retries = %d, want 2", got)
@@ -75,7 +75,7 @@ func TestNormalizeDecomposeLintMode(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"", DecomposeLintModeShadow, false}, // unset -> safe default
+		{"", DecomposeLintModeEnforce, false}, // unset -> shipped default
 		{"off", "off", false},
 		{"shadow", "shadow", false},
 		{"enforce", "enforce", false},

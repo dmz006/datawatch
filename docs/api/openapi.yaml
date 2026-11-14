@@ -12415,13 +12415,14 @@ components:
     DecomposeLintConfig:
       type: object
       description: |
-        `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
-        `max_retries: 2`, the nine-rule built-in pack (six block, three warn), and an empty
-        `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
-        validation error. `max_retries` clamps negatives to 0 (0 = valid,
-        lint-and-record without retrying) and above the cap (5) to the cap.
+        `autonomous.decompose_lint`. Defaults when unset: `mode: enforce`,
+        `max_retries: 2`, the twenty-one-rule built-in pack (sixteen block,
+        five warn), and an empty `disabled_rules`. `mode` empty normalizes
+        to `enforce`; a typo is a validation error. `max_retries` clamps
+        negatives to 0 (0 = valid, lint-and-record without retrying) and
+        above the cap (5) to the cap.
       properties:
-        mode: {type: string, enum: [off, shadow, enforce], description: "off records nothing; shadow lints and records without retrying; enforce feeds block findings back to the decomposer up to max_retries times"}
+        mode: {type: string, enum: [off, shadow, enforce], description: "off records nothing; shadow lints and records without retrying; enforce (the default when unset) feeds block findings back to the decomposer up to max_retries times"}
         max_retries: {type: integer, minimum: 0, description: "Retries an enforce run may spend over block findings (0 = no retry; negative → 0; above the cap → the cap)"}
         rules: {type: array, items: {allOf: [{$ref: "#/components/schemas/DecomposeLintRule"}]}, description: "Operator rule additions / same-id replacements of the built-in pack (validated for unique well-formed ids, legal severities, non-empty messages, compiling regexes)"}
         disabled_rules: {type: array, items: {type: string}, description: "Built-in (or operator) rule ids to drop from the effective pack"}

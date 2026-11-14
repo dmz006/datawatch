@@ -4428,11 +4428,12 @@ autonomous:
   # How to: docs/howto/automaton-decompose-lint.md.
   #
   # mode: off (no check, no record) | shadow (one lint pass, recorded,
-  # never retries — DEFAULT; empty/unset normalizes to shadow) | enforce
-  # (while block findings remain and the retry budget is unspent, the
-  # decomposer is re-run with the block findings fed back; each retry is
-  # re-parsed, re-templated and re-linted) — case-insensitive; anything
-  # else is a config error (a typo cannot quietly mean "enforce").
+  # never retries) | enforce (while block findings remain and the retry
+  # budget is unspent, the decomposer is re-run with the block findings
+  # fed back; each retry is re-parsed, re-templated and re-linted —
+  # DEFAULT; empty/unset normalizes to enforce) — case-insensitive;
+  # anything else is a config error (a typo cannot quietly mean
+  # "enforce").
   #
   # max_retries: the enforce retry budget. Default 2 (1 initial pass + at
   # most 2 retries; attempts = 1 + retries consumed, at most
@@ -4441,12 +4442,12 @@ autonomous:
   # 5. Only block findings trigger retries; warn findings are reported,
   # never retried.
   decompose_lint:
-    mode: shadow
+    mode: enforce
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # eight rules: six block, two warn; the pack is the floor, your rules
-    # the ceiling over it). Empty (below) = the built-in pack, unmodified.
+    # twenty-one rules: sixteen block, five warn; the pack is the floor, your
+    # rules the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
     # anything else is a config error). A rule's message is required on an

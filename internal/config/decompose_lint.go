@@ -20,11 +20,11 @@ const (
 	// DecomposeLintModeOff disables the decompose-lint check.
 	DecomposeLintModeOff = "off"
 	// DecomposeLintModeShadow runs the check and records findings but
-	// never blocks decomposition. This is the default when the setting
-	// is empty/unset.
+	// never blocks decomposition.
 	DecomposeLintModeShadow = "shadow"
 	// DecomposeLintModeEnforce stops decomposition on a blocking
-	// finding (after the retry budget is exhausted).
+	// finding (after the retry budget is exhausted). This is the
+	// default when the setting is empty/unset.
 	DecomposeLintModeEnforce = "enforce"
 )
 
@@ -71,7 +71,7 @@ const decomposeLintMatchMaxDepth = 8
 // cleared value and leaves the previous stored value in place. The
 // same gotcha as AutonomousConfig.PlanCoverageCheck.
 type DecomposeLintConfig struct {
-	// Mode is "off", "shadow" (default when empty) or "enforce" — see
+	// Mode is "off", "shadow" or "enforce" (default when empty) — see
 	// ValidDecomposeLintModes. Unknown values are a config error.
 	Mode string `yaml:"mode" json:"mode"`
 	// MaxRetries is how many times a blocked decomposition is re-run
@@ -365,10 +365,10 @@ func RenderTaskTemplateSpec(spec string, s TaskTemplateSlots) string {
 }
 
 // DefaultDecomposeLint returns the shipped decompose-lint settings:
-// shadow mode, the default retry budget, no rules.
+// enforce mode, the default retry budget, no rules.
 func DefaultDecomposeLint() DecomposeLintConfig {
 	return DecomposeLintConfig{
-		Mode:       DecomposeLintModeShadow,
+		Mode:       DecomposeLintModeEnforce,
 		MaxRetries: DefaultDecomposeLintMaxRetries,
 	}
 }
@@ -380,21 +380,21 @@ func DefaultTaskTemplates() TaskTemplatesConfig {
 }
 
 // NormalizeDecomposeLintMode resolves a raw decompose-lint mode to its
-// canonical form. Empty (unset) normalizes to "shadow" — the safe
+// canonical form. Empty (unset) normalizes to "enforce" — the shipped
 // default. Comparison is case-insensitive. Any other value is an error;
 // callers must not silently fall back on a typo ("enforc" must never
 // quietly mean "enforce").
 func NormalizeDecomposeLintMode(s string) (string, error) {
 	m := strings.ToLower(strings.TrimSpace(s))
 	if m == "" {
-		return DecomposeLintModeShadow, nil
+		return DecomposeLintModeEnforce, nil
 	}
 	switch m {
 	case DecomposeLintModeOff, DecomposeLintModeShadow, DecomposeLintModeEnforce:
 		return m, nil
 	default:
 		return "", fmt.Errorf("invalid decompose_lint.mode %q: must be one of %q, %q, %q (or empty for the %q default)",
-			s, DecomposeLintModeOff, DecomposeLintModeShadow, DecomposeLintModeEnforce, DecomposeLintModeShadow)
+			s, DecomposeLintModeOff, DecomposeLintModeShadow, DecomposeLintModeEnforce, DecomposeLintModeEnforce)
 	}
 }
 
@@ -583,7 +583,7 @@ func (a *AutonomousConfig) EffectiveTaskTemplateMode(id string) TaskTemplateMode
 }
 
 // EffectiveDecomposeLintMode resolves the decompose-lint mode in
-// effect: unset (empty) → "shadow"; a typo → an error, not a guess.
+// effect: unset (empty) → "enforce"; a typo → an error, not a guess.
 func (a *AutonomousConfig) EffectiveDecomposeLintMode() (string, error) {
 	return NormalizeDecomposeLintMode(a.DecomposeLint.Mode)
 }
