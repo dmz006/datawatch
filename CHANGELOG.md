@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.5 — Projects page phone overflow and empty Events grouping
+
+### Fixed
+
+- **The Projects page no longer scrolls sideways on a phone.** At 600 px or less only the page sub-tab strip scrolls horizontally; the picker row wraps, long event, card and directory text wraps, and wide `pre` and table content scrolls inside its own box. First seen on the Events page sub-tab of a project.
+- **Empty notes on a project's Events page are grouped.** Notes that only say something is empty or has never happened are collapsed into one summary line with a count while **Show empty lines and sections** is off; tick it to list them one per line. Notes that report something real are always listed.
+
 ## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
 
 ### Fixed

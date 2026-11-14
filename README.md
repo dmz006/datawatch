@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.173.4 (2026-11-14).** The daemon starts without a model-use source, the release smoke shared-navigation section honors its section filter and no longer aborts on an undefined counter, and the test daemon helper cleans up when signals arrive ignored. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.173.5 (2026-11-14).** The Projects page no longer scrolls sideways on a phone and groups empty Events notes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
