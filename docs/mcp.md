@@ -2330,7 +2330,7 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 | Tool | Reads or writes | Parameters |
 |---|---|---|
 | `project_list` | read | none |
-| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
+| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value. `description` and `default_backend` are sent as given: left out they overwrite the stored values with empty, present an explicit empty clears. `policy` written as sent, absent clears) |
 | `project_set_arcs` | write (deprecated old name and plan list; the registry plan records replace it, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the plan order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |

@@ -24,7 +24,7 @@ exec_steps:
     args: {name: core-api}
     read_only: true
   - tool: project_upsert
-    description: Set the record fields of a project. Pass the whole record you want to keep; an absent record field keeps its stored value. Owner, repository and default branch are set here with the target, lane defaults and weekly share
+    description: Set the record fields of a project. An absent record field (owner, target, lane defaults, weekly share and the rest) keeps its stored value, and the description and default backend are sent as given: an update that omits them blanks the stored ones, so pass them along in the call to keep them. An explicit empty value clears them
     args: {name: core-api, dir: /srv/projects/core-api, owner: platform-team, target: {name: "Core API 2.0", definition_of_done: "All v1 endpoints served by v2 and the v1 routes removed"}, lane_defaults: {lane: gpu, backend: claude-code, model: qwen3.8:27b}, weekly_share: 40, branch_retention_days: 14}
   - tool: project_set_arcs
     description: Deprecated old name and plan list (arcs); the registry plan records replace it (see plan_migrate). Replace the ordered plan list of a project. The array order is the plan order; each plan has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the plans
@@ -148,7 +148,7 @@ an error is showing; otherwise it is collapsed.
 | To do this | Do this |
 |---|---|
 | Add a project | Fill in **Name**, **Directory (absolute path)** and, if you want, **Description** and **Default backend**, then choose **Add project**. Name and directory are required; the page says "Enter a project name." or "Enter the project directory." when one is missing |
-| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only. Change the directory, description or default backend and choose **Save changes**, or **Cancel** |
+| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only and the stored directory, description and default backend pre-filled. Change what you want and choose **Save changes** — a new description is stored, taking the place of the old one in the list and the project page, and a directory or backend change never blanks it — or **Cancel** |
 | Remove a project | Choose **Remove** on its row and confirm. Only the project record is removed. Running sessions and Automaton work are not stopped, and the directory is not touched |
 
 After a save or a remove the list and the picker reload and the page shows
@@ -783,7 +783,7 @@ capability; a federated peer is checked against the same two.
 | Tool | Parameters | Purpose |
 |---|---|---|
 | `project_list` | none | List the aliases and their records |
-| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update; omit a field to keep it |
+| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update. The record fields (owner, repository, default branch, target, lane defaults, weekly share, retention, major trigger) keep their stored value when omitted; an explicit empty value clears them. `description` and `default_backend` behave differently: the call forwards them as given, so an update that omits one overwrites the stored value with an empty one — pass the stored description in the call to keep it, and an explicit empty value clears it. `policy` is written as sent: a call without one clears the stored policy |
 | `project_set_arcs` | `name`, `arcs` (required) | Replace the plans; `[]` clears them |
 | `project_rollup` | `name`; `window` | The roll-up |
 | `project_history` | `name`; `limit`, `cursor` | One history page |
@@ -814,7 +814,7 @@ Example call, set the plans:
 | `datawatch projects get <name>` | One alias and its record |
 | `datawatch projects upsert <name> --dir <abs> [--backend …] [--description …]` | Create or update an alias (replaces the policy; see the note in Setup) |
 | `datawatch projects show <name> [--window N]` | Record plus roll-up |
-| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass |
+| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass; the stored description, default backend, policy and record fields come along and are kept |
 | `datawatch projects arcs <name>` | Print the plans in order |
 | `datawatch projects arcs <name> --set id:priority:state,…` | Replace the plans; `--set ""` clears them |
 | `datawatch projects history <name> [--limit N] [--cursor …]` | History page |
@@ -857,6 +857,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
+| The saved description is gone after a change | Which surface is doing the writing decides. The **Manage projects** form keeps the stored description (it pre-fills it and re-sends it) unless you change it, and CLI `projects set` and the comm channel carry the stored one forward when the change sends none. CLI `projects upsert`, MCP `project_upsert` and a plain REST `POST /api/projects` forward the description they are sent, blank when the field is missing — so an update that omits it overwrote the stored one; keep it by sending it in the call (or restore it, for example with comm `project set <name> description …`), and an explicit empty description clears it on purpose |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
 | Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
@@ -933,6 +934,24 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Edit keeps the record.** The page says editing keeps the policy, plans, owner,
   target and other record fields. That follows the shipped form's behavior as
   documented in the change; confirm it on a project that has a policy and plans.
+- **Description handling differs by updating surface — review before relying on it.**
+  Saving a new description from the **Manage projects** form updates the stored
+  one, and the Manage projects list and the project page show it; a form change
+  of the directory or backend never blanks the stored description, because the
+  form pre-fills it and re-sends it. The CLI's `set` command and the comm channel read
+  the stored record and carry the description forward when the change sends none. CLI
+  `projects upsert`, MCP `project_upsert` and a plain REST `POST /api/projects` do the
+  opposite for
+  the description and the default backend: they accept exactly what is sent, so
+  a call without the field overwrites the stored value with an empty one while
+  every other record field keeps its stored value when omitted. Note the
+  asymmetry with owner and repository, which the REST and MCP write surfaces keep on
+  omission. The repository ships an MCP test that expects an omitted
+  description to survive the update; that test currently fails against the
+  shipped handler, so the alignment is outstanding. Until it lands, treat CLI
+  `upsert`, MCP and plain REST as replace-what-is-sent. Confirm per surface
+  that this is what you want, and that a saved description survives the update
+  patterns that write your projects.
 
 - **Gantt edges and ordering (2026-11-12).** The Gantt now draws dependency edges, an
   **Edges** toggle and a hover highlight, fits **All time** to the visible rows, and orders

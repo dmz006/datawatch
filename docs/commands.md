@@ -1634,11 +1634,11 @@ Project + cluster profile CRUD (F10 sprint 2).
 |---|---|
 | `list` | List the registered project aliases |
 | `get <name>` | Show one alias and its record |
-| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier; see [howto/projects-tab](howto/projects-tab.md) |
+| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier (set it back with `policy set`); `--description` sets the description; without it the call sends an empty one and the stored description is cleared (unlike `set`, which keeps the stored description). See [howto/projects-tab](howto/projects-tab.md) |
 | `delete <name>` | Remove an alias; the directory is not touched |
 | `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
-| `show <name> [--window N]` | The record plus the roll-up: plans, Automata, tasks, points and throughput |
-| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
+| `show <name> [--window N]` | The record (description included) plus the roll-up: plans, Automata, tasks, points and throughput |
+| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields — description included — keep their stored value |
 | `arcs <name> [--set id:priority:state,…]` | Print the plans in order, or replace them (`--set ""` clears). Deprecated old name and plan list (arcs): the registry plan records replace it, see `datawatch plans migrate [--apply]` and [howto/plan-records](howto/plan-records.md#building-plans-from-arcs-and-rows) |
 | `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
 | `timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline: start, end and status (completed, running, waiting, blocked, failed or cancelled) per plan, Automaton and task, with task dependencies and Automaton chain edges (the CLI prints the daemon reply unchanged); chat: `project timeline <name> [level=…] [parent=…] [automaton=…] [focus=…] [limit=…] [cursor=…]`. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline) |
