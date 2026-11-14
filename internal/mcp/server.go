@@ -867,6 +867,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
 	mcpSrv.AddTool(s.toolHousekeepingRepairs(), tracked(s.handleHousekeepingRepairs))
 	mcpSrv.AddTool(s.toolGateRepairs(), tracked(s.handleGateRepairs))
+	mcpSrv.AddTool(s.toolGateRepairStatus(), tracked(s.handleGateRepairStatus)) // autonomous_gate_repair_status: mode, records, budget
+	mcpSrv.AddTool(s.toolGateRepairRun(), tracked(s.handleGateRepairRun))      // autonomous_gate_repair_run: run now (one gate or a pass)
 	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))
 	mcpSrv.AddTool(s.toolSupervisorLoopRuns(), tracked(s.handleSupervisorLoopRuns))
 	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))

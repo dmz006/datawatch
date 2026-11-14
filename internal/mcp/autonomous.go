@@ -304,6 +304,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 		mcpsdk.WithString("planning_restart_policy", mcpsdk.Enum("reattach", "restart", "draft"), mcpsdk.Description("autonomous.planning_restart_policy — what a daemon restart does to an Automaton that is still in planning (decompose running): reattach (the default) keeps planning running and re-attaches it to the restarted daemon; restart restarts planning once after the restart and records a decision saying so; draft resets the Automaton to draft, as the daemon did before this setting existed. Any other value is refused. It is sent on PUT /api/config. See docs/howto/restart-with-work-running.md.")),
+		mcpsdk.WithString("gate_repair_mode", mcpsdk.Enum("off", "report", "on"), mcpsdk.Description("autonomous.gate_repair.mode — the gate repair engine's mode: off (no detection, nothing recorded), report (detect and record the finding as a gate_repair repair record but repair nothing; the shipped default), on (apply the safe repair for the failed class, once per class per task; a spent budget or an unknown class raises a held operator question). Any other value is refused. It is sent on PUT /api/config.")),
 		mcpsdk.WithNumber("inherited_tags_cache_seconds", mcpsdk.Description("autonomous.inherited_tags_cache_seconds — lifetime, in whole seconds, of the shared cache of tags inherited from the PRD (default 15); 0 = the default, negative = cache off. Not an autonomous-manager key: it is sent on PUT /api/config and takes effect on the next tag read.")),
 	}, append(append(append(append(append(append(append(daemonTaskKeysSetOptions(), verifierPolicyConfigTools()...), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...), modelRoutingConfigOptions()...), pendingItemConfigOptions()...)...)...)
 }
@@ -322,6 +323,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		return mcpsdk.NewToolResultError(planningErr.Error()), nil
 	}
 	for k, v := range planningPatch {
+		promptPatch[k] = v
+	}
+	// gate_repair_mode is a daemon-config key (PUT /api/config), so it joins
+	// the same validated patch. An invalid value is refused here, before
+	// anything is sent.
+	gateRepairPatch, gateRepairErr := gateRepairModePatch(req)
+	if gateRepairErr != nil {
+		return mcpsdk.NewToolResultError(gateRepairErr.Error()), nil
+	}
+	for k, v := range gateRepairPatch {
 		promptPatch[k] = v
 	}
 	// Attempt-cost keys go to the same /api/config PUT as the judge prompt keys,
