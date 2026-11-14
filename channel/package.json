@@ -22,6 +22,6 @@
     "fast-uri": ">=4.1.5",
     "ip-address": ">=10.7.1",
     "qs": ">=6.16.0",
-    "body-parser": ">=2.3.0"
+    "body-parser": ">=2.4.0"
   }
 }
