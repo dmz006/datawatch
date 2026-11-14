@@ -149,11 +149,12 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
 // terminal kinds plus the non-terminal member transitions that matter
-// (revert to approved after start, archive, the wait-only statuses, and running,
+// (revert to approved after start, archive, the wait-only statuses including
+// held, and running,
 // which reopens a member that was cancelled).
 func coordinatorKinds() []string {
 	kinds := TerminalPRDKinds()
-	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused, PRDRunning} {
+	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused, PRDHeld, PRDRunning} {
 		kinds = append(kinds, PRDStatusKind(s))
 	}
 	return kinds

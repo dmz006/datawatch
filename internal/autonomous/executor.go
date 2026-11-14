@@ -207,6 +207,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if prd.IsTemplate {
 		return fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return err
+	}
 	if len(prd.Story) == 0 {
 		return fmt.Errorf("prd %q has no stories — call Decompose first", prdID)
 	}
@@ -403,6 +406,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		for i := 0; ; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
+			}
+			// A hold that landed while a task ran stops the walk: nothing new
+			// starts, the status stays held and the completion rollup is not
+			// reached. The concurrent path drains the same way.
+			if st, ok := m.prdStatusOf(prdID); ok && st == PRDHeld {
+				return nil
 			}
 			// An operator review decision (a retry or a cancel) landed while
 			// a task ran. Re-read the Automaton and rebuild the order, then
@@ -730,8 +739,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// starts.
 		reviewDecisions := func() {
 			latest, _ := m.store.GetPRD(prdID)
-			if latest == nil || latest.Status == PRDPaused {
-				// A paused Automaton launches nothing. The result path drains
+			if latest == nil || latest.Status == PRDPaused || latest.Status == PRDHeld {
+				// A paused or held Automaton launches nothing. The result path drains
 				// the tasks in flight and returns.
 				return
 			}
@@ -928,7 +937,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					// skip autoFailDeps()/launch() so nothing new starts,
 					// and don't touch latest.Status — Pause() already set
 					// it and this loop must not race back to PRDRunning.
-					if latest.Status == PRDPaused {
+					if latest.Status == PRDPaused || latest.Status == PRDHeld {
+						// A hold that lands while tasks run drains them the
+						// same way: nothing new starts and the status stays.
 						for len(inFlight) > 0 {
 							dr := <-results
 							finalizeDrained(dr)

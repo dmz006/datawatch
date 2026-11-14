@@ -954,6 +954,13 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 	if _, ok := a.prdStatus(id); !ok {
 		return false, fmt.Errorf("prd %q not found", id)
 	}
+	// A held Automaton is refused before a slot is claimed or prep can change
+	// its status: nothing starts it until the operator releases the hold.
+	if p, ok := a.M.Store().GetPRD(id); ok {
+		if err := a.M.refuseHeld(p); err != nil {
+			return false, err
+		}
+	}
 	execs := a.spawnFn != nil && a.verify != nil
 	var ctx context.Context
 	if execs {

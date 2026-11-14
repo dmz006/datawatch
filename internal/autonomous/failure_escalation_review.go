@@ -201,6 +201,9 @@ func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, 
 	if req.Action == reviewActionCancel {
 		return m.cancelHeldTask(prdID, taskID, actor, req.Note)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	r, err := m.reviewRetryChanges(prdID, prd, task, story, req, held)
 	if err != nil {
 		return nil, err

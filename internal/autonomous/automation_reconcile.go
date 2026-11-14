@@ -186,6 +186,11 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	memID, prdID := mem.ID, mem.PRDID
 	name, _, _ := c.prdState(prdID)
 	mode, status := c.startGate(prdID)
+	if status == PRDHeld {
+		// A held member waits by operator decision: it is not started and the
+		// Automation is not blocked for it. A release lets a later pass start it.
+		return
+	}
 	reason := ""
 	if mode == "" {
 		reason = fmt.Sprintf("next member %s is %s", name, status)
