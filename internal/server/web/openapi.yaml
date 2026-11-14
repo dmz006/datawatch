@@ -13117,7 +13117,7 @@ components:
           items:
             type: object
             properties:
-              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers, planning]}
+              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers, planning, unarchive]}
               mode: {type: string, enum: [off, report, "on"]}
               would: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               did: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}

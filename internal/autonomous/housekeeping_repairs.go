@@ -1,8 +1,9 @@
 // Housekeeping repairs: the daemon repairs, or at least cleanly resolves, the
 // basic stuck states that otherwise only the supervisor watch reports.
 //
-// A Repairer owns five groups (task_chain, advance_judge, lane_fill,
-// leftovers, planning). Each group has a mode: off (nothing happens), report (the
+// A Repairer owns six groups (task_chain, advance_judge, lane_fill,
+// leftovers, planning, unarchive). The unarchive group is one-time: it
+// runs once and records its completion, so it never runs again. Each group has a mode: off (nothing happens), report (the
 // default: record what the group would do and act on nothing) or on (repair).
 //
 // Hard limits, enforced by what a Repair may do rather than by a check: a
@@ -35,6 +36,8 @@ const (
 	RepairGroupLaneFill     = "lane_fill"
 	RepairGroupLeftovers    = "leftovers"
 	RepairGroupPlanning     = "planning"
+	// RepairGroupUnarchive — the one-time "unarchive unmerged work" repair.
+	RepairGroupUnarchive = "unarchive"
 )
 
 // Record kinds.
@@ -103,7 +106,7 @@ type RepairerHooks struct {
 	StorePath string
 }
 
-// Repairer runs the five groups.
+// Repairer runs the groups; the unarchive group is one-time.
 type Repairer struct {
 	hooks   RepairerHooks
 	repairs []Repair

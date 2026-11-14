@@ -263,9 +263,9 @@ with zero stories because planning failed for a reason retrying will not change
   model or backend. Undo: edit the spec back from the Automaton's detail view
   and plan again.
 
-## The five settings groups
+## The six settings groups
 
-The repairable kinds sit in five groups. Each group has one setting and one mode,
+The repairable kinds sit in six groups. Each group has one setting and one mode,
 and the repairs of a group act only in `on`. The settings live under
 `autonomous.housekeeping_repairs`, beside `grace_seconds`:
 
@@ -276,6 +276,7 @@ and the repairs of a group act only in `on`. The settings live under
 | Lane fill | `autonomous.housekeeping_repairs.lane_fill` | `IDLE lanes`, `LEASE`, `PLACEMENT` |
 | Leftovers | `autonomous.housekeeping_repairs.leftovers` | `WORKTREE`, and the leftover lease, worktree and tmux name of a finished Automaton |
 | Planning | `autonomous.housekeeping_repairs.planning` | A draft with no stories whose planning failed for a non-retryable reason (the planning part of `BACKLOG`) |
+| Unarchive (one-time) | `autonomous.housekeeping_repairs.unarchive` | An archived Automaton whose branch still has unmerged commits: put it back to its pre-archive status, once |
 
 | Mode | What it does |
 |---|---|
@@ -296,6 +297,7 @@ autonomous:
     lane_fill: report
     leftovers: report
     planning: report
+    unarchive: report
     grace_seconds: 300
 ```
 
@@ -338,6 +340,37 @@ for each shipped repair:
   released tmux name is simply free to reuse.
 - `planning`: the spec change is on the Automaton's decision log; edit the spec
   back from the Automaton's detail view and plan again. No session was touched.
+- `unarchive`: set the Automaton back to its previous archived status from the
+  detail view; the `unarchive_unmerged` decision on the log says what was moved
+  and back.
+
+## Unarchive repair (one-time)
+
+The `unarchive` group (default `report`) is a one-time repair for one specific
+wrong outcome: an Automaton that the daemon archived while its branch still
+carried unmerged commits. The daemon must confirm the branch is fully merged
+before an archive (it checks with git, and when it cannot tell it keeps the
+record instead of archiving it), but an archive that slipped past that check
+leaves the work unlanded. This pass puts the Automaton back.
+
+- **What it finds**, after the grace: an Automaton that is archived now and
+  whose branch still has commits its base does not have (the same merge check
+  the archive uses), with the commit count.
+- **What it does (in `on`)**, for each one, re-checked just before acting:
+  moves the Automaton back to the status it had before the archive — completed,
+  or cancelled if it had been cancelled before the archive, read from the
+  decision log. Only the status changes. It appends one decision (kind
+  `unarchive_unmerged`, actor `housekeeping-repair`) — the old status, the new
+  one, and the commit count — and raises one alert.
+- **What it never does**: an Automaton the **operator archived or cancelled** stays as the
+  operator left it; one that is **not archived anymore** is skipped and
+  reported; one whose branch state **cannot be checked** (no worktree, no repo,
+  no upstream base) is left archived — when in doubt, do nothing. It never
+  touches, kills or signals a session, never merges or ships, and never changes
+  a model or backend.
+- **It runs once**: after the pass it records that it has run and never runs it
+  again. In `report` it only shows which Automata it would unarchive, with the
+  same commit counts; in `off` it does nothing at all.
 
 No surface reads the record yet: it is reachable only through the decision log.
 The finding itself keeps its first-seen time and is read through the supervisor

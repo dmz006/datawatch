@@ -24487,6 +24487,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.unarchive', label: 'Unarchive unmerged repairs', labelKey: 'settings_housekeeping_unarchive', helpKey: 'settings_housekeeping_unarchive_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
     { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
@@ -38635,8 +38636,8 @@ function _automationUnlandedWorkLoader() {
 // housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
 // { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
 // Each group shows its mode, what it would do (report mode) and what it did.
-const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning'];
-const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning' };
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning', 'unarchive'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning', unarchive: 'housekeeping_repairs_group_unarchive' };
 const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
 function _housekeepingRecs(list) {
   return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
