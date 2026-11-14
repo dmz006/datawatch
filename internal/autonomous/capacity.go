@@ -598,6 +598,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 			note := fmt.Sprintf("fell through from %s/%s to %s/%s: requested pool full, alternate idle", backend, model, fell.Backend, fell.Model)
 			rec.AdmissionFallthrough(t.ID, prd.ID, fromPools, pools, note)
 			log.Printf("[autonomous] prd=%s task=%s %s", prd.ID, t.ID, note)
+			m.recordAdmissionLaneDecision(prd.ID, t.ID, backend, model, fromPools, fell, pools)
 		}
 		if waited {
 			rec.AdmissionAdmitted(t.ID, waitStart, pools)
@@ -610,6 +611,39 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		return fmt.Errorf("capacity: %w", err)
 	default:
 		return err
+	}
+}
+
+// admissionLaneDecisionKind is the Decision.Kind written when admission
+// places a worker on another pool than the one its effective backend asked for.
+const admissionLaneDecisionKind = "capacity_fallthrough"
+
+// recordAdmissionLaneDecision appends the Automaton decision-log entry for a
+// worker admitted on an alternate pool: the backend and model it now runs on,
+// the pool it sits on, and why (the pool its effective backend asked for was
+// full and the alternate had a free slot). Same mechanism as the other
+// decisions (store lock, then save); a failed save is logged and never fails
+// the admission.
+func (m *Manager) recordAdmissionLaneDecision(prdID, taskID, reqBackend, reqModel string, fromPools []string, alt *CapacityAlternate, toPools []string) {
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	note := fmt.Sprintf("task %s: admitted on %s/%s (pool %s) instead of %s/%s (pool %s): requested pool full, alternate pool free",
+		taskID, alt.Backend, alt.Model, strings.Join(sortedPools(toPools), ","),
+		reqBackend, reqModel, strings.Join(sortedPools(fromPools), ","))
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{
+			At:      m.attemptNow(),
+			Kind:    admissionLaneDecisionKind,
+			Actor:   "autonomous",
+			Backend: alt.Backend,
+			Model:   alt.Model,
+			Note:    note,
+		})
+	})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s save %s decision: %v", prdID, admissionLaneDecisionKind, err)
 	}
 }
 

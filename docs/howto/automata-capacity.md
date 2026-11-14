@@ -365,6 +365,15 @@ entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as
 `fell through from claude-code/sonnet to ollama/qwen: requested pool full,
 alternate idle`.
 
+The Automaton's decision log gets a `capacity_fallthrough` entry too. It names
+the backend and model the task was admitted on, the pool it now holds, the
+backend, model and pool it asked for, and the reason (`requested pool full,
+alternate pool free`). The lane is chosen at the moment of each admission from
+the task's effective backend (task, then story, then Automaton), so a relaunch
+is judged afresh. A task that stays on its own pool, or keeps waiting, writes
+no entry. The capacity page lists the pool the task actually holds, so a task
+that fell through shows the alternate's pool.
+
 Set it on any surface:
 
 ```bash
