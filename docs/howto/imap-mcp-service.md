@@ -230,6 +230,13 @@ stops verifying.
 | a widget tile shows stale data | Pull mode: the service must answer `pull_path` (and the pull uses the service token); push mode: check the push token is still valid after the last rotate |
 | `pull_path` rejected at load | For service plugins it must start with `/`; it must be empty for push-mode widgets |
 
+> **Troubleshooting:** if the daemon starts with imap-mcp installed but no plugin
+> token source wired, it no longer crashes; the model-use card is empty and
+> `GET /api/plugins/imap-mcp/models` answers 503 until the source is wired. See
+> [operations.md](../operations.md#plugin-services-lifecycle-semantics).
+>
+> **Operator review:** after any start with imap-mcp installed, check `daemon_logs` for the skipped model-node task and confirm the plugin token source is wired; until then the model-use card stays empty.
+
 ## Related
 
 - [docs/plugins.md](../plugins.md) — the concepts, thresholds and surfaces in
@@ -238,9 +245,4 @@ stops verifying.
   the operations manual
 - [docs/mcp.md](../mcp.md) — the MCP tools that mirror this surface
   (`plugin_service_*`, `plugin_widget_*`, `plugin_token_*`)
-
-> **Troubleshooting:** if the daemon starts with imap-mcp installed but no plugin
-> token source wired, it no longer crashes; the model-use card is empty and
-> `GET /api/plugins/imap-mcp/models` answers 503 until the source is wired. See
-> [operations.md](../operations.md#plugin-services-lifecycle-semantics).
 - [docs/howto/](README.md) — the how-to index
