@@ -90,7 +90,9 @@ Details worth knowing:
 - **Reserve full.** A review request that cannot get a slot — or that would
   exceed the token budget — waits with the reason
   `pool llm:<backend> backpressure: back-off, review reserve in use`, which is
-  classified as a back-off wait and shows the flag's reset time.
+  classified as a back-off wait and shows the flag's reset time. The PWA and the
+  task wait displays label that wait **Back-off, review reserve in use**, so it
+  is not confused with a plain worker back-off wait.
 - **Audited.** Each admission or refusal through the reserve writes one
   operator audit entry — `autonomous_usage_backoff_reserve_admitted` or
   `autonomous_usage_backoff_reserve_refused` — carrying the backend, the role,
@@ -127,7 +129,7 @@ Details worth knowing:
 | MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason` | `usage_backoff_clear` with `backend` (omit or `all` for every flag) |
 | REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` |
 | CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text]` | `datawatch usage-backoff clear [backend\|all]` |
-| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes> [reason]` | `usage_backoff clear [backend\|all]` |
+| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes\|until> [reason]` | `usage_backoff clear [backend\|all]` |
 
 With neither `minutes` nor `until`, a set holds the backend for 30 minutes.
 `minutes` must be 1 or more and `until` must be in the future.

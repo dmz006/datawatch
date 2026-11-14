@@ -598,7 +598,7 @@ arguments:
   `datawatch usage-backoff set <backend> <minutes|until> [--reason text]`,
   `datawatch usage-backoff clear [backend|all]`.
 - Comm channels: `usage_backoff status`,
-  `usage_backoff set <backend> <minutes> [reason]`, `usage_backoff clear`.
+  `usage_backoff set <backend> <minutes|until> [reason]`, `usage_backoff clear`.
 
 Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
