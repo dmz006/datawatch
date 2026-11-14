@@ -28,6 +28,7 @@
 package channel
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -226,11 +227,14 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 		want = MCPServerSpec{Command: nodePath, Args: []string{channelJSPath}, Env: env}
 	}
 
-	// Skip rewrite when the existing entry is already correct.
+	// Skip rewrite when the existing entry is already correct. Env is
+	// compared too (nil and empty treated as equal): the env carries the
+	// DATAWATCH_TOKEN, and with a rotating scoped token a stale token means
+	// the entry is stale even when command/args match.
 	if existing, ok := cfg.MCPServers[ProjectMCPEntryName]; ok {
 		argsMatch := len(existing.Args) == len(want.Args) &&
 			(len(existing.Args) == 0 || existing.Args[0] == want.Args[0])
-		if existing.Command == want.Command && argsMatch {
+		if existing.Command == want.Command && argsMatch && envMapEqual(existing.Env, want.Env) {
 			return false, nil
 		}
 	}
@@ -318,4 +322,103 @@ func IsStaleProjectMCPConfig(path string) (bool, string, error) {
 		return false, jsPath, nil // file exists, not stale
 	}
 	return true, jsPath, nil
+}
+
+// envMapEqual reports whether two env maps are equal, treating nil and
+// empty maps as the same.
+func envMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+// RemoveInstanceMCPConfig removes the "datawatch" entry from
+// <dataDir>/.mcp.json, preserving any operator-added servers (the rewrite
+// keeps the existing 0600 + chmod discipline) and deleting the file when no
+// servers remain. Idempotent; no error when the file is missing or
+// unparsable.
+func RemoveInstanceMCPConfig(dataDir string) error {
+	if dataDir == "" {
+		return nil
+	}
+	path := filepath.Join(dataDir, ".mcp.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil // file doesn't exist — nothing to remove
+	}
+	var cfg MCPProjectConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
+		return nil // unparsable or no servers map — leave it alone
+	}
+	if _, ok := cfg.MCPServers[ProjectMCPEntryName]; !ok {
+		return nil // entry not present — already clean
+	}
+	delete(cfg.MCPServers, ProjectMCPEntryName)
+	if len(cfg.MCPServers) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	// HLLM-001 -- see WriteProjectMCPConfig's comment above.
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
+}
+
+// ScrubInstanceMCPToken removes the "datawatch" entry from
+// <dataDir>/.mcp.json when its env DATAWATCH_TOKEN equals any non-empty
+// legacyTokens value (constant-time compare via crypto/subtle), deleting the
+// file when no servers remain. Returns true when an entry was removed.
+// Migration for files written by earlier daemons that held the daemon's
+// long-lived server token in the file. No error when the file is missing or
+// unparsable; the token value is never logged or returned.
+func ScrubInstanceMCPToken(dataDir string, legacyTokens ...string) (bool, error) {
+	if dataDir == "" {
+		return false, nil
+	}
+	path := filepath.Join(dataDir, ".mcp.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, nil // file doesn't exist — nothing to scrub
+	}
+	var cfg MCPProjectConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.MCPServers == nil {
+		return false, nil
+	}
+	spec, ok := cfg.MCPServers[ProjectMCPEntryName]
+	if !ok {
+		return false, nil
+	}
+	current := spec.Env["DATAWATCH_TOKEN"]
+	match := false
+	if current != "" {
+		for _, legacy := range legacyTokens {
+			if legacy == "" {
+				continue
+			}
+			if subtle.ConstantTimeCompare([]byte(current), []byte(legacy)) == 1 {
+				match = true
+				break
+			}
+		}
+	}
+	if !match {
+		return false, nil
+	}
+	if err := RemoveInstanceMCPConfig(dataDir); err != nil {
+		return false, err
+	}
+	return true, nil
 }
