@@ -8095,6 +8095,21 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
 
+## Observer push TLS (verify by default)
+
+Observer pushes — a worker's Shape A push into its parent, and the primary → root federation push (`observer.federation`) — now verify the counterpart's TLS certificate. Before this change the worker push ran with certificate checking off unconditionally.
+
+| Channel | Knob | Effect |
+|---------|------|--------|
+| Worker push (`https://` parent) | *(none)* | Parent's leaf verified against the system trust store; one startup notice says so. |
+| | `DATAWATCH_PARENT_CERT_FINGERPRINT` (hex SHA-256 of the parent's leaf) | The chain is not checked and the leaf must match; a malformed pin fails closed. **The pin wins over the opt-out.** The parent already injects this variable into container workers for the bootstrap channel. |
+| | `DATAWATCH_OBSERVER_PUSH_INSECURE=1\|true\|yes\|on` | Explicit opt-out, honored only when no pin is set; startup warning names the parent host (never tokens). |
+| Federation push | `observer.federation.insecure: true` | Still skips verification, but the daemon prints `[observer/federation] WARNING: TLS certificate verification is SKIPPED for the federation root <url>…` at startup (no pin knob; trust the root's certificate instead). |
+
+What does not change: the bootstrap channel's existing unverified fallback for a TLS-less parent, and `datawatch-stats` (a separate binary with its own `--insecure-tls`).
+
+**Operator review before upgrading a fleet:** a peer that pushed to a self-signed or private-CA `https://` parent was working only because verification was off; after the upgrade the push fails the TLS handshake unless the parent's leaf fingerprint is pinned or the opt-out is set. A primary pushing into a self-signed root needs the root's certificate in the system trust store, or the (warned) `observer.federation.insecure: true`. The walkthrough with the openssl derivation is in [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default).
+
 ## LLM billing mode
 
 Each LLM entry carries a `billing_mode`: `api` (metered), `allowance` (a bundled

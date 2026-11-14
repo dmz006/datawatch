@@ -32,6 +32,14 @@ finishes. Use for sandbox isolation, multi-cluster fan-out, or
 running an agent on a different OS / architecture than the daemon
 host.
 
+> The worker's observer push over `https://` verifies the parent's
+> certificate — pinned to the parent's leaf fingerprint (the
+> `DATAWATCH_PARENT_CERT_FINGERPRINT` the parent already injects for
+> the bootstrap channel) or, if that is absent, the system trust
+> store; skipping is the startup-warned `DATAWATCH_OBSERVER_PUSH_INSECURE`
+> opt-out. See [federated-observer → Push-channel TLS
+> (verified by default)](federated-observer.md#push-channel-tls-verified-by-default).
+
 ## What it is
 
 An "agent worker" is a container running:
