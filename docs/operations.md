@@ -6835,6 +6835,19 @@ A read that matches nothing is an empty list, not an error. The full field docum
 
 ---
 
+## Automation parallelism, decision waits and stage gating
+
+Four optional Automation features shape how branches run. All are off or unlimited by default and need no restart; an update that omits a field keeps its stored value.
+
+| Feature | Field | Status shows | Operator action |
+|---|---|---|---|
+| Branch chain | members between a fork and join, `on_complete` only | `branch_chains` | A failed chain member fails its branch; the join's `on_branch_failure` decides |
+| Max parallel | `max_parallel` on the Automation or a fork (0 = no limit) | `waiting_for_slot` | None; waiting members start in member order as slots free |
+| Decision wait | member `kind` `decision_wait` with a `question` | `waiting_for_operator` | Answer the question in the Inbox or with `datawatch question answer` |
+| Stage gate | `stage_gate` on the Automation | `waiting_for_stage` | Finish or skip the earlier stage's members |
+
+A daemon restart keeps waiting, held and decision-wait members in place and re-links the one open question to its member. A decision wait needs `autonomous.questions.enabled`; without it the question cannot be raised. A blocked member of an earlier stage keeps holding the later stage until it is resumed or skipped. See [howto/automation-chains.md](howto/automation-chains.md) and the glossary entries in [datawatch-definitions.md](datawatch-definitions.md).
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
 When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each completed Automaton's branch with `main` so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
