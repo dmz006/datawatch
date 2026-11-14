@@ -122,6 +122,14 @@ type Automation struct {
 	// value, and the JSON clone keeps it.
 	Milestone bool `json:"milestone,omitempty"`
 
+	// MaxParallel caps how many members of this Automation run at once: 0 (or
+	// unset) means no limit, today's behavior. When a member would start and
+	// that many members are already running, it waits for a free slot (its
+	// cursor is held, the Automation is not blocked) and starts when a running
+	// member finishes, in member order. A fork's own max_parallel narrows it
+	// for that fork's branches; the smaller limit wins. Never negative.
+	MaxParallel int `json:"max_parallel,omitempty"`
+
 	// Project is the explicit project link: the name of a configured project.
 	// Member Automata without their own link inherit it. Empty on older records.
 	Project string `json:"project,omitempty"`
@@ -165,6 +173,15 @@ type AutomationMember struct {
 	ForkMembers     []string `json:"fork_members,omitempty"`      // kind=fork: branch member IDs (at least 2)
 	JoinMembers     []string `json:"join_members,omitempty"`      // kind=join: branch member IDs, equal to the paired fork's
 	OnBranchFailure string   `json:"on_branch_failure,omitempty"` // kind=join: all_must_succeed (default) | any_one_is_enough | continue_anyway
+	// MaxParallel (kind=fork only) caps how many of the fork's branch members
+	// run at once: 0 (or unset) means no fork limit. It never widens the
+	// Automation's max_parallel; the smaller of the two applies. Never negative.
+	MaxParallel int `json:"max_parallel,omitempty"`
+	// WaitingForSlot is runtime state written only by the stepper: the member
+	// holds its cursor but was not started because a max_parallel limit was
+	// reached. It is meaningful only while the member has not started; the
+	// status views read it through memberWaitingForSlot.
+	WaitingForSlot bool `json:"waiting_for_slot,omitempty"`
 
 	AddedAt     time.Time `json:"added_at"`
 	AddedBy     string    `json:"added_by"`               // "operator" | "session:<id>" | "agent:<id>" | "import:bl117:<graph>"
@@ -366,6 +383,9 @@ func validateAutomation(a *Automation) error {
 	if a == nil || strings.TrimSpace(a.Name) == "" {
 		return fmt.Errorf("automation invalid: nil Automation or blank name")
 	}
+	if a.MaxParallel < 0 {
+		return fmt.Errorf("automation invalid: max_parallel %d must not be negative (0 means no limit)", a.MaxParallel)
+	}
 	switch a.Status {
 	case AutomationDraft, AutomationActive, AutomationPaused,
 		AutomationCompleted, AutomationBlocked, AutomationCancelled:
@@ -497,6 +517,12 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	}
 	if k != MemberKindAutomation && m.AutomationID != "" {
 		return fmt.Errorf("automation invalid: member %s: automation_id is only valid on kind automation", m.ID)
+	}
+	if m.MaxParallel < 0 {
+		return fmt.Errorf("automation invalid: member %s: max_parallel %d must not be negative (0 means no limit)", m.ID, m.MaxParallel)
+	}
+	if k != MemberKindFork && m.MaxParallel != 0 {
+		return fmt.Errorf("automation invalid: member %s: max_parallel is only valid on kind fork", m.ID)
 	}
 	if m.EstimatedCostUSD < 0 {
 		return fmt.Errorf("automation invalid: member %s: estimated_cost_usd %v must not be negative", m.ID, m.EstimatedCostUSD)

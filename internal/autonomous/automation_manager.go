@@ -38,6 +38,10 @@ type AutomationInput struct {
 	// given (omitted means false); an update changes it only when the field is
 	// present, so nil keeps the stored value.
 	Milestone *bool `json:"milestone,omitempty"`
+	// MaxParallel caps how many members of the Automation run at once (0 or
+	// unset = no limit). Create takes it as given; an update changes it only
+	// when the field is present, so nil keeps the stored value.
+	MaxParallel *int `json:"max_parallel,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -68,6 +72,9 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 	}
 	if in.Milestone != nil {
 		a.Milestone = *in.Milestone
+	}
+	if in.MaxParallel != nil {
+		a.MaxParallel = *in.MaxParallel
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -202,6 +209,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		}
 		if in.Milestone != nil {
 			a.Milestone = *in.Milestone
+		}
+		if in.MaxParallel != nil {
+			a.MaxParallel = *in.MaxParallel
 		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID

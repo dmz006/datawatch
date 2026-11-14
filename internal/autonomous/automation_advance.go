@@ -389,6 +389,19 @@ func (st *stepper) enter(next *AutomationMember) {
 		st.enterPending(next)
 		return
 	}
+	if st.holdForSlot(next) {
+		// A max_parallel limit is reached: the cursor holds the member, which
+		// starts when a running member finishes (promoteWaiting).
+		return
+	}
+	st.enterAdmitted(next)
+}
+
+// enterAdmitted starts next once any max_parallel limit has admitted it: the
+// budget gate, then the start for its kind. enter calls it after the slot check,
+// and promoteWaiting calls it for a member whose slot has come.
+func (st *stepper) enterAdmitted(next *AutomationMember) {
+	next.WaitingForSlot = false
 	if next.kind() != MemberKindJoin {
 		if v := st.snap[next.ID].verdict; v.Gate {
 			st.budgetGate(next, v)
@@ -432,6 +445,7 @@ func (st *stepper) startPRD(next *AutomationMember, resume, branch bool) {
 	t := st.now
 	next.Status = MemberRunning
 	next.StartedAt = &t
+	next.WaitingForSlot = false
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindPRD, prdID: next.PRDID,
@@ -450,6 +464,7 @@ func (st *stepper) startNested(next *AutomationMember, branch bool) {
 	t := st.now
 	next.Status = MemberRunning
 	next.StartedAt = &t
+	next.WaitingForSlot = false
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindAutomation, childID: next.AutomationID,
@@ -475,6 +490,11 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 	join.StartedAt = &t
 
 	branches := sortedCopy(fork.ForkMembers)
+	if anyMaxParallel(st.a) {
+		// A limit hands the slots out in member order, the same order a waiting
+		// member is started in later.
+		branches = byMemberOrder(st.a, fork.ForkMembers)
+	}
 	results := make(map[string]any, len(branches))
 	for _, bid := range branches {
 		b := automationMember(st.a, bid)
@@ -483,6 +503,10 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 			return
 		}
 		if b.kind() == MemberKindAutomation {
+			if st.holdForSlot(b) {
+				results[bid] = "waiting"
+				continue
+			}
 			st.startNested(b, true)
 			results[bid] = "started"
 			continue
@@ -493,6 +517,10 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 			st.failBranchMember(b, "gate-denied")
 			st.decision("branch", fmt.Sprintf("branch %s not started: %s is %s", b.ID, info.name, info.prdStatus))
 			results[bid] = "gate-denied"
+			continue
+		}
+		if st.holdForSlot(b) {
+			results[bid] = "waiting"
 			continue
 		}
 		st.startPRD(b, mode == "resume", true)
@@ -632,6 +660,7 @@ func (st *stepper) blockJoin(j *AutomationMember, rule string, failed []string, 
 // finalize settles the derived fields and the Decision the step leaves behind.
 func (st *stepper) finalize() {
 	a := st.a
+	st.promoteWaiting()
 	if !automationIsLinear(a) {
 		a.CurrentMemberID = firstCursor(a.ActiveCursors)
 	}

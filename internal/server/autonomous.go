@@ -4118,6 +4118,9 @@ type automationReq struct {
 	// Milestone marks the Automation as a milestone arc; omitted on an update
 	// keeps the stored value.
 	Milestone *bool `json:"milestone,omitempty"`
+	// MaxParallel caps how many members run at once (0 = no limit); omitted on
+	// an update keeps the stored value.
+	MaxParallel *int `json:"max_parallel,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -4138,6 +4141,7 @@ func automationInput(req automationReq) autonomous.AutomationInput {
 		VerificationEffort:  req.VerificationEffort,
 		AutoTags:            req.AutoTags,
 		Milestone:           req.Milestone,
+		MaxParallel:         req.MaxParallel,
 	}
 }
 

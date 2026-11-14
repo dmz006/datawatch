@@ -5119,6 +5119,9 @@ paths:
                         current_prd_id: {type: string}
                         current_prd_title: {type: string}
                         pending_members: {type: integer}
+                        max_parallel: {type: integer, description: "The Automation's max_parallel limit; omitted when unset"}
+                        running_members: {type: integer, description: "Members running now; reported only while a limit (the Automation's or a fork's) is set"}
+                        waiting_for_slot: {type: array, items: {type: string}, description: "Member IDs that hold their cursor and wait for a free slot, in member order. Waiting is not blocked; omitted when none waits"}
                         idle_since: {type: string, format: date-time}
                         idle_seconds: {type: integer}
                         blocked_reason: {type: string}
@@ -5130,7 +5133,8 @@ paths:
                               member_id: {type: string}
                               prd_id: {type: string}
                               automation_id: {type: string}
-                              status: {type: string}
+                              status: {type: string, description: "The member status; waiting_for_slot while the member waits under a max_parallel limit"}
+                              wait_reason: {type: string, description: "waiting for a free slot, set only while status is waiting_for_slot"}
                         join_wait:
                           type: object
                           description: "Present only while a join waits on its branches"
@@ -13531,6 +13535,7 @@ components:
         verification_model: {type: string, description: "Verifier model default for member runs"}
         verification_effort: {type: string, description: "Verifier effort default for member runs"}
         project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
+        max_parallel: {type: integer, minimum: 0, description: "Most members of this Automation that run at once; 0 or omitted means no limit. A member that would start past the limit waits for a free slot and starts, in member order, when a running member finishes. A fork's own max_parallel narrows it for that fork's branches; the smaller limit wins"}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         started_at: {type: string, format: date-time, nullable: true}
@@ -13553,6 +13558,8 @@ components:
         fork_members: {type: array, items: {type: string}, description: "kind fork: the branch member IDs started together (at least 2)"}
         join_members: {type: array, items: {type: string}, description: "kind join: the branch member IDs collected, equal to the paired fork's fork_members"}
         on_branch_failure: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway], description: "kind join only; omitted means all_must_succeed"}
+        max_parallel: {type: integer, minimum: 0, description: "kind fork only: most of the fork's branch members that run at once; 0 or omitted means no fork limit. Never wider than the Automation's max_parallel"}
+        waiting_for_slot: {type: boolean, readOnly: true, description: "Set by the daemon while the member holds its cursor and waits for a free slot under a max_parallel limit"}
         on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
@@ -13706,6 +13713,7 @@ components:
         verification_backend: {type: string}
         verification_model: {type: string}
         verification_effort: {type: string}
+        max_parallel: {type: integer, minimum: 0, description: "Most members that run at once; 0 or omitted means no limit. On update, omitted keeps the stored value and 0 clears the limit"}
         actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
         reason: {type: string, description: "Why this Automation is being created; recorded in the audit log"}
 

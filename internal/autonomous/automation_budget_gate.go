@@ -396,6 +396,9 @@ func stepStartPending(a *Automation, in stepInput, snap map[string]memberInfo) (
 	if budgetNoChange(a, snap[mem.ID].verdict) {
 		return nil, errStaleStep
 	}
+	if memberWaitingForSlot(mem) && !slotAdmitted(a, mem.ID) {
+		return nil, errStaleStep // still waiting for a free slot: nothing new to record
+	}
 	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at()}
 	dropCursor(a, mem.ID)
 	st.advNote = fmt.Sprintf("started %s", st.name(mem))

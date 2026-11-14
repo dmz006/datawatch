@@ -40,7 +40,13 @@ func (c *Coordinator) reconcile() {
 // waiting. It re-reads the Automation before every cursor, so an advance made
 // earlier in the pass is seen, and a cursor that has already moved on is skipped.
 func (c *Coordinator) reconcileOne(a *Automation) {
-	for _, id := range liveCursorIDs(a) {
+	ids := liveCursorIDs(a)
+	if anyMaxParallel(a) {
+		// Under a max_parallel limit the members waiting for a free slot are
+		// started in member order, so the cursors are walked in that order.
+		ids = byMemberOrder(a, ids)
+	}
+	for _, id := range ids {
 		cur, ok := c.m.automations.Get(a.ID)
 		if !ok || (cur.Status != AutomationActive && cur.Status != AutomationPaused) || !isLiveCursor(cur, id) {
 			continue
@@ -184,6 +190,12 @@ func (c *Coordinator) reconcileJoins(autoID string) {
 // reconciles start it once.
 func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	memID, prdID := mem.ID, mem.PRDID
+	if !slotAdmitted(a, memID) {
+		// A max_parallel limit is still reached: the member keeps its cursor and
+		// waits for a free slot. Nothing is blocked and nothing is written; the
+		// step that ends a running member starts it, in member order.
+		return
+	}
 	name, _, _ := c.prdState(prdID)
 	mode, status := c.startGate(prdID)
 	reason := ""
@@ -213,6 +225,9 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		if a.Status != AutomationActive || !isLiveCursor(a, memID) || cur == nil || (cur.Status != MemberPending && cur.Status != "") {
 			return errors.New("409: member already handled")
 		}
+		if !slotAdmitted(a, memID) {
+			return errors.New("409: member still waiting for a free slot")
+		}
 		now := c.now()
 		beff = nil
 		if reason == "" && verdict.Gate {
@@ -230,6 +245,7 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		}
 		cur.Status = MemberRunning
 		cur.StartedAt = &now
+		cur.WaitingForSlot = false
 		a.IdleSince = nil
 		a.BudgetState = nil
 		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "advance", Actor: coordinatorActor, Note: fmt.Sprintf("restart: retried start of %s", name)}))
