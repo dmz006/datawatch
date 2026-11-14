@@ -3393,12 +3393,13 @@ paths:
       summary: Unlanded Automaton branches
       description: |
         The Housekeeping action list: archived Automata whose branch carries
-        commits that are not on the default branch, each with a recommendation
-        (`landed`, `superseded` or `needs_decision`) and the reason. Branches
-        the operator chose to keep are left out. `branches` is an empty list,
-        never null, when nothing is unlanded or no base repository is
-        configured. Read-only; a federated peer needs the autonomous read
-        capability.
+        commits that are not on the default branch. Each row names the merge
+        state (`needs_decision`, `superseded` or `landed`), the recommended
+        action (`re-judge first`, `merge`, `archive branch` or
+        `delete worktree`) and the reason. Branches the operator chose to
+        keep are left out. `branches` is an empty list, never null, when
+        nothing is unlanded or no base repository is configured. Read-only;
+        a federated peer needs the autonomous read capability.
       operationId: autonomousUnlandedWork
       tags: [Autonomous]
       responses:
@@ -3420,7 +3421,8 @@ paths:
                         title: {type: string}
                         commits: {type: integer}
                         last_activity: {type: string, format: date-time}
-                        recommendation: {type: string, enum: [landed, superseded, needs_decision]}
+                        merge_state: {type: string, enum: [needs_decision, superseded, landed], description: "Whether the branch's work needs a decision, landed on the default branch, or was superseded on it"}
+                        recommendation: {type: string, description: "The one recommended action: re-judge first, merge, archive branch or delete worktree"}
                         reason: {type: string}
         "401":
           $ref: "#/components/responses/Unauthorized"

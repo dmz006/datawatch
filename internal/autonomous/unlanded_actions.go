@@ -159,7 +159,7 @@ var unlandedUnsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 func DeleteWorktree(ctx context.Context, git MergeGitRunner, opts DeleteWorktreeOptions) (DeleteWorktreeResult, error) {
 	b := opts.Branch
 	res := DeleteWorktreeResult{Branch: b.Branch}
-	switch b.Recommendation {
+	switch listState(b) {
 	case UnlandedLanded, UnlandedSuperseded, UnlandedNeedsDecision:
 	default:
 		return res, fmt.Errorf("delete refused: branch %q is not classified", b.Branch)

@@ -9,6 +9,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -183,5 +186,98 @@ func TestManagerHousekeepingEmptyWithoutRepo(t *testing.T) {
 	list, err := m.UnlandedWork(context.Background())
 	if err != nil || list == nil || len(list) != 0 {
 		t.Fatalf("nil manager: %v %v", list, err)
+	}
+}
+
+// TestRealAPIWrapperServesUnlanded drives the route through the production
+// wiring: the gate type-asserts AutonomousAPI (*autonomous.API wrapping the
+// real *Manager) to the unlanded surface, which it did not implement before
+// the delegating methods landed and every one of these reads returned 503.
+func TestRealAPIWrapperServesUnlanded(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "Unlanded Server Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "unlanded@example.invalid")
+	t.Setenv("GIT_COMMITTER_NAME", "Unlanded Server Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "unlanded@example.invalid")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	repo := t.TempDir()
+	rgit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	w := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rgit("init", "-q", "-b", "main")
+	w("base.txt", "base\n")
+	rgit("add", "base.txt")
+	rgit("commit", "-q", "-m", "base")
+
+	// landed: the change also lands on main with a different subject.
+	rgit("checkout", "-q", "-b", "automaton/uwl01")
+	w("done.txt", "same\n")
+	rgit("add", "done.txt")
+	rgit("commit", "-q", "-m", "work A")
+	rgit("checkout", "-q", "main")
+	w("done.txt", "same\n")
+	rgit("add", "done.txt")
+	rgit("commit", "-q", "-m", "merge of A")
+
+	// needs_decision: work not on main, nothing replaces it, no verdict filed.
+	rgit("checkout", "-q", "-b", "automaton/uwl02")
+	w("fresh.txt", "fresh\n")
+	rgit("add", "fresh.txt")
+	rgit("commit", "-q", "-m", "work B")
+	rgit("checkout", "-q", "main")
+
+	// superseded: main rewrote the file after the branch forked.
+	rgit("checkout", "-q", "-b", "automaton/uwl03")
+	w("shared.txt", "branch\n")
+	rgit("add", "shared.txt")
+	rgit("commit", "-q", "-m", "work C")
+	rgit("checkout", "-q", "main")
+	w("shared.txt", "main rewrote\n")
+	rgit("add", "shared.txt")
+	rgit("commit", "-q", "-m", "replace")
+
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	cfg := mgr.Config()
+	cfg.WorktreeBaseRepo = repo
+	mgr.SetConfig(cfg)
+	for _, br := range []string{"automaton/uwl01", "automaton/uwl02", "automaton/uwl03"} {
+		p, err := mgr.CreatePRD("unlanded fixture work", t.TempDir(), "", "", autonomous.EffortNormal)
+		if err != nil {
+			t.Fatalf("CreatePRD: %v", err)
+		}
+		p.Status = autonomous.PRDArchived
+		p.Git.Branch = br
+		if err := mgr.Store().SavePRD(p); err != nil {
+			t.Fatalf("SavePRD: %v", err)
+		}
+	}
+
+	s := &Server{autonomousMgr: autonomous.NewAPI(mgr)}
+	rec := hkDo(s, s.handleUnlandedWork, http.MethodGet, "/api/autonomous/unlanded-work", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("real API wrapper: status = %d, want 200\n%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"merge_state":"needs_decision"`, `"merge_state":"landed"`, `"merge_state":"superseded"`,
+		"re-judge first", "delete worktree", "archive branch", "automaton/uwl01",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body lacks %s:\n%s", want, body)
+		}
 	}
 }
