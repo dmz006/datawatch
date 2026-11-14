@@ -1016,7 +1016,8 @@ stories is never explained only by an internal field.
 The same object is returned by the MCP tools `autonomous_prd_get` and
 `autonomous_prd_list`. The CLI `autonomous prd-get` prints a "Planning failed"
 section and `autonomous prd-list` adds one `planning failed:` line per
-affected Automaton. The chat verbs `autonomous get` and `autonomous list` add a
+affected Automaton; both write these plain-text lines to standard error, so
+standard output stays one JSON document. The chat verbs `autonomous get` and `autonomous list` add a
 one-line failure with the reason and the phrases. The PWA shows the same fields
 on the Automaton detail and a "Planning failed" badge on the Automata list card
 of a draft; when the "Fix the wording and plan again" question is waiting, the

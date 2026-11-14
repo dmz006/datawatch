@@ -318,7 +318,7 @@ session:
   stale_timeout_seconds: 1800
   task_delivery_window_seconds: 60 # max wait per attempt for the Claude prompt before redelivery
   task_delivery_attempts: 3    # redelivery attempts before the task fails
-  schedule_settle_ms: 1500
+  schedule_settle_ms: 1500     # pause between typing the text and Enter; the paste wait and Enter retry after it use fixed timings
   default_effort: normal     # quick | normal | thorough
   persist_telemetry_on_stop: false  # flush structured telemetry to episodic memory on Stop
 ```

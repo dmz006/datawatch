@@ -226,13 +226,19 @@ func daemonJSONBody(method, path string, body any) ([]byte, error) {
 
 // prettyPrint emits indented JSON when body parses as JSON, raw otherwise.
 func prettyPrint(body []byte) {
+	prettyPrintTo(os.Stdout, body)
+}
+
+// prettyPrintTo is prettyPrint with an explicit destination, so a command
+// can send the JSON to its own output writer.
+func prettyPrintTo(w io.Writer, body []byte) {
 	var v any
 	if err := json.Unmarshal(body, &v); err == nil {
 		out, _ := json.MarshalIndent(v, "", "  ")
-		fmt.Println(string(out))
+		_, _ = fmt.Fprintln(w, string(out))
 		return
 	}
-	_, _ = os.Stdout.Write(body)
+	_, _ = w.Write(body)
 }
 
 // ----- BL34 ask ------------------------------------------------------------

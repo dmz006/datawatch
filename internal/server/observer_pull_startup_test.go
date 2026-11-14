@@ -43,7 +43,8 @@ func TestHTTPServerStart_StartsAndStopsObserverPull(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err
 	case <-time.After(10 * time.Second):
 		t.Fatal("Start did not return after cancel")
 	}

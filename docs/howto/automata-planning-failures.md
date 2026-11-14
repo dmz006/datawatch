@@ -126,11 +126,29 @@ An Automaton with no planning failure has no `planning_failure` object.
 | Web list | A red **Planning failed** badge on the Automaton's row; hover for the reason |
 | REST | `planning_failure` on `GET /api/autonomous/prds/{id}` and on each row of `GET /api/autonomous/prds` |
 | MCP | `autonomous_prd_get` and `autonomous_prd_list` return the same object |
-| CLI | `datawatch autonomous prd-get <id>` prints a **Planning failed** section (reason, category, rule, phrases, retries); `datawatch autonomous prd-list` prints one `planning failed:` line per failed Automaton |
+| CLI | `datawatch autonomous prd-get <id>` prints a **Planning failed** section (reason, category, rule, phrases, retries); `datawatch autonomous prd-list` prints one `planning failed:` line per failed Automaton. Both print these plain-text lines on **standard error**; standard output holds one JSON document only (see below) |
 | Chat | `autonomous get <id>` adds a "Planning failed: ..." line with the phrases; `autonomous list` adds one line per failed Automaton |
 
 A retry of a content failure with the same spec reproduces it, so do not simply
 plan again: reword the phrases the record names.
+
+## Reading the CLI output in a script
+
+The Automata list and get commands (`prd-list` and `prd-get`) print the JSON
+reply, and only the JSON, on standard output. The `planning failed` notes and
+every other plain-text summary line (the **Planning failed** section, the
+rules-review outcome, the review and parallel lines) go to standard error. A
+script can therefore pipe standard output straight into a JSON parser. In a
+terminal you still see both.
+
+```sh
+datawatch autonomous prd-list 2>/dev/null | jq .
+```
+
+The `2>/dev/null` drops the notes; leave it off to see them on the terminal,
+or use `>/dev/null` to read only the notes. A script that used to filter the
+`planning failed:` lines out of standard output no longer needs to, and a
+script that read them from standard output must now read standard error.
 
 ## The alert and the question
 
@@ -217,6 +235,11 @@ Things this change leaves for you to decide or confirm:
   the spec check; parity is tracked in datawatch-app.
 - The spec check never blocks. If your process needs a hard stop on a private
   address or a worktree path, that is not provided.
+- `prd-list` and `prd-get` now print their plain-text lines (`planning failed:`
+  and the other summary lines) on standard error, and standard output is one
+  JSON document. Check any of your scripts or cron jobs that grep standard
+  output for `planning failed:`; they must read standard error instead. The
+  REST, MCP and chat surfaces are unchanged.
 - The release-number self-correction rewrites the stored plan, not your spec.
   Read the `auto_correct` line on the decision log the first few times.
 

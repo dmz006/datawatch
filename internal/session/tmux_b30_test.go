@@ -24,7 +24,13 @@ func fakeTmuxOnPath(t *testing.T) (pathVal, logFile string) {
 	}
 	dir := t.TempDir()
 	logFile = filepath.Join(dir, "tmux.log")
+	// Read-only capture-pane calls are not logged (the log lists only
+	// keystroke sends) and echo the last literal push, as a real TUI
+	// would, so the pre-Enter visibility poll ends immediately.
+	echo := filepath.Join(dir, "pane.txt")
 	script := "#!/bin/sh\n" +
+		`case "$1" in display-message) exit 0;; capture-pane) cat ` + echo + ` 2>/dev/null; exit 0;; esac` + "\n" +
+		`if [ "$4" = "-l" ]; then printf "%s" "$5" > ` + echo + "; fi\n" +
 		`printf "%s\n" "$*" >> ` + logFile + "\n" +
 		"exit 0\n"
 	p := filepath.Join(dir, "tmux")

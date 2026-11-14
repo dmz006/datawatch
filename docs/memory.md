@@ -204,7 +204,7 @@ memory:
 - **Best for**: Team deployments, shared knowledge bases, existing Postgres infrastructure
 - **Storage**: Dedicated database with `memories`, `kg_entities`, `kg_triples` tables
 - **Performance**: Application-side cosine similarity (pgvector native search planned)
-- **Encryption**: XChaCha20-Poly1305 content encryption works identically to SQLite
+- **Encryption**: XChaCha20-Poly1305 encryption of `content` and `summary` follows `--secure`, as on SQLite; import and export differ (see [encryption.md](encryption.md#memory-behaviour-to-know-about))
 
 ##### PostgreSQL Setup
 

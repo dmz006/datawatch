@@ -112,6 +112,13 @@ Steps:
 
 - **Go:** `go build -o datawatch ./cmd/datawatch/ && go test ./...` from the
   repo root.
+- **Before a tag:** `make pre-tag` must pass on the build host. It replaces `go test` in the
+  CI and release workflows and appends its result to the gitignored
+  `.datawatch/pre-tag-record`.
+- **New work ships with tests:** include unit and functional tests and the relevant smoke
+  script with every change.
+- **E2E and sandbox smoke:** this run is the operator's major-release step. It is not a
+  product feature and is not part of a contribution.
 - **PWA JS (`internal/server/web/`):** there is no bundler or framework for
   this code (every file is a classic `<script>`), but regression tests for
   it use Node's built-in test runner — zero dependencies, ships with Node
@@ -168,6 +175,16 @@ chore(deps): update gorilla/websocket to v1.5.3
 6. Commit with a conventional commit message.
 7. Push to your fork and open a PR using the PR template.
 8. One maintainer review is required before merge.
+
+### Local pre-tag checks
+
+Two slow checks are opt-in. Run both before tagging a release; `make help` lists them.
+
+- `make test-tmp-guard` — runs the temp-dir leak guard over every package.
+- `make test-cross-build` — cross-builds the daemon for windows and darwin.
+
+A plain `go test ./...` skips both and prints a skip message that names the make
+target to run. Whether CI and the release workflow run them is decided separately.
 
 All contributions are welcome. This is a solo-maintainer project — please be patient
 with review turnaround.

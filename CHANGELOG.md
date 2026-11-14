@@ -5,6 +5,100 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.3 — Projects cards and Gantt fix
+
+### Fixed
+
+- The Projects view draws its project list and its Unassigned and History boards as cards, with a Cards, Tiles and Compact switch that is remembered in the browser; a phone width starts in Compact.
+- The Unassigned board now has Assign (set the project from the card), Open and Dismiss per Automaton, with an Undo link. Dismiss hides the card in this browser only; the daemon keeps tracking the Automaton.
+- The Policy page was removed from a project's sub-tabs. The link next to the project name opens the policy in Settings, and an old stored or addressed `policy` choice opens Overview.
+- The Projects Gantt now draws an Automaton from its first task start to its last task end, and a shipped Automaton always reads completed, whatever its record says.
+
+## v9.173.2 — Workers stop writing rules-file checkpoints
+
+### Fixed
+
+- **Automaton workers no longer write checkpoint entries into the rules file.** Workers often appended a progress note to `AGENT.md`, a protected path, so almost every task raised a protected-path question. Every worker prompt that carries the rules block now also carries a short rule: do not add, edit or remove checkpoint entries in `AGENT.md`, `CLAUDE.md` or the configured rules file, and write progress notes to `CHECKPOINT.md` at the root of the working directory instead.
+- **A checkpoint-only change to the rules file is reverted automatically.** When a worker appends a checkpoint entry anyway and that entry is the file's entire change since the base commit, the protected-paths gate strips it out, records a `protected_paths_checkpoint_reverted` decision and does not hold the task. A change that goes beyond the entry is still caught by the gate.
+- The how-tos on protected paths and rules and context, the operations guide and the glossary describe the new rule and the revert.
+
+## v9.173.1 — Dashboard phone layout fix
+
+### Fixed
+
+- **Dashboard on a phone.** At 600px or less the stat bar now wraps onto a second row so the **+ Card** and **Edit** buttons stay on screen, and the Dashboard scrolls as one page (the card grid grows to fit its cards instead of clipping inside a short nested scroll box). Layout only: no setting, API, MCP or CLI change. Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`; see [howto/dashboard.md](docs/howto/dashboard.md#on-a-phone).
+
+## v9.173.0 — Local pre-tag run replaces the slow CI checks
+
+### Added
+
+- **`make pre-tag` runs the release gates locally before the tag.** `scripts/pre-tag.sh` runs the checks CI would otherwise find after the tag, in CI order, and stops at the first failure: lint, the Go test suite, the security and release-build steps, and an opt-in slow step (tmp guard, cross build of the release targets, perf rollup and busy-loop checks, each niced and time-limited). A step whose tool is missing prints `SKIP [step]: <tool> not found` and does not fail the run. Every run appends a line to the git-ignored `.datawatch/pre-tag-record` (`PRE_TAG_RECORD_FILE` overrides it; a dry run writes nothing). `tests/test-pre-tag.sh` covers the runner and runs in `make test`.
+
+### Changed
+
+- **CI no longer runs the Go test suite.** The `go test` step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build`. The pre-tag run is the only gate that runs the suite, so run it before every tag. AGENT.md, CONTRIBUTING.md, the release checklist, the push-and-tag how-to, the testing page, the operations page and the glossary describe the rule.
+
+## v9.172.14 — Accept the second soupsieve finding on the aider image
+
+### Security
+
+- **CVE-2026-126191 on the aider image is accepted for 30 days.** The release scan lists a second HIGH finding on soupsieve 2.10 (exponential ReDoS in selector compilation, fixed in 3.0.2). Every soupsieve release from 3.0.2 requires Python >=3.11.5 and the aider image runs Python 3.11.2, so it cannot be upgraded. Aider calls no selector, a finding reused from the CVE-2026-126190 trace and not re-traced, so the entry is untraced. It clears when the aider venv moves to Python >=3.11.5 (Automaton 66dd0001).
+
+## v9.172.13 — Burn script counts helper agents
+
+### Changed
+
+- **The usage burn script now counts helper agents.** `scripts/claude-burn.py` read only the top-level session transcripts and left out the subagent transcripts that Claude Code keeps for helper agents, so merge, repair and audit helpers did not show in the usage totals. It now counts them and prints them as their own line, and it joins the other supervisor tools (`supervisor-watch.py`, `v10-status.py`) in the version-bump check's exempt list.
+
+## v9.172.12 — Encryption audit: the encryption docs match the code
+
+### Documentation
+
+- **The encryption page and the pages that repeat it now match the code.** `docs/encryption.md` was rewritten against the 2026-11-13 encryption audit: it names the current config format and key settings, the real file names (session records under `sessions.d/`, `schedule.json`, `output.log.enc`), and states that memory encryption follows `--secure` (there is no memory encryption setting). It now lists what `--secure` covers, what is still plain, what cannot be encrypted, that there is no password-change or key-rotation command, that `export --all` misses the current session records and the schedule store, and that the vault key file sits beside the vault. The operations, setup, memory, secrets and cross-agent memory pages, the glossary and the README no longer say that all data is encrypted. No behavior changed.
+- **Three more encryption claims corrected.** The secrets how-to no longer tells operators to run `datawatch secrets export` and `secrets import <file>` (neither exists); it describes moving values with `secrets get` and `secrets set`, and separates `secrets migrate`. The devices API page no longer says `devices.json` is encrypted through a `secrets.encryption_enabled` setting (there is none; the file is plain). The profiles page links the encryption page.
+
+## v9.172.11 — Email empty-recipient test is instant and deterministic
+
+### Fixed
+
+- **The email empty-recipient test is instant and deterministic.** The test that a send with no recipient falls back to the configured `email.to` address used to connect to a non-routable host and wait for a network timeout, and it could not tell a refused address from a slow network. It now sends to a local fake mail server, so it finishes at once, and it checks that the message is addressed to the configured fallback. Test-only change: the email backend's behavior is unchanged. The comm channels how-to, the messaging backends reference, the operations guide and the glossary state the behavior: a send with no recipient goes to the configured address, and a recipient or sender containing a newline is refused before any connection is opened.
+
+## v9.172.10 — A pasted message with attachments is now submitted
+
+### Fixed
+
+- **A message sent to a session with attachments is now submitted.** A message pasted into a Claude Code session (for example from the web app with attachments) could land in the input box without being submitted, because Enter was pressed before the session had accepted the paste. The daemon now waits up to 1.5 seconds for the pasted text or its `[Pasted text #N]` placeholder to show in the pane, presses Enter once, and, for pasted, multi-line or long input, presses Enter again at most twice while the text is still unsent. The delivery sequence is covered by tests over a fake terminal. No new setting, endpoint or field.
+
+### Documentation
+
+- **Sending a message to a session is documented as wait, Enter, verify.** The Sessions deep-dive how-to gains "How a sent message is submitted", the operations guide gains "Message submission to a session", and the glossary gains a "Message submission" entry. The `schedule_settle_ms` comments, `datawatch session send` and the sessions API page point to it.
+
+## v9.172.9 — Projects Overview sub-tabs respond and use the Projects look
+
+### Fixed
+
+- **The Projects Overview sub-tabs respond to a click or tap.** Under Overview on the Projects page the in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) did nothing when chosen. Choosing one now shows its body, marks it selected, and keeps the Inbox count live.
+- **The Overview sub-tabs use the Projects look.** The strip now matches the project page sub-tabs instead of the Automation view's second row, and the choice is remembered in this browser (the same stored value as the project page sub-tabs) and restored on refresh. A remembered value that does not belong to the Overview strip is ignored and Inbox opens. The strip has no address of its own, so the address stays `#projects`.
+- The Projects tab how-to and the glossary describe the Overview sub-tabs, with tests for the clicks, classes and memory. This is a display rule of the web app only: no setting and no REST, MCP, CLI or chat change.
+
+## v9.172.8 — Two slow tests behind opt-in make targets
+
+### Fixed
+
+- **Two slow non-unit tests no longer run in a plain `go test ./...`.** The release-target cross-build check and the temporary-folder leak guard each start nested builds or test runs and made the regular run slow. Both now skip with a message naming their target unless asked for, and two opt-in `make` targets run them: `make test-cross-build` (sets `DW_RUN_CROSS_BUILD=1`) and `make test-tmp-guard` (sets `DW_RUN_TMP_GUARD=1`). `make help` lists both, a test guards that the plain run skips them and the targets run them, and the contributor guide and testing guide say to run both before tagging a release. Whether CI and the release workflow run them is decided separately.
+
+## v9.172.7 — Automata list and get: notes off standard output
+
+### Fixed
+
+- **`datawatch autonomous list` and `get` print one JSON document on standard output.** The plain-text notes they add (for example a "planning failed" line for an Automaton, or a skipped-tag note) went to standard output after the JSON, so a script that parsed the output failed. The notes now go to standard error, and a test guards that standard output holds exactly one JSON document. The planning failures how-to, the API reference and the glossary describe the split.
+
+## v9.172.6 — Soupsieve CVE accepted for the aider image
+
+### Security
+
+- **CVE-2026-126190 (soupsieve 2.10, HIGH) in the aider image is accepted for 30 days.** It is a denial of service that needs an attacker to control a CSS selector passed to soupsieve; aider scrapes pages with beautifulsoup4 but its own code never calls select, so no selector reaches it. The fix (soupsieve 4.0.0) needs Python 3.11.5 or newer and the image has Python 3.11.2, so it cannot be installed yet. It clears when the aider venv moves to a newer Python, which is a separate follow-up; the entry expires 2026-12-13.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed

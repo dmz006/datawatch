@@ -21,7 +21,7 @@ const TRANSLATED = LANGS.filter(l => l !== 'en');
 const SAME_IN_LANGUAGE = {
   de: ['projects_subtab_gantt', 'projects_page_repository', 'projects_manage_col_name', 'projects_manage_field_name'],
   es: ['projects_subtab_gantt'],
-  fr: ['projects_subtab_gantt', 'projects_subtab_plans', 'projects_subtab_arcs', 'projects_page_plans', 'projects_page_arcs', 'projects_field_description', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description'],
+  fr: ['projects_subtab_gantt', 'projects_subtab_plans', 'projects_subtab_arcs', 'projects_page_plans', 'projects_page_arcs', 'projects_field_description', 'projects_page_points', 'projects_manage_col_description', 'projects_manage_field_description', 'projects_view_compact'],
   ja: [],
 };
 
@@ -103,15 +103,17 @@ test('app.js references only projects_ keys that exist in en.json', () => {
   assert.deepEqual(missing, [], `app.js uses projects_ keys missing from en.json: ${missing.join(', ')}`);
 });
 
-// The Projects sub-tab strip: seven tab labels plus the strip's aria-label.
+// The Projects sub-tab strip: six tab labels plus the strip's aria-label.
+// (The former Policy tab is gone; a stored policy choice falls back to.
+// Overview, so its key was removed from the labels.)
 const SUBTAB_KEYS = [
   'projects_subtab_overview', 'projects_subtab_plans', 'projects_subtab_gantt',
-  'projects_subtab_unassigned', 'projects_subtab_history', 'projects_subtab_policy',
+  'projects_subtab_unassigned', 'projects_subtab_history',
   'projects_subtab_events', 'projects_subtabs_label',
 ];
 
-test('the eight Projects sub-tab keys exist and are non-empty in all five locales', () => {
-  assert.equal(SUBTAB_KEYS.length, 8);
+test('the six Projects sub-tab keys plus the strip label exist and are non-empty in all five locales', () => {
+  assert.equal(SUBTAB_KEYS.length, 7);
   for (const lang of LANGS) {
     for (const key of SUBTAB_KEYS) {
       assert.ok(Object.prototype.hasOwnProperty.call(bundles[lang], key), `${lang}.json is missing ${key}`);

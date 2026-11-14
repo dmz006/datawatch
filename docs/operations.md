@@ -123,7 +123,7 @@ datawatch start --config /path/to/config.yaml
 - PID is written to `~/.datawatch/daemon.pid`
 - **PID lock:** On startup, datawatch checks `daemon.pid` — if the PID is still running, it refuses to start a second instance. This prevents multiple daemons from competing for the same sessions and Signal connection.
 - Use `datawatch stop` to send SIGTERM gracefully
-- Daemon mode is incompatible with `--secure` (encrypted config); use `--foreground` instead
+- Background daemon mode cannot prompt for the `--secure` password. Use `--foreground`, or set `DATAWATCH_SECURE_PASSWORD` in the service environment (see [encryption.md](encryption.md) for what that exposes)
 
 ---
 
@@ -324,7 +324,7 @@ Your own archive is unaffected and works at any time, from any surface. The two 
 
 ### Data compatibility
 
-datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
+datawatch data files (the session records under `sessions.d/` — the legacy single `sessions.json` is read only for migration — and `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
 
 **Encrypted stores (`--secure` mode):** The encryption formats (`DWDAT2\n` XChaCha20-Poly1305 and legacy `DWDAT1\n` AES-256-GCM) are stable. The derived key (Argon2id with salt embedded in config header) is deterministic — the same password always yields the same key across versions. Upgrading does not require re-encrypting data files. Legacy v1 files are read transparently.
 
@@ -653,12 +653,23 @@ datawatch config set session.liveness_idle_timeout_overrides '{"pi": 30, "goose"
 ```
 
 
-**Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
-are encrypted with XChaCha20-Poly1305: `sessions.json`, `schedule.json`, `commands.json`,
-`filters.json`, and `alerts.json` — not just `config.yaml`. The encryption key is derived
-from your passphrase using Argon2id with a salt embedded in the encrypted config header.
-Set `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive restarts.
-See [docs/encryption.md](encryption.md) for full details.
+**Note on `--secure` mode:** When started with `datawatch --secure start`, the
+config file (`DWATCH3`) and a defined set of data stores are encrypted with
+XChaCha20-Poly1305: the session records in `sessions.d/` and the session archive,
+`schedule.json`, `commands.json`, `filters.json`, `alerts.json`, the federation,
+compute, LLM, skills and channel-routing registries, plan records, session output
+(`output.log.enc`), the application log and the memory `content` and `summary`
+fields. **It is not every file.** Token and credential files, the Automaton store,
+spend files, the tracker files in each session folder, audit and trace logs and
+the TLS private keys are still plain, and a running secure daemon appears to write
+`config.yaml` back unencrypted after a runtime settings change (found by reading
+the code, not yet reproduced). The encryption key is derived from your passphrase
+using Argon2id with a salt embedded in the encrypted config header. Set the
+`DATAWATCH_SECURE_PASSWORD` environment variable for non-interactive restarts; it
+is then readable by the same user through the process environment. Use disk-level
+encryption for anything `--secure` does not cover. See
+[docs/encryption.md](encryption.md) for the full list and the
+[encryption audit](plans/2026-11-13-encryption-audit.md) for the evidence.
 
 **Minimum viable config** (everything else uses defaults):
 
@@ -1412,7 +1423,7 @@ Each key is reachable through all five configuration methods (MCP agents use `co
 | `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
 | `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
 
-**Project timeline.** The per-project read of when each plan, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one plan's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled) and `release`; task rows carry `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automata's own records, so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. The Focus view's "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — not the exact first and last task dates, so each can read up to a day off. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
+**Project timeline.** The per-project read of when each plan, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one plan's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled — a shipped Automaton reads completed whatever its record says) and `release`; an Automaton row spans its first task start to its last task end (the `end` is empty while it runs), and an Automaton with no started task is read from its created time to its completion time. A task row carries `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automata's own records, so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. The Focus view's "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — not the exact first and last task dates, so each can read up to a day off. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
 
 **Timeline chart.** The interval chart of the Automata (the Gantt-style view across all projects — every task as a bar with its start and end, blocked and waiting intervals, the today marker and the projected finish) is a pure read: no configuration key, no state, nothing stored when it is read, and therefore nothing to change live and nothing that needs a restart. It needs autonomous enabled (the route answers 503 when autonomous is off) and, for a federated peer, the autonomous read capability. Every surface — `GET /api/autonomous/timeline`, MCP `autonomous_timeline`, `datawatch autonomous timeline` (with `--json` for the raw body), and the `timeline` comm channel command — decodes the exact same object, so the surfaces can never disagree. See [howto/automata-timeline.md](howto/automata-timeline.md).
 
@@ -2519,9 +2530,13 @@ switch once devices report their own environment.
 
 ### Encryption at Rest
 
-When `--secure` mode is enabled, all data stores are encrypted with XChaCha20-Poly1305.
+When `--secure` mode is enabled, the config file and the stores listed in
+[encryption.md](encryption.md) are encrypted with XChaCha20-Poly1305; the rest of
+the data directory is not (that page has the plain-today list, the items that
+cannot be encrypted, and the open items for the operator).
 Set `DATAWATCH_SECURE_PASSWORD` as an environment variable for automatic restarts.
-See [encryption.md](encryption.md) for details.
+Back up `config.yaml`: it holds the salt, and there is no password-change or
+key-rotation command.
 
 ### Interface Configuration Summary
 
@@ -2902,6 +2917,10 @@ curl -X POST 'https://localhost:8443/api/reload?subsystem=filters' \
 reload filters
 ```
 
+### Email notifications: recipient and test notes
+
+The `email` backend sends to the recipient named in the send; with none, it uses the configured `email.to`. A recipient or sender containing a newline is refused before any SMTP connection, so that failure is immediate rather than a timeout. If an email test appears to hang, check that it uses the local fake SMTP server (`startFakeSMTPServer` in `internal/messaging/backends/email/backend_test.go`) and not a real host. Details: [`messaging-backends.md`](messaging-backends.md) § Email.
+
 ### Claude Auto-Accept Disclaimer (v5.27.2)
 
 **Config key:** `session.claude_auto_accept_disclaimer` (default: `false`)
@@ -3201,6 +3220,60 @@ serialise from one client if order matters; (3) a last-tag `@<path>`
 fallback ends in exactly one space on purpose — it closes the session's
 `@` completion so one Enter sends; confirm nothing downstream compares the
 typed session input byte for byte before deciding to send.
+
+### Message submission to a session (paste wait and Enter retry)
+
+Every text sent into a tmux-backed session (the PWA input bar and image
+send, `POST /api/sessions/send`, the MCP `send_input` tool, `datawatch
+session send`, and comm channel `send`) ends with the same delivery
+sequence, so a message that Claude Code folds into a `[Pasted text #N +M
+lines]` placeholder is submitted instead of being left unsent in the input
+box:
+
+1. The text is typed literally (chunked above the tmux argument limit),
+   then the daemon waits `session.schedule_settle_ms` (default 200 ms,
+   scaled up for many chunks).
+2. The daemon polls the visible pane every 50 ms, for at most 1.5 s, until
+   the paste placeholder or the last 24 characters of the last line show up
+   near the input prompt. On timeout, or if the pane cannot be read, it
+   goes on to Enter anyway.
+3. One Enter is sent.
+4. For input that showed a placeholder, contains a newline, or is longer
+   than 200 bytes, the daemon re-reads the pane 400 ms later. If the
+   placeholder or the text is still in the last six non-empty lines on a
+   prompt line and no assistant output follows it, it sends another Enter,
+   at most two more. It never sends an Enter once the placeholder is gone
+   or the assistant is active.
+
+Short single-line input without a placeholder gets one Enter and no
+re-check. An empty payload is a bare Enter with no polling.
+
+What to know when operating it:
+
+- **No new configuration.** The 1.5 s wait, the 50 ms poll, the 400 ms
+  re-check, the two-retry cap and the 24-character tail are fixed
+  constants in `internal/session/paste_submit.go`, not config keys. The
+  only tunable is `session.schedule_settle_ms`, unchanged.
+- **A send that exhausts its retries still reports success.** The text did
+  reach the terminal, so `SendInput` returns no error and the input count
+  still increments; the message simply remains in the input box. The
+  daemon does not alert on this. This is different from a task-prompt
+  delivery, which has its own bounded wait for assistant activity and
+  fails with "prompt not submitted" (see `task_delivery_window_seconds` and
+  `task_delivery_attempts`).
+- **Detection is text-based.** Retrying relies on the placeholder text
+  (`[Pasted text #`), the ❯ prompt or the input-box frame in the captured
+  pane. A TUI that renders its input differently gets the single Enter
+  after the 1.5 s wait and no retry.
+- **Chat-mode ollama sessions are untouched.** Their input goes through the
+  daemon's own conversation manager, not tmux, so none of this applies.
+- **Cost.** A long or pasted send holds the sending goroutine for up to
+  about 1.5 s plus 0.8 s of re-checks (two pane re-reads at most after the
+  first Enter), on top of the settle delay.
+
+See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#5h-how-a-sent-message-is-submitted)
+for the operator-facing description and what to do when a message is still
+unsent.
 
 ### Browser Auto-Refresh
 
@@ -6958,7 +7031,7 @@ MCP agents use `checks_status` and `ship_status` (both read-only, the same objec
 
 ## Rules and context for planning
 
-When the daemon plans an Automaton it points the planner at the project's rules file and context files, adds the same pointer to each worker and verification prompt, and, for a backend that cannot read files, adds a short rules digest. The names, the digest mode and the size limit are settings under `autonomous.rules_context`, with a per-project override; a planning record on each Automaton shows which files were used (names, hashes, sizes, missing files), never their content. The planner also gives each task a rules checklist; a task whose checklist misses an area it touches gets an advisory *rules checklist gap* finding. The walkthrough is [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#rules-and-context).
+When the daemon plans an Automaton it points the planner at the project's rules file and context files, adds the same pointer to each worker and verification prompt, and, for a backend that cannot read files, adds a short rules digest. Every worker prompt that carries that pointer also carries a short, fixed no-checkpoints rule: checkpoint, progress-note and status entries in `AGENT.md`, `CLAUDE.md` or the configured rules file are written only by the operator and the supervisor, and a worker that needs a progress note writes it to `CHECKPOINT.md` at the root of its working directory instead. The planning prompt decompose uses does not carry the rule, and a retried task is never given the pointer or the rule twice. The names, the digest mode and the size limit are settings under `autonomous.rules_context`, with a per-project override; a planning record on each Automaton shows which files were used (names, hashes, sizes, missing files), never their content. The planner also gives each task a rules checklist; a task whose checklist misses an area it touches gets an advisory *rules checklist gap* finding. The walkthrough is [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#rules-and-context).
 
 | Task | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
@@ -7077,7 +7150,7 @@ The read is GET-only (any other method is 405), needs the autonomous read capabi
 
 ## Automaton protected paths (a task may not change the rules without a decision)
 
-A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
+A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. Worker progress notes no longer reach the gate in the ordinary case either: every worker prompt that gets its rules and context block also gets a short, fixed rule that the Checkpoints sections of the rules files are operator- and supervisor-only and that a worker progress note belongs in `CHECKPOINT.md` ([worker progress notes no longer touch the rules file](howto/automaton-protected-paths.md#worker-progress-notes-no-longer-touch-the-rules-file)). The gate also covers the rule's failure mode: a worker that appends a checkpoint entry to the rules file anyway is not held when that entry is the file's entire change since the base commit — the gate strips the entry out of the file and records a `protected_paths_checkpoint_reverted` decision — and a change that goes beyond the entry is still held the same way (see [the checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert)). The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
 
 **The three keys.**
 
@@ -7087,7 +7160,7 @@ A worker can edit any file inside the project, including the file that holds the
 | `autonomous.automation.protected_paths_action` | What happens when a task changes a protected path | `hold` | `hold`, `warn`, `block`, `off` (anything else is refused on every write surface; an unset key reads `hold`) |
 | `autonomous.automation.rules_review_source` | Where the rules review reads the project rules | `base_commit` | `base_commit`, `worktree` (anything else is refused on every write surface; an unset key reads `base_commit`) |
 
-`hold` parks the task as blocked with the changed paths and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` records a decision, an audit event and a warning alert and lets the task go on. `block` parks the task as blocked with the error `protected_path_blocked: <paths>` and raises no question. `off` does no check. The gate never reverts, resets, amends or rewrites anything. `base_commit` gives the judge the rules and context files as they were at the Automaton's base commit; `worktree` tells it to read them from the working directory. The rules review itself runs only when `rules-review` is in the Automaton's guardrail list.
+`hold` parks the task as blocked with the changed paths and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` records a decision, an audit event and a warning alert and lets the task go on. `block` parks the task as blocked with the error `protected_path_blocked: <paths>` and raises no question. `off` does no check. Apart from the [checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert) — a worker's own checkpoint entry, stripped from a rules file when it is the file's entire change since the base commit — the gate never reverts, resets, amends or rewrites anything. `base_commit` gives the judge the rules and context files as they were at the Automaton's base commit; `worktree` tells it to read them from the working directory. The rules review itself runs only when `rules-review` is in the Automaton's guardrail list.
 
 **Changing the settings.**
 
@@ -7139,6 +7212,7 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 | An answer did not match the hold | — | `protected_paths_answer_ignored`, `protected_paths_answer_invalid` |
 | An Automaton's authorised list is set | `autonomous_protected_paths_authorised_set` | `protected_paths_authorised_set` |
 | A task changed a path the authorised list covers | — | `protected_paths_authorised` |
+| The gate stripped a worker's checkpoint entry from the rules file | — | `protected_paths_checkpoint_reverted` |
 | The check could not run | — | `protected_paths_check_skipped` |
 | The rules review fell back to the working tree | — | `rules_review_source_fallback` |
 
@@ -7146,7 +7220,7 @@ The audit details carry the Automaton id, the task id, the paths and the base co
 
 **Known limits.** In direct mode a change made by the operator or by a parallel task in the same tree during the task can be attributed to it. A file that was dirty before the task started is not attributed unless a commit made since the base touched it. When the base commit cannot be resolved the gate skips with a warning and the rules review reads the working tree for that run; both are recorded.
 
-**What the gate never does.** It never reverts, resets, amends or rewrites a change by itself, never pushes or merges, and never changes the list, the action or an authorised list on its own. Only the **reject** answer puts files back, only the exact paths of the hold, in a new commit. The status read never runs git and never changes anything. In `off` it does not look at the tree at all.
+**What the gate never does.** Apart from the [checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert) — a worker's own checkpoint entry, stripped from a rules file when it is the file's entire change since the base commit — it never reverts, resets, amends or rewrites a change by itself, never pushes or merges, and never changes the list, the action or an authorised list on its own. Only the **reject** answer puts files back, only the exact paths of the hold, in a new commit. The status read never runs git and never changes anything. In `off` it does not look at the tree at all.
 
 ---
 
@@ -8086,3 +8160,18 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 **Plans (links, migration, read API).** Plans are records of kind `plan`, stored like the others, with `goal`, `order` and the link lists `automations`, `automata` and `findings`. No new setting: the plans routes follow `autonomous.plan_records.enabled` and answer 404 while it is off. A link is never overwritten (`ErrLinkConflict`, a refusal naming the holder); link and order changes write `plan_record_linked`, `plan_record_unlinked` and `plan_record_reordered`. `datawatch plans migrate` (REST `POST /api/plans/migrate`, MCP `plan_migrate`, chat `autonomous plan-migrate`) previews by default; `--apply` writes plans from the plans and registry rows, each tagged `migrated-from` so a rerun is a no-op, and writes one `plan_record_imported` event with subject `plans migrate`. It deletes no plan, row or config key. The read routes (`/api/projects/{name}/plans`, `overview-summary`, `/api/plans/{ref}/automata`, `.../tasks`, `/api/plan-records/browse`) read the summary index, which is kept in step on every write, so they stay fast at thousands of records; only `.../tasks` opens Automaton records. Writes go through `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order` and `POST /api/plans/{ref}/attach|detach` (MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`; CLI `datawatch plans`; chat `autonomous plan`); they need `autonomous:write` for a federated peer. Not in MCP: the read routes. Android and iPhone do not have the Plans view yet; track it in datawatch-app. The plans route and the roll-up `arcs` field are deprecated and still answer, now with a `plans` list added.
 
 **Rollback.** Set `autonomous.plan_records.enabled` to `false` to answer every route with 404 and hide the section; records stay on disk. Turn `write_through` off to send the registry hook back to the README. Removing the `plan-records` directory under the data dir discards every record; the original files are untouched and a new import rebuilds them. Rows shipped by write-through while it was on exist only as records, so import or copy them back by hand before discarding the directory.
+
+## Projects Overview sub-tabs (web app)
+
+Under **Automata → Projects**, choosing **Overview** in the picker shows the cross-project in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) in a strip styled like the project page sub-tabs. Each sub-tab responds to a click or tap, shows its own body, and is remembered in the browser value `cs_projects_subtab` (shared with the project page sub-tabs; restored after a refresh when it names an Overview sub-tab). Nothing is stored or served by the daemon: no setting, no REST, MCP, CLI or chat form, and no address for an Overview sub-tab. If an operator reports dead Overview sub-tabs, check the browser has loaded the current web app (hard refresh) and that browser storage is not blocked (a blocked store only loses the memory, not the clicks). Android and iPhone are not covered by this change; track parity in datawatch-app. See [howto/projects-tab.md](howto/projects-tab.md#the-overview-sub-tabs).
+
+## Pre-tag run (`make pre-tag`)
+
+`make pre-tag` runs `scripts/pre-tag.sh`: the release gates that CI would otherwise find after the tag, run locally in CI order, stopping at the first failure. The Go test suite (`go test ./... -count=1`) no longer runs in CI: the step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build` (formerly `go test + lint`). This run is the only gate that runs it, so run it before every tag; CI still runs lint, the build and the security and release jobs. The step list and knobs are in [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+
+- **Record.** Every run, pass or fail, appends `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>` to `.datawatch/pre-tag-record` (override with `PRE_TAG_RECORD_FILE`). The file is git-ignored. A dry run (`PRE_TAG_DRY_RUN=1`) writes nothing.
+- **Missing tools.** A step whose tool is absent prints `SKIP [step]: <tool> not found` and does not fail the run. Install `golangci-lint`, `govulncheck`, `gosec`, `gitleaks`, `goreleaser`, `docker` and `python3` on the build host or those gates are not checked.
+- **Slow steps.** `slow-opt-in` runs `make test-tmp-guard`, `make test-cross-build` (all five release targets build), the perf rollup check and the busy-loop checks. Each is niced, limited to a quarter of the CPUs (at least one), killed after `PRE_TAG_SLOW_TIMEOUT` seconds (default 21600) and killed if the script is interrupted.
+- **Test daemons.** `go test` runs with `TMUX` and `TMUX_TMPDIR` removed; the runner starts no daemon of its own.
+- **Tests.** `tests/test-pre-tag.sh` runs in `make test`.
+
