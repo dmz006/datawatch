@@ -103,6 +103,13 @@ is** and the pass raises **one warning alert per worktree** that names the file 
 the reason, so you decide whether to remove the block by hand. The pass does nothing while
 `rtk.write_rules_files` is on, because the block is then meant to be there.
 
+### What to review after upgrading
+
+- **Leftover blocks.** A worktree whose `AGENT.md` or `CLAUDE.md` raised the cleanup warning alert still carries the block. Remove it by hand, or commit it if you meant to keep it.
+- **Committed blocks.** The cleanup never rewrites a block that is already committed; remove those in a normal commit.
+- **Legacy setting.** If your `config.yaml` sets `rtk.write_rules_files: true`, the daemon keeps writing into the tracked rules files. Confirm that is what you want.
+- **Tracked `CLAUDE.local.md`.** A project that tracks its own `CLAUDE.local.md` gets no RTK block through the untracked file.
+
 ### Where to see RTK stats
 
 | Location | What you see |
