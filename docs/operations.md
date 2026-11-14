@@ -6479,9 +6479,10 @@ restored flag writes a boot-resume entry (`backoff_restored`), a warning alert
 audit event. Restoring never ends or signals a session. The review reserve is
 separate: while a restored flag is up, the review roles (guardrail judges,
 verifiers, planning) still get their bounded admission path on that backend,
-built from the YAML-only keys `autonomous.backoff_reserve_for_review` (default
+built from `autonomous.backoff_reserve_for_review` (default
 `1`; `0` disables it) and `autonomous.backoff_reserve_tokens_per_hour`
-(default `0` = no one-hour token budget). The reserve's own state — the rolling
+(default `0` = no one-hour token budget), settable from any config surface
+(YAML, REST, MCP, CLI, comm, PWA — see docs/howto/usage-backoff.md). The reserve's own state — the rolling
 token stamps and its in-flight verdicts — is in memory only and does not
 survive a restart. Deleting the file while
 the daemon is stopped forgets all flags; clear a single flag with

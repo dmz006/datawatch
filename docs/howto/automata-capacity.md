@@ -575,8 +575,13 @@ classified as a back-off wait, so it shows the flag's reset time — and starts
 when the flag clears. Every admission and refusal is audited as
 `autonomous_usage_backoff_reserve_admitted` /
 `autonomous_usage_backoff_reserve_refused` (see [Audit trail](#audit-trail)).
-Both keys are read live at decision time, need no restart, and are YAML-only
-configuration (no REST, MCP, CLI, comm or PWA surface).
+Both keys are read live at decision time, so a change needs no restart, and
+they are settable from every config surface (YAML, REST `PUT /api/config` with
+the dotted keys, MCP `autonomous_config_set`, CLI
+`datawatch config set autonomous.backoff_reserve_for_review=…`, comm
+`configure autonomous.backoff_reserve_for_review=…`, and the two *Usage
+back-off review reserve* fields in PWA Settings) — see [Usage
+back-off](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve).
 
 ### Manual set, clear and status
 

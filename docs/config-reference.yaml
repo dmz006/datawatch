@@ -3917,9 +3917,14 @@ autonomous:
   # back-off, review reserve in use" until the flag clears. Default 1;
   # 0 disables the reserve (every new session on the held backend is refused,
   # review roles included). Read live at decision time; no restart needed.
-  # YAML-only: no REST, MCP, CLI, comm or PWA surface. The reserve's rolling
-  # token state is in memory and does not survive a daemon restart.
-  # Audited as autonomous_usage_backoff_reserve_admitted /
+  # Reachable via REST PUT /api/config (this dotted key), MCP
+  # autonomous_config_set, CLI `datawatch config set
+  # autonomous.backoff_reserve_for_review=2`, comm `configure
+  # autonomous.backoff_reserve_for_review=2` and the PWA Settings field.
+  # The reserve's rolling token state is in memory and does not survive a
+  # daemon restart. The effective value and the reserve's per-backend window
+  # usage show in every usage-backoff status. The reserve's verdicts are
+  # audited as autonomous_usage_backoff_reserve_admitted /
   # autonomous_usage_backoff_reserve_refused. See docs/howto/usage-backoff.md
   # and docs/howto/automata-capacity.md (The review reserve).
   backoff_reserve_for_review: 1
@@ -3929,9 +3934,10 @@ autonomous:
   # review-reserve admission is refused while the tokens recorded for that
   # backend inside the current rolling hour are at or above this value,
   # even with a free slot; enforced only when token usage is reported. Read
-  # live at decision time; no restart needed. YAML-only: no REST, MCP, CLI,
-  # comm or PWA surface. See docs/howto/usage-backoff.md (What a flag does
-  # not hold: the review reserve).
+  # live at decision time; no restart needed. Same surfaces as
+  # autonomous.backoff_reserve_for_review (YAML, REST, MCP, CLI, comm, PWA).
+  # See docs/howto/usage-backoff.md (What a flag does not hold: the review
+  # reserve).
   backoff_reserve_tokens_per_hour: 0
   # Minimum covered/extractable-requirement ratio a plan must meet for
   # coverage to pass. Value must be in (0,1]; zero or negative normalizes to
