@@ -155,6 +155,52 @@ func WriteRTKLocalFile(projectDir, block string) (written bool, err error) {
 	})
 }
 
+// Marker lines for the memory and cross-session blocks that the daemon writes
+// into CLAUDE.local.md. The cross-session pair is the one the rules-file form
+// of the block already carries (see daemon_sections.go); the memory pair exists
+// only in the local file, because the memory section in a rules file has no
+// markers.
+const (
+	memoryBegin = "<!-- datawatch:memory-instructions -->"
+	memoryEnd   = "<!-- /datawatch:memory-instructions -->"
+)
+
+// WriteMemoryLocalFile writes the memory instructions into the untracked
+// projectDir/CLAUDE.local.md, wrapped in marker lines so a later write replaces
+// it in place. body is the memory section text without markers. It never
+// touches a tracked file: see mutateLocalFile.
+func WriteMemoryLocalFile(projectDir, body string) (written bool, err error) {
+	block := memoryBegin + "\n" + strings.TrimRight(body, "\n") + "\n" + memoryEnd
+	return mutateLocalFile(projectDir, func(existing string) string {
+		return upsertMarkerBlock(existing, memoryBegin, memoryEnd, block)
+	})
+}
+
+// WriteCrossSessionLocalFile writes the cross-session communication rule (the
+// text already delimited by its own marker lines) into the untracked
+// projectDir/CLAUDE.local.md. It never touches a tracked file.
+func WriteCrossSessionLocalFile(projectDir, block string) (written bool, err error) {
+	return mutateLocalFile(projectDir, func(existing string) string {
+		return upsertMarkerBlock(existing, crossBegin, crossEnd, block)
+	})
+}
+
+// RemoveMemoryLocalFile strips the memory block from CLAUDE.local.md and
+// deletes the file when nothing else is left.
+func RemoveMemoryLocalFile(projectDir string) (removed bool, err error) {
+	return removeLocalFileBlock(projectDir, func(s string) string {
+		return removeMarkerBlock(s, memoryBegin, memoryEnd)
+	})
+}
+
+// RemoveCrossSessionLocalFile strips the cross-session block from
+// CLAUDE.local.md and deletes the file when nothing else is left.
+func RemoveCrossSessionLocalFile(projectDir string) (removed bool, err error) {
+	return removeLocalFileBlock(projectDir, func(s string) string {
+		return removeMarkerBlock(s, crossBegin, crossEnd)
+	})
+}
+
 // removeLocalFileBlock strips the begin..end block from CLAUDE.local.md and
 // deletes the file when nothing else is left.
 func removeLocalFileBlock(projectDir string, strip func(string) string) (removed bool, err error) {

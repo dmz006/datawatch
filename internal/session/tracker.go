@@ -215,10 +215,14 @@ func (t *Tracker) RecordResume() error {
 type GuardrailsOptions struct {
 	MemoryEnabled bool
 	RTKEnabled    bool
-	// RTKWriteRulesFiles (rtk.write_rules_files) restores the legacy append of
-	// the RTK block to the tracked AGENT.md / CLAUDE.md. Off by default: the
-	// block goes to the untracked CLAUDE.local.md instead.
-	RTKWriteRulesFiles  bool
+	// WriteRulesFiles (rtk.write_rules_files) is the single gate for every
+	// write the tracker makes into the project's own rules file (AGENT.md or
+	// CLAUDE.md): creating it, refreshing its "# Session Guardrails" header,
+	// and appending the memory, RTK and cross-session sections. Off by
+	// default: the tracker then never opens that file for writing, and the
+	// RTK, memory and cross-session text goes to the untracked CLAUDE.local.md
+	// instead. On restores the legacy in-place merge.
+	WriteRulesFiles     bool
 	CrossSessionEnabled bool
 	// PlatformContextEnabled upserts the versioned platform context section
 	// into the project's rules file.
@@ -235,9 +239,12 @@ func (o GuardrailsOptions) platformContextBody() string {
 	return platformcontext.PlatformContext
 }
 
-// WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
-// for claude-code sessions, merges memory/RTK sections into the project's existing
-// CLAUDE.md or AGENT.md (creating it if it doesn't exist).
+// WriteSessionGuardrails writes a guardrails file to the session tracking folder.
+// For claude-code sessions the project's own CLAUDE.md / AGENT.md is left alone
+// unless opts.WriteRulesFiles is on (the legacy merge: refresh the header, add
+// the memory, RTK and cross-session sections, create the file when missing);
+// otherwise the RTK, memory and cross-session text is delivered through the
+// untracked CLAUDE.local.md, like the platform context.
 // Template variables: SessionID, Hostname, StartedAt, Task, ProjectDir, TrackingDir.
 func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opts ...GuardrailsOptions) error {
 	var opt GuardrailsOptions
@@ -291,7 +298,10 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			targetFile = agentPath
 		}
 
-		if fileExists(targetFile) {
+		// Legacy merge into the tracked rules file: only when
+		// rtk.write_rules_files is on. By default this branch does not run, so
+		// a session start never modifies or creates AGENT.md / CLAUDE.md.
+		if opt.WriteRulesFiles && fileExists(targetFile) {
 			// File exists — merge missing sections
 			existing, _ := os.ReadFile(targetFile)
 			existingStr := string(existing)
@@ -327,10 +337,8 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 				modified = true
 			}
 
-			// Legacy RTK delivery: append to the tracked rules file. Only when
-			// rtk.write_rules_files is on; otherwise the block goes to the
-			// untracked CLAUDE.local.md below and this file is left alone.
-			if opt.RTKEnabled && opt.RTKWriteRulesFiles {
+			// Legacy RTK delivery: append to the tracked rules file.
+			if opt.RTKEnabled {
 				if !strings.Contains(existingStr, "rtk-instructions") && !strings.Contains(existingStr, "RTK (Rust Token Killer)") {
 					existingStr += "\n\n" + rtkInstructions()
 					modified = true
@@ -346,28 +354,45 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			if modified {
 				os.WriteFile(targetFile, []byte(existingStr), 0644) //nolint:errcheck
 			}
-		} else {
+		} else if opt.WriteRulesFiles {
 			// No file exists — write the full template
 			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
 		}
 
-		// The RTK block never goes into a tracked project file unless
-		// rtk.write_rules_files is on: by default it lives in the untracked
-		// CLAUDE.local.md beside the platform context. The flag records that
-		// the instructions are in place by either channel.
+		// Nothing above ever opens the rules file unless rtk.write_rules_files
+		// is on. Otherwise the RTK, memory and cross-session blocks live in
+		// the untracked CLAUDE.local.md beside the platform context. The
+		// RTKInstructionsDelivered flag records that the RTK text is in place
+		// by either channel; when the legacy merge is on, the local blocks are
+		// removed so the text is not delivered twice.
 		sess.RTKInstructionsDelivered = false
-		switch {
-		case opt.RTKEnabled && opt.RTKWriteRulesFiles:
-			platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
-			// True when the block is present in the rules file after the write,
-			// whether it was just appended or was already there.
-			final, rerr := os.ReadFile(targetFile)
-			sess.RTKInstructionsDelivered = rerr == nil && (strings.Contains(string(final), "rtk-instructions") || strings.Contains(string(final), "RTK (Rust Token Killer)"))
-		case opt.RTKEnabled:
-			_, werr := platformcontext.WriteRTKLocalFile(sess.ProjectDir, rtkInstructions())
-			sess.RTKInstructionsDelivered = werr == nil
-		default:
-			platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
+		if opt.WriteRulesFiles {
+			platformcontext.RemoveRTKLocalFile(sess.ProjectDir)          //nolint:errcheck
+			platformcontext.RemoveMemoryLocalFile(sess.ProjectDir)       //nolint:errcheck
+			platformcontext.RemoveCrossSessionLocalFile(sess.ProjectDir) //nolint:errcheck
+			if opt.RTKEnabled {
+				// True when the block is present in the rules file after the
+				// write, whether it was just appended or was already there.
+				final, rerr := os.ReadFile(targetFile)
+				sess.RTKInstructionsDelivered = rerr == nil && (strings.Contains(string(final), "rtk-instructions") || strings.Contains(string(final), "RTK (Rust Token Killer)"))
+			}
+		} else {
+			if opt.RTKEnabled {
+				_, werr := platformcontext.WriteRTKLocalFile(sess.ProjectDir, rtkInstructions())
+				sess.RTKInstructionsDelivered = werr == nil
+			} else {
+				platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
+			}
+			if opt.MemoryEnabled {
+				platformcontext.WriteMemoryLocalFile(sess.ProjectDir, memoryInstructions()) //nolint:errcheck
+			} else {
+				platformcontext.RemoveMemoryLocalFile(sess.ProjectDir) //nolint:errcheck
+			}
+			if opt.CrossSessionEnabled {
+				platformcontext.WriteCrossSessionLocalFile(sess.ProjectDir, crossSessionCommunicationRule()) //nolint:errcheck
+			} else {
+				platformcontext.RemoveCrossSessionLocalFile(sess.ProjectDir) //nolint:errcheck
+			}
 		}
 
 		// The platform context block never goes into a tracked project file:

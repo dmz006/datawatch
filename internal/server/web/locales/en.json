@@ -5764,6 +5764,6 @@
   "records_tab_status": "%1$s records; %2$s shown.",
   "records_tab_plan": "Plan",
   "records_tab_automata": "Automata",
-  "settings_rtk_write_rules_files": "Write RTK instructions into AGENT.md and CLAUDE.md",
-  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes RTK instructions into AGENT.md or CLAUDE.md; they go to an untracked per-session file instead. Rules files are written by people only."
+  "settings_rtk_write_rules_files": "Write session instructions into AGENT.md and CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "When off (the default), the daemon never writes into AGENT.md or CLAUDE.md: it does not create them, refresh their session header, or add the RTK, memory or cross-session instructions. Those go to an untracked per-session file instead. Rules files are written by people only."
 }

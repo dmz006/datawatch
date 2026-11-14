@@ -38,7 +38,7 @@ rtk:
   show_savings: true       # Display savings in stats dashboard
   auto_init: true          # Auto-run 'rtk init -g' on startup if hooks missing
   discover_interval: 0     # Seconds between discover checks (0 = disabled)
-  write_rules_files: false # Write the RTK text into the tracked AGENT.md/CLAUDE.md instead of the untracked file (legacy; default off)
+  write_rules_files: false # Let the daemon write its session text (RTK, memory, cross-session) into the tracked AGENT.md/CLAUDE.md instead of the untracked file (legacy; default off)
 ```
 
 ### Where the RTK instructions go
@@ -63,52 +63,63 @@ through the project's rules files:
   start.
 
 **`AGENT.md` and `CLAUDE.md` are never written by the daemon by default.** Rules files are
-written by people only. This matters most for Automaton work: a block appended to a tracked
+written by people only. That covers everything the session start used to put there, not just
+the RTK block: the memory instructions and the cross-session communication rule now go to the
+same untracked file, each in its own marked block, and the daemon no longer creates a missing
+`AGENT.md` / `CLAUDE.md` or rewrites the `# Session Guardrails` header in an existing one. This matters most for Automaton work: a block appended to a tracked
 rules file shows up as an uncommitted change, and the protected-paths check treats a change to
 the rules file as a change that needs a decision.
 
 ### The rules-file setting
 
-`rtk.write_rules_files` controls whether the daemon writes the block into the tracked
-rules files instead of the untracked file. **The default is `false` (off).** Turn it on only if you want the old behaviour,
-where the block is appended to the project's own `AGENT.md` (or `CLAUDE.md`) at session start
-and the untracked file is not used.
+`rtk.write_rules_files` is the one setting that controls whether the daemon writes into the
+tracked rules files at all. **The default is `false` (off).** Turn it on only if you want the
+old behaviour. Then, at session start, the daemon merges into the project's own `AGENT.md` (or
+`CLAUDE.md`, created if neither exists): it refreshes the `# Session Guardrails` header, and it
+appends the RTK block, the memory instructions and the cross-session communication rule when
+each is enabled and missing. The untracked file does not carry those blocks while the setting
+is on. The key sits under `rtk` because that is where it first shipped; it governs the memory
+and cross-session text as well.
 
 | Surface | How |
 |---------|-----|
 | **YAML** | `rtk.write_rules_files: true` in `~/.datawatch/config.yaml` |
-| **Web UI** | Settings → General → **RTK (Token Savings)** → *Write RTK instructions into AGENT.md and CLAUDE.md* (the help text beside it says the default is off) |
+| **Web UI** | Settings → General → **RTK (Token Savings)** → *Write session instructions into AGENT.md and CLAUDE.md* (the help text beside it says the default is off) |
 | **REST API** | `PUT /api/config` with `{"rtk.write_rules_files": true}` |
 | **CLI** | `datawatch config set rtk.write_rules_files true` |
 | **MCP** | `config_set` with `rtk.write_rules_files` |
 | **Comm channel** | `configure rtk.write_rules_files=true` |
 
-### Startup cleanup of an old block
+### Startup cleanup of old blocks
 
-Older versions appended the block to the tracked rules file at every session start, so some
-worktrees still carry it as an uncommitted change. At daemon start a cleanup pass looks at the
-project directory of each stored session and checks `AGENT.md` and `CLAUDE.md` for an
-`rtk-instructions` block. It removes the block **only when the block is the sole difference
-from the committed file**. All of these must hold:
+Older versions appended the RTK block, the cross-session communication rule and the memory
+instructions to the tracked rules file at every session start, so some worktrees still carry
+them as an uncommitted change. At daemon start a cleanup pass looks at the project directory
+of each stored session and checks `AGENT.md` and `CLAUDE.md` for those blocks. It removes them
+**only when they are the sole difference from the committed file**. All of these must hold:
 
 1. the file is tracked by git;
 2. `git status` shows one plain unstaged modification for it (nothing staged);
-3. the file without the block is byte-identical to the committed version
-   (`git show HEAD:<file>`).
+3. the file without the blocks is byte-identical to the committed version
+   (`git show HEAD:<file>`). The pass tries every combination of the blocks it finds, so a
+   memory section that the committed file already carries stays, while an RTK block and a
+   cross-session block added on top are removed together.
 
 When they hold, the pass writes the stripped file back, which restores the committed version,
-and logs the removal. In every other case — the file is untracked, the block is committed, the
-file has other uncommitted changes, or git cannot answer — the file is **left exactly as it
-is** and the pass raises **one warning alert per worktree** that names the file or files and
-the reason, so you decide whether to remove the block by hand. The pass does nothing while
-`rtk.write_rules_files` is on, because the block is then meant to be there.
+and logs the removal. In every other case — the file is untracked, an RTK block is committed,
+the file has other uncommitted changes (a refreshed `# Session Guardrails` header counts), or
+git cannot answer — the file is **left exactly as it is** and the pass raises **one warning
+alert per worktree** that names the file or files and the reason, so you decide whether to
+remove the blocks by hand. A cross-session or memory section in a file with no uncommitted
+change is the project's own text and is skipped without an alert. The pass does nothing while
+`rtk.write_rules_files` is on, because the blocks are then meant to be there.
 
 ### What to review after upgrading
 
-- **Leftover blocks.** A worktree whose `AGENT.md` or `CLAUDE.md` raised the cleanup warning alert still carries the block. Remove it by hand, or commit it if you meant to keep it.
+- **Leftover blocks.** A worktree whose `AGENT.md` or `CLAUDE.md` raised the cleanup warning alert still carries the blocks. Remove them by hand, or commit them if you meant to keep them.
 - **Committed blocks.** The cleanup never rewrites a block that is already committed; remove those in a normal commit.
-- **Legacy setting.** If your `config.yaml` sets `rtk.write_rules_files: true`, the daemon keeps writing into the tracked rules files. Confirm that is what you want.
-- **Tracked `CLAUDE.local.md`.** A project that tracks its own `CLAUDE.local.md` gets no RTK block through the untracked file.
+- **Legacy setting.** If your `config.yaml` sets `rtk.write_rules_files: true`, the daemon keeps writing into the tracked rules files (RTK, memory, cross-session and the header refresh). Confirm that is what you want.
+- **Tracked `CLAUDE.local.md`.** A project that tracks its own `CLAUDE.local.md` gets none of the RTK, memory or cross-session blocks through the untracked file.
 
 ### Where to see RTK stats
 
