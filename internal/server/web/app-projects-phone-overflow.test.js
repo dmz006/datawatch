@@ -141,6 +141,22 @@ test('every card in the page can shrink and stays inside its parent', () => {
   assert.match(rulesFor('project-cards-tiles'), /minmax\(min\(220px, 100%\), 1fr\)/, 'tiles shrink below 220px on a phone');
 });
 
+test('phone overrides come after the base rules they override (same specificity, later wins)', () => {
+  const m = /@media \(max-width: 600px\) \{\n  \.projects-show-empty[\s\S]*?\n\}/.exec(CSS);
+  assert.ok(m, 'the Projects phone media block exists');
+  for (const base of ['.project-cards-tiles {', '.project-card-title {', '.projects-show-empty {']) {
+    const at = CSS.indexOf('\n' + base);
+    assert.ok(at >= 0, base + ' base rule exists');
+    assert.ok(at < m.index, base + ' base rule is declared before the phone media block');
+  }
+  // The last rule that sets the tiles' columns is the shrinking one.
+  const tiles = [...CSS.matchAll(/\.project-cards-tiles \{[^}]*grid-template-columns:[^;}]*/g)];
+  assert.ok(tiles.length >= 2, 'base and phone tiles rules both exist');
+  assert.match(tiles[tiles.length - 1][0], /minmax\(min\(220px, 100%\), 1fr\)/, 'the winning tiles rule shrinks');
+  // And no other rule after the media block re-declares the label's white-space.
+  assert.ok(!/\.projects-show-empty \{[^}]*white-space/.test(CSS.slice(m.index + m[0].length)), 'nothing later re-overrides the label');
+});
+
 test('long text lines wrap, including the "has no sessions yet" line', () => {
   const sb = load();
   const html = page(sb, 'events');
