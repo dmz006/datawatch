@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **REST routes for release plans.** `GET`, `PUT` and `POST /api/plans/{ref}/themes` read, set and change a release plan's themes (create, rename, delete, place, unplace, reorder); `POST /api/plans/{ref}/archive` and `POST /api/plans/{ref}/restore` archive and restore a plan without deleting anything; `GET /api/projects/{name}/plans` takes `archived=exclude|include|only`. `POST /api/plans` accepts `plan_kind` and `release`, and the plan create, plans list, themes, Automata and browse answers return them.
+- **Release migration and row-plan conversion over REST.** `POST /api/plans/migrate` with `mode` `release` files a project's Automata and Automations under the current and next release plans. Both it and `POST /api/plans/migrate/row-plans` preview by default, and a written run needs `apply` and the `preview_id` of the approved preview (missing is 400, stale is 409); a second written run changes nothing. `GET /api/plans/migrate/row-plans` lists the plans the plans migration made from registry rows.
+- **Automata no release plan holds.** `GET /api/plans/unattributed` lists them with a suggested release and theme from the migration rules. `POST /api/plans/{ref}/attach` takes `ids` and an optional `theme` for a bulk attach with one result per id, so one attached elsewhere is reported while the others succeed.
+
+### Changed
+
+- The unattributed count in the project overview summary (`counts.unattributed.automata`), and the Unassigned group of the project roll-up and Gantt, now count only Automata no release plan holds.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed
