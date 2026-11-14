@@ -38658,6 +38658,107 @@ function _automationHousekeepingRepairsLoader() {
   });
 }
 
+// Gate repair: the gate failure repair engine, shown next to the
+// Housekeeping repairs card in the Housekeeping view. The mode select writes
+// autonomous.gate_repair.mode through PUT /api/config and the Run-now button
+// runs one pass through POST /api/autonomous/gate-repair/run; both refresh
+// through the same listLoader (the shared polling pattern), and every label
+// goes through t() and escHtml().
+function _gateRepairModeLabel(mode) {
+  const s = t('gate_repair_mode_' + mode);
+  return (s && s !== 'gate_repair_mode_' + mode) ? s : String(mode || '');
+}
+function _gateRepairKindLabel(kind) {
+  const key = 'gate_repair_kind_' + kind;
+  const s = t(key);
+  return (s && s !== key) ? s : String(kind || '');
+}
+function _gateRepairToast(msg) {
+  if (typeof showToast === 'function') showToast(msg, 'error');
+}
+function _gateRepairRefresh() {
+  const c = window._listLoaders && window._listLoaders['automation_gate_repair'];
+  if (c && c.load) c.load();
+}
+window.gateRepairCardHtml = function(data) {
+  data = data || {};
+  const mode = String(data.mode || '');
+  const records = Array.isArray(data.records) ? data.records : [];
+  const findings = records.slice(-5).reverse().map(r => {
+    r = r || {};
+    let rec = '<div class="gate-repair-finding" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;">' +
+      `<div class="gate-repair-finding-head" style="font-weight:600;">${escHtml(r.subject || '')} · ${escHtml(_gateRepairKindLabel(r.kind))}</div>` +
+      `<div class="gate-repair-finding-cause" style="color:var(--text2);">${escHtml(t('gate_repair_finding_cause'))}: ${escHtml(r.found || '')}</div>` +
+      `<div class="gate-repair-finding-repair" style="color:var(--text2);">${escHtml(t('gate_repair_finding_repair'))}: ${escHtml(r.done || r.undo || '')}</div>`;
+    if (r.before) rec += `<div class="gate-repair-finding-before" style="color:var(--text2);">${escHtml(t('gate_repair_finding_before'))}: <code>${escHtml(r.before)}</code></div>`;
+    if (r.after) rec += `<div class="gate-repair-finding-after" style="color:var(--text2);">${escHtml(t('gate_repair_finding_after'))}: <code>${escHtml(r.after)}</code></div>`;
+    return rec + '</div>';
+  });
+  const empty = findings.length
+    ? ''
+    : `<div class="gate-repair-nothing" style="color:var(--text2);">${escHtml(t('gate_repair_nothing'))}</div>`;
+  const budgetKeys = (Array.isArray(data.budget) ? data.budget : []).map(k => String(k));
+  const budgetLines = budgetKeys.slice(-8).map(k => {
+    const parts = k.split('\x00');
+    const task = parts[0] || k;
+    const cls = parts.length > 1 ? parts[1] : '';
+    return `<div class="gate-repair-budget-line" style="color:var(--text2);">${escHtml(t('gate_repair_budget_spent', [task, cls]))}</div>`;
+  });
+  const budgetEmpty = budgetLines.length
+    ? ''
+    : `<div class="gate-repair-budget-empty" style="color:var(--text2);">${escHtml(t('gate_repair_budget_empty'))}</div>`;
+  const selVal = (mode === 'on') ? 'on' : 'report';
+  return '<div class="prd-capacity-card gate-repair-card" style="min-width:0;margin:6px 8px 0;">' +
+    `<div class="prd-capacity-card-title" style="margin:0 12px 6px;font-weight:700;">${escHtml(t('gate_repair_card_title'))}</div>` +
+    `<div class="gate-repair-purpose" style="margin:0 12px 8px;color:var(--text2);">${escHtml(t('gate_repair_purpose'))}</div>` +
+    '<div class="gate-repair-mode-row" style="margin:0 12px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      `<span class="gate-repair-mode-current" style="font-weight:600;">${escHtml(t('gate_repair_mode_label'))}: ${escHtml(_gateRepairModeLabel(mode))}</span>` +
+      `<select id="gateRepairModeSelect" class="gate-repair-mode-select" onchange="window.setGateRepairMode(this)" aria-label="${escHtml(t('gate_repair_mode_label'))}">` +
+        `<option value="report" ${selVal === 'report' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_report'))}</option>` +
+        `<option value="on" ${selVal === 'on' ? 'selected' : ''}>${escHtml(t('gate_repair_mode_on'))}</option>` +
+      '</select>' +
+      `<button type="button" class="gate-repair-run-now" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border,#333);background:transparent;color:var(--text);cursor:pointer;" onclick="window.runGateRepairNow(this)">${escHtml(t('gate_repair_run_now'))}</button>` +
+    '</div>' +
+    `<div class="gate-repair-findings-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_findings_label'))}</div>` +
+    `<div class="gate-repair-findings" style="margin:0 12px 8px;max-height:220px;overflow-y:auto;">${findings.join('') || empty}</div>` +
+    `<div class="gate-repair-budget-label" style="margin:0 12px 4px;font-weight:600;color:var(--text2);">${escHtml(t('gate_repair_budget_label'))}</div>` +
+    `<div class="gate-repair-budget" style="margin:0 12px 12px;">${budgetLines.join('') || budgetEmpty}</div>` +
+  '</div>';
+};
+window.setGateRepairMode = function(sel) {
+  const v = String((sel && sel.value) || '').trim();
+  if (v !== 'report' && v !== 'on') return;
+  if (sel) sel.disabled = true;
+  apiFetch('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify({ 'autonomous.gate_repair.mode': v }),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (sel) sel.disabled = false;
+      _gateRepairToast(t('gate_repair_mode_save_failed', [String((err && err.message) || err)]));
+    });
+};
+window.runGateRepairNow = function(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = t('gate_repair_run_running'); }
+  apiFetch('/api/autonomous/gate-repair/run', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).then(() => _gateRepairRefresh())
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = t('gate_repair_run_now'); }
+      _gateRepairToast(t('gate_repair_run_failed', [String((err && err.message) || err)]));
+    });
+};
+function _automationGateRepairLoader() {
+  return window._listLoaders.automation_gate_repair || listLoader({
+    key: 'automation_gate_repair', el: 'automationGateRepairCard', url: '/api/autonomous/gate-repair', pollMs: 30000,
+    failedText: msg => t('gate_repair_failed', [msg]),
+    active: () => !!document.getElementById('automationGateRepairCard'),
+    render: data => window.gateRepairCardHtml(data),
+  });
+}
+
 // _cleanupSkipReasonText names a skip reason in the operator's language and
 // falls back to the raw reason name when no label exists for it.
 function _cleanupSkipReasonText(reason) {
@@ -43189,6 +43290,15 @@ registerAutomationCardSlot('housekeeping', {
   html: _automationPlaceholderHTML('automationHousekeepingRepairsCard'),
   mount: () => listLoaderAll([_automationHousekeepingRepairsLoader()]),
   stop: () => _automationStopLoaders(['automation_housekeeping_repairs']),
+});
+// The Gate repair card sits next to the Housekeeping repairs card and, like
+// it, is polled only while the Housekeeping sub-tab is shown.
+registerAutomationCardSlot('housekeeping', {
+  id: 'automationGateRepairCard',
+  order: 95,
+  html: _automationPlaceholderHTML('automationGateRepairCard'),
+  mount: () => listLoaderAll([_automationGateRepairLoader()]),
+  stop: () => _automationStopLoaders(['automation_gate_repair']),
 });
 // The Unlanded work card fills the Housekeeping slot: hidden until the list
 // has a row, and polled only while the Housekeeping sub-tab is shown.

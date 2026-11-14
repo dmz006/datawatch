@@ -38,6 +38,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"automation_join_rule_":            true, // + join rule name
 		"chat_quick_reply_":                true, // + lowercased quick-reply label
 		"repo_ci_watch_mode_":              true, // + off/shadow/on mode string
+		"gate_repair_mode_":                true, // + off/report/on mode label
 		"supervisor_watch_mode_":           true, // + off/shadow/on mode string
 		"priority_source_":                 true, // + explicit/kind/default source string
 		"project_policy_":                  true, // + policy field key (project policy panel row/label)
