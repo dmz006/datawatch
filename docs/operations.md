@@ -5081,10 +5081,12 @@ grace period, so there is time to inspect it or repair and reuse it first.
 | Value | Behavior |
 |---|---|
 | a whole number of minutes (default `60`) | A cancelled Automaton is kept that long before it is archived. |
-| `0` | A cancelled Automaton is archived at once. |
+| `0` | A cancelled Automaton is archived at once, unless the branch guard is keeping it (see below). |
 | negative or not a whole number | Refused, on every surface, with an error that names the rule. |
 
 It is read on every supervisor pass, so a change needs no restart.
+
+One exception to the grace, at any value including `0`: a cancelled Automaton whose branch still holds commits that are not on the base branch is never archived by the loop — it stays until you archive it yourself, its work is merged (a rebased or squashed landing counts), or its branch is deleted. A branch whose merge state cannot be determined is kept too. See [What the supervisor loop closes, and when](#what-the-supervisor-loop-closes-and-when).
 
 | Surface | How to set it |
 |---|---|

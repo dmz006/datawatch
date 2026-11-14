@@ -184,7 +184,10 @@ error naming its state.
 
 If you do cancel, the cancelled Automaton is kept for
 `autonomous.archive_grace_minutes` (default 60, `0` archives at once) before it
-is archived, so there is time to reuse it. The cancel reply reports
+is archived, so there is time to reuse it — except a cancelled Automaton whose
+working branch still holds commits that are not on the base branch is never
+archived by the loop, even with a grace of `0`: it stays until you archive it
+yourself, its work is merged, or its branch is deleted. The cancel reply reports
 `killed_sessions` and `killed_live_sessions`. Full detail:
 [Repairing a Failed Automaton in Place](../operations.md#repairing-a-failed-automaton-in-place).
 
@@ -370,7 +373,7 @@ What happens next:
 - **Stale** (older than the limit, or directory missing): the Automaton is parked as `blocked` with a plain-English reason, an operator alert is raised, and an entry is added to the boot-resume report (`Status().BootResume`). Nothing runs on its own; review it and resume it with the resume action if you still want it.
 - **Live worker**: a worker session that is still alive on an `in_progress` task counts as activity, and so does its recent output. An Automaton with a live worker is never treated as stale just because its stored timestamps are old.
 - **Resuming a parked Automaton**: use the resume action, which is available everywhere. Approval is not the right action, because a parked Automaton is already approved. REST: `POST /api/autonomous/prds/{id}/resume` with an optional `note`. MCP: `autonomous_prd_resume`. CLI: `datawatch autonomous prd-resume <id> [--note "..."]`. Chat: `autonomous resume <id> [note]`. PWA: the Resume button on the parked Automaton, which shows the park reason. Only an Automaton parked by the boot-resume gate can be resumed this way; any other state is rejected with an error naming the allowed state. A live worker is re-adopted rather than respawned.
-- **Cancelled**: an Automaton you cancelled is never recovered. It is also kept for the archive grace period (`autonomous.archive_grace_minutes`, default 60) before the supervisor loop archives it; see [Archive grace](../operations.md#archive-grace-for-cancelled-automata-autonomousarchive_grace_minutes).
+- **Cancelled**: an Automaton you cancelled is never recovered. It is also kept for the archive grace period (`autonomous.archive_grace_minutes`, default 60, `0` = at once) before the supervisor loop archives it — except a cancelled Automaton whose branch still holds commits that are not on the base branch is never archived by the loop, even after the grace; it stays until you archive it yourself, its work is merged, or its branch is deleted. See [Archive grace](../operations.md#archive-grace-for-cancelled-automata-autonomous-archive-grace-minutes).
 
 ### Reading the boot-resume report
 

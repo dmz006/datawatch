@@ -2520,8 +2520,14 @@ steps (no model call) and three model jobs, each run recorded. See
   never falls back to a hosted model.
 - **Close step (archive grace + branch guard):** `closeFinishedRecords`
   (`internal/autonomous/supervisor_loop_steps.go`) runs first every pass and
-  walks terminal-state PRDs. `completed` and `rejected` are archived on the
-  same pass. `cancelled` are held while `now - lastCancel` is below
+  walks terminal-state PRDs. `rejected` are archived on the same pass;
+  `completed` ones too, but `Manager.Archive` runs the merged-branch guard
+  (`archiveGuard`, `internal/autonomous/archive_merge_guard.go`) for non-operator
+  actors and refuses a completed record whose branch still holds commits not on
+  the base branch — typed `ErrArchiveUnmerged`, or `ErrArchiveMergeUnknown`
+  when the state cannot be determined — so the loop keeps such a record until
+  the work lands (an operator archive always passes); `cancelled` are held
+  while `now - lastCancel` is below
   `archive_cancelled_after_minutes` (default 60; 0 archives at once), where
   `lastCancel` is the timestamp of the record's latest `cancel` decision
   (falling back to `UpdatedAt`), so a re-cancel restarts the grace. A held
