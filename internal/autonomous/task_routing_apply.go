@@ -2,9 +2,11 @@
 //
 // ApplyTaskRouting is the single apply function: the decomposer calls it for
 // every task it materializes and the add-task paths call it for a new task.
-// It writes the active profile's row into the task's own backend, model,
-// effort and verification fields, and records the outcome on the task
-// (Task.TaskRouting) and as one decision-log entry.
+// It writes the active profile's effort and verification choice into the
+// task and records the outcome on the task (Task.TaskRouting) and as one
+// decision-log entry. It never writes a worker backend or model onto a task:
+// a task gets its own backend only when its spec or the operator names one,
+// and otherwise inherits the story, then the Automaton setting, at run time.
 //
 // Precedence (most specific wins): a task LLM set by an operator, then a
 // story LLM, then an Automaton LLM, then the routing table, then the global
@@ -46,6 +48,7 @@ const (
 	taskRoutingReasonStarted    = "task already started"
 	taskRoutingReasonNoRow      = "no row for the task type in the profile"
 	taskRoutingReasonEmptyRow   = "the row names no LLM, so the default applies"
+	taskRoutingReasonInherits   = "the row sets only a worker LLM, so the task inherits the story or Automaton LLM"
 )
 
 // handEditKinds are the decision kinds that mark a task as hand edited.
@@ -96,14 +99,22 @@ func taskHandEdited(prd *PRD, taskID string) bool {
 }
 
 // routerOwnsWorkerLLM reports whether the task's worker fields hold exactly
-// what the router wrote earlier.
+// what the router wrote earlier. The router writes only the effort now, so a
+// task that names no backend or model of its own and carries the recorded
+// effort is the router's. A task routed before that change, whose backend and
+// model hold the recorded pair, is still the router's.
 func routerOwnsWorkerLLM(t *Task) bool {
 	r := t.TaskRouting
 	if r == nil || !r.Applied || r.Result == nil {
 		return false
 	}
-	return t.Backend == r.Result.WorkerBackend && t.Model == r.Result.WorkerModel &&
-		string(t.Effort) == r.Result.Effort
+	if string(t.Effort) != r.Result.Effort {
+		return false
+	}
+	if t.Backend == "" && t.Model == "" {
+		return true
+	}
+	return t.Backend == r.Result.WorkerBackend && t.Model == r.Result.WorkerModel
 }
 
 // taskRoutingBlock returns the reason the table must not decide this task, or
@@ -200,6 +211,16 @@ func planTaskRouting(prd *PRD, t *Task, st *Story, auto *Automation, cfg config.
 		dec.Reason = "the row's LLM was refused: " + err.Error()
 		return dec
 	}
+	// The planner never names a worker backend or model for a task: that is
+	// the operator's, the spec's or the story's to set. The row's worker
+	// choice was checked above and is dropped here, so the task inherits the
+	// story, then the Automaton setting, at run time. Effort and the
+	// verification choice still apply.
+	res.WorkerBackend, res.WorkerModel = "", ""
+	if res.Effort == "" && res.VerificationBackend == "" && res.VerificationModel == "" {
+		dec.Reason = taskRoutingReasonInherits
+		return dec
+	}
 	dec.Applied = true
 	dec.Result = res
 	dec.SecondChoiceUsed = second
@@ -259,7 +280,9 @@ func applyTaskRoutingLocked(prd *PRD, task *Task, auto *Automation, cfg config.T
 		return dec
 	}
 	r := dec.Result
-	t.Backend, t.Model, t.Effort = r.WorkerBackend, r.WorkerModel, Effort(r.Effort)
+	// Task.Backend and Task.Model stay as they are (empty unless the spec
+	// named a backend, which the block check above already respects).
+	t.Effort = Effort(r.Effort)
 	if verifierFieldsOwnedByRouter(t) {
 		t.VerificationBackend, t.VerificationModel = r.VerificationBackend, r.VerificationModel
 	}
@@ -270,8 +293,8 @@ func applyTaskRoutingLocked(prd *PRD, task *Task, auto *Automation, cfg config.T
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: now, Kind: taskRoutingDecisionKind, Actor: taskRoutingActor,
 		Backend: r.WorkerBackend, Model: r.WorkerModel,
-		Note: fmt.Sprintf("task=%s type=%s profile=%s row=%s worker=%s/%s effort=%s verification=%s/%s second_choice=%t",
-			t.ID, dec.TaskType, dec.Profile, dec.Row, r.WorkerBackend, r.WorkerModel, r.Effort,
+		Note: fmt.Sprintf("task=%s type=%s profile=%s row=%s effort=%s verification=%s/%s second_choice=%t",
+			t.ID, dec.TaskType, dec.Profile, dec.Row, r.Effort,
 			r.VerificationBackend, r.VerificationModel, dec.SecondChoiceUsed),
 	})
 	return dec

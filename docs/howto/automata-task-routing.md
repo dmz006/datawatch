@@ -54,6 +54,17 @@ stronger model, so it goes to `claude-code` with Sonnet. Verification follows
 the **global verifier policy** unless a row names its own verifier. Without a
 table you pick this by hand, task by task.
 
+**The planner never writes a worker backend or model onto a task.** A task has
+a backend of its own only when you or its spec name one: a `backend` key in the
+decomposed task JSON, or a line in the spec that is exactly `backend: <name>`.
+Every other task keeps an empty backend and model and runs on its story's
+setting, then the Automaton's, then the global default. What the table still
+writes is the row's **effort** and its **verification** choice. The row's worker
+backend and model are checked (an unknown LLM is still refused) and recorded as
+the row that decided the task, but they are not copied onto the task. A row
+that names only a worker backend and model therefore changes nothing, and the
+task records that it inherits.
+
 Task routing is **off by default**. Nothing changes for you until you turn it
 on. The backends and models in the shipped table are one operator's starting
 choice, not a rule; other users change them freely.
@@ -254,7 +265,7 @@ The same outcome is written to the Automaton's decision log as one
 `task_routing` entry by the `task-router` actor. The note is one line:
 
 ```
-task=<id> type=<type> profile=<profile> row=<row> worker=<backend>/<model> effort=<effort> verification=<backend>/<model> second_choice=<true|false>
+task=<id> type=<type> profile=<profile> row=<row> effort=<effort> verification=<backend>/<model> second_choice=<true|false>
 ```
 
 Two reads are available per Automaton:
