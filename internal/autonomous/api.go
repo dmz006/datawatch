@@ -2559,6 +2559,19 @@ func (a *API) MigrateCompleted(dryRun bool, limit int, id string) (any, error) {
 	return report, nil
 }
 
+// HoldMigrationCandidates lists the blocked or failed Automata that look like
+// they should be on hold. It reads data and writes nothing.
+func (a *API) HoldMigrationCandidates() []HoldMigrationCandidate {
+	return a.M.HoldMigrationCandidates()
+}
+
+// MigrateToHold puts the Automata the operator chose on hold with the reason
+// the operator supplied (see Manager.MigrateToHold). It runs only when the
+// operator asks; nothing in the package calls it on its own.
+func (a *API) MigrateToHold(opts HoldMigrationOpts) (HoldMigrationReport, error) {
+	return a.M.MigrateToHold(opts)
+}
+
 // SweepTags re-derives the system tags of every existing Automata object
 // and session under the tags.placement settings in effect now (see
 // Manager.SweepTags for the full contract): the REST tag-sweep route and
