@@ -8044,6 +8044,7 @@ The manifest's `lifecycle.supported_modes` is the **ceiling**: the operator's ch
 - **Service tokens** — the credential a service *presents to the daemon* (e.g. imap-mcp resolving a scoped secret) — are minted by the operator in a real terminal (`datawatch secrets mint-service-token <name> --desc "…"`), never via an agent or a transcript-capturing shell: the printed line is the only plaintext. `list-service-tokens` shows names only; `revoke-service-token <name>` drops the credential.
 - **Widget push tokens** are separate again: minted against the plugin (`/api/plugins/<name>/widgets/token`), returned once, and verified only on that plugin's push route.
 - Read surfaces (PWA, REST, MCP) show the *names* of every family — values are never echoed.
+- **No token source wired:** a service-kind plugin installed while no plugin token source is wired used to crash the daemon at start (a typed-nil model-use source). It now starts normally; model-node events are skipped and `GET /api/plugins/<name>/models` returns `503 plugins not available` until the source is wired. Check `daemon_logs` after a start with a service plugin installed, and expect no model-use card data until then.
 
 The how-to in [docs/howto/imap-mcp-service.md](howto/imap-mcp-service.md) walks the store → attach → rotate loop.
 
