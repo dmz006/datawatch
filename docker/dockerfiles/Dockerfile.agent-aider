@@ -3,30 +3,60 @@
 #
 # datawatch agent-aider — aider-chat only.
 # Heavy due to litellm's 100+ deps; ~1.2GB irreducibly.
-# pipx isolates aider's deps from the system Python (PEP 668).
+#
+# Layout: aider lives in its own virtualenv (/opt/aider-venv) built on a
+# uv-managed CPython 3.12 (/opt/uv-python), NOT on Debian's python3 and NOT via
+# pipx. The base image (minideb Debian 12) ships no python, and Debian 12's
+# python3 is 3.11.2 — too old for soupsieve 4, which needs Python >= 3.11.5.
+# A uv-managed 3.12 satisfies that and keeps aider's dependencies isolated from
+# the system. Every other image still uses Debian's python3 and is unchanged.
+#
+#   /opt/uv-python   uv-managed CPython 3.12 (world-readable, outside any home
+#                    directory, so the non-root datawatch user can run it)
+#   /opt/aider-venv  aider's virtualenv; its python is a symlink into /opt/uv-python
+#   /usr/local/bin/aider  symlink to the venv's aider entrypoint (already on PATH)
+#
+# uv is pinned by release (UV_VERSION) and used only at build time; the binary
+# and its caches are removed before the layer ends — nothing at runtime needs it.
+# The final install step forces the soupsieve floor so aider's resolver cannot
+# hold it back; scripts/check-dockerfile-soupsieve.sh guards that floor in CI.
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 # Inherited non-root user name (see agent-base); home under /home/${DW_USER}.
 ARG DW_USER=datawatch
 ARG AIDER_VERSION=0.86.0
+# Pinned uv release, used at build time only (copied in from the uv image).
+ARG UV_VERSION=0.13.8
+# Python minor line for aider's venv; uv resolves the newest patch of it.
+ARG AIDER_PYTHON=3.12
+
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 # Build arguments declared before FROM are empty inside a stage; declare it again here.
 ARG DW_USER=datawatch
 ARG AIDER_VERSION
+ARG AIDER_PYTHON
 
 USER root
-# Full python (not just minimal) is needed for many of aider's deps.
-# build-essential lets pip compile native wheels when prebuilt aren't avail.
+COPY --from=uv /uv /usr/local/bin/uv
+
+# build-essential lets uv compile native wheels when prebuilt aren't avail.
+# python3/pipx are intentionally absent: aider runs on the uv-managed Python.
 RUN install_packages \
-        python3 python3-pip python3-venv pipx \
         build-essential pkg-config libffi-dev libssl-dev && \
-    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install aider-chat==${AIDER_VERSION} && \
+    export UV_PYTHON_INSTALL_DIR=/opt/uv-python \
+           UV_PYTHON_PREFERENCE=only-managed \
+           UV_CACHE_DIR=/opt/uv-cache \
+           UV_NO_CACHE=1 && \
+    uv python install "${AIDER_PYTHON}" && \
+    uv venv --python "${AIDER_PYTHON}" /opt/aider-venv && \
+    uv pip install --python /opt/aider-venv/bin/python \
+        aider-chat==${AIDER_VERSION} && \
     # Upgrade vulnerable transitive deps within aider's venv to their patched versions.
     # Aider pins these conservatively; force minimums that clear all Trivy HIGH/CRITICAL.
-    # Use python -m pip (not the pip symlink) — Debian venvs omit the bare pip binary.
-    /opt/pipx/venvs/aider-chat/bin/python -m pip install --quiet --no-cache-dir \
+    uv pip install --python /opt/aider-venv/bin/python \
         "gitpython>=3.1.50" \
         # certifi floor clears GHSA-6q48-6c7w-9gw2
         "certifi>=2026.10.19" \
@@ -34,27 +64,36 @@ RUN install_packages \
         "urllib3>=2.8.0" \
         "pyasn1>=0.6.3" \
         "pillow>=12.2.0" \
-        "soupsieve>=2.8.4" \
         "anyio>=4.14.2" \
         "protobuf>=5.29.6,<6" \
         "httplib2>=0.32.0" \
         "msgpack>=1.2.1" \
         "setuptools>=78.1.1" \
         "fsspec>=2026.6.0" && \
+    # LAST install step, separate from the above: soupsieve 4 (requires
+    # Python >= 3.11.5) is forced after aider and every other floor so no
+    # resolver run can hold it back to an older release.
+    uv pip install --python /opt/aider-venv/bin/python \
+        "soupsieve>=4.0.1" && \
+    # Expose aider on PATH via the image's standard executable directory.
+    ln -s /opt/aider-venv/bin/aider /usr/local/bin/aider && \
+    # The non-root datawatch user must be able to read and execute the
+    # interpreter and the venv; never leave root-only files behind.
+    chmod -R a+rX /opt/uv-python /opt/aider-venv && \
+    # Fail the build now if the entrypoint or the soupsieve floor is broken.
+    /usr/local/bin/aider --version && \
+    /opt/aider-venv/bin/python -c "import soupsieve, sys; assert sys.version_info >= (3, 11, 5); assert int(soupsieve.__version__.split('.')[0]) >= 4, soupsieve.__version__" && \
     # linux-libc-dev (kernel headers) is pulled by build-essential for C compilation
-    # of Python native extensions during pip install. All compilation is now done;
+    # of Python native extensions during install. All compilation is now done;
     # purge it to eliminate 100+ unfixable kernel CVEs from the Trivy scan.
     # --force-depends avoids cascade-removing libc6-dev/build-essential which
     # are no longer needed but which apt's dependency solver would drag along.
     dpkg -r --force-depends linux-libc-dev && \
-    # Aggressive cleanup — pipx leaves install artifacts and pip caches.
-    # /opt/pipx/shared is pipx's own bootstrap venv (its bundled pip, which
-    # vendors its own pinned urllib3) — used only while running `pipx
-    # install` above, never by the installed app afterward (aider runs from
-    # its own venv at /opt/pipx/venvs/aider-chat, entrypoint-linked into
-    # PIPX_BIN_DIR). Confirmed `aider --version` still works with it removed.
-    # Deleting it removes a stale CVE surface entirely rather than patching it.
-    rm -rf /root/.cache/pip /opt/pipx/.cache /opt/pipx/shared /home/${DW_USER}/.cache \
+    # Aggressive cleanup — remove the build-time uv binary and every uv cache
+    # (aider's venv and the managed Python are self-contained and never call uv),
+    # plus pip caches and package-manager leftovers.
+    rm -rf /usr/local/bin/uv /usr/local/bin/uvx /opt/uv-cache /root/.cache/uv \
+           /root/.cache/pip /root/.aider /home/${DW_USER}/.cache \
            /var/cache/apt/* \
            /usr/share/doc /usr/share/man /usr/include \
            /tmp/* /root/.npm
