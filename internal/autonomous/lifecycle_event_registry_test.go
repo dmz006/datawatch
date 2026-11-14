@@ -20,7 +20,7 @@ func TestEventKindRegistryCoversEveryKnownKind(t *testing.T) {
 	for _, s := range []PRDStatus{
 		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,
 		PRDActive, PRDRunning, PRDCompleted, PRDRejected, PRDCancelled,
-		PRDArchived, PRDBlocked, PRDFailed, PRDPaused,
+		PRDArchived, PRDBlocked, PRDFailed, PRDPaused, PRDHeld,
 	} {
 		want = append(want, PRDStatusKind(s))
 	}

@@ -52,6 +52,7 @@ const (
 	PRDBlocked        PRDStatus = "blocked" // BL191 Q6 — a guardrail returned `block`; awaits operator action
 	PRDFailed         PRDStatus = "failed"  // one or more tasks failed after all retries; PRD did not complete
 	PRDPaused         PRDStatus = "paused"  // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
+	PRDHeld           PRDStatus = "held"    // operator hold — waiting by decision; not blocked, failed or in review, and nothing starts it
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.
@@ -61,6 +62,24 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 		return PRDPlanning
 	}
 	return s
+}
+
+// HoldState is the record of an operator hold on an Automaton (status
+// held). Reason is required; Condition is free text shown to the operator
+// and never evaluated; Until is the optional look-again time. From is the
+// status the Automaton had when it was held, and a release restores it.
+// PriorBlockedReason keeps the blocked reason at hold time, because the
+// store clears BlockedReason whenever the status is not blocked. ExpiredAt
+// is set once when Until passes; expiry never changes the status.
+type HoldState struct {
+	Reason             string     `json:"reason"`
+	Condition          string     `json:"condition,omitempty"`
+	Until              *time.Time `json:"until,omitempty"`
+	HeldAt             time.Time  `json:"held_at"`
+	HeldBy             string     `json:"held_by,omitempty"`
+	From               PRDStatus  `json:"from"`
+	PriorBlockedReason string     `json:"prior_blocked_reason,omitempty"`
+	ExpiredAt          *time.Time `json:"expired_at,omitempty"`
 }
 
 // SessionDecision is one duplicate-session decision on a task: two or more
@@ -378,6 +397,9 @@ type PRD struct {
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// Hold is the operator hold record. Set while Status is held and nil
+	// otherwise; releasing the hold clears it.
+	Hold *HoldState `json:"hold,omitempty"`
 	// RulesReviewOutcome is the structured record of the last completion
 	// rules review that blocked this automaton: the findings, the recovery
 	// action taken and the retry budget. It is set by the completion rollup

@@ -1969,6 +1969,10 @@ type Manager struct {
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
 
+	// now — the time source for operator holds (hold.go). Nil reads the
+	// wall clock; tests inject a fake so hold times are exact.
+	now func() time.Time
+
 	// synthesizeFn — test seam for the rules review rollup's corrective
 	// work creation. Nil uses synthesizeCorrectiveWork.
 	synthesizeFn func(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error)
@@ -6744,10 +6748,10 @@ var taskOverrideStatusesKnown = []string{
 	string(PRDDraft), string(PRDPlanning), string(PRDNeedsReview), string(PRDApproved),
 	string(PRDRevisionsAsked), string(PRDActive), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
 	string(PRDCancelled), string(PRDArchived), string(PRDBlocked), string(PRDFailed),
-	string(PRDPaused),
+	string(PRDPaused), string(PRDHeld),
 }
 
-// TaskOverrideStatusesKnown returns the 14 PRD status names a
+// TaskOverrideStatusesKnown returns the 15 PRD status names a
 // task_override_statuses list may name (the models.go status constants).
 func TaskOverrideStatusesKnown() []string {
 	return append([]string(nil), taskOverrideStatusesKnown...)

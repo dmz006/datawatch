@@ -2080,7 +2080,7 @@ and inherit from its guardrail profile or the global default set.
 
 Valid kinds:
   prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
-  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.draft prd.failed prd.held prd.needs_review prd.paused prd.planning prd.rejected
   prd.revisions_asked prd.running
   task.awaiting_approval task.blocked task.cancelled task.completed task.failed
   task.in_progress task.pending task.queued task.review_needed task.running_tests

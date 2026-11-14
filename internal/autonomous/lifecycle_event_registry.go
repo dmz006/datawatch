@@ -61,6 +61,7 @@ func buildEventKindRegistry() []EventKindInfo {
 		PRDBlocked:        "A guardrail blocked an Automaton until the operator acts.",
 		PRDFailed:         "An Automaton ended because tasks failed after all retries.",
 		PRDPaused:         "An Automaton was paused; running tasks finish and no new ones start.",
+		PRDHeld:           "An Automaton was put on hold by the operator; it waits by decision and nothing starts it.",
 	}
 	for s, d := range autoDesc {
 		add(PRDStatusKind(s), EventGroupAutomaton, d)

@@ -86,7 +86,7 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.held', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
@@ -42462,7 +42462,7 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_prd', 'PRD status', [
     'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
     'prd.active', 'prd.running', 'prd.completed', 'prd.rejected', 'prd.cancelled',
-    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused']],
+    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused', 'prd.held']],
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
