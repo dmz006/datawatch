@@ -27,7 +27,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Staged skill** — a skill draft written under `internal/skills/testdata/staging/`, waiting to be published to the community registry by an operator. It is not embedded in the binary. See [`skills/publish-instructions.md`](skills/publish-instructions.md).
 - **Secrets manager** — native AES-256-GCM store at `~/.datawatch/secrets.db` plus optional KeePass and 1Password backends; `${secret:name}` references resolve in YAML, plugin manifests, spawn-time env injection.
 - **Native ACME / Let's Encrypt** — the daemon obtains and auto-renews its own browser-trusted TLS certificate (HTTP-01), no external tool and no DNS management required beyond a single A record. Staging-first workflow, restart-based apply, all 7 surfaces. See [`howto/letsencrypt-acme.md`](howto/letsencrypt-acme.md).
-- **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
+- **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view. Observer pushes over `https://` verify the counterpart's certificate by default (system trust store; or, a worker's push, the parent's pinned leaf fingerprint) — skipping verification is an explicit, startup-warned opt-out. See [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default).
 - **Autonomous Automata (PRD-DAG)** — high-level intent decomposed into a directed graph of stories and tasks, executed under verification + guardrails.
 - **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards. Community plugins can be installed from a connected registry with `datawatch plugins install <registry> <name>`.
 - **Model-use source** — the daemon-side provider of which models a service-kind plugin calls (`GET /api/plugins/<name>/models`). When none is wired the daemon still starts; the route answers 503 and model-node events do not run.
@@ -951,6 +951,16 @@ This is one of **two** separate logs: `audit.log` (operator actions, shown here)
 ### Agent trace
 
 A redacted record of what agents did: tool calls and results, model requests, state changes, capability and permission decisions, loop warnings and errors. Read it as a timeline for one session or one Automaton, or as a roll-up by session, task, story, Automaton, agent or backend. `tracing.mode` is `off`, `summary` (default, short first-line summaries) or `full` (longer text up to `tracing.arg_cap_bytes`); `tracing.retention_days` (default 14) sets how long events are kept and `tracing.backends` turns a backend off. Each backend has a coverage level: **full**, **partial** or **events-only**, so missing detail is never read as no activity. Secrets and private paths are removed before an event is stored. Shown as the Trace sub-tab under a session's Status tab and the Trace tab of an Automaton. OpenTelemetry export is a follow-up. See [howto/agent-tracing](howto/agent-tracing.md).
+
+### Push-channel TLS (verified by default)
+
+Observer **pushes** — a worker's Shape A push into its parent, and the primary → root federation push (`observer.federation`) — verify the counterpart's TLS certificate. Until this change the worker push ran with certificate checking off unconditionally, so a peer that could push to a self-signed / private-CA `https://` parent before may need the parent's pin or the explicit opt-out below.
+
+- **Worker push** (`https://` parent): default is verification against the **system trust store** (one startup notice). `DATAWATCH_PARENT_CERT_FINGERPRINT` pins the parent's leaf — the same variable the parent injects for the bootstrap channel; a malformed pin makes the push refuse to start (fail closed). The **pin wins over the opt-out**. `DATAWATCH_OBSERVER_PUSH_INSECURE=1|true|yes|on` is the explicit opt-out, honored only when no pin is set, with a startup warning that names the parent host and no tokens. An `http://` parent has no TLS to verify.
+- **Federation push** (primary → root): verified by default; `observer.federation.insecure: true` still skips verification but the daemon prints a startup `WARNING: TLS certificate verification is SKIPPED for the federation root <url>`. No pin knob on this push — trust the root's certificate instead.
+- **Unchanged:** the bootstrap channel's existing unverified fallback for a TLS-less parent, and `datawatch-stats`, the separate reporter binary with its own `--insecure-tls` flag.
+
+Walkthrough (including deriving the parent's leaf fingerprint): [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default). Operations entry: [operations.md → Observer push TLS (verify by default)](operations.md#observer-push-tls-verify-by-default).
 
 ### Knowledge graph
 

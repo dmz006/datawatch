@@ -158,7 +158,7 @@ who can read the machine.
 | **tmux pipe output (live)** | In secure mode `pipe-pane` feeds a named pipe that the daemon re-encrypts into `output.log.enc`; the in-flight bytes in the kernel buffer are not at-rest data. (Exceptions: see the plain `output.log` above.) |
 | **Memory embeddings** | Float32 vectors must stay plain for vector search; they can hint at the topic of the text. |
 | **Certificates and hashed tokens** | Certificates are public; plugin and observer tokens are stored only as hashes. |
-| **Network transit** | Not an at-rest feature. Peer, worker and observer connections rely on TLS. Certificate checking can be turned off per peer (`tls_skip_verify`), and worker observer pushes default to skipping verification. |
+| **Network transit** | Not an at-rest feature. Peer, worker and observer connections rely on TLS. Observer pushes verify the counterpart's certificate by default (system trust store; a worker's push can also pin the parent's leaf via `DATAWATCH_PARENT_CERT_FINGERPRINT`); certificate checking can be turned off per peer (`tls_skip_verify`), per push (`DATAWATCH_OBSERVER_PUSH_INSECURE` / `observer.federation.insecure`), and each opt-out is announced with a startup warning naming the host (no tokens). |
 
 ### Note on `daemon.log` vs `daemon-app.log`
 

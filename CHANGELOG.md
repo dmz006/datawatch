@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Observer pushes verify TLS certificates by default.** A worker's Shape A push into its parent now verifies the parent's certificate against the system trust store, or against the parent's pinned leaf fingerprint when `DATAWATCH_PARENT_CERT_FINGERPRINT` is set (the same variable the parent injects for the bootstrap channel; the pin wins over the opt-out, and a malformed pin fails closed). `DATAWATCH_OBSERVER_PUSH_INSECURE` (`1`/`true`/`yes`/`on`, case-insensitive) remains the explicit skip, honored only when no pin is set, with a startup warning naming the parent host and no tokens. The primary → root federation push verifies by default too; `observer.federation.insecure: true` still works but now prints a startup warning announcing the skip. The bootstrap channel's fallback for a TLS-less parent is unchanged, and `datawatch-stats` keeps its own `--insecure-tls`. The how-to on the federated observer, the operations entry and the definitions carry the operator walkthrough, including deriving the parent's leaf fingerprint.
+
 ## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
 
 ### Fixed
