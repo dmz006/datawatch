@@ -10090,8 +10090,8 @@ paths:
               properties:
                 name: {type: string, description: "Project alias"}
                 dir: {type: string, description: "Absolute directory"}
-                default_backend: {type: string}
-                description: {type: string}
+                default_backend: {type: string, description: "Default backend. Absent keeps the stored value; empty clears it"}
+                description: {type: string, description: "Project description. Absent keeps the stored value; empty clears it"}
                 policy:
                   description: The per-project policy tier (optional); unset keys inherit from the daemon tier.
                   $ref: "#/components/schemas/ProjectPolicy"
