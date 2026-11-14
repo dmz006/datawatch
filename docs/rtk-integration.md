@@ -38,7 +38,7 @@ rtk:
   show_savings: true       # Display savings in stats dashboard
   auto_init: true          # Auto-run 'rtk init -g' on startup if hooks missing
   discover_interval: 0     # Seconds between discover checks (0 = disabled)
-  write_rules_files: false # Also write the RTK text into the tracked AGENT.md/CLAUDE.md (legacy; default off)
+  write_rules_files: false # Write the RTK text into the tracked AGENT.md/CLAUDE.md instead of the untracked file (legacy; default off)
 ```
 
 ### Where the RTK instructions go
@@ -69,8 +69,8 @@ the rules file as a change that needs a decision.
 
 ### The rules-file setting
 
-`rtk.write_rules_files` controls whether the daemon may also write the block into the tracked
-rules files. **The default is `false` (off).** Turn it on only if you want the old behaviour,
+`rtk.write_rules_files` controls whether the daemon writes the block into the tracked
+rules files instead of the untracked file. **The default is `false` (off).** Turn it on only if you want the old behaviour,
 where the block is appended to the project's own `AGENT.md` (or `CLAUDE.md`) at session start
 and the untracked file is not used.
 
