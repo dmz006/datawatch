@@ -235,7 +235,10 @@ func TestAdoptRestart_NewRequestAvoidsAdoptedNode(t *testing.T) {
 
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		// The error is the cancelled admission's own result; the assertion is
+		// only that the call returned.
+		t.Logf("waiting admission after cancel: %v", err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("waiting admission did not return after cancel")
 	}
