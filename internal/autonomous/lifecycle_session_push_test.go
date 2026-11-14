@@ -20,15 +20,15 @@ import (
 
 // sessionPushRecorder captures bridge / SendInput / comm deliveries.
 type sessionPushRecorder struct {
-	mu         sync.Mutex
-	bridge     []string // "port|sessionID|text"
-	input      []string // "fullID|source|text"
-	comm       []string // message texts
-	bridgeErr  error
-	inputErr   error
-	inputDelay time.Duration
-	block      chan struct{} // when non-nil, SendInput waits on it
-	entered    bool          // set when SendInput (or bridge) has started
+	mu           sync.Mutex
+	bridge       []string // "port|sessionID|text"
+	input        []string // "fullID|source|text"
+	comm         []string // message texts
+	bridgeErr    error
+	inputErr     error
+	block        chan struct{} // when non-nil, SendInput waits on it before recording
+	entered      bool          // set when SendInput (or bridge) has started
+	findAttempts int           // FindSession calls (deterministic "both attempts ran" signal)
 }
 
 func (r *sessionPushRecorder) postBridge(port int, sessionID, text string) error {
@@ -41,20 +41,29 @@ func (r *sessionPushRecorder) postBridge(port int, sessionID, text string) error
 
 func (r *sessionPushRecorder) sendInput(fullID, text, source string) error {
 	r.mu.Lock()
-	delay, block := r.inputDelay, r.block
+	block := r.block
 	inputErr := r.inputErr
 	r.entered = true
 	r.mu.Unlock()
 	if block != nil {
-		<-block
-	}
-	if delay > 0 {
-		time.Sleep(delay)
+		<-block // parked until the test releases: nothing recorded yet
 	}
 	r.mu.Lock()
 	r.input = append(r.input, fullID+"|"+source+"|"+text)
 	r.mu.Unlock()
 	return inputErr
+}
+
+func (r *sessionPushRecorder) noteFind() {
+	r.mu.Lock()
+	r.findAttempts++
+	r.mu.Unlock()
+}
+
+func (r *sessionPushRecorder) findCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.findAttempts
 }
 
 func (r *sessionPushRecorder) commSend(text string) {
@@ -107,10 +116,13 @@ func newEngineForTest(t *testing.T, rec *sessionPushRecorder, table sessionTable
 		t.Fatalf("NewSubscriptionStore: %v", err)
 	}
 	cfg := SessionPushConfig{
-		FindSession: table.find,
-		PostBridge:  rec.postBridge,
-		SendInput:   rec.sendInput,
-		Comm:        CommSinkConfig{Send: rec.commSend, Window: commWindow},
+		FindSession: func(nameOrID string) (string, int, bool) {
+			rec.noteFind()
+			return table.find(nameOrID)
+		},
+		PostBridge: rec.postBridge,
+		SendInput:  rec.sendInput,
+		Comm:       CommSinkConfig{Send: rec.commSend, Window: commWindow},
 	}
 	e := NewLifecycleSubscriptionEngine(m, store, cfg)
 	if err := e.Start(); err != nil {
@@ -231,7 +243,10 @@ func TestSessionPushUnknownSession(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	m.emit(startedEvent())
-	time.Sleep(150 * time.Millisecond) // let both attempts run and log
+	// Deterministic completion signal: BOTH delivery attempts have failed
+	// at the session lookup (two FindSession calls — nothing else can land
+	// for this event).
+	waitFor(t, "both delivery attempts failed at lookup", func() bool { return rec.findCount() >= 2 })
 
 	if rec.bridgeCount() != 0 || rec.inputCount() != 0 {
 		t.Errorf("unknown session delivered via bridge(%d)/input(%d), want neither", rec.bridgeCount(), rec.inputCount())
@@ -305,9 +320,17 @@ func TestSessionPushOneShotDeletedOnlyAfterSuccess(t *testing.T) {
 		t.Errorf("one-shot delivered via bridge %d times, want 1", rec.bridgeCount())
 	}
 
-	// A second matching event must not re-deliver: the registration is gone.
+	// A second matching event must not re-deliver. Deterministic bound:
+	// the deletion's resync has dropped the registration from the engine's
+	// active set (tear-down then runs in the same synchronous call).
+	waitFor(t, "registration dropped by one-shot resync", func() bool {
+		e.mu.Lock()
+		_, active := e.active[sub.ID]
+		e.mu.Unlock()
+		return !active
+	})
 	m.emit(startedEvent())
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // bounded assert-not-happens window after the verified deregistration
 	if got := rec.bridgeCount(); got != 1 {
 		t.Errorf("deleted one-shot fired again (bridge calls now %d), want 1 total", got)
 	}
@@ -375,17 +398,25 @@ func TestSessionPushOneShotSendInputTargetsWorker(t *testing.T) {
 		t.Errorf("bridge attempted %d times for a port-0 worker, want 0", rec.bridgeCount())
 	}
 
-	// One-shot consumed: a second matching event re-delivers nothing, and
-	// the record is left empty in the store.
-	m.emit(startedEvent())
-	time.Sleep(150 * time.Millisecond)
-	if got := rec.inputCount(); got != 1 {
-		t.Errorf("one-shot send_input fired %d times, want exactly 1", got)
-	}
+	// One-shot consumed: the record is gone from the store, and a second
+	// matching event re-delivers nothing. Deterministic bound for the
+	// bounded assert-not-happens window below: the deletion's resync has
+	// dropped the registration from the engine's active set.
 	waitFor(t, "one-shot removal", func() bool {
 		_, ok := store.Get(sub.ID)
 		return !ok
 	})
+	waitFor(t, "registration dropped by one-shot resync", func() bool {
+		e.mu.Lock()
+		_, active := e.active[sub.ID]
+		e.mu.Unlock()
+		return !active
+	})
+	m.emit(startedEvent())
+	time.Sleep(100 * time.Millisecond) // bounded assert-not-happens window after the verified deregistration
+	if got := rec.inputCount(); got != 1 {
+		t.Errorf("one-shot send_input fired %d times, want exactly 1", got)
+	}
 
 	auditMu.Lock()
 	actions := strings.Join(audited, " ")
@@ -429,11 +460,12 @@ func TestSessionPushExpiredSubNeverFires(t *testing.T) {
 	m, store, e := newEngineForTest(t, rec, sessionTable{"ops": 9013}, 0)
 
 	expires := time.Now().Add(2 * time.Second)
-	if _, err := store.Add(Subscription{
+	subID, err := store.Add(Subscription{
 		Filter:    LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
 		Sink:      SubscriptionSink{Type: SinkSession, Target: "ops"},
 		ExpiresAt: &expires,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -442,9 +474,16 @@ func TestSessionPushExpiredSubNeverFires(t *testing.T) {
 	e.nowFn = func() time.Time { return time.Now().Add(1 * time.Hour) }
 	e.mu.Unlock()
 	e.resync()
-
+	// Deterministic: resync is synchronous, so the expired record is NOT
+	// registered and the previous registration was cancelled inside that
+	// call. A fired delivery is structurally impossible — no wait window.
+	e.mu.Lock()
+	_, active := e.active[subID.ID]
+	e.mu.Unlock()
+	if active {
+		t.Fatal("expired subscription is still registered after resync")
+	}
 	m.emit(startedEvent())
-	time.Sleep(200 * time.Millisecond)
 
 	if rec.bridgeCount() != 0 || rec.inputCount() != 0 {
 		t.Errorf("expired subscription delivered (bridge=%d, input=%d), want 0/0", rec.bridgeCount(), rec.inputCount())
@@ -456,7 +495,9 @@ func TestSessionPushExpiredSubNeverFires(t *testing.T) {
 // executor: emit returns promptly and the delivery lands later on the
 // subscriber's own goroutine.
 func TestSessionPushSlowSubscriberDoesNotBlockEmit(t *testing.T) {
-	rec := &sessionPushRecorder{inputDelay: 300 * time.Millisecond}
+	// SendInput parks on rec.block (a channel, not an injected delay), so
+	// the parked state is proven, not timed against.
+	rec := &sessionPushRecorder{block: make(chan struct{})}
 	m, store, _ := newEngineForTest(t, rec, sessionTable{"ops": 0}, 0)
 
 	if _, err := store.Add(Subscription{
@@ -466,16 +507,42 @@ func TestSessionPushSlowSubscriberDoesNotBlockEmit(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	start := time.Now()
-	m.emit(startedEvent())
-	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
-		t.Fatalf("emit blocked on a slow subscriber: took %v", elapsed)
+	// The emit must not block even if the delivery never returns: run it
+	// on a goroutine and let a generous failure-only timeout fail the test
+	// instead of hanging the suite.
+	emitDone := make(chan struct{})
+	go func() {
+		m.emit(startedEvent())
+		close(emitDone)
+	}()
+	select {
+	case <-emitDone:
+	case <-time.After(5 * time.Second):
+		close(rec.block)
+		t.Fatal("emit did not return while the subscriber was parked — the emit path must not block on delivery")
 	}
 
-	// Meanwhile a second event must have been QUEUED, not dropped, and
-	// both deliver in order once the slow call finishes.
-	m.emit(startedEvent())
+	// Deterministic parked proof: delivery 1 is inside SendInput (entered
+	// is set) and its count can only advance once we release rec.block.
+	waitFor(t, "first delivery parked in SendInput", rec.inputEntered)
+	if got := rec.inputCount(); got != 0 {
+		t.Fatalf("parked delivery was already recorded (count %d) — the parking channel is not honored", got)
+	}
+
+	// A second event queues behind the parked delivery.
+	evt2 := startedEvent()
+	evt2.TaskID = "task-2"
+	m.emit(evt2)
+
+	// Release; both events must arrive, in publish order.
+	close(rec.block)
 	waitFor(t, "both queued events delivered", func() bool { return rec.inputCount() == 2 })
+	if !strings.Contains(rec.input[0], "(task task-1)") {
+		t.Errorf("first delivery is not the first event: %q", rec.input[0])
+	}
+	if !strings.Contains(rec.input[1], "(task task-2)") {
+		t.Errorf("second delivery is not the second event: %q", rec.input[1])
+	}
 }
 
 // TestSessionPushDeleteCancelsDelivery — deleting a subscription
@@ -483,7 +550,7 @@ func TestSessionPushSlowSubscriberDoesNotBlockEmit(t *testing.T) {
 // event reaches nothing anymore (exactly one delivery total).
 func TestSessionPushDeleteCancelsDelivery(t *testing.T) {
 	rec := &sessionPushRecorder{block: make(chan struct{})}
-	m, store, _ := newEngineForTest(t, rec, sessionTable{"ops": 0}, 0)
+	m, store, e := newEngineForTest(t, rec, sessionTable{"ops": 0}, 0)
 
 	sub, err := store.Add(Subscription{
 		Filter: LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
@@ -500,6 +567,15 @@ func TestSessionPushDeleteCancelsDelivery(t *testing.T) {
 	if err := store.Delete(sub.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
+	// Deterministic: Delete's OnChanged callback ran resync synchronously;
+	// wait for the engine to report the registration dropped (tear-down
+	// then executes in the same call).
+	waitFor(t, "registration dropped on delete", func() bool {
+		e.mu.Lock()
+		_, active := e.active[sub.ID]
+		e.mu.Unlock()
+		return !active
+	})
 
 	// A matching event AFTER the cancel must not deliver.
 	m.emit(startedEvent())
@@ -507,7 +583,9 @@ func TestSessionPushDeleteCancelsDelivery(t *testing.T) {
 	// Release the in-flight delivery; it completes exactly once.
 	close(rec.block)
 	waitFor(t, "in-flight delivery completes", func() bool { return rec.inputCount() == 1 })
-	time.Sleep(200 * time.Millisecond)
+	// No wait window: the second event was emitted after the verified
+	// cancellation (publish skips closed subscriptions, and the old queue
+	// is drained), so a second delivery is structurally impossible.
 	if got := rec.inputCount(); got != 1 {
 		t.Errorf("SendInput called %d times after delete, want exactly 1 (the in-flight one)", got)
 	}
@@ -517,13 +595,14 @@ func TestSessionPushDeleteCancelsDelivery(t *testing.T) {
 // same-Automaton events into ONE message after the quiet window.
 func TestSessionPushCommCoalesced(t *testing.T) {
 	rec := &sessionPushRecorder{}
-	m, store, _ := newEngineForTest(t, rec, sessionTable{"team": 0}, 100*time.Millisecond)
+	m, store, e := newEngineForTest(t, rec, sessionTable{"team": 0}, 100*time.Millisecond)
 
-	if _, err := store.Add(Subscription{
+	subID, err := store.Add(Subscription{
 		Filter:   LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
 		Sink:     SubscriptionSink{Type: SinkComm, Target: "team"},
 		Coalesce: true,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	ev := startedEvent()
@@ -533,7 +612,19 @@ func TestSessionPushCommCoalesced(t *testing.T) {
 	m.emit(ev)
 
 	waitFor(t, "coalesced comm flush", func() bool { return rec.commCount() >= 1 })
-	time.Sleep(300 * time.Millisecond) // allow (incorrect) extra flushes to appear
+	// Deterministic: the flushed bucket is drained under the sink's own
+	// lock (lines deleted and the pending timer removed together) before
+	// its send, so with no pending lines and no pending timer no further
+	// flush for this Automaton can happen — the assert-not-happens below
+	// needs no wait window.
+	a, ok := e.commSink(subID.ID)
+	if ok && a.comm != nil {
+		waitFor(t, "coalesce bucket drained", func() bool {
+			a.comm.mu.Lock()
+			defer a.comm.mu.Unlock()
+			return len(a.comm.lines) == 0 && len(a.comm.timers) == 0
+		})
+	}
 	if got := rec.commCount(); got != 1 {
 		t.Fatalf("coalescing produced %d comm sends for two same-PRD events in one window, want 1", got)
 	}
