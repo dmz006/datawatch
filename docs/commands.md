@@ -1693,6 +1693,39 @@ for one release and holds that release's Automata, grouped in themes.
 
 Same calls on REST (`GET` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive|restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`), MCP (`plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_migrate`, `plan_row_plan_list`, `plan_row_plan_convert`) and chat (`autonomous plan themes <plan>`, `plan theme add|rename|remove|place|unplace|reorder|reorder-items <plan> ...`, `plan archive <plan> [protect=<plan>] [reason...]`, `plan restore <plan>`, `plan unattributed [project=P] [current=R] [next=R]`, `plan migrate release project=P [current=R] [next=R]`, `plan migrate release approve <preview-id> project=P`, `plan attach <plan> automaton|automation <id> <id>... [theme=T]`). The chat approve step carries the preview id and is refused without it. See [howto/plan-records](howto/plan-records.md#release-plans-and-themes).
 
+A theme is named by its id, or in chat by its name when it is one word. The two
+migrations (`migrate --release` and `row-plans convert`) preview by default, print
+a preview id and write only when run again with `--apply --preview-id`; a missing
+id is refused before anything is written and a stale id is refused by the
+daemon, so preview again. `--marks` takes a JSON object of Automaton id to
+`{"release","theme"}` and must be given to the approving run as it was to the
+preview. `datawatch plan attach` with several ids exits non-zero when any id was
+not attached. Archive and restore never delete anything.
+
+#### Chat verbs for release plans (`autonomous plan ...`)
+
+| Verb | What it does |
+|---|---|
+| `plan themes <plan>` | A release plan's themes in order, the items in each, then the unplaced items (a read) |
+| `plan theme add <plan> <name...>` | Add an empty theme |
+| `plan theme rename <plan> <theme> <new name...>` | Rename a theme |
+| `plan theme remove <plan> <theme>` | Remove a theme; its items stay in the plan, unplaced |
+| `plan theme place <plan> <theme> automaton\|automation <id>` | Put an item the plan holds into a theme |
+| `plan theme unplace <plan> automaton\|automation <id>` | Take an item out of its theme |
+| `plan theme reorder <plan> <theme> [<theme>...]` | Set the theme order (every theme once) |
+| `plan theme reorder-items <plan> <theme> automaton\|automation <id> [<id>...]` | Set the order of one kind of item in a theme (every item once) |
+| `plan archive <plan> [protect=<plan>] [reason...]` | Archive a plan (a mark only); a protected plan that holds Automata is refused |
+| `plan restore <plan>` | Clear the archive mark |
+| `plan unattributed [project=P] [current=R] [next=R]` | The Automata no release plan holds, with the release and theme the rules suggest (a read) |
+| `plan attach <plan> automaton\|automation <id> [<id>...] [theme=T]` | Attach one or several; each id gets its own line and a refused id names the holder |
+| `plan migrate release project=P [current=R] [next=R]` | Preview the release migration; prints the preview id and writes nothing |
+| `plan migrate release approve <preview-id> project=P [current=R] [next=R]` | Write exactly that preview; refused without the id |
+
+There is no chat verb for the row-plan conversion or for `--marks`; use the CLI,
+MCP, REST or the web app for those. Every verb calls the same route as the other
+surfaces, so the channel's sender checks come first and then the route's own
+capability check. `arcs` is accepted in place of `plan`.
+
 ### `datawatch cooldown <subcommand>`
 
 | Subcommand | Description |
