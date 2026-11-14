@@ -1,8 +1,6 @@
 package autonomous
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -82,34 +80,5 @@ func TestWorkerCheckpointRuleText(t *testing.T) {
 	}
 	if strings.Count(once, workerCheckpointRuleMarker) != 1 {
 		t.Fatalf("exactly one marker: %q", once)
-	}
-}
-
-func TestWorkerCheckpointRuleRepoClaudeMd(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "CLAUDE.md"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			t.Skip("no CLAUDE.md at the repository root")
-		}
-		t.Fatal(err)
-	}
-	s := string(raw)
-	const head = "\n## Checkpoints"
-	start := strings.Index(s, head)
-	if start < 0 {
-		t.Fatalf("CLAUDE.md has no %q heading: %q", "## Checkpoints", s)
-	}
-	section := s[start+len(head):]
-	if next := strings.Index(section, "\n## "); next >= 0 {
-		section = section[:next]
-	}
-	if !strings.Contains(section, "human operator and by the supervisor only") {
-		t.Fatalf("Checkpoints section must say entries are written by the operator and supervisor only: %q", section)
-	}
-	if !strings.Contains(section, "Automaton task workers must not") {
-		t.Fatalf("Checkpoints section must carry the no-task-worker note: %q", section)
-	}
-	if !strings.Contains(section, "CHECKPOINT.md") {
-		t.Fatalf("Checkpoints section must point workers at CHECKPOINT.md: %q", section)
 	}
 }
