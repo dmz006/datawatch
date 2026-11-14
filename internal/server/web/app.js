@@ -24616,6 +24616,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.lane_counts_from_caps', label: 'Lane fill lane counts from caps (follow the LLM concurrency caps instead of the configured lane counts, on by default)', labelKey: 'settings_lane_fill_lane_counts_from_caps', type: 'toggle', default: true },
     { key: 'autonomous.lane_fill.gpu_mode', label: 'Lane fill GPU mode (empty = inherit the lane fill mode, or off, shadow or on)', labelKey: 'settings_lane_fill_gpu_mode', type: 'select', options: ['', 'off', 'shadow', 'on'], default: '' },
     { key: 'autonomous.lane_fill.claude_mode', label: 'Lane fill Claude mode (empty = inherit the lane fill mode, or off, shadow or on)', labelKey: 'settings_lane_fill_claude_mode', type: 'select', options: ['', 'off', 'shadow', 'on'], default: '' },
+    { key: 'autonomous.lane_fill.stalled_merge_minutes', label: 'Lane fill stalled merge (minutes a verified task may wait to be merged before its Automaton frees the lane, 0 = never, default 30)', labelKey: 'settings_lane_fill_stalled_merge_minutes', helpKey: 'settings_lane_fill_stalled_merge_minutes_help', helpDocs: 'howto/automation-lane-fill.md', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Defect queue — batching and tiny-fix settings. Lists are comma separated.
     { label: 'Defect queue', labelKey: 'settings_defect_queue_group', type: 'group' },
     { key: 'autonomous.defect_queue.enabled', label: "Defect queue (on by default)", labelKey: 'settings_defect_queue_enabled', hintKey: 'settings_defect_queue_enabled_hint', type: 'toggle' },
@@ -36425,6 +36426,32 @@ function _laneFillLaneHtml(l) {
     `<span class="lane-bar" role="img" aria-label="${escHtml(t(stateKey))}"><span class="lane-bar-fill" style="width:${level}%;"></span></span>` +
     `<span class="lane-row-runs">${escHtml(runs)}${notesHtml ? (runs ? ' — ' : '') + notesHtml : ''}</span></div>`;
 }
+// The waiting list: every running Automaton that holds no live work, with its
+// title and a plain-language reason. Its lane is not drawn as occupied; the
+// row carries an empty bar and an idle marker so the freed lane stays visibly
+// idle. A reason code the app does not know falls back to the server's text.
+const LANE_FILL_WAITING_REASON_KEYS = {
+  waiting_review_merge: 'lane_fill_waiting_reason_waiting_review_merge',
+  merge_stalled: 'lane_fill_waiting_reason_merge_stalled',
+  no_task_startable: 'lane_fill_waiting_reason_no_task_startable',
+};
+function _laneFillWaitingRowHtml(w) {
+  const title = String(w.title || w.prd_id || '').trim();
+  const key = _laneFillKey(LANE_FILL_WAITING_REASON_KEYS, w.reason_code);
+  const reason = key ? t(key) : (String(w.wait_reason || '').trim() || t('lane_fill_waiting_reason_other'));
+  const backend = String(w.backend || '').trim();
+  return `<div class="lane-fill-waiting-row" data-reason-code="${escHtml(String(w.reason_code || ''))}" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+    `<span class="lane-fill-waiting-title" style="font-weight:600;">${escHtml(title)}</span>` +
+    (backend ? ` <span class="lane-fill-waiting-backend" style="color:var(--text2);">${escHtml(backend)}</span>` : '') +
+    ` <span class="lane-fill-waiting-idle" style="color:var(--text2);"><span class="lane-bar" role="img" aria-label="${escHtml(t('lane_fill_waiting_lane_idle'))}"><span class="lane-bar-fill" style="width:0%;"></span></span> ${escHtml(t('lane_fill_waiting_lane_idle'))}</span>` +
+    `<div class="lane-fill-waiting-reason" style="font-size:12px;color:var(--text2);">${escHtml(reason)}</div></div>`;
+}
+function _laneFillWaitingListHtml(list) {
+  const rows = (Array.isArray(list) ? list : []).filter(w => w && typeof w === 'object');
+  if (!rows.length) return '';
+  return `<div class="lane-fill-waiting-list">` +
+    _laneFillSection(t('lane_fill_waiting_heading'), `<div class="lane-fill-waiting-help" style="font-size:12px;color:var(--text2);">${escHtml(t('lane_fill_waiting_help'))}</div>${rows.map(_laneFillWaitingRowHtml).join('')}`) + `</div>`;
+}
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
@@ -36475,7 +36502,7 @@ window.laneFillCardHtml = function(status, cap) {
   const alertsHtml = alerts.length
     ? `<div class="lane-fill-gap" aria-hidden="true"></div>` + _laneFillSection(t('lane_fill_alerts_heading'), alerts.map(_laneFillAlertHtml).join('')) : '';
   return `<div class="prd-capacity-card lane-fill-card lane-card">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
-    `<div class="lane-rows">${lanesHtml}</div>` + queuedLine + evidence + degraded + alertsHtml + `</div>`;
+    `<div class="lane-rows">${lanesHtml}</div>` + _laneFillWaitingListHtml(status.waiting) + queuedLine + evidence + degraded + alertsHtml + `</div>`;
 };
 
 // ── Lane utilization dashboard card ─────────────────────────────────────────

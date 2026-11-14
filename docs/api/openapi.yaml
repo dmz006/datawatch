@@ -1085,7 +1085,12 @@ paths:
         false only `gpu_lanes` and `claude_lanes` set the lane counts) and
         `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode`
         (off | shadow | on, or empty to follow `autonomous.lane_fill.mode`; they set
-        the mode for one lane kind). A bad lane fill value rejects the whole PUT with
+        the mode for one lane kind). `autonomous.lane_fill.stalled_merge_minutes`
+        (whole number >= 0, default 30; minutes a verified task's merge into the
+        Automaton branch may stay pending with no progress before the Automaton stops
+        holding its lane and appears in the `waiting` list of the lane fill status
+        with the reason code `merge_stalled`; `0` turns the rule off and the lane is
+        kept; an unset key reads as 30). A bad lane fill value rejects the whole PUT with
         400 and nothing is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
         `autonomous.failure_escalation.enabled` (true|false, default true),
@@ -1584,7 +1589,9 @@ paths:
         each lane type, the evidence from the last poll (active GPU sessions and loaded
         models), the newest planner decisions and the idle alerts. `modes` gives the
         mode in effect for each lane kind and `lane_counts` the lane counts the last
-        poll used. A decision that refused an Automaton carries `eligibility_reason`,
+        poll used. `waiting` lists each running Automaton that holds no live work, with
+        its title and the reason it waits; the lane it sat on is left idle for the next
+        eligible work. A decision that refused an Automaton carries `eligibility_reason`,
         the stable code for the refusal. `limit` caps the decision history, newest first. Needs the autonomous read capability when
         called by a federated peer.
       operationId: autonomousLaneFillStatus
@@ -11456,6 +11463,22 @@ components:
         alerts:
           type: array
           items: {$ref: "#/components/schemas/LaneFillAlert"}
+        waiting:
+          type: array
+          description: Running Automata that hold no live work, in the order the snapshot read them. The lane each one sat on is left idle for the next eligible work, and lane fill never starts a second run of it. Empty when nothing running is idle.
+          items: {$ref: "#/components/schemas/LaneFillWaiting"}
+    LaneFillWaiting:
+      type: object
+      description: One running Automaton that holds no live work
+      properties:
+        prd_id: {type: string, description: "The Automaton's id"}
+        title: {type: string, description: "The Automaton's title"}
+        backend: {type: string, description: "The backend the Automaton runs on; left out when not known"}
+        wait_reason: {type: string, description: "Why it waits, in words"}
+        reason_code:
+          type: string
+          enum: [waiting_review_merge, merge_stalled, no_task_startable]
+          description: "The stable code behind wait_reason. waiting_review_merge: every task is completed and merged, and the Automaton waits for the completion review. merge_stalled: a verified task's merge stayed pending past autonomous.lane_fill.stalled_merge_minutes with no progress. no_task_startable: no task can start and no verified work is pending a merge."
     LaneFillLaneCounts:
       type: object
       description: The lane counts of the last poll, per lane kind
