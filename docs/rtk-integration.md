@@ -38,27 +38,70 @@ rtk:
   show_savings: true       # Display savings in stats dashboard
   auto_init: true          # Auto-run 'rtk init -g' on startup if hooks missing
   discover_interval: 0     # Seconds between discover checks (0 = disabled)
-  write_rules_files: false # Also append the RTK text to the tracked AGENT.md/CLAUDE.md (legacy)
+  write_rules_files: false # Write the RTK text into the tracked AGENT.md/CLAUDE.md instead of the untracked file (legacy; default off)
 ```
 
 ### Where the RTK instructions go
 
-At session start datawatch gives a claude-code session the RTK instructions through the
-untracked `CLAUDE.local.md` in the project directory (the same file that carries the
-platform context). In a git repository that file is excluded locally, so a session start
-leaves no change in `git status` and the text cannot reach a commit. The session record
-keeps `rtk_instructions_delivered: true` once the text is in place.
+The RTK instructions are a short block of text that tells a session to put `rtk` in front of
+its shell commands. datawatch delivers it through an **untracked per-session file**, not
+through the project's rules files:
 
-Set `rtk.write_rules_files: true` (Settings → General → **RTK (Token Savings)** →
-*Also write RTK text into tracked AGENT.md/CLAUDE.md*, `PUT /api/config` with
-`{"rtk.write_rules_files": true}`, or `configure rtk.write_rules_files=true`) to restore the
-old behaviour of appending the block to the project's own rules file.
+- At session start a claude-code session gets the block in `CLAUDE.local.md` in the project
+  directory — the same untracked file that carries the [platform
+  context](datawatch-definitions.md#platform-context). The block sits between
+  `<!-- rtk-instructions -->` and `<!-- /rtk-instructions -->` marker lines; any text you wrote
+  in that file outside the markers is kept.
+- In a git repository datawatch first adds `CLAUDE.local.md` to the repository's
+  `info/exclude` list (a per-clone ignore list that is not itself tracked). A session start
+  therefore leaves no change in `git status`, and the text cannot reach a commit, including
+  the commit an Automaton task makes when it finishes.
+- If the project already tracks its own `CLAUDE.local.md`, datawatch refuses to write into it
+  and the session does not get the block that way.
+- The session record keeps `rtk_instructions_delivered: true` once the text is in place.
+- With RTK turned off, the block is removed from the untracked file at the next session
+  start.
 
-At daemon start a cleanup pass looks at the project directory of each stored session. If
-`AGENT.md` or `CLAUDE.md` still carries an old `rtk-instructions` block, it removes the block
-only when the file is tracked, has no staged change, and the file without the block is
-byte-identical to the committed version (`git show HEAD:<file>`). In every other case the file
-is left untouched and one alert per worktree names the file so you can decide.
+**`AGENT.md` and `CLAUDE.md` are never written by the daemon by default.** Rules files are
+written by people only. This matters most for Automaton work: a block appended to a tracked
+rules file shows up as an uncommitted change, and the protected-paths check treats a change to
+the rules file as a change that needs a decision.
+
+### The rules-file setting
+
+`rtk.write_rules_files` controls whether the daemon writes the block into the tracked
+rules files instead of the untracked file. **The default is `false` (off).** Turn it on only if you want the old behaviour,
+where the block is appended to the project's own `AGENT.md` (or `CLAUDE.md`) at session start
+and the untracked file is not used.
+
+| Surface | How |
+|---------|-----|
+| **YAML** | `rtk.write_rules_files: true` in `~/.datawatch/config.yaml` |
+| **Web UI** | Settings → General → **RTK (Token Savings)** → *Write RTK instructions into AGENT.md and CLAUDE.md* (the help text beside it says the default is off) |
+| **REST API** | `PUT /api/config` with `{"rtk.write_rules_files": true}` |
+| **CLI** | `datawatch config set rtk.write_rules_files true` |
+| **MCP** | `config_set` with `rtk.write_rules_files` |
+| **Comm channel** | `configure rtk.write_rules_files=true` |
+
+### Startup cleanup of an old block
+
+Older versions appended the block to the tracked rules file at every session start, so some
+worktrees still carry it as an uncommitted change. At daemon start a cleanup pass looks at the
+project directory of each stored session and checks `AGENT.md` and `CLAUDE.md` for an
+`rtk-instructions` block. It removes the block **only when the block is the sole difference
+from the committed file**. All of these must hold:
+
+1. the file is tracked by git;
+2. `git status` shows one plain unstaged modification for it (nothing staged);
+3. the file without the block is byte-identical to the committed version
+   (`git show HEAD:<file>`).
+
+When they hold, the pass writes the stripped file back, which restores the committed version,
+and logs the removal. In every other case — the file is untracked, the block is committed, the
+file has other uncommitted changes, or git cannot answer — the file is **left exactly as it
+is** and the pass raises **one warning alert per worktree** that names the file or files and
+the reason, so you decide whether to remove the block by hand. The pass does nothing while
+`rtk.write_rules_files` is on, because the block is then meant to be there.
 
 ### Where to see RTK stats
 
