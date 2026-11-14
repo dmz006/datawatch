@@ -554,12 +554,38 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	m.setFallthrough(t.ID, nil)
 	var fell *CapacityAlternate
 	var fromPools []string
+	// requested is the request on the pools the task asked for, kept so every
+	// wait pass can ask again whether an alternate would be granted.
+	requested, requestedPools := req, pools
 	// A pinned worker never falls through: the alternate backend would be
 	// placed without the pin.
-	if role == capacity.RoleWorker && pin == "" {
+	canFall := role == capacity.RoleWorker && pin == ""
+	if canFall {
 		if alt, altReq := m.pickFallthrough(led, req, backend, model); alt != nil {
 			fell, fromPools = alt, pools
 			req, pools = altReq, altReq.Pools
+		}
+	}
+	// A task already waiting re-reads the fall-through setting on every wait
+	// pass, so turning it on admits tasks that are waiting now, with no
+	// restart and no re-queue. recheck runs on the Acquire goroutine, the
+	// same one that runs the onWait callback below, so fell, fromPools and
+	// pools need no extra locking.
+	var recheck func() (capacity.Request, bool)
+	if canFall {
+		recheck = func() (capacity.Request, bool) {
+			// Already on an alternate, or retargeted by a queued-mode
+			// override (it rewrites the requested pools): leave it alone.
+			if fell != nil || !samePoolSet(m.waitReqPoolsNow(t.ID), requestedPools) {
+				return capacity.Request{}, false
+			}
+			alt, altReq := m.pickFallthrough(led, requested, backend, model)
+			if alt == nil {
+				return capacity.Request{}, false
+			}
+			fell, fromPools = alt, requestedPools
+			pools = altReq.Pools
+			return altReq, true
 		}
 	}
 	// A worker's capacity bound is one budget for the whole admission: time
@@ -577,7 +603,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		entered := rec.Now()
 		defer func() { m.addCapacityWaitSpent(t.ID, rec.Now().Sub(entered)) }()
 	}
-	err := led.Acquire(ctx, req, bound, func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+	err := led.AcquireRechecking(ctx, req, bound, func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
 		}
@@ -590,12 +616,12 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		}
 		waited = true
 		m.setWaiting(t, reason)
-	})
+	}, recheck)
 	switch {
 	case err == nil:
 		if fell != nil {
 			m.setFallthrough(t.ID, fell)
-			note := fmt.Sprintf("fell through from %s/%s to %s/%s: requested pool full, alternate idle", backend, model, fell.Backend, fell.Model)
+			note := m.fallthroughNote(prd, t, backend, model, fell)
 			rec.AdmissionFallthrough(t.ID, prd.ID, fromPools, pools, note)
 			log.Printf("[autonomous] prd=%s task=%s %s", prd.ID, t.ID, note)
 		}
@@ -1293,9 +1319,40 @@ func (m *Manager) setFallthrough(taskID string, alt *CapacityAlternate) {
 	m.fallthroughs[taskID] = *alt
 }
 
+// fallthroughNote is the audit and log wording for a fall-through admission.
+// A task whose backend was set explicitly (per task, story, PRD or Automaton)
+// is only here because the fall-through setting is on, so the note says so.
+func (m *Manager) fallthroughNote(prd *PRD, t *Task, backend, model string, alt *CapacityAlternate) string {
+	note := fmt.Sprintf("fell through from %s/%s to %s/%s: requested pool full, alternate idle", backend, model, alt.Backend, alt.Model)
+	if m.hasExplicitBackend(prd, t) {
+		note += "; explicit backend; fall-through setting on"
+	}
+	return note
+}
+
+// hasExplicitBackend reports whether a level above the global default set the
+// task's backend: the task itself, its story, its PRD or its Automaton. Lane
+// preference and the execution fallback are not explicit.
+func (m *Manager) hasExplicitBackend(prd *PRD, t *Task) bool {
+	if t.Backend != "" {
+		return true
+	}
+	if story := findStory(prd, t.StoryID); story != nil && story.Backend != "" {
+		return true
+	}
+	if prd.Backend != "" {
+		return true
+	}
+	auto := m.AutomationForPRD(prd)
+	return auto != nil && auto.Backend != ""
+}
+
 // pickFallthrough returns the first alternate whose pools the ledger would
 // grant now, with its request, when the requested pools cannot be granted.
-// Off, no resolver, or room on the requested pools: nil.
+// Off, no resolver, or room on the requested pools: nil. It reads the setting
+// from the live config on every call (acquireLease calls it on each wait
+// pass), and a task whose backend was set explicitly is held to the same rule:
+// it falls through only while the setting is on.
 func (m *Manager) pickFallthrough(led *capacity.Ledger, base capacity.Request, backend, model string) (*CapacityAlternate, capacity.Request) {
 	m.mu.Lock()
 	on, altFn, keysFn, choicesFn := m.cfg.CapacityFallthrough, m.capacityAlternates, m.capacityKeys, m.capacityChoices

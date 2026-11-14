@@ -388,10 +388,23 @@ Mark an entry as a target on any surface:
 | **MCP** | `llm_update` or `llm_add` with `fallthrough_target=true` |
 | **Comm channel** | `llm update <name> fallthrough_target=true` |
 
+A task that is already waiting looks again on every wait pass (about once a
+second), reading the setting from the live config each time. Turning
+`autonomous.capacity_fallthrough` on therefore admits the tasks that are
+waiting now, with no restart and no re-queue, as soon as an alternate has
+room; the task keeps its place and its wait timeout. Turning it off stops
+further fall-throughs; a task already admitted on an alternate keeps it. An
+explicit backend (set on the task, story, PRD or Automaton) is held to the
+same rule: it waits for its own pool while the setting is off and falls
+through only while it is on.
+
 A task that fell through leaves an `autonomous_capacity_admitted` audit
 entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as
 `fell through from claude-code/sonnet to ollama/qwen: requested pool full,
-alternate idle`.
+alternate idle`. When the task's backend was set explicitly the note ends
+with `; explicit backend; fall-through setting on`. A task that had waited
+first also gets the usual plain `autonomous_capacity_admitted` entry with
+`waited_seconds` beside it.
 
 Set it on any surface:
 
