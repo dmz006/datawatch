@@ -214,7 +214,12 @@ func (m *Manager) applyQueuedTaskLLM(prdID, taskID, backend, effort, model, acto
 	}
 
 	out := LLMOverrideOutcome{TaskID: taskID, Reason: "not started: the override takes effect when the task runs"}
-	if oldStatus == TaskWaitingCapacity && backend != "" && oldBackend != backend {
+	// The move is not gated on the record's old backend differing: a task
+	// whose stored backend already matches can still sit queued on another
+	// pool (inherited from its story or PRD, or an earlier fall-through).
+	// Retarget is a no-op when the request already carries the placement.
+	_ = oldBackend
+	if oldStatus == TaskWaitingCapacity && backend != "" {
 		_, mod := resolveTaskBackendModel(task, story, prd, m.AutomationForPRD(prd), m.cfg.ExecutionBackend)
 		if m.requeueQueuedCapacity(prd, task, backend, mod) {
 			out.CapacityMoved = true
@@ -265,6 +270,9 @@ func (m *Manager) requeueQueuedCapacity(prd *PRD, t *Task, backend, model string
 		// wait reason names the NEW pool it moved to, not the one it entered
 		// the queue with.
 		m.setWaitReqPools(t.ID, req.Pools)
+		// A fall-through recorded for the old request no longer describes
+		// where the task waits.
+		m.setFallthrough(t.ID, nil)
 		return true
 	}
 	return false
