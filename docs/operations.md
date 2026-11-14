@@ -7114,24 +7114,27 @@ When the script gate of an Automaton final gate fails for a cause the daemon own
 
 Nothing here changes what a failed task means: the operator's failed-gate path, the retry budget and the verifier are untouched, and a spent budget or an `unknown` class is one held operator question, never a retry loop and never a guess.
 
-**The five access methods.**
+**The access methods.**
 
 | Task | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
 | Set the mode | `autonomous.gate_repair.mode` (`off`, `report` or `on`; default `report`) in `~/.datawatch/config.yaml` | `datawatch config set autonomous.gate_repair.mode on` | Settings → General → Automata settings → **Gate repair** (mode select) | `PUT /api/config` with `{"autonomous.gate_repair.mode": "on"}` | `configure autonomous.gate_repair.mode=on` |
-| Read the mode, the records (newest first) and the budget | n/a | `datawatch autonomous gate-repairs [--json]` | n/a — the web app shows the mode only, no record view | `GET /api/autonomous/gate-repairs` | `autonomous gate-repairs` |
+| Read the mode, the records (newest first) and the budget | n/a | `datawatch autonomous gate-repair status [--json]` | Automation page → **Gate repair** card: the mode in effect, the recent findings (cause, repair, before/after) and the spent repair budget | `GET /api/autonomous/gate-repair` | `autonomous gate-repair status` |
+| Run the engine now — one pass over every failed gate, or one failed gate | n/a — the mode is what a run honors | `datawatch autonomous gate-repair run [--automaton ID --task ID] [--json]` | Automation page → **Gate repair** card → **Run now** (one pass) | `POST /api/autonomous/gate-repair/run` — empty body: one pass; both `automaton_id` and `task_id`: one gate; exactly one is refused with 400 | `autonomous gate-repair run [automaton=ID task=ID]` |
 
-MCP agents read with the `gate_repairs` tool (no arguments, read-only — reading never repairs anything, raises an alert or changes a mode) and change the mode with `config_set` on the key `autonomous.gate_repair.mode`. A mode other than `off`, `report` or `on` is refused on every write surface, naming the key and the valid values, and nothing is changed. The read route is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the engine is wired.
+A run is the same engine path as the out-of-band work after a failure: it honors the live mode (in `report` it only records what it would do and changes nothing; in `on` it applies the safe repair and re-runs the gate once), spends the same repair budget, writes the same records and decision lines, and is bound by the same hard limits. It answers with the run outcome(s) and a fresh status read, and it never changes the mode. The earlier plural read — `GET /api/autonomous/gate-repairs`, the `gate_repairs` MCP tool, `datawatch autonomous gate-repairs`, `autonomous gate-repairs` in chat — still answers the same object; the singular surfaces above are the current ones and the only ones with the run verb (operator review: whether the plural alias stays).
+
+MCP agents read with the `autonomous_gate_repair_status` tool (no arguments, read-only — reading never repairs anything, raises an alert or changes a mode), run the engine with `autonomous_gate_repair_run` (both `automaton_id` and `task_id` to repair one failed gate, neither for one pass; exactly one is refused) and change the mode with `config_set` on the key `autonomous.gate_repair.mode`. A mode other than `off`, `report` or `on` is refused on every write surface, naming the key and the valid values, and nothing is changed. The read route is GET-only (any other method is 405), the read needs the autonomous read capability when called by a federated peer, the run route needs the autonomous run capability, and both routes answer 503 until the engine is wired.
 
 **Where to see it.**
 
 | Surface | How |
 |---|---|
-| REST | `GET /api/autonomous/gate-repairs` — `mode`, `budget` (one entry per spent task/class) and `records`, newest first, each with the failure class, what it would do or did, the undo (the `before`/`after` text pair when a script changed) and the held question |
-| MCP | `gate_repairs` (same object, read-only, no arguments) |
-| CLI | `datawatch autonomous gate-repairs`: the mode, the budget in lines, each record below it; `--json` for the object |
-| Comm channel | `autonomous gate-repairs`: the same lines, budget then records |
-| Web UI | Settings → General → Automata settings → **Gate repair** shows the mode in effect; the records themselves are read through the four surfaces above |
+| REST | `GET /api/autonomous/gate-repair` — `mode`, `budget` (one entry per spent task/class) and `records`, newest first, each with the failure class, what it would do or did, the undo (the `before`/`after` text pair when a script changed) and the held question; `POST /api/autonomous/gate-repair/run` — one pass or one gate, answering the run outcome(s) and a fresh status |
+| MCP | `autonomous_gate_repair_status` (same object, read-only, no arguments) and `autonomous_gate_repair_run` (both ids or neither) |
+| CLI | `datawatch autonomous gate-repair status`: the mode, the budget in lines, each record below it; `datawatch autonomous gate-repair run`: the run's outcomes then the fresh status; `--json` for the object |
+| Comm channel | `autonomous gate-repair status`: the same lines, budget then records; `autonomous gate-repair run [automaton=ID task=ID]`: the run's outcomes then the fresh status |
+| Web UI | Automation page → **Gate repair** card: the mode in effect (with a mode select), the recent findings (cause, repair, before/after), the spent repair budget and a **Run now** button that runs one pass |
 
 ## Model request progress (a hung request told from a slow one)
 

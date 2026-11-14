@@ -2707,10 +2707,17 @@ autonomous:
   # mcp.allow_self_config=true), comm `configure autonomous.gate_repair.mode=<value>`,
   # and the web app Settings (Automata, Gate repair). An invalid value is
   # refused on every surface with the same message and nothing is written.
-  # Read what it found and did with GET /api/autonomous/gate-repairs, the
-  # MCP tool gate_repairs, `datawatch autonomous gate-repairs` and the chat
-  # verb `autonomous gate-repairs`. A change takes effect on the next pass
-  # without a restart.
+  # Read what it found and did with GET /api/autonomous/gate-repair, the
+  # MCP tool autonomous_gate_repair_status, `datawatch autonomous gate-repair
+  # status` and the chat verb `autonomous gate-repair status`; run the engine
+  # now — one pass over every failed gate, or one failed gate with both ids —
+  # with POST /api/autonomous/gate-repair/run, the MCP tool
+  # autonomous_gate_repair_run, `datawatch autonomous gate-repair run` and
+  # `autonomous gate-repair run` in chat (a run honors the mode in effect and
+  # changes nothing else). The earlier plural reads (GET
+  # /api/autonomous/gate-repairs, the gate_repairs MCP tool, `datawatch
+  # autonomous gate-repairs`) still answer the same object. A change takes
+  # effect on the next pass without a restart.
   gate_repair:
     # The engine mode: off (does nothing), report (records what it would do
     # and changes nothing) or on (repairs and reruns the gate). Default: report.

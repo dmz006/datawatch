@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [autonomous, automation, gate, gate repair, repair, failure class, budget, held question, verify script, restart, SIGPIPE, docs mirror, allowed list]
 exec_steps:
-  - tool: gate_repairs
+  - tool: autonomous_gate_repair_status
     description: Read the gate repair engine state: the mode in effect, the repair records and the spent budget
     args: {}
     read_only: true
@@ -33,7 +33,9 @@ failed gate, changing nothing on disk; in `on` it repairs and resets the
 failed run. The setting `autonomous.gate_repair.mode` is accepted on every
 configuration surface, so a report-mode engine is active from the first
 daemon start. Switch the mode to `on` to make it repair; switch it to `off`
-to turn the engine off entirely.
+to turn the engine off entirely. It can also be run on demand — one pass
+over every failed gate it can see, or one failed gate by name — in whatever
+mode is in effect, on the run surfaces below.
 
 ## The failure classes
 
@@ -93,15 +95,51 @@ through the config set paths above.
 
 | Surface | How |
 |---|---|
-| REST | `GET /api/autonomous/gate-repairs` |
-| MCP | `gate_repairs` (no arguments; any argument is refused) |
-| CLI | `datawatch autonomous gate-repairs` (`--json` for the raw body) |
-| Chat | `autonomous gate-repairs` |
-| Web UI | **Settings → Automata → Gate repair** shows the mode in effect; the records themselves are read through the other surfaces above (the web app has no record view for the engine) |
+| REST | `GET /api/autonomous/gate-repair` |
+| MCP | `autonomous_gate_repair_status` (no arguments; any argument is refused) |
+| CLI | `datawatch autonomous gate-repair status` (`--json` for the raw body) |
+| Chat | `autonomous gate-repair status` |
+| Web UI | the Automation page **Gate repair** card shows the mode in effect, the recent findings (cause, repair, and the before/after pair when a script changed) and the spent repair budget, next to a **Run now** button (below) |
+
+The earlier plural read — `GET /api/autonomous/gate-repairs`, the `gate_repairs` MCP tool, `datawatch autonomous gate-repairs` and the chat verb `autonomous gate-repairs` — still answers the same object; the singular surfaces above are the current ones and are the only ones with the run verb.
+
+## Running the engine now (a pass, or one failed gate)
+
+The engine does not only work out a failure after the gate has already
+failed: it can also be run on demand. A run is the same engine path as the
+out-of-band work after a failure — it honors the live mode (in `report` it
+only records what it would do and changes nothing; in `on` it applies the
+safe repair and resets the failed run), spends the same budget, writes the
+same records, and is bound by the same hard limits — but it is started by
+you, over every failed gate it can see (one pass), or pointed at one
+Automaton and task to repair that one failed gate now. It answers with the
+run outcome(s) and a fresh status read. It never changes the mode and
+touches nothing else.
+
+| Surface | How |
+|---|---|
+| REST | `POST /api/autonomous/gate-repair/run` — an empty body runs one pass; `{"automaton_id": "<id>", "task_id": "<id>"}` repairs that one failed gate |
+| MCP | `autonomous_gate_repair_run` — no arguments for one pass; `automaton_id` and `task_id` for one failed gate (exactly one is refused) |
+| CLI | `datawatch autonomous gate-repair run` (`--json` for the raw body); one gate: `--automaton <id> --task <id>` |
+| Chat | `autonomous gate-repair run` for one pass; `autonomous gate-repair run automaton=<id> task=<id>` for one failed gate |
+| Web UI | the Automation page **Gate repair** card → **Run now** (one pass) |
+
+Both ids, or neither: giving exactly one of the automaton and the task is
+refused (400 on REST, the usage on the other surfaces). Called by a federated
+peer, the run route needs the autonomous run capability (the status read
+needs only the autonomous read capability), and both routes answer 503 until
+the engine is wired.
+
+## Undoing a repair
 
 Because every record says how to undo what was done, undoing a repair is:
 restore the record's `before` text in place of the `after`; if the engine
 had also reset the task and its dependents, put the task back to `failed` to
 re-open the failed gate. A reset-only class (`restart_killed`,
 `later_story_script`) changed no file at all — only that state put-back
-applies. Nothing else was touched.
+applies. Nothing else was touched. A run — on the run surfaces above — is bound by the same limits: it spends the same budget, writes the same records, and changes nothing outside the engine's own repair path.
+
+The budget file and the ledger survive daemon restarts — a class the task
+already spent stays spent, so the engine does not re-apply the same repair
+after a restart. The mode and the budget are operator-owned: neither a read
+nor a run changes them.
