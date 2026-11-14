@@ -182,6 +182,7 @@ func wireHousekeepingRepairs(coord *autonomouspkg.Coordinator, amgr *autonomousp
 	}
 	base.API = aAPI
 	base.Steps = steps
+	base.Manager = amgr
 	base.Settings = func() config.HousekeepingRepairsConfig { return cfg.Autonomous.HousekeepingRepairs }
 	base.Log = func(line string) { log.Printf("[housekeeping-repair] %s", line) }
 	base.Alert = func(level, title, body string) {

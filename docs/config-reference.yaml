@@ -2683,6 +2683,14 @@ autonomous:
     # re-plan it the way the planning question's fix answer does; otherwise it is
     # reported once with an alert and left alone. off, report or on. Default: report.
     planning: report
+    # One-time: an archived Automaton whose branch still has unmerged commits is
+    # moved back to its pre-archive status (completed, or cancelled if it was
+    # cancelled before the archive), with one decision (unarchive_unmerged) and
+    # one alert. Operator archives and cancellations are never touched, and a
+    # branch state that cannot be checked is left archived. The pass runs once
+    # and never again. off does nothing; report records what it would do until
+    # it does; on performs the one pass. Default: report.
+    unarchive: report
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300

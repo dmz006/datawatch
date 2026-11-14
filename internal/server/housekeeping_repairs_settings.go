@@ -22,6 +22,7 @@ func housekeepingRepairsSettingsForDisplay(h config.HousekeepingRepairsConfig) m
 		"lane_fill":     e.LaneFill,
 		"leftovers":     e.Leftovers,
 		"planning":      e.Planning,
+		"unarchive":     e.Unarchive,
 		"grace_seconds": e.GraceSecondsOrDefault(),
 	}
 }
