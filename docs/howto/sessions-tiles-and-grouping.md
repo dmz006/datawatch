@@ -145,20 +145,24 @@ servers](multi-servers.md#switch-between-servers-header-dropdown).
   out of how many there are. The search text is remembered on this device,
   so it is still there when you come back to the page; clear the box to see
   everything again.
-- **Filters button** — toggles the Filters sheet (below): it opens the sheet,
-  and clicking it again closes it. A badge on the
-  button shows how many filters are active, so you can tell at a glance that
-  the list is narrowed even with the sheet closed.
+- **Filters button** — toggles the Filters panel (below): one click opens
+  it, clicking it again closes it. It also closes on **Escape** and on any
+  click outside the panel, the same on the phone bottom sheet and the
+  desktop panel. A badge on the button shows how many filters are active,
+  so you can tell at a glance that the list is narrowed even with the
+  panel closed.
 - **Fold all** — an icon button (⊟ while at least one group can be folded, ⊞ once everything is folded; tooltip **Fold every group**, and **Unfold every group** after) that appears while a grouping is active and the visible list has foldable groups. It is a compact icon button, not a text button, and it folds or unfolds every group at once. It replaces the former separate fold row under the list, so there is no second row of controls for folding.
 - **View mode buttons** — the **List / Tiles / Compact** control: three
   icon buttons (List ☰, Tiles ⊞, Compact ▤) sitting side by side in the
   toolbar line, with the mode in use marked on the active button. Tap (or
   click) the button for the mode you want; it is remembered on this device.
-  The buttons form a group of three and take no more width than the
-  dropdown they replaced — at 360 px phone width the line still does not
-  split or wrap. On a touch screen a quick tap switches the mode, while
-  holding a button for a moment shows its name (List / Tiles / Compact) as a
-  small hint and does *not* change the mode. Described next under
+  Each button is an ordinary focusable button that carries its name —
+  **List**, **Tiles**, **Compact** — as its accessible label for keyboard
+  and screen-reader use, and the same name shows as the button's label on
+  hover; on a touch screen holding a button for a moment shows its name as
+  a small hint and does *not* change the mode. The three buttons take no
+  more width than the dropdown they replaced — at 360 px phone width the
+  line still does not split or wrap. Described next under
   [View modes](#view-modes).
 - **One line below the toolbar** — the **Tree** and **History** buttons sit
   on their own line, with the clickable **🌐 <name>** indicator while a
@@ -313,6 +317,8 @@ applied — their layouts are unchanged:
 The **view mode buttons** in the toolbar line (☰ **List**, ⊞ **Tiles**,
 ▤ **Compact**) offer three choices — tap the button for the mode you want;
 the active button is marked and the choice is remembered on this device.
+Each button carries its name as its accessible label (shown on hover, read
+out by screen readers, usable from the keyboard).
 
 - **List** is the classic one-card-per-row layout. It stays the default on
   phone-width viewports (narrower than 600 px), where the dense rows read
