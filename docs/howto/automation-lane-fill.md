@@ -7,6 +7,15 @@ exec_steps:
     description: Read the lanes, the queued eligible counts, the pool evidence, the newest decisions and the idle alerts
     args: {limit: 50}
     read_only: true
+  - tool: autonomous_lane_fill_status
+    description: Read the waiting list, the running Automata that hold no live work, each with its reason and reason code (waiting_review_merge, merge_stalled or no_task_startable); their lanes are left idle
+    args: {limit: 50}
+    read_only: true
+  - tool: autonomous_config_set
+    description: Set how many minutes a verified task's merge may stay pending before its Automaton stops holding its lane (whole number, 30 by default, 0 turns the rule off); it takes effect on the next poll
+    args:
+      lane_fill_stalled_merge_minutes: "{{params.stalled_merge_minutes}}"
+    read_only: false
   - tool: autonomous_prd_set_lane_preference
     description: Set which lane an Automaton may take (gpu, claude or any; empty means any)
     args:
@@ -111,20 +120,24 @@ datawatch autonomous lane-fill --limit 20
 
 Lane fill used to count every running Automaton as occupying a lane, so an
 Automaton that had finished its tasks, or whose merge had stalled, hid an idle
-Claude or GPU lane and nothing ran in it. Now a running Automaton holds its lane
-only while it has **live work**:
+Claude or GPU lane and nothing ran in it. Now a lane is held only by an
+Automaton with a live worker, verifier or judge session, or a task that is
+starting. In full, a running Automaton holds its lane only while it has **live
+work**:
 
 - a task whose worker, tests or verifier run (in progress, running tests, or
   verifying, including a verifier queued for a slot);
 - a capacity lease the ledger still holds for one of its tasks (worker,
-  verifier or judge);
+  verifier or judge), because the session it names is still live;
 - a task in the act of starting (waiting for its capacity slot, or queued with
   every dependency complete and nothing unmerged in front of it);
 - verified work waiting on its merge into the Automaton branch, **while the
   stalled-merge window allows** (see below).
 
-When none of these holds, the Automaton is **waiting**: its lane is left idle
-for the next eligible work, and lane fill never starts a second run of it.
+When none of these holds, the Automaton is **waiting**: it is shown as waiting
+with its reason, it frees its lane, the lane is left idle for the next eligible
+work, and lane fill never starts a second run of it. An Automaton that is
+running but has not made any task yet is treated as starting and keeps its lane.
 
 **Why it waits.** Each waiting Automaton is listed with a reason and a stable
 reason code:
@@ -147,7 +160,8 @@ Automaton branch. The age of that wait runs from the time the task records for
 its merge, else from when lane fill first saw it pending. Past
 `stalled_merge_minutes` (default `30`) with no progress, the Automaton stops
 holding its lane and lane fill records why (`merge_stalled`). What else happens
-follows the lane fill mode:
+follows the lane fill mode in effect (`on` when either lane kind is `on`, else
+`shadow` when either is `shadow`):
 
 - `off`: nothing.
 - `shadow`: the stalled merge is recorded as a lane fill decision and nothing
@@ -164,6 +178,35 @@ rule off: a pending merge keeps the lane however long it waits, and nothing is
 alerted or retried. The observation clock is kept in memory, so after a daemon
 restart a stalled merge keeps the lane for at most one more threshold window
 before it frees it.
+
+**Reading the waiting list and setting the window.** Follow these steps to see
+which Automata are waiting and to change `stalled_merge_minutes`:
+
+1. **Read the waiting list.** Use the status read from the table under
+   "Reading the status". The `waiting` list names each waiting Automaton, its
+   reason and its reason code. An Automaton that is waiting is not an idle
+   lane's occupant, so its lane also shows idle.
+2. **Choose a number of minutes.** A whole number of `0` or more. A smaller
+   number frees the lane sooner and retries sooner; `0` turns the rule off.
+3. **Set it on any channel below.** The change applies on the next poll, with
+   no restart. A negative number, a fraction or text is refused and nothing is
+   written.
+4. **Read the status again** to confirm the new window took effect.
+
+| Channel | How to set `stalled_merge_minutes` to 45 |
+|---|---|
+| Web UI (PWA) | Settings → General → Autonomous, the **Lane fill stalled merge** field in the Lane fill fields |
+| REST | `PUT /api/config` with the key `autonomous.lane_fill.stalled_merge_minutes` set to `45` |
+| MCP | `autonomous_config_set` with `lane_fill_stalled_merge_minutes: 45` |
+| CLI | `datawatch config set autonomous.lane_fill.stalled_merge_minutes 45` |
+| Comm channel | `configure autonomous.lane_fill.stalled_merge_minutes=45` |
+| YAML | In `config.yaml`, under `autonomous:` then `lane_fill:`, set `stalled_merge_minutes: 45` |
+
+The waiting list reads the same way on every surface: REST
+`GET /api/autonomous/lane-fill` (the `waiting` list), MCP
+`autonomous_lane_fill_status`, CLI `datawatch autonomous lane-fill`, the comm
+verb `autonomous lane-fill` and the **Lane fill** card on the Automation
+sub-tab, which shows the same waiting rows.
 
 ## A lane waiting on a verifier
 
@@ -630,6 +673,10 @@ It refuses, writes one decision-log line (found, done, how to undo) and raises e
 |---|---|
 | Every GPU lane is blocked with `pool evidence unavailable: ...` | A node could not be read and the failure is blocking. The error names the node. If the node holds work, a lane is placed on it, or it has been unreachable for less than `host_down_after_minutes`, it blocks; restore the node, or for a certificate error set the node's own TLS options (see the certificate section above). A node that is switched off and holds no work stops blocking after `host_down_after_minutes` and shows under Degraded hosts instead. If `host_down_after_minutes` is `0` every failure blocks. See the section on a degraded host. |
 | A "Degraded hosts" block shows on the card | A node is unreachable but holds no work. The lanes are judged from the other nodes. It clears on the first successful read. |
+| A lane shows idle although an Automaton is running | The Automaton holds no live work and is listed in the `waiting` list with its reason. `waiting_review_merge` means it waits for the completion review; `merge_stalled` means a verified task's merge has been pending past `stalled_merge_minutes`; `no_task_startable` means no task can start. The lane is free on purpose. |
+| A running Automaton keeps a lane while its merge waits | The merge is still inside `stalled_merge_minutes`, or the setting is `0` (rule off). Lower the number to free the lane sooner. |
+| "Task merge stalled" alert | A verified task's merge has been pending past `stalled_merge_minutes` and lane fill is in `on` mode. The merge is retried. If the merge is held for the operator (a merge block, a hold or a review), it is alerted and never retried: clear the hold. |
+| A stalled merge raised no alert | The mode is `shadow` or `off`, or `stalled_merge_minutes` is `0`. In shadow the stall is only a recorded decision. |
 
 ## See also
 
