@@ -76,6 +76,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
 		"projects_subtab_plans",
+		"header_scope_button_label",
 		// Plans browser: backlog group, create action, the Automation heading and the move buttons.
 		"plans_browser_backlog",
 		"plans_browser_create_btn",

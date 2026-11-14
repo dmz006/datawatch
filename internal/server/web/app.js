@@ -2959,6 +2959,13 @@ function navigate(view, sessionId, fromPopstate) {
   if (headerIdentityBtn) {
     headerIdentityBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
   }
+  // The scope button shows only on the Automata view; the remembered scope
+  // stays while the button is hidden.
+  const headerScopeBtn = document.getElementById('headerScopeBtn');
+  if (headerScopeBtn) {
+    headerScopeBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
+  }
+  renderScopeButton();
 
   renderServerHeaderLine(); // shared shell: every page gets the stable server line
   renderServerDropdown();   // …and the header server button stays in sync with every page
@@ -3159,20 +3166,40 @@ function projectsToggleSection(id) {
   cards.forEach(c => _projectsSectionToggleState(c, collapsed));
 }
 
+// A #projects hash may end in ?plan=<automation_id>, the plan of the project
+// the hash names (the header scope). _projectsHashSplit separates that suffix
+// from the path so every older form (#projects, #projects/<name> and
+// #projects/<name>/<subtab>) keeps parsing exactly as before.
+function _projectsHashSplit(hash) {
+  const s = String(hash || '');
+  const q = s.indexOf('?');
+  return { path: q < 0 ? s : s.slice(0, q), query: q < 0 ? '' : s.slice(q + 1) };
+}
 function _projectsHashParse(hash) {
-  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(String(hash || ''));
+  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(_projectsHashSplit(hash).path);
   if (!m) return null;
   try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
 }
 // _projectsHashSubtab returns the sub-tab named by #projects/<name>/<subtab>,
 // or '' when the hash names none or an unknown one.
 function _projectsHashSubtab(hash) {
-  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
+  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(_projectsHashSplit(hash).path);
   return m && _projectsSubtabValid(m[1]) ? _projectsSubtabCanon(m[1]) : '';
 }
-function _projectsHashBuild(name, subtab) {
+// _projectsHashPlan returns the plan (an automation id) a projects hash names
+// with ?plan=, or '' when it names none. A plan needs a project, so a hash
+// without one never carries a plan.
+function _projectsHashPlan(hash) {
+  const sp = _projectsHashSplit(hash);
+  if (!/^#projects\/[^/]+(?:\/[^/]+)?$/.test(sp.path)) return '';
+  const m = /(?:^|&)plan=([^&]*)/.exec(sp.query);
+  if (!m) return '';
+  try { return decodeURIComponent(m[1]); } catch (_) { return ''; }
+}
+function _projectsHashBuild(name, subtab, plan) {
   if (!name) return '#projects';
-  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '');
+  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '')
+    + (plan ? '?plan=' + encodeURIComponent(plan) : '');
 }
 function _projectsCurrentHash() {
   return typeof location !== 'undefined' ? location.hash : '';
@@ -3923,7 +3950,7 @@ function selectProjectsSubtab(k) {
   _projectsRememberSubtab(k);
   try {
     if (_projectsState.selected) {
-      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k));
+      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k, _scopeHashPlan()));
     }
   } catch (_) { /* history blocked */ }
   _projectsPaint();
@@ -6361,7 +6388,16 @@ function renderProjectsView() {
     // A projects address opens Overview unless it names a sub-tab; no address
     // at all keeps the remembered sub-tab.
     if (fromHash !== null) _projectsState.subtab = _projectsHashSubtab(_projectsCurrentHash()) || 'overview';
-    return fromHash !== null ? fromHash : _projectsRecallLast();
+    // The header scope is the one source of truth: a hash that names a project
+    // (and plan) sets it, the Overview hash means All, and no hash at all
+    // keeps the remembered scope (else the remembered project of old).
+    if (fromHash !== null) {
+      _scopeApplyFromHash(fromHash, _projectsHashPlan(_projectsCurrentHash()));
+      return fromHash;
+    }
+    const kept = _scopeActive() ? getScope().project : _projectsRecallLast();
+    if (kept !== getScope().project) setScope(kept, '', { silent: true, noHash: true });
+    return kept;
   })();
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   _projectsPaint();
@@ -6373,11 +6409,12 @@ function renderProjectsView() {
 
 function _projectsLoad() {
   return apiFetch('/api/projects').then(list => {
-    if (!_projectsActive()) return;
+    if (!_projectsActive() && !_scopeListWanted) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
+    _scopeOnProjectList(); // the header scope is checked against every list that arrives
   }).catch(err => {
-    if (!_projectsActive()) return;
+    if (!_projectsActive() && !_scopeListWanted) return;
     _projectsState.list = _projectsState.list || [];
     _projectsState.error = (err && err.message) || String(err);
   });
@@ -6406,17 +6443,376 @@ function _projectsLoadRollup() {
 // selectProjectsView is the picker's change handler. It remembers the choice
 // and mirrors it in the hash without adding a history entry.
 function selectProjectsView(name) {
-  _projectsState.selected = name || _PROJECTS_OVERVIEW;
-  _projectsRememberLast(_projectsState.selected);
-  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
-  try {
-    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
-  } catch (_) { /* the hash is a convenience; the choice still applies */ }
+  // The scope is the one source of truth: setScope keeps _projectsState.selected,
+  // the remembered project and the hash in step; this handler only repaints.
+  setScope(name || _PROJECTS_OVERVIEW, '', { silent: true });
   _projectsPaint();
   return _projectsLoadSelected().then(() => {
     if (_projectsActive()) _projectsPaint();
   });
 }
+
+// ── Header scope ─────────────────────────────────────────────────────────────
+// The scope is what the Automata pages are filtered to: All, one project, or
+// one plan of that project. It is {project, plan} where '' means All, and a
+// plan implies its project. A plan is one entry of the project's arcs array,
+// keyed by its automation_id (the Automation whose member Automata make up the
+// plan). The choice is remembered per device under the single localStorage key
+// dw_scope (JSON); every storage access is wrapped in try/catch, so blocked
+// storage leaves the scope in memory for the page's lifetime. setScope() is the
+// one mutation path: the header scope modal, the in-page Projects picker, the
+// Clear button and a #projects/<name>?plan=<id> hash all go through it, and it
+// keeps _projectsState.selected, the remembered project and the hash in step.
+const SCOPE_STORE_KEY = 'dw_scope';
+const _SCOPE_MODAL_ID = 'scopeModal';
+let _scopeState = null;          // { project, plan } -- read lazily from storage
+let _scopeToken = 0;             // bumped on every scope change; a late reply for an older scope is dropped
+let _scopeListWanted = 0;        // >0 while the scope itself waits on _projectsLoad (any Automata sub-page)
+let _scopePlanCache = { key: '', ids: new Set(), status: 'idle' };
+let _scopeNames = null;          // automation id -> name, read once for plan labels
+let _scopeModalProject = '';     // project whose plans the open modal shows ('' = none yet)
+
+function _scopeStorage() {
+  try { return (typeof localStorage !== 'undefined' && localStorage) ? localStorage : null; } catch (_) { return null; }
+}
+// _scopeRead -> the saved scope, or null when nothing usable was saved.
+function _scopeRead() {
+  try {
+    const ls = _scopeStorage();
+    if (!ls) return null;
+    const raw = ls.getItem(SCOPE_STORE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    const project = typeof o.project === 'string' ? o.project : '';
+    const plan = project && typeof o.plan === 'string' ? o.plan : '';
+    return { project, plan };
+  } catch (_) { return null; }
+}
+function _scopeSave() {
+  try {
+    const ls = _scopeStorage();
+    if (ls) ls.setItem(SCOPE_STORE_KEY, JSON.stringify(_scopeState));
+  } catch (_) { /* storage blocked: the scope stays in memory */ }
+}
+function _scopeEnsure() {
+  if (!_scopeState) _scopeState = _scopeRead() || { project: '', plan: '' };
+  return _scopeState;
+}
+
+// getScope returns a copy of the scope: {project, plan}, '' meaning All.
+function getScope() {
+  const s = _scopeEnsure();
+  return { project: s.project, plan: s.plan };
+}
+function _scopeActive() { return !!_scopeEnsure().project; }
+
+// _scopePlanLabel resolves a plan's readable label: the Automation's name, else
+// the title of the plan record that lists it, else the automation id itself.
+function _scopePlanLabel(project, id) {
+  id = String(id || '');
+  if (!id) return '';
+  try {
+    if (_scopeNames && _scopeNames[id]) return _scopeNames[id];
+    const auto = (typeof _automationState !== 'undefined' && Array.isArray(_automationState.list))
+      ? _automationState.list.find(a => a && a.id === id) : null;
+    if (auto && auto.name) return String(auto.name);
+    const rows = [];
+    if (_projectsState.rollup && _projectsState.rollupFor === project && Array.isArray(_projectsState.rollup.plans)) rows.push(..._projectsState.rollup.plans);
+    if (typeof _plansBrowser !== 'undefined' && _plansBrowser && _plansBrowser.project === project && Array.isArray(_plansBrowser.plans)) rows.push(..._plansBrowser.plans);
+    const row = rows.find(r => r && Array.isArray(r.automation_ids) && r.automation_ids.indexOf(id) >= 0 && r.title);
+    if (row) return String(row.title);
+  } catch (_) { /* fall through to the id */ }
+  return id;
+}
+
+// _scopeLabel is the human text of the scope: 'All', 'projectName' or
+// 'projectName / planLabel'.
+function _scopeLabel() {
+  const s = _scopeEnsure();
+  if (!s.project) return t('header_scope_all') || 'All';
+  return s.plan ? s.project + ' / ' + _scopePlanLabel(s.project, s.plan) : s.project;
+}
+
+// The plan the hash should carry: only the plan of the project the Projects
+// page has selected.
+function _scopeHashPlan() {
+  const s = _scopeEnsure();
+  return s.project && s.project === _projectsState.selected ? s.plan : '';
+}
+function _scopeSyncHash() {
+  if (!_projectsActive()) return;
+  try {
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true), _scopeHashPlan()));
+  } catch (_) { /* the hash is a convenience; the scope still applies */ }
+}
+
+// _scopeRepaint redraws the current Automata sub-page through the existing
+// view renderer, without a page reload.
+function _scopeRepaint() {
+  if (state.activeView !== 'autonomous') return Promise.resolve();
+  if (_projectsActive()) {
+    _projectsPaint();
+    const tok = _scopeToken;
+    return _projectsLoadSelected().then(() => {
+      if (tok === _scopeToken && _projectsActive()) _projectsPaint();
+    });
+  }
+  renderAutonomousView();
+  return Promise.resolve();
+}
+
+// setScope(project, plan) sets the scope. Returns true when it changed. A plan
+// without a project is dropped. opts.silent skips the repaint (the caller paints);
+// opts.noHash skips the hash write.
+function setScope(project, plan, opts) {
+  opts = opts || {};
+  project = String(project || '');
+  plan = project ? String(plan || '') : '';
+  const cur = _scopeEnsure();
+  const changed = cur.project !== project || cur.plan !== plan;
+  _scopeState = { project, plan };
+  if (changed) {
+    _scopeToken++;
+    _scopePlanCache = { key: '', ids: new Set(), status: 'idle' };
+  }
+  _scopeSave();
+  _projectsState.selected = project || _PROJECTS_OVERVIEW;
+  _projectsRememberLast(project);
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
+  if (!opts.noHash) _scopeSyncHash();
+  renderScopeButton();
+  if (changed && !opts.silent) _scopeRepaint();
+  return changed;
+}
+function clearScope() { return setScope('', ''); }
+// A #projects hash names the scope: a project (and plan), or the Overview (All).
+function _scopeApplyFromHash(project, plan) {
+  return setScope(project || '', plan || '', { silent: true, noHash: true });
+}
+
+// _scopeValidate checks the scope against the project list once it has arrived:
+// a project that is gone, or a plan that is no longer one of the project's
+// arcs, falls back to All and the fallback is saved. A list that failed to
+// load proves nothing, so it never clears the scope.
+function _scopeValidate() {
+  if (!_scopeActive() || _projectsState.error || !Array.isArray(_projectsState.list)) return;
+  const s = _scopeEnsure();
+  const p = _projectsState.list.find(x => x && x.name === s.project);
+  if (!p) { setScope('', ''); return; }
+  if (s.plan) {
+    const arcs = Array.isArray(p.arcs) ? p.arcs : [];
+    if (!arcs.some(a => a && a.automation_id === s.plan)) setScope(s.project, '');
+  }
+}
+// _scopeOnProjectList runs when the project list arrives: validate the scope and
+// refresh the modal if it is open.
+function _scopeOnProjectList() {
+  _scopeValidate();
+  renderScopeButton();
+  if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+}
+// _scopeLoadList reads the project list from any Automata sub-page.
+function _scopeLoadList() {
+  _scopeListWanted++;
+  return Promise.resolve(_projectsLoad()).catch(() => {}).then(() => {
+    _scopeListWanted--;
+    if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+  });
+}
+// _scopeBootKick validates a remembered scope once the list arrives. Boot never
+// waits for it: the remembered scope is restored first and corrected later.
+function _scopeBootKick() {
+  try {
+    if (_scopeActive() && !Array.isArray(_projectsState.list)) _scopeLoadList();
+  } catch (_) { /* boot must never break */ }
+}
+
+// ── Filter helpers the page tasks call ───────────────────────────────────────
+
+// _scopeMatchesPrd(prd): true when the scope is All. A project scope matches on
+// the Automaton's project link (the project field of the /api/autonomous/prds
+// reply). A plan scope matches the Automata that are members of the plan's
+// Automation: the plan implies its project.
+function _scopeMatchesPrd(prd) {
+  const s = _scopeEnsure();
+  if (!s.project) return true;
+  if (!prd || typeof prd !== 'object') return false;
+  if (!s.plan) return String(prd.project || '') === s.project;
+  if (prd.automation_id && prd.automation_id === s.plan) return true;
+  return _scopePlanPrdIds().has(prd.id);
+}
+// _scopePlanPrdIds is the Set of Automaton ids of the active plan, read once per
+// plan from the Automation detail route and cached until the scope changes. It
+// is empty until the reply arrives; the page repaints then.
+function _scopePlanPrdIds() {
+  const s = _scopeEnsure();
+  if (!s.plan) return new Set();
+  const key = s.project + '\n' + s.plan;
+  if (_scopePlanCache.key === key) return _scopePlanCache.ids;
+  const entry = { key, ids: new Set(), status: 'loading' };
+  _scopePlanCache = entry;
+  const tok = _scopeToken;
+  let req;
+  try { req = automationRequest('GET', '/api/automations/' + encodeURIComponent(s.plan)); } catch (_) { req = Promise.reject(); }
+  Promise.resolve(req).then(data => {
+    if (tok !== _scopeToken || _scopePlanCache !== entry) return; // a later scope owns the cache
+    const members = data && Array.isArray(data.members) ? data.members : [];
+    members.forEach(m => { if (m && m.prd_id) entry.ids.add(m.prd_id); });
+    entry.status = 'ready';
+    _scopeRepaint();
+  }, () => {
+    if (tok !== _scopeToken || _scopePlanCache !== entry) return;
+    entry.status = 'error';
+  });
+  return entry.ids;
+}
+
+// ── Banner ───────────────────────────────────────────────────────────────────
+// _scopeBannerHTML is '' while the scope is All, else a status line saying what
+// the page is filtered to, with a Clear button.
+function _scopeBannerHTML() {
+  if (!_scopeActive()) return '';
+  const text = t('header_scope_banner', [_scopeLabel()]) || ('Filtered to ' + _scopeLabel());
+  return `<div class="scope-banner" role="status"><span class="scope-banner-text">${escHtml(text)}</span>` +
+    `<button type="button" class="btn-secondary scope-banner-clear" onclick="clearScope()">${escHtml(t('header_scope_clear') || 'Clear')}</button></div>`;
+}
+
+// ── Header button ────────────────────────────────────────────────────────────
+// renderScopeButton syncs the label, title, badge and aria-expanded. The badge
+// shows only while a scope is active.
+function renderScopeButton() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const btn = document.getElementById('headerScopeBtn');
+  if (!btn) return;
+  const label = _scopeLabel();
+  const text = t('header_scope_button_label', [label]) || ('Scope: ' + label);
+  btn.setAttribute('aria-label', text);
+  btn.setAttribute('title', text);
+  btn.setAttribute('aria-expanded', _headerModalIsOpen(_SCOPE_MODAL_ID) ? 'true' : 'false');
+  const badge = document.getElementById('headerScopeBadge');
+  if (badge) {
+    if (_scopeActive()) {
+      badge.style.display = '';
+      badge.innerHTML = `<span class="header-scope-badge-text">${escHtml(t('header_scope_badge_label') || 'Filter active')}</span>`;
+    } else {
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+    }
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+function _scopeModalRow(cls, label, call, current, extra) {
+  return `<button type="button" class="scope-modal-row${cls ? ' ' + cls : ''}${current ? ' is-active' : ''}"${current ? ' aria-current="true"' : ''}${extra || ''} onclick="${escHtml(call)}"><span class="scope-modal-row-label">${escHtml(label)}</span></button>`;
+}
+
+function _scopeModalBodyHTML() {
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const err = _projectsState.error;
+  if (!list || (!list.length && _scopeListWanted > 0)) {
+    return loadingEyeBlock();
+  }
+  const s = _scopeEnsure();
+  let html = '';
+  if (err) html += `<div class="scope-modal-error" role="alert">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>`;
+  html += `<div class="scope-modal-list" role="group" aria-labelledby="scopeModalTitle">`;
+  html += _scopeModalRow('is-all', t('header_scope_all') || 'All', 'clearScope();closeScopeModal();', !s.project, ' data-scope-all="1"');
+  if (list.length) {
+    html += `<div class="scope-modal-heading">${escHtml(t('header_scope_project_heading') || 'Project')}</div>`;
+    list.forEach(p => {
+      const open = _scopeModalProject === p.name;
+      const call = (Array.isArray(p.arcs) && p.arcs.length)
+        ? `_scopeModalPickProject(${JSON.stringify(p.name)})`
+        : `setScope(${JSON.stringify(p.name)},'');closeScopeModal();`;
+      html += _scopeModalRow('', p.name, call, s.project === p.name, ` data-scope-project="${escHtml(p.name)}"${open ? ' aria-expanded="true"' : ''}`);
+    });
+  }
+  const sel = list.find(p => p.name === _scopeModalProject);
+  if (sel) {
+    html += `<div class="scope-modal-heading">${escHtml(t('header_scope_plan_heading') || 'Plan')}</div>`;
+    const here = s.project === sel.name;
+    html += _scopeModalRow('', t('header_scope_all_plans') || 'All plans', `setScope(${JSON.stringify(sel.name)},'');closeScopeModal();`, here && !s.plan, ' data-scope-all-plans="1"');
+    (Array.isArray(sel.arcs) ? sel.arcs : []).forEach(a => {
+      if (!a || !a.automation_id) return;
+      html += _scopeModalRow('', _scopePlanLabel(sel.name, a.automation_id),
+        `setScope(${JSON.stringify(sel.name)},${JSON.stringify(a.automation_id)});closeScopeModal();`,
+        here && s.plan === a.automation_id, ` data-scope-plan="${escHtml(a.automation_id)}"`);
+    });
+  }
+  html += `</div>`;
+  html += `<div class="scope-modal-note">${escHtml(t('header_scope_templates_note') || 'Templates are shown for every project.')}</div>`;
+  return html;
+}
+
+// _scopeModalPaint redraws the open modal's body in place and keeps keyboard
+// focus on the row it was on.
+function _scopeModalPaint(focusProject) {
+  const el = document.getElementById('scopeModalBody');
+  if (!el) return;
+  el.innerHTML = _scopeModalBodyHTML();
+  if (focusProject) {
+    const btn = Array.from(el.querySelectorAll('[data-scope-project]')).find(b => b.getAttribute('data-scope-project') === focusProject);
+    if (btn && typeof btn.focus === 'function') { try { btn.focus(); } catch (_) { /* detached */ } return; }
+  }
+  _headerModalRefocus(_SCOPE_MODAL_ID);
+}
+// _scopeModalPickProject shows a project's plans under the Plan heading.
+function _scopeModalPickProject(name) {
+  _scopeModalProject = String(name || '');
+  _scopeModalPaint(_scopeModalProject);
+}
+window._scopeModalPickProject = _scopeModalPickProject;
+
+function _scopeHelpLink() {
+  const label = t('header_scope_help_label') || 'Help: scope';
+  return `<a class="header-modal-help" href="/diagrams.html#docs/howto/projects-tab.md" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}">?</a>`;
+}
+
+// _scopeLoadPlanNames reads the Automation names once, for readable plan labels.
+function _scopeLoadPlanNames() {
+  if (_scopeNames) return;
+  let req;
+  try { req = automationRequest('GET', '/api/automations'); } catch (_) { return; }
+  Promise.resolve(req).then(d => {
+    const rows = Array.isArray(d) ? d : (d && Array.isArray(d.automations) ? d.automations : (d && Array.isArray(d.list) ? d.list : []));
+    const names = {};
+    rows.forEach(a => { if (a && a.id && a.name) names[a.id] = String(a.name); });
+    _scopeNames = names;
+    renderScopeButton();
+    if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+  }, () => { /* labels fall back to the automation id */ });
+}
+
+function openScopeModal() {
+  const s = _scopeEnsure();
+  _scopeModalProject = s.plan ? s.project : '';
+  _headerModalShow({
+    id: _SCOPE_MODAL_ID,
+    titleId: 'scopeModalTitle',
+    titleText: t('header_scope_modal_title') || 'Scope',
+    titleExtraHtml: _scopeHelpLink(),
+    bodyHtml: `<div id="scopeModalBody">${_scopeModalBodyHTML()}</div>`,
+    closeOnclick: 'closeScopeModal()',
+    openerId: 'headerScopeBtn',
+    onClose: () => { _scopeModalProject = ''; renderScopeButton(); },
+  });
+  renderScopeButton();
+  if (!Array.isArray(_projectsState.list) || _projectsState.error) _scopeLoadList();
+  _scopeLoadPlanNames();
+}
+window.openScopeModal = openScopeModal;
+
+// The one close path: the Close button, a row choice, Escape and the backdrop
+// all end here, so focus returns to #headerScopeBtn.
+function closeScopeModal() {
+  _headerModalHide(_SCOPE_MODAL_ID);
+}
+window.closeScopeModal = closeScopeModal;
+window.getScope = getScope;
+window.setScope = setScope;
+window.clearScope = clearScope;
+window.renderScopeButton = renderScopeButton;
 
 // Handle Android/browser back button via popstate
 window.addEventListener('popstate', function(e) {
@@ -52542,6 +52938,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // one falls back to All (and saves that). See _serverChoiceSettleBoot
     // for the full one-round rule.
     try { await _serverChoiceSettleBoot(); } catch (_) { /* storage unusable: boot defaults unchanged */ }
+    // A remembered scope is restored at once and checked against the project list when it arrives.
+    _scopeBootKick();
     // If no token is stored, probe health to see if auth is required before
     // spinning up the WS. When it is, replace the splash with a token-entry
     // prompt so visitors without credentials don't see an endless loading
