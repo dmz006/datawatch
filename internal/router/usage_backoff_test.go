@@ -209,6 +209,47 @@ func TestConfigureHelpListsUsageBackoffKeys(t *testing.T) {
 	}
 }
 
+// TestUsageBackoffReserveKeysHaveMeaningfulHelpText pins the configure help
+// for the two review-reserve settings: each key names its unit and its
+// zero value's meaning, so an operator configuring from chat sees whether
+// 0 is a valid choice and what an unset key reads as.
+func TestUsageBackoffReserveKeysHaveMeaningfulHelpText(t *testing.T) {
+	r := &Router{hostname: "h"}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+	for _, in := range []string{"configure help", "configure list"} {
+		out := strings.Join(r.HandleTestMessage(in), "\n")
+		if i := strings.Index(out, "autonomous.backoff_reserve_for_review"); i == -1 {
+			t.Fatalf("%q help missing autonomous.backoff_reserve_for_review:\n%s", in, out)
+		} else if seg := out[i : i+240]; !strings.Contains(seg, "0 = no slot reserve") {
+			t.Errorf("%q: slots key lacks its 0-meaning (\"0 = no slot reserve\") near the key: %q", in, seg)
+		}
+		if i := strings.Index(out, "autonomous.backoff_reserve_tokens_per_hour"); i == -1 {
+			t.Fatalf("%q help missing autonomous.backoff_reserve_tokens_per_hour:\n%s", in, out)
+		} else if seg := out[i : i+200]; !strings.Contains(seg, "0 = no per-hour budget") {
+			t.Errorf("%q: tokens key lacks its 0-meaning (\"0 = no per-hour budget\") near the key: %q", in, seg)
+		}
+	}
+}
+
+// TestUsageBackoffStatusReserveFieldsPassThrough proves the chat status
+// surface carries the reserve settings and the live reserve array verbatim
+// from the REST body: no key is dropped or renamed on the way through.
+func TestUsageBackoffStatusReserveFieldsPassThrough(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/usage-backoff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":[{"backend":"claude-code","until":"2026-11-10T00:00:00Z","reason":"weekly cap","source":"operator"}],"config":{"mode":"pause_backend","max_wait_minutes":60,"reserve_for_review":2,"reserve_tokens_per_hour":500000},"reserve":[{"backend":"claude-code","tokens_used":123456}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	out := strings.Join(loopbackRouter(t, srv).HandleTestMessage("usage_backoff status"), "\n")
+	for _, want := range []string{"reserve_for_review", "reserve_tokens_per_hour", "tokens_used", "500000", "123456"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status reply lacks %q: %q", want, out)
+		}
+	}
+}
+
 func TestParse_UsageBackoff_Recheck(t *testing.T) {
 	for _, in := range []string{"usage_backoff recheck", "usage-backoff RECHECK"} {
 		c := Parse(in)
