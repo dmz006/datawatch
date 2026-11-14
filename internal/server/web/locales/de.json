@@ -1270,6 +1270,8 @@
   "prd_btn_reset_to_draft": "Zu Entwurf zurücksetzen",
   "prd_btn_reset_to_draft_title": "Zu Entwurf zurücksetzen, um das Backend neu zu konfigurieren und erneut zu planen",
   "prd_btn_resume": "Fortsetzen",
+  "prd_btn_rejudge": "Neu bewerten",
+  "prd_btn_rejudge_title": "Abschlussprüfung erneut ausführen (Neubewertung); ein Bestehen hebt eine veraltete Blockade auf, ein Blockieren stellt den Status auf blockiert zurück",
   "prd_btn_resume_title": "Nach dem Daemon-Neustart angehaltenen Lauf fortsetzen",
   "prd_btn_run_rules": "Regeln ausführen",
   "prd_btn_run_rules_title": "Regelprüfung ausführen (nach Scan)",

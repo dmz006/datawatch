@@ -1657,7 +1657,7 @@ func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDRejudge() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_rejudge",
-		mcpsdk.WithDescription("Re-judge the completion guardrail of a blocked automaton (PRD) whose tasks are all completed, without resetting any task. Use it when the guardrail verdict that blocked the PRD deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused otherwise: on PRDs that are not blocked, or on blocked PRDs that still have incomplete tasks — use autonomous_prd_reset_task instead."),
+		mcpsdk.WithDescription("Re-judge the completion guardrail of an automaton (PRD) record whose tasks are all completed, without resetting any task. Applies to blocked records, records held for rules review, and completed or archived records whose work is not yet merged into the base branch and whose completion review is pending or blocked. Use it when the guardrail verdict on the record deserves a fresh evaluation (new evidence, fix work landed on the branch, revised gate settings) — a passing re-judgment clears the stale block. Refused otherwise: on records whose completion review already passed, on records already merged into the base branch, or on records that still have incomplete tasks — in the last case use autonomous_prd_reset_task instead."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

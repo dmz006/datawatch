@@ -164,6 +164,7 @@ Subcommands:
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
   prd-plan-review <id>            Re-run the plan reviewer for a PRD (alias: plan-review)
+  prd-rejudge <id>                Re-run the completion review of an Automaton (re-judge); a pass clears a stale block (alias: rejudge)
   prd-resume <id> [--note ...]    Resume a paused or boot-parked PRD (alias: resume)
   prd-reject <id>                 Reject a PRD plan
   prd-coverage <id> [--json]      Show the Automaton's stored plan-coverage report, its ack, findings and the suppressed counts
@@ -251,6 +252,7 @@ Subcommands:
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
+		newAutonomousRejudgeCmd(),
 		newAutonomousPRDResumeCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),

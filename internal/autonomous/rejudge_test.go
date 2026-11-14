@@ -366,7 +366,7 @@ func TestRejudgeCompletionGuardrailRefuses(t *testing.T) {
 	// The non-completed subtests' refusal error must name the offending task.
 	refuse("pending task names the task", "not completed; every task must be completed", setTaskStatus(TaskPending))
 	refuse("failed task names the task", "not completed; every task must be completed", setTaskStatus(TaskFailed))
-	refuse("prd not blocked", "not blocked", func(m *Manager, prd *PRD) {
+	refuse("prd not eligible", "not eligible", func(m *Manager, prd *PRD) {
 		prd.Status = PRDApproved
 		if err := m.Store().SavePRD(prd); err != nil {
 			t.Fatalf("SavePRD: %v", err)

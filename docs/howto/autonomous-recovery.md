@@ -191,15 +191,25 @@ yourself, its work is merged, or its branch is deleted. The cancel reply reports
 `killed_sessions` and `killed_live_sessions`. Full detail:
 [Repairing a Failed Automaton in Place](../operations.md#repairing-a-failed-automaton-in-place).
 
-## Re-judging a blocked Automaton whose guardrail verdict was lost (`rejudge`)
+## Re-judging the completion guardrail (`rejudge`)
 
 A different stuck state from the ones above: every task completed fine, but
 the Automaton ended `blocked` because the completion guardrail's verdict was
-lost or in doubt. The **rejudge** action asks for that same completion
+lost or in doubt — or the Automaton finished and is now `completed` or
+`archived` while its work is still not merged, and the completion review is
+pending or its last verdict was a block that no longer matches the current
+head. The **rejudge** action asks for that same completion
 guardrail to run again — as a fresh judgment — without resetting or retrying
 any task:
 
-- The Automaton must be `blocked`; re-judging one that isn't is refused.
+- The Automaton must be `blocked`, or held for review with its head moved,
+  or `completed`/`archived` with its work branch not yet on the base branch
+  (merge state `finished_not_merged`) and a review still open to re-running
+  — no verdict on record, a verdict that is a block, or a pass judged on
+  an older head before the work moved on (a stale pass); re-judging anything
+  else — including a finished Automaton whose work is already landed, or
+  whose latest pass covers the current head — is refused.
+  The refusal says which states re-judgment applies to.
 - **Every task in every story must be `completed` or `cancelled`, with at
   least one `completed`.** A cancelled task is skipped, not a blocker. If any
   task is pending, running or failed, or if every task is cancelled, the call
@@ -212,9 +222,11 @@ any task:
 A rejudge is a fresh completion review, not a lookup of the old answer. When
 a review runs, the daemon looks at the current head commit of the Automaton,
 starts a judge session on the configured judge backends, and records the new
-verdict with its own time and the commit it judged. That verdict replaces the
-blocked state: a pass completes the Automaton and a block updates its blocked
-reason, as set out under the outcomes below.
+verdict with its own time and the commit it judged. That verdict resolves the block: a pass clears the blocking records — a
+blocked Automaton is lifted to `completed`, a completed or archived Automaton
+keeps its status and simply loses the stale block — and a block flips the
+record back to `blocked` with the new reason, as set out under the outcomes
+below.
 
 A rejudge is a fresh completion review whenever anything it judged has
 changed. The review is anchored to the real head of the Automaton's own
@@ -277,6 +289,15 @@ With the head and the rules text unchanged the stored block is reused as
 above: the Automaton stays held, the judge is not asked and a single
 `guardrail_reuse` entry is recorded.
 
+**The re-review runs on its own when an auto-fix lands.** When an auto-fix
+task — the follow-up work a previous block spawned — completes and merges
+back into the Automaton's branch, the merge itself triggers exactly one
+automatic re-review of the new head: the guardrail judges the head that now
+includes the auto-fix, a pass clears the stale block (a finished record
+keeps its finished status), and a block re-blocks with the new reason. You
+run no re-judge for that one; the decision log shows it with the merge and
+the new verdict next to each other.
+
 **Telling a fixed Automaton from a still-broken one.** Read the latest
 verdict in the Automaton's verdict list (`autonomous_prd_get`, or the
 Automaton's detail page) and compare two things on it: the commit it judged
@@ -295,12 +316,16 @@ and the time it was made.
 Outcome, in every case written to the Automaton's decision log (attributed
 to the acting operator) **before** any status change:
 
-- **Pass** — the blocked reason is cleared and the Automaton becomes
-  `completed` in the same step.
-- **Block** — the Automaton stays `blocked`, and its blocked reason is
-  updated from the new verdict.
+- **Pass** — the block records are cleared in the same step — the blocked
+  reason, the structured review outcome, nothing to act on — and a blocked
+  Automaton becomes `completed`. A completed or archived Automaton keeps its
+  status.
+- **Block** — the Automaton becomes or stays `blocked` (a finished record is
+  flipped back by the verdict; a later pass is what lifts it again), and its
+  blocked reason is updated from the new verdict.
 - **No verdict** (the judge failed or returned nothing) — the Automaton
-  stays `blocked` with its previous blocked reason, and an error is
+  keeps its status (a blocked one keeps its previous blocked reason, nothing
+  is cleared), and an error is
   returned so you see the re-judge produced no judgment.
 
 Reading the judge's verdict:
@@ -347,6 +372,33 @@ autonomous_prd_rejudge(id="<prd_id>")
 ```
 
 The MCP tool returns the same compact reply, with the same `message`.
+
+### CLI
+
+```
+datawatch autonomous prd-rejudge <prd_id>     # alias: datawatch autonomous rejudge <prd_id>
+```
+
+Same request, same compact reply: with `--backend <name>` the re-judgment is
+pinned to that judge backend (the Reroute form), without it the stored judge
+order is used. The refusal reason (already passed on this head, work landed)
+comes back verbatim when the record is not eligible.
+
+### Comm
+
+```
+autonomous rejudge <prd_id> [backend=<name>]
+```
+
+The comm verb sends the same request from the messaging side and replies with
+the same compact `message`.
+
+### Web app
+
+The Re-review button on the Automaton's detail header (shown for blocked,
+completed and archived records) sends the same request and shows the same
+`message` in the notice, alongside the Retry / Reroute buttons a timed-out
+review state carries.
 
 ## What happens to Automata when the daemon restarts
 

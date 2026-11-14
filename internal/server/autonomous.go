@@ -1884,16 +1884,21 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "rejudge":
-		// Re-run the PRD-completion "rules-review" guardrail for a
-		// PRDBlocked PRD whose work is fully done, on the operator's
-		// behalf. The guardrail verdict and a "guardrail_rejudge"
-		// Decision are recorded on the PRD's decision log; a pass
-		// unblocks the PRD, a block keeps it blocked. Body: {actor?,
+		// Re-run the Automaton-completion "rules-review" guardrail on the
+		// operator's behalf. Eligible: a blocked Automaton (any progress
+		// state), one held for review with the head moved, or a
+		// completed/archived Automaton whose work is not yet on the base
+		// branch (merge state finished_not_merged) and whose last review
+		// verdict is pending or blocked; everything else is refused. The
+		// guardrail verdict and a "guardrail_rejudge" Decision are recorded
+		// on the record's decision log; a pass clears the block records
+		// (blocked → completed, finished stays finished and loses its stale
+		// block), a block flips the record to blocked. Body: {actor?,
 		// backend?} — backend is the reroute of the review state whose
 		// action is "reroute": it names the judge backend the re-judgment
 		// runs on (winning over the resolved tier, pinned), typically the
-		// PRD's stronger guardrail backend. No Run() afterwards — a pass
-		// ends the PRD, not a retry of any task, and a block waits for
+		// record's stronger guardrail backend. No Run() afterwards — a pass
+		// ends the Automaton, not a retry of any task, and a block waits for
 		// operator action again.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

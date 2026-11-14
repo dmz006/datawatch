@@ -41707,6 +41707,16 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     ? `<button class="btn-primary prd-action-btn prd-resume-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'resume','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_resume_title')||'Resume the run that the daemon restart parked')}">▶ ${escHtml(t('prd_btn_resume')||'Resume')}</button>` +
       `<span class="prd-park-reason" style="font-size:11px;color:var(--text2);flex-basis:100%;">${escHtml(prd.blocked_reason || parkDec.note || '')}</span>`
     : '';
+  // Re-review button — re-run this Automaton's completion rules review
+  // (re-judging the completion guardrail) for a record whose review is
+  // open to re-running: blocked (a stale block after the work moved on),
+  // or finished (completed/archived) with unmerged work and a review that
+  // is still pending, blocked, or passed on an older head. The server is
+  // the authority: a refused record comes back with the reason (already
+  // passed on this head, or the work has landed), shown in the toast.
+  const reReviewBtn = (status === 'blocked' || status === 'completed' || status === 'archived')
+    ? `<button class="btn-secondary prd-action-btn" style="background:rgba(96,165,250,0.15);color:var(--accent);" onclick="event.stopPropagation();reviewRejudge(${escHtml(idJ)},'')" title="${escHtml(t('prd_btn_rejudge_title')||'Re-run the completion review again (re-judge); a pass clears a stale block and a block flips the record back to blocked')}">&#10227; ${escHtml(t('prd_btn_rejudge')||'Re-review')}</button>`
+    : '';
   const editBtn = editMenuItems.length > 0
     ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event,this)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
     : '';
@@ -41786,7 +41796,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       ${_prdGeneratedArtefactsBlock(prd)}
       <div id="prdDecomposeLintSlot" class="prd-plan-coverage" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
+        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${reReviewBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
       </div>
       ${(terminal && status !== 'cancelled') ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}
