@@ -74,6 +74,52 @@ func RenderGateRepairs(b io.StringWriter, s *GateRepairStatus) {
 	}
 }
 
+// RenderGateRepairRun writes one run's outcomes as plain text, newest first:
+// per outcome the mode, class, subject, the would-do/did/done line, the
+// applied before/after pair, the held question and any error. Shared by the
+// CLI and the chat verb so both print the same thing. A passed outcome
+// (empty Err) means the gate was resolved or reported; a non-empty Err means
+// it was refused or the repair failed.
+func RenderGateRepairRun(b io.StringWriter, runs []GateRepairOutcome) {
+	w := func(s string) { _, _ = b.WriteString(s) }
+	w("Gate repair run — " + strconv.Itoa(len(runs)) + " outcome(s)\n")
+	for i := len(runs) - 1; i >= 0; i-- {
+		o := runs[i]
+		line := "  " + o.Mode
+		if o.Class != "" {
+			line += " " + string(o.Class)
+		}
+		if o.Subject != "" {
+			line += "; " + o.Subject
+		}
+		w(line + "\n")
+		if o.Found != "" {
+			w("    found: " + o.Found + "\n")
+		}
+		if o.Would != "" {
+			w("    would: " + o.Would + "\n")
+		}
+		if o.Did != "" {
+			w("    did: " + o.Did + "\n")
+		}
+		if o.Done != "" {
+			w("    done: " + o.Done + "\n")
+		}
+		if o.Before != "" {
+			w("    before: " + o.Before + "\n")
+		}
+		if o.After != "" {
+			w("    after: " + o.After + "\n")
+		}
+		if o.Held != "" {
+			w("    held question: " + o.Held + "\n")
+		}
+		if o.Err != "" {
+			w("    error: " + o.Err + "\n")
+		}
+	}
+}
+
 // GateRepairerStatus returns the engine's read state (an empty status in
 // report mode when no engine is wired), for the REST, CLI and chat reads.
 func (m *Manager) GateRepairerStatus() GateRepairStatus {
