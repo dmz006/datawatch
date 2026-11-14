@@ -1086,6 +1086,7 @@
   "projects_event_plan_empty": "Le plan %1$s n'a pas encore d'automates.",
   "projects_event_no_unassigned": "Aucun automate non assigné.",
   "projects_event_automaton_no_sessions": "%1$s n'a pas encore de sessions.",
+  "projects_event_empty_summary": "%1$d éléments vides ou non démarrés masqués. Cochez « Afficher les lignes et sections vides » pour les lister.",
   "projects_rollup_heading": "Progression",
   "projects_rollup_whole_project": "Projet entier",
   "projects_rollup_points_label": "Coût en points",

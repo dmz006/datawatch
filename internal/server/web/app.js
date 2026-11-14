@@ -3752,7 +3752,16 @@ function toggleProjectsShowEmpty(checked) {
 // it loads); rollErr is the roll-up's load failure, if any.
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
-  const events = [];
+  // Informative Events lines are always shown, one each. emptyEvents holds the
+  // lines whose only content is that something is empty, absent, unset or has
+  // never happened (no sessions yet, empty plan, no plans, no unassigned
+  // Automata, a field that is not set). Those are listed one per line only
+  // while Show empty lines and sections is on; otherwise one summary line
+  // carries their count. Every line keeps its push order in eventOrder.
+  const emptyEvents = [];
+  const eventOrder = [];
+  const addEvent = text => { eventOrder.push({ text, empty: false }); };
+  const addEmptyEvent = text => { emptyEvents.push(text); eventOrder.push({ text, empty: true }); };
   // Only a missing weekly share matters, and only when the project has an arc
   // or an unassigned Automaton that needs a share. Other empty fields are hidden
   // and produce no Events entry.
@@ -3760,7 +3769,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
     (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
   const unset = key => {
-    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    if (key === 'projects_page_weekly_share' && needsShare) addEmptyEvent(t('projects_event_unset', [t(key)]));
     return '';
   };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
@@ -3790,7 +3799,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const automatonHTML = a => {
     const title = a.title || a.id;
     const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
-    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    if (!sessions.length) addEmptyEvent(t('projects_event_automaton_no_sessions', [title]));
     const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
     return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
       <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
@@ -3812,7 +3821,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
-      events.push(t('projects_event_plan_empty', [arc.automation_id]));
+      addEmptyEvent(t('projects_event_plan_empty', [arc.automation_id]));
       return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
@@ -3823,7 +3832,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let unassignedBody = '';
   const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
-    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
     overviewBody = loadingLine;
     arcsBody = loadingLine;
@@ -3832,7 +3841,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
     overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
-      events.push(t('projects_event_no_plans'));
+      addEmptyEvent(t('projects_event_no_plans'));
       if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
@@ -3849,7 +3858,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
       unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
     } else {
-      events.push(t('projects_event_no_unassigned'));
+      addEmptyEvent(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
@@ -3857,10 +3866,18 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
-  const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div class="project-event-line" style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+  const eventLine = (e, cls) => `<div class="${cls}" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(e)}</div>`;
+  // Informative lines always show; empty-state lines show one per line with
+  // Show empty on, or fold into one counted summary line with it off. The
+  // summary comes after the real events and never replaces them.
+  const eventLines = eventOrder.filter(e => showEmpty || !e.empty).map(e => eventLine(e.text, 'project-event-line'));
+  if (!showEmpty && emptyEvents.length > 0) {
+    eventLines.push(eventLine(t('projects_event_empty_summary', [emptyEvents.length]), 'project-event-line project-event-summary'));
+  }
+  const evs = eventLines.length
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${eventLines.join('')}</div>`)
     : '';
-  const hasEvents = events.length > 0;
+  const hasEvents = eventLines.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
     overview: head + _projectOverviewSummaryHTML(p),
