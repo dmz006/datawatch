@@ -69,6 +69,22 @@ func (c *Coordinator) reconcileCursor(a *Automation, mem *AutomationMember) {
 		}
 		return
 	}
+	if mem.kind() == MemberKindDecisionWait {
+		// A decision wait has no Automaton to start or observe. One that never
+		// entered (a pause held it back) is entered now; one that waits is
+		// re-linked to its open question, which is raised if the crash fell
+		// between the write and the raise, and resolved if it was decided while
+		// the daemon was down. A paused Automation starts nothing.
+		switch {
+		case memberUnstarted(mem):
+			if a.Status == AutomationActive {
+				c.startPending(a, mem)
+			}
+		default:
+			c.reconcileDecisionWait(a.ID, mem.ID)
+		}
+		return
+	}
 	if k := mem.kind(); (k == MemberKindAutomation || k == MemberKindFork) && memberUnstarted(mem) {
 		// A deferred member (the budget gate, or a pause, held it back).
 		c.startPending(a, mem)

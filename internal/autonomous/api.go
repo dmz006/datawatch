@@ -1524,6 +1524,13 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // same goes for an answered protected-paths question
 // (protected_paths_answer.go).
 func (a *API) OnQuestionChange(c QuestionChange) {
+	// An answered, withdrawn or expired decision wait question resolves the
+	// Automation member waiting on it (automation_decision_wait.go); a
+	// withdrawal fails that member's branch, so it must be seen here before the
+	// answered-only filter below.
+	if c.Question.ID != "" && a.M.onDecisionWaitChange(c) {
+		return
+	}
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
 	}

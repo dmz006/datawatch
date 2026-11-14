@@ -128,7 +128,7 @@ other branches are untouched. Chain members carry `on_complete` only. If a chain
 member blocks, fails or is cancelled, or cannot start, its branch ends as failed,
 the members behind it are skipped, and the join's `on_branch_failure` rule
 decides what that means. A member belongs to one chain, a chain stays between its
-fork and join, and chain members must be Automaton or nested Automation members.
+fork and join, and chain members must be Automaton, nested Automation or decision wait members.
 Status shows each chain under `branch_chains`.
 
 ### Limit how many run at once
@@ -154,6 +154,28 @@ not blocked, and the Automation stays active. When a running member finishes,
 completed, failed or cancelled, the next waiting member starts, again in member
 order. A daemon restart keeps the waiting members waiting and starts them as
 slots free. No member kind other than a fork takes the field.
+
+### Wait for an operator answer on a branch
+
+A member with `kind` `decision_wait` asks you a question and holds only its own
+branch until you answer. Give it a `question` and, as on any chain member, an
+`on_complete` edge:
+
+```json
+{"id":"approve","kind":"decision_wait","question":"Ship the migration now?","on_complete":"deploy"}
+```
+
+Put it at the head, in the middle or at the tail of a branch chain. When the
+branch reaches it, the daemon raises an operator question (asker `decision-wait`)
+that you answer in the Inbox or with `datawatch question answer`, and one alert,
+"Automation waiting for you", names it. The other branches keep running, the
+Automation is not blocked, and under `all_must_succeed` the join waits. In
+status the member shows `waiting_for_operator` with the reason `waiting for you`.
+Any answer completes the member and the chain moves on along `on_complete`. If
+you withdraw the question instead, that branch fails with the reason on the
+decision log and the join rule decides the rest. The question needs
+`autonomous.questions.enabled`. A restart keeps the one open question linked to
+its member.
 
 While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.

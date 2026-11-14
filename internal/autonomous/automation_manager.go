@@ -260,6 +260,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 			if im.AddedBy == "" {
 				im.AddedBy = actor
 			}
+			// Only a draft is edited here, and a draft has started nothing: a
+			// caller cannot hand in a wait the coordinator owns.
+			im.QuestionID, im.WaitingForOperator = "", false
 			members = append(members, im)
 		}
 		a.Members = members

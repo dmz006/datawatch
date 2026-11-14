@@ -62,8 +62,8 @@ func (m *Manager) budgetVerdictFor(a *Automation, mem *AutomationMember) BudgetV
 	if b == nil || a == nil {
 		return BudgetVerdict{}
 	}
-	if mem != nil && mem.kind() == MemberKindPending {
-		return BudgetVerdict{} // nothing runs for a pending item, so nothing is gated
+	if mem != nil && (mem.kind() == MemberKindPending || mem.kind() == MemberKindDecisionWait) {
+		return BudgetVerdict{} // nothing runs for a pending item or a decision wait, so nothing is gated
 	}
 	if mem == nil || mem.kind() == MemberKindFork {
 		return b.Evaluate(a, nil, false)
@@ -376,7 +376,7 @@ func (c *Coordinator) startPending(a *Automation, mem *AutomationMember) {
 	switch mem.kind() {
 	case MemberKindPRD:
 		c.retryPendingStart(a, mem)
-	case MemberKindAutomation, MemberKindFork:
+	case MemberKindAutomation, MemberKindFork, MemberKindDecisionWait:
 		c.advance(a.ID, stepInput{memberID: mem.ID, startPending: true})
 	}
 }
@@ -390,7 +390,7 @@ func stepStartPending(a *Automation, in stepInput, snap map[string]memberInfo) (
 	if mem == nil || a.Status != AutomationActive || !isLiveCursor(a, mem.ID) || !memberUnstarted(mem) {
 		return nil, errStaleStep
 	}
-	if mem.kind() != MemberKindAutomation && mem.kind() != MemberKindFork {
+	if k := mem.kind(); k != MemberKindAutomation && k != MemberKindFork && k != MemberKindDecisionWait {
 		return nil, errStaleStep
 	}
 	if budgetNoChange(a, snap[mem.ID].verdict) {

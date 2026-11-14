@@ -5122,6 +5122,7 @@ paths:
                         max_parallel: {type: integer, description: "The Automation's max_parallel limit; omitted when unset"}
                         running_members: {type: integer, description: "Members running now; reported only while a limit (the Automation's or a fork's) is set"}
                         waiting_for_slot: {type: array, items: {type: string}, description: "Member IDs that hold their cursor and wait for a free slot, in member order. Waiting is not blocked; omitted when none waits"}
+                        waiting_for_operator: {type: array, items: {type: string}, description: "decision_wait member IDs that hold their cursor and wait for the operator's answer, in member order. The Automation is waiting for you, not blocked; omitted when none waits"}
                         idle_since: {type: string, format: date-time}
                         idle_seconds: {type: integer}
                         blocked_reason: {type: string}
@@ -5134,7 +5135,8 @@ paths:
                               prd_id: {type: string}
                               automation_id: {type: string}
                               status: {type: string, description: "The member status; waiting_for_slot while the member waits under a max_parallel limit"}
-                              wait_reason: {type: string, description: "waiting for a free slot, set only while status is waiting_for_slot"}
+                              wait_reason: {type: string, description: "waiting for a free slot (status waiting_for_slot) or waiting for you (status waiting_for_operator)"}
+                              question_id: {type: string, description: "decision_wait member: the open operator question it waits on"}
                         join_wait:
                           type: object
                           description: "Present only while a join waits on its branches"
@@ -13551,7 +13553,7 @@ components:
       description: "One member of an Automation: a member Automaton, a nested Automation, or a fork/join control node, each with an outcome edge per result. Fork/join and nested members carry the kind fields below; Automaton members carry prd_id."
       properties:
         id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
-        kind: {type: string, enum: [prd, automation, fork, join, pending_item], description: "Member kind; omitted means an Automaton member. pending_item waits for an Automaton to be attached"}
+        kind: {type: string, enum: [prd, automation, fork, join, pending_item, decision_wait], description: "Member kind; omitted means an Automaton member. pending_item waits for an Automaton to be attached. decision_wait asks the operator the question in question and holds only its own branch until it is answered; it carries question and on_complete only, and may sit on a fork branch chain"}
         pending_item_id: {type: string, description: "kind pending_item: the pending item this member waits on. An attached member keeps it as a note of where it came from"}
         prd_id: {type: string, description: "The member Automaton ID; Automaton members only"}
         automation_id: {type: string, description: "kind automation: the nested child Automation ID"}
@@ -13560,6 +13562,9 @@ components:
         on_branch_failure: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway], description: "kind join only; omitted means all_must_succeed"}
         max_parallel: {type: integer, minimum: 0, description: "kind fork only: most of the fork's branch members that run at once; 0 or omitted means no fork limit. Never wider than the Automation's max_parallel"}
         waiting_for_slot: {type: boolean, readOnly: true, description: "Set by the daemon while the member holds its cursor and waits for a free slot under a max_parallel limit"}
+        question: {type: string, maxLength: 4096, description: "kind decision_wait: the text the member asks the operator; required on that kind and valid on no other"}
+        question_id: {type: string, readOnly: true, description: "kind decision_wait: the open operator question the member waits on, linked by the daemon"}
+        waiting_for_operator: {type: boolean, readOnly: true, description: "Set by the daemon while a decision_wait member holds its cursor waiting for the operator's answer. Waiting is not blocked"}
         on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}

@@ -33,6 +33,7 @@ type endOutcome struct {
 	revert    bool              // PRD reverted to approved: counts only while the member is running
 	note      string            // branch decision text (a start error names its cause)
 	merged    *mergedMemberNote // set when the merged-member proof decided this end
+	answerID  string            // decision_wait: the operator answer that ended the wait
 }
 
 // prdEnd maps a PRD status onto a member's end. ok is false for the wait
@@ -144,6 +145,12 @@ type stepEffects struct {
 	// mergedAdvance is set when the chain moved on over a cancelled member whose
 	// branch was proved merged; afterAdvance raises the merged-member alert.
 	mergedAdvance *mergedMemberAlert
+	// waits names the decision_wait members that began waiting in this step:
+	// afterAdvance raises (or finds) and links each one's operator question.
+	waits []string
+	// settle holds the question ids of decision_wait members that ended without
+	// being answered or withdrawn: afterAdvance withdraws each one still open.
+	settle []string
 }
 
 // stepper accumulates one step's mutations on a clone of the Automation.
@@ -266,6 +273,9 @@ func (st *stepper) finish(mem *AutomationMember, end endOutcome) {
 	mem.EdgeTaken = end.edge
 	dropCursor(st.a, mem.ID)
 	st.a.IdleSince = nil
+	if mem.kind() == MemberKindDecisionWait {
+		st.endDecisionWait(mem, end)
+	}
 	st.eff.details = map[string]any{
 		"automation_id": st.a.ID, "from": mem.ID, "edge": end.edge,
 		"outcome": end.outcome, "actor": coordinatorActor,
@@ -389,6 +399,12 @@ func (st *stepper) enter(next *AutomationMember) {
 		st.enterPending(next)
 		return
 	}
+	if next.kind() == MemberKindDecisionWait {
+		// A decision wait runs nothing, takes no slot and has no budget: it holds
+		// its own cursor until the operator answers (automation_decision_wait.go).
+		st.enterDecisionWait(next)
+		return
+	}
 	if st.holdForSlot(next) {
 		// A max_parallel limit is reached: the cursor holds the member, which
 		// starts when a running member finishes (promoteWaiting).
@@ -435,6 +451,8 @@ func (st *stepper) enterAdmitted(next *AutomationMember) {
 		st.startNested(next, joinOf(st.a, next.ID) != nil)
 	case MemberKindFork:
 		st.fireFork(next)
+	case MemberKindDecisionWait:
+		st.enterDecisionWait(next)
 	default:
 		st.block(fmt.Sprintf("member %s is a join; a join is reached only through its fork", next.ID))
 	}
@@ -501,6 +519,11 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 		if b == nil {
 			st.block(fmt.Sprintf("fork %s names unknown branch member %s", fork.ID, bid))
 			return
+		}
+		if b.kind() == MemberKindDecisionWait {
+			st.enterDecisionWait(b)
+			results[bid] = "waiting for operator"
+			continue
 		}
 		if b.kind() == MemberKindAutomation {
 			if st.holdForSlot(b) {
@@ -619,6 +642,7 @@ func (st *stepper) fireJoin(j *AutomationMember, rule string, won, failed, pendi
 			switch b.Status {
 			case MemberRunning:
 				b.Status = MemberCancelled
+				st.settleCancelledDecisionWait(b)
 			case MemberPending, "":
 				b.Status = MemberSkipped
 			default:

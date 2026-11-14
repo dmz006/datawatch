@@ -197,8 +197,8 @@ func (st *stepper) skipChainAfter(chain []string, id string) {
 
 // checkBranchChains validates the chain behind every head of fork m. claims
 // maps each chain member to the fork that owns it, so a member on two chains is
-// reported. A chain stays inside its fork/join pair: every member is a prd or
-// automation member carrying on_complete only, the walk reaches a tail without
+// reported. A chain stays inside its fork/join pair: every member is a prd,
+// automation or decision_wait member carrying on_complete only, the walk reaches a tail without
 // a loop, and nothing outside the chain enters it part-way.
 func checkBranchChains(a *Automation, m AutomationMember, byID map[string]AutomationMember, claims map[string]string) error {
 	seen := make(map[string]struct{}, len(m.ForkMembers))
@@ -216,8 +216,8 @@ func checkBranchChains(a *Automation, m AutomationMember, byID map[string]Automa
 			if !found {
 				return fmt.Errorf("automation invalid: fork %s branch chain from %s names unknown member %s", m.ID, head, cur)
 			}
-			if k := target.kind(); k != MemberKindPRD && k != MemberKindAutomation {
-				return fmt.Errorf("automation invalid: fork %s branch chain member %s is a %s member; branches must be prd or automation members", m.ID, cur, k)
+			if k := target.kind(); !isBranchMemberKind(k) {
+				return fmt.Errorf("automation invalid: fork %s branch chain member %s is a %s member; branches must be prd or automation members (or decision_wait)", m.ID, cur, k)
 			}
 			if target.OnBlocked != "" || target.OnFailed != "" {
 				return fmt.Errorf("automation invalid: branch member %s of fork %s must not carry outcome edges other than on_complete; a blocked or failed chain member ends its branch as failed", cur, m.ID)

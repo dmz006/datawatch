@@ -511,6 +511,8 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 				policy = c.m.Config().Automation.EffectivePendingItemPolicy()
 			}
 			snap[m.ID] = c.pendingMemberInfo(m, policy) // no Automaton and no budget gate
+		case MemberKindDecisionWait:
+			snap[m.ID] = memberInfo{name: "decision wait " + m.ID} // runs nothing: no start gate and no budget gate
 		default:
 			snap[m.ID] = memberInfo{name: "fork " + m.ID, verdict: c.startVerdict(a, &a.Members[i])}
 		}
@@ -550,6 +552,7 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 	}
 	c.afterBudget(a, eff.budget)
 	c.afterMergedMember(a, eff.mergedAdvance)
+	c.afterDecisionWaits(a, eff)
 	switch {
 	case eff.blocked != "":
 		c.blocked(a, eff.blocked, eff.details)
