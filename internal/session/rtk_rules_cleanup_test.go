@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -332,5 +333,50 @@ func TestCleanupRTKRulesFiles_RealGit(t *testing.T) {
 	}
 	if diff := untrackedGit(t, dir, "diff", "HEAD"); diff != "" {
 		t.Errorf("git diff HEAD not empty:\n%s", diff)
+	}
+}
+
+// With rtk.write_rules_files on and the block already in the rules file, the
+// file is untouched and the delivered flag still reports the block as present.
+func TestRTKSessionStart_WriteRulesFilesTrueBlockAlreadyPresent(t *testing.T) {
+	dir := t.TempDir()
+	body := "# AGENT.md\n\n" + rtkInstructions() + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr, s, err := newGuardrailsTestSession(t.TempDir(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.WriteSessionGuardrails("", s, GuardrailsOptions{RTKEnabled: true, RTKWriteRulesFiles: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pcRead(t, filepath.Join(dir, "AGENT.md")); got != body {
+		t.Errorf("AGENT.md changed:\n%s", got)
+	}
+	if !s.RTKInstructionsDelivered {
+		t.Error("RTKInstructionsDelivered must be true when the block is already in the rules file")
+	}
+}
+
+// RTKInstructionsDelivered survives a Store save and reload, like
+// PlatformContextLocalFile.
+func TestRTKInstructionsDelivered_PersistsThroughStore(t *testing.T) {
+	st, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	s := &Session{ID: "ab12", FullID: "host-ab12", RTKInstructionsDelivered: true, PlatformContextLocalFile: true}
+	if err := st.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := st.Get("host-ab12")
+	if !ok || !got.RTKInstructionsDelivered || !got.PlatformContextLocalFile {
+		t.Fatalf("flags lost: ok=%v %+v", ok, got)
+	}
+	b, _ := json.Marshal(got)
+	if !strings.Contains(string(b), `"rtk_instructions_delivered":true`) {
+		t.Errorf("json tag missing: %s", b)
 	}
 }

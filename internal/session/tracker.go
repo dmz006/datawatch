@@ -291,7 +291,6 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			targetFile = agentPath
 		}
 
-		rtkInRulesFile := false
 		if fileExists(targetFile) {
 			// File exists — merge missing sections
 			existing, _ := os.ReadFile(targetFile)
@@ -332,7 +331,6 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			// rtk.write_rules_files is on; otherwise the block goes to the
 			// untracked CLAUDE.local.md below and this file is left alone.
 			if opt.RTKEnabled && opt.RTKWriteRulesFiles {
-				rtkInRulesFile = true
 				if !strings.Contains(existingStr, "rtk-instructions") && !strings.Contains(existingStr, "RTK (Rust Token Killer)") {
 					existingStr += "\n\n" + rtkInstructions()
 					modified = true
@@ -361,7 +359,10 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 		switch {
 		case opt.RTKEnabled && opt.RTKWriteRulesFiles:
 			platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
-			sess.RTKInstructionsDelivered = rtkInRulesFile
+			// True when the block is present in the rules file after the write,
+			// whether it was just appended or was already there.
+			final, rerr := os.ReadFile(targetFile)
+			sess.RTKInstructionsDelivered = rerr == nil && (strings.Contains(string(final), "rtk-instructions") || strings.Contains(string(final), "RTK (Rust Token Killer)"))
 		case opt.RTKEnabled:
 			_, werr := platformcontext.WriteRTKLocalFile(sess.ProjectDir, rtkInstructions())
 			sess.RTKInstructionsDelivered = werr == nil
