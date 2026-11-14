@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
+
+### Added
+
+- **Pool fall-through now has alternates to fall through to.** With `autonomous.capacity_fallthrough` on, a worker whose requested pool is full is offered, in order, the other lane fill backend (the Claude lane backend or the GPU lane backend, on its default model) and then every LLM entry marked as an allowed fall-through target. An alternate whose backend is disabled, already at its in-flight cap or unable to serve the model is skipped, and verifiers, judges and planners never fall through.
+- **New LLM entry setting `fallthrough_target`** (default false) marks an entry as an allowed fall-through target. Set it with `datawatch llm add|update --fallthrough-target`, MCP `llm_add` / `llm_update`, comm `llm update <name> fallthrough_target=true`, `PUT /api/llms/{name}`, `fallthrough_target: true` in the `llms:` list, or the **Allowed fall-through target** switch in the web app LLM settings. Omitting it on an update keeps the stored value. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+
+### Fixed
+
+- **Turning on pool fall-through now reaches tasks that are already waiting.** A task decided about fall-through once, when it was queued, so a task waiting on a full pool stayed there after `autonomous.capacity_fallthrough` was switched on until it was re-queued or the daemon restarted. A waiting worker now re-reads the setting and asks for an idle alternate on every wait pass, keeping its queue place and wait timeout. The fall-through audit entry (`autonomous_capacity_admitted` with `fall_through`, `from_pools`, `to_pools` and a note) says when the task's backend was set explicitly (`explicit backend; fall-through setting on`), and an explicit-backend task still falls through only while the setting is on. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+- **A task of an Automaton that prefers the Claude lane no longer asks for the daemon default's capacity pool.** When no task, story, PRD or Automaton worker was named, the worker fell back to the daemon default (often pi-prompt) and the task queued on `pool llm:pi-prompt` even though its lane preference was Claude. The lane preference is now a level of the worker order: task, story, PRD, Automaton, lane preference, then the daemon default. A `claude` preference falls back to the Claude lane backend, a `gpu` preference to the GPU lane backend, and `any` or none keeps the default. Lane fill and lane utilization read the same order.
+
 ## v9.173.5 — Projects page phone overflow and empty Events grouping
 
 ### Fixed
