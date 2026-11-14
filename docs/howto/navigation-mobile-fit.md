@@ -145,6 +145,8 @@ What you see:
 - **Tap targets.** Each tab and each action button in these strips is at least 40 px tall (the 44 px line above is the bottom bar's check, not these strips').
 - **Short header title.** On the Automata view the header shows the Projects sub-tab as **Projects** from its own short-name text (`nav_projects_short`), so a longer translation does not push the title onto a second line. The header title font is slightly smaller at phone width.
 
+On the Projects page only the strip scrolls sideways; the rest of the page (toolbar, picker, cards, event lines) stays within the screen width, long text wraps and wide `pre` and table content scrolls in its own box. See [Projects tab](projects-tab.md#for-the-operator-to-review).
+
 The Observer and Dashboard views have no tab strip. The rule was audited at 320 and 360 px.
 
 What is not covered: the strips are not part of the `make test-e2e-shared-nav` gate, and there is no automated pixel check of the fade. The unit tests under `internal/server/web/` (`app-automation-subtab-load.test.js`, `app-automation-tab-registry.test.js`, `app-automaton-detail-tab-strip.test.js`) cover the scripts, not how the strip looks.
