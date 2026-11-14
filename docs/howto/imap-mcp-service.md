@@ -238,4 +238,9 @@ stops verifying.
   the operations manual
 - [docs/mcp.md](../mcp.md) — the MCP tools that mirror this surface
   (`plugin_service_*`, `plugin_widget_*`, `plugin_token_*`)
+
+> **Troubleshooting:** if the daemon starts with imap-mcp installed but no plugin
+> token source wired, it no longer crashes; the model-use card is empty and
+> `GET /api/plugins/imap-mcp/models` answers 503 until the source is wired. See
+> [operations.md](../operations.md#plugin-services-lifecycle-semantics).
 - [docs/howto/](README.md) — the how-to index

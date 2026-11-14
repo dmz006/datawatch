@@ -30,6 +30,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Federated observer** — multiple datawatch instances pushing process / network / GPU stats into one aggregated view.
 - **Autonomous Automata (PRD-DAG)** — high-level intent decomposed into a directed graph of stories and tasks, executed under verification + guardrails.
 - **Plugin framework** — manifest-driven hot-reload; subprocess + native plugins; declared comm verbs / CLI subcommands / MCP tools / mobile cards. Community plugins can be installed from a connected registry with `datawatch plugins install <registry> <name>`.
+- **Model-use source** — the daemon-side provider of which models a service-kind plugin calls (`GET /api/plugins/<name>/models`). When none is wired the daemon still starts; the route answers 503 and model-node events do not run.
 
 ## How it's built
 
