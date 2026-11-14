@@ -1086,6 +1086,7 @@
   "projects_event_plan_empty": "プラン %1$s にはまだオートマトンがありません。",
   "projects_event_no_unassigned": "未割り当てのオートマトンはありません。",
   "projects_event_automaton_no_sessions": "%1$s にはまだセッションがありません。",
+  "projects_event_empty_summary": "空または未開始の項目 %1$d 件を非表示にしています。「空の行とセクションを表示」をオンにすると一覧表示されます。",
   "projects_rollup_heading": "進捗",
   "projects_rollup_whole_project": "プロジェクト全体",
   "projects_rollup_points_label": "ポイントでのコスト",

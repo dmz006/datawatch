@@ -1051,6 +1051,7 @@
   "projects_event_plan_empty": "Plan %1$s has no Automata yet.",
   "projects_event_no_unassigned": "No unassigned Automata.",
   "projects_event_automaton_no_sessions": "%1$s has no sessions yet.",
+  "projects_event_empty_summary": "%1$d empty or not-started items hidden. Check Show empty lines and sections to list them.",
   "projects_rollup_heading": "Progress",
   "projects_rollup_whole_project": "Whole project",
   "projects_rollup_points_label": "Cost in points",

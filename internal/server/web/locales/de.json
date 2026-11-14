@@ -1086,6 +1086,7 @@
   "projects_event_plan_empty": "Plan %1$s hat noch keine Automaten.",
   "projects_event_no_unassigned": "Keine nicht zugeordneten Automaten.",
   "projects_event_automaton_no_sessions": "%1$s hat noch keine Sitzungen.",
+  "projects_event_empty_summary": "%1$d leere oder noch nicht begonnene Einträge ausgeblendet. Aktiviere „Leere Zeilen und Abschnitte anzeigen“, um sie aufzulisten.",
   "projects_rollup_heading": "Fortschritt",
   "projects_rollup_whole_project": "Gesamtes Projekt",
   "projects_rollup_points_label": "Kosten in Punkten",

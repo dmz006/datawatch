@@ -1086,6 +1086,7 @@
   "projects_event_plan_empty": "El plan %1$s aún no tiene autómatas.",
   "projects_event_no_unassigned": "No hay autómatas sin asignar.",
   "projects_event_automaton_no_sessions": "%1$s aún no tiene sesiones.",
+  "projects_event_empty_summary": "%1$d elementos vacíos o sin empezar ocultos. Marca «Mostrar líneas y secciones vacías» para listarlos.",
   "projects_rollup_heading": "Progreso",
   "projects_rollup_whole_project": "Proyecto completo",
   "projects_rollup_points_label": "Coste en puntos",
