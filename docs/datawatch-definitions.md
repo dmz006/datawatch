@@ -3265,7 +3265,7 @@ The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y
 
 ## Plan records
 
-A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
+A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. A plan can be a [release plan](#release-plan), and registry rows and findings are items that link into a plan, never plans. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
 
 ### Plan
 
@@ -3281,7 +3281,7 @@ A **finding** is a problem raised by an Automaton or an operator. It attaches to
 
 ### Plans browser
 
-The **Plans browser** is the body of the **Plans** page sub-tab on the Projects sub-tab: the project's Plans in priority order, each with its goal, state, progress of finished Automata and points, then a **Backlog** group of Plans with no Automaton yet. Open a Plan to see its Automations, its Automata in run order with the next marker, its tasks (read only when opened, with **Load more**) and its linked findings and registry rows. The up and down buttons reorder Plans and a Plan's Automata; **Create plan** and the attach controls link an Automaton, an Automation or a finding, through the [Plans write API](#plans-write-api). The search box covers Plan, Automaton, registry row and finding titles, the state filter narrows by Plan state, and reordering is off while either is in use. Which Plans are expanded is remembered per browser, not by the daemon.
+The **Plans browser** is the body of the **Plans** page sub-tab on the Projects sub-tab: the project's Plans in priority order, each with its goal, state, progress of finished Automata and points, then a **Backlog** group of Plans with no Automaton yet. Open a Plan to see its Automations, its Automata in run order with the next marker, its tasks (read only when opened, with **Load more**) and its linked findings and registry rows. The up and down buttons reorder Plans and a Plan's Automata; **Create plan** and the attach controls link an Automaton, an Automation or a finding, through the [Plans write API](#plans-write-api). The search box covers Plan, Automaton, registry row and finding titles, the state filter narrows by Plan state, and reordering is off while either is in use. Which Plans are expanded is remembered per browser, not by the daemon. For [release plans](#release-plan) it also shows the Release badge, the Themes section, Archive and Restore with the archived filter, the Unattributed list with per-row and bulk attach, and the release and row-plan migration panels.
 
 ### Records sub-tab
 
@@ -3297,27 +3297,56 @@ A **plan record** of kind `plan` is the registry record of what you are working 
 
 ### Release plan
 
-A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A project has one release plan per label. It links down like any plan, and groups its items with themes. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes). The release migration engine attaches Automata and Automations to release plans (default labels `10.0` and `11.0`); it previews first and a written run needs the preview id you approved (audit action `plan_record_release_migrated`). It has no operator surface yet.
+A **release plan** is a plan record with `plan_kind` `release` and a `release` label naming the release it stands for. A plan *is* a release: the release plan holds that release's Automata and Automations, grouped by [themes](#theme). A project has one release plan per label (compared like titles, so `Release 11.0` and ` release 11.0 ` are one label), and a second is refused with the plan that holds the label named. The release migration names the plans it makes `Release <label>` and uses the default labels `10.0` (current) and `11.0` (next) when it is given none. Registry rows and findings are not release plans; they are items that link into one (see [Registry row link](#registry-row-link) and [Backlog item](#backlog-item)). A release plan is created by the [release migration](#release-migration), or by hand over REST or MCP (`plan_create` with `plan_kind` `release`). See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
 
 ### Theme
 
-A **theme** is a named group inside a release plan. It groups Automata and Automations the plan already holds and never adds one; an item is in at most one theme, and an item in no theme is *unplaced*. Detaching an item from the plan takes it out of its theme; removing a theme leaves its items in the plan.
+A **theme** is a named group inside a release plan. It groups Automata and Automations the plan already holds and never adds one; an item is in at most one theme, and an item in no theme is *unplaced*. Detaching an item from the plan takes it out of its theme; removing a theme leaves its items in the plan, unplaced. A plan holds at most 50 themes, a theme name is at most 100 characters and unique in the plan (case-insensitive), and a theme is created empty. Only a release plan has themes. Themes are changed with the theme calls (`plan_theme_list`, `plan_theme_set`, `datawatch plan theme`, `autonomous plan theme`, the Themes section of the Plans sub-tab). See [Theme rules](#theme-rules).
+
+### Theme rules
+
+The **theme rules** are the table the release migration and the unattributed list use to choose a theme for an Automaton. Rows are tried in order and the first match decides: a tag rule matches a tag exactly (any case); an Automation-title or Automaton-title rule matches when the words of any listed phrase appear together, in order, in that title. An operator mark overrides the table, and an item no row matches is attached unplaced. An Automation (a chain) is filed by its own title as the Automation title.
+
+| Order | Looks at | Matches | Theme |
+|---|---|---|---|
+| 1 | tag | `security`, `encryption`, `secrets`, `crypto`, `tls` | Security and encryption |
+| 2 | tag | `mobile`, `android`, `ios`, `iphone`, `app` | Mobile and the app |
+| 3 | tag | `release`, `tests`, `testing`, `e2e`, `ci` | Release tooling and tests |
+| 4 | tag | `automata`, `automation`, `autonomous`, `projects`, `plans`, `core` | Core automation and projects |
+| 5 | Automation title | `security`, `encryption`, `secrets`, `vault`, `tls`, `certificate` | Security and encryption |
+| 6 | Automation title | `mobile`, `android`, `ios`, `iphone`, `companion app` | Mobile and the app |
+| 7 | Automation title | `release`, `tests`, `testing`, `e2e`, `smoke`, `changelog` | Release tooling and tests |
+| 8 | Automation title | `automata`, `automaton`, `automation`, `projects`, `project`, `plans`, `plan` | Core automation and projects |
+| 9 | Automaton title | `security`, `encryption`, `encrypt`, `secret`, `secrets`, `vault`, `tls`, `cve`, `certificate` | Security and encryption |
+| 10 | Automaton title | `mobile`, `android`, `ios`, `iphone`, `companion app` | Mobile and the app |
+| 11 | Automaton title | `release`, `tests`, `test`, `e2e`, `smoke`, `changelog`, `goreleaser` | Release tooling and tests |
+| 12 | Automaton title | `automata`, `automaton`, `automation`, `projects`, `project`, `plans`, `plan`, `decompose`, `executor` | Core automation and projects |
+
+The four themes are created in the order *Core automation and projects*, *Security and encryption*, *Mobile and the app*, *Release tooling and tests* when a run needs them, then any theme of the operator's own that a mark names, alphabetically.
+
+### Release migration
+
+The **release migration** files a project's Automata and Automations under two release plans, the current release and the next one (default labels `10.0` and `11.0`), creating the plans and their themes as needed. Work shipped since the last major release, or planned and not held, goes to the current plan; work held for after it, planned for the next release or marked for it goes to the next plan; other work is skipped with a reason. An Automaton another plan already holds is a *conflict* and is never moved. It previews by default and prints a **preview id** (a stable hash of what the preview shows); a written run needs `apply` and the preview id of the preview you read, a missing id is refused (400) and a stale one (the plans changed since) is refused (409), both before anything is written. A second approved run changes nothing, and nothing is deleted. Run it with `datawatch plan migrate --release`, `POST /api/plans/migrate` with `mode` `release`, MCP `plan_migrate` with `mode` `release`, chat `autonomous plan migrate release`, or the Release migration panel of the Plans sub-tab. Audit: the store action `plan_record_release_migrated`, recorded in the audit log as `plan_record_updated` with an `op` detail. Not the same as the [plans migration](#plans-migration). See [howto/plan-records.md](howto/plan-records.md#migrating-automata-to-release-plans).
 
 ### Backlog item
 
-A **backlog item** is a registry row or a finding with no Automaton yet that a plan holds. It is an item inside the plan, never a plan. Not the same as the plans *backlog* group, which lists plans with no Automaton.
+A **backlog item** is a registry row or a finding with no Automaton yet that a plan holds. It is an item inside the plan, never a plan. Not the same as the plans *backlog* group, which lists plans with no Automaton. The row-plan conversion makes a backlog item of a row-plan that holds no Automaton.
 
 ### Row-plan
 
-A **row-plan** is a plan the older plans migration made for one registry row (title `Plan: <row text>`, with a `migrated-from` link naming the row). The row-plan conversion replaces it with a registry row link, or a backlog item when it holds no Automaton, on a release plan, and archives it with a reason; nothing is deleted. A row-plan whose Automata are not all on a release plan yet waits. Preview first; a written run needs the approved preview id; audit action `plan_record_row_plans_converted`. No operator surface runs it yet. See [howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
+A **row-plan** is a plan the older plans migration made for one registry row (title `Plan: <row text>`, with a `migrated-from` link naming the row). The **row-plan conversion** replaces it with a registry row link on the release plan that holds its Automata, or a backlog item of the current release plan when it holds none, and archives it with a reason; nothing is deleted. A row-plan whose Automata are not all on a release plan yet *waits* and is left alone. Preview first; a written run needs the approved preview id; the store action is `plan_record_row_plans_converted`, recorded in the audit log as `plan_record_updated` with an `op` detail. Run it with `datawatch plan row-plans convert`, `POST /api/plans/migrate/row-plans`, MCP `plan_row_plan_list` and `plan_row_plan_convert`, or the Row-plans migration panel; it has no chat verb. See [howto/plan-records.md](howto/plan-records.md#converting-the-row-plans).
 
 ### Registry row link
 
-A **registry row link** ties a registry row to a plan. A row can be linked from more than one plan. A record is held by a plan as a row link or as a backlog item, not both.
+A **registry row link** ties a registry row to a plan. A row can be linked from more than one plan. A record is held by a plan as a row link or as a backlog item, not both. The row-plan conversion makes a row link of a row-plan that holds Automata.
 
 ### Archived plan
 
-An **archived plan** is a plan marked `archived` (with the time and an optional reason). It is left out of the default plan lists, the backlog, search and overview counts, but its file, links and order are kept, and **restore** brings it back in its old place. Archiving a plan does not touch its Automata, Automations, rows or findings. Audit events: `plan_record_archived`, `plan_record_restored`. Not the same as an archived Automaton or the plans folder archive.
+An **archived plan** is a plan marked `archived` (with the time and an optional reason of at most 1000 characters). It is left out of the default plan lists, the backlog, search and overview counts, but its file, links, themes and order are kept, and **restore** brings it back in its old place. Archiving a plan does not touch its Automata, Automations, rows or findings, and neither archive nor restore ever deletes anything. Both are idempotent, only plans can be archived, and a *protected plan* named by the caller (usually the current release plan) is refused while it holds Automata. Asking for archived plans takes `archived=include` or `archived=only` on the project plans list, or the archived filter in the web app. Audit events: `plan_record_archived`, `plan_record_restored`. Not the same as an archived Automaton or the plans folder archive. See [howto/plan-records.md](howto/plan-records.md#archiving-a-plan).
+
+### Unattributed Automaton
+
+An **unattributed Automaton** is an Automaton that no release plan holds. The unattributed list (`GET /api/plans/unattributed`, MCP `plan_unattributed_list`, `datawatch plan unattributed`, chat `autonomous plan unattributed`, the **Unattributed** chip of the Plans sub-tab) shows each one with the release and theme the [theme rules](#theme-rules) would file it under; an Automaton held by an ordinary plan names that plan and must be detached from it first. It only reads. An Automaton is attached to a release plan one at a time (`plan_attach`, `plan attach <plan> --automaton ID`) or in bulk (`plan_attach_bulk`, `plan attach <plan> --automaton a1,a2 [--theme T]`, up to 500 ids, one result per id, a refused id never stops the others). See [howto/plan-records.md](howto/plan-records.md#the-unattributed-list).
 
 ### Plan order
 

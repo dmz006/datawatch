@@ -267,6 +267,45 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/resolve_task_review` (body `{task_id, action, spec, backend, model, effort, files, read_only, report_path, note, actor}`) | `autonomous_prd_resolve_task_review` | Complete | `action` is `retry` or `cancel`; a 409 when the task is not held for review — [howto](howto/failure-escalation.md) |
 | `GET /api/config` and `PUT /api/config` keys `autonomous.failure_escalation.enabled`, `.max_failures`, `.steps` | `config_set` / `get_config` | Complete | `steps` takes a JSON array or the text `backend:model[@attempts],...` — [howto](howto/failure-escalation.md) |
 
+### Release plans, themes, archive and migration (every surface)
+
+A plan is a release, themes group its Automata, and registry rows and findings
+are items that link into a plan. The rows above give the REST to MCP mapping;
+this table gives the same calls on every surface, one row per call: the MCP
+tool, the REST route, the CLI command (`datawatch plan` is the same command as
+`datawatch plans`), the chat verb (after `autonomous`) and the web app control
+on the project's Plans sub-tab. Walkthroughs:
+[howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
+
+| MCP tool | REST route | CLI command | Comm verb | Web app |
+|----------|------------|-------------|-----------|---------|
+| `plan_theme_list` | `GET /api/plans/{ref}/themes` | `plan theme list <plan>` | `plan themes <plan>` | Themes section |
+| `plan_theme_set` `create` | `POST /api/plans/{ref}/themes` `{action: "create", name}` | `plan theme add <plan> <name>` | `plan theme add <plan> <name...>` | Add theme |
+| `plan_theme_set` `rename` | same, `{action: "rename", theme, name}` | `plan theme rename <plan> <theme> <new-name>` | `plan theme rename <plan> <theme> <new name...>` | theme name field |
+| `plan_theme_set` `delete` | same, `{action: "delete", theme}` | `plan theme remove <plan> <theme>` | `plan theme remove <plan> <theme>` | Delete |
+| `plan_theme_set` `place` | same, `{action: "place", theme, kind, id}` | `plan theme place <plan> <theme> --automaton ID` | `plan theme place <plan> <theme> automaton <id>` | Place in theme |
+| `plan_theme_set` `unplace` | same, `{action: "unplace", kind, id}` | `plan theme unplace <plan> --automaton ID` | `plan theme unplace <plan> automaton <id>` | Unplace |
+| `plan_theme_set` `reorder` | same, `{action: "reorder", themes}` | `plan theme reorder <plan> <theme>...` | `plan theme reorder <plan> <theme>...` | theme arrows |
+| `plan_theme_set` `reorder_items` | same, `{action: "reorder_items", theme, kind, items}` | `plan theme reorder-items <plan> <theme> --kind automaton <id>...` | `plan theme reorder-items <plan> <theme> automaton <id>...` | — |
+| — (not in MCP) | `PUT /api/plans/{ref}/themes` `{themes: [...]}` | — | — | every theme edit |
+| `plan_create` `plan_kind` `release` | `POST /api/plans` `{plan_kind: "release", release}` | — | — | — |
+| `plan_archive` | `POST /api/plans/{ref}/archive` | `plan archive <plan> [--reason TEXT] [--protect PLAN]` | `plan archive <plan> [protect=<plan>] [reason...]` | Archive |
+| `plan_restore` | `POST /api/plans/{ref}/restore` | `plan restore <plan>` | `plan restore <plan>` | Restore |
+| — (not in MCP) | `GET /api/projects/{name}/plans?archived=exclude\|include\|only` | — | — | archived filter |
+| `plan_unattributed_list` | `GET /api/plans/unattributed` | `plan unattributed [--project P]` | `plan unattributed [project=P] [current=R] [next=R]` | Unattributed chip |
+| `plan_attach` | `POST /api/plans/{ref}/attach` `{kind, id}` | `plan attach <plan> --automaton ID` | `plan attach <plan> automaton <id>` | Attach |
+| `plan_attach_bulk` | `POST /api/plans/{ref}/attach` `{kind, ids, theme?}` | `plan attach <plan> --automaton a1,a2 [--theme T]` | `plan attach <plan> automaton <id> <id>... [theme=T]` | Bulk attach |
+| `plan_migrate` `mode` `release` (preview) | `POST /api/plans/migrate` `{mode: "release", project, ...}` | `plan migrate --release --project P` | `plan migrate release project=P` | Preview migration |
+| `plan_migrate` `mode` `release` `apply` | same, `{apply: true, preview_id}` | `plan migrate --release --project P --apply --preview-id ID` | `plan migrate release approve <preview-id> project=P` | Approve migration |
+| `plan_row_plan_list` | `GET /api/plans/migrate/row-plans` | `plan row-plans list` | — | — |
+| `plan_row_plan_convert` (preview) | `POST /api/plans/migrate/row-plans` | `plan row-plans convert` | — | Preview row-plans migration |
+| `plan_row_plan_convert` `apply` | same, `{apply: true, preview_id}` | `plan row-plans convert --apply --preview-id ID` | — | Approve |
+
+A dash means the surface has no form of that call. Both migrations preview by
+default and write only with the `preview_id` of the preview that was read;
+every surface refuses a write without it, and the daemon answers 400 for a
+missing id and 409 for a stale one.
+
 ### Operator questions
 
 | API Endpoint | MCP Tool | Status | Notes |

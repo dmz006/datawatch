@@ -1792,10 +1792,11 @@ supersession rule — is walked through in
 
 A plan record is a registry row (one item of the plans registry) or a finding
 (a problem raised by an Automaton or an operator), kept by the daemon. The first
-six tools proxy the `/api/plan-records` REST surface and the other six work on
-plans (`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
-`plan_attach`, `plan_detach`, `/api/plans`); all answer with the title first and
-the id second. They need `autonomous:read` (`plan_record_list`,
+six tools proxy the `/api/plan-records` REST surface, six work on plans
+(`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach`, `/api/plans`) and eight work on release plans (a
+plan is a release, with themes inside; see below); all answer with the title
+first and the id second. They need `autonomous:read` (`plan_record_list`,
 `plan_record_get`, `plan_record_search`) or `autonomous:write`
 (`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
 by a federated peer. While `autonomous.plan_records.enabled` is `false` every
@@ -1834,6 +1835,43 @@ The release migration (`plan_migrate` with `mode` `release`) and
 tool's description links the how-to
 [plan-records.md](howto/plan-records.md#release-plans-and-themes).
 `project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
+
+**Release plan tools: every surface side by side.** Each release plan tool
+proxies one REST route, so the answers cannot drift from the CLI, chat and the
+web app.
+
+| Tool | REST route | CLI command | Chat verb | Web app |
+|---|---|---|---|---|
+| `plan_theme_list` | `GET /api/plans/{ref}/themes` | `datawatch plan theme list <plan>` | `autonomous plan themes <plan>` | Themes section of an open release plan |
+| `plan_theme_set` | `POST /api/plans/{ref}/themes` | `datawatch plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | `autonomous plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | Add theme, rename, Delete, Place in theme, Unplace, theme arrows |
+| `plan_archive` | `POST /api/plans/{ref}/archive` | `datawatch plan archive <plan> [--reason TEXT] [--protect PLAN]` | `autonomous plan archive <plan> [protect=<plan>] [reason...]` | Archive |
+| `plan_restore` | `POST /api/plans/{ref}/restore` | `datawatch plan restore <plan>` | `autonomous plan restore <plan>` | Restore |
+| `plan_unattributed_list` | `GET /api/plans/unattributed` | `datawatch plan unattributed [--project P]` | `autonomous plan unattributed [project=P] [current=R] [next=R]` | Unattributed chip, Show unattributed |
+| `plan_attach_bulk` | `POST /api/plans/{ref}/attach` with `ids` | `datawatch plan attach <plan> --automaton a1,a2 [--theme T]` | `autonomous plan attach <plan> automaton <id> <id>... [theme=T]` | Attach, Bulk attach |
+| `plan_row_plan_list` | `GET /api/plans/migrate/row-plans` | `datawatch plan row-plans list` | not in chat | the preview of the Row-plans migration panel |
+| `plan_row_plan_convert` | `POST /api/plans/migrate/row-plans` | `datawatch plan row-plans convert [--apply --preview-id ID]` | not in chat | Preview row-plans migration, Approve |
+| `plan_migrate` (`mode` `release`) | `POST /api/plans/migrate` | `datawatch plan migrate --release --project P [--apply --preview-id ID]` | `autonomous plan migrate release project=P` and `... release approve <preview-id> project=P` | Preview migration, Approve migration |
+| `plan_create` (`plan_kind` `release`) | `POST /api/plans` | not in the CLI | not in chat | not in the web app |
+
+Parameters of the release tools (`plan` is a plan id or title; a theme is named
+by id or name):
+
+| Tool | Parameters |
+|---|---|
+| `plan_theme_list` | `plan` (required) |
+| `plan_theme_set` | `plan` and `action` (required): `create` needs `name`; `rename` needs `theme` and `name`; `delete` needs `theme`; `place` needs `theme`, `kind` and `id`; `unplace` needs `kind` and `id`; `reorder` needs `themes` (every theme once); `reorder_items` needs `theme`, `kind` and `items` (every item of that kind once). `kind` is `automaton` or `automation`. Answers the plan's themes after the change |
+| `plan_archive` | `plan` (required), `reason` (at most 1000 characters), `protected_plan` (refused with 409 while it holds Automata) |
+| `plan_restore` | `plan` (required) |
+| `plan_unattributed_list` | `project`, `current_release`, `next_release`, `limit`, `offset` (all optional) |
+| `plan_attach_bulk` | `plan` and `ids` (required, up to 500), `kind` (`automaton` by default), `theme` (must already exist) |
+| `plan_row_plan_list` | `project` (optional) |
+| `plan_row_plan_convert` | `project`, `current_release`, `apply` (default false: preview), `preview_id` (required with `apply`) |
+| `plan_migrate` | `mode` (`arcs` by default, or `release`), `apply`; with `release`: `project` (required), `current_release` (default `10.0`), `next_release` (default `11.0`), `marks` (a JSON object of Automaton id to `{release, theme}`), `preview_id` (required with `apply`) |
+| `plan_create` | `project`, `title` (required), `goal`, `plan_kind` (`ordinary` or `release`), `release` (the label; required with `plan_kind` `release`) |
+
+A release tool that writes many things (`plan_migrate` with `mode` `release`,
+`plan_row_plan_convert`) refuses `apply` without a `preview_id` before the call
+reaches the daemon.
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
