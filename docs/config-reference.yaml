@@ -2054,6 +2054,11 @@ autonomous:
   #   judges the lanes from the readable hosts. An absent key reads 10; an
   #   explicit 0 never treats an unreachable host as down and survives a round
   #   trip. Negative or non-integer values are refused.
+  # stalled_merge_minutes: whole number >= 0, default 30. How many whole
+  #   minutes a task-branch merge may stay pending without progress before the
+  #   Automaton stops holding its lane; the stalled merge is alerted and
+  #   retried. An absent key reads 30; an explicit 0 turns the rule off and
+  #   survives a round trip. Negative or non-integer values are refused.
   # require_confirmed_proposal: bool, default true (an absent key reads true).
   #   An implementation Automaton is taken only when a proposal file named in
   #   its spec (docs/plans/<name>.md, read from the base repository) has a line
@@ -2098,6 +2103,7 @@ autonomous:
     count_verifier_wait: true
     stale_after_hours: 72
     host_down_after_minutes: 10
+    stalled_merge_minutes: 30
     require_confirmed_proposal: true
     check_main_carries: true
     require_worktree: true
