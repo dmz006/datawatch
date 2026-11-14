@@ -7098,7 +7098,10 @@ of that category.
   "the release" or "the next patch above main" and logs one `auto_correct`
   decision line (`old -> new`, with story and task) instead of failing.
   It does so only when every other plan check passes on the corrected
-  plan.
+  plan. Only the Automaton's own release version is rewritten; a Python,
+  Go or library version, a pin, a path or an image tag stays as written.
+  Operator review: an Automaton that really must name such a version in a
+  release task is no longer flagged, so check those specs by hand.
 - **A non-retryable failure raises one warning alert**, "Automaton could
   not be planned: <title>", once per recorded failure, and survives a
   restart without repeating. A retryable failure raises nothing until its
