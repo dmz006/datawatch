@@ -373,6 +373,55 @@ next poll. If it fails again later, the clock starts over. To make an unreachabl
 node block again right away, set `host_down_after_minutes` to `0`; to wait
 longer before ignoring it, raise it. The change applies on the next poll.
 
+## Which lane a task takes
+
+Lane fill decides which **Automaton** an idle lane starts. It does not choose
+the lane for each task inside a running Automaton. That choice is made later,
+when the task is **admitted**, and it follows these rules:
+
+- **A task inherits the Automaton's backend unless its spec names one.** The
+  planner never writes a backend onto a task. A task has a backend of its own
+  only when you or its spec name one (a line that is exactly `backend: <name>`,
+  or a per-task LLM you set by hand). Every other task runs on its story's
+  setting, then the Automaton's, then the global default. This is the task's
+  **effective backend**.
+- **The lane is chosen when a task is admitted, not when it is planned.**
+  Admission reads the task's effective backend at that moment and asks for a
+  slot in that backend's pool. Because the choice is made fresh at every
+  admission, a relaunch or a re-queued task is judged again and is not tied to
+  whatever the plan looked like earlier.
+- **A full pool can send the task to another allowed pool.** When the task's own
+  pool is full and another allowed pool has a free slot, the task is admitted on
+  the other pool, following the retry-other-backend rule (pool fall-through,
+  controlled by `autonomous.capacity_fallthrough`; see
+  [Automata capacity](automata-capacity.md#pool-fall-through)). That setting is
+  off by default, so with it off a task waits for its own pool. Only worker
+  tasks move this way.
+- **The choice and the reason are in the decision log.** A task that is placed
+  on another pool writes a `capacity_fallthrough` entry in the Automaton's
+  decision log. It names the backend and model the task was admitted on, the
+  pool it now holds, what it asked for, and the reason (for example `requested
+  pool full, alternate pool free`). A task that stays on its own pool, or keeps
+  waiting, writes no entry.
+- **Changing a task's backend while it waits moves its request at once.** If a
+  task is waiting for capacity and you change its backend (or its story's or the
+  Automaton's), its queued request is moved to the new pool straight away and
+  its wait reason names that pool. Nothing is duplicated. A task that already
+  holds a slot, is running or has finished is left alone.
+- **A reset re-queues the task on the new pool.** Resetting a task re-admits it
+  from its current effective backend, so it queues on the pool you changed it to.
+- **A pi task with no compute node waits and is not failed.** When a pi-family
+  task is granted capacity but no compute node of its LLM entry is leased, no
+  worker is started. The task gives its slot back and waits for a node, or moves
+  to another pool as above, with a wait reason such as `waiting for a compute
+  node: <backend> worker on model <model> was granted capacity but no node of its
+  LLM entry was leased`. This wait is not counted against the content retry
+  budget: the task's retry counters do not move, and it starts on the node as
+  soon as one is leased. Only the capacity wait timeout ends the wait.
+
+None of this adds a setting, an endpoint or a command. Lane fill's own
+decisions, counts and modes are unchanged.
+
 ## The day-long shadow comparison
 
 Run shadow mode for about one day while the supervisor still fills lanes by
