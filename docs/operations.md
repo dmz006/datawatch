@@ -7042,6 +7042,28 @@ MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A fil
 
 ---
 
+## Decompose lint mode and rules (`autonomous.decompose_lint`)
+
+Every fresh decomposition is linted before the plan is stored. The mode
+(`autonomous.decompose_lint.mode`) is **`enforce` unless you set it**: the
+twenty-one-rule built-in pack (sixteen `block`, five `warn`) runs, and while a
+`block` finding remains the planner is re-run with the findings fed back, up to
+`autonomous.decompose_lint.max_retries` (default 2, cap 5). `shadow` records
+the findings and never retries; `off` runs no lint and records nothing. A
+project that relied on the old `shadow` default now blocks on a `block`
+finding, so read the stored findings of an Automaton that stalls in planning
+(`datawatch autonomous lint findings <id>`).
+
+Each finding names the task, the rule id and the offending line; a
+verification-script rule also names the script. To stop one rule blocking, set
+it to `warn` with a same-id operator rule or list it in `disabled_rules`; to
+stop the whole lint blocking, set `mode: shadow`. The rule list and fixes are in
+[howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#3-the-rule-pack-that-ships)
+and
+[howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5-how-the-lint-reports-a-finding-and-how-to-fix-each-rule).
+
+---
+
 ## Standard task modes (`autonomous.task_templates.mode`)
 
 Every decomposed story gets the built-in pack's closing tasks appended, and `autonomous.task_templates.mode` — a global map of **template id → mode**, not per-project — decides who performs each appended task: **`llm`** — a worker session runs it, verifier included, like any other task (the default for `docs_set`; also the default for `final_gate`, though the daemon's script gate performs it — see below); **`daemon`** — the daemon performs the task itself and completes it, spending no model session and running no verifier (the default for `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`); **`off`** — the standard task is not appended to the story at all. In daemon mode, `changelog_entry` and `parity_issue_draft` write their generated artefact with the same edit-protection rules as the generated-artefacts feature: a file already edited, or a kind switched off in the generated-artefact settings, is skipped with the reason recorded in the task's decision note, and the task still completes; a write it cannot make (for example no project directory) marks the task failed. `bounded_load_step` and `version_bump_left_to_merge` write nothing — their spec text is recorded as the story's decision note. A daemon-run task shows in the story record as completed with its decision note, and has **no worker session** in the session list; the structural checks (decompose lint, per-task verification script, report, file tokens) skip it, because a handler performs it, not a judge.

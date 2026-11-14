@@ -276,6 +276,42 @@ validator. Two shapes worth knowing:
   "(?i)\\A\\s*READ-ONLY:"}]` so the flag and the spec marker both count,
   then requires `verification_script_empty` and `report_path_empty`.
 
+### Switching a rule to warn, or off
+
+Every shipped rule in the twenty-one-rule pack starts at its own severity (the
+sixteen `block` rules stop a decompose in the default `enforce` mode, the five
+`warn` rules never do). To change one rule without touching the rest:
+
+- **To warn.** Replace the rule with the same id and `severity: warn`, and keep
+  its `match` and `message`. The finding is still recorded and shown, but it no
+  longer feeds a retry or stops the decompose. This is the way to watch how
+  often a planner trips a rule before letting it block.
+
+  ```yaml
+  autonomous:
+    decompose_lint:
+      rules:
+        - id: verify_script_pipe_grep_q
+          severity: warn
+          match:
+            verification_script_pipe_grep_q: true
+          message: >
+            The verification script pipes into grep -q; capture the output
+            first or drop -q.
+  ```
+
+- **Off.** Add the id to `disabled_rules`, or write `{id: <id>, disabled: true}`
+  in `rules`. The rule no longer runs and no finding is recorded for it.
+- **Every rule at once.** Set `mode: shadow` (record only, never block) or
+  `mode: off` (no lint at all). `shadow` keeps the findings; `off` records
+  nothing.
+
+On the CLI, `datawatch autonomous lint config-set disabled_rules=<id>,<id>`
+turns rules off and keeps the rest of the pack; the Settings panel and the
+`autonomous_decompose_lint_config_set` tool do the same. A severity change
+needs the same-id rule, so it goes through the `rules` list (Settings, REST
+`PUT /api/autonomous/decompose-lint/config`, the MCP tool, or the YAML file).
+
 ### Turning rules off, three ways
 
 1. **`disabled_rules`** on the config — a flat list of rule ids dropped
@@ -801,7 +837,7 @@ characters around the hit; the retry feedback to the planner carries it too); an
 `clean: 0 findings`.
 
 ```
-decompose lint of prd-9f3a (mode enforce, 9 active rules): 1 block, 2 warn
+decompose lint of prd-9f3a (mode enforce, 21 active rules): 1 block, 2 warn
 [block] runs_hosting_cli task-2: Task spec invokes the hosting CLI (gh/glab/hub); hosting operations run on the operator's host, not inside a task.
 [warn] no_verification_script task-5: Task has no verification script; every decomposed task should declare one so its result can be checked.
 [warn] no_verification_script story-1: Task has no verification script; every decomposed task should declare one so its result can be checked.

@@ -12489,7 +12489,8 @@ components:
         message: {type: string, description: "The rule's finding text"}
         story: {type: string, description: 'Story the offending task belongs to (may be "-" for plan-level findings)'}
         task: {type: string, description: 'Offending task id (may be "-" for story-/plan-level findings)'}
-        matched: {type: string, description: "The matched snippet, or a short description of an asserted field state for predicate-only rules"}
+        matched: {type: string, description: "The offending line: the whole spec line a spec rule fired on (clipped around the hit), the script line a script-content rule fired on, or a short description of an asserted field state for predicate-only rules"}
+        script: {type: string, description: "For a verification-script rule, the repo-relative path of the script the finding is about"}
     LintSummary:
       type: object
       required: [block, warn]

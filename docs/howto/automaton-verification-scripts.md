@@ -44,7 +44,7 @@ task that fails for no reason in its own files. This guide says how to write
 scripts that do not drift, what the decompose lint flags, and how to fix a
 plan that has the problem.
 
-## 1. The five habits
+## 1. The nine habits
 
 Every script the planner writes — and every one you write by hand — follows
 these. The planner is given the same rules in its prompt.
@@ -69,6 +69,28 @@ these. The planner is given the same rules in its prompt.
 5. **One final gate for the Automaton, at the end.** Story-level checks are
    plain task verification; there is no per-story gate — see
    [section 4](#4-one-final-gate-per-automaton).
+6. **Write bash, and run it with bash.** Start every script with
+   `#!/usr/bin/env bash`. The daemon and the planner run the script with
+   `bash`, so `[[ ]]`, arrays, process substitution and `set -o pipefail` are
+   fine there; under an `sh` shebang, or when a spec line runs the script with
+   `sh`, they break (`verify_script_sh_for_bash`).
+7. **Keep one shared allowed-file list.** Build the allowed list once, from
+   the task's own files plus the standard set (changelog, README, docs,
+   locales, tests), cumulative across stories, or source the shared helper.
+   A short literal list that leaves out the task's own files or the standard
+   set rejects correct work (`verify_script_rejects_own_files`).
+8. **No hex-colour patterns, and no pipe into `grep -q`.** A tracker-id
+   pattern made of digits alone (`#[0-9]{3,}`) also matches CSS hex colours
+   such as `#123456`, so put a tracker word before the `#` or require the
+   match not to follow a `#` (`verify_script_hex_pattern`). `grep -q` exits
+   at the first match and the producer gets SIGPIPE, which fails the pipeline
+   under `pipefail`; capture the output first, then run `grep -q` on the
+   variable or file (`verify_script_pipe_grep_q`).
+9. **A story's gate script covers that story only.** A script that closes a
+   story runs only that story's own scripts, never another story's. Only the
+   single final gate runs the checks of the whole Automaton, and a script
+   must not require output that only a task it does not depend on creates
+   (`verify_script_needs_later_task_output`).
 
 ## 2. The cumulative allowed-file helper
 
@@ -114,7 +136,8 @@ the **last** task of the **last** story, depending on every other task. The
 standard-task pack appends it once there, and a planner-written `final_gate`
 on any earlier story is rejected by the plan check at decompose time (and any
 that remains is dropped when the standard tasks are applied). A story-level
-check is plain task verification, not a gate.
+check is plain task verification, not a gate, and a script that closes a story
+runs only that story's own scripts.
 
 The final gate **always carries a verification script or an explicit
 exemption reason**: a **final gate exemption reason** is the stated reason a
@@ -146,7 +169,7 @@ skipped by the script-content rules below; the warn rule
 | `verify_script_needs_later_task_output` | block | The script requires a file or a phrase (a path test, a grep target) that only a task it does not depend on creates. | Add the `depends_on` edge to the creating task, or move the check into that task's own script. |
 | `verify_script_sh_for_bash` | block | The script uses `[[ ]]`, arrays, process substitution or `pipefail` under an sh shebang, or a spec or script line runs a bash script with `sh`. | Use `#!/usr/bin/env bash` and run the script with `bash`. |
 | `verify_script_pipe_grep_q` | block | The script pipes into `grep -q`; grep exits at the first match and the producer gets SIGPIPE, which fails the pipeline under `pipefail`. | Capture the output first (`out=$(cmd)`, then `grep -q pat <<<"$out"`), or drop `-q` and send the output to `/dev/null`. |
-| `verify_script_hex_pattern` | block | A grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours (`#123456`) as tracker ids. | Put a tracker word before the `#` (`(issue|fixes|closes)\s+#[0-9]{3,}`) or use the BL/GH-prefixed id forms. |
+| `verify_script_hex_pattern` | block | A grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours (`#123456`) as tracker ids. | Put a tracker word before the `#` (`(issue\|fixes\|closes)\s+#[0-9]{3,}`), require the match not to follow a `#`, or use the BL/GH-prefixed id forms. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 
 All of these are `block`-severity: in `enforce` mode they feed the planner a retry
@@ -185,11 +208,13 @@ A typical fix after a lint finding:
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All three stability rules are
-  `block`: in `enforce` mode a script that breaks one sends the plan back to
-  the planner (up to `max_retries`) before any task runs. Decide whether you
-  want that, or want `shadow` first to see how often your planners trip them;
-  an operator rule with the same id replaces the built-in.
+- **Block severity in `enforce` is the shipped default.** Every
+  verification-script rule is `block`, and the lint mode is `enforce` unless
+  you set it: a script that breaks one sends the plan back to the planner (up
+  to `max_retries`) before any task runs. To see how often your planners trip
+  a rule before it blocks, set that rule to `warn` with a same-id operator
+  rule, or set `mode: shadow`; `disabled_rules` turns a rule off — see
+  [the decompose-lint how-to](automaton-decompose-lint.md#4-writing-your-own-rules--a-worked-example).
 - **Existing scripts are not rewritten.** The rules read scripts as they stand
   in the project. A script already checked in that compares only against its
   own task's files will now be flagged on the next decompose; fix or exempt it.

@@ -2636,6 +2636,37 @@ Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks
 - **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
 - **Tests:** `internal/config/parallel_policy_test.go`, `internal/autonomous/parallel_config_test.go`, `parallel_metrics_test.go`, `internal/mcp/parallel_config_test.go`, `internal/router/parallel_config_surface_test.go`, `cmd/datawatch/parallel_config_cli_test.go`, and the web tests `app-parallel-task-merge.test.js` and `app-parallel-metrics.test.js`.
 
+## Decompose lint mode and rule pack
+
+- **Config:** `autonomous.decompose_lint` (`config.DecomposeLintConfig` in
+  `internal/config/decompose_lint.go`): `mode`, `max_retries`, `rules`,
+  `disabled_rules`. `NormalizeDecomposeLintMode` resolves an empty mode to
+  `enforce` (the default, also `DefaultDecomposeLint`); `off` and `shadow`
+  are the other two values, and any other word is a load and write error.
+  `EffectiveDecomposeLintMode` is what the decompose hook reads.
+- **Pack:** `DefaultDecomposeLintRules` in
+  `internal/autonomous/decompose_lint_rules.go` returns twenty-one rules,
+  sixteen `block` then five `warn`. The block rules are the six boundary rules,
+  `read_only_task_writes_file` and `spec_path_outside_allowed_dirs` (spec-line
+  rules, `decompose_lint_spec_paths.go`), and the eight verification-script
+  rules: `verify_script_task_files_only`, `verify_script_docs_without_sync`,
+  `verify_script_rejects_own_files`, `verify_script_needs_later_task_output`,
+  `verify_script_sh_for_bash`, `verify_script_pipe_grep_q`,
+  `verify_script_hex_pattern` and `final_gate_without_script`. The warn rules
+  are `no_verification_script`, `unexecutable_verification_script`,
+  `names_tracker_id`, `version_number_in_spec` and `unbounded_load_step`.
+- **Switching a rule:** a same-id entry in `rules` replaces the built-in (use
+  `severity: warn` to demote it), and `disabled_rules` or a
+  `{id, disabled: true}` entry removes it. `LintTasksInDir` applies the
+  effective pack.
+- **Finding format:** `LintFinding` carries `rule_id`, `severity`, `message`,
+  `story`, `task` and `matched` (the offending line, clipped); the text form is
+  `[severity] rule_id task: message [line: …]` (`decompose_lint_text.go`), and a
+  script rule adds the script path to the message.
+- **Docs:** [decompose-lint how-to](howto/automaton-decompose-lint.md),
+  [verification-scripts how-to](howto/automaton-verification-scripts.md) and
+  [definitions](datawatch-definitions.md#decompose-lint).
+
 ## Read-only tasks and report paths
 
 Operator-facing description of what a read-only task may do and where its
@@ -2668,8 +2699,10 @@ section above) — no new config key is introduced here.
 - **Stable generated scripts:** the planning prompt carries a shared helper
   text (`internal/autonomous/verification_script_helpers.go`): docs sync
   first, a cumulative allowed-file list, a merge-base comparison and no
-  package-wide formatter run. Three block-severity lint rules enforce it
-  (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+  package-wide formatter run, bash only, no hex-colour tracker patterns, no
+  pipe into `grep -q`, and a story's gate script limited to that story's own
+  scripts (rules 6–13 of the helper text). Three block-severity lint rules
+  enforce the first part (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
   `final_gate_without_script`, via the `verification_script_task_files_only`,
   `verification_script_docs_without_sync` and `verification_script_reason_empty`
   /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
@@ -2683,10 +2716,11 @@ section above) — no new config key is introduced here.
   `internal/autonomous/decompose_lint_verify_script_rules.go`. The
   needs-later-task-output check reads the whole plan (`newLintPlan`, built in
   `LintTasksInDir`) and honours task and story `depends_on`.
-- **Still to review (operator):** the three stability rules ship at `block`
-  severity (operator decision 2026-11-12, option 2); whether `shadow` should
-  precede `enforce`, and a live run confirming planners write stable scripts
-  first try, are not settled by this tree. See
+- **Still to review (operator):** the verification-script rules ship at
+  `block` severity and the lint mode defaults to `enforce`; a live run
+  confirming planners write stable scripts first try is not settled by this
+  tree. An operator who wants to watch a rule first sets it to `warn` with a
+  same-id rule, or sets `mode: shadow`. See
   [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).
 - **Gate resolution across the Automaton:** the script gate
   (`ResolveGateCheckForAutomaton` in `internal/autonomous/script_gate.go`)

@@ -352,11 +352,14 @@ gate with nothing runnable — fails it.
 
 The planner is told to write each verification script so it keeps passing as
 the other tasks of the Automaton land: run `make sync-docs` first in any docs
-check, build the allowed-file list from every file the Automaton may touch (the
-cumulative allowed-file helper), compare against the merge base, never run a
-formatter over a whole folder, and plan **one** final gate, as the last task,
-with a script or an explicit `verification_script_reason`. Three decompose-lint
-rules flag a plan that breaks this, naming the script and the rule id, and the
+check, build one shared allowed-file list from every file the Automaton may
+touch (the cumulative allowed-file helper), compare against the merge base,
+write bash and run it with bash, never match CSS hex colours as tracker ids,
+never pipe into `grep -q`, never run a formatter over a whole folder, keep a
+story's gate script to that story's own scripts, and plan **one** final gate,
+as the last task, with a script or an explicit `verification_script_reason`.
+Eight decompose-lint `block` rules flag a plan that breaks this, naming the
+script, the rule id and the offending line, and the
 script gate now runs every task's script across the whole Automaton when the
 final gate has none of its own. Fix a flagged task in place with the task edit
 (`verification_script` / `verification_script_reason`) instead of re-decomposing.
