@@ -1,5 +1,6 @@
-// Automaton merge-pending pass. A completed Automaton whose work branch still
-// carries commits that are not on main is "merge pending". The pass runs from
+// Automaton merge-pending pass. A finished (completed, or archived) Automaton
+// whose work branch still carries commits that are not on main is "merge
+// pending". The pass runs from
 // Coordinator.triagePass (automation_coordinator.go) and, depending on
 // autonomous.automation.merge_pending_mode:
 //
@@ -324,8 +325,9 @@ func (c *Coordinator) mergePendingClear(prd *PRD) {
 	}
 }
 
-// mergePendingCheck handles one completed Automaton with a work branch while
-// merge_pending_mode is shadow or on. It returns the alert to raise, if any;
+// mergePendingCheck handles one finished (completed or archived) Automaton
+// with a work branch while merge_pending_mode is shadow or on. It returns
+// the alert to raise, if any;
 // the caller sends it after the pass. An unknown state changes nothing.
 func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Time, threshold time.Duration) (title, body string, alert bool) {
 	cmp, ok := c.mergeCompare(repo, prd.Git.Branch)

@@ -201,6 +201,32 @@ func TestSupervisorWatchWorkAutomatonNotMerged(t *testing.T) {
 	}
 }
 
+// TestSupervisorWatchWorkArchivedFinishedNotMerged — an archived
+// Automaton (status archived) that carries a merge_pending record and
+// fully finished work is raised just as a completed one: the record's
+// state decides, not the status.
+func TestSupervisorWatchWorkArchivedFinishedNotMerged(t *testing.T) {
+	archived := workTestPRD("p-1",
+		&TriageRecord{PRDID: "p-1", Status: TriageStatusMergePending, Branch: "automaton/finished-not-merged"},
+		workTestTask("p-1", "t-1", TaskCompleted))
+	archived.Status = PRDArchived
+	completed := workTestPRD("p-2",
+		&TriageRecord{PRDID: "p-2", Status: TriageStatusMergePending, Branch: "automaton/finished-not-merged-too"},
+		workTestTask("p-2", "t-1", TaskCompleted))
+	completed.Status = PRDCompleted
+
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: []*PRD{archived, completed}}, nil, nil)
+	fs := w.CheckAutomatonNotMerged()
+	if len(fs) != 2 {
+		t.Fatalf("expected 2 automaton_not_merged findings (archived and completed), got %d: %+v", len(fs), fs)
+	}
+	for _, f := range fs {
+		if f.Kind != SupervisorWatchAutomatonNotMerged || f.Text == "" {
+			t.Errorf("unexpected finding: %+v", f)
+		}
+	}
+}
+
 // TestWorkIdleLane — one idle_lane_eligible_work finding per lane that
 // is idle and has eligible work queued on its backend; and none for an
 // idle lane with nothing queued, an occupied lane with work queued, or

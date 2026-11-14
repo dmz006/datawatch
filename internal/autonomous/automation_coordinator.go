@@ -878,9 +878,10 @@ func (c *Coordinator) triagePass() {
 				})
 			}
 		default:
-			if mergeActive && prd.Status == PRDCompleted && prd.Git.Branch != "" {
+			if mergeActive && (prd.Status == PRDCompleted || prd.Status == PRDArchived) && prd.Git.Branch != "" {
 				if prd.Triage != nil && prd.Triage.Status != TriageStatusMergePending {
-					// a completed Automaton holds no failed or blocked record
+					// a finished (completed, or archived) Automaton holds no
+					// failed or blocked record
 					if err := m.ClearTriageRecord(prd.ID); err != nil {
 						log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
 						continue

@@ -5024,6 +5024,7 @@
   "merge_blocked_age_hours": "%1$s Std.",
   "merge_blocked_age_days": "%1$s Tg.",
   "merge_blocked_help_link": "Was bedeutet ein blockierter Merge? Hilfe zum Automaten-Merge öffnen",
+  "merge_state_help_link": "Was bedeutet ein nicht gemergter Branch? Hilfe zum Merge-Zustand des Automaten öffnen",
   "sessions_auto_story_root": "Ohne Story",
   "sessions_auto_ungrouped": "Ohne Automat",
   "sessions_group_automaton": "Automat",

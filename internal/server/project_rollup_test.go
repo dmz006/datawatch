@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -458,5 +459,63 @@ func TestCompletedDisplayRollupThroughput(t *testing.T) {
 	in.ShippedEnabled = false
 	if n := buildProjectRollup(in).Total.Throughput.AutomataFinished; n != 1 {
 		t.Errorf("surface off finished = %d, want 1", n)
+	}
+}
+
+// TestBuildProjectRollup_FinishedNotMergedMergeState: the rollup lines keep the
+// daemon-derived, read-only merge_state so the Projects cards can render the
+// merge-state badge. A finished Automaton whose branch work never landed reads
+// finished_not_merged; the field is omitted (omitempty) for the merged ones.
+func TestBuildProjectRollup_FinishedNotMergedMergeState(t *testing.T) {
+	dir := "/srv/acme"
+	recent := rollupNow.Add(-2 * time.Hour)
+	unmerged := &autonomous.PRD{ID: "fin1", ProjectDir: dir, Status: autonomous.PRDCompleted, UpdatedAt: recent}
+	merged := &autonomous.PRD{ID: "fin2", ProjectDir: dir, Status: autonomous.PRDCompleted, UpdatedAt: recent}
+
+	in := rollupInput{
+		Project: "acme", Dir: dir + "/",
+		PRDs:       []*autonomous.PRD{unmerged, merged},
+		WindowDays: 7,
+		Now:        rollupNow,
+		// The same derivation the handler wires (mergeStateOf): only fin1's
+		// branch still holds work that never landed on the base branch.
+		MergeState: func(prd *autonomous.PRD) string {
+			if prd != nil && prd.ID == "fin1" {
+				return autonomous.MergeStateFinishedNotMerged
+			}
+			return ""
+		},
+	}
+	got := buildProjectRollup(in)
+
+	byID := map[string]rollupAutomaton{}
+	for _, a := range got.Unassigned.Automata {
+		byID[a.ID] = a
+	}
+	for _, arc := range got.Arcs {
+		for _, a := range arc.Automata {
+			byID[a.ID] = a
+		}
+	}
+	if got, want := byID["fin1"].MergeState, autonomous.MergeStateFinishedNotMerged; got != want {
+		t.Errorf("fin1 merge_state = %q, want %q", got, want)
+	}
+	if got := byID["fin2"].MergeState; got != "" {
+		t.Errorf("fin2 merge_state = %q, want empty (only the unmerged ones carry the value)", got)
+	}
+
+	b, err := json.Marshal(byID["fin1"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"merge_state":"finished_not_merged"`) {
+		t.Errorf("fin1 JSON %s must carry merge_state", b)
+	}
+	b2, err := json.Marshal(byID["fin2"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b2), "merge_state") {
+		t.Errorf("fin2 JSON %s must omit merge_state (omitempty)", b2)
 	}
 }

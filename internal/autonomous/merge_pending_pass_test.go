@@ -269,6 +269,77 @@ func TestMergePendingPass_AlertOncePerEpisode(t *testing.T) {
 	th.assertAlerts(t, 2, mergeAlertPrefix)
 }
 
+// TestMergePendingPass_ArchivedFinishedNotMergedKeepsRecord — an archived
+// Automaton whose work branch still carries unlanded commits is treated
+// like a completed one: a merge_pending record is written, it survives
+// later unchanged polls (it used to drop off the merge-ready list once the
+// Automaton was archived), and it is cleared once the work lands.
+func TestMergePendingPass_ArchivedFinishedNotMergedKeepsRecord(t *testing.T) {
+	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 0)
+	p, ok := th.h.m.store.GetPRD(th.h.prds[0].ID)
+	if !ok {
+		t.Fatal("prd missing")
+	}
+	p.Status = PRDArchived
+	if err := th.h.m.store.SavePRD(p); err != nil {
+		t.Fatal(err)
+	}
+
+	th.h.c.triagePass()
+	rec := th.record(t, 0)
+	if rec == nil || rec.Status != TriageStatusMergePending || rec.Branch != mergeTestBranch {
+		t.Fatalf("record = %+v, want merge_pending on %s for the archived Automaton", rec, mergeTestBranch)
+	}
+
+	// an unchanged poll keeps the record; a finished_not_merged Automaton
+	// does not fall out of the merge-ready list when it is archived
+	th.advance(time.Minute)
+	th.h.c.triagePass()
+	if rec := th.record(t, 0); rec == nil || rec.Status != TriageStatusMergePending {
+		t.Fatalf("record = %+v, want the merge_pending record to stay", rec)
+	}
+	th.assertNoAlerts(t, "")
+
+	// the work lands: the episode ends and the record goes
+	git.setMerged("branch-1", "base-2")
+	th.h.c.triagePass()
+	if rec := th.record(t, 0); rec != nil {
+		t.Fatalf("record = %+v, want it cleared once merged", rec)
+	}
+}
+
+// TestMergePendingPass_ArchivedFinishedNotMergedShadowObserved — in
+// shadow mode the archived finished-not-merged Automaton is observed as
+// it would be alerted, with no alert and no record.
+func TestMergePendingPass_ArchivedFinishedNotMergedShadowObserved(t *testing.T) {
+	th, _ := newMergePendingHarness(t, config.MergePendingModeShadow, 10)
+	p, ok := th.h.m.store.GetPRD(th.h.prds[0].ID)
+	if !ok {
+		t.Fatal("prd missing")
+	}
+	p.Status = PRDArchived
+	if err := th.h.m.store.SavePRD(p); err != nil {
+		t.Fatal(err)
+	}
+
+	th.h.c.triagePass()
+	got := th.h.c.MergeShadowDecisions(0)
+	if len(got) != 1 || got[0].AutomatonID != th.h.prds[0].ID || got[0].State != MergeStatePending || got[0].WouldAlert {
+		t.Fatalf("shadow decisions = %+v, want the archived Automaton observed pending, no alert yet", got)
+	}
+
+	th.advance(10 * time.Minute)
+	th.h.c.triagePass()
+	got = th.h.c.MergeShadowDecisions(0)
+	if len(got) != 2 || got[0].AutomatonID != th.h.prds[0].ID || got[0].State != MergeStatePending || !got[0].WouldAlert {
+		t.Fatalf("shadow decisions (newest first) = %+v, want the episode flipped to would_alert", got)
+	}
+	th.assertNoAlerts(t, "")
+	if rec := th.record(t, 0); rec != nil {
+		t.Fatalf("record = %+v, want none in shadow mode", rec)
+	}
+}
+
 func TestMergePendingPass_ThresholdZeroNoAlert(t *testing.T) {
 	th, _ := newMergePendingHarness(t, config.MergePendingModeOn, 0)
 

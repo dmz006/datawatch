@@ -5024,6 +5024,7 @@
   "merge_blocked_age_hours": "%1$s h",
   "merge_blocked_age_days": "%1$s d",
   "merge_blocked_help_link": "¿Qué significa una fusión bloqueada? Abrir la ayuda de fusión del Autómata",
+  "merge_state_help_link": "¿Qué significa rama sin fusionar? Abrir la ayuda del estado de fusión del Autómata",
   "sessions_auto_story_root": "Sin historia",
   "sessions_auto_ungrouped": "Sin autómata",
   "sessions_group_automaton": "Autómata",
