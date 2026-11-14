@@ -1,7 +1,8 @@
 'use strict';
 // Sessions page one-line toolbar: the topbar is ONE non-splitting flex row
-// (no separate fold row, no server-chip slot) at phone (≤640px) and wide
-// widths. Contents in DOM order: server dropdown → search → Filters →
+// (no separate fold row, no server-chip slot, no server <select>: the header
+// server button is the one server picker) at phone (≤640px) and wide
+// widths. Contents in DOM order: search → Filters →
 // Fold all (only while grouping is active) → the single view-mode <select>.
 // The Fold all is a compact icon button carrying a tooltip, an aria-label
 // and an aria-pressed that reflect collapsed vs expanded. The view control
@@ -148,7 +149,8 @@ test('the toolbar is a single non-splittable flex row at every width in the CSS'
   assert.ok(search.length, 'a .sessions-topbar .sessions-search-row rule exists');
   assert.match(search[0].body, /flex:\s*1 1 auto/, 'the search row flexes');
   assert.match(search[0].body, /min-width:\s*0/, '... and may shrink below its content size');
-  for (const name of ['sessions-server-select', 'sessions-fold-all', 'sessions-view-select']) {
+  assert.doesNotMatch(CSS, /sessions-server-select/, 'no rule for a Sessions server select remains');
+  for (const name of ['sessions-fold-all', 'sessions-view-select']) {
     const r = ruleForDesc(rules, name);
     assert.ok(r.length, 'a .sessions-topbar .' + name + ' rule exists');
     assert.match(r[0].body, /flex:\s*0 0 auto/, '.sessions-topbar .' + name + ' stays fixed-size');
@@ -168,7 +170,7 @@ test('there is no separate fold row: not in the CSS, not in the rendered markup'
 
 // ── (a)+(b) rendered row: one row, correct parts, correct order ─────────────
 
-test('at phone AND wide width the toolbar is one row: server, search, Filters, Fold all, view select — in that order', () => {
+test('at phone AND wide width the toolbar is one row: search, Filters, Fold all, view select — in that order, with no server select', () => {
   for (const [label, phone] of [['phone', true], ['wide', false]]) {
     const sb = loadApp({ phone });
     seed(sb);
@@ -179,7 +181,6 @@ test('at phone AND wide width the toolbar is one row: server, search, Filters, F
 
     const top = topbarSlice(html);
     const order = [
-      'id="sessionsServerDropdown"',           // (2) shared server dropdown instance
       'class="sessions-search-row"',           // (3) search
       'id="sessionFilterInput"',
       'class="sessions-filters-slot"',         // (4) Filters
@@ -190,9 +191,10 @@ test('at phone AND wide width the toolbar is one row: server, search, Filters, F
     assert.ok(order.every(i => i >= 0), label + ': every toolbar part is in the one row: ' + order.join(','));
     assert.deepEqual(order, [...order].sort((a, b) => a - b), label + ': parts appear in the stated DOM order');
     assert.equal((top.match(/class="sessions-search-row"/g) || []).length, 1, label + ': exactly one search row');
-    // The server control is the shared picker instance — its mutation path is
-    // the header dropdown's selectServer() path.
-    assert.match(top, /onchange="onServerDropdownChange\(this\.value\)"/, label + ': server dropdown drives selectServer()');
+    // The page carries no server select: the header server button is the one
+    // picker (its modal drives selectServer()).
+    assert.doesNotMatch(top, /ServerDropdown|server-select|onServerDropdownChange/, label + ': no server select in the toolbar');
+    assert.doesNotMatch(html, /id="sessionsServerDropdown"/, label + ': no Sessions server select anywhere on the page');
   }
 });
 
@@ -326,7 +328,8 @@ test('an ungrouped Sessions page keeps the one-line toolbar without the fold con
   seed(sb, { grouped: false });
   const html = render(sb);
   const top = topbarSlice(html);
-  for (const k of ['sessionsServerDropdown', 'sessions-search-row', 'sessionsFiltersBtn', 'sessionsViewSelect']) {
+  assert.ok(!top.includes('sessionsServerDropdown'), 'the toolbar has no server select');
+  for (const k of ['sessions-search-row', 'sessionsFiltersBtn', 'sessionsViewSelect']) {
     assert.ok(top.includes(k), 'toolbar keeps its parts on an ungrouped page: ' + k);
   }
   assert.ok(!top.includes('sessions-fold-all'), 'no grouping means nothing is foldable');

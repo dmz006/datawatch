@@ -138,6 +138,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_ship_group",
 		"burn_guard_title",
 		"server_header_showing",
+		"header_server_button_label",
 		"server_header_all",
 		"safe_delete_stale",
 		"safe_delete_computed_at",

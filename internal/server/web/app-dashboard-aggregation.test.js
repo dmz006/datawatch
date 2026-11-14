@@ -19,6 +19,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const { pickerRows } = require('./testutil_fake_dom');
 
 const APP_JS = path.join(__dirname, 'app.js');
 
@@ -26,7 +27,7 @@ function loadAppJS() {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
-  for (const fn of ['_dashFetchPRDs', '_dashFetchCost', '_serverPickerBar', '_initServerDropdown']) {
+  for (const fn of ['_dashFetchPRDs', '_dashFetchCost', 'openServerPickerModal', '_initServerDropdown']) {
     assert.equal(vm.runInContext(`typeof ${fn}`, sandbox), 'function', `${fn} is not defined -- did it get renamed?`);
   }
   return sandbox;
@@ -107,29 +108,12 @@ test('_dashFetchCost in all-servers mode tolerates a non-array response (e.g. a 
   assert.equal(cost.sessions, 0);
 });
 
-test('_serverPickerBar includes the "All" option by default', () => {
+test('picker modal includes the "All" row', () => {
   const sandbox = loadAppJS();
   setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
-  const html = vm.runInContext('_serverPickerBar()', sandbox);
-  assert.ok(html.includes('<option value="all"'), 'expected an "All servers" option');
-});
-
-test('_serverPickerBar({hideAll:true}) omits the "All" option (Observer)', () => {
-  const sandbox = loadAppJS();
-  setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
-  sandbox.__opts = { hideAll: true };
-  const html = vm.runInContext('_serverPickerBar(__opts)', sandbox);
-  delete sandbox.__opts;
-  assert.ok(!html.includes('<option value="all"'), 'expected no "All servers" option when hideAll is set');
-  assert.ok(html.includes('pi-node'), 'other options should still render normally');
-});
-
-test('_serverPickerBar still returns empty string with hideAll when there are no configured servers at all', () => {
-  const sandbox = loadAppJS();
-  sandbox.__opts = { hideAll: true };
-  const html = vm.runInContext('_serverPickerBar(__opts)', sandbox);
-  delete sandbox.__opts;
-  assert.equal(html, '');
+  const { rowFor } = pickerRows(sandbox);
+  assert.ok(rowFor('all'), 'expected an "All servers" row');
+  assert.ok(rowFor('pi-node'), 'and the configured peer row');
 });
 
 // Operator-reported (2026-10-07): a real federated peer named "Apple
@@ -140,23 +124,20 @@ test('_serverPickerBar still returns empty string with hideAll when there are no
 // named chip unconditionally (not just names with unusual characters --
 // ANY quoted value collides), including the "All" chip itself.
 //
-// The header dropdown eliminates this class of bug structurally: there
-// is exactly ONE static, inline-built handler on the select --
-// onchange="onServerDropdownChange(this.value)" -- and each server's
-// name travels in its OWN option's value attribute (escHtml-escaped,
-// read back via this.value). The regression this pins now: the full
-// name must remain an intact option value, the handler must stay the
-// single generic one, and no per-name inline handler may exist at all.
-test('a server name does not break the dropdown (regression)', () => {
+// The picker modal keeps the name in an escHtml-escaped data attribute and
+// JSON-encodes it inside an escaped onclick, so the handler can never be
+// truncated. The regression this pins: the full name must remain intact in
+// the row's data attribute, and the row's handler must decode back to a
+// complete selectServer(<json name>) call followed by the one close call.
+test('a server name does not break the picker row (regression)', () => {
   const sandbox = loadAppJS();
-  setState(sandbox, { servers: { servers: [{ name: 'Apple Testing Sandbox', enabled: true }] } });
-  const html = vm.runInContext('_serverPickerBar()', sandbox);
-
-  assert.ok(!/onclick="selectServer\(/.test(html), 'no per-server inline selectServer( handler may exist anymore');
-  assert.ok(html.includes('<option value="Apple Testing Sandbox"'), 'expected the full, intact name in the option value');
-
-  // Exactly ONE change handler for the whole dropdown -- the generic one.
-  const handlers = [...html.matchAll(/onchange="([^"]*)"/g)].map(m => m[1]);
-  assert.equal(handlers.length, 1, 'exactly one change handler on the select');
-  assert.equal(handlers[0], 'onServerDropdownChange(this.value)', 'the handler must be the generic one, never inline-built per name');
+  const name = 'Apple Testing Sandbox "x" & \'y\'';
+  setState(sandbox, { servers: { servers: [{ name, enabled: true }] } });
+  const { rowFor, html } = pickerRows(sandbox);
+  const row = rowFor(name);
+  assert.ok(row, 'expected the full, intact name in the row data attribute');
+  assert.equal(row.getAttribute('onclick'), `selectServer(${JSON.stringify(name)});closeServerPickerModal();`,
+    'the handler decodes to a complete, correctly quoted call');
+  // The raw attribute never holds an unescaped quote from the name.
+  assert.ok(!html.includes('data-server-name="Apple Testing Sandbox "'), 'the name is escaped in the attribute');
 });

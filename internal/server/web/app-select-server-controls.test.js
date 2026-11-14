@@ -2,23 +2,21 @@
 // selectServer() — every control that calls it, PWA side.
 //
 // Controls that invoke selectServer (found by reading app.js):
-//   1. header dropdown   <select id="serverDropdown"
-//                        onchange="onServerDropdownChange(this.value)">
-//                        (one generic handler; the name travels in the
-//                        option's value, never inline-built per server)
+//   1. header server button  <button id="serverPickerBtn"> opens the picker
+//                        modal (openServerPickerModal); it never calls
+//                        selectServer itself -- every choice is a modal row
 //   2. header chip       .server-indicator  onclick="selectServer(null)"   (renderSessionsView)
-//   3. picker modal      _loadServerPickerModalList chips
-//                        onclick="selectServer(<json name>);document.getElementById('serverPickerModal').remove();"
+//   3. picker modal      _loadServerPickerModalList rows (real <button>s)
+//                        onclick="selectServer(<json name>);closeServerPickerModal();"
 //   4. Settings servers  loadServers        onclick="selectServer('<name>')" (one button per row)
 //   5. "back to local"   the federated-connection error panel, onclick="selectServer(null)"
 //
 // Double invocation, from reading the handlers: none of the five controls
 // binds a second handler. The only extra work next to a selectServer call
-// is the picker-modal chip, which removes #serverPickerModal in the same
-// onclick; the overlay's own click listener (modal.addEventListener
-// ('click', ...)) only acts when e.target === modal, so a chip click
-// (target = the button) never reaches remove() twice or re-enters
-// selectServer. selectServer itself calls loadServers() and showToast(),
+// is the picker-modal row, which calls closeServerPickerModal() in the same
+// onclick; the overlay's own click listener (added by _headerModalShow)
+// only acts when e.target === overlay, so a row click (target = the button)
+// never closes twice or re-enters selectServer. selectServer itself calls loadServers() and showToast(),
 // neither of which calls selectServer back. The test "no control invokes
 // selectServer twice per click" pins that.
 //
@@ -105,19 +103,20 @@ function clickFor(codes, name) {
   return hit;
 }
 
-// The header dropdown: simulate the change for `name` the way the browser
-// does -- the one generic onchange handler fires with the option's value
-// (name, 'all', or '' for this server). Returns the code to execute.
-function dropdownChangeFor(sandbox, name) {
-  sandbox.__html = vm.runInContext('_serverPickerBar({})', sandbox);
-  const html = sandbox.__html; delete sandbox.__html;
-  const re = new RegExp('<option value="' + String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"');
-  assert.ok(re.test(html), `expected an option with value "${name}" in the dropdown`);
-  return `onServerDropdownChange(${JSON.stringify(name)})`;
+// The header server button: it only opens the picker modal; the choice is
+// then a modal row. Returns the row's onclick code for `name` ('' = this
+// server, 'all', or a peer name) after asserting the button opens the modal.
+function headerButtonChoiceFor(sandbox, name) {
+  const src = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const m = src.match(/<button type="button" id="serverPickerBtn"[^>]*onclick="([^"]*)"/);
+  assert.ok(m, 'header server button not found in index.html');
+  assert.equal(m[1], 'openServerPickerModal()', 'the header button only opens the picker modal');
+  const codes = pickerModalCodes(sandbox);
+  return clickFor(codes, name === '' ? null : name);
 }
 
 function click(sandbox, code) {
-  // The modal chips call document.getElementById('serverPickerModal').remove().
+  // The modal rows call closeServerPickerModal().
   vm.runInContext(code, sandbox);
 }
 
@@ -179,8 +178,8 @@ function backToLocalCode() {
 
 // Each control: how to get the code that selects PEER.
 const CONTROLS = [
-  { name: 'header dropdown', peerCode: async (s) => dropdownChangeFor(s, PEER) },
-  { name: 'picker modal chip', peerCode: async (s) => clickFor(await pickerModalCodes(s), PEER) },
+  { name: 'header server button (picker modal row)', peerCode: async (s) => headerButtonChoiceFor(s, PEER) },
+  { name: 'picker modal row', peerCode: async (s) => clickFor(await pickerModalCodes(s), PEER) },
   { name: 'Settings servers list button', peerCode: async (s) => clickFor(await settingsCodes(s), PEER) },
 ];
 
@@ -204,10 +203,10 @@ for (const c of CONTROLS) {
   });
 }
 
-test('header dropdown: choosing this server returns to local with a single call', () => {
+test('header server button: choosing this server returns to local with a single call', () => {
   const sandbox = loadApp();
   vm.runInContext(`state.activeServer = ${JSON.stringify(PEER)}`, sandbox);
-  click(sandbox, dropdownChangeFor(sandbox, ''));
+  click(sandbox, headerButtonChoiceFor(sandbox, ''));
   assert.equal(active(sandbox), null);
   assert.deepEqual(sandbox.__calls, [null]);
   assert.ok(sandbox.__toasts.length === 1);
@@ -230,15 +229,16 @@ test('federated "back to local" button: single call, returns to local', () => {
   assert.deepEqual(sandbox.__calls, [null]);
 });
 
-test('no control invokes selectServer twice per click (modal removal does not re-trigger)', async () => {
+test('no control invokes selectServer twice per click (modal close does not re-trigger)', async () => {
   const sandbox = loadApp();
-  let removed = 0;
-  const realGet = sandbox.document.getElementById;
-  sandbox.document.getElementById = (id) =>
-    id === 'serverPickerModal' ? { remove() { removed++; }, addEventListener() {} } : realGet(id);
+  // Count closes: handlers resolve closeServerPickerModal through the global
+  // object, so wrapping the property intercepts the row's inline call.
+  const realClose = sandbox.closeServerPickerModal;
+  let closed = 0;
+  sandbox.closeServerPickerModal = function () { closed++; return realClose.apply(this, arguments); };
   const codes = pickerModalCodes(sandbox);
   click(sandbox, clickFor(codes, PEER));
-  assert.equal(removed, 1, 'modal removed once');
+  assert.equal(closed, 1, 'modal closed once');
   assert.deepEqual(sandbox.__calls, [PEER]);
 });
 
@@ -275,7 +275,7 @@ test('a re-render does not re-invoke selectServer with the active name', async (
   vm.runInContext(`selectServer(${JSON.stringify(PEER)})`, sandbox);
   const before = sandbox.__calls.length;
   // Re-render every surface that shows the active peer.
-  dropdownChangeFor(sandbox, PEER);
+  vm.runInContext('renderServerDropdown()', sandbox);
   pickerModalCodes(sandbox);
   await settingsCodes(sandbox);
   await flushAsync(30);

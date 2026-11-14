@@ -4,13 +4,14 @@
 // 'all' | a peer name | '' for this server) — app.js's
 // _serverChoiceRead / _serverChoiceSave / _serverChoiceSettleBoot plus the
 // selectServer() save. These tests cover the PWA-side persistence
-// behavior, modeled on app-header-server-dropdown.test.js:
+// behavior, modeled on app-header-server-dropdown.test.js (the header server
+// button and its picker modal):
 //   * saved  — selecting a peer / All / this server each saves exactly one
 //              key with the expected value; re-selecting the active saved
 //              choice writes nothing;
 //   * reload — a fresh sandbox (a page reload) sharing the same storage map
 //              restores state.activeServer, and the first-paint header
-//              dropdown shows the saved peer name or 'all';
+//              button shows the saved peer name or 'all';
 //   * falls back — an unknown saved peer name falls back to All at boot
 //              and that fallback is saved, so a stale choice never
 //              survives another reload;
@@ -38,39 +39,9 @@ const STORE_KEY = 'dw_server_choice';
 
 const { vm, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
 
-// An element that captures what gets written to .innerHTML/.value, so the
-// tests can assert on the rendered dropdown (copied from the header
-// dropdown test — the stub DOM's querySelectorAll returns nothing).
-function elementCatcher() {
-  let html = '';
-  let val = '';
-  return {
-    style: {},
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    dataset: {},
-    setAttribute() {}, getAttribute() { return null; }, removeAttribute() {},
-    querySelector() { return null; }, querySelectorAll() { return []; },
-    addEventListener() {}, removeEventListener() {},
-    appendChild() {}, remove() {},
-    focus() {}, blur() {}, click() {},
-    set innerHTML(v) { html = String(v); }, get innerHTML() { return html; },
-    set textContent(v) { html = String(v); }, get textContent() { return html; },
-    set value(v) { val = String(v); }, get value() { return val; },
-  };
-}
-
-function unescapeAttr(s) {
-  return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-}
-
-// The value attribute of the option carrying `selected` in a rendered
-// dropdown.
-function selectedOption(html) {
-  const m = html.match(/<option value="([^"]*)"[^>]*selected/);
-  assert.ok(m, 'no option carries selected: ' + String(html).slice(0, 400));
-  return unescapeAttr(m[1]);
-}
+// The fake DOM (testutil_fake_dom.js) parses what app.js writes, so the tests
+// can read the header button and click picker-modal rows.
+const { installFakeDom } = require('./testutil_fake_dom');
 
 function active(sb) { return vm.runInContext('state.activeServer', sb); }
 
@@ -79,9 +50,8 @@ function active(sb) { return vm.runInContext('state.activeServer', sb); }
 // reload = calling loadPage again with the SAME storage object — that is
 // what a browser keeps across reloads.
 function loadPage(storage) {
-  const sel = elementCatcher();  // the header <select id="serverDropdown">
-  const view = elementCatcher(); // #view — the page body the views render into
-  const sandbox = buildSandbox({ byId: { serverDropdown: sel, view } });
+  const sandbox = buildSandbox();
+  const dom = installFakeDom(sandbox, { statics: ['serverPickerBtn', 'serverPickerDot', 'serverPickerName', 'view'] });
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
 
@@ -132,14 +102,23 @@ function loadPage(storage) {
     `state.activeView = 'sessions';`,
     sandbox,
   );
-  sandbox.__sel = sel;
+  sandbox.__dom = dom;
   return sandbox;
 }
 
-// The value attribute of the option currently carrying `selected`.
+// The choice the header button currently shows, in the shape the choice key
+// uses: 'all', a peer name, or '' for this server.
+function shownChoice(sb) {
+  const dot = sb.__dom.el('serverPickerDot');
+  const kind = dot.dataset.kind;
+  if (kind === 'all') return 'all';
+  if (kind === 'local') return '';
+  return sb.__dom.el('serverPickerBtn').getAttribute('title').replace(/ \(unreachable\)$/, '');
+}
+
 function renderSelected(sb) {
   vm.runInContext('renderServerDropdown();', sb);
-  return selectedOption(sb.__sel.innerHTML);
+  return shownChoice(sb);
 }
 
 function assertNoKillOrSignal(sb) {
@@ -149,10 +128,15 @@ function assertNoKillOrSignal(sb) {
   }
 }
 
-// The one generic change handler fires with the selected option's value,
-// the way a keyboard or mouse choice in a native <select> does.
+// Picks an entry the way an operator does: open the picker modal from the
+// header button and click the row ('' = this server, 'all', or a peer name).
+// The row's own inline handler runs, so selectServer + close are the real path.
 function choose(sandbox, value) {
-  vm.runInContext(`onServerDropdownChange(${JSON.stringify(value)})`, sandbox);
+  vm.runInContext('openServerPickerModal()', sandbox);
+  const list = sandbox.__dom.byId('serverPickerModalList');
+  const row = list.querySelectorAll('button').find(r => r.getAttribute('data-server-name') === value);
+  assert.ok(row, 'no picker row for ' + JSON.stringify(value));
+  vm.runInContext(row.getAttribute('onclick'), sandbox);
 }
 
 // ── (a) saved ──────────────────────────────────────────────────────────────
@@ -167,7 +151,7 @@ test('saved: selecting a peer, All, and this server each saves exactly one key w
   choose(sb, PEER);
   assert.deepEqual(storage.keys(), [STORE_KEY], 'exactly one key after the peer choice');
   assert.equal(storage.getItem(STORE_KEY), PEER);
-  assert.equal(sb.__sel.value, PEER, 'the dropdown tracks the choice');
+  assert.equal(shownChoice(sb), PEER, 'the header button tracks the choice');
   assert.equal(active(sb), PEER);
 
   choose(sb, 'all');
@@ -232,7 +216,7 @@ test('reload: a saved peer name that is still in the server list is restored by 
   await flushAsync(30);
   assert.equal(active(sb), PEER, 'the reload restores the saved peer');
   assert.equal(renderSelected(sb), PEER, 'first paint is already on the restored server');
-  assert.equal(sb.__sel.value, PEER);
+  assert.equal(shownChoice(sb), PEER);
   assertNoKillOrSignal(sb);
 });
 
@@ -247,7 +231,7 @@ test('reload: a saved "all" is restored by a fresh sandbox the same way, and the
   await flushAsync(30);
   assert.equal(active(sb), 'all', 'the reload restores the saved All');
   assert.equal(renderSelected(sb), 'all', 'first paint is already on All');
-  assert.equal(sb.__sel.value, 'all');
+  assert.equal(shownChoice(sb), 'all');
   assertNoKillOrSignal(sb);
 });
 
@@ -359,7 +343,7 @@ test('refresh: the chosen value survives renderServerDropdown re-runs and a simu
   choose(sb, PEER);
   assert.equal(storage.getItem(STORE_KEY), PEER);
   assert.equal(renderSelected(sb), PEER);
-  assert.equal(sb.__sel.value, PEER);
+  assert.equal(shownChoice(sb), PEER);
 
   // Re-rendering (view switch, data update, ...) keeps the chosen value.
   vm.runInContext('renderServerDropdown(); renderServerDropdown();', sb);
@@ -375,7 +359,7 @@ test('refresh: the chosen value survives renderServerDropdown re-runs and a simu
   await flushAsync(20);
   assert.equal(active(sb2), PEER, 'the refresh restores the peer, not All');
   assert.equal(renderSelected(sb2), PEER, 'and first paint after the refresh is on it');
-  assert.equal(sb2.__sel.value, PEER);
+  assert.equal(shownChoice(sb2), PEER);
   assert.deepEqual(storage.keys(), [STORE_KEY], 'still exactly one key after the refresh');
   assertNoKillOrSignal(sb2);
 });
