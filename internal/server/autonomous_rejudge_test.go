@@ -78,11 +78,11 @@ func TestRejudgeHandler_WrongMethodIs405(t *testing.T) {
 	}
 }
 
-// Refusal — the manager rejected the re-judge (e.g. PRD not blocked or a
+// Refusal — the manager rejected the re-judge (e.g. record not eligible or a
 // task not completed): 400 with the manager's error text, manager called
 // exactly once.
 func TestRejudgeHandler_RefusalIs400WithManagerErrorText(t *testing.T) {
-	msg := `rejudge completion guardrail: prd prd-rej-2 is approved, not blocked; rejudgment only applies to a PRDBlocked PRD`
+	msg := `rejudge completion guardrail: prd prd-rej-2 is approved, not eligible; rejudgment applies to a blocked record, a held one with new commits since the held verdict, or a completed/archived one whose work is not yet on the base branch and whose review verdict is pending or blocked`
 	api := &rejudgeAPI{err: &rejudgeErr{msg: msg}}
 	s := &Server{autonomousMgr: api}
 

@@ -5092,18 +5092,27 @@ paths:
 
   /api/autonomous/prds/{id}/rejudge:
     post:
-      summary: Re-run the rules-review completion guardrail for a blocked Automaton
+      summary: Re-run the rules-review completion guardrail for a blocked, held, or finished unmerged Automaton
       description: |
-        Runs a fresh completion review for a PRDBlocked Automaton whose work
-        is fully done — every task in every story at `task_completed` —
-        without resetting or editing any task. The review reads the current
-        head commit of the Automaton's working tree, starts a judge session on
-        the configured judge backends, and records a new verdict with its own
-        time and the commit it judged. That verdict replaces the blocked
-        state: a pass unblocks the Automaton (status `prd_completed`), a block
-        keeps it `prd_blocked` with its blocked reason set from the new
-        verdict. No tasks are retried afterwards — a pass ends the Automaton
-        and a block waits for operator action again.
+        Runs a fresh completion review for an Automaton whose work is fully
+        done — every task in every story at `task_completed` — without
+        resetting or editing any task. It applies to a `prd_blocked`
+        record, a record held for rules review, and a completed or archived
+        record whose work is not yet merged into the base branch (merge state
+        `finished_not_merged`) and whose completion review is missing or
+        blocked. The review reads the current head commit of the
+        Automaton's working tree, starts a judge session on the configured
+        judge backends, and records a new verdict with its own
+        time and the commit it judged. For a blocked or held record the
+        verdict replaces the blocked state: a pass completes the Automaton
+        (status `prd_completed`), a block keeps it `prd_blocked` with its
+        blocked reason set from the new
+        verdict. For a completed or archived record a pass keeps the
+        record's finished status and clears the stale block records (the
+        blocked reason and the rules-review outcome) — a block flips the
+        record back to `prd_blocked` with the new reason. No tasks are retried
+        afterwards — a pass resolves the record and a block waits for
+        operator action again.
         The stored verdict is reused instead only when the head commit and the
         rules text the judge reads are both unchanged since it was made (and
         the judge verdict cache is on). The reply `message` (carried by the
@@ -5136,7 +5145,7 @@ paths:
                 backend: {type: string, description: "Optional judge backend reroute (the review state action `reroute`); empty = the resolved tier"}
       responses:
         "200": {description: "Rejudge complete. The reply message says whether a new review ran on the head commit (the new verdict and outcome are in the Automaton's decision log) or the stored verdict was reused because the head commit and the rules text are unchanged since it was made (no new review ran, no verdict added)"}
-        "400": {description: "Refused: unknown Automaton, not PRDBlocked, a task not completed (the message names the first offending task and its status), or no verdict was produced — each refusal says why"}
+        "400": {description: "Refused: unknown Automaton; an Automaton that is not eligible — rejudgment applies to a blocked record, a record held for rules review, or a completed or archived record whose work is not yet merged into the base branch and whose completion review is missing or blocked (each refusal says why that record is refused); a task not completed (the message names the first offending task and its status); or no verdict was produced"}
         "403": {description: "Federated peer lacks the autonomous write capability"}
         "405": {description: "POST-only action"}
 

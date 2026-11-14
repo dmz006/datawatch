@@ -380,8 +380,9 @@ fix the cause, then pick the route that matches the hold.
      - CLI: `datawatch autonomous prd-plan-review <id>`
      - Comm channel: `autonomous plan-review <id>`
    - **Guardrail hold on an Automaton or on one of its tasks or stories:** the
-     Automaton is in `needs_review`, and the rejudge action does not apply to
-     it, because rejudge only runs on a blocked Automaton. The reset action
+     Automaton is in `needs_review`. Rejudge accepts a held Automaton only
+     when its head has moved since the hold — on an unchanged head it refuses,
+     because the held verdict describes exactly that commit. The reset action
      `reset_task` does not accept a `needs_review` Automaton either, so cancel
      the Automaton first. Then reset the held task with `reset_task` (use
      `force` when the task shows as completed) and run the Automaton again, so
@@ -584,7 +585,7 @@ autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_
 - **A re-judged commit comes back with the same verdict in an instant.** The
   per-commit verdict cache replays a completed pass or block on an unchanged
   (commit, judge policy, rules) triple — that is the point, not a bug. For a
-  rejudge of a blocked Automaton the commit is the real branch head and the
+  rejudge the commit is the real branch head and the
   rules include the rules text, so commit the fix or edit the rules text the
   judge reads and the next rejudge judges again. If you want a fresh judgment
   without either, change the judge chain, or turn the cache off with

@@ -7,9 +7,20 @@
 // without resetting or editing any task.
 //
 // RejudgeCompletionGuardrail is deliberately narrow in what it accepts:
-// the PRD must exist, be PRDBlocked, and have EVERY task in EVERY story
-// at TaskCompleted (a re-judgment of "this work is done" is meaningless,
-// and possibly premature, while real work is still pending). It then runs
+// the PRD must exist, have every task terminal, and be one of:
+//   - PRDBlocked (work done, the verdict blocked);
+//   - PRDNeedsReview held by a rules-review retries-spent or
+//     auto-fix-disabled decision;
+//   - completed or archived (PRDCompleted or PRDArchived) with its work
+//     branch still carrying commits not on the base branch (its merge
+//     state is finished_not_merged) and its completion review missing or
+//     its last verdict a block. In that case the review re-runs once for
+//     the current head commit, and a pass clears the stale block records
+//     (BlockedReason, RulesReviewOutcome) while the record keeps its
+//     completed/archived status — a pass un-blocks the merge step, it
+//     does not un-archive a record.
+//
+// It then runs
 // the identical rules-review GuardrailInvocation the completion rollup
 // runs (prdRulesReviewInvocation) through the same
 // runGuardrailWithInfraRetry infra-retry wrapper that
@@ -132,12 +143,16 @@ func recordedVerdictMatching(prd *PRD, v GuardrailVerdict, sha, fingerprint stri
 }
 
 // RejudgeCompletionGuardrail re-runs the PRD-completion "rules-review"
-// judgment for a PRDBlocked PRD whose work is fully done, on an
+// judgment for a PRD whose work is fully done, on an
 // operator's behalf (actor is recorded as the "guardrail_rejudge"
 // Decision's Actor, not hardcoded to "autonomous"). It refuses — with a
-// clear error, and no side effects on any task (never a ResetTask, never
-// a status change) — when the PRD does not exist, is not PRDBlocked, or
-// has any task not at TaskCompleted; the last case names the first
+// clear error — states outside "PRDBlocked, a PRDNeedsReview hold by the
+// rules review, or a completed/archived PRD whose work is not yet merged
+// into the base branch (merge state finished_not_merged) and whose
+// completion review is missing or blocked", with no side effects on any
+// task (never a ResetTask, never a status change); a record whose
+// completion review already passed, and one with any task not
+// completed-or-cancelled, are both refused, the latter naming the first
 // offending task's id and status.
 //
 // Outcome handling, in order:
@@ -150,17 +165,23 @@ func recordedVerdictMatching(prd *PRD, v GuardrailVerdict, sha, fingerprint stri
 //     carrying the same verdict detail (outcome, category, summary,
 //     judge session or backend) the guardrail_verdict Decision does.
 //  3. Pass (Outcome != "block") — the verdict is appended to
-//     prd.Verdicts and Status is set to PRDCompleted with BlockedReason
-//     cleared in ONE store commit, through CommitPRDIfRev with the same
-//     re-checks commitRollupStatus uses (still PRDBlocked, every task
-//     still terminal, under the store lock), then emitPRDStatus fires
+//     prd.Verdicts and the block records are cleared (BlockedReason,
+//     RulesReviewOutcome) in ONE store commit;
+//     Status is then lifted to PRDCompleted (a record that was already
+//     completed or archived keeps that status) — through
+//     CommitPRDIfRev with the same re-checks commitRollupStatus uses
+//     (the pass did not rewrite the status, every task still terminal,
+//     under the store lock), then emitPRDStatus fires
 //     with the "guardrail_rejudge" Decision attached.
-//  4. Block — Status stays PRDBlocked, BlockedReason is set with
-//     blockedReasonFor(v), and the event carries the last block verdict.
+//  4. Block — the verdict flips the PRD to PRDBlocked with BlockedReason
+//     set from blockedReasonFor(v) (a completed or archived record is
+//     flipped back to blocked — the work is still not judged clean, and
+//     a later pass lifts it again), and the event
+//     carries the last block verdict.
 //  5. No verdict (the judge errored, or returned an empty Outcome) — a
 //     "guardrail_rejudge" Decision notes that no verdict was produced,
-//     the PRD keeps its PRDBlocked status and its previous
-//     BlockedReason, and an error is returned so the operator sees the
+//     the PRD's current status and BlockedReason are untouched, and an
+//     error is returned so the operator sees the
 //     re-judge failed.
 //
 // backend selects the judge backend for the re-judgment (a reroute, see
@@ -172,12 +193,39 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 	origStatus := prd.Status
 	heldReview := false
+	// A finished record (completed or archived) is re-judged only when
+	// its work has not landed and its review never passed on the current
+	// head; the merge state is derived on read (never persisted) and the
+	// verdict gate asks the append-only verdict log of the Automaton.
+	finished := origStatus == PRDCompleted || origStatus == PRDArchived
+	finishedNotMerged := false
+	if finished {
+		finishedNotMerged = m.AutomatonMergeState(prd) == MergeStateFinishedNotMerged
+	}
 	switch {
 	case prd.Status == PRDBlocked:
 	case prd.Status == PRDNeedsReview && rulesReviewHoldIsLast(prd):
 		heldReview = true
+	case prd.Status == PRDCompleted || prd.Status == PRDArchived:
+		if finishedNotMerged && rulesReviewVerdictPendingOrBlocked(prd) {
+			// finished_not_merged with the review missing or its last
+			// verdict a block: re-run the review once for the current head
+			// commit; a pass clears the stale block records (the record
+			// keeps its completed/archived status).
+			break
+		}
+		if finishedNotMerged {
+			// The last rules-review verdict passed (pass or warn): the
+			// work is already judged clean at some head — re-judging has
+			// nothing to un-block.
+			last := lastRulesReviewVerdict(prd)
+			return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s and its completion review already passed (last verdict %s, made %s); there is no block left to clear", prd.ID, prd.Status, last.Outcome, last.VerdictAt.Format(time.RFC3339))
+		}
+		// Work already landed on the base branch, or the merge state is
+		// undetermined: nothing unmerged for the review to clear.
+		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s but its work is already on the base branch or its merge state is undetermined; rejudgment of a finished record applies only when its merge state is finished_not_merged", prd.ID, prd.Status)
 	default:
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD or a PRDNeedsReview PRD held by a rules-review retries-spent or auto-fix-disabled decision", prd.ID, prd.Status)
+		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not eligible; rejudgment applies to a blocked PRD, a PRD held for review by the rules review, or a completed or archived PRD whose work is not yet merged into the base branch and whose completion review is missing or blocked", prd.ID, prd.Status)
 	}
 	if storyID, taskID, status := firstBlockingTask(prd); taskID != "" {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s task %s (story %s) is %s, not completed; every task must be completed or cancelled, with at least one completed, before the completion guardrail can be re-run", prd.ID, taskID, storyID, status)
@@ -188,7 +236,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 
 	// No-verdict path (the judge errored, or returned an empty outcome):
 	// record a "guardrail_rejudge" Decision stating no verdict was
-	// produced, keep the PRD blocked with its previous BlockedReason
+	// produced, keep the PRD's current status and BlockedReason
 	// untouched, and return an error so the operator sees the re-judge
 	// did not yield a judgment.
 	var headSHA, fingerprint string
@@ -353,11 +401,21 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 
 	if v.Outcome != "block" {
-		// Pass — verdict + "guardrail_rejudge" Decision + status +
-		// cleared reason in ONE conditional commit, the same
+		// Pass — verdict + "guardrail_rejudge" Decision + cleared block
+		// records in ONE conditional commit, the same
 		// CommitPRDIfRev pattern commitRollupStatus uses: only if nobody
 		// rewrote the PRD since this pass observed it and every task is
 		// still terminal (re-checked under the store lock).
+		//
+		// A blocked or held record is lifted to PRDCompleted; a record
+		// that is already completed or archived keeps that status — the
+		// pass clears the stale block it recorded (BlockedReason and the
+		// structured RulesReviewOutcome), which is what the merge step
+		// keys off.
+		passStatus := PRDCompleted
+		if origStatus == PRDArchived {
+			passStatus = PRDArchived
+		}
 		rev, ok := m.store.PRDRev(prd.ID)
 		if !ok {
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %q not found", prdID)
@@ -370,11 +428,12 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 				p.Verdicts = append(p.Verdicts, v)
 			}
 			p.Decisions = append(p.Decisions, rej)
-			p.Status = PRDCompleted
+			p.Status = passStatus
 			p.BlockedReason = ""
+			p.RulesReviewOutcome = nil
 			return true
 		}); cerr != nil {
-			return nil, fmt.Errorf("rejudge completion guardrail: prd %s: commit PRDCompleted: %w", prd.ID, cerr)
+			return nil, fmt.Errorf("rejudge completion guardrail: prd %s: commit re-judgment pass: %w", prd.ID, cerr)
 		}
 		old := origStatus
 		m.store.WithLock(func() {
@@ -382,8 +441,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 				prd.Verdicts = append(prd.Verdicts, v)
 			}
 			prd.Decisions = append(prd.Decisions, rej)
-			prd.Status = PRDCompleted
+			prd.Status = passStatus
 			prd.BlockedReason = ""
+			prd.RulesReviewOutcome = nil
 		})
 		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), nil)
 		m.recordProgressMilestone(prd.ID)
@@ -391,9 +451,13 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 
 	// Block — the same PRDBlocked signal the completion rollup uses: the
-	// verdict goes on prd.Verdicts and the reason on BlockedReason in
-	// the one save (Status is already PRDBlocked, so SavePRD's
-	// clearStaleBlockedReason leaves the new reason in place).
+	// verdict goes on prd.Verdicts and the reason on BlockedReason in the
+	// one save (SavePRD's clearStaleBlockedReason leaves a fresh reason
+	// in place only while the status is blocked, and drops a stale one —
+	// the exact hygiene for the finished-record case, whose stale reason
+	// would otherwise survive the save). A block flips a completed or
+	// archived record back to blocked: the work is still not judged
+	// clean, and a pass on a later re-judgment is what lifts it again.
 	var old PRDStatus
 	m.store.WithLock(func() {
 		old = prd.Status
@@ -426,4 +490,28 @@ func rulesReviewHoldIsLast(prd *PRD) bool {
 		}
 	}
 	return false
+}
+
+// lastRulesReviewVerdict is the newest Automaton-level verdict of the
+// "rules-review" guardrail (PRD.Verdicts holds the Automaton-level
+// verdicts; task-level verdicts live on the task record), or nil when the
+// Automaton's completion review never ran to a verdict.
+func lastRulesReviewVerdict(prd *PRD) *GuardrailVerdict {
+	for i := len(prd.Verdicts) - 1; i >= 0; i-- {
+		if prd.Verdicts[i].Guardrail == "rules-review" {
+			return &prd.Verdicts[i]
+		}
+	}
+	return nil
+}
+
+// rulesReviewVerdictPendingOrBlocked reports whether, as far as the
+// Automaton-level verdict log shows, the completion review is pending
+// (no rules-review verdict recorded on the Automaton yet) or blocked
+// (the newest rules-review verdict is a block). A newest verdict that
+// passed (pass or warn) means the review is settled and a re-judgment
+// has nothing left to clear.
+func rulesReviewVerdictPendingOrBlocked(prd *PRD) bool {
+	v := lastRulesReviewVerdict(prd)
+	return v == nil || v.Outcome == "block"
 }
