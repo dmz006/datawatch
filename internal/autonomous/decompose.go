@@ -389,7 +389,54 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 		}
 	}
 	applyWorkerProfileLines(doc.Stories)
+	applyBackendLines(doc.Stories)
 	return doc.Title, doc.Stories, nil
+}
+
+// backendLinePrefix is the key a task spec uses to name the worker backend it
+// must run on. The key is case-sensitive.
+const backendLinePrefix = "backend:"
+
+// ParseBackendLine returns the backend name from the first line of spec that
+// is exactly 'backend: <name>' once surrounding whitespace is trimmed. It
+// reports false when no such line exists, or when the name is empty or holds
+// internal whitespace.
+func ParseBackendLine(spec string) (string, bool) {
+	for _, line := range strings.Split(spec, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, backendLinePrefix) {
+			continue
+		}
+		rest := line[len(backendLinePrefix):]
+		if !strings.HasPrefix(rest, " ") {
+			continue
+		}
+		name := strings.TrimSpace(rest)
+		if name == "" || strings.ContainsAny(name, " \t") {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+// applyBackendLines copies each task's backend line into its Backend field,
+// the only way a planned task gets a backend of its own besides a "backend"
+// key in the task JSON. A field that is already set keeps its value. A task
+// that names no backend is left empty and inherits the story, then the
+// Automaton setting, at run time.
+func applyBackendLines(stories []Story) {
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			t := &stories[si].Tasks[ti]
+			if t.Backend != "" {
+				continue
+			}
+			if name, ok := ParseBackendLine(t.Spec); ok {
+				t.Backend = name
+			}
+		}
+	}
 }
 
 // workerProfileLinePrefix is the key a task spec uses to name its worker

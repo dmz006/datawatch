@@ -3205,7 +3205,7 @@ A **task type** is the class a task is sorted into so the task-routing table can
 
 ### Task routing table
 
-The **task routing table** is the set of rows, kept in named profiles, that maps each task type to the worker LLM and verification LLM a newly created task starts with. It is off by default and is read when a task is created, by the planner and by the add-task path. An LLM set on the task, its story or its Automaton always wins over a row. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
+The **task routing table** is the set of rows, kept in named profiles, that maps each task type to the effort and verification LLM a newly created task starts with. It is off by default and is read when a task is created, by the planner and by the add-task path. The planner never writes a worker backend or model onto a task: a task has its own backend only when its task JSON or its spec (a line `backend: <name>`) names one, and otherwise runs on its story's, then its Automaton's, setting. An LLM set on the task, its story or its Automaton always wins over a row. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
 
 ### Task routing profile
 
