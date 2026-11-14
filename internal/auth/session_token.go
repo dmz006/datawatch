@@ -11,6 +11,23 @@
 // of being relaunched. The store is persisted to a 0600 JSON file under
 // DataDir and reloaded at construction so an already-minted token for
 // an already-running session stays valid.
+//
+// Expiry: a record may optionally carry ExpiresAt. Zero means no expiry
+// (as for tokens minted before expiring tokens existed, or minted via
+// Mint, which still produces non-expiring credentials). MintScoped sets
+// ExpiresAt to now+ttl, so the daemon can hand a launched tool a
+// short-lived credential that stops resolving once it lapses. A token
+// whose ExpiresAt is set and not after the current time is treated as
+// unknown by CapsForToken/SessionIDForToken, and SweepOrphans removes
+// every expired record regardless of owner.
+//
+// Reserved owner prefix: Mint/Revoke/Sweep are keyed on the record's
+// owner id — a session id for ordinary tokens, but any owner id for
+// scoped ones. InstanceTokenOwnerPrefix ("instance:") is reserved for
+// credentials not tied to one session (e.g. a tool handed an
+// instance-scoped short-lived token); SweepOrphans keeps an unexpired
+// record whose owner id carries that prefix even though it is not in
+// the active session list.
 package auth
 
 import (
@@ -21,14 +38,29 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 )
+
+// InstanceTokenOwnerPrefix is the reserved owner-id prefix for scoped
+// credentials that are not tied to one session (a tool credential minted
+// for the instance as a whole, say, not for a specific session).
+// SweepOrphans keeps an unexpired record whose SessionID (owner id) has
+// this prefix even though it cannot appear in the active session list.
+const InstanceTokenOwnerPrefix = "instance:"
 
 // SessionTokenRecord is one session's current scoped credential.
 type SessionTokenRecord struct {
 	SessionID string   `json:"session_id"`
 	Token     string   `json:"token"`
 	Caps      []string `json:"caps"`
+	// ExpiresAt, when set, is the time after this token no longer
+	// resolves. Zero means no expiry (the default, and the only value
+	// produced by Mint and by store files written before expiring
+	// tokens existed). JSON-omitted when zero so legacy files keep their
+	// exact shape.
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 }
 
 // SessionTokenStore holds, at most, one active token per session.
@@ -39,6 +71,7 @@ type SessionTokenStore struct {
 	path      string
 	byToken   map[string]*SessionTokenRecord // token -> record
 	bySession map[string]string              // sessionID -> token
+	now       func() time.Time               // injectable clock; time.Now by default
 }
 
 // NewSessionTokenStore loads the store at path (creating an empty one
@@ -48,6 +81,7 @@ func NewSessionTokenStore(path string) (*SessionTokenStore, error) {
 		path:      path,
 		byToken:   map[string]*SessionTokenRecord{},
 		bySession: map[string]string{},
+		now:       time.Now,
 	}
 	if path == "" {
 		return s, nil // in-memory only (tests)
@@ -95,31 +129,70 @@ func (s *SessionTokenStore) Mint(sessionID string, caps []string) (string, error
 	return tok, nil
 }
 
+// MintScoped issues a new 256-bit token for ownerID scoped to caps
+// that expires after ttl, superseding (and removing) any prior token
+// for that owner id exactly as Mint does. A scoped token must expire:
+// a ttl <= 0 is an error. ownerID may be a session id or a reserved
+// owner id such as InstanceTokenOwnerPrefix for a credential that is
+// not tied to one session.
+func (s *SessionTokenStore) MintScoped(ownerID string, caps []string, ttl time.Duration) (string, error) {
+	if ttl <= 0 {
+		return "", fmt.Errorf("mint scoped token: ttl must be positive, got %s", ttl)
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("mint scoped token: %w", err)
+	}
+	tok := hex.EncodeToString(buf)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.bySession[ownerID]; ok {
+		delete(s.byToken, old)
+	}
+	rec := &SessionTokenRecord{SessionID: ownerID, Token: tok, Caps: caps, ExpiresAt: s.now().Add(ttl)}
+	s.byToken[tok] = rec
+	s.bySession[ownerID] = tok
+	if err := s.persistLocked(); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+// expired reports whether the record carries an expiry that is
+// (inclusively) already due. Callers need not hold s.mu; the record
+// pointer comes from the store's own maps.
+func (s *SessionTokenStore) expired(r *SessionTokenRecord) bool {
+	return !r.ExpiresAt.IsZero() && !r.ExpiresAt.After(s.now())
+}
+
 // CapsForToken resolves a bearer token to its session's capability
-// list. ok is false for an unknown/revoked token.
+// list. ok is false for an unknown, revoked, or expired token.
 func (s *SessionTokenStore) CapsForToken(tok string) ([]string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	r, ok := s.byToken[tok]
-	if !ok {
+	if !ok || s.expired(r) {
 		return nil, false
 	}
 	return r.Caps, true
 }
 
 // SessionIDForToken returns which session a token belongs to, or ""
-// if unknown. Used for audit/attribution.
+// if unknown or expired. Used for audit/attribution.
 func (s *SessionTokenStore) SessionIDForToken(tok string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if r, ok := s.byToken[tok]; ok {
+	if r, ok := s.byToken[tok]; ok && !s.expired(r) {
 		return r.SessionID
 	}
 	return ""
 }
 
-// Revoke invalidates sessionID's token immediately (session kill,
-// stop_all_sessions). Idempotent.
+// Revoke invalidates ownerID's token immediately (session kill,
+// stop_all_sessions). It works for any owner id minted via Mint or
+// MintScoped, including reserved prefix ids such as
+// InstanceTokenOwnerPrefix. Idempotent.
 func (s *SessionTokenStore) Revoke(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -134,8 +207,14 @@ func (s *SessionTokenStore) Revoke(sessionID string) error {
 
 // SweepOrphans removes tokens for sessions no longer present in
 // activeSessionIDs (a snapshot from session.Manager.ListSessions()).
-// Returns the number of records removed. Call periodically and once
-// right after startup reconciliation completes.
+// It also removes every record whose expiry is already due, of any
+// owner (including instance-owner and active-session ones); both kinds
+// of removal count in the returned total. An unexpired record whose
+// owner id is a reserved id with the InstanceTokenOwnerPrefix (a
+// credential not tied to one session) is kept even though it cannot be
+// in the active session list. Returns the number of records removed.
+// Call periodically and once right after startup reconciliation
+// completes.
 func (s *SessionTokenStore) SweepOrphans(activeSessionIDs []string) (int, error) {
 	active := make(map[string]struct{}, len(activeSessionIDs))
 	for _, id := range activeSessionIDs {
@@ -145,7 +224,17 @@ func (s *SessionTokenStore) SweepOrphans(activeSessionIDs []string) (int, error)
 	defer s.mu.Unlock()
 	swept := 0
 	for sessionID, tok := range s.bySession {
+		r := s.byToken[tok]
+		if s.expired(r) {
+			delete(s.byToken, tok)
+			delete(s.bySession, sessionID)
+			swept++
+			continue
+		}
 		if _, ok := active[sessionID]; ok {
+			continue
+		}
+		if strings.HasPrefix(sessionID, InstanceTokenOwnerPrefix) {
 			continue
 		}
 		delete(s.byToken, tok)
