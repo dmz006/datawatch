@@ -352,18 +352,101 @@ unstarted or paused Automaton, a tree lock) does not use up the timeout.
 
 ### Pool fall-through
 
+> **Operator review:** fall-through is off by default. Before turning it on, review which LLM entries you mark as **Allowed fall-through target**, since a waiting worker may then run on any of them. The glossary entries are in [glossary.md](../glossary.md#pool-fall-through).
+
 By default a task always waits for its own pool, explicit backend or not.
 Turn on `autonomous.capacity_fallthrough` (default off) and a worker task
 whose requested pool cannot be granted right now is admitted on another
 allowed backend and model that has room, instead of waiting. The first
 alternate the ledger would grant wins, in preference order. If the
 requested pool has room, or no alternate does, nothing changes and the task
-waits as usual. Only worker tasks fall through; verifiers do not.
+waits as usual. Only worker tasks fall through; verifiers, judges and
+planners do not.
+
+The requested pool is the one the task's **effective backend** maps to. The
+backend is resolved in this order: task, story, PRD, Automaton, the
+Automaton's lane preference (the Claude or GPU lane backend), then the
+daemon default (`execution_backend`). A task that falls back to its lane
+preference is judged against that lane's pool, not the daemon default's.
+
+The alternates for a task requested on a backend and model, in order:
+
+1. **The lane fill pair.** The other of the Claude lane backend and the GPU
+   lane backend from `autonomous.lane_fill` (`claude_backend`,
+   `gpu_backend`), on that backend's default model. For the GPU lanes that
+   is `autonomous.lane_fill.gpu_model` when set, otherwise the entry's own
+   model. A task on neither lane backend has no lane fill pair.
+2. **Entries you marked.** Every LLM entry with **Allowed fall-through
+   target** switched on, in name order. The task keeps its model when the
+   entry serves it; otherwise it runs on the entry's default model. An entry
+   is never a target until you mark it.
+
+The ledger is asked about the alternates in that order and the first one
+it would grant wins, so a lane fill pair with room is always preferred to a
+marked entry. An alternate is skipped when:
+
+- its backend is **disabled**,
+- it is already at its **in-flight cap**, or
+- it **cannot serve the model** it would run.
+
+The requested backend and model are never their own alternate. Only a worker
+task falls through: a **verifier never falls through** (nor does a judge or
+a planner), because it must run on the backend it was resolved to. A worker
+pinned to a compute node does not fall through either, since the alternate
+would be placed without the pin.
+
+Mark an entry as a target on any surface:
+
+| Method | How |
+|--------|-----|
+| **YAML** | `fallthrough_target: true` on the entry in the `llms:` list |
+| **CLI** | `datawatch llm update <name> --fallthrough-target` (`--fallthrough-target=false` clears it; leaving the flag off keeps the stored value) |
+| **Web UI** | Settings, LLM, edit an entry, **Allowed fall-through target** |
+| **REST API** | `PUT /api/llms/<name>` with `{"fallthrough_target": true}` (omit to keep the stored value) |
+| **MCP** | `llm_update` or `llm_add` with `fallthrough_target=true` |
+| **Comm channel** | `llm update <name> fallthrough_target=true` |
+
+#### Tasks that are already waiting
+
+A task that is already waiting looks again on every wait pass (about once a
+second), reading the setting from the live config each time. Turning
+`autonomous.capacity_fallthrough` on therefore admits the tasks that are
+waiting now, with no restart and no re-queue, as soon as an alternate has
+room; the task keeps its place and its wait timeout. Marking an LLM entry as
+a target, or changing the lane fill backends, is picked up the same way on
+the next pass. Turning the setting off stops further fall-throughs; a task
+already admitted on an alternate keeps it.
+
+#### Explicit backends
+
+A backend set explicitly on the task, story, PRD or Automaton is not
+protected from fall-through. It is held to the same rule as every other
+worker: it waits for its own pool while the setting is off, and falls
+through only while the setting is on. Check the audit note to see whether it
+happened: an explicit backend that fell through has a note ending
+`; explicit backend; fall-through setting on`. A task whose backend came
+from the Automaton's lane preference or the daemon default is not explicit,
+and its note has no such ending.
+
+#### Audit fields
 
 A task that fell through leaves an `autonomous_capacity_admitted` audit
-entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as
-`fell through from claude-code/sonnet to ollama/qwen: requested pool full,
-alternate idle`.
+entry for the task, and the daemon log carries the same note on one line.
+The entry has these fields:
+
+| Field | Meaning |
+|---|---|
+| `fall_through` | `true`; this is what tells a fall-through entry from a plain admission |
+| `from_pools` | the pools the task asked for (sorted), for example `llm:claude-code` |
+| `to_pools` | the pools the task was admitted on (sorted), for example `llm:ollama`, `node:gpu-1` |
+| `note` | what happened in one sentence, for example `fell through from claude-code/sonnet to ollama/qwen: requested pool full, alternate idle` |
+
+The entry also carries `pools` (the same as `to_pools`), `task_id`,
+`task_title`, `prd_id` and `prd_title`. A task that had waited first also
+gets the usual plain `autonomous_capacity_admitted` entry with
+`waited_seconds` beside it. List the fall-throughs with
+`audit_query` for `autonomous_capacity_admitted` and look for
+`fall_through`.
 
 Set it on any surface:
 
@@ -1104,7 +1187,7 @@ the cause changes.
 | Action | Actor | Subject | Values |
 |---|---|---|---|
 | `autonomous_capacity_wait` | `autonomous` | the task id | `prd_id`, `cause`, `reason` (the full wait text), `pools` (sorted) |
-| `autonomous_capacity_admitted` | `autonomous` | the task id | `waited_seconds`, `pools` |
+| `autonomous_capacity_admitted` | `autonomous` | the task id | `waited_seconds`, `pools`; for a fall-through also `fall_through`, `from_pools`, `to_pools`, `note` (see [Pool fall-through](#pool-fall-through)) |
 | `autonomous_usage_backoff_set` | `autonomous` for a rate limit, `operator` (or the caller's own actor) for a flag set by hand | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`) |
 | `autonomous_usage_backoff_cleared` | `operator` (or the caller's own actor) | the backend, or `all` | `backend` |
 | `autonomous_usage_backoff_auto_cleared` | `autonomous` | the backend | `backend`, `until` (RFC 3339) |

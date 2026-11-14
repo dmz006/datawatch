@@ -1071,6 +1071,18 @@ func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 // they may call back into the ledger; the Options functions are not so
 // lucky (see Options).
 func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string)) error {
+	return l.AcquireRechecking(ctx, req, timeout, cancelled, onWait, nil)
+}
+
+// AcquireRechecking is Acquire with a per-pass recheck. On every wait pass
+// (each poll tick, after the cancelled check and before the re-dispatch) it
+// calls recheck without the ledger lock held; when recheck returns a request
+// and true, the waiting request is retargeted in place onto it (Retarget: the
+// queue position, wait start and timeout bound are kept, and a placement with
+// room is granted in that same pass). It lets a caller move a task that is
+// already waiting when something it reads has changed since it was queued,
+// without re-queueing it. A nil recheck is plain Acquire.
+func (l *Ledger) AcquireRechecking(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string), recheck func() (Request, bool)) error {
 	l.mu.Lock()
 	if _, held := l.leases[req.Holder]; held {
 		l.mu.Unlock()
@@ -1124,6 +1136,11 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			if cancelled != nil && cancelled() {
 				l.remove(w)
 				return context.Canceled
+			}
+			if recheck != nil {
+				if moved, ok := recheck(); ok {
+					l.Retarget(req.Holder, moved)
+				}
 			}
 			l.mu.Lock()
 			l.dispatchLocked()

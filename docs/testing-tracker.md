@@ -6036,3 +6036,45 @@ The daemon repairs, or cleanly resolves, the basic stuck states the supervisor w
 | Config: comm configure, MCP config_set and CLI config set | `TestHousekeepingRepairs_ConfigurePassesKeysAndShowsRefusal`, `TestHousekeepingRepairs_ConfigSetSendsAndShowsRefusal`, `TestHousekeepingRepairsConfigSetThenGetReadsBack`, `TestHousekeepingRepairsConfigSetRefusesInvalidValues` | `env -u TMUX -u TMUX_TMPDIR go test ./internal/router/ ./internal/mcp/ ./cmd/datawatch/ -count=1 -run 'HousekeepingRepairs'` | Each surface carries the key to PUT /api/config and shows the same refusal text; the CLI reads a set value back and a refused set leaves the stored value unchanged | Go unit | **Yes** | Pass | No | The daemon end is a fake that runs the shared validator |
 | Settings select fields and locale keys | `internal/server/web/app-housekeeping-repairs-card.test.js`, `TestLocales_*` (`internal/server/v5280_locales_test.go`) | `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/*.test.js` and `go test ./internal/server/ -run 'TestLocales'` | The four select fields and the card render; every `settings_housekeeping_*` and `housekeeping_repairs_*` key is in the must-have list for the five bundles | Node, Go unit | **Yes** | Pass | No | |
 | Live smoke section | `scripts/release-smoke.sh`, section "Housekeeping repairs" | `bash scripts/release-smoke.sh` | The read answers 200 with four groups and known modes, POST is 405, a bad mode is refused with a 400 naming the key and a mode set to report reads back (scratch daemon only) | Script | **No** (`bash -n` only) | Not run | No | Run on an isolated test daemon at release time; see the change notes for the live check made on the running daemon |
+
+## Requested capacity pool follows the effective worker — unreleased
+
+Tests that the pool a worker task asks for is the pool of its effective backend: task, story, PRD, Automaton, then the Automaton's lane preference, then the daemon default. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous -count=1 -run 'RequestedPool'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| A task, Automaton and lane preference all set to Claude request and hold the Claude pool while the daemon default is pi-prompt | **Yes** | **No** | `TestRequestedPool_ExplicitClaudeRequestsClaudePool` (`internal/autonomous/capacity_requested_pool_test.go`): fake ledger with one slot per pool, fake spawn, full executor run | Capacity is never asked about pi-prompt. No live daemon run. |
+| An Automaton that prefers the Claude lane and names no worker requests the Claude pool, not the default's | **Yes** | **No** | `TestRequestedPool_ClaudeLanePreferenceDecidesPoolOverDefault`, same file and fixture | Fails without the lane-preference level. |
+| A task with no Claude setting keeps the pool of the daemon default | **Yes** | **No** | `TestRequestedPool_NoClaudeSettingKeepsExistingPool`, same file and fixture | Capacity is never asked about claude-code. |
+| Fallback level: claude and gpu preference pick the lane backend, any or none keeps the default, a named worker still wins | **Yes** | **No** | `TestRequestedPool_ExecutionFallbackBackend`, same file | Unit level. |
+
+## Pool fall-through alternates and the LLM `fallthrough_target` mark — unreleased
+
+Tests the resolver that lists the other backend and model pairs a worker may fall through to, and the new per-entry `fallthrough_target` setting on every surface. Run with `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch ./internal/autonomous ./internal/inference ./internal/mcp ./internal/router ./internal/server -count=1 -run 'CapacityAlternates|FallthroughTarget|PoolFallthrough'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Alternates in preference order: the other lane fill backend first (both directions), then marked entries in name order | **Yes** | **No** | `TestCapacityAlternates_LaneFillPairBothDirections`, `_GPUModelFromLaneFillConfig`, `_PreferenceOrder_LaneFillThenMarked` (`cmd/datawatch/capacity_alternates_test.go`): fake entries, cap source and in-flight counts | No daemon needed. |
+| Skip rules: disabled backend, backend at its in-flight cap, model the entry does not serve, the requested pair itself; marked entry listed, unmarked entry not | **Yes** | **No** | `TestCapacityAlternates_DisabledBackendSkipped`, `_OverCapBackendSkipped`, `_UnlimitedCapNeverOver`, `_ModelNotServedSkipped`, `_RequestedPairSkipped`, `_MarkedEntryIncluded_UnmarkedExcluded`, `_MarkedEntryUsesRequestedModelWhenServed`, `_LiveMarkApplies`, same file | A mark change applies on the next call. |
+| Verifier, judge and planner requests never fall through | **Yes** | **No** | `TestPoolFallthrough_NonWorkerRolesNeverFallThrough` (`internal/autonomous/pool_fallthrough_test.go`) | Guard in `pickFallthrough`. |
+| REST `POST`/`PUT /api/llms` `fallthrough_target`: stored on create, kept when omitted on update, cleared by false | **Yes** | **No** | `TestLLMFallthroughTargetRESTRoundTrip` (`internal/server/llm_fallthrough_target_test.go`) | The field is a plain boolean on the entry; it is omitted from the entry while false. |
+| Entry field default false, JSON and YAML round trip | **Yes** | **No** | `TestLLM_FallthroughTargetDefaultsFalseAndRoundTrips` (`internal/inference/llm_test.go`) | — |
+| MCP `llm_add` / `llm_update` `fallthrough_target` | **Yes** | **No** | `TestLLMBody_FallthroughTarget` (`internal/mcp/capacity_tools_test.go`) | Absent stays absent. |
+| CLI `datawatch llm add|update --fallthrough-target` | **Yes** | **No** | `TestLLMFallthroughTargetFlag` (`cmd/datawatch/cli_llm_fallthrough_target_test.go`) | Sent only when the flag is passed. |
+| Comm channel `llm add|update <name> fallthrough_target=` | **Yes** | **No** | `TestParseLLMKVPairs_FallthroughTarget`, `TestLLMUsage_NamesFallthroughTarget` (`internal/router/llm_fallthrough_target_comm_test.go`) | — |
+| Web app LLM edit forms: **Allowed fall-through target** switch (inline form and modal) and the five locale bundles | **Yes** | **No** | `internal/server/web/app-llm-fallthrough-target.test.js` (`node --test`) | Source and sandbox level; no browser pass yet. |
+
+## Pool fall-through re-evaluated on every wait pass — unreleased
+
+Tests that a worker already waiting for capacity re-reads `autonomous.capacity_fallthrough` on each wait pass and is admitted on an idle alternate when the setting is turned on mid-wait, and that the audit entry carries `fall_through`, `from_pools`, `to_pools` and a note. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous ./internal/capacity -count=1 -run 'CapacityFallthrough|PoolFallthrough|AcquireRechecking'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Fall-through admits on the idle pool; the audit entry has `fall_through`, `from_pools`, `to_pools` and a note | **Yes** | **No** | `TestCapacityFallthrough_AdmitsOnIdlePoolWithAuditDetails` (`internal/autonomous/capacity_fallthrough_test.go`): fake ledger on a manual clock, llm:a held, llm:b idle | No live daemon run. |
+| A full alternate is skipped for the next one | **Yes** | **No** | `TestCapacityFallthrough_FullAlternateIsSkippedForTheNext`, same file | Alternates b (full) then c (idle). |
+| A verifier or planner waits and never falls through, across several wait passes | **Yes** | **No** | `TestCapacityFallthrough_VerifierWaitsAndNeverFallsThrough`, same file | Setting on, alternate idle, three passes. |
+| An already-waiting task falls through after the setting is turned on mid-wait | **Yes** | **No** | `TestCapacityFallthrough_WaitingTaskFallsThroughWhenSettingTurnedOnMidWait`, same file | One admit call; the setting is changed with `SetConfig`. Fails when the per-pass recheck is disabled. |
+| A waiting task with the setting on but a full alternate keeps waiting and is admitted on its own pool | **Yes** | **No** | `TestCapacityFallthrough_SettingOnWithFullAlternateKeepsWaiting`, same file | |
+| An explicit-backend task waits with the setting off and falls through, with the explicit note, with it on; PRD-level explicit backend notes on the first pass | **Yes** | **No** | `TestCapacityFallthrough_ExplicitBackendWaitsOffAndFallsThroughOn`, `_ExplicitBackendNoteOnFirstPass`, same file | |
+| Explicit-backend levels: task, story, PRD, Automaton; none is not explicit | **Yes** | **No** | `TestCapacityFallthrough_HasExplicitBackendLevels`, same file | |
+| Ledger per-pass recheck: retargets and grants a waiter, keeps the wait bound, nil recheck is plain Acquire | **Yes** | **No** | `TestAcquireRechecking_*` (`internal/capacity/ledger_recheck_test.go`): manual clock | |

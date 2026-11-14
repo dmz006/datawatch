@@ -13899,6 +13899,9 @@ components:
         enabled: {type: boolean}
         plan_tier: {type: string}
         max_inflight: {type: integer, nullable: true}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target. When autonomous.capacity_fallthrough is on and a worker's requested pool is full, the daemon may admit the worker on this entry. Default false; omitted from the entry while false.
         roles:
           type: array
           items: {type: string}
@@ -13914,6 +13917,9 @@ components:
       properties:
         name: {type: string}
         kind: {type: string}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target (default false). On update, omit to keep the stored value; false clears it.
         roles:
           type: array
           items: {type: string}

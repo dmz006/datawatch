@@ -108,6 +108,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		billingMode                                      string
 		maxInflight                                      int
 		roles                                            []string
+		fallthroughTarget                                bool
 	)
 	use := "add <name>"
 	short := "Add a new LLM"
@@ -161,6 +162,11 @@ func newLLMAddCmd(update bool) *cobra.Command {
 			}
 			if budgetSet {
 				body["budget"] = budget
+			}
+			// fallthrough_target — only sent when the flag is passed: absent =
+			// keep the stored value, --fallthrough-target=false = clear it.
+			if rcmd.Flags().Changed("fallthrough-target") {
+				body["fallthrough_target"] = fallthroughTarget
 			}
 			if rcmd.Flags().Changed("role") {
 				body["roles"] = llmRolesFromFlag(roles)
@@ -284,6 +290,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&billingGroup, "billing-group", "", "label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group; empty = clears on update)")
 	addLLMBudgetFlags(cmd)
 	cmd.Flags().StringArrayVar(&roles, "role", nil, "workload role this LLM serves (repeatable). On update, omitting --role keeps the stored roles; a single empty --role=\"\" clears them")
+	cmd.Flags().BoolVar(&fallthroughTarget, "fallthrough-target", false, "allow autonomous workers to fall through to this LLM when their requested pool is full (needs autonomous.capacity_fallthrough on; default false; omit on update to keep the stored value, --fallthrough-target=false clears it)")
 	cmd.Flags().IntVar(&maxInflight, "max-inflight", 0, "explicit inflight cap on this LLM (>= 0; 0 = use the plan_tier table or the kind default; > 0 wins over both)")
 	return cmd
 }

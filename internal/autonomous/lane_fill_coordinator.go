@@ -608,18 +608,18 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 
 // workerBackend resolves the Automaton's effective worker backend with the
 // resolver the executor uses.
-func (c *Coordinator) laneFillWorkerBackend(r laneFillRaw, execution string) string {
+func (c *Coordinator) laneFillWorkerBackend(r laneFillRaw, mcfg Config) string {
 	var story *Story
 	if r.workerStoryBackend != "" || r.workerStoryModel != "" {
 		story = &Story{Backend: r.workerStoryBackend, Model: r.workerStoryModel}
 	}
 	task := r.worker
-	prd := &PRD{ID: r.id, Backend: r.backend, Model: r.model}
+	prd := &PRD{ID: r.id, Backend: r.backend, Model: r.model, LanePreference: r.pref}
 	var auto *Automation
 	if r.automationID != "" {
 		auto, _ = c.m.automations.Get(r.automationID)
 	}
-	backend, _ := admittedWorker(&task, story, prd, auto, execution)
+	backend, _ := admittedWorker(&task, story, prd, auto, executionFallbackBackend(mcfg, prd))
 	return backend
 }
 
@@ -648,7 +648,7 @@ func laneFillRefLookup(raws []laneFillRaw) PRDRefLookup {
 // evidence. It holds no Manager or store lock while it calls the evidence
 // source or the merge probe.
 func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, now time.Time) (LaneFillInput, LaneFillStatus) {
-	execution := c.m.Config().ExecutionBackend
+	mcfg := c.m.Config()
 	raws := c.readLaneFillRaw()
 	lookup := laneFillRefLookup(raws)
 
@@ -674,7 +674,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		if r.template {
 			continue
 		}
-		backend := c.laneFillWorkerBackend(r, execution)
+		backend := c.laneFillWorkerBackend(r, mcfg)
 		switch {
 		case laneFillRunning(r.status):
 			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}))

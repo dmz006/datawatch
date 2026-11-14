@@ -4867,7 +4867,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	if wasWaiting {
 		if up, ok := m.store.GetPRD(prdID); ok {
 			if tk, story := findTaskInPRD(up, taskID); tk != nil {
-				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), m.cfg.ExecutionBackend); backend != "" {
+				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), executionFallbackBackend(m.cfg, up)); backend != "" {
 					m.requeueQueuedCapacity(up, tk, backend, model)
 				}
 				m.resetCapacityWait(tk.ID)
@@ -7246,7 +7246,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
+					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), executionFallbackBackend(m.cfg, p))
 					if backend == "" {
 						backend = "unknown"
 					}

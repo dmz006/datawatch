@@ -1191,10 +1191,20 @@ profiles:
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
 # LLM registry entries (the `llms:` list; manage with `datawatch llm ...`).
-# Each entry may carry a per-LLM verification_mode key:
+# Each entry may carry a per-LLM verification_mode key and a
+# fallthrough_target key:
 #   llms:
 #     - name: <llm-name>
 #       verification_mode: generate    # default "generate" (empty string too)
+#       fallthrough_target: false      # default false
+# fallthrough_target: when true, this entry is an allowed fall-through target:
+#   with autonomous.capacity_fallthrough on, a worker whose requested pool is
+#   full may be admitted on this entry instead of waiting. Set it with
+#   `datawatch llm update <name> --fallthrough-target`, MCP llm_update, comm
+#   `llm update <name> fallthrough_target=true`, PUT on the LLM entry, or the
+#   Allowed fall-through target switch in the web app LLM settings. The
+#   Claude lane and GPU lane backends from autonomous.lane_fill are tried
+#   first without any mark.
 # verification_mode: how this LLM judges a verification.
 #   "" or "generate" (default) asks the judge to write a verdict and parses it.
 #   "classify" reads the judge's option probabilities instead and fails closed
@@ -3233,7 +3243,10 @@ autonomous:
   archive_grace_minutes: 60
   # Pool fall-through (default false). When a task's requested LLM pool is full
   # and another allowed backend/model can take it now, admit it there instead
-  # of waiting. Off = a task always waits for its own pool.
+  # of waiting. Off = a task always waits for its own pool. The alternates are
+  # the other lane fill backend (autonomous.lane_fill claude_backend or
+  # gpu_backend) first, then LLM entries marked fallthrough_target; a disabled,
+  # full or non-serving backend is skipped, and only workers fall through.
   capacity_fallthrough: false
   # Node over-admission rules (all default true; false restores the earlier
   # behaviour). capacity_strict_node_limit: a session adopted onto a full node
