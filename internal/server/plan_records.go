@@ -66,6 +66,10 @@ func PlanRecordsAuditFunc(l *audit.Log) planrecords.AuditFunc {
 			name = audit.ActionPlanRecordCreated
 		case planrecords.AuditMigrated:
 			name = audit.ActionPlanRecordImported
+		case planrecords.AuditArchived:
+			name = audit.ActionPlanRecordArchived
+		case planrecords.AuditRestored:
+			name = audit.ActionPlanRecordRestored
 		}
 		_ = l.Write(audit.Entry{Actor: actor, Action: name, Subject: subject, Details: details})
 	}

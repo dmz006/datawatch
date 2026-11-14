@@ -72,6 +72,8 @@ const (
 	// MaxThemes bounds the themes of one plan; MaxThemeNameRunes bounds a theme name.
 	MaxThemes         = 50
 	MaxThemeNameRunes = 100
+	// MaxArchiveReasonRunes bounds the reason given when a plan is archived.
+	MaxArchiveReasonRunes = 1000
 )
 
 // PlanKind marks what sort of plan a plan record is. The empty value is an
@@ -159,6 +161,13 @@ type Record struct {
 	PlanKind PlanKind `json:"plan_kind,omitempty"`
 	Release  string   `json:"release,omitempty"`
 	Themes   []Theme  `json:"themes,omitempty"`
+	// Archived marks a plan that was taken out of the default lists, search
+	// results and counts. ArchivedAt is when, and ArchiveReason the optional
+	// reason. They change only through the store's Archive and Restore
+	// methods; the plan's file and every link it holds stay as they were.
+	Archived      bool   `json:"archived,omitempty"`
+	ArchivedAt    string `json:"archived_at,omitempty"`
+	ArchiveReason string `json:"archive_reason,omitempty"`
 
 	// Finding fields (kind finding only): what the finding is attached to.
 	AttachKind string `json:"attach_kind,omitempty"`
@@ -380,6 +389,9 @@ func (r *Record) validatePlanFields() error {
 	if err := r.validateRelease(); err != nil {
 		return err
 	}
+	if err := r.validateArchive(); err != nil {
+		return err
+	}
 	for name, ids := range map[string][]string{"automations": r.Automations, "automata": r.Automata, "findings": r.Findings} {
 		if err := validateRefList(name, ids); err != nil {
 			return err
@@ -398,6 +410,21 @@ func (r *Record) validatePlanFields() error {
 		if runesOver(k, MaxLinkRefRunes+16) || runesOver(v.Title, MaxTitleRunes) || runesOver(v.State, MaxLinkKindRunes) {
 			return invalid("link info too long")
 		}
+	}
+	return nil
+}
+
+// validateArchive checks the archive mark. It applies to plans only; the
+// time and the reason exist only while the plan is archived.
+func (r *Record) validateArchive() error {
+	if !r.Archived && (r.ArchivedAt != "" || r.ArchiveReason != "") {
+		return invalid("archived_at and archive_reason apply to an archived plan only")
+	}
+	if r.Archived && r.Kind != KindPlan {
+		return invalid("only a plan can be archived")
+	}
+	if runesOver(r.ArchiveReason, MaxArchiveReasonRunes) {
+		return invalid("archive reason longer than %d characters", MaxArchiveReasonRunes)
 	}
 	return nil
 }

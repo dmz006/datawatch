@@ -74,6 +74,9 @@ type Summary struct {
 	// PlanKind and Release mark a release plan and say which release (plans only).
 	PlanKind PlanKind `json:"plan_kind,omitempty"`
 	Release  string   `json:"release,omitempty"`
+	// Archived and ArchivedAt mark an archived plan (plans only).
+	Archived   bool   `json:"archived,omitempty"`
+	ArchivedAt string `json:"archived_at,omitempty"`
 }
 
 // PlanRef names the plan an Automaton or Automation belongs to.
@@ -130,6 +133,7 @@ func summarize(r *Record) Summary {
 	sm := summarizeBase(r)
 	sm.Goal = r.Goal
 	sm.PlanKind, sm.Release = r.PlanKind, r.Release
+	sm.Archived, sm.ArchivedAt = r.Archived, r.ArchivedAt
 	if r.Kind != KindPlan {
 		for _, l := range r.Links {
 			if l.Kind == linkAutomaton && strings.TrimSpace(l.Ref) != "" {
@@ -252,13 +256,17 @@ func (s *Store) planSummariesLocked() []Summary {
 }
 
 // Plans lists the plans in priority order, from the summary index. A
-// non-empty state keeps only plans in that state.
-func (s *Store) Plans(state State) []Summary {
+// non-empty state keeps only plans in that state. Archived plans are left out;
+// PlansIn asks for them.
+func (s *Store) Plans(state State) []Summary { return s.PlansIn(state, ArchiveScope{}) }
+
+// PlansIn is Plans with an explicit archive scope.
+func (s *Store) PlansIn(state State, scope ArchiveScope) []Summary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Summary
 	for _, sm := range s.planSummariesLocked() {
-		if state == "" || sm.State == state {
+		if (state == "" || sm.State == state) && scope.allows(sm.Archived) {
 			out = append(out, sm)
 		}
 	}
@@ -266,12 +274,16 @@ func (s *Store) Plans(state State) []Summary {
 }
 
 // Backlog lists the plans that have no Automaton yet, in priority order.
-func (s *Store) Backlog() []Summary {
+// Archived plans are left out; BacklogIn asks for them.
+func (s *Store) Backlog() []Summary { return s.BacklogIn(ArchiveScope{}) }
+
+// BacklogIn is Backlog with an explicit archive scope.
+func (s *Store) BacklogIn(scope ArchiveScope) []Summary {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Summary
 	for _, sm := range s.planSummariesLocked() {
-		if sm.AutomatonCount == 0 {
+		if sm.AutomatonCount == 0 && scope.allows(sm.Archived) {
 			out = append(out, sm)
 		}
 	}
@@ -285,11 +297,16 @@ type SummaryFilter struct {
 	State   State
 	Limit   int
 	Offset  int
+	// IncludeArchived adds archived plans to the result; ArchivedOnly returns
+	// only archived plans. With neither set, archived plans are left out.
+	IncludeArchived bool
+	ArchivedOnly    bool
 }
 
 func (f SummaryFilter) matches(sm Summary) bool {
 	return (f.Kind == "" || sm.Kind == f.Kind) && (f.Project == "" || sm.Project == f.Project) &&
-		(f.State == "" || sm.State == f.State)
+		(f.State == "" || sm.State == f.State) &&
+		ArchiveScope{IncludeArchived: f.IncludeArchived, ArchivedOnly: f.ArchivedOnly}.allows(sm.Archived)
 }
 
 // ListSummaries returns one page of summaries and the total before paging.
