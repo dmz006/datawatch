@@ -135,16 +135,21 @@ Decompose lint reads each task's script from the project directory and names
 the finding with **the script path and the rule id**, for example
 `verify_script_task_files_only: .datawatch/verify/<name>.sh …`. A script that
 does not exist yet (or is a command string, or lies outside the project) is
-skipped by the three rules below; the warn rule
+skipped by the script-content rules below; the warn rule
 `unexecutable_verification_script` keeps covering it.
 
 | Rule id | Severity | What it means | How to fix it |
 |---|---|---|---|
 | `verify_script_task_files_only` | block | The script compares only against the task's own files (a literal list equal to them, or a file-listing diff of HEAD, the tree or `main`) and never against the merge base. | Compare against `git merge-base HEAD main` — directly, or through a sourced helper — and compare the result with the cumulative allowed list. |
 | `verify_script_docs_without_sync` | block | The script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`. | Add `make sync-docs` as the script's first step, or source a helper that runs it. |
+| `verify_script_rejects_own_files` | block | The allowed-file list is built only from literals that omit a file the task itself plans, or the standard allowed set (changelog, README, docs, locales, tests), so the script rejects the task's correct work. | List the task's own files and the standard set, or source the shared allowed list instead of a literal one. |
+| `verify_script_needs_later_task_output` | block | The script requires a file or a phrase (a path test, a grep target) that only a task it does not depend on creates. | Add the `depends_on` edge to the creating task, or move the check into that task's own script. |
+| `verify_script_sh_for_bash` | block | The script uses `[[ ]]`, arrays, process substitution or `pipefail` under an sh shebang, or a spec or script line runs a bash script with `sh`. | Use `#!/usr/bin/env bash` and run the script with `bash`. |
+| `verify_script_pipe_grep_q` | block | The script pipes into `grep -q`; grep exits at the first match and the producer gets SIGPIPE, which fails the pipeline under `pipefail`. | Capture the output first (`out=$(cmd)`, then `grep -q pat <<<"$out"`), or drop `-q` and send the output to `/dev/null`. |
+| `verify_script_hex_pattern` | block | A grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours (`#123456`) as tracker ids. | Put a tracker word before the `#` (`(issue|fixes|closes)\s+#[0-9]{3,}`) or use the BL/GH-prefixed id forms. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 
-All three are `block`-severity: in `enforce` mode they feed the planner a retry
+All of these are `block`-severity: in `enforce` mode they feed the planner a retry
 with the findings as guidance; in `shadow` mode they are recorded on the
 Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)

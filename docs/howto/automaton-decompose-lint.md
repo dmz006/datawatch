@@ -145,6 +145,11 @@ and never name a particular project, repository or home directory.
 | `spec_path_outside_allowed_dirs` | block | a spec line that names an absolute path (under a system root such as `/usr`, `/opt`, `/etc`, `/var`, `/home`, `/tmp`) outside the project directory; repo-relative paths, paths inside the project tree, URLs, shebang lines and `/dev` paths are ignored. The finding quotes the offending spec line |
 | `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `verify_script_rejects_own_files` | block | a verification script whose allowed-file list (an `allowed=(…)` style list, a `git diff --name-only | grep -v …` filter that then fails, or a `case` over the changed file with a failing `*)` branch) is built only from literals that omit a file the task itself plans or the standard allowed set (changelog, README, docs, locales, tests), with no shared allowed list sourced. The finding names the script path and the offending line |
+| `verify_script_needs_later_task_output` | block | a verification script that requires a file (`test -f`, a grep target) or a phrase that only a task it does not depend on creates, judged against every other task's files and `files_generated` and the `depends_on` edges of the task and its story. The finding names the script path and the offending line |
+| `verify_script_sh_for_bash` | block | a verification script that uses bash-only syntax (`[[ ]]`, arrays, process substitution, `pipefail`) under an sh shebang, or a spec or script line that runs a bash script with `sh` instead of `bash`. The finding names the script path and the offending line |
+| `verify_script_pipe_grep_q` | block | a verification script that pipes into `grep -q`; grep exits at the first match, the producer gets SIGPIPE and the pipeline fails under `pipefail`. The finding names the script path and the offending line |
+| `verify_script_hex_pattern` | block | a verification script whose grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours such as `#123456` as tracker ids; put a tracker word (issue, fixes, closes) before the `#`. The finding names the script path and the offending line |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
@@ -152,9 +157,9 @@ and never name a particular project, repository or home directory.
 | `version_number_in_spec` | warn | a spec or title that names a dotted version of a tool or library (a Python, Go or Node version, a `lib==1.2.3` pin) rather than the release; keep it unambiguous and never write it as the release number |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
-### The three verification-script stability rules
+### The eight verification-script rules
 
-The last three `block` rules read the task's verification script from the
+Eight `block` rules read the task's verification script from the
 project directory (and any helper it sources, one level deep) and name the
 **script path and the rule id** in the finding:
 
@@ -167,6 +172,11 @@ project directory (and any helper it sources, one level deep) and name the
 - `final_gate_without_script` — fires on a `final_gate` task that has no
   script, no `verification_script_reason` and no usable report path. Fix: give
   it a script, a report path, or a reason.
+- `verify_script_rejects_own_files`, `verify_script_needs_later_task_output`,
+  `verify_script_sh_for_bash`, `verify_script_pipe_grep_q` and
+  `verify_script_hex_pattern` — read the script text and name the **offending
+  line** as well as the script. See the verification-scripts how-to for the fix
+  for each.
 
 They use three match predicates (below): `verification_script_task_files_only`,
 `verification_script_docs_without_sync` and `verification_script_reason_empty`
@@ -238,6 +248,11 @@ hold for the same task. The leaves:
 | `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
 | `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `verification_script_rejects_own_files` | assert the script's literal allowed-file list omits the task's own planned files or the standard allowed set, with no shared allowed list; skipped when the script file does not exist |
+| `verification_script_needs_later_task_output` | assert the script requires a file or phrase only a task it does not depend on creates (plan-wide, honours `depends_on`); skipped when the script file does not exist |
+| `verification_script_sh_for_bash` | assert the script uses bash-only syntax under an sh shebang, or a spec/script line runs a bash script with `sh`; skipped when the script file does not exist |
+| `verification_script_pipe_grep_q` | assert the script pipes into `grep -q`; skipped when the script file does not exist |
+| `verification_script_hex_pattern` | assert a grep pattern in the script matches a bare `#<digits>` run (CSS hex colours as tracker ids); skipped when the script file does not exist |
 | `read_only_writes_outside_report` | assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path |
 | `spec_absolute_path_outside_project` | assert a spec line names an absolute system path outside the project directory |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |

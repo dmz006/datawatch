@@ -49,11 +49,11 @@ const versionNumberPattern = `(?i)\b(?:python3?|py|node(?:\.?js)?|golang|ruby|ja
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Sixteen rules, in the order findings should surface them: the eleven
+// Twenty-one rules, in the order findings should surface them: the sixteen
 // block-severity rules (tasks that cross a hard boundary — including the
-// two spec-line rules that follow read_only_unverifiable — plus the three
-// verification-script stability rules) first, then the five warn-severity
-// hygiene rules.
+// two spec-line rules that follow read_only_unverifiable — plus the
+// verification-script stability and script-content rules) first, then the
+// five warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -147,6 +147,46 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "verify_script_docs_without_sync: the task's verification script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`, so it fails on a stale embedded copy; run `make sync-docs` first (directly or via a sourced helper).",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptDocsWithoutSync: true,
+			},
+		},
+		{
+			ID:       "verify_script_rejects_own_files",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_rejects_own_files: the task's verification script builds its allowed-file list from literals that omit files the task itself writes or the standard allowed set (changelog, README, docs, locales, tests), so it fails on the task's own correct work; list the task's files and the standard set, or use the shared allowed list.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptRejectsOwnFiles: true,
+			},
+		},
+		{
+			ID:       "verify_script_needs_later_task_output",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_needs_later_task_output: the task's verification script requires a file or phrase that only a task it does not depend on creates, so it fails when this task is verified; add the depends_on edge, or move the check to the later task's script.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptNeedsLaterTaskOutput: true,
+			},
+		},
+		{
+			ID:       "verify_script_sh_for_bash",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_sh_for_bash: the task's verification script uses bash-only syntax ([[ ]], arrays, process substitution, pipefail) under an sh shebang, or a spec or script line runs a bash script with sh; use a bash shebang and run it with bash.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptShForBash: true,
+			},
+		},
+		{
+			ID:       "verify_script_pipe_grep_q",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_pipe_grep_q: the task's verification script pipes into grep -q; grep -q exits at the first match, the producer gets SIGPIPE and the pipeline fails under pipefail. Capture the output first (out=$(cmd); grep -q pat <<<\"$out\") or drop -q and send the output to /dev/null.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptPipeGrepQ: true,
+			},
+		},
+		{
+			ID:       "verify_script_hex_pattern",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_hex_pattern: a grep pattern in the task's verification script matches a bare #<digits> run, which also matches CSS hex colours (#123456) as tracker ids; require a tracker word before it (issue, fixes, closes) or use the BL/GH-prefixed id forms.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptHexPattern: true,
 			},
 		},
 		{

@@ -102,6 +102,7 @@ type compiledMatch struct {
 	docsNoSync    bool
 	roWritesOut   bool
 	absPathOut    bool
+	scriptPreds   scriptPredID
 	kind          string
 	anyOf         []compiledMatch
 	allOf         []compiledMatch
@@ -110,7 +111,7 @@ type compiledMatch struct {
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync {
+	if m.taskFilesOnly || m.docsNoSync || m.scriptPreds != 0 {
 		return true
 	}
 	for i := range m.anyOf {
@@ -126,7 +127,7 @@ func (m *compiledMatch) usesScriptContent() bool {
 	return false
 }
 
-func (m *compiledMatch) matchTask(t Task, dir string) bool {
+func (m *compiledMatch) matchTask(t Task, dir string, plan *lintPlan) bool {
 	if m.spec != nil && !m.spec.MatchString(t.Spec) {
 		return false
 	}
@@ -169,6 +170,13 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 			return false
 		}
 	}
+	for _, sp := range scriptPredicates {
+		if m.scriptPreds&sp.id != 0 {
+			if _, ok := sp.check(dir, t, plan); !ok {
+				return false
+			}
+		}
+	}
 	if m.files != nil {
 		matched := false
 		for _, f := range t.FilesPlanned {
@@ -184,7 +192,7 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	if len(m.anyOf) > 0 {
 		anyMatched := false
 		for _, sub := range m.anyOf {
-			if sub.matchTask(t, dir) {
+			if sub.matchTask(t, dir, plan) {
 				anyMatched = true
 				break
 			}
@@ -194,7 +202,7 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 		}
 	}
 	for _, sub := range m.allOf {
-		if !sub.matchTask(t, dir) {
+		if !sub.matchTask(t, dir, plan) {
 			return false
 		}
 	}
@@ -242,7 +250,7 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, roWritesOut: m.ReadOnlyWritesOutsideReport, absPathOut: m.SpecAbsolutePathOutsideProject, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, scriptPreds: scriptPredsOf(m), roWritesOut: m.ReadOnlyWritesOutsideReport, absPathOut: m.SpecAbsolutePathOutsideProject, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -291,6 +299,7 @@ func LintTasksWithErrors(stories []Story, rules []Rule) ([]LintFinding, []error)
 // only (a path cannot be checked without a base directory).
 func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, []error) {
 	compiled := compileRules(rules)
+	plan := newLintPlan(stories)
 	var errs []error
 	var findings []LintFinding
 	for i := range compiled {
@@ -306,7 +315,7 @@ func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, [
 				if daemonRunsTask(t) {
 					continue
 				}
-				if !cr.match.matchTask(t, dir) {
+				if !cr.match.matchTask(t, dir, plan) {
 					continue
 				}
 				f := LintFinding{
@@ -315,10 +324,10 @@ func LintTasksInDir(dir string, stories []Story, rules []Rule) ([]LintFinding, [
 					Message:  cr.rule.Message,
 					Story:    s.ID,
 					Task:     t.ID,
-					Matched:  excerptFor(cr.match, t, dir),
+					Matched:  excerptFor(cr.match, t, dir, plan),
 				}
 				if cr.match.usesScriptContent() {
-					f.Script = verifyScriptFindingPath(cr.match, dir, t)
+					f.Script = verifyScriptFindingPathIn(cr.match, dir, t, plan)
 					if f.Script != "" {
 						f.Message += " (verification script: " + f.Script + ")"
 					}
@@ -455,21 +464,21 @@ func clipExcerpt(s string) string {
 	return string(r[:maxExcerptLen-1]) + "…"
 }
 
-func excerptFor(m *compiledMatch, t Task, dir string) string {
+func excerptFor(m *compiledMatch, t Task, dir string, plan *lintPlan) string {
 	if e := regexExcerpt(m, t); e != "" {
 		return e
 	}
 	for i := range m.anyOf {
-		if e := excerptFor(&m.anyOf[i], t, dir); e != "" {
+		if e := excerptFor(&m.anyOf[i], t, dir, plan); e != "" {
 			return e
 		}
 	}
 	for i := range m.allOf {
-		if e := excerptFor(&m.allOf[i], t, dir); e != "" {
+		if e := excerptFor(&m.allOf[i], t, dir, plan); e != "" {
 			return e
 		}
 	}
-	return predicateExcerpt(m, t, dir)
+	return predicateExcerpt(m, t, dir, plan)
 }
 
 // regexExcerpt is the first regex hit in priority order: spec, files
@@ -491,7 +500,7 @@ func regexExcerpt(m *compiledMatch, t Task) string {
 // predicateExcerpt describes the asserted field state of a
 // predicate-only condition (read_only, the files list, an empty
 // verification script).
-func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
+func predicateExcerpt(m *compiledMatch, t Task, dir string, plan *lintPlan) string {
 	var parts []string
 	if m.readOnly != nil {
 		parts = append(parts, fmt.Sprintf("read_only=%v", *m.readOnly))
@@ -537,6 +546,14 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.docsNoSync {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (checks docs without make sync-docs)")
+	}
+	for _, sp := range scriptPredicates {
+		if m.scriptPreds&sp.id == 0 {
+			continue
+		}
+		if hit, ok := sp.check(dir, t, plan); ok {
+			parts = append(parts, hit.Path+": "+hit.Line)
+		}
 	}
 	if len(parts) == 0 {
 		return ""

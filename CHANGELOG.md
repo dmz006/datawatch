@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Five more decompose lint rules read the verification script.** The rule pack grows to twenty-one rules, sixteen of them blocking. New findings cover a script whose allowed-file list rejects the task's own files or the standard set (changelog, README, docs, locales, tests), a script that needs a file or phrase only a task it does not depend on creates, bash-only syntax under an sh shebang or a bash script run with `sh`, a pipe into `grep -q`, and a grep pattern that matches CSS hex colours as tracker ids. Each finding names the task, the script and the offending line, and a custom rule can use the matching `verification_script_*` predicates.
+
 ## v9.172.14 — Accept the second soupsieve finding on the aider image
 
 ### Security

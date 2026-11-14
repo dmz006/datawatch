@@ -127,6 +127,12 @@ func taskHasVerificationReason(t Task) bool {
 // for m on t should report: the script the content predicates read, else
 // the task's declared script (empty when none).
 func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
+	return verifyScriptFindingPathIn(m, dir, t, nil)
+}
+
+// verifyScriptFindingPathIn is verifyScriptFindingPath with the plan-wide
+// view the cross-task script predicates need.
+func verifyScriptFindingPathIn(m *compiledMatch, dir string, t Task, plan *lintPlan) string {
 	if m.taskFilesOnly {
 		if p, ok := verifyScriptTaskFilesOnly(dir, t); ok {
 			return p
@@ -137,13 +143,20 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 			return p
 		}
 	}
+	for _, sp := range scriptPredicates {
+		if m.scriptPreds&sp.id != 0 {
+			if hit, ok := sp.check(dir, t, plan); ok {
+				return hit.Path
+			}
+		}
+	}
 	for _, sub := range m.anyOf {
-		if p := verifyScriptFindingPath(&sub, dir, t); p != "" {
+		if p := verifyScriptFindingPathIn(&sub, dir, t, plan); p != "" {
 			return p
 		}
 	}
 	for _, sub := range m.allOf {
-		if p := verifyScriptFindingPath(&sub, dir, t); p != "" {
+		if p := verifyScriptFindingPathIn(&sub, dir, t, plan); p != "" {
 			return p
 		}
 	}
