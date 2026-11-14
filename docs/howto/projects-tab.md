@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source, loading, cache, retry, performance]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -225,6 +225,56 @@ in the window, whatever the Automaton's final status, and never twice.
 
 Costs are **points** from the billing profile, never API dollars. A project with
 no priced Automaton shows the note that the backends are not on a bundled plan.
+
+### The page opens at once and refreshes in the background
+
+The Projects page does not wait for the daemon before it shows something. When
+you open it, it draws the **last good data** for the project from this browser
+straight away, then asks the daemon again in the background and redraws only
+what changed.
+
+- **A saved copy is on screen.** Each card that came from the saved copy carries
+  a small **Refreshing…** line until the background request has finished. It is
+  never presented as current while it is still being checked. When the answer
+  arrives and nothing changed, nothing is redrawn.
+- **Nothing saved yet.** The first time you open a project on a device, each
+  card shows a grey loading placeholder until its own data arrives.
+- **Every card loads on its own.** The arc cards, the Automata without an arc,
+  the Automata without a project, the totals, the throughput, the Gantt and the
+  Plan each have their own **loading state**. They all start at once, and a slow
+  card never holds up the others.
+- **A card that fails has its own retry.** A failed card shows a red error line
+  with the reason and a **Retry** button on that card only. **Retry** sends the
+  request for that one card again; the other cards keep what they show. Cards
+  that already hold good data keep it on screen while a refresh is failing.
+
+If the browser blocks its storage, the page still works; it simply loads on each
+visit. Changing the project drops the saved roll-up of the project you left. See
+[automata-tab-loading.md](automata-tab-loading.md) for the same behaviour on the
+Automata list.
+
+### How fast the roll-up is, and what keeps it fast
+
+The roll-up is read from the daemon's summary of each Automaton and is cached
+**per project**. The cache entry is for one project and one window, and it is
+refreshed when **any member changes**: a task finishing, a status change or an
+edit of any Automaton in the project, a change to the project's directory or
+arcs, or a change to the Automation list. A project nobody touched is answered
+from the cache without rebuilding.
+
+The measured targets, for a daemon holding 700 Automata:
+
+| Read | Target |
+|---|---|
+| Roll-up, warm (the same data as the last read, answered from the cache) | under 300 ms |
+| Roll-up, cold (the first read after a change, rebuilt from the summary) | under 1.5 s |
+| Automata list, default response | under 300 ms and 2 MB |
+
+The targets are checked by the performance test and `scripts/perf-rollup-check.sh`,
+which run against a generated store of 700 Automata with long decision logs and
+task output, and also check that neither read hands out a full record. On a slow
+host, set `PERF_ROLLUP_MULTIPLIER` to a number of 1 or more to scale the time
+limits for that run; the size limit never scales.
 
 ### 5. Set the target, the definition of done and the lane defaults
 
@@ -735,6 +785,8 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | A block I used to see on the project page is missing | The page now shows one page sub-tab at a time. Find the block in the table under step 6 (for example the Gantt is on **Gantt** and the policy and merge pipeline are on **Policy**) |
 | There is no **Events** page sub-tab | It is left out of the strip while the project has no notes. An `#projects/<name>/events` address or a remembered **Events** choice opens **Overview** in that case |
 | The page opens a page sub-tab I did not pick | The last choice is remembered in this browser. Choose **Overview**, or open `#projects/<name>`, which always opens **Overview** |
+| A card on the project page shows a red error line with **Retry** | That one card failed to load; the others are unaffected. Press **Retry** on the card. If it keeps failing, check the daemon with `datawatch projects get <name>` |
+| A card says **Refreshing…** | The page drew the last good data from this browser and is checking it with the daemon. It clears when the answer arrives; no action needed |
 | An arc shows no Automata | Its Automation has no member Automata yet, or the Automata are of another project |
 | An Automaton is missing from a project's page, or appears under a different one | Membership follows the order in [Which Automata belong to a project](#which-automata-belong-to-a-project). Its own link or its Automation's link beats its directory. Look for it under **Automata without a project** if nothing placed it, then set its link as in [Link an Automaton to a project](#link-an-automaton-to-a-project) |
 | The backfill report lists an Automaton as skipped | It matched no datawatch source (Automation, parent or directory), or no project that is the datawatch project is configured. Link it by hand, or add the project first |

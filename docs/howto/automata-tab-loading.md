@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automata, pwa, loading, performance]
+  topics: [automata, pwa, loading, performance, summary, full records, paged tasks, archive]
 ---
 # How-to: how the Automata tab loads
 
@@ -56,6 +56,46 @@ under the last card with the count, for example **Load more (50/273)**.
 - The button disappears when there is nothing left to load.
 
 The Sessions and Alerts tabs page the same way and use the same control.
+
+## Summaries by default, full records only when asked
+
+The Automata list is **summaries only**. No story text, task text, decision log
+or output is on a list row, whichever surface asks: the web app, the CLI, the
+MCP tool or a script calling REST. The row is built from the daemon's in-memory
+summary index, so its size does not depend on how much an Automaton holds.
+
+The heavy form, whole records for every row, still exists but only behind an
+explicit switch, so nothing gets it by accident:
+
+| Surface | How to ask for whole records |
+|---|---|
+| REST | `GET /api/autonomous/prds?full=true` |
+| CLI | `datawatch autonomous list --full` |
+| MCP | the `full` argument of `autonomous_prd_list` |
+
+Use it with a `limit` (and `cursor`); without one it returns every Automaton in
+full and can be many megabytes. The web app never sends it.
+
+### Tasks are paged per Automaton
+
+The task rows of one Automaton are read one page at a time, never as part of the
+list.
+
+| Surface | How to read a page of one Automaton's tasks |
+|---|---|
+| REST | `GET /api/autonomous/prds/{id}/tasks` with `limit` (default 50, at most 500), `cursor`, `story` and `status` |
+| CLI | `datawatch autonomous tasks <id>` with `--limit`, `--cursor`, `--story` and `--status` |
+| MCP | the `autonomous_prd_tasks` tool with the same arguments |
+
+A page carries each task's identity, state, timing, the sessions that ran it and
+a short error, but no spec, history or verification text. The reply has `total`
+(the tasks that match the filters) and `next_cursor`; pass it back as the cursor
+to read the next page.
+
+The web app uses the same route. **Expanding an Automaton on the Gantt** and
+**opening an Automaton's detail** each load that Automaton's tasks 50 at a time,
+on demand, with a **Load more** control, so a page with hundreds of Automata
+reads task rows only for the ones you open.
 
 ## Loading, cached, stale and failed
 
@@ -149,7 +189,8 @@ for, so opening an archived row on the tab is as quick as any other.
 Archiving is skipped for an Automaton with a running task, an open session, or
 a completed record whose branch is not merged. Set
 `autonomous.archive.enabled` to `false` to stop the daemon archiving by itself.
-The dry-run report, the apply run and the per-Automaton read are described in
+The dry run, the apply run, the verified backup and the per-Automaton read are
+described in [automata-archive.md](automata-archive.md); the settings table is in
 [operations.md](../operations.md) (search "What the archive does").
 
 ## Children
@@ -254,6 +295,11 @@ release smoke against the smoke daemon.
   the summary list, paging, ETag / 304 and compression.
 - [automation-tab.md](automation-tab.md): the Automation tab that chains
   Automata.
+- [automata-archive.md](automata-archive.md): what the archive moves and what
+  stays in the store, the dry run then apply, the verified backup and how to
+  read an archive.
+- [projects-tab.md](projects-tab.md): the Projects page, which opens from the
+  last good data and refreshes behind it.
 - [operations.md](../operations.md): the archive settings
   (`autonomous.archive.retention_days`, `autonomous.archive.enabled`), the
   dry-run and apply commands and the verified backup.
