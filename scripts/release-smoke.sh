@@ -4993,7 +4993,6 @@ if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; the
   fi
 fi
 rm -rf "$PSRC_EVD"
-SMOKE_PASS=$((SMOKE_PASS+1))
 
 # ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
