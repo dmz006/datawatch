@@ -232,7 +232,7 @@ A bad value is refused, and nothing is written. An explicit `0` is kept.
 ## Why lane fill skips an Automaton
 
 Before it hands a lane to a queued Automaton (a draft, an approved one or one
-waiting for review), lane fill checks it against seven rules. The first rule
+waiting for review), lane fill checks it against eight rules. The first rule
 that refuses it gives the **eligibility reason**, a short fixed code with a
 sentence of detail. A refused Automaton is never started in any mode, and it
 does not count as eligible work: not in the queued counts, not in the idle-lane
@@ -243,6 +243,7 @@ The rules run in this order:
 
 | Reason code | What it means | How to clear it |
 |---|---|---|
+| `operator_hold` | The Automaton's status is `held`: an operator put it on hold. The detail reads "on hold by the operator: <reason>; look again at <time>". This is checked first and applies to every status lane fill would otherwise consider. | Release the hold (see [Put an Automaton on hold](automaton-hold.md)). Until then this is the rule working. |
 | `held` | The title or spec has a line that starts with `HOLD`, says "do not run" or "sequenced last", or the judge timed out on every backend while the Automaton needed review. | Remove the line from the spec if the hold is over. If the hold is right, leave it: this is the rule working. |
 | `sequenced_after_unshipped` | The spec says it is "sequenced after" another Automaton, and that one is not completed, or the reference matches no Automaton at all (an unknown reference counts as unfinished). | Finish the other Automaton, or fix the reference so it names the right one (an 8-character id is the most reliable). |
 | `stale` | The Automaton has had no change for longer than `stale_after_hours` (72 by default). Old probes and forgotten drafts end up here. | If it still matters, edit it, which refreshes its last-updated time; if it does not, cancel it. To change the limit, set `stale_after_hours`; `0` turns the rule off. |
@@ -254,7 +255,7 @@ The rules run in this order:
 Two rules turn their own check on and off: `proposal_not_confirmed` and
 `proposal_missing` need `require_confirmed_proposal`, `main_carries_work` needs
 `check_main_carries`, `worktree_invalid` needs `require_worktree` and `stale`
-needs a non-zero `stale_after_hours`. The `held` and `sequenced_after_unshipped`
+needs a non-zero `stale_after_hours`. The `operator_hold`, `held` and `sequenced_after_unshipped`
 rules have no switch: a hold is a person's instruction.
 
 If a check cannot be made (git cannot be read, the filesystem view is not
@@ -543,7 +544,7 @@ needs no restart.
   exempt. A file that cannot be read for any other reason does not refuse the
   Automaton. Set `autonomous.lane_fill.require_confirmed_proposal` to `false`
   to turn the rule off.
-- **It never starts an Automaton it has refused.** The seven eligibility
+- **It never starts an Automaton it has refused.** The eight eligibility
   reasons (see "Why lane fill skips an Automaton") apply in every mode, and a
   refused Automaton is not counted as eligible work anywhere, including the
   supervisor watch's idle-lane finding.

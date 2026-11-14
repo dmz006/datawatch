@@ -310,7 +310,12 @@ Whatever the mode of any group, a repair never:
 - **merges** an Automaton or **ships** a release;
 - **deletes a session**, and never kills or signals a session;
 - **changes a model or a backend**, and never loads or unloads a model;
-- **touches a security workflow** or its result.
+- **touches a security workflow** or its result;
+- **changes a held Automaton or any of its tasks.** An Automaton an operator put
+  on hold (see [Put an Automaton on hold](automaton-hold.md)) is skipped by every
+  repair, by the supervisor loop, the stuck-running and verifier watchdogs, boot
+  reconcile, infrastructure retries, merge retries and the completed migration;
+  only an operator release or extend changes it.
 
 Kinds that are not in a group (`MERGE READY`, `SILENT`, `TMUX`, `NODE`, `MODEL`,
 `MAIN`, `DAEMON`, `CI STUCK`, `CI RED`) are reported in every mode.
