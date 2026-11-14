@@ -241,7 +241,9 @@ type laneFillState struct {
 	// again, so a daemon that restarts keeps the lane for at most one more
 	// threshold window before a stalled merge frees it.
 	mergePendingSince map[string]time.Time
-	wg                sync.WaitGroup
+	// stall is the stalled-merge pass's own state (task_merge_stall.go).
+	stall taskMergeStallState
+	wg    sync.WaitGroup
 	// kindModes is the effective mode of each lane kind at the last poll;
 	// kindModesSeen is false until the first poll has set it, so a change is
 	// audited only against a mode this process saw.
@@ -406,6 +408,7 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	c.laneFillAuditModeChange(kinds)
 	if kinds.allOff() {
 		c.laneFillResetAlerts()
+		c.taskMergeStallReset()
 		return
 	}
 	// One set of lane counts for the whole poll: the lanes, the planner, the
@@ -431,6 +434,9 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	in.Lanes = laneFillKeepLaneObjects(in.Lanes, kinds)
 	decisions := laneFillKeepDecisions(PlanLaneFill(in), kinds)
 	c.laneFillCheckAlerts(cfg, in.Lanes, in.Candidates, now)
+	// Stalled task-branch merges follow the mode too: shadow records them,
+	// off (and a threshold of 0) does nothing.
+	c.taskMergeStallPass(ctx, kinds, cfg.EffectiveStalledMergeMinutes(), now)
 
 	candidates := make(map[string]LaneFillCandidate, len(in.Candidates))
 	for _, cand := range in.Candidates {
@@ -864,7 +870,9 @@ func (c *Coordinator) laneFillClassifyRunning(r laneFillRaw, backend string) (La
 // the current record.
 func (c *Coordinator) laneFillNotePendingMerges(p *PRD, now time.Time) map[string]time.Time {
 	pending := map[string]bool{}
+	owned := map[string]bool{}
 	for _, t := range laneOccTasks(p) {
+		owned[t.ID] = true
 		if laneOccMergePending(t) {
 			pending[t.ID] = true
 		}
@@ -878,8 +886,10 @@ func (c *Coordinator) laneFillNotePendingMerges(p *PRD, now time.Time) map[strin
 			c.lf.mergePendingSince[id] = now
 		}
 	}
+	// Only this Automaton's records are dropped: other Automata's pending
+	// merges keep their first-seen time.
 	for id := range c.lf.mergePendingSince {
-		if !pending[id] {
+		if owned[id] && !pending[id] {
 			delete(c.lf.mergePendingSince, id)
 		}
 	}
