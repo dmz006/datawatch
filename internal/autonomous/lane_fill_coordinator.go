@@ -160,6 +160,18 @@ type LaneFillAlert struct {
 	Message string `json:"message"`
 }
 
+// LaneFillWaitingOcc is one running Automaton that holds its lane without
+// any live work (see lane_fill_idle_occupant.go): the reason it waits, and
+// the stable reason code behind it. Its lane is left idle for the next
+// eligible work, and lane fill never starts a second run of it.
+type LaneFillWaitingOcc struct {
+	PRDID      string `json:"prd_id"`
+	Title      string `json:"title"`
+	Backend    string `json:"backend,omitempty"`
+	WaitReason string `json:"wait_reason"`
+	ReasonCode string `json:"reason_code"`
+}
+
 // LaneFillStatus is the lane fill status: the mode, the lanes and evidence of
 // the last poll, and the decision history newest first.
 type LaneFillStatus struct {
@@ -175,6 +187,10 @@ type LaneFillStatus struct {
 	// LaneCounts: per lane type, the configured count, the count the last
 	// poll used and where it came from.
 	LaneCounts LaneFillLaneCounts `json:"lane_counts"`
+	// Waiting holds the running Automata that hold no live work, in the order
+	// the snapshot read them: the lane they sit on is left idle, and each
+	// entry says why the Automaton waits. Empty when nothing running is idle.
+	Waiting []LaneFillWaitingOcc `json:"waiting"`
 }
 
 // laneFillStart remembers an Automaton lane fill started, until the store
@@ -219,7 +235,13 @@ type laneFillState struct {
 	alerts      []LaneFillAlert
 	started     map[string]laneFillStart
 	decomposing map[string]LaneType
-	wg          sync.WaitGroup
+	// mergePendingSince is when each task-branch merge was first observed
+	// pending — the clock the stalled-merge classification reads. It is
+	// in-memory, like idleSince: a restart starts the observation clock
+	// again, so a daemon that restarts keeps the lane for at most one more
+	// threshold window before a stalled merge frees it.
+	mergePendingSince map[string]time.Time
+	wg                sync.WaitGroup
 	// kindModes is the effective mode of each lane kind at the last poll;
 	// kindModesSeen is false until the first poll has set it, so a change is
 	// audited only against a mode this process saw.
@@ -229,11 +251,12 @@ type laneFillState struct {
 
 func newLaneFillState() laneFillState {
 	return laneFillState{
-		idleSince:   map[string]time.Time{},
-		workSince:   map[string]time.Time{},
-		alerted:     map[string]bool{},
-		started:     map[string]laneFillStart{},
-		decomposing: map[string]LaneType{},
+		idleSince:         map[string]time.Time{},
+		workSince:         map[string]time.Time{},
+		alerted:           map[string]bool{},
+		started:           map[string]laneFillStart{},
+		decomposing:       map[string]LaneType{},
+		mergePendingSince: map[string]time.Time{},
 	}
 }
 
@@ -270,6 +293,7 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 	}
 	if m == nil {
 		def := DefaultLaneFillConfig()
+		empty.Waiting = []LaneFillWaitingOcc{}
 		empty.Mode = def.EffectiveMode()
 		empty.Modes = laneFillKindModes(def)
 		return empty
@@ -279,6 +303,7 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 	cfg := m.cfg.LaneFill
 	m.mu.Unlock()
 	if c == nil {
+		empty.Waiting = []LaneFillWaitingOcc{}
 		empty.Mode = cfg.EffectiveMode()
 		empty.Modes = laneFillKindModes(cfg)
 		return empty
@@ -310,6 +335,9 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	}
 	if st.Alerts == nil {
 		st.Alerts = []LaneFillAlert{}
+	}
+	if st.Waiting == nil {
+		st.Waiting = []LaneFillWaitingOcc{}
 	}
 	if st.LaneCounts.GPU.Source == "" {
 		// No poll has run yet: show the counts the next poll would use.
@@ -666,6 +694,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	grace := 3 * time.Duration(cfg.EffectivePollSeconds()) * time.Second
 
 	var running []LaneOccupant
+	var waiting []LaneFillWaitingOcc
 	var cands []LaneFillCandidate
 	branches := map[string]string{}
 	worktrees := map[string]string{}
@@ -677,6 +706,16 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		backend := c.laneFillWorkerBackend(r, execution)
 		switch {
 		case laneFillRunning(r.status):
+			// A running PRD holds its lane only while it holds live work, so
+			// classify first: an idle occupant does not block the lane, its
+			// entry in the Waiting list says why it waits, and — it never
+			// enters the candidate list — the planner cannot start a second
+			// run of it while it waits.
+			if _, waitingOcc := c.laneFillClassifyRunning(r, backend); waitingOcc != nil {
+				waiting = append(waiting, *waitingOcc)
+				c.laneFillForgetStart(r.id)
+				continue
+			}
 			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}))
 			c.laneFillForgetStart(r.id)
 			continue
@@ -745,6 +784,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 
 	queued := QueuedEligible(cands)
 	status := LaneFillStatus{
+		Waiting:        waiting,
 		QueuedEligible: LaneFillQueued{GPU: queued[LaneTypeGPU], Claude: queued[LaneTypeClaude]},
 		Evidence: LaneFillEvidence{
 			CheckedAt: ev.CheckedAt, GPUActiveSessions: ev.ActiveGPUSessions,
@@ -777,6 +817,78 @@ func (c *Coordinator) laneFillForgetStart(id string) {
 	c.lf.mu.Lock()
 	delete(c.lf.started, id)
 	c.lf.mu.Unlock()
+}
+
+// laneFillClassifyRunning reads the Automaton from the store and the capacity
+// ledger and classifies it for the snapshot: occupied (it keeps its lane) or
+// waiting (the lane is left idle and the entry says why). A waiting Automaton
+// never enters the candidate list, so the planner cannot start a second run
+// of it while it waits.
+func (c *Coordinator) laneFillClassifyRunning(r laneFillRaw, backend string) (LaneOccupant, *LaneFillWaitingOcc) {
+	occ := LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}
+	p, ok := c.m.store.SnapshotPRD(r.id)
+	if !ok {
+		// Unreadable snapshot: the lane keeps the Automaton, as before this
+		// classification existed.
+		return occ, nil
+	}
+	held := map[string]bool{}
+	if led := c.m.Capacity(); led != nil {
+		for _, ls := range led.Snapshot().Leases {
+			held[ls.Holder] = true
+		}
+	}
+	now := c.now()
+	d := classifyLaneOccupant(laneOccFacts{
+		prd:                 p,
+		held:                held,
+		pendingSince:        c.laneFillNotePendingMerges(p, now),
+		stalledMergeMinutes: c.m.Config().LaneFill.EffectiveStalledMergeMinutes(),
+		now:                 now,
+	})
+	if d.Occupied {
+		return occ, nil
+	}
+	return occ, &LaneFillWaitingOcc{
+		PRDID:      r.id,
+		Title:      r.title,
+		Backend:    backend,
+		WaitReason: d.Reason,
+		ReasonCode: d.Code,
+	}
+}
+
+// laneFillNotePendingMerges keeps the record of when each task-branch merge
+// was first observed pending — the clock the stalled-merge classification
+// reads — drops the record of a merge that is no longer pending, and returns
+// the current record.
+func (c *Coordinator) laneFillNotePendingMerges(p *PRD, now time.Time) map[string]time.Time {
+	pending := map[string]bool{}
+	for _, t := range laneOccTasks(p) {
+		if laneOccMergePending(t) {
+			pending[t.ID] = true
+		}
+	}
+	c.lf.mu.Lock()
+	if c.lf.mergePendingSince == nil {
+		c.lf.mergePendingSince = map[string]time.Time{}
+	}
+	for id := range pending {
+		if _, ok := c.lf.mergePendingSince[id]; !ok {
+			c.lf.mergePendingSince[id] = now
+		}
+	}
+	for id := range c.lf.mergePendingSince {
+		if !pending[id] {
+			delete(c.lf.mergePendingSince, id)
+		}
+	}
+	out := make(map[string]time.Time, len(c.lf.mergePendingSince))
+	for k, v := range c.lf.mergePendingSince {
+		out[k] = v
+	}
+	c.lf.mu.Unlock()
+	return out
 }
 
 // laneFillNeedsMerge says whether finished work still needs a merge flag.
