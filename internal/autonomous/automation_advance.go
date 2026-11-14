@@ -271,6 +271,7 @@ func (st *stepper) finish(mem *AutomationMember, end endOutcome) {
 	mem.FinishedAt = &t
 	mem.Outcome = end.outcome
 	mem.EdgeTaken = end.edge
+	mem.WaitingForStage = ""
 	dropCursor(st.a, mem.ID)
 	st.a.IdleSince = nil
 	if mem.kind() == MemberKindDecisionWait {
@@ -313,6 +314,7 @@ func (st *stepper) followChain(mem *AutomationMember, end endOutcome) {
 func (st *stepper) failBranchMember(b *AutomationMember, outcome string) {
 	t := st.now
 	b.Status = MemberFailed
+	b.WaitingForStage = ""
 	b.Outcome = outcome
 	b.FinishedAt = &t
 	b.EdgeTaken = ""
@@ -393,6 +395,11 @@ func (st *stepper) enter(next *AutomationMember) {
 		st.idle = true
 		return
 	}
+	if st.holdForStage(next) {
+		// An earlier stage still has unfinished members: the cursor holds the
+		// member, which starts when that stage finishes (promoteWaiting).
+		return
+	}
 	if next.kind() == MemberKindPending {
 		// A pending item runs nothing: it holds the cursor, is skipped, or is
 		// passed on when its work is done (pending_item_hold.go).
@@ -418,6 +425,7 @@ func (st *stepper) enter(next *AutomationMember) {
 // and promoteWaiting calls it for a member whose slot has come.
 func (st *stepper) enterAdmitted(next *AutomationMember) {
 	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	if next.kind() != MemberKindJoin {
 		if v := st.snap[next.ID].verdict; v.Gate {
 			st.budgetGate(next, v)
@@ -464,6 +472,7 @@ func (st *stepper) startPRD(next *AutomationMember, resume, branch bool) {
 	next.Status = MemberRunning
 	next.StartedAt = &t
 	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindPRD, prdID: next.PRDID,
@@ -483,6 +492,7 @@ func (st *stepper) startNested(next *AutomationMember, branch bool) {
 	next.Status = MemberRunning
 	next.StartedAt = &t
 	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindAutomation, childID: next.AutomationID,
@@ -508,9 +518,9 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 	join.StartedAt = &t
 
 	branches := sortedCopy(fork.ForkMembers)
-	if anyMaxParallel(st.a) {
+	if anyMaxParallel(st.a) || st.a.StageGate {
 		// A limit hands the slots out in member order, the same order a waiting
-		// member is started in later.
+		// member is started in later; a stage gate releases in the same order.
 		branches = byMemberOrder(st.a, fork.ForkMembers)
 	}
 	results := make(map[string]any, len(branches))
@@ -519,6 +529,12 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 		if b == nil {
 			st.block(fmt.Sprintf("fork %s names unknown branch member %s", fork.ID, bid))
 			return
+		}
+		if st.holdForStage(b, fork.ForkMembers...) {
+			// The branches the fork has not started yet have no cursor, so they are
+			// named as sources: a stage is judged the same whatever the start order.
+			results[bid] = "waiting for stage"
+			continue
 		}
 		if b.kind() == MemberKindDecisionWait {
 			st.enterDecisionWait(b)
@@ -649,6 +665,7 @@ func (st *stepper) fireJoin(j *AutomationMember, rule string, won, failed, pendi
 				continue // already terminal
 			}
 			dropCursor(st.a, cid)
+			b.WaitingForStage = ""
 			b.Outcome = "join-fired"
 			b.FinishedAt = &t
 			b.EdgeTaken = ""

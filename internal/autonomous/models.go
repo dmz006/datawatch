@@ -2082,6 +2082,14 @@ type AutomationStatusSummary struct {
 	RunningMembers int      `json:"running_members,omitempty"`
 	WaitingForSlot []string `json:"waiting_for_slot,omitempty"`
 
+	// StageGate reports that the Automation holds a staged member back while an
+	// earlier stage has unfinished members; omitted when the gate is off.
+	// WaitingForStage lists, in member order, the members that hold their cursor
+	// for an earlier stage: they are not blocked, and the Automation is not
+	// either. Each one's cursor names the stage. Omitted when none waits.
+	StageGate       bool     `json:"stage_gate,omitempty"`
+	WaitingForStage []string `json:"waiting_for_stage,omitempty"`
+
 	// WaitingForOperator lists, in member order, the decision_wait members that
 	// hold their cursor for an operator answer. They are not blocked, and the
 	// Automation is not either: only their own branch waits. Omitted when none
@@ -2113,6 +2121,10 @@ type ActiveCursorSummary struct {
 	// CursorStatusWaitingForSlot and WaitReason reads "waiting for a free slot".
 	// It is never a blocked state.
 	WaitReason string `json:"wait_reason,omitempty"`
+	// WaitStage names the earlier stage a member waits for while Status is
+	// CursorStatusWaitingForStage; WaitReason then reads "waiting for stage
+	// <name>". It is never a blocked state.
+	WaitStage string `json:"wait_stage,omitempty"`
 	// QuestionID names the open operator question a decision_wait member waits
 	// on; Status is then CursorStatusWaitingForOperator and WaitReason reads
 	// "waiting for you".
@@ -2127,6 +2139,10 @@ const CursorStatusWaitingForOperator = "waiting_for_operator"
 // CursorStatusWaitingForSlot is the ActiveCursorSummary status of a member that
 // waits for a free slot under a max_parallel limit.
 const CursorStatusWaitingForSlot = "waiting_for_slot"
+
+// CursorStatusWaitingForStage is the ActiveCursorSummary status of a member the
+// stage gate holds back until an earlier stage finishes.
+const CursorStatusWaitingForStage = "waiting_for_stage"
 
 // JoinWaitSummary describes the join an Automation waits on: the rule it applies,
 // the branches still live, and the branches that ended without success. Each

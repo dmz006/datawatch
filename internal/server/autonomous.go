@@ -4121,6 +4121,9 @@ type automationReq struct {
 	// MaxParallel caps how many members run at once (0 = no limit); omitted on
 	// an update keeps the stored value.
 	MaxParallel *int `json:"max_parallel,omitempty"`
+	// StageGate makes a staged member wait while an earlier stage has unfinished
+	// members; omitted on an update keeps the stored value.
+	StageGate *bool `json:"stage_gate,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -4142,6 +4145,7 @@ func automationInput(req automationReq) autonomous.AutomationInput {
 		AutoTags:            req.AutoTags,
 		Milestone:           req.Milestone,
 		MaxParallel:         req.MaxParallel,
+		StageGate:           req.StageGate,
 	}
 }
 

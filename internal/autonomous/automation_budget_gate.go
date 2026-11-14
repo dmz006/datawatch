@@ -396,6 +396,9 @@ func stepStartPending(a *Automation, in stepInput, snap map[string]memberInfo) (
 	if budgetNoChange(a, snap[mem.ID].verdict) {
 		return nil, errStaleStep
 	}
+	if stage := stageHold(a, mem); stage != "" && mem.WaitingForStage == stage {
+		return nil, errStaleStep // still held for the stage already recorded: nothing new to record
+	}
 	if memberWaitingForSlot(mem) && !slotAdmitted(a, mem.ID) {
 		return nil, errStaleStep // still waiting for a free slot: nothing new to record
 	}

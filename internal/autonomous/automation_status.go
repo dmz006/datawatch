@@ -54,6 +54,10 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			s.RunningMembers = runningMembers(a)
 		}
 		s.WaitingForSlot = slotWaiters(a)
+		s.StageGate = a.StageGate
+		if a.StageGate {
+			s.WaitingForStage = stageWaiters(a)
+		}
 		s.WaitingForOperator = operatorWaiters(a)
 		if automationIsLinear(a) {
 			s.CurrentMemberID = a.CurrentMemberID
@@ -120,6 +124,11 @@ func activeCursorSummaries(a *Automation, itemOf func(id string) (*PendingItem, 
 		if memberWaitingForSlot(mem) {
 			c.Status = CursorStatusWaitingForSlot
 			c.WaitReason = SlotWaitReason
+		}
+		if stage := stageWaiting(a, mem); stage != "" {
+			c.Status = CursorStatusWaitingForStage
+			c.WaitReason = stageWaitReason(stage)
+			c.WaitStage = stage
 		}
 		switch mem.kind() {
 		case MemberKindDecisionWait:

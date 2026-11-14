@@ -137,7 +137,9 @@ func chainOutcome(a *Automation, chain []string) (status, failedMember string) {
 			return BranchChainFailed, id
 		case m.Status == MemberCompleted:
 			continue
-		case m.Status == MemberRunning || m.Status == MemberPending:
+		case m.Status == MemberRunning || memberUnstarted(m):
+			// An unstarted member is pending whether its status is "pending" or unset
+			// (a member held for a free slot or an earlier stage keeps the unset one).
 			return BranchChainRunning, ""
 		default:
 			return BranchChainFailed, id
@@ -189,6 +191,7 @@ func (st *stepper) skipChainAfter(chain []string, id string) {
 		}
 		dropCursor(st.a, cid)
 		m.Status = MemberSkipped
+		m.WaitingForStage = ""
 		m.Outcome = "branch-failed"
 		m.FinishedAt = &t
 		m.EdgeTaken = ""
