@@ -302,15 +302,26 @@ datawatch mcp status
   binary on the host's PATH. `which datawatch` from the same shell
   the MCP host is started in.
 - **Tool calls return 401.** `DATAWATCH_TOKEN` env var missing or
-  wrong. For **your own MCP host config**, reset the daemon's bearer via
-  `datawatch token rotate` and update the host config. For a
-  **daemon-written** `.mcp.json` (a session's project file or the
-  instance-level one), the token is a scoped, short-lived session credential —
-  it is **not** the long-lived `server.token` and it is revoked when that
-  session ends (2026-11-13 encryption audit, fix 13), so a 401 from a
-  leftover file is expected behaviour: start a session (the daemon rewrites
-  the file with the starting session's credential) or use a live session's
-  bridge — do not treat it as a hint that the daemon token rotated.
+  wrong. First work out **which** file the bridge is using, because the two
+  daemon-written `.mcp.json` variants carry different credentials:
+  - For **your own MCP host config**, check whether the daemon's bearer was
+    rotated or regenerated — then reset it via `datawatch token rotate`
+    and update the host config.
+  - For the **per-session** `<project_dir>/.mcp.json`, the token is that
+    session's scoped, short-lived credential (it is **not** the long-lived
+    `server.token`) and it is revoked when that session ends
+    ([howto/federation-cbac](federation-cbac.md)). A 401 from a leftover
+    file whose session is over is dead-credential behaviour: start a
+    session (the daemon rewrites the file with the starting session's
+    credential) or use a live session's bridge.
+  - For the **instance-level** `<data_dir>/.mcp.json`, the token is
+    *today* the daemon's long-lived `server.token` — so a 401 there means
+    the admin bearer rotated or was regenerated (or the daemon is not
+    reachable): sync the file with the daemon's current `server.token`
+    (regenerate one with `datawatch token rotate` if it is lost). The 2026-11-13 encryption audit proposes
+    scoping this write and deleting the file with the session (fix 13,
+    row K9); that fix is **not implemented in this release**, so the
+    instance-level file still holds the admin token.
   Capability model: [howto/federation-cbac](federation-cbac.md).
 - **ACL denies a call.** Daemon returns the denied scope set; check
   `mcp.per_tool_acl` and adjust.
