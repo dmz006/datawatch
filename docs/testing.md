@@ -73,6 +73,12 @@ When documenting a test, use this table format:
 - Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`, for example `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-unscoped-tmux.sh`.
 - `scripts/check-no-unscoped-tmux.sh` enforces these rules. It runs in `make lint`, in CI, and as a check when a PRD is decomposed. A line that only holds fixture text and is never run against tmux may carry a `tmux-scope-ok` marker.
 
+## No load patterns in tests
+
+Tests must not burn CPU or generate stress. `scripts/check-no-load-patterns.sh` scans Go `*_test.go` files, `testdata/`, `scripts/tests/`, `tests/` and the `*.test.js` files under `internal/server/web` for shell busy loops (`while :; do :; done`, `while true; do :; done`), `yes > /dev/null`, `stress`, `stress-ng`, `cpuburn`, `dd if=/dev/zero of=/dev/null`, empty Go `for {}` spin loops, `runtime.GOMAXPROCS`-wide worker fan-outs described as load, and the helper names `startConcurrentLoad` and `loadWorkers`. It prints every `file:line` hit and exits non-zero. There is no allow-list; use a deterministic fake instead of real load.
+
+The check is part of the local pre-tag run on the build host, not a CI step. Run it with `make check-no-load-patterns` (it also runs its fixture test, `scripts/check-no-load-patterns_test.sh`); `make lint` depends on it, so a normal `make lint` before pushing a tag covers it.
+
 ## Temp directory hygiene for tests
 
 Tests share one operating-system temp directory, and a suite that leaves its scratch
