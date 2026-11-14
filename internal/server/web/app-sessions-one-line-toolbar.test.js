@@ -156,6 +156,13 @@ test('the toolbar is a single non-splittable flex row at every width in the CSS'
     assert.ok(r.length, 'a .sessions-topbar .' + name + ' rule exists');
     assert.match(r[0].body, /flex:\s*0 0 auto/, '.sessions-topbar .' + name + ' stays fixed-size');
   }
+
+  // The button group is capped at the same width the control it replaced
+  // (the old view-mode select) was allowed, at every width.
+  assert.match(CSS, /\.sessions-topbar \.sessions-view-buttons \{[^}]*max-width:\s*34%/,
+    'the button group never exceeds the old select base max-width (34%)');
+  assert.match(CSS, /@media \(max-width: 640px\) \{[\s\S]*?\.sessions-topbar \.sessions-view-buttons \{[^}]*max-width:\s*30%/,
+    '... and stays within the old select phone cap (30%) too');
 });
 
 
