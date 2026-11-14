@@ -6169,6 +6169,13 @@ paths:
       summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
+      description: |
+        A row of the list can carry the derived, read-only merge_state field,
+        with the value finished_not_merged when a finished record (completed,
+        or since archived) still holds commits on its working branch that
+        never landed on the base branch. The daemon derives it at view time;
+        the field and the value are read-only and no record, alert or write
+        happens for it.
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
@@ -6560,6 +6567,11 @@ paths:
     get:
       summary: Fetch one PRD with story+task tree
       description: |
+        Finished records can also carry the derived, read-only merge_state
+        field, with the value finished_not_merged when the working branch
+        still has commits that never landed on the base branch. The daemon
+        derives it at view time; the field and the value are read-only and
+        no record, alert or write happens for it.
         Each task may carry `undeclared_edits`: an array of
         `{path: string, lines_changed: integer}` for files the task's worker
         committed that are in neither the task's planned nor generated files
@@ -13650,6 +13662,7 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         merged_in_release: {type: string, description: 'shipped state: the release the work landed in. Present when the work shipped'}
+        merge_state: {type: string, enum: [finished_not_merged], description: 'derived, read-only: present (with this single value) when a finished record — completed, or since archived — still holds commits on its working branch that never landed on the base branch; absent otherwise. No record, alert or write happens for it'}
         merged_at: {type: string, format: date-time, description: 'shipped state: when it merged (RFC 3339)'}
         merge_commit: {type: string, description: 'shipped state: the default-branch merge commit — its being non-empty is what makes the record shipped; recording it never changes the status'}
         shipped_source: {type: string, enum: [merge_step, backfill], description: 'shipped state: where the record came from'}
