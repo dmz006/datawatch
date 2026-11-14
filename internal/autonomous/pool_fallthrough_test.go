@@ -39,6 +39,14 @@ func (s *fallthroughAuditSink) fallThroughs() []audit.Entry {
 // (a -> b) and a fixed audit clock.
 func fallthroughFixture(t *testing.T, enabled bool) (*Manager, *Task, *PRD, *fallthroughAuditSink, *capacity.Ledger) {
 	t.Helper()
+	m, task, prd, sink, led, _ := fallthroughFixtureClock(t, enabled)
+	return m, task, prd, sink, led
+}
+
+// fallthroughFixtureClock is fallthroughFixture that also returns the step
+// clock the ledger runs on, for tests that drive wait passes by hand.
+func fallthroughFixtureClock(t *testing.T, enabled bool) (*Manager, *Task, *PRD, *fallthroughAuditSink, *capacity.Ledger, *stepClock) {
+	t.Helper()
 	m, _, clk, led := backoffFixture(t)
 	led.SetLimit("llm:a", 1)
 	led.SetLimit("llm:b", 1)
@@ -68,7 +76,7 @@ func fallthroughFixture(t *testing.T, enabled bool) (*Manager, *Task, *PRD, *fal
 	prd := newPRDWithTasks(t, m, 1)
 	cur, _ := m.Store().GetPRD(prd.ID)
 	task := cur.Story[0].Tasks[0]
-	return m, &task, cur, sink, led
+	return m, &task, cur, sink, led, clk
 }
 
 func TestPoolFallthrough_AdmitsOnIdleAlternateAndAudits(t *testing.T) {

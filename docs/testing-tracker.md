@@ -6063,3 +6063,18 @@ Tests the resolver that lists the other backend and model pairs a worker may fal
 | CLI `datawatch llm add|update --fallthrough-target` | **Yes** | **No** | `TestLLMFallthroughTargetFlag` (`cmd/datawatch/cli_llm_fallthrough_target_test.go`) | Sent only when the flag is passed. |
 | Comm channel `llm add|update <name> fallthrough_target=` | **Yes** | **No** | `TestParseLLMKVPairs_FallthroughTarget`, `TestLLMUsage_NamesFallthroughTarget` (`internal/router/llm_fallthrough_target_comm_test.go`) | — |
 | Web app LLM edit forms: **Allowed fall-through target** switch (inline form and modal) and the five locale bundles | **Yes** | **No** | `internal/server/web/app-llm-fallthrough-target.test.js` (`node --test`) | Source and sandbox level; no browser pass yet. |
+
+## Pool fall-through re-evaluated on every wait pass — unreleased
+
+Tests that a worker already waiting for capacity re-reads `autonomous.capacity_fallthrough` on each wait pass and is admitted on an idle alternate when the setting is turned on mid-wait, and that the audit entry carries `fall_through`, `from_pools`, `to_pools` and a note. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous ./internal/capacity -count=1 -run 'CapacityFallthrough|PoolFallthrough|AcquireRechecking'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Fall-through admits on the idle pool; the audit entry has `fall_through`, `from_pools`, `to_pools` and a note | **Yes** | **No** | `TestCapacityFallthrough_AdmitsOnIdlePoolWithAuditDetails` (`internal/autonomous/capacity_fallthrough_test.go`): fake ledger on a manual clock, llm:a held, llm:b idle | No live daemon run. |
+| A full alternate is skipped for the next one | **Yes** | **No** | `TestCapacityFallthrough_FullAlternateIsSkippedForTheNext`, same file | Alternates b (full) then c (idle). |
+| A verifier or planner waits and never falls through, across several wait passes | **Yes** | **No** | `TestCapacityFallthrough_VerifierWaitsAndNeverFallsThrough`, same file | Setting on, alternate idle, three passes. |
+| An already-waiting task falls through after the setting is turned on mid-wait | **Yes** | **No** | `TestCapacityFallthrough_WaitingTaskFallsThroughWhenSettingTurnedOnMidWait`, same file | One admit call; the setting is changed with `SetConfig`. Fails when the per-pass recheck is disabled. |
+| A waiting task with the setting on but a full alternate keeps waiting and is admitted on its own pool | **Yes** | **No** | `TestCapacityFallthrough_SettingOnWithFullAlternateKeepsWaiting`, same file | |
+| An explicit-backend task waits with the setting off and falls through, with the explicit note, with it on; PRD-level explicit backend notes on the first pass | **Yes** | **No** | `TestCapacityFallthrough_ExplicitBackendWaitsOffAndFallsThroughOn`, `_ExplicitBackendNoteOnFirstPass`, same file | |
+| Explicit-backend levels: task, story, PRD, Automaton; none is not explicit | **Yes** | **No** | `TestCapacityFallthrough_HasExplicitBackendLevels`, same file | |
+| Ledger per-pass recheck: retargets and grants a waiter, keeps the wait bound, nil recheck is plain Acquire | **Yes** | **No** | `TestAcquireRechecking_*` (`internal/capacity/ledger_recheck_test.go`): manual clock | |
