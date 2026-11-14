@@ -8382,23 +8382,98 @@ window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
 window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
 window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
 
-// One-line toolbar view-mode control: a native <select> (accessible, keyboard-
-// operable, and it can never wrap the row). _sessionsSetViewMode remains the
-// sole mutator — the select is just its trigger, exactly like the three
-// buttons it replaces. No new storage key: the stored mode (or computed
-// default) is simply the selected option.
+// One-line toolbar view-mode control: a role=group of three native buttons
+// (List / Tiles / Compact) — keyboard operable (Tab to the group's buttons,
+// Enter or Space activates), and their combined width never wraps the row.
+// _sessionsSetViewMode remains the sole mutator — the buttons are just its
+// trigger. No new storage key: the stored mode (or computed default) simply
+// marks the active button. On touch, holding a button (~500 ms) shows its
+// label in a small tooltip next to it instead of changing the mode: the
+// synthetic click is cancelled by preventing the touchend's default action.
 function _sessionsViewSelectHTML(mode) {
   const m = (SESSIONS_VIEW_MODES.indexOf(mode) >= 0) ? mode : _sessionsViewMode();
   const label = _stx('sessions_view_dropdown', _stx('sessions_view_toggle', 'Sessions view mode'));
   const defs = [
-    { key: 'list', label: _stx('sessions_view_list', 'List') },
-    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles') },
-    { key: 'compact', label: _stx('sessions_view_compact', 'Compact') },
+    { key: 'list', glyph: '&#9776;', label: _stx('sessions_view_list', 'List') },
+    { key: 'tiles', glyph: '&#8862;', label: _stx('sessions_view_tiles', 'Tiles') },
+    { key: 'compact', glyph: '&#9636;', label: _stx('sessions_view_compact', 'Compact') },
   ];
-  const opts = defs.map(d => `<option value="${d.key}"${d.key === m ? ' selected' : ''}>${escHtml(d.label)}</option>`).join('');
-  return `<select id="sessionsViewSelect" class="sessions-view-select" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="_sessionsSetViewMode(this.value)">${opts}</select>`;
+  const btns = defs.map(d => {
+    const on = d.key === m;
+    return `<button type="button" class="sessions-view-btn${on ? ' active' : ''}" data-mode="${d.key}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')" ontouchstart="_svbPressStart(this)" ontouchend="_svbPressEnd(event,this)" ontouchcancel="_svbPressEnd(event,this)"><span aria-hidden="true">${d.glyph}</span></button>`;
+  }).join('');
+  return `<div class="sessions-view-buttons" role="group" aria-label="${escHtml(label)}">${btns}</div>`;
 }
 window._sessionsViewSelectHTML = _sessionsViewSelectHTML;
+
+// Long-press (touch) label hint for the view-mode buttons: a short tap
+// fires the normal click (mode change); holding for ~500 ms shows the
+// button's label in a tooltip and cancels the synthetic click so the
+// long press never changes the mode. Both paths hide the tooltip when the
+// finger lifts (touchend or touchcancel).
+const SESSIONS_VIEW_BTN_LONG_PRESS_MS = 500;
+function _svbPressStart(btn) {
+  if (!btn) return; // no DOM (tests) — nothing to arm
+  clearTimeout(btn._svbTimer);
+  btn._svbTimer = setTimeout(function () {
+    btn._svbTimer = null;
+    btn._svbLong = true;
+    _svbShowTip(btn);
+  }, SESSIONS_VIEW_BTN_LONG_PRESS_MS);
+}
+function _svbPressEnd(ev, btn) {
+  if (btn && btn._svbTimer) {
+    clearTimeout(btn._svbTimer);
+    btn._svbTimer = null;
+    return; // brief touch: let the synthetic click run the normal mode change
+  }
+  if (btn) btn._svbLong = false;
+  _svbHideTip();
+  if (ev) {
+    // The long press already fired: cancel the synthetic click so lifting
+    // the finger does not switch the mode.
+    try { if (ev.preventDefault) ev.preventDefault(); } catch (_) { /* stub */ }
+  }
+}
+function _svbTipEl() {
+  try {
+    if (typeof document === 'undefined' || !document.body) return null;
+    let el = document.getElementById('sessionsViewTip');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sessionsViewTip';
+      el.className = 'sessions-view-tip';
+      el.style.display = 'none';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+    }
+    return el;
+  } catch (_) { return null; }
+}
+function _svbShowTip(btn) {
+  const el = _svbTipEl();
+  if (!el || !btn) return;
+  const label = btn.getAttribute ? btn.getAttribute('aria-label') : '';
+  el.textContent = label || '';
+  try {
+    const r = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+    if (r) {
+      el.style.left = (r.left + r.width / 2) + 'px';
+      el.style.top = (r.top - 6) + 'px';
+    }
+    el.style.transform = 'translate(-50%, -100%)';
+  } catch (_) { /* positioning is cosmetic only */ }
+  el.style.display = 'block';
+}
+function _svbHideTip() {
+  const el = _svbTipEl();
+  if (el) el.style.display = 'none';
+}
+window.SESSIONS_VIEW_BTN_LONG_PRESS_MS = SESSIONS_VIEW_BTN_LONG_PRESS_MS;
+window._svbPressStart = _svbPressStart;
+window._svbPressEnd = _svbPressEnd;
+window._svbShowTip = _svbShowTip;
+window._svbHideTip = _svbHideTip;
 
 window.renderSessionsViewsBar = renderSessionsViewsBar;
 window._savedViewsRead = _savedViewsRead;
