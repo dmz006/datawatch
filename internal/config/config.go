@@ -41,6 +41,13 @@ type RemoteServerConfig struct {
 	// false. OK for a self-signed/local-dev peer on a trusted network only;
 	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
 	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
+	// TLSCertFingerprint pins the peer's leaf certificate to the hex
+	// SHA-256 of its DER bytes. It is the recommended alternative to
+	// TLSSkipVerify for a self-signed peer: the peer's identity is still
+	// checked, only the CA chain is not. When set it wins over
+	// TLSSkipVerify. Same convention as the compute node
+	// tls_cert_fingerprint.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty"`
 	// FingerprintSync opts THIS peer into the resource-fingerprint exchange.
 	// Opt-in per peer, default false — the operator decision recorded in
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question

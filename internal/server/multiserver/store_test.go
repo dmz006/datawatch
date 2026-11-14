@@ -2,6 +2,8 @@ package multiserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -474,5 +476,187 @@ func TestFingerprintSyncStoreRoundTrip(t *testing.T) {
 	}
 	if !fin.FingerprintSync {
 		t.Error("FingerprintSync=true must survive persist/reload")
+	}
+}
+
+func TestStore_PinRoundTrip(t *testing.T) {
+	fp := strings.Repeat("c3", 32)
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	// An uppercase pin must be normalized to lowercase hex on Add.
+	if err := s.Add(&Entry{Name: "pinned", URL: "https://pinned.example.com:8080", Enabled: true, TLSCertFingerprint: strings.ToUpper(fp)}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	got, ok := s.Get("pinned")
+	if !ok {
+		t.Fatal("Get: entry not found after Add")
+	}
+	if got.TLSCertFingerprint != fp {
+		t.Fatalf("TLSCertFingerprint = %q, want normalized %q", got.TLSCertFingerprint, fp)
+	}
+
+	// The pin must survive persist/reload into a fresh store.
+	s2, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore reload: %v", err)
+	}
+	re, ok := s2.Get("pinned")
+	if !ok {
+		t.Fatal("reload: entry not found")
+	}
+	if re.TLSCertFingerprint != fp {
+		t.Fatalf("reload: TLSCertFingerprint = %q, want %q", re.TLSCertFingerprint, fp)
+	}
+}
+
+func TestStore_AddRejectsPinWithSkipVerify(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "both", URL: "https://both.example.com", TLSSkipVerify: true, TLSCertFingerprint: strings.Repeat("d4", 32)}); err == nil {
+		t.Fatal("Add: expected an error for pin + tls_skip_verify together")
+	}
+	if _, ok := s.Get("both"); ok {
+		t.Fatal("rejected entry must not be stored")
+	}
+}
+
+func TestStore_UpdatePinNormalizationAndRejection(t *testing.T) {
+	fp := strings.Repeat("e5", 32)
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "up", URL: "https://up.example.com", Enabled: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Update with an uppercase pin — normalized on the way in.
+	if err := s.Update("up", &Entry{URL: "https://up.example.com", Enabled: true, TLSCertFingerprint: strings.ToUpper(fp)}); err != nil {
+		t.Fatalf("Update(pin): %v", err)
+	}
+	got, ok := s.Get("up")
+	if !ok {
+		t.Fatal("Get after Update: not found")
+	}
+	if got.TLSCertFingerprint != fp {
+		t.Fatalf("TLSCertFingerprint = %q, want normalized %q", got.TLSCertFingerprint, fp)
+	}
+
+	// Update with both a pin and skip-verify must be rejected and leave
+	// the stored entry unchanged.
+	if err := s.Update("up", &Entry{URL: "https://up.example.com", TLSSkipVerify: true, TLSCertFingerprint: strings.Repeat("f6", 32)}); err == nil {
+		t.Fatal("Update: expected an error for pin + tls_skip_verify together")
+	}
+	if got.TLSSkipVerify || got.TLSCertFingerprint != fp {
+		t.Fatalf("rejected Update mutated the entry: %+v", got)
+	}
+}
+
+func TestStore_Test_Pinned(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"version":"7.0.0-pinned"}`)) //nolint:errcheck
+		case "/api/sessions":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	sum := sha256.Sum256(srv.Certificate().Raw)
+	fp := hex.EncodeToString(sum[:])
+
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	// A pin matching the self-signed leaf must pass Test(); this is the
+	// point of pinning — trusted peer without disabling verification.
+	if err := s.Add(&Entry{Name: "pinned", URL: srv.URL, Enabled: true, TLSCertFingerprint: fp}); err != nil {
+		t.Fatalf("Add(pinned): %v", err)
+	}
+	_, version, err := s.Test(context.Background(), "pinned")
+	if err != nil {
+		t.Fatalf("Test(pinned): expected the matching pin to succeed, got: %v", err)
+	}
+	if version != "7.0.0-pinned" {
+		t.Errorf("version = %q, want %q", version, "7.0.0-pinned")
+	}
+
+	// A wrong pin must fail closed against the same server.
+	if err := s.Add(&Entry{Name: "badpin", URL: srv.URL, Enabled: true, TLSCertFingerprint: strings.Repeat("0a", 32)}); err != nil {
+		t.Fatalf("Add(badpin): %v", err)
+	}
+	if _, _, err := s.Test(context.Background(), "badpin"); err == nil {
+		t.Fatal("Test(badpin): expected a fingerprint-mismatch error, got nil")
+	}
+
+	// No pin and no skip-verify still fails against the self-signed cert.
+	if err := s.Add(&Entry{Name: "strict", URL: srv.URL, Enabled: true}); err != nil {
+		t.Fatalf("Add(strict): %v", err)
+	}
+	if _, _, err := s.Test(context.Background(), "strict"); err == nil {
+		t.Fatal("Test(strict): expected a certificate-verification error, got nil")
+	}
+}
+
+// A servers.json written before TLSCertFingerprint existed (no such
+// field in the JSON) must load unchanged: every pre-existing entry keeps
+// its values and the new field simply reads empty.
+func TestStore_Migration_LegacyStoreFile(t *testing.T) {
+	dir := t.TempDir()
+	legacy := []byte(`[
+  {
+    "name": "legacy",
+    "url": "https://legacy.example.com:8080",
+    "token": "abc123",
+    "enabled": true,
+    "tls_skip_verify": true,
+    "fingerprint_sync": true,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-02T00:00:00Z"
+  }
+]
+`)
+	if err := os.WriteFile(filepath.Join(dir, "servers.json"), legacy, 0o600); err != nil {
+		t.Fatalf("write legacy store: %v", err)
+	}
+
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore over legacy file: %v", err)
+	}
+	got, ok := s.Get("legacy")
+	if !ok {
+		t.Fatal("legacy entry did not load")
+	}
+	if got.URL != "https://legacy.example.com:8080" {
+		t.Errorf("URL = %q, unchanged value expected", got.URL)
+	}
+	if got.Token != "abc123" {
+		t.Errorf("Token = %q, unchanged value expected", got.Token)
+	}
+	if !got.Enabled || !got.TLSSkipVerify || !got.FingerprintSync {
+		t.Errorf("legacy flags changed: %+v", got)
+	}
+	if got.TLSCertFingerprint != "" {
+		t.Errorf("TLSCertFingerprint = %q, want empty for a pre-change entry", got.TLSCertFingerprint)
+	}
+	if got.Builtin {
+		t.Error("legacy entry must not read as builtin")
 	}
 }
