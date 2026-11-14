@@ -1575,6 +1575,7 @@
   "header_scope_clear": "Zurücksetzen",
   "header_scope_help_label": "Hilfe: Bereich",
   "header_scope_templates_note": "Vorlagen werden für jedes Projekt und jeden Plan angezeigt.",
+  "header_scope_global_note": "Dieser Bereich gilt für jedes Projekt und jeden Plan.",
   "server_settings_title": "Remote-Server",
   "server_test_btn": "Testen",
   "server_token_label": "Token",

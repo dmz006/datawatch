@@ -1575,6 +1575,7 @@
   "header_scope_clear": "Effacer",
   "header_scope_help_label": "Aide : périmètre",
   "header_scope_templates_note": "Les modèles sont affichés pour tous les projets et plans.",
+  "header_scope_global_note": "Cette section s'applique à tous les projets et plans.",
   "server_settings_title": "Serveurs Distants",
   "server_test_btn": "Tester",
   "server_token_label": "Jeton",

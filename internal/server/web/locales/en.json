@@ -1546,6 +1546,7 @@
   "header_scope_clear": "Clear",
   "header_scope_help_label": "Help: scope",
   "header_scope_templates_note": "Templates are shown for every project and plan.",
+  "header_scope_global_note": "This section applies to every project and plan.",
   "server_settings_title": "Remote Servers",
   "server_test_btn": "Test",
   "server_token_label": "Token",

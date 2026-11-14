@@ -32876,6 +32876,15 @@ function _automataBaseList() {
   const st = _automataState;
   const isTemplates = st.tab === 'templates';
   let list = st.allPrds.filter(p => !!p.is_template === isTemplates);
+  // Header scope ("Filter active"): with a project or a plan scope the list
+  // shows only the Automata of that project or of that plan, so the tag and
+  // status facets, the select-all box and the batch actions all see the same
+  // visible cards. Templates are global — shown for every project and plan —
+  // so they are not filtered; that case is called out with the one-line
+  // header_scope_templates_note instead (_automataScopeNoteHtml).
+  if (!isTemplates && typeof _scopeActive === 'function' && _scopeActive() && typeof _scopeMatchesPrd === 'function') {
+    list = list.filter(p => _scopeMatchesPrd(p));
+  }
   // When a status badge filter is active the badge controls exactly what's visible,
   // so bypass the history gate — a clicked 'archived' badge should show archived
   // without needing to toggle the history button separately.
@@ -33470,12 +33479,36 @@ function _automataLoadMoreHtml() {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="automataLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="automataLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// _automataScopeNoteHtml is the status line above the Automata list while a
+// header scope is active. The Automata list gets the standard "Filtered to …"
+// banner (with a Clear button). The Templates sub-tab is not filtered —
+// templates are shown for every project and plan — and shows the one-line
+// header_scope_templates_note instead. Under the All scope it is '' so the
+// unscoped page is byte-for-byte unchanged.
+function _automataScopeNoteHtml() {
+  if (typeof _scopeActive !== 'function' || !_scopeActive()) return '';
+  if (_automataState.tab === 'templates') {
+    const text = t('header_scope_templates_note') || 'Templates are shown for every project and plan.';
+    return `<div class="scope-banner scope-banner-note" role="note"><span class="scope-banner-text">${escHtml(text)}</span></div>`;
+  }
+  return _scopeBannerHTML();
+}
+// _automataGlobalScopeNote is the one-line note shown above sub-tabs that are
+// inherently global (Resources, Housekeeping and slot cards without a project
+// link): the scope filters the lists that carry a project link, but this
+// section is shared across every project and plan, so it stays unchanged with
+// a note. All scope shows nothing.
+function _automataGlobalScopeNote() {
+  if (typeof _scopeActive !== 'function' || !_scopeActive()) return '';
+  const text = t('header_scope_global_note') || 'This section applies to every project and plan.';
+  return `<div class="scope-banner scope-banner-note" role="note"><span class="scope-banner-text">${escHtml(text)}</span></div>`;
+}
 // _automataCardsHtml draws the Automata body through the shared tag browser.
 function _automataCardsHtml() {
   const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
   const empty = `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
   const base = _automataBaseList();
-  return _decisionRecordSlotHtml() + _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
+  return _automataScopeNoteHtml() + _decisionRecordSlotHtml() + _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
 }
 function _automataAfterPaint(panel, openIds) {
   if (openIds && openIds.size) {
@@ -34146,7 +34179,54 @@ const _AUTOMATA_EVENTS_SEARCH_MS = 300;
 const _automataEventsState = {
   inFlight: null, expanded: new Set(), kinds: new Set(), project: '', q: '',
   nextCursor: '', events: [], projects: new Set(), gen: 0, searchTimer: null,
+  autoFill: 0,
 };
+
+// The Events sub-tab follows the header scope. A project scope is sent as the
+// project= query parameter; a plan scope additionally hides the rows that do
+// not belong to that plan, and while a filtered page comes back short the load
+// keeps pulling the next page (capped) so the plan's rows are not stranded on
+// a later page. A scope change is a filter change: reload drops late replies.
+// _eventsScopeProject is the scope's project, or '' when the scope is All.
+function _eventsScopeProject() {
+  try {
+    if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+      const s = getScope();
+      return (s && s.project) ? String(s.project) : '';
+    }
+  } catch (_) { /* no scope available: All */ }
+  return '';
+}
+// _eventsEffectiveProject is the project the events load uses: the scope's
+// project when set, else the operator's own dropdown choice.
+function _eventsEffectiveProject() {
+  return _eventsScopeProject() || _automataEventsState.project;
+}
+// _eventsPlanScopeActive is true only for a plan scope (project + plan).
+function _eventsPlanScopeActive() {
+  try {
+    if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+      const s = getScope();
+      return !!(s && s.plan);
+    }
+  } catch (_) { /* no scope */ }
+  return false;
+}
+// _eventsRowInScope keeps an event when it belongs to the active plan scope.
+// A project scope is enforced server-side by project=, so only a plan narrows
+// a row: it must name the plan's Automation or one of its Automata.
+function _eventsRowInScope(ev) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.project) return true;   // All
+    if (!s.plan) return true;            // project scope: project= already scoped
+    if (!ev || typeof ev !== 'object') return false;
+    if (ev.automation && _scopeAutomatonIdMatches(ev.automation)) return true;
+    if (ev.automaton && _scopeAutomatonIdMatches(ev.automaton)) return true;
+    return false;
+  } catch (_) { return true; }
+}
 
 // _automataEventsText returns the translation, or the English fallback when no
 // bundle defines the key (t() returns the key itself on a miss).
@@ -34254,7 +34334,8 @@ function automataEventsQuery(before) {
   const parts = ['limit=' + _AUTOMATA_EVENTS_LIMIT];
   const kinds = _AUTOMATA_EVENT_KINDS.filter(k => st.kinds.has(k));
   if (kinds.length) parts.push('kind=' + encodeURIComponent(kinds.join(',')));
-  if (st.project) parts.push('project=' + encodeURIComponent(st.project));
+  const proj = _eventsEffectiveProject();
+  if (proj) parts.push('project=' + encodeURIComponent(proj));
   if (st.q) parts.push('q=' + encodeURIComponent(st.q));
   if (before) parts.push('before=' + encodeURIComponent(before));
   return '/api/autonomous/event-log?' + parts.join('&');
@@ -34296,6 +34377,9 @@ function paintAutomataEvents(events, errorText) {
     list.innerHTML = `<div style="color:var(--error,#ef4444);font-size:12px;">${escHtml(errorText)}</div>`;
     return;
   }
+  // A plan scope hides the rows that do not belong to it before anything is
+  // drawn, so a full page is never shown with the plan's rows missing.
+  events = (events || []).filter(_eventsRowInScope);
   if (!events.length) {
     list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_empty', 'No events yet.'))}</div>`;
     return;
@@ -34328,6 +34412,7 @@ function renderAutomataEventsPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
+    ${_automataScopeNoteHtml()}
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
     ${automataEventsStatusHtml()}
@@ -34451,11 +34536,12 @@ function automataEventsFilterHtml() {
 // the loaded events, plus the selected one, so the selection never vanishes.
 function automataEventsProjectOptions() {
   const st = _automataEventsState;
+  const sel = _eventsEffectiveProject();
   const names = new Set(st.projects);
-  if (st.project) names.add(st.project);
-  const opts = [`<option value=""${st.project ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
+  if (sel) names.add(sel);
+  const opts = [`<option value=""${sel ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
   Array.from(names).sort().forEach(p => {
-    opts.push(`<option value="${escHtml(p)}"${p === st.project ? ' selected' : ''}>${escHtml(p)}</option>`);
+    opts.push(`<option value="${escHtml(p)}"${p === sel ? ' selected' : ''}>${escHtml(p)}</option>`);
   });
   return opts.join('');
 }
@@ -34487,6 +34573,7 @@ function automataEventsReload() {
   st.events = [];
   st.nextCursor = '';
   st.lastEvents = [];
+  st.autoFill = 0;
   const list = document.getElementById('automataEventsList');
   if (list) list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>`;
   const err = document.getElementById('automataEventsMoreError');
@@ -34511,6 +34598,15 @@ function automataEventsLoad(append) {
       st.events.forEach(ev => { if (ev && ev.project) st.projects.add(ev.project); });
       paintAutomataEvents(st.events);
       automataEventsSyncControls();
+      // A plan scope hides most of a full page, so while the visible rows are
+      // still short and a next cursor remains, pull the next page and merge it
+      // in, up to _SCOPE_MAX_PAGES extra pages. The guard is plan-scope only:
+      // with All or a project scope the server already paged the right rows.
+      if (!append && _eventsPlanScopeActive() && st.nextCursor && st.autoFill < _SCOPE_MAX_PAGES
+          && (st.lastEvents.filter(_eventsRowInScope).length < _AUTOMATA_EVENTS_LIMIT)) {
+        st.autoFill++;
+        automataEventsLoad(true);
+      }
     })
     .catch(err => {
       if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
@@ -44194,7 +44290,7 @@ function renderAutonomousView() {
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;display:none;" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
         ${_automationActionButtonsHTML(isAutomation)}
       </div>
-      ${isAutomation ? _automationBodyHTML() : `${st.tab === 'templates' ? _templatesSubtabsBarHTML() : ''}<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+      ${isAutomation ? _automationBodyHTML() : `${st.tab === 'templates' ? _templatesSubtabsBarHTML() + _automataScopeNoteHtml() : ''}<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         ${_tagFilterBarHTML('automata',
           `<input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`,
           `<div class="automata-badge-group">${typeBadges}</div>`,
@@ -44859,7 +44955,9 @@ window.costChartsEventEntries = costChartsEventEntries;
 // search filter is set, because these entries carry none of them.
 function costChartsMergeEvents(events) {
   const st = _automataEventsState;
-  if (!_costCharts.events.length || st.kinds.size || st.project) return events;
+  if (!_costCharts.events.length || st.kinds.size) return events;
+  const proj = (typeof _eventsEffectiveProject === 'function') ? _eventsEffectiveProject() : st.project;
+  if (proj) return events;
   const q = String(st.q || '').toLowerCase();
   const mine = _costCharts.events.filter(e => !q || (e.summary + ' ' + e.reason).toLowerCase().indexOf(q) >= 0);
   return mine.concat(events);
@@ -44942,9 +45040,18 @@ const _automationInboxRaw = {};
 const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
-// (everything) or one selected project. A project scope applies only while
-// the Projects tab is shown and the selected name is a known project.
+// (everything) or one selected project. The header scope is authoritative
+// whichever sub-tab is shown; a project scope applies through the selected
+// name on the Projects tab.
 function _inboxScope() {
+  if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+    const s = getScope();
+    if (s && s.project) {
+      const list = (typeof _projectsState !== 'undefined' && Array.isArray(_projectsState.list)) ? _projectsState.list : [];
+      const project = list.find(p => p && p.name === s.project) || { name: s.project, dir: '' };
+      return { kind: 'project', project };
+    }
+  }
   const sel = (typeof _projectsState !== 'undefined' && _projectsState) ? _projectsState.selected : '';
   if (!sel || typeof _projectsActive !== 'function' || !_projectsActive()) return { kind: 'overview' };
   const list = Array.isArray(_projectsState.list) ? _projectsState.list : [];
@@ -45000,10 +45107,23 @@ function _inboxItemInProject(item, project) {
 // _inboxScopeData returns one Inbox source's data cut to the current scope,
 // in the same shape the source's renderer and counter read. The Overview
 // returns the data untouched, so count and list agree in both scopes.
+function _inboxItemInPlan(item) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.plan) return true;               // no plan: project scope only
+    if (!item || typeof item !== 'object') return false;
+    if (item.prd_id && _scopeAutomatonIdMatches(item.prd_id)) return true;
+    if (item.automation && _scopeAutomatonIdMatches(item.automation)) return true;
+    const prd = _inboxPrdFor(item);
+    if (prd && prd.id && _scopeAutomatonIdMatches(prd.id)) return true;
+    return false;
+  } catch (_) { return true; }
+}
 function _inboxScopeData(key, data) {
   const scope = _inboxScope();
   if (scope.kind !== 'project' || !data) return data;
-  const keep = x => _inboxItemInProject(x, scope.project);
+  const keep = x => _inboxItemInProject(x, scope.project) && _inboxItemInPlan(x);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
   if (key === 'automation_questions') {
@@ -45114,7 +45234,7 @@ const _AUTOMATION_SUBTABS = [
     id: 'inbox',
     labelKey: 'automation_subtab_inbox',
     badge: () => _automationInboxBadgeCount(),
-    bodyHTML: () => `
+    bodyHTML: () => `${_automataScopeNoteHtml()}
       <!-- Inbox order: the queue and hold cards first, then the triage card
            (the failed and blocked records), then the rest. -->
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
@@ -45154,7 +45274,7 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_automations',
     bodyHTML: () => {
       const st = _automationState;
-      return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+      return `${_automataScopeNoteHtml()}<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
         ${_tagFilterBarHTML('automation',
           `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
       </div>
@@ -45175,7 +45295,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'resources',
     labelKey: 'automation_subtab_resources',
-    bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
@@ -45192,7 +45312,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'progress',
     labelKey: 'automation_subtab_progress',
-    bodyHTML: () => `<div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('progress')}`,
     mount() {
       // The progress card renders into its slot on this sub-tab; it has no
@@ -45205,7 +45325,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
-    bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPendingItemsCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       ${_automationSlotsHTML('housekeeping')}`,
@@ -47265,6 +47385,16 @@ window.automationBudgetSummary = automationBudgetSummary;
 // automationListVisible applies the status badges, the history toggle and the
 // search box to list, then orders it by status and name. It does not modify
 // the list it is given.
+function _automationInScope(a) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.project) return true;              // All
+    if (s.plan) return !!a && String(a.id) === s.plan;
+    return !!a && String(a.project || '') === s.project;
+  } catch (_) { return true; }
+}
+window._automationInScope = _automationInScope;
 function automationListVisible(list, st) {
   const f = st && st.statusFilter;
   const inFilter = s => (f && typeof f.has === 'function' ? f.has(s) : Array.isArray(f) ? f.includes(s) : true);
@@ -47275,6 +47405,7 @@ function automationListVisible(list, st) {
   };
   return (Array.isArray(list) ? list : []).filter(a => {
     if (!a) return false;
+    if (!_automationInScope(a)) return false;
     // Shipped selection (Go's shipped.go read semantics): decided by the
     // record's shipped-state (its merged commit), never by its stored
     // status — so a cancelled Automation whose work landed is "shipped",
