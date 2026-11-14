@@ -3857,7 +3857,11 @@ is still accepted, but it applies **only to tasks that have not started**
 (`pending`, `queued`, `waiting_capacity`, `waiting_decision`,
 `awaiting_approval`, or never scheduled). A task that is `waiting_capacity`
 gets its queued capacity request re-targeted to the pool the new backend and
-model resolve to, and is reported with `capacity_moved: true`. Started tasks
+model resolve to, and is reported with `capacity_moved: true`. This holds even
+when the task's stored backend already matches the new one (it may be queued on
+another pool through inheritance or an earlier fall-through), and a
+fall-through note recorded for the old request is cleared when the request
+moves. Started tasks
 (running, running tests, verifying), finished tasks (completed, failed,
 cancelled) and parked ones (blocked, waiting for review) are never modified
 — they are reported as left alone with the reason, and the override will take
