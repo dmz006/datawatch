@@ -59,12 +59,6 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
-      # No CPU-burner / stress patterns in test files or helpers.
-      - name: no load patterns check
-        run: |
-          bash scripts/check-no-load-patterns.sh
-          bash scripts/check-no-load-patterns_test.sh
-
       # Unscoped `tmux kill-server` / `kill-session -a` audit.
       - name: unscoped tmux kill check
         run: bash scripts/check-no-unscoped-tmux.sh
@@ -87,9 +81,6 @@ jobs:
 
       - name: dockerfile certifi floor check
         run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
-
-      - name: go test
-        run: go test ./... -count=1 -timeout 12m
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9

@@ -137,8 +137,8 @@ Steps:
   `scripts/check-no-load-patterns.sh` enforces this over test files and test
   helpers and runs as `make check-no-load-patterns` (it also runs its
   fixture, `scripts/check-no-load-patterns_test.sh`) and inside `make lint`
-  — so it is part of the local pre-tag run on the build host, never a CI
-  step.
+  — `make lint` is the local pre-tag list, so run it before every tag. This
+  check is part of that pre-tag run on the build host, never a CI step.
 
 ## Code Style
 
