@@ -197,7 +197,7 @@ func (m *Manager) LaneUtilization(window time.Duration, buckets int, now time.Ti
 	}
 	m.mu.Lock()
 	cfg := m.cfg.LaneFill
-	execution := m.cfg.ExecutionBackend
+	mcfg := m.cfg
 	c := m.coordinator
 	usageSrc := m.laneUtilUsage
 	m.mu.Unlock()
@@ -210,7 +210,7 @@ func (m *Manager) LaneUtilization(window time.Duration, buckets int, now time.Ti
 		firstEligible: map[string]string{},
 		status:        m.LaneFillStatus(LaneUtilizationDecisionLimit),
 	}
-	in.tasks = m.laneUtilizationTasks(execution, start, now)
+	in.tasks = m.laneUtilizationTasks(mcfg, start, now)
 	if c != nil {
 		c.lf.mu.Lock()
 		for id, t := range c.lf.workSince {
@@ -248,7 +248,7 @@ func laneUtilizationFirstEligible(st LaneFillStatus) map[string]string {
 // laneUtilizationTasks copies every task that started before now and ended
 // (or is still running) after start, resolving its worker backend with the
 // resolver the executor uses.
-func (m *Manager) laneUtilizationTasks(execution string, start, now time.Time) []laneUtilizationTask {
+func (m *Manager) laneUtilizationTasks(mcfg Config, start, now time.Time) []laneUtilizationTask {
 	if m.store == nil {
 		return nil
 	}
@@ -281,7 +281,7 @@ func (m *Manager) laneUtilizationTasks(execution string, start, now time.Time) [
 					raws = append(raws, rawTask{
 						task:   Task{Backend: t.Backend, Model: t.Model, AdmittedBackend: t.AdmittedBackend, AdmittedModel: t.AdmittedModel, ID: t.ID, Title: t.Title, Kind: t.Kind, Status: t.Status, StartedAt: t.StartedAt, CompletedAt: t.CompletedAt, UpdatedAt: t.UpdatedAt},
 						story:  Story{Backend: s.Backend, Model: s.Model},
-						prd:    PRD{ID: p.ID, Title: p.Title, Backend: p.Backend, Model: p.Model, AutomationID: p.AutomationID},
+						prd:    PRD{ID: p.ID, Title: p.Title, Backend: p.Backend, Model: p.Model, AutomationID: p.AutomationID, LanePreference: p.LanePreference},
 						stage:  s.Title,
 						queued: q,
 					})
@@ -296,7 +296,7 @@ func (m *Manager) laneUtilizationTasks(execution string, start, now time.Time) [
 			auto, _ = m.automations.Get(r.prd.AutomationID)
 		}
 		task, story, prd := r.task, r.story, r.prd
-		backend, _ := admittedWorker(&task, &story, &prd, auto, execution)
+		backend, _ := admittedWorker(&task, &story, &prd, auto, executionFallbackBackend(mcfg, &prd))
 		var end time.Time
 		if !laneFillRunningTask[task.Status] {
 			end = laneUtilizationTaskEnd(&task, now)

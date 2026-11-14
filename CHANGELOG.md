@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A task of an Automaton that prefers the Claude lane no longer asks for the daemon default's capacity pool.** When no task, story, PRD or Automaton worker was named, the worker fell back to the daemon default (often pi-prompt) and the task queued on `pool llm:pi-prompt` even though its lane preference was Claude. The lane preference is now a level of the worker order: task, story, PRD, Automaton, lane preference, then the daemon default. A `claude` preference falls back to the Claude lane backend, a `gpu` preference to the GPU lane backend, and `any` or none keeps the default. Lane fill and lane utilization read the same order.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed
