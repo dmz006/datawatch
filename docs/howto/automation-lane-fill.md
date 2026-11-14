@@ -422,6 +422,12 @@ when the task is **admitted**, and it follows these rules:
 None of this adds a setting, an endpoint or a command. Lane fill's own
 decisions, counts and modes are unchanged.
 
+**For the operator to review:** pool fall-through is off by default, so the
+fall-through paragraphs above only apply once `autonomous.capacity_fallthrough`
+is turned on. Decide whether to enable it for your pools, and check that the
+wait reason wording for a pi task with no compute node matches what your build
+shows.
+
 ## The day-long shadow comparison
 
 Run shadow mode for about one day while the supervisor still fills lanes by
