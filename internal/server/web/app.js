@@ -24436,6 +24436,12 @@ const GENERAL_CONFIG_FIELDS = [
     // and interactive session starts are never blocked.
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
+    // Review reserve: while a backed-off backend holds nothing else, keep a
+    // few of its live slots for review work (guardrail judging, verifying,
+    // planning) — workers never take a reserve slot. Slot count 0 = off
+    // (default 1); the reserve's rolling one-hour token budget 0 = no cap.
+    { key: 'autonomous.backoff_reserve_for_review', label: 'Usage back-off review reserve (review session slots kept per backed-off backend, 0 = off, default 1)', labelKey: 'settings_backoff_reserve_for_review', type: 'number', placeholder: '1', min: 0, step: 1, default: '1' },
+    { key: 'autonomous.backoff_reserve_tokens_per_hour', label: 'Usage back-off review reserve token cap (rolling one-hour tokens the reserve may use per backend, 0 = no cap)', labelKey: 'settings_backoff_reserve_tokens_per_hour', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Host load check — off does nothing, alert (default) raises one alert per sustained breach, reap also ends proven-orphan processes of ended sessions.
@@ -34659,7 +34665,11 @@ function capacityBackoffHtml(backoff) {
     const rung = b.rung
       ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
       : '';
-    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
+    // The daemon sends the reserve reason in its built-in English wording
+    // ("back-off, review reserve in use"); show it translated here, keeping
+    // any pool prefix the ledger added. Every other reason shows as sent.
+    const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
+    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
     return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
@@ -34670,11 +34680,17 @@ function capacityBackoffHtml(backoff) {
 // and the holdings line. Field names cover both payload shapes: the task
 // views (cause, resets_at, pools, node) and the session status automaton
 // block (wait_cause, wait_resets_at, holds).
-function _taskWaitCauseLabel(cause) {
+// A back-off wait narrows to the review-reserve chip when its reason names
+// the reserve (a review slot or the reserve's hourly token budget is in
+// use), so the chip says why instead of a bare back-off; every other
+// back-off keeps the original label.
+function _taskWaitCauseLabel(cause, reason) {
   switch (cause) {
     case 'pool_full': return t('task_wait_cause_pool_full') || 'Pool full';
     case 'node_busy': return t('task_wait_cause_node_busy') || 'Node busy';
-    case 'backoff': return t('task_wait_cause_backoff') || 'Back-off';
+    case 'backoff':
+      if (/review reserve in use/.test(String(reason || ''))) return t('task_wait_cause_backoff_reserve') || 'Back-off, review reserve in use';
+      return t('task_wait_cause_backoff') || 'Back-off';
     case 'budget': return t('task_wait_cause_budget') || 'Budget';
     case 'global_cooldown': return t('task_wait_cause_global_cooldown') || 'Cool-down';
     case 'await_external': return t('task_wait_cause_await_external') || 'Awaiting external';
@@ -34697,7 +34713,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = _taskWaitCauseLabel(cause);
+  const label = _taskWaitCauseLabel(cause, reason);
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
