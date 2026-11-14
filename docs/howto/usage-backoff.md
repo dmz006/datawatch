@@ -4,7 +4,7 @@ docs:
   topics: [usage, backoff, back-off, rate-limit, capacity, restart, burn-guard, alerts, review-reserve]
 exec_steps:
   - tool: usage_backoff_status
-    description: Read every active back-off flag first (backend, until, reason, source), plus the effective mode and maximum wait
+    description: Read every active back-off flag first (backend, until, reason, source), plus the effective mode, maximum wait and review-reserve settings, and the reserve's per-backend window usage
     args: {}
     read_only: true
   - tool: usage_backoff_set
@@ -100,9 +100,25 @@ Details worth knowing:
   daemon restart. The reserve's in-memory state (the rolling token stamps) is
   not persisted and does not survive a restart; the flags themselves do, as
   described below.
-- **Surfaces.** The two reserve keys are YAML-only configuration. They have no
-  REST, MCP, CLI, comm or PWA surface — see the row in
-  [../parity-status.md](../parity-status.md).
+- **Surfaces.** Both keys are settable from every config surface, and every
+  `usage-backoff` status shows the effective values:
+  - **YAML.** `autonomous.backoff_reserve_for_review` and
+    `autonomous.backoff_reserve_tokens_per_hour` in `config.yaml`.
+  - **REST.** `PUT /api/config` with `{"autonomous.backoff_reserve_for_review": 2}`
+    (and/or `autonomous.backoff_reserve_tokens_per_hour`); `GET /api/config`
+    returns the effective values, and `GET /api/usage-backoff` shows them in its
+    `config` object (as `reserve_for_review` and
+    `reserve_tokens_per_hour`) with the per-backend window usage in its
+    `reserve` array.
+  - **MCP.** `autonomous_config_set` with `backoff_reserve_for_review` and/or
+    `backoff_reserve_tokens_per_hour`; read them back in `usage_backoff_status`
+    (`config.reserve_for_review`, `config.reserve_tokens_per_hour`, `reserve`).
+  - **CLI.** `datawatch config set autonomous.backoff_reserve_for_review=2`;
+    `datawatch usage-backoff status` prints the effective values and the
+    reserve's window usage per backed-off backend.
+  - **Comm channels.** `configure autonomous.backoff_reserve_for_review=2`;
+    `usage_backoff status` shows the effective values and window usage.
+  - **PWA.** The two *Usage back-off review reserve* fields in Settings.
 
 ## Set, check and clear a flag
 
