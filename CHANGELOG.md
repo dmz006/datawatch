@@ -9,6 +9,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Five more decompose lint rules read the verification script.** The rule pack grows to twenty-one rules, sixteen of them blocking. New findings cover a script whose allowed-file list rejects the task's own files or the standard set (changelog, README, docs, locales, tests), a script that needs a file or phrase only a task it does not depend on creates, bash-only syntax under an sh shebang or a bash script run with `sh`, a pipe into `grep -q`, and a grep pattern that matches CSS hex colours as tracker ids. Each finding names the task, the script and the offending line, and a custom rule can use the matching `verification_script_*` predicates.
 
+### Changed
+
+- **The decompose lint default is now `enforce`.** An unset or empty `autonomous.decompose_lint.mode` used to normalize to `shadow` (one lint pass, recorded, never blocked); it now normalizes to `enforce` (block-severity findings are fed back to the decomposer within the retry budget, default 2; warn-severity findings are still reported and never block). An explicit `shadow` or `off` is still honored everywhere, and a misspelled mode remains a config error. The CLI, MCP, comm, PWA and REST descriptions, the how-to, the glossary, the config reference and the OpenAPI entry all name the new default.
+
 ## v9.172.14 — Accept the second soupsieve finding on the aider image
 
 ### Security

@@ -25,7 +25,7 @@ import (
 // decomposeLintBlockDesc is shared by the config-set object parameters.
 const decomposeLintBlockDesc = "Full replacement of one decompose-lint config block. " +
 	"decompose_lint takes {mode, max_retries, rules, disabled_rules}: " +
-	"mode is off (lint runs, nothing recorded), shadow (recorded, never blocks) or enforce (recorded and blocking); " +
+	"mode is off (lint runs, nothing recorded), shadow (recorded, never blocks) or enforce (recorded and blocking; the default when unset); " +
 	"max_retries is the decompose retry budget (whole number >= 0; 0 disables auto-retry); " +
 	"rules is an array of {id, severity (block|warn), match, message} lint rules; " +
 	"disabled_rules is an array of rule ids to turn off. " +

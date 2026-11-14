@@ -24415,7 +24415,7 @@ const GENERAL_CONFIG_FIELDS = [
       labelKey: 'settings_decompose_lint',
       type: 'decompose_lint',
       modeOptions: ['off', 'shadow', 'enforce'],
-      modeDefault: 'shadow',
+      modeDefault: 'enforce',
       modeLabelKey: 'settings_decompose_lint_mode',
       maxRetriesDefault: 2,
       maxRetriesMin: 0,
@@ -26423,7 +26423,7 @@ function settingsDecomposeLintLoadCore(pid) {
       delete decomposeLintLoadedTemplateBlocks[pid];
     }
     const modeEl = document.getElementById(pid + '-mode');
-    if (modeEl) modeEl.value = String(dl.mode || 'off');
+    if (modeEl) modeEl.value = String(dl.mode || 'enforce');
     const mrEl = document.getElementById(pid + '-maxretries');
     if (mrEl) mrEl.value = (dl.max_retries !== undefined && dl.max_retries !== null) ? dl.max_retries : 2;
     const tEl = document.getElementById(pid + '-tasktemplates');
@@ -26483,7 +26483,7 @@ window.settingsDecomposeLintSave = function (pid) {
     return;
   }
   const body = {
-    decompose_lint: { mode: String(val(pid + '-mode') || 'shadow'), max_retries: maxRet },
+    decompose_lint: { mode: String(val(pid + '-mode') || 'enforce'), max_retries: maxRet },
     decompose_guidance: String(val(pid + '-guidance') || ''),
   };
   // Send the loaded block back intact, with only enabled updated from the

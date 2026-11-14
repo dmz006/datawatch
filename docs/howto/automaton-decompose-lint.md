@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question]
 exec_params:
-  - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
+  - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow or enforce (default)"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
   - {name: prd_id, required: false, description: "The id of the Automaton to dry-run or read the stored record for"}
 exec_steps:
@@ -88,15 +88,15 @@ Two companion pieces travel with it:
 ## 2. The three modes, and the retry budget
 
 `autonomous.decompose_lint.mode` picks the mode. Empty (unset) resolves to
-`shadow` — the safe default. A misspelled mode (`enforc`) is a **config
+`enforce` — the shipped default. A misspelled mode (`enforc`) is a **config
 error, not a guess**: `Load` refuses the file and the daemon rejects the
-write, rather than quietly reading it as `enforce`.
+write, rather than quietly reading it as something else.
 
 | Mode | Standard tasks | Lint pass | Stored record | Retry |
 |---|---|---|---|---|
 | `off` | not applied | none | none | — |
-| `shadow` (default) | applied | one | yes — all findings | never |
-| `enforce` | applied | one, plus retries | yes — what remained | while block findings remain and budget lasts |
+| `shadow` | applied | one | yes — all findings | never |
+| `enforce` (default) | applied | one, plus retries | yes — what remained | while block findings remain and budget lasts |
 
 **Shadow.** The standard tasks are applied, one lint pass runs, and the pass — mode,
 attempts, findings, timestamp — is recorded on the Automaton. Nothing is
@@ -890,13 +890,13 @@ standard tasks are defined."
 
 ## 9. A reasonable end-to-end sequence
 
-1. Leave the default **shadow** for a while; read the records on the PWA
+1. Keep the default **enforce**; read the records on the PWA
    panel (or `lint findings <id>`).
 2. Silence the rules you do not care about (`{id, disabled: true}` or
    `disabled_rules`); tighten the ones you do (same-id replacement).
 3. Add your own `block` rules for the boundaries that matter *here*.
-4. Flip `mode: enforce` with the `max_retries` you can afford (0 is legal
-   and is “record, but let me decide”).
+4. Set the `max_retries` you can afford (0 is legal and is “record, but
+   let me decide”). Not ready to block yet? Set `mode: shadow`.
 5. If a class of finding is systemic, add a **guidance file** or template
    so the planner writes the plan right the first time.
 6. Once the decompose looks right, **set the gate up**: declare the

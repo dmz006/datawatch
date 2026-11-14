@@ -4640,7 +4640,7 @@
   "stats_trace_last_event_age": "最後のイベント(秒前)",
   "settings_decompose_lint_group": "Decompose Lint",
   "settings_decompose_lint": "Decompose Lint",
-  "settings_decompose_lint_mode": "モード（off | shadow | enforce）",
+  "settings_decompose_lint_mode": "モード（off | shadow | enforce；デフォルト: enforce）",
   "settings_decompose_lint_max_retries": "最大リトライ（0-5、既定 2）",
   "settings_decompose_lint_task_templates": "標準タスク",
   "settings_decompose_lint_guidance": "Decompose ガイダンス",
