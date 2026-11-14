@@ -129,6 +129,16 @@ Steps:
   hoisted top-level functions. Shared shim helpers live in
   `internal/server/web/testutil_browser_stub.js` — reuse them rather than
   duplicating a new stub per file.
+- **No load in tests:** tests must never burn CPU or generate stress — never
+  a shell busy loop, `stress`/`stress-ng`/`cpuburn`/`yes > /dev/null`/`dd
+  if=/dev/zero of=/dev/null`, an empty Go `for {}` spin loop, a
+  `GOMAXPROCS`-wide load fan-out, or the helper names `startConcurrentLoad` /
+  `loadWorkers`. Use a deterministic fake instead of real load.
+  `scripts/check-no-load-patterns.sh` enforces this over test files and test
+  helpers and runs as `make check-no-load-patterns` (it also runs its
+  fixture, `scripts/check-no-load-patterns_test.sh`) and inside `make lint`
+  — so it is part of the local pre-tag run on the build host, never a CI
+  step.
 
 ## Code Style
 
