@@ -155,6 +155,40 @@ completed, failed or cancelled, the next waiting member starts, again in member
 order. A daemon restart keeps the waiting members waiting and starts them as
 slots free. No member kind other than a fork takes the field.
 
+### Hold a later stage until an earlier one finishes
+
+A member's `stage` is a label by default (for example `build` or `review`). Set
+`stage_gate` to `true` on the Automation and the label becomes an order: a staged
+member does not start while an earlier stage still has unfinished members, and it
+starts when that stage finishes. Stages are ordered by first appearance in the
+`members` array, not alphabetically, and a member with no stage is never held and
+never holds anything.
+
+```json
+{"name":"ship","stage_gate":true,"entry_member_id":"start","members":[
+  {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
+  {"id":"split","kind":"fork","fork_members":["b1","b2","r1"]},
+  {"id":"b1","prd_id":"<automaton-2>","stage":"build"},
+  {"id":"b2","prd_id":"<automaton-3>","stage":"build"},
+  {"id":"r1","prd_id":"<automaton-4>","stage":"review"},
+  {"id":"merge","kind":"join","join_members":["b1","b2","r1"]}
+]}
+```
+
+Here `b1` and `b2` start at once, and `r1` waits until both have finished. A held
+member shows `waiting_for_stage` in status with the reason `waiting for stage
+build`; it is not blocked, and the Automation stays active. Finished means
+completed, failed or skipped, so skipping a build member that is stuck releases
+the review stage, while a blocked build member keeps holding it until you deal
+with it. A restart keeps held members held and releases them once the earlier
+stage is finished.
+
+The gate composes with the limit above: a released member that finds every slot
+full waits for a slot instead of starting past `max_parallel`. It is off by
+default, and an update that omits `stage_gate` keeps the stored value. Set it
+with `stage_gate` in the body of `POST /api/automations`, or the `stage_gate`
+argument of `automation_create` and `automation_update` over MCP.
+
 ### Wait for an operator answer on a branch
 
 A member with `kind` `decision_wait` asks you a question and holds only its own

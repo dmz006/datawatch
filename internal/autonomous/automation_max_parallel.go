@@ -221,6 +221,7 @@ func (st *stepper) holdForSlot(next *AutomationMember) bool {
 func (st *stepper) waitForSlot(next *AutomationMember) {
 	already := memberWaitingForSlot(next) && isLiveCursor(st.a, next.ID)
 	next.WaitingForSlot = true
+	next.WaitingForStage = "" // a member that reached a slot check passed the stage gate
 	if !isLiveCursor(st.a, next.ID) {
 		addCursor(st.a, next.ID)
 	}
@@ -236,11 +237,14 @@ func (st *stepper) waitForSlot(next *AutomationMember) {
 	})
 }
 
-// promoteWaiting starts the members waiting for a free slot that a finished
-// member just released, in member order. It runs at the end of every step, so
-// the release and the start are one write and a restart cannot fall between
-// them. It starts nothing while the Automation is paused, blocked or stopped by
-// the budget gate; those members wait on the cursor until the Automation moves.
+// promoteWaiting starts the members held back that a finished member just
+// released, in member order: first the members an earlier stage held (stage
+// gate), each through the same entry as any start so a max_parallel limit still
+// applies to it, then the members waiting for a free slot. It runs at the end of
+// every step, so the release and the start are one write and a restart cannot
+// fall between them. It starts nothing while the Automation is paused, blocked or
+// stopped by the budget gate; those members wait on the cursor until the
+// Automation moves.
 func (st *stepper) promoteWaiting() {
 	a := st.a
 	if (a.Status != AutomationActive && a.Status != AutomationDraft) || st.eff.blocked != "" || st.eff.completed || st.eff.budget != nil {
@@ -249,9 +253,21 @@ func (st *stepper) promoteWaiting() {
 	saved := st.advNote
 	defer func() { st.advNote = saved }()
 	// Start the first admitted waiter, then judge again: a start that fails its
-	// gate takes no slot, so the next waiter in order may now be admitted. Each
-	// pass clears one waiter, so the loop ends.
-	for range a.Members {
+	// gate takes no slot, so the next waiter in order may now be admitted, and a
+	// member that starts or finishes can end a stage. Each pass clears one waiter;
+	// a fork that fires can add held branches, so the passes are bounded by twice
+	// the member count.
+	for pass := 0; pass <= 2*len(a.Members)+2; pass++ {
+		if m := st.releaseStageWaiter(); m != nil {
+			st.advNote = fmt.Sprintf("%s started: stage %s finished", st.name(m), m.WaitingForStage)
+			dropCursor(a, m.ID)
+			m.WaitingForStage = ""
+			st.enter(m)
+			if st.eff.blocked != "" || st.eff.budget != nil || st.eff.completed {
+				return
+			}
+			continue
+		}
 		waiters := slotWaiters(a)
 		if len(waiters) == 0 {
 			return

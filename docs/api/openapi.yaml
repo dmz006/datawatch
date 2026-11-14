@@ -5123,6 +5123,8 @@ paths:
                         running_members: {type: integer, description: "Members running now; reported only while a limit (the Automation's or a fork's) is set"}
                         waiting_for_slot: {type: array, items: {type: string}, description: "Member IDs that hold their cursor and wait for a free slot, in member order. Waiting is not blocked; omitted when none waits"}
                         waiting_for_operator: {type: array, items: {type: string}, description: "decision_wait member IDs that hold their cursor and wait for the operator's answer, in member order. The Automation is waiting for you, not blocked; omitted when none waits"}
+                        stage_gate: {type: boolean, description: "The Automation holds a staged member back while an earlier stage has unfinished members; omitted when the gate is off"}
+                        waiting_for_stage: {type: array, items: {type: string}, description: "Member IDs that hold their cursor for an earlier stage, in member order. Each one's cursor names the stage. Waiting is not blocked; omitted when none waits"}
                         idle_since: {type: string, format: date-time}
                         idle_seconds: {type: integer}
                         blocked_reason: {type: string}
@@ -5134,8 +5136,9 @@ paths:
                               member_id: {type: string}
                               prd_id: {type: string}
                               automation_id: {type: string}
-                              status: {type: string, description: "The member status; waiting_for_slot while the member waits under a max_parallel limit"}
-                              wait_reason: {type: string, description: "waiting for a free slot (status waiting_for_slot) or waiting for you (status waiting_for_operator)"}
+                              status: {type: string, description: "The member status; waiting_for_slot while the member waits under a max_parallel limit, waiting_for_stage while the stage gate holds it"}
+                              wait_reason: {type: string, description: "waiting for a free slot (status waiting_for_slot), waiting for you (status waiting_for_operator), or waiting for stage <name> (status waiting_for_stage)"}
+                              wait_stage: {type: string, description: "status waiting_for_stage: the earlier stage the member waits for"}
                               question_id: {type: string, description: "decision_wait member: the open operator question it waits on"}
                         join_wait:
                           type: object
@@ -13537,6 +13540,7 @@ components:
         verification_model: {type: string, description: "Verifier model default for member runs"}
         verification_effort: {type: string, description: "Verifier effort default for member runs"}
         project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
+        stage_gate: {type: boolean, description: "Make member stages a gate: a staged member is not started while an earlier stage (ordered by first appearance in members) has unfinished members, and starts when that stage finishes. Unstaged members are never held. Finished means completed, failed or skipped. Default false: a stage is only a label"}
         max_parallel: {type: integer, minimum: 0, description: "Most members of this Automation that run at once; 0 or omitted means no limit. A member that would start past the limit waits for a free slot and starts, in member order, when a running member finishes. A fork's own max_parallel narrows it for that fork's branches; the smaller limit wins"}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
@@ -13562,6 +13566,7 @@ components:
         on_branch_failure: {type: string, enum: [all_must_succeed, any_one_is_enough, continue_anyway], description: "kind join only; omitted means all_must_succeed"}
         max_parallel: {type: integer, minimum: 0, description: "kind fork only: most of the fork's branch members that run at once; 0 or omitted means no fork limit. Never wider than the Automation's max_parallel"}
         waiting_for_slot: {type: boolean, readOnly: true, description: "Set by the daemon while the member holds its cursor and waits for a free slot under a max_parallel limit"}
+        waiting_for_stage: {type: string, readOnly: true, description: "Set by the daemon to the earlier stage's name while the member holds its cursor and the Automation's stage_gate holds it back"}
         question: {type: string, maxLength: 4096, description: "kind decision_wait: the text the member asks the operator; required on that kind and valid on no other"}
         question_id: {type: string, readOnly: true, description: "kind decision_wait: the open operator question the member waits on, linked by the daemon"}
         waiting_for_operator: {type: boolean, readOnly: true, description: "Set by the daemon while a decision_wait member holds its cursor waiting for the operator's answer. Waiting is not blocked"}
@@ -13569,7 +13574,7 @@ components:
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
         added_at: {type: string, format: date-time}
-        stage: {type: string, maxLength: 64, description: "Optional operator label grouping members of one Automation (e.g. build, review); empty is unstaged. Cosmetic: edges, advance rule and budget never read it. Rename it in place with POST /api/automations/{id}/stages/rename; the Automation's stage auto-tag follows the rename"}
+        stage: {type: string, maxLength: 64, description: "Optional operator label grouping members of one Automation (e.g. build, review); empty is unstaged. Cosmetic unless the Automation sets stage_gate: edges, advance rule and budget never read it. Rename it in place with POST /api/automations/{id}/stages/rename; the Automation's stage auto-tag follows the rename"}
         added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
         added_reason: {type: string}
         status: {type: string, enum: [pending, running, completed, blocked, failed, skipped, cancelled]}
@@ -13719,6 +13724,7 @@ components:
         verification_model: {type: string}
         verification_effort: {type: string}
         max_parallel: {type: integer, minimum: 0, description: "Most members that run at once; 0 or omitted means no limit. On update, omitted keeps the stored value and 0 clears the limit"}
+        stage_gate: {type: boolean, description: "Hold a staged member until every earlier stage has finished. On update, omitted keeps the stored value and false turns the gate off"}
         actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
         reason: {type: string, description: "Why this Automation is being created; recorded in the audit log"}
 

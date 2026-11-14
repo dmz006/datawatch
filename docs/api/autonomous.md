@@ -1247,6 +1247,35 @@ starts them as slots free. On create and update, `max_parallel` on the
 request body sets the Automation limit; an update that omits it keeps the
 stored value, and `0` clears it.
 
+**Stage gate.** `stage_gate` is a boolean on the Automation; `false` or
+omitted is the behavior before the field existed, where a member's `stage`
+is only a label. When it is `true`, the daemon does not start a member
+whose stage is later than a stage that still has unfinished members.
+Stages are ordered by first appearance in the `members` array, not by name.
+An unstaged member (empty `stage`) forms no gate and is never held. A
+member is finished when it is completed, failed or skipped; a blocked
+member still holds its stage open. Three more states never hold a stage,
+because the member can no longer run: a cancelled member, a member that
+ended blocked and whose `on_blocked` edge was followed, and a branch member
+whose join has already fired or blocked. A member that has not started
+and lies behind the held member, or that nothing live can still reach (for
+example an `on_failed` handler the run did not take), is not waited for, so
+a mis-ordered graph cannot hold a member forever. The gate holds a `prd`
+member, a nested `automation`, a `fork` and a `decision_wait`; a `join` is
+reached only through its fork, and a `pending_item` runs nothing, though
+both still count toward their own stage.
+
+A held member is not started and not blocked: it keeps its cursor, shows
+`waiting_for_stage` in the status naming the earlier stage, and starts in
+the same step that finishes that stage, in member order. It composes with
+`max_parallel` (a released member that finds every slot full then waits for
+a slot) and with forks (a branch is held like any member, and the join keeps
+waiting for it). The held state is stored with the Automation, so a daemon
+restart finds the members still held and releases them when the earlier
+stage is finished, including one that finished while the daemon was down.
+On create and update, `stage_gate` on the request body sets the gate; an
+update that omits it keeps the stored value, and `false` turns it off.
+
 **Decision wait.** A `decision_wait` member asks the operator one question and
 waits for the answer. It carries `question` and `on_complete` only: no
 `prd_id`, no fork or join fields, and no `on_blocked` or `on_failed` (each is
@@ -1293,6 +1322,13 @@ the state has already moved.
   `active_cursors`, a waiting member has `status` `waiting_for_slot` and
   `wait_reason` `waiting for a free slot`. Waiting is never reported as
   blocked, and the Automation stays `active`.
+- `stage_gate` and `waiting_for_stage`: `stage_gate` is `true` when the
+  Automation's stage gate is on and is omitted otherwise. `waiting_for_stage`
+  lists, in member order, the members that hold their cursor for an earlier
+  stage; it is omitted when none waits. On `active_cursors`, a held member
+  has `status` `waiting_for_stage`, `wait_reason` `waiting for stage <name>`
+  and `wait_stage` `<name>`, the first earlier stage that is unfinished. The
+  Automation stays `active`; a held member is not blocked.
 - `waiting_for_operator`: the `decision_wait` member IDs that hold their cursor
   for an operator answer, in member order; omitted when none waits. On
   `active_cursors`, such a member has `kind` `decision_wait`, `status`

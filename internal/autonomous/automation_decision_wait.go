@@ -142,6 +142,7 @@ func (st *stepper) enterDecisionWait(next *AutomationMember) {
 	next.Status = MemberRunning
 	next.StartedAt = &t
 	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	next.WaitingForOperator = true
 	next.QuestionID = "" // a fresh wait: the coordinator links the question it raises
 	addCursor(st.a, next.ID)

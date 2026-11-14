@@ -42,6 +42,11 @@ type AutomationInput struct {
 	// unset = no limit). Create takes it as given; an update changes it only
 	// when the field is present, so nil keeps the stored value.
 	MaxParallel *int `json:"max_parallel,omitempty"`
+	// StageGate turns member stages into a gate: a staged member waits while an
+	// earlier stage has unfinished members (false or unset = stage is only a
+	// label). Create takes it as given; an update changes it only when the field
+	// is present, so nil keeps the stored value.
+	StageGate *bool `json:"stage_gate,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -75,6 +80,9 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 	}
 	if in.MaxParallel != nil {
 		a.MaxParallel = *in.MaxParallel
+	}
+	if in.StageGate != nil {
+		a.StageGate = *in.StageGate
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -212,6 +220,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		}
 		if in.MaxParallel != nil {
 			a.MaxParallel = *in.MaxParallel
+		}
+		if in.StageGate != nil {
+			a.StageGate = *in.StageGate
 		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID

@@ -72,6 +72,7 @@ func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_model", mcpsdk.Description("Optional verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("Optional verification effort default.")),
 		mcpsdk.WithBoolean("milestone", mcpsdk.Description("Optional. true marks this Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting. Omitted means false.")),
+		mcpsdk.WithBoolean("stage_gate", mcpsdk.Description("Optional. true makes member stages a gate: a staged member is not started while an earlier stage (ordered by first appearance in the member list) still has unfinished members, and starts when that stage finishes. Unstaged members are never held. Omitted or false means a stage is only a label.")),
 	)
 }
 
@@ -167,6 +168,7 @@ func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_model", mcpsdk.Description("New verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("New verification effort default.")),
 		mcpsdk.WithBoolean("milestone", mcpsdk.Description("New milestone flag: true marks this Automation as a milestone plan, false clears it. Omitted keeps the stored value.")),
+		mcpsdk.WithBoolean("stage_gate", mcpsdk.Description("New stage gate flag: true holds a staged member until every earlier stage has finished, false makes a stage only a label again. Omitted keeps the stored value.")),
 	)
 }
 

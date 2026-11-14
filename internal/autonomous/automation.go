@@ -135,6 +135,14 @@ type Automation struct {
 	// for that fork's branches; the smaller limit wins. Never negative.
 	MaxParallel int `json:"max_parallel,omitempty"`
 
+	// StageGate turns member stages from a label into a gate: false (the
+	// default) is today's behavior, where Stage is cosmetic. When true, the
+	// stepper does not start a staged member while an earlier stage still has
+	// unfinished members, and starts it when that stage finishes. Stages are
+	// ordered by first appearance in Members; unstaged members form no gate and
+	// are never held. See automation_stage_gate.go.
+	StageGate bool `json:"stage_gate,omitempty"`
+
 	// Project is the explicit project link: the name of a configured project.
 	// Member Automata without their own link inherit it. Empty on older records.
 	Project string `json:"project,omitempty"`
@@ -220,9 +228,16 @@ type AutomationMember struct {
 	EstimatedCostUSD float64 `json:"estimated_cost_usd,omitempty"`
 
 	// Stage is the optional operator label grouping members of one Automation
-	// (e.g. "build", "review"); empty means unstaged. It is cosmetic — the
-	// graph edges, advance rule and budget never read it.
+	// (e.g. "build", "review"); empty means unstaged. It is cosmetic unless the
+	// Automation sets StageGate: the graph edges, advance rule and budget never
+	// read it, and with the gate on only the stepper's start check does.
 	Stage string `json:"stage,omitempty"`
+	// WaitingForStage is runtime state written only by the stepper and the
+	// coordinator: the name of the earlier stage whose unfinished members hold
+	// this member back under the Automation's StageGate. The member keeps its
+	// cursor and has not started. It is meaningful only while the member has not
+	// started; the status views read the gate live through stageHold.
+	WaitingForStage string `json:"waiting_for_stage,omitempty"`
 }
 
 // kind returns the member's kind, treating the empty kind as MemberKindPRD.

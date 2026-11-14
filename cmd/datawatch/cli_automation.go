@@ -187,13 +187,16 @@ func newAutomationGetCmd() *cobra.Command {
 
 func newAutomationCreateCmd() *cobra.Command {
 	var name, description, entry, members string
+	var stageGate bool
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a draft Automation (members from a JSON file or inline JSON)",
 		Long: `Create a draft Automation. --members takes a JSON array of members, either
 inline (the value starts with "[") or as the path of a file that holds it.
 Members may be prd, fork, join or automation (nested) kinds; the automation_create
-MCP tool documents each member field. The Automation stays a draft until activate.`,
+MCP tool documents each member field. The Automation stays a draft until activate.
+--stage-gate makes member stages a gate: a staged member waits while an earlier
+stage still has unfinished members (off by default, where a stage is only a label).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{"name": name}
@@ -209,6 +212,9 @@ MCP tool documents each member field. The Automation stays a draft until activat
 					return err
 				}
 				body["members"] = parsed
+			}
+			if cmd.Flags().Changed("stage-gate") {
+				body["stage_gate"] = stageGate
 			}
 			raw, err := automationAPI(http.MethodPost, "/api/automations", body)
 			if err != nil {
@@ -226,6 +232,7 @@ MCP tool documents each member field. The Automation stays a draft until activat
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringVar(&entry, "entry-member", "", "Member ID where the chain starts")
 	cmd.Flags().StringVar(&members, "members", "", "Members as a JSON array: inline, or the path of a file")
+	cmd.Flags().BoolVar(&stageGate, "stage-gate", false, "Hold a staged member until every earlier stage has finished (default off: a stage is only a label)")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -233,6 +240,7 @@ MCP tool documents each member field. The Automation stays a draft until activat
 func newAutomationUpdateCmd() *cobra.Command {
 	var f automationControlFlags
 	var name, description, entry, members string
+	var stageGate bool
 	var autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
@@ -243,7 +251,9 @@ starts with "[") or as the path of a file that holds it; it replaces the member 
 Auto-tags: --auto-tags on|off switches per-Automation tag assignment, and
 --auto-tags-automation-template, --auto-tags-stage-template and
 --auto-tags-kind-template set the per-Automation label templates (empty or unset
-keeps the daemon default; templates may use {date}, {time}, {automation}, {stage}).`,
+keeps the daemon default; templates may use {date}, {time}, {automation}, {stage}).
+--stage-gate=true holds a staged member until every earlier stage has finished;
+--stage-gate=false makes a stage only a label again.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := f.body(cmd)
@@ -262,6 +272,9 @@ keeps the daemon default; templates may use {date}, {time}, {automation}, {stage
 					return err
 				}
 				body["members"] = parsed
+			}
+			if cmd.Flags().Changed("stage-gate") {
+				body["stage_gate"] = stageGate
 			}
 			tags, err := automationAutoTagsArg(cmd, autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate)
 			if err != nil {
@@ -286,6 +299,7 @@ keeps the daemon default; templates may use {date}, {time}, {automation}, {stage
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&entry, "entry-member", "", "New entry member ID")
 	cmd.Flags().StringVar(&members, "members", "", "New members as a JSON array: inline, or the path of a file")
+	cmd.Flags().BoolVar(&stageGate, "stage-gate", false, "Stage gate on or off (--stage-gate=false turns it off); omitted keeps the stored value")
 	cmd.Flags().StringVar(&autoTags, "auto-tags", "", "Auto-tag this Automation: on or off")
 	cmd.Flags().StringVar(&autoTagsAutomationTemplate, "auto-tags-automation-template", "", "Automation label template (empty keeps the daemon default)")
 	cmd.Flags().StringVar(&autoTagsStageTemplate, "auto-tags-stage-template", "", "Stage label template (empty keeps the daemon default)")

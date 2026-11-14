@@ -41,9 +41,11 @@ func (c *Coordinator) reconcile() {
 // earlier in the pass is seen, and a cursor that has already moved on is skipped.
 func (c *Coordinator) reconcileOne(a *Automation) {
 	ids := liveCursorIDs(a)
-	if anyMaxParallel(a) {
+	if anyMaxParallel(a) || a.StageGate {
 		// Under a max_parallel limit the members waiting for a free slot are
-		// started in member order, so the cursors are walked in that order.
+		// started in member order, and under a stage gate the members an earlier
+		// stage held are released in member order, so the cursors are walked in
+		// that order.
 		ids = byMemberOrder(a, ids)
 	}
 	for _, id := range ids {
@@ -206,6 +208,13 @@ func (c *Coordinator) reconcileJoins(autoID string) {
 // reconciles start it once.
 func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	memID, prdID := mem.ID, mem.PRDID
+	if stage := stageHold(a, mem); stage != "" {
+		// An earlier stage still has unfinished members: the member keeps its
+		// cursor and waits, not blocked. The flag is written once so the status
+		// reads it; the step that finishes the earlier stage starts the member.
+		c.markStageHeld(a.ID, memID, stage)
+		return
+	}
 	if !slotAdmitted(a, memID) {
 		// A max_parallel limit is still reached: the member keeps its cursor and
 		// waits for a free slot. Nothing is blocked and nothing is written; the
@@ -241,6 +250,9 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		if a.Status != AutomationActive || !isLiveCursor(a, memID) || cur == nil || (cur.Status != MemberPending && cur.Status != "") {
 			return errors.New("409: member already handled")
 		}
+		if stageHold(a, cur) != "" {
+			return errors.New("409: member still waiting for an earlier stage")
+		}
 		if !slotAdmitted(a, memID) {
 			return errors.New("409: member still waiting for a free slot")
 		}
@@ -262,6 +274,7 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		cur.Status = MemberRunning
 		cur.StartedAt = &now
 		cur.WaitingForSlot = false
+		cur.WaitingForStage = ""
 		a.IdleSince = nil
 		a.BudgetState = nil
 		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "advance", Actor: coordinatorActor, Note: fmt.Sprintf("restart: retried start of %s", name)}))
@@ -289,6 +302,33 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		return
 	}
 	c.startMember(updated.ID, memID, prdID, name, mode == "resume")
+}
+
+// markStageHeld records, once, that member memID holds its cursor waiting for an
+// earlier stage. It writes nothing when the flag already names that stage, or
+// when the member has started, left the cursor set or no longer waits, so a
+// repeated reconcile pass changes nothing.
+func (c *Coordinator) markStageHeld(autoID, memID, stage string) {
+	_, err := c.m.automations.Update(autoID, 0, func(a *Automation) error {
+		cur := automationMember(a, memID)
+		if a.Status != AutomationActive || cur == nil || !isLiveCursor(a, memID) || !memberUnstarted(cur) {
+			return errStaleStep
+		}
+		if stageHold(a, cur) != stage || cur.WaitingForStage == stage {
+			return errStaleStep
+		}
+		cur.WaitingForStage = stage
+		cur.WaitingForSlot = false
+		now := c.now()
+		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "waiting", Actor: coordinatorActor, Note: fmt.Sprintf("member %s %s", memID, stageWaitReason(stage))}))
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	c.audit("automation_waiting_for_stage", map[string]any{
+		"automation_id": autoID, "member": memID, "stage": stage, "actor": coordinatorActor,
+	})
 }
 
 func (c *Coordinator) reconcileAudit(a *Automation, mem *AutomationMember, reason, outcome string) {
