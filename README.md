@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.173.1 (2026-11-13).** The Dashboard stat bar wraps and the page scrolls as one on a phone, so + Card and Edit stay reachable. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.173.2 (2026-11-13).** Automaton task workers no longer write checkpoint entries into AGENT.md or CLAUDE.md, and a checkpoint-only change to the rules file is reverted automatically. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

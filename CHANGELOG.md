@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.2 — Workers stop writing rules-file checkpoints
+
+### Fixed
+
+- **Automaton workers no longer write checkpoint entries into the rules file.** Workers often appended a progress note to `AGENT.md`, a protected path, so almost every task raised a protected-path question. Every worker prompt that carries the rules block now also carries a short rule: do not add, edit or remove checkpoint entries in `AGENT.md`, `CLAUDE.md` or the configured rules file, and write progress notes to `CHECKPOINT.md` at the root of the working directory instead.
+- **A checkpoint-only change to the rules file is reverted automatically.** When a worker appends a checkpoint entry anyway and that entry is the file's entire change since the base commit, the protected-paths gate strips it out, records a `protected_paths_checkpoint_reverted` decision and does not hold the task. A change that goes beyond the entry is still caught by the gate.
+- The how-tos on protected paths and rules and context, the operations guide and the glossary describe the new rule and the revert.
+
 ## v9.173.1 — Dashboard phone layout fix
 
 ### Fixed
