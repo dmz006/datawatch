@@ -67,7 +67,49 @@ const (
 	MaxGoalRunes      = 2000
 	MaxLinkedItems    = 500
 	MaxOrder          = 1_000_000
+	// MaxReleaseRunes bounds a release plan's release label.
+	MaxReleaseRunes = 64
+	// MaxThemes bounds the themes of one plan; MaxThemeNameRunes bounds a theme name.
+	MaxThemes         = 50
+	MaxThemeNameRunes = 100
 )
+
+// PlanKind marks what sort of plan a plan record is. The empty value is an
+// ordinary plan, so a record written before the marker existed loads as one.
+type PlanKind string
+
+// The plan kinds.
+const (
+	PlanKindOrdinary PlanKind = ""
+	// PlanKindRelease is a release plan: it stands for one release and may group
+	// the items it holds into themes.
+	PlanKindRelease PlanKind = "release"
+)
+
+// ValidPlanKind reports whether k is a known plan kind marker.
+func ValidPlanKind(k PlanKind) bool { return k == PlanKindOrdinary || k == PlanKindRelease }
+
+// Theme groups items a release plan already holds. An item (an Automaton or an
+// Automation of the plan) is in at most one theme of its plan.
+type Theme struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Order is the theme's position, 1 first.
+	Order int `json:"order"`
+	// Automata and Automations are the ids placed in the theme, in display order.
+	Automata    []string `json:"automata,omitempty"`
+	Automations []string `json:"automations,omitempty"`
+}
+
+func (t Theme) clone() Theme {
+	if t.Automata != nil {
+		t.Automata = append([]string(nil), t.Automata...)
+	}
+	if t.Automations != nil {
+		t.Automations = append([]string(nil), t.Automations...)
+	}
+	return t
+}
 
 // Link points a record at something else (an Automaton, a doc, an issue).
 type Link struct {
@@ -110,6 +152,13 @@ type Record struct {
 	// or Automation, keyed "automaton:<id>" or "automation:<id>", so lists and
 	// search never read the linked item itself.
 	LinkInfo map[string]LinkInfo `json:"link_info,omitempty"`
+	// PlanKind marks a release plan (PlanKindRelease); empty is an ordinary plan.
+	// Release is the release label a release plan stands for. Themes group the
+	// items the plan already holds; they change only through the store's theme
+	// methods.
+	PlanKind PlanKind `json:"plan_kind,omitempty"`
+	Release  string   `json:"release,omitempty"`
+	Themes   []Theme  `json:"themes,omitempty"`
 
 	// Finding fields (kind finding only): what the finding is attached to.
 	AttachKind string `json:"attach_kind,omitempty"`
@@ -136,6 +185,9 @@ type Patch struct {
 	// Goal and Order apply to plans only.
 	Goal  *string
 	Order *int
+	// PlanKind and Release apply to plans only.
+	PlanKind *PlanKind
+	Release  *string
 	// Actor names who made the change for the audit event.
 	Actor string
 }
@@ -288,7 +340,10 @@ func (r *Record) validate() error {
 	if err := r.validatePlanFields(); err != nil {
 		return err
 	}
-	return validateLinks(r.Links)
+	if err := validateLinks(r.Links); err != nil {
+		return err
+	}
+	return r.validateRowLinks()
 }
 
 func validateRefList(name string, ids []string) error {
@@ -318,9 +373,12 @@ func (r *Record) validatePlanFields() error {
 		return invalid("goal longer than %d characters", MaxGoalRunes)
 	}
 	planOnly := r.Goal != "" || r.Order != 0 || len(r.Automations) > 0 || len(r.Automata) > 0 ||
-		len(r.Findings) > 0 || len(r.LinkInfo) > 0
+		len(r.Findings) > 0 || len(r.LinkInfo) > 0 || r.PlanKind != PlanKindOrdinary || r.Release != "" || len(r.Themes) > 0
 	if planOnly && r.Kind != KindPlan {
-		return invalid("goal, order and links down apply to plans only")
+		return invalid("goal, order, links down, plan kind, release and themes apply to plans only")
+	}
+	if err := r.validateRelease(); err != nil {
+		return err
 	}
 	for name, ids := range map[string][]string{"automations": r.Automations, "automata": r.Automata, "findings": r.Findings} {
 		if err := validateRefList(name, ids); err != nil {
@@ -344,6 +402,81 @@ func (r *Record) validatePlanFields() error {
 	return nil
 }
 
+// validateRelease checks the plan kind marker, the release label and the
+// themes. A theme only groups items the plan already holds, and an item is in
+// at most one theme.
+func (r *Record) validateRelease() error {
+	if !ValidPlanKind(r.PlanKind) {
+		return invalid("plan_kind must be empty or %q, got %q", PlanKindRelease, r.PlanKind)
+	}
+	if r.Release != "" {
+		if r.PlanKind != PlanKindRelease {
+			return invalid("a release label applies to a release plan only")
+		}
+		if strings.TrimSpace(r.Release) == "" {
+			return invalid("release must not be blank")
+		}
+		if runesOver(r.Release, MaxReleaseRunes) {
+			return invalid("release longer than %d characters", MaxReleaseRunes)
+		}
+	}
+	if len(r.Themes) == 0 {
+		return nil
+	}
+	if r.PlanKind != PlanKindRelease {
+		return invalid("themes apply to a release plan only; remove them before changing the plan kind")
+	}
+	if len(r.Themes) > MaxThemes {
+		return invalid("too many themes (max %d)", MaxThemes)
+	}
+	ids, names := map[string]bool{}, map[string]bool{}
+	placed := map[string]string{} // "automaton:<id>" -> theme id
+	for _, t := range r.Themes {
+		if t.ID == "" || runesOver(t.ID, MaxIDRunes) || !idRe.MatchString(t.ID) {
+			return invalid("a theme id must be lower-case letters, digits and hyphens (max %d)", MaxIDRunes)
+		}
+		if ids[t.ID] {
+			return invalid("theme id %q is used twice", t.ID)
+		}
+		ids[t.ID] = true
+		if NormTitle(t.Name) == "" {
+			return invalid("a theme needs a name")
+		}
+		if runesOver(t.Name, MaxThemeNameRunes) {
+			return invalid("theme name longer than %d characters", MaxThemeNameRunes)
+		}
+		if names[NormTitle(t.Name)] {
+			return invalid("theme name %q is used twice", t.Name)
+		}
+		names[NormTitle(t.Name)] = true
+		if t.Order < 0 || t.Order > MaxOrder {
+			return invalid("theme order must be between 0 and %d", MaxOrder)
+		}
+		for _, list := range []struct {
+			kind     string
+			in, held []string
+		}{
+			{linkAutomaton, t.Automata, r.Automata},
+			{linkAutomation, t.Automations, r.Automations},
+		} {
+			if err := validateRefList("theme "+list.kind+" items", list.in); err != nil {
+				return err
+			}
+			for _, id := range list.in {
+				if indexOf(list.held, id) < 0 {
+					return invalid("theme %q holds %s %q, which the plan does not hold", t.ID, list.kind, id)
+				}
+				k := linkKey(list.kind, id)
+				if other, dup := placed[k]; dup {
+					return invalid("%s %q is in themes %q and %q; an item is in one theme only", list.kind, id, other, t.ID)
+				}
+				placed[k] = t.ID
+			}
+		}
+	}
+	return nil
+}
+
 // clone returns a deep copy so callers cannot alter the index.
 func (r Record) clone() Record {
 	if r.Links != nil {
@@ -360,6 +493,13 @@ func (r Record) clone() Record {
 	}
 	if r.Findings != nil {
 		r.Findings = append([]string(nil), r.Findings...)
+	}
+	if r.Themes != nil {
+		ts := make([]Theme, len(r.Themes))
+		for i, t := range r.Themes {
+			ts[i] = t.clone()
+		}
+		r.Themes = ts
 	}
 	if r.LinkInfo != nil {
 		m := make(map[string]LinkInfo, len(r.LinkInfo))

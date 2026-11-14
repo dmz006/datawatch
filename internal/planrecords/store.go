@@ -397,11 +397,18 @@ func (s *Store) Create(in Record) (Record, error) {
 		rec.AttachKind != "" || rec.AttachRef != "" {
 		return Record{}, invalid("links are added with the attach methods, not at creation")
 	}
+	if len(rec.Themes) > 0 {
+		return Record{}, invalid("themes are added with the theme methods, not at creation")
+	}
+	rec.Release = strings.TrimSpace(rec.Release)
 	if err := rec.validate(); err != nil {
 		return Record{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.checkReleaseFreeLocked(rec, ""); err != nil {
+		return Record{}, err
+	}
 	if uidHolder, ok := s.byTitle[titleKey(rec.Project, rec.Title)]; ok {
 		return Record{}, &ErrTitleConflict{Title: rec.Title, Existing: s.byUID[uidHolder].clone()}
 	}
@@ -507,6 +514,16 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 		next.State = *p.State
 		changed = append(changed, "state")
 	}
+	if p.PlanKind != nil && *p.PlanKind != cur.PlanKind {
+		next.PlanKind = *p.PlanKind
+		changed = append(changed, "plan_kind")
+	}
+	if p.Release != nil {
+		if rel := strings.TrimSpace(*p.Release); rel != cur.Release {
+			next.Release = rel
+			changed = append(changed, "release")
+		}
+	}
 	if p.NeedsReview != nil && *p.NeedsReview != cur.NeedsReview {
 		next.NeedsReview = *p.NeedsReview
 		changed = append(changed, "needs_review")
@@ -525,6 +542,9 @@ func (s *Store) Update(ref string, p Patch) (Record, error) {
 	}
 	if len(changed) == 0 {
 		return cur.clone(), nil
+	}
+	if err := s.checkReleaseFreeLocked(next, cur.UID); err != nil {
+		return Record{}, err
 	}
 	ts := s.now().Format(time.RFC3339)
 	next.UpdatedAt = ts
