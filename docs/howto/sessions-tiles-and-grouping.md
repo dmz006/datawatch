@@ -68,7 +68,8 @@ header (fixed, every page):   …  [ ▾ All servers │ This server │ server-
 
 Sessions (one toolbar line, at phone and wide widths):
 ┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ☰ ⊞ ▤ ]
-│  (⊟ Fold all shows only while a grouping is active; ☰ ⊞ ▤ are the three
+│  (⊟ Fold all shows only while a grouping is active and reads ⊞ once
+│   everything is folded; ☰ ⊞ ▤ are the three
 │   view mode buttons — List, Tiles, Compact — with the active one marked;
 │   the line below the toolbar carries Tree and History — and the 🌐
 │   server-a indicator, shown only while a federated server is active)
@@ -833,11 +834,12 @@ in your tag registry.
   `internal/server/web/app.js`), confirmed by code and pinned by the PWA
   tests `app-sessions-filters-toggle.test.js` and
   `app-sessions-filters-sheet.test.js`. Confirm on the build in use: one
-  click on the **Filters** button opens the sheet, the same button closes
-  it again, and the sheet also closes on the close button, a tap on the
-  backdrop or anywhere outside, or **Escape** — none of these touches the
-  picks you made or the badge count, and a refresh with the sheet open
-  keeps it open.
+  click on the **Filters** button opens the sheet, a second click on the
+  same button closes it again, and it reopens on the next click; the
+  sheet also closes on the ✕ close button in its header, a tap on the
+  backdrop or anywhere outside the sheet, or **Escape** — none of these
+  touches the picks you made or the badge count, and a refresh with the
+  sheet open keeps it open.
 
 ## Related guides
 
