@@ -3226,7 +3226,8 @@ function _projectsPaint() {
       ${_projectsManageHTML([])}</div>`;
     return;
   }
-  const sel = _projectsState.selected;
+  // The header scope is the one source of truth: a scoped project is the page.
+  const sel = _scopeActive() ? getScope().project : _projectsState.selected;
   const known = sel === _PROJECTS_OVERVIEW || (list && list.some(p => p.name === sel));
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
@@ -3849,6 +3850,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let arcsBody = '';
   let unassignedBody = '';
   const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
+  const planScope = _scopePlanId();
   if (rollErr) {
     events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
@@ -3856,20 +3858,23 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     arcsBody = loadingLine;
     unassignedBody = loadingLine;
   } else {
-    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
+    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).filter(a => !planScope || (a && a.automation_id === planScope)).sort((x, y) => (x.priority || 0) - (y.priority || 0));
     overviewBody = _projectRollupHTML(roll, arcs);
     if (!arcs.length) {
       events.push(t('projects_event_no_plans'));
       if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
-    const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
+    const un = !planScope && roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
       lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
         renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
     const hidden = _projectsUnassignedHiddenLoad();
     const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
     const hiddenCount = un.length - shownUn.length;
-    if (un.length) {
+    if (planScope) {
+      // Unassigned Automata belong to no plan, so a plan scope has none to list.
+      unassignedBody = _scopeEmptyHTML('projects_scope_unassigned_not_in_plan', 'scope-empty-unassigned');
+    } else if (un.length) {
       const undo = hiddenCount
         ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
         : '';
@@ -3879,7 +3884,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       events.push(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
-    const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
+    const wp = !planScope && roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
     if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`;
   }
 
@@ -3889,15 +3894,19 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     : '';
   const hasEvents = events.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
+  const scopedArcs = roll && !rollErr ? (Array.isArray(roll.arcs) ? roll.arcs : []).filter(a => !planScope || (a && a.automation_id === planScope)) : [];
   const bodies = {
     overview: head + _projectOverviewSummaryHTML(p),
-    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + plansBrowserHTML(p) + arcsBody,
+    plans: (roll && !rollErr ? _projectRollupHTML(roll, scopedArcs) : '') + plansBrowserHTML(p) + arcsBody,
     records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
+  // Every body of a scoped page starts with the banner that says what it is
+  // filtered to; the scope All draws none.
+  Object.keys(bodies).forEach(k => { bodies[k] = _scopeBody(bodies[k]); });
   const strip = _projectsSubtabStripHTML(active, hasEvents);
   // A stored or hashed sub-tab that no longer exists (the old Policy page)
   // falls back to Overview, the one body that is always renderable.
@@ -4006,9 +4015,10 @@ function _projectsLoadLinks() {
     if (current()) _projectsLinks.merge = obj(r);
   }).catch(err => { if (current()) _projectsLinks.mergeError = msg(err); });
   const evq = '?queue=' + encodeURIComponent(_PROJECTS_EVENTS_QUEUE) + '&project=' + enc + '&limit=' + _PROJECTS_EVENTS_LIMIT;
+  const tok = _scopeToken; // a late events reply for an older scope is dropped
   const evs = apiFetch('/api/autonomous/events' + evq).then(r => {
-    if (current()) _projectsLinks.events = obj(r);
-  }).catch(err => { if (current()) _projectsLinks.eventsError = msg(err); });
+    if (current() && tok === _scopeToken) _projectsLinks.events = obj(r);
+  }).catch(err => { if (current() && tok === _scopeToken) _projectsLinks.eventsError = msg(err); });
   return Promise.all([policy, merge, evs]);
 }
 
@@ -4127,8 +4137,12 @@ function _projectEventStreamHTML(ev, err) {
   } else if (!ev) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
   } else {
-    const items = Array.isArray(ev.events) ? ev.events : [];
-    if (!items.length && !ev.dropped && !_projectsShowEmpty()) return '';
+    const raw = Array.isArray(ev.events) ? ev.events : [];
+    // A plan scope keeps the rows of the plan's Automation (the project is
+    // already the request's filter).
+    const planScope = _scopePlanId();
+    const items = planScope ? raw.filter(e => e && typeof e === 'object' && e.automation_id === planScope) : raw;
+    if (!raw.length && !ev.dropped && !_projectsShowEmpty()) return '';
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
@@ -4206,8 +4220,9 @@ function _projectBarHTML(done, total, label) {
 // roll-up without a total (older replies) is summed from its arcs and the
 // unassigned group.
 function _projectRollupHTML(roll, arcs) {
-  const groups = arcs.concat([roll.unassigned || {}]);
-  let tot = roll.total && roll.total.tasks ? roll.total : null;
+  const planScope = _scopePlanId();
+  const groups = planScope ? arcs : arcs.concat([roll.unassigned || {}]);
+  let tot = !planScope && roll.total && roll.total.tasks ? roll.total : null;
   if (!tot) {
     tot = { tasks: { done: 0, total: 0 }, points: 0, throughput: { automata_finished: 0, tasks_finished: 0, automata_per_day: 0, tasks_per_day: 0 } };
     groups.forEach(g => {
@@ -4235,7 +4250,7 @@ function _projectRollupHTML(roll, arcs) {
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
   return _projectsSectionCard('progress', escHtml(t('projects_rollup_heading')), `<div class="project-rollup">
-    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, planScope ? _scopePlanLabel(_scopeEnsure().project, planScope) : t('projects_rollup_whole_project'))}
     ${line(t('projects_rollup_points_label'), pointsVal)}
     ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
     <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
@@ -4385,14 +4400,15 @@ function _projectHistoryRowHTML(e) {
 // next cursor. bare drops the card wrapper for a sub-tab that holds only this block.
 function _projectHistoryHTML(hist, bare) {
   let inner;
-  if (!hist) {
+  const items = hist ? hist.items.filter(_scopeHistoryItemMatches) : [];
+  if (!hist || (!items.length && _scopePlanLoading())) {
     inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
   } else if (hist.error) {
     inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + hist.error)}</div>`;
-  } else if (!hist.items.length) {
+  } else if (!items.length) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_history_empty'))}</div>`;
   } else {
-    inner = hist.items.map(_projectHistoryRowHTML).join('');
+    inner = items.map(_projectHistoryRowHTML).join('');
   }
   if (hist && hist.next) {
     const busy = _projectsState.histBusy ? ' disabled' : '';
@@ -4902,13 +4918,33 @@ function _projectsGanttFetch(g, key, append) {
   if (slot.loading) return Promise.resolve();
   slot.loading = true;
   const cursor = append ? slot.next : '';
-  const live = () => _projectsState.gantt === g && _projectsState.selected === g.name;
-  return apiFetch(_projectsGanttUrl(g.name, key, row, cursor)).then(r => {
-    if (!live()) return;
+  // A plan scope narrows the arcs level to the plan's Automation. The timeline
+  // route has no plan filter, so the page is filtered here; while a page holds
+  // no row of the plan and a next cursor exists, the next page is read (capped).
+  // The rows below an arc are already the plan's own (parent=<automation id>).
+  // A reply for an older scope is dropped through the scope token.
+  const tok = _scopeToken;
+  const plan = !key ? _scopePlanId() : '';
+  const live = () => _projectsState.gantt === g && _projectsState.selected === g.name && tok === _scopeToken;
+  const readPage = (cur, hops, acc) => apiFetch(_projectsGanttUrl(g.name, key, row, cur)).then(r => {
+    if (!live()) return null;
     const b = _projectsGanttBody(r);
-    slot.rows = (append ? slot.rows : []).concat(b.rows);
-    slot.edges = (append ? (slot.edges || []) : []).concat(b.edges);
-    slot.next = b.next;
+    if (plan) {
+      b.rows = b.rows.filter(x => x.kind === 'arc' && x.id === plan);
+      b.edges = []; // one row has no edge to another
+    }
+    acc.rows = acc.rows.concat(b.rows);
+    acc.edges = acc.edges.concat(b.edges);
+    acc.next = b.next;
+    if (plan && acc.rows.length) acc.next = ''; // the plan is one row: nothing more to find
+    else if (plan && b.next && hops < _SCOPE_MAX_PAGES) return readPage(b.next, hops + 1, acc);
+    return acc;
+  });
+  return readPage(cursor, 0, { rows: append ? slot.rows : [], edges: append ? (slot.edges || []) : [], next: '' }).then(acc => {
+    if (!acc || !live()) return;
+    slot.rows = acc.rows;
+    slot.edges = acc.edges;
+    slot.next = acc.next;
     slot.loaded = true;
     if (!key) g.error = '';
   }).catch(err => {
@@ -5234,15 +5270,27 @@ function _projectsLoadHistory(append) {
   const prevItems = prev ? prev.items : [];
   const q = '?limit=' + _PROJECTS_HISTORY_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
   _projectsState.histBusy = true;
+  const tok = _scopeToken; // a late reply for an older scope is dropped
   return apiFetch('/api/projects/' + encodeURIComponent(name) + '/history' + q).then(r => {
-    if (_projectsState.selected !== name) return;
+    if (_projectsState.selected !== name || tok !== _scopeToken) return;
     const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     const items = Array.isArray(body.items) ? body.items : [];
     _projectsState.hist = { name, items: prevItems.concat(items), next: body.next_cursor || '', error: '' };
   }).catch(err => {
-    if (_projectsState.selected !== name) return;
+    if (_projectsState.selected !== name || tok !== _scopeToken) return;
     _projectsState.hist = { name, items: prevItems, next: cursor, error: (err && err.message) || String(err) };
-  }).then(() => { _projectsState.histBusy = false; });
+  }).then(() => {
+    _projectsState.histBusy = false;
+    // A plan scope filters the page client-side: keep reading the next page while
+    // the plan shows fewer than a page of rows and a next cursor exists (capped).
+    // It waits for the plan's member list, which the filter reads.
+    const h = _projectsState.hist;
+    if (tok !== _scopeToken || !_scopePlanId() || _scopePlanLoading() || !h || h.name !== name || h.error || !h.next || _projectsState.selected !== name) return;
+    if (h.items.filter(_scopeHistoryItemMatches).length >= _PROJECTS_HISTORY_PAGE) return;
+    if (!append) _projectsState.histHops = 0;
+    if ((_projectsState.histHops = (_projectsState.histHops || 0) + 1) > _SCOPE_MAX_PAGES) return;
+    return _projectsLoadHistory(true);
+  });
 }
 
 // projectsHistoryMore is the Load more button: it appends the next page and
@@ -5507,16 +5555,17 @@ function planRecordListHtml(v) {
   if (v.status === 'error') {
     return `<div class="plan-records-error" role="alert" style="color:var(--error);font-size:13px;margin-top:8px;overflow-wrap:anywhere;">${escHtml(t('plan_records_load_failed', [v.error]))}</div>`;
   }
-  const recs = Array.isArray(v.recs) ? v.recs : [];
+  const all = Array.isArray(v.recs) ? v.recs : [];
+  const recs = all.filter(_scopeRecordMatches);
   if (!recs.length) {
     const key = v.q ? 'plan_records_empty_search' : (kind === 'finding' ? 'plan_records_empty_findings' : 'plan_records_empty_registry');
     return `<div class="plan-records-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(key))}</div>`;
   }
   const countKey = kind === 'finding' ? 'plan_records_status_findings' : 'plan_records_status_registry_rows';
-  const more = recs.length < v.total
+  const more = all.length < v.total
     ? `<div style="margin-top:6px;"><button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsMore()">${escHtml(t('plan_records_load_more'))}</button></div>`
     : '';
-  return `<div class="plan-records-count" style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t(countKey, [v.total, recs.length]))}</div>${recs.map(planRecordRowHtml).join('')}${more}`;
+  return `<div class="plan-records-count" style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t(countKey, [_scopePlanId() ? recs.length : v.total, recs.length]))}</div>${recs.map(planRecordRowHtml).join('')}${more}`;
 }
 
 function planRecordsBodyHtml(v) {
@@ -5599,6 +5648,12 @@ function _planRecordsLoad(more) {
     st.status = 'ready';
     st.error = '';
     _planRecordsPaint();
+    if (!more) st.scopeHops = 0;
+    // A plan scope filters the page client-side: keep loading while the shown
+    // rows are fewer than a page and the server has more, up to a cap.
+    if (_scopePlanId() && st.recs.length < st.total && st.recs.filter(_scopeRecordMatches).length < _PLAN_RECORDS_PAGE && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+      return _planRecordsLoad(true);
+    }
   }).catch(err => {
     if (_planRecords !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err)) { st.status = 'disabled'; st.recs = []; _planRecordsPaint(); return; }
@@ -5789,7 +5844,14 @@ function _projectOverviewSummaryHTML(p) {
   const S = _projectsSummary.name === p.name ? _projectsSummary : { data: null, error: '' };
   if (S.error) return `<div class="project-overview-error" style="color:var(--error,#ef4444);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_failed') + ' ' + S.error)}</div>`;
   if (!S.data) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
-  const d = S.data;
+  let d = S.data;
+  const planScope = !!_scopePlanId();
+  if (planScope) {
+    // A plan scope reads its numbers from the plan's roll-up group only.
+    const roll = _projectsState.rollupFor === p.name ? _projectsState.rollup : null;
+    if (!roll) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
+    d = Object.assign({}, S.data, _scopeOverviewData(p, roll));
+  }
   const pr = d.progress || {};
   const au = pr.automata || {};
   const done = Number(au.done) || 0;
@@ -5905,6 +5967,16 @@ function _plansBrowserLoad(more) {
     st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
     st.status = 'ready'; st.error = '';
     _plansBrowserPaint();
+    if (!more) st.scopeHops = 0;
+    if (_scopePlanId()) {
+      // The plan rows decide which records belong to the scoped plan.
+      _recordsTabPaint();
+      _planRecordsPaintBody();
+      // A scoped list keeps loading while its pages show no row of the plan.
+      if (st.plans.length < st.total && !st.plans.some(_scopePlanRowMatches) && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+        return _plansBrowserLoad('plans');
+      }
+    }
   }).catch(err => {
     if (_plansBrowser !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _plansBrowserPaint(); return; }
@@ -6099,7 +6171,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
 }
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
-  const shown = list.filter(p => _plansMatch(st, p));
+  const shown = list.filter(p => _plansMatch(st, p) && _scopePlanRowMatches(p));
   const filtering = !!(st.stateFilter || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
@@ -6119,9 +6191,9 @@ function plansBrowserListHTML(st) {
   if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
     html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
-  if (st.backlogTotal > 0 || back.count) {
+  if (_scopePlanId() ? back.count > 0 : (st.backlogTotal > 0 || back.count)) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
-      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${st.backlogTotal})</a>
+      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${_scopePlanId() ? back.count : st.backlogTotal})</a>
       ${backOpen ? `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('plans_browser_backlog_hint'))}</div>${back.rows}${back.more}` : ''}</div>`;
   }
   return html;
@@ -6284,6 +6356,12 @@ function _recordsTabLoad(more) {
     st.total = Number(((r || {}).page || {}).total) || st.rows.length;
     st.status = 'ready'; st.error = '';
     _recordsTabPaint();
+    if (!more) st.scopeHops = 0;
+    // A plan scope filters the page client-side: keep loading while the shown
+    // rows are fewer than a page and the server has more, up to a cap.
+    if (_scopePlanId() && st.rows.length < st.total && st.rows.filter(_scopeRecordMatches).length < _RECORDS_TAB_PAGE && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+      return _recordsTabLoad(true);
+    }
   }).catch(err => {
     if (_recordsTab !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _recordsTabPaint(); return; }
@@ -6315,10 +6393,12 @@ function recordsTabListHTML(st) {
   if (st.status === 'disabled') return `<div class="records-tab-off" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_off'))}</div>`;
   if (st.status === 'idle' || (st.status === 'loading' && !st.rows.length)) return `<div class="records-tab-loading" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_loading'))}</div>`;
   if (st.status === 'error') return `<div class="records-tab-error" role="alert" style="font-size:13px;color:var(--danger,#c0392b);">${escHtml(t('records_tab_failed', [st.error]))}</div>`;
-  if (!st.rows.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>`;
-  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [st.total, st.rows.length]))}</div>`;
+  const shown = st.rows.filter(_scopeRecordMatches);
+  const scoped = !!_scopePlanId();
   const more = st.rows.length < st.total ? `<button type="button" class="btn-secondary records-tab-more" onclick="recordsTabMore();return false;" style="margin-top:8px;">${escHtml(t('plans_browser_load_more'))}</button>` : '';
-  return status + st.rows.map(_recordsTabRowHTML).join('') + more;
+  if (!shown.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>` + more;
+  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [scoped ? shown.length : st.total, shown.length]))}</div>`;
+  return status + shown.map(_recordsTabRowHTML).join('') + more;
 }
 
 function recordsTabHTML(p) {
@@ -6676,6 +6756,122 @@ function _scopeBannerHTML() {
   const text = t('header_scope_banner', [_scopeLabel()]) || ('Filtered to ' + _scopeLabel());
   return `<div class="scope-banner" role="status"><span class="scope-banner-text">${escHtml(text)}</span>` +
     `<button type="button" class="btn-secondary scope-banner-clear" onclick="clearScope()">${escHtml(t('header_scope_clear') || 'Clear')}</button></div>`;
+}
+
+// ── Projects page filters ────────────────────────────────────────────────────
+// With a plan scope the project page narrows every sub-tab to that plan: the
+// plan is an Automation (an arc of the project), so a roll-up group matches on
+// its automation_id, a plan-record row matches through the plan record that
+// lists the Automation, and an Automaton matches through the plan's members.
+function _scopePlanId() { return _scopeEnsure().plan; }
+
+// _scopePlanRecordIds is the Set of plan-record ids that list the scoped
+// Automation, read from the rows the Plans browser and the roll-up hold.
+function _scopePlanRecordIds() {
+  const s = _scopeEnsure();
+  const ids = new Set();
+  if (!s.plan) return ids;
+  const rows = [];
+  try {
+    if (_projectsState.rollup && _projectsState.rollupFor === s.project && Array.isArray(_projectsState.rollup.plans)) rows.push(..._projectsState.rollup.plans);
+    if (typeof _plansBrowser !== 'undefined' && _plansBrowser && _plansBrowser.project === s.project) {
+      if (Array.isArray(_plansBrowser.plans)) rows.push(..._plansBrowser.plans);
+      if (Array.isArray(_plansBrowser.backlog)) rows.push(..._plansBrowser.backlog);
+    }
+  } catch (_) { /* no plan rows yet */ }
+  rows.forEach(r => { if (r && r.id && _scopePlanRowMatches(r)) ids.add(r.id); });
+  return ids;
+}
+// _scopePlanRowMatches: true without a plan scope, else when the plan row (a
+// plan record or roll-up plan) is the scoped plan or lists its Automation.
+function _scopePlanRowMatches(r) {
+  const plan = _scopeEnsure().plan;
+  if (!plan) return true;
+  return !!r && (r.id === plan || r.automation_id === plan || (Array.isArray(r.automation_ids) && r.automation_ids.indexOf(plan) >= 0));
+}
+// _SCOPE_MAX_PAGES caps how many extra pages a filtered list pulls while its
+// current page shows too little.
+const _SCOPE_MAX_PAGES = 10;
+
+// _scopeAutomatonIdMatches: true when no plan is scoped, else when the id is the
+// plan's Automation or one of its member Automata.
+function _scopeAutomatonIdMatches(id) {
+  const s = _scopeEnsure();
+  if (!s.plan) return true;
+  id = String(id || '');
+  return !!id && (id === s.plan || _scopePlanPrdIds().has(id));
+}
+
+// _scopeRecordMatches filters plan-record rows and findings: true without a
+// plan scope, else when the record sits under a plan that lists the scoped
+// Automation or is tied to the Automation or one of its Automata.
+function _scopeRecordMatches(r) {
+  const s = _scopeEnsure();
+  if (!s.plan) return true;
+  if (!r || typeof r !== 'object') return false;
+  if (r.plan_id && _scopePlanRecordIds().has(String(r.plan_id))) return true;
+  const ids = [].concat(Array.isArray(r.automaton_ids) ? r.automaton_ids : [], r.automation_id, r.shipped_by, r.raised_by);
+  return ids.some(id => id && _scopeAutomatonIdMatches(id));
+}
+
+// _scopeRollupGroup is the roll-up group of the scoped plan, or null.
+function _scopeRollupGroup(roll) {
+  const s = _scopeEnsure();
+  if (!s.plan || !roll || !Array.isArray(roll.arcs)) return null;
+  return roll.arcs.find(a => a && a.automation_id === s.plan) || null;
+}
+
+// _scopeOverviewData builds the overview summary of a plan scope from the plan's
+// own roll-up group (progress, points, state, Automata) and the plan's records;
+// nothing is read from the project-wide summary reply.
+const _SCOPE_FINISHED = ['done', 'completed', 'shipped', 'merged', 'finished'];
+function _scopeOverviewData(p, roll) {
+  const s = _scopeEnsure();
+  const g = _scopeRollupGroup(roll);
+  const tk = (g && g.tasks) || {};
+  const done = Number(tk.done) || 0;
+  const total = Number(tk.total) || 0;
+  const pct = total ? Math.round(done * 100 / total) : 0;
+  const autos = g && Array.isArray(g.automata) ? g.automata : [];
+  const finished = a => !a || _SCOPE_FINISHED.indexOf(String(a.status || '').toLowerCase()) >= 0;
+  const left = autos.find(a => !finished(a));
+  const label = _scopePlanLabel(s.project, s.plan);
+  const st = _recordsTab.project === p.name ? _recordsTab : null;
+  const recs = st ? st.rows.filter(_scopeRecordMatches) : [];
+  const findings = recs.filter(r => r.kind === 'finding').length;
+  return {
+    progress: { automata: { done: autos.filter(a => a && finished(a)).length, total: autos.length }, points: g ? g.points : 0 },
+    active_plans: g ? [{ id: s.plan, title: label, state: g.state, progress: { done, total, percent: pct } }] : [],
+    next: left ? { automaton_id: left.id, automaton_title: left.title, plan_id: s.plan, plan_title: label } : null,
+    counts: { plans: { total: g ? 1 : 0, backlog: 0 }, records: { total: recs.length }, rows: { total: recs.length - findings }, findings: { total: findings } },
+  };
+}
+
+// _scopePlanLoading is true while the scoped plan's member list is still being
+// read, so a page that filters on it shows its loading line, not a false empty.
+function _scopePlanLoading() {
+  if (!_scopePlanId()) return false;
+  _scopePlanPrdIds();
+  return _scopePlanCache.status === 'loading';
+}
+
+// _scopeHistoryItemMatches filters the project history: a finished Automaton
+// matches through the plan's members; a daily snapshot is project-wide and has
+// no plan, so a plan scope leaves it out.
+function _scopeHistoryItemMatches(e) {
+  if (!_scopePlanId()) return true;
+  return !!e && e.kind === 'automaton' && _scopeAutomatonIdMatches(e.id);
+}
+
+// _scopeEmptyHTML is the one-line empty state a scoped page shows.
+function _scopeEmptyHTML(key, cls) {
+  return `<div class="scope-empty${cls ? ' ' + cls : ''}" role="status">${escHtml(t(key))}</div>`;
+}
+
+// _scopeBody puts the banner on top of a page body. An empty body stays empty
+// so the page's own fall-back rules still see it.
+function _scopeBody(html) {
+  return html === '' ? '' : _scopeBannerHTML() + html;
 }
 
 // ── Header button ────────────────────────────────────────────────────────────

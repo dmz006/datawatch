@@ -1542,6 +1542,7 @@
   "header_scope_all_plans": "All plans",
   "header_scope_badge_label": "Filter active",
   "header_scope_banner": "Filtered to %1$s",
+  "projects_scope_unassigned_not_in_plan": "Unassigned Automata are not part of a plan, so none are shown for this plan.",
   "header_scope_clear": "Clear",
   "header_scope_help_label": "Help: scope",
   "header_scope_templates_note": "Templates are shown for every project and plan.",
