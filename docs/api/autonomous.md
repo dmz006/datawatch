@@ -1301,6 +1301,23 @@ re-links the open question to its member, raises it if the restart fell before
 it was raised, and applies an answer or withdrawal that came while the daemon
 was down; exactly one question is ever open for one wait.
 
+**Setting these from every surface.** The Automation limit and the stage gate
+are `max_parallel` and `stage_gate` on the create and update body (MCP
+`automation_create` / `automation_update` take `max_parallel` and `stage_gate`;
+CLI `datawatch automation create|update` take `--max-parallel` and
+`--stage-gate`), and a fork's limit and a `decision_wait` member's `question`
+are fields of the member in the `members` array (MCP `members_json`, CLI
+`--members`). To change one on a running Automation without sending the whole
+record, use `set_max_parallel` and `set_stage_gate` (see "Run-shape limits"),
+and `insert_member` with a `question` to add a decision wait (see "Inserting a
+member"). Each has the same operation on every non-web surface:
+
+| Operation | REST | MCP | CLI | Comm |
+|---|---|---|---|---|
+| Limit members running at once | `POST .../set_max_parallel` | `automation_set_max_parallel` | `datawatch automation set-max-parallel <id> --max-parallel <n> [--member <fork>]` | `automation set-max-parallel <id> <n> [member=<fork>]` |
+| Turn the stage gate on or off | `POST .../set_stage_gate` | `automation_set_stage_gate` | `datawatch automation set-stage-gate <id> --stage-gate=<true\|false>` | `automation set-stage-gate <id> on\|off` |
+| Add a decision wait | `POST .../insert_member` with `member.question` | `automation_insert_member` with `question` | `datawatch automation insert <id> --kind decision-wait --question <text> --reason <why>` | `automation insert <id> decision-wait <question> \| <reason>` |
+
 **Concurrency.** A stale `expected_version` on update returns `409`, and
 the record is left unchanged. Inside the daemon, a write that races
 another one re-reads the Automation, re-evaluates, and does nothing if
@@ -1408,7 +1425,7 @@ The REST endpoints do not change. `GET/POST /api/automations` and
 ### Phase 3b — control operations
 
 An operator, or a session or agent acting through the API, can steer a
-running Automation with eleven `POST` endpoints under
+running Automation with thirteen `POST` endpoints under
 `/api/automations/{id}/`. They need the autonomous write capability, like
 the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 `405`.
@@ -1419,12 +1436,14 @@ the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 | `POST /api/automations/{id}/resume` | `paused` | Moves it back to `active`. Members that finished while paused are routed on and the next member is started. Finished members are not restarted. |
 | `POST /api/automations/{id}/cancel` | `active`, `paused`, `blocked` | Cancels it. Needs `cancel_in_flight` (below). |
 | `POST /api/automations/{id}/skip_member` | `active`, `paused` | Skips an active member and follows one of its edges, as if the member had ended that way. A session the skipped member is running is not ended. |
-| `POST /api/automations/{id}/insert_member` | `draft`, `active`, `paused`, `blocked` | Adds a member PRD to the chain (see "Inserting a member"). |
+| `POST /api/automations/{id}/insert_member` | `draft`, `active`, `paused`, `blocked` | Adds a member to the chain: an Automaton, a pending item or a decision wait (see "Inserting a member"). |
 | `POST /api/automations/{id}/remove_member` | `active`, `paused` | Removes a member that has not started and has no outgoing edges. Edges of other members that named it are cleared. |
 | `POST /api/automations/{id}/reorder_edges` | `active`, `paused` | Rewires the outgoing edges of a member that has not started. |
 | `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
 | `POST /api/automations/{id}/set_budget` | `draft`, `active`, `paused`, `blocked` | Sets, replaces or clears the spending limit of the Automation, or of one member that has not finished (see "Spending limit"). Does not change the status. |
 | `POST /api/automations/{id}/set_decision_assistant` | `draft`, `active`, `paused`, `blocked` | Sets or clears the optional local-model decision assistant of the Automation, or of one member (default off; see "Decision assistant"). Does not change the status. |
+| `POST /api/automations/{id}/set_max_parallel` | `draft`, `active`, `paused`, `blocked` | Sets the most members that run at once, for the Automation or for one fork (`0` clears it; see "Run-shape limits"). Changes only that field; on an active Automation it starts or holds members at once. Does not change the status. |
+| `POST /api/automations/{id}/set_stage_gate` | `draft`, `active`, `paused`, `blocked` | Turns the stage gate on or off (see "Run-shape limits"). Changes only that field; on an active Automation it starts or holds members at once. Does not change the status. |
 | `POST /api/automations/{id}/stages/rename` | `draft`, `active`, `paused`, `blocked` | Renames every member stage named `from` to `to` in place (see "Renaming a member stage"). Does not change the status. |
 
 **Request body.** Every endpoint takes a JSON object. All fields are
@@ -1436,10 +1455,10 @@ optional on the wire, but each operation has the fields it needs.
 | `actor` | all | Who is acting, recorded in the audit trail. Defaults to `operator`. An agent or session passes `agent:<id>` or `session:<id>`. |
 | `reason` | all | Free text recorded with the audit entry and the Automation's decision log. Required by `insert_member`. |
 | `cancel_in_flight` | `cancel` | Boolean, required, no default. See below. |
-| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget`, `set_decision_assistant` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
+| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget`, `set_decision_assistant`, `set_max_parallel` | The member to act on. For `set_max_parallel` it names a fork, to limit that fork's branch members instead of the whole Automation. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
 | `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
 | `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
-| `member` | `insert_member` | Object `{"prd_id": "...", "name": "...", "stage": "..."}`. `prd_id` is required. `name` is an optional display name. `stage` is an optional stage label recorded on the inserted member (it shows on the member in `automation_get` and in the decision-log entry; the `stages/rename` rules apply to it like any other member stage). |
+| `member` | `insert_member` | Object `{"prd_id": "...", "name": "...", "stage": "..."}`, or `{"pending_item_id": "..."}`, or `{"kind": "decision_wait", "question": "..."}`: exactly one of `prd_id`, `pending_item_id` and `question` is required (`kind` is optional and only ever `decision_wait`, which needs `question`). `question` is at most 4096 bytes. `name` is an optional display name. `stage` is an optional stage label recorded on the inserted member (it shows on the member in `automation_get` and in the decision-log entry; the `stages/rename` rules apply to it like any other member stage). |
 | `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
 | `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
 | `from` | `stages/rename` | The stage to rename; must be carried by at least one member. |
@@ -1448,6 +1467,8 @@ optional on the wire, but each operation has the fields it needs.
 | `estimated_cost_usd` | `set_budget` | With `member_id`: the member's expected cost in dollars (a number, `0` removes it). Alone it changes only the estimate. |
 | `clear` | `set_budget` | Boolean. `true` removes the limit; it cannot be combined with any policy field or `estimated_cost_usd`. |
 | `backend`, `model`, `mode`, `hooks`, `thresholds` | `set_decision_assistant` | The decision assistant. They replace the whole setting; see "Decision assistant". `backend` and `model` are required together; an empty `backend` turns it off. |
+| `max_parallel` | `set_max_parallel` | Integer, required. The most members that run at once; `0` clears the limit. Never negative. |
+| `stage_gate` | `set_stage_gate` | Boolean, required. `true` holds a staged member until every earlier stage has finished; `false` makes a stage only a label. |
 | `clear` | `set_decision_assistant` | Boolean. `true` turns the assistant off; it cannot be combined with `backend`, `model`, `mode`, `hooks` or `thresholds`. |
 
 **Responses.** `200` returns the updated Automation (same shape as
@@ -1455,7 +1476,7 @@ optional on the wire, but each operation has the fields it needs.
 
 | HTTP | Meaning |
 |------|---------|
-| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without `member.prd_id`, or naming an unknown PRD. An invalid `edge`. A bad edge target in `reorder_edges`. `stages/rename` with an empty `from` or `to`, a `to` longer than 64 characters, or a `to` another member already uses. A branch-naming rejection (below). |
+| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without any of `member.prd_id`, `member.pending_item_id` and `member.question` (or with more than one), with a question over 4096 bytes, or naming an unknown PRD. `set_max_parallel` without `max_parallel`, with a negative one, or with a `member_id` that is not a fork. `set_stage_gate` without `stage_gate`. An invalid `edge`. A bad edge target in `reorder_edges`. `stages/rename` with an empty `from` or `to`, a `to` longer than 64 characters, or a `to` another member already uses. A branch-naming rejection (below). |
 | 404 | No Automation with that ID, no such member, no such pending insert, or (for `stages/rename`) no member carries the stage `from`. |
 | 405 | A method other than `POST`. |
 | 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
@@ -1492,6 +1513,54 @@ Errors: `400` for an unknown backend, hook or mode, a threshold outside
 for an unknown Automation or member; `409` for a stale `expected_version` or a
 completed or cancelled Automation. The audit entry is
 `automation_set_decision_assistant`.
+
+#### Run-shape limits (`set_max_parallel`, `set_stage_gate`)
+
+Two settings decide how many of an Automation's members run side by side:
+`max_parallel` (a cap on members running at once) and `stage_gate` (whether a
+member's `stage` holds it back until earlier stages finish). Both are set when
+the Automation is created or updated (`max_parallel` and `stage_gate` on the
+`POST /api/automations` and `PUT /api/automations/{id}` body; a fork member's
+own `max_parallel` goes in its `members` entry). They are also changeable on
+their own while the Automation runs:
+
+```
+POST /api/automations/3fa9c2d1/set_max_parallel
+{"max_parallel": 3, "expected_version": 6, "actor": "operator", "reason": "GPU lanes freed up"}
+
+POST /api/automations/3fa9c2d1/set_max_parallel
+{"max_parallel": 2, "member_id": "a1b2c3d4", "expected_version": 7}
+
+POST /api/automations/3fa9c2d1/set_stage_gate
+{"stage_gate": false, "expected_version": 8}
+```
+
+Use these instead of `PUT` for a bare change: `PUT` replaces the description,
+budget policy and defaults it is not given, and refuses member edits on a
+started Automation, while these two change only their own field and are
+allowed while the Automation is `draft`, `active`, `paused` or `blocked`. They
+reject nothing but a malformed value. `expected_version` omitted (or `0`)
+skips the version check; a stale positive value is a `409`.
+
+On an `active` Automation the change takes effect at once, through the same
+admission check a restart uses: raising or clearing `max_parallel`, or turning
+the gate off, starts the members that were waiting (in member order), and
+lowering the limit or turning the gate on holds members that have not started
+yet. A member that is already running is never stopped. A `paused` or
+`blocked` Automation starts nothing until it is resumed or unblocked; the new
+value is read then.
+
+`set_max_parallel` takes `max_parallel` (required, `0` clears the limit) and,
+to limit one fork's branch members instead of the whole Automation,
+`member_id` naming that fork; the smaller of the Automation's and the fork's
+limit applies. A `member_id` that is not a fork is a `400`, an unknown one a
+`404`. `set_stage_gate` takes `stage_gate` (required). Audit entries:
+`automation_set_max_parallel` (with `member_id` and `max_parallel`) and
+`automation_set_stage_gate` (with `stage_gate`); the Automation's `decisions`
+list gets a matching entry. The Automation's `max_parallel`, `stage_gate` and
+each member's `waiting_for_slot`, `waiting_for_stage` and
+`waiting_for_operator` show the result in `GET /api/automations/{id}` and in
+the status rows (see **Status**).
 
 #### Spending limit (`set_budget`)
 
@@ -1581,9 +1650,18 @@ POST /api/automations/3fa9c2d1/cancel
 
 #### Inserting a member
 
-`insert_member` adds `member.prd_id` to the chain. The PRD must exist, and
-it must not already be a member or a pending insert of this Automation or
-belong to another Automation that has not ended.
+`insert_member` adds one member to the chain: an Automaton
+(`member.prd_id`), a pending item (`member.pending_item_id`) or a decision
+wait (`member.question`), exactly one of the three. An Automaton's PRD must
+exist, and it must not already be a member or a pending insert of this
+Automation or belong to another Automation that has not ended.
+
+A **decision wait** (`{"kind": "decision_wait", "question": "..."}`, the
+question at most 4096 bytes) is a `decision_wait` member: when the chain
+reaches it, it asks the operator the question and holds only its own branch
+until the answer arrives (see "Decision wait" above). It carries
+`question` and `on_complete` only, and lands in the chain like any other
+insert, with the same placement, stage, pending-insert and approval rules.
 
 - **Placement.** A normal insert goes to the end of the chain, or directly
   after `after` when that is given. An urgent insert takes the next slot: on
@@ -1629,6 +1707,10 @@ belong to another Automation that has not ended.
 POST /api/automations/3fa9c2d1/insert_member
 {"expected_version": 8, "actor": "agent:ab12", "reason": "tests found a gap",
  "member": {"prd_id": "c9d0e1f2", "name": "fix flaky step"}, "urgent": true}
+
+POST /api/automations/3fa9c2d1/insert_member
+{"expected_version": 9, "reason": "sign off before the release step",
+ "member": {"kind": "decision_wait", "question": "Ship the release now?", "stage": "release"}}
 ```
 
 #### Branches (active cursors)
@@ -1685,7 +1767,9 @@ resource: `automation_pause`, `automation_resume`, `automation_cancel`
 `automation_skip_member`, `automation_insert_member`,
 `automation_remove_member`, `automation_reorder_edges`,
 `automation_approve_insert`, `automation_set_decision_assistant` (with the
-backend, model, mode and hooks, or `cleared`), `automation_rename_stage`
+backend, model, mode and hooks, or `cleared`), `automation_set_max_parallel`
+(with `member_id` and `max_parallel`), `automation_set_stage_gate` (with
+`stage_gate`), `automation_rename_stage`
 (with `from` and `to`) and `automation_set_budget` (with the policy
 that was set, or `clear`). The limit also writes `automation_budget_breach`
 (once per breach, again when a pause turns into a block; details: Automation,
@@ -1701,18 +1785,25 @@ The same operations are reachable as MCP tools (`automation_pause`,
 `automation_resume`, `automation_cancel`, `automation_skip_member`,
 `automation_insert_member`, `automation_remove_member`,
 `automation_reorder_edges`, `automation_approve_insert`,
-`automation_rename_stage`, `automation_set_budget`; see
+`automation_rename_stage`, `automation_set_budget`,
+`automation_set_max_parallel`, `automation_set_stage_gate`; see
 [mcp.md](../mcp.md)), as `datawatch automation
-pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget|set-max-parallel|set-stage-gate` (`cancel`
 requires `--cancel-in-flight <true|false>`; `rename-stage` takes the
 Automation ID and the from/to stage names; `set-budget` takes
 `--ceiling-type`, `--ceiling-value`, `--window` and the optional flags, or
-`--clear`), and as the comm verbs `automation
-pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+`--clear`; `set-max-parallel` takes `--max-parallel <n>` and an optional
+`--member <fork-id>`; `set-stage-gate` takes `--stage-gate=<true|false>`;
+`insert` takes `--kind decision-wait --question <text>` for a decision wait),
+and as the comm verbs `automation
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget|set-max-parallel|set-stage-gate` (`cancel`
 requires `in-flight=true` or `in-flight=false`; `rename-stage <id>
 <from-stage> <to-stage>`; `set-budget <id>
-ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`). `openapi.yaml` documents the
-endpoints.
+ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`;
+`set-max-parallel <id> 3 [member=<fork-id>]`; `set-stage-gate <id> on|off`;
+`insert <id> decision-wait <question> | <reason>`). `automation status <id>`
+prints a `run shape:` line with the limit, the gate and what waits.
+`openapi.yaml` documents the endpoints.
 
 ### Converting an orchestrator graph (`import-graph`)
 

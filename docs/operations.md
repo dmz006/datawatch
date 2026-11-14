@@ -6846,6 +6846,14 @@ Four optional Automation features shape how branches run. All are off or unlimit
 | Decision wait | member `kind` `decision_wait` with a `question` | `waiting_for_operator` | Answer the question in the Inbox or with `datawatch question answer` |
 | Stage gate | `stage_gate` on the Automation | `waiting_for_stage` | Finish or skip the earlier stage's members |
 
+Set the Automation limit and the gate on create or update (`max_parallel`, `stage_gate`), or change either on a running Automation with its own call, which changes only that field and takes effect at once (raising the limit or turning the gate off starts waiting members; lowering the limit never stops a running one):
+
+| Action | REST | MCP | CLI | Chat |
+|---|---|---|---|---|
+| Limit members running at once | `POST /api/automations/{id}/set_max_parallel` | `automation_set_max_parallel` | `datawatch automation set-max-parallel <id> --max-parallel <n>` | `automation set-max-parallel <id> <n>` |
+| Stage gate on or off | `POST /api/automations/{id}/set_stage_gate` | `automation_set_stage_gate` | `datawatch automation set-stage-gate <id> --stage-gate=<true\|false>` | `automation set-stage-gate <id> on\|off` |
+| Add a decision wait | `POST /api/automations/{id}/insert_member` with `member.question` | `automation_insert_member` with `question` | `datawatch automation insert <id> --kind decision-wait --question <text> --reason <why>` | `automation insert <id> decision-wait <question> \| <reason>` |
+
 A daemon restart keeps waiting, held and decision-wait members in place and re-links the one open question to its member. A decision wait needs `autonomous.questions.enabled`; without it the question cannot be raised. A blocked member of an earlier stage keeps holding the later stage until it is resumed or skipped. See [howto/automation-chains.md](howto/automation-chains.md) and the glossary entries in [datawatch-definitions.md](datawatch-definitions.md).
 
 ## Merge-pending check (finished Automata whose branch is not on main)

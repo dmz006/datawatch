@@ -7592,10 +7592,13 @@ paths:
     post:
       summary: Insert an Automaton member
       description: |
-        Inserts a new member: an Automaton (`member.prd_id`) or a pending item
-        (`member.pending_item_id`, or `pending_item_id` at the top level), exactly one of the two.
+        Inserts a new member: an Automaton (`member.prd_id`), a pending item
+        (`member.pending_item_id`, or `pending_item_id` at the top level) or a decision wait
+        (`member.question`, with the optional `member.kind` of `decision_wait`), exactly one of the three.
         A pending item member holds the Automation at the cursor until an Automaton is attached
-        (`POST /api/autonomous/pending-items/{id}/attach`). On a draft it lands in the graph at once; on a
+        (`POST /api/autonomous/pending-items/{id}/attach`). A decision wait member asks the operator
+        the question when the chain reaches it and holds only its own branch until it is answered.
+        On a draft it lands in the graph at once; on a
         running Automation it is held as a pending insert until an operator approves it
         (`approve_insert`). `reason` is required. Only one urgent insert may be pending
         at a time. An urgent insert takes the next slot and must leave `after` empty.
@@ -7614,12 +7617,14 @@ paths:
                 reason: {type: string, description: "Why (audit log)"}
                 member:
                   type: object
-                  description: "The member to insert: an Automaton (prd_id) or a pending item (pending_item_id), exactly one of the two"
+                  description: "The member to insert: an Automaton (prd_id), a pending item (pending_item_id) or a decision wait (question), exactly one of the three"
                   properties:
                     prd_id: {type: string, description: "The member Automaton to insert"}
                     pending_item_id: {type: string, description: "The pending item to insert (an id from GET /api/autonomous/pending-items). The item must be waiting and not a member of another Automation. The member waits at the cursor until an Automaton is attached"}
                     name: {type: string, description: "Optional display name"}
                     stage: {type: string, description: "Optional stage label recorded on the inserted member"}
+                    kind: {type: string, enum: [decision_wait], description: "Optional; decision_wait states that the member is a decision wait and needs question"}
+                    question: {type: string, maxLength: 4096, description: "Inserts a decision_wait member that asks the operator this question and waits for the answer"}
                 pending_item_id: {type: string, description: "The top-level form of member.pending_item_id"}
                 urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
                 after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
@@ -7630,7 +7635,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Automation"
-        "400": {description: "reason missing, neither or both of member.prd_id and member.pending_item_id given, or an invalid position"}
+        "400": {description: "reason missing, none or more than one of member.prd_id, member.pending_item_id and member.question given, a question over 4096 bytes, or an invalid position"}
         "404": {description: Automation not found}
         "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
         "401": {$ref: "#/components/responses/Unauthorized"}
@@ -7889,6 +7894,100 @@ paths:
                 $ref: "#/components/schemas/Automation"
         "400": {description: "Invalid setting, or nothing to set"}
         "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/set_max_parallel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set an Automation's max_parallel limit
+      description: |
+        Sets the most members of the Automation that run at once; `0` clears the
+        limit (the default: no limit). A member that would start past the limit
+        is not started and not blocked: it holds its cursor, shows
+        `waiting_for_slot`, and starts, in member order, when a running member
+        finishes. With `member_id` naming a fork, it sets that fork's own
+        `max_parallel` on its branch members instead; the smaller of the
+        Automation's and the fork's limit applies. A negative limit, or a
+        `member_id` that is not a fork, is a 400.
+
+        The call changes only this field, so unlike `PUT /api/automations/{id}`
+        (which replaces the description, budget and defaults it is not given)
+        it is safe on a running Automation. It is allowed while the Automation
+        is `draft`, `active`, `paused` or `blocked`. On an `active` Automation
+        it takes effect at once: raising or clearing the limit starts waiting
+        members, and lowering it never stops a running member. `actor` and
+        `reason` are recorded in the audit log as `automation_set_max_parallel`.
+      operationId: automationsSetMaxParallel
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [max_parallel]
+              properties:
+                max_parallel: {type: integer, minimum: 0, description: "The most members that run at once; 0 clears the limit. Required"}
+                member_id: {type: string, description: "A fork member ID: set that fork's limit on its branch members instead of the Automation's"}
+                expected_version: {type: integer, description: "The Automation version the caller read; a stale positive value is a 409; omitted or 0 skips the check"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "max_parallel missing or negative, or member_id is not a fork"}
+        "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+  /api/automations/{id}/set_stage_gate:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Turn an Automation's stage gate on or off
+      description: |
+        Turns the stage gate on (`stage_gate: true`) or off. On, a staged member
+        is not started while an earlier stage (ordered by first appearance in
+        the member list) still has unfinished members, and starts when that
+        stage finishes; an unstaged member is never held. Off (the default), a
+        member's `stage` is only a label. `stage_gate` is required.
+
+        The call changes only the gate, so unlike `PUT /api/automations/{id}`
+        it is safe on a running Automation. It is allowed while the Automation
+        is `draft`, `active`, `paused` or `blocked`. On an `active` Automation
+        it takes effect at once: turning the gate off starts held members, and
+        turning it on holds members that have not started. `actor` and `reason`
+        are recorded in the audit log as `automation_set_stage_gate`.
+      operationId: automationsSetStageGate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage_gate]
+              properties:
+                stage_gate: {type: boolean, description: "true holds a staged member until every earlier stage has finished; false makes a stage only a label. Required"}
+                expected_version: {type: integer, description: "The Automation version the caller read; a stale positive value is a 409; omitted or 0 skips the check"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "stage_gate missing"}
+        "404": {description: Automation not found}
         "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}

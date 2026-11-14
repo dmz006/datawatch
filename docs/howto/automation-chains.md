@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automation, chain, fork, join, nesting, budget, control, import-graph]
+  topics: [automation, chain, fork, join, nesting, budget, control, import-graph, max-parallel, stage-gate, decision-wait, run-shape]
 exec_params:
   - {name: automation_id, required: true, description: "Automation ID to read"}
   - {name: graph_id, required: true, description: "Orchestrator graph ID to preview as an Automation"}
@@ -141,8 +141,11 @@ for that fork's branches.
 
 Set the Automation limit with `max_parallel` in the body of `POST
 /api/automations` (an update that omits it keeps the stored value, and `0`
-clears it). Set a fork's limit inside its member JSON, which works the same from
-the CLI `--members` array and the MCP `members` array:
+clears it), with `--max-parallel` on `datawatch automation create` and
+`update`, or with the `max_parallel` argument of `automation_create` and
+`automation_update` over MCP. Set a fork's limit inside its member JSON, which
+works the same from the CLI `--members` array and the MCP `members_json`
+argument:
 
 ```json
 {"id":"split","kind":"fork","fork_members":["a","b","c","d","e"],"max_parallel":2}
@@ -154,6 +157,21 @@ not blocked, and the Automation stays active. When a running member finishes,
 completed, failed or cancelled, the next waiting member starts, again in member
 order. A daemon restart keeps the waiting members waiting and starts them as
 slots free. No member kind other than a fork takes the field.
+
+To change the limit on an Automation that is already running, without
+resending the whole record (an update replaces the description, budget and
+defaults it is not given), use the dedicated call. It changes only the limit,
+and on an active Automation it takes effect at once: raising or clearing the
+limit starts the waiting members, and lowering it never stops a running member.
+Add `member` (CLI), `member_id` (REST, MCP) or `member=` (chat) naming a fork to
+change that fork's limit instead.
+
+| Surface | Set the limit to 3 |
+|---|---|
+| REST | `POST /api/automations/{id}/set_max_parallel` with `{"max_parallel":3}` |
+| MCP | `automation_set_max_parallel` with `max_parallel` 3 |
+| CLI | `datawatch automation set-max-parallel <id> --max-parallel 3` |
+| Chat | `automation set-max-parallel <id> 3` |
 
 ### Hold a later stage until an earlier one finishes
 
@@ -187,7 +205,19 @@ The gate composes with the limit above: a released member that finds every slot
 full waits for a slot instead of starting past `max_parallel`. It is off by
 default, and an update that omits `stage_gate` keeps the stored value. Set it
 with `stage_gate` in the body of `POST /api/automations`, or the `stage_gate`
-argument of `automation_create` and `automation_update` over MCP.
+argument of `automation_create` and `automation_update` over MCP, or
+`--stage-gate` on `datawatch automation create` and `update`.
+
+To flip the gate on a running Automation without resending the whole record,
+use the dedicated call. Turning the gate off starts the held members at once;
+turning it on holds members that have not started.
+
+| Surface | Turn the gate on |
+|---|---|
+| REST | `POST /api/automations/{id}/set_stage_gate` with `{"stage_gate":true}` |
+| MCP | `automation_set_stage_gate` with `stage_gate` true |
+| CLI | `datawatch automation set-stage-gate <id> --stage-gate=true` |
+| Chat | `automation set-stage-gate <id> on` |
 
 ### Wait for an operator answer on a branch
 
@@ -211,9 +241,20 @@ decision log and the join rule decides the rest. The question needs
 `autonomous.questions.enabled`. A restart keeps the one open question linked to
 its member.
 
+Besides writing the member into the `members` array, you can add a decision wait
+to an Automation with the insert call (on a draft it lands at once; on a started
+Automation it is held until you approve it, like any insert):
+
+| Surface | Add a decision wait |
+|---|---|
+| REST | `POST /api/automations/{id}/insert_member` with `{"member":{"kind":"decision_wait","question":"Ship it?"},"reason":"sign-off"}` |
+| MCP | `automation_insert_member` with `question` and `reason` |
+| CLI | `datawatch automation insert <id> --kind decision-wait --question "Ship it?" --reason "sign-off"` |
+| Chat | `automation insert <id> decision-wait Ship it? \| sign-off` (question, then `\|`, then the reason) |
+
 While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.
-Same call over MCP: `automation_create` with the same `members` array.
+Same call over MCP: `automation_create` with the same members in `members_json`.
 
 ## 4. Nest an Automation inside another
 
