@@ -230,6 +230,37 @@ func TestClassifyLaneOccupant(t *testing.T) {
 			wantTxt: "threshold 30 min",
 		},
 		{
+			name: "failed and cancelled tasks are all terminal and wait for the review",
+			facts: occFacts(occPRD(
+				Task{Status: TaskFailed},
+				Task{Status: TaskCancelled},
+			), nil),
+			wantOcc: false,
+			wantCod: LaneOccWaitingReviewMerge,
+		},
+		{
+			name: "a recorded merge time past the threshold wins over a fresh first-seen time",
+			facts: func() laneOccFacts {
+				f := occFacts(occPRD(Task{Status: TaskCompleted, WorktreeBranch: "b1", MergeState: MergeStatePending,
+					MergeBlock: &MergeBlock{Since: occNow.Add(-45 * time.Minute)}}), nil)
+				f.pendingSince["ta"] = occNow.Add(-1 * time.Minute)
+				return f
+			}(),
+			wantOcc: false,
+			wantCod: LaneOccMergeStalled,
+			wantTxt: "45 min",
+		},
+		{
+			name: "a recorded merge time inside the threshold keeps the lane",
+			facts: func() laneOccFacts {
+				f := occFacts(occPRD(Task{Status: TaskCompleted, WorktreeBranch: "b1", MergeState: MergeStatePending,
+					MergeBlock: &MergeBlock{Since: occNow.Add(-5 * time.Minute)}}), nil)
+				f.pendingSince["ta"] = occNow.Add(-3 * time.Hour)
+				return f
+			}(),
+			wantOcc: true,
+		},
+		{
 			name:    "a conflicted merge needs the operator, waits for review and merge",
 			facts:   occFacts(occPRD(Task{Status: TaskCompleted, WorktreeBranch: "b1", MergeState: MergeStateConflict}), nil),
 			wantOcc: false,

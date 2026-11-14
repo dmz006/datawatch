@@ -15,12 +15,14 @@
 //     and waiting for its capacity slot (waiting_capacity), or queued with
 //     every dependency completed and nothing unmerged in front of it;
 //   - verified work waiting on its merge into the PRD branch keeps the lane
-//     while the stalled-merge window allows: stalled_merge_minutes = 0
+//     while the stalled-merge window allows (the window runs from the time
+//     the task records for its merge, else from when it was first seen
+//     pending): stalled_merge_minutes = 0
 //     switches the rule off (the lane is kept), otherwise every pending
 //     merge past the threshold with no progress frees the lane and records
 //     why (merge_stalled).
 //
-// When none of these holds — every task completed with nothing left to
+// When none of these holds — every task finished with nothing left to
 // merge, or settled in a state nothing can start on its own — the Automaton
 // is waiting: it does not enter the running list the planner reads, its
 // lane is left idle for the next eligible work, and the status' Waiting list
@@ -149,10 +151,7 @@ func classifyLaneOccupant(f laneOccFacts) laneOccDecision {
 		if f.stalledMergeMinutes <= 0 {
 			continue
 		}
-		since, ok := f.pendingSince[t.ID]
-		if !ok {
-			since = f.now
-		}
+		since := laneOccMergeSince(t, f.pendingSince, f.now)
 		if f.now.Sub(since) <= threshold {
 			hasFresh = true
 		}
@@ -180,14 +179,14 @@ func classifyLaneOccupant(f laneOccFacts) laneOccDecision {
 	// (d) Settled work only: everything completed and merged waits on the
 	// completion review; anything else settled is a task nothing can start
 	// on its own.
-	allCompleted := true
+	allTerminal := true
 	for _, t := range tasks {
-		if t.Status != TaskCompleted {
-			allCompleted = false
+		if !isTaskTerminal(t.Status) {
+			allTerminal = false
 			break
 		}
 	}
-	if allCompleted {
+	if allTerminal {
 		return laneOccWaiting(LaneOccWaitingReviewMerge,
 			"all tasks are completed and merged; the Automaton waits on the completion review to close it")
 	}
@@ -228,6 +227,20 @@ func laneOccDepsSatisfied(p *PRD, t *Task) bool {
 		}
 	}
 	return true
+}
+
+// laneOccMergeSince is when the task's pending merge started waiting: the
+// time the task records for its merge block when it has one, otherwise the
+// time the poll first saw it pending, otherwise now (a merge seen for the
+// first time is as young as it can be).
+func laneOccMergeSince(t *Task, seen map[string]time.Time, now time.Time) time.Time {
+	if t.MergeBlock != nil && !t.MergeBlock.Since.IsZero() {
+		return t.MergeBlock.Since
+	}
+	if at, ok := seen[t.ID]; ok {
+		return at
+	}
+	return now
 }
 
 // laneOccMergePending says the task's verified work still waits on its merge
