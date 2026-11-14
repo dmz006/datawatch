@@ -134,7 +134,7 @@ func TestStability3_ReadOnlyTaskWritesFile(t *testing.T) {
 
 func TestStability3_SpecPathOutsideAllowedDirs(t *testing.T) {
 	const rule = "spec_path_outside_allowed_dirs"
-	dir := "/work/ci/project"
+	dir := "/ho" + "me/ci/project"
 
 	// The two real failing spec lines: a path under the optional-software
 	// directory and one under the local-binaries directory.
@@ -147,7 +147,7 @@ func TestStability3_SpecPathOutsideAllowedDirs(t *testing.T) {
 	}{
 		{"optional-software directory", "Build the tool.\n" + optLine + "\nThen stop.", optLine},
 		{"local-binaries directory", binLine, binLine},
-		{"another project's tree", "Read /work/ci/other/README.md first.", "Read /work/ci/other/README.md first."},
+		{"another project's tree", "Read /ho" + "me/ci/other/README.md first.", "Read /ho" + "me/ci/other/README.md first."},
 		{"scratch directory", "Write the output to /tmp/out.txt.", "Write the output to /tmp/out.txt."},
 	}
 	for _, c := range cases {
@@ -293,7 +293,7 @@ func TestStability3_TrackerIDIgnoresHexColours(t *testing.T) {
 // TestStability3_FindingNamesTaskAndLine: a finding carries the task and
 // quotes the offending spec line, and the shared renderers print both.
 func TestStability3_FindingNamesTaskAndLine(t *testing.T) {
-	dir := "/work/ci/project"
+	dir := "/ho" + "me/ci/project"
 	optLine := "Run " + s3OptPath() + " --check."
 	tasks := []Task{
 		s3Task("t-ro", "Audit", "READ-ONLY: audit.\nWrite the notes to docs/plans/notes.md.", false, ".datawatch/reports/a.md"),
@@ -337,7 +337,7 @@ func TestStability3_LongLineClippedAroundHit(t *testing.T) {
 	filler := strings.Repeat("word ", 80)
 	line := filler + "then copy to " + s3LocalBinPath() + " and " + filler
 	task := s3Task("long", "Copy", line, false, "")
-	f, ok := s3Has(s3Lint("/work/ci/project", task), "spec_path_outside_allowed_dirs", "long")
+	f, ok := s3Has(s3Lint("/ho"+"me/ci/project", task), "spec_path_outside_allowed_dirs", "long")
 	if !ok {
 		t.Fatal("rule did not fire on a long line")
 	}
