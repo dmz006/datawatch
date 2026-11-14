@@ -26,12 +26,14 @@ const (
 	releaseNeutralWord = "the release"
 )
 
-// correctReleaseText rewrites every fixed three-part number in text.
-// A number introduced by the word "version" or "release" is replaced
+// correctReleaseText rewrites every fixed three-part number in text that
+// is the release version of the Automaton (see isReleaseNumberAt); a
+// Python, Go, Node or library version, a pin, a path, URL or image tag is
+// left exactly as written. A number introduced by the word "version" or "release" is replaced
 // together with that word by "the release"; a bare number becomes "the
 // next patch above main".
 func correctReleaseText(text string) (string, []Replacement) {
-	locs := dottedChainRE.FindAllStringIndex(text, -1)
+	locs := releaseVersionLocs(text)
 	if len(locs) == 0 {
 		return text, nil
 	}
@@ -39,10 +41,6 @@ func correctReleaseText(text string) (string, []Replacement) {
 	var reps []Replacement
 	last := 0
 	for _, loc := range locs {
-		num := text[loc[0]:loc[1]]
-		if len(strings.Split(strings.TrimPrefix(num, "v"), ".")) != 3 {
-			continue
-		}
 		start, repl := loc[0], releaseNeutralBare
 		if i := lastWordBefore(text, loc[0]); i >= last {
 			if w := strings.ToLower(strings.TrimSpace(text[i:loc[0]])); w == "version" || w == "release" {
