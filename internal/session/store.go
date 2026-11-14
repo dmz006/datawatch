@@ -367,6 +367,12 @@ type Session struct {
 	// caller can fall back to another delivery channel.
 	PlatformContextLocalFile bool `json:"platform_context_local_file,omitempty"`
 
+	// RTKInstructionsDelivered — true when the RTK instructions block was put
+	// in place for this session: in the untracked CLAUDE.local.md by default,
+	// or in the tracked rules file when rtk.write_rules_files is on. False when
+	// RTK is disabled or the write failed. Persisted like PlatformContextLocalFile.
+	RTKInstructionsDelivered bool `json:"rtk_instructions_delivered,omitempty"`
+
 	// PRDID, TaskID, and StoryID link this session to the autonomous executor
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.

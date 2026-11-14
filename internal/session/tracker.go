@@ -213,8 +213,12 @@ func (t *Tracker) RecordResume() error {
 
 // GuardrailsOptions controls which sections are included in session guardrails.
 type GuardrailsOptions struct {
-	MemoryEnabled       bool
-	RTKEnabled          bool
+	MemoryEnabled bool
+	RTKEnabled    bool
+	// RTKWriteRulesFiles (rtk.write_rules_files) restores the legacy append of
+	// the RTK block to the tracked AGENT.md / CLAUDE.md. Off by default: the
+	// block goes to the untracked CLAUDE.local.md instead.
+	RTKWriteRulesFiles  bool
 	CrossSessionEnabled bool
 	// PlatformContextEnabled upserts the versioned platform context section
 	// into the project's rules file.
@@ -287,6 +291,7 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			targetFile = agentPath
 		}
 
+		rtkInRulesFile := false
 		if fileExists(targetFile) {
 			// File exists — merge missing sections
 			existing, _ := os.ReadFile(targetFile)
@@ -323,11 +328,15 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 				modified = true
 			}
 
-			// Add RTK section if enabled and not present
-			// Add RTK section if enabled and not present
-			if opt.RTKEnabled && !strings.Contains(existingStr, "rtk-instructions") && !strings.Contains(existingStr, "RTK (Rust Token Killer)") {
-				existingStr += "\n\n" + rtkInstructions()
-				modified = true
+			// Legacy RTK delivery: append to the tracked rules file. Only when
+			// rtk.write_rules_files is on; otherwise the block goes to the
+			// untracked CLAUDE.local.md below and this file is left alone.
+			if opt.RTKEnabled && opt.RTKWriteRulesFiles {
+				rtkInRulesFile = true
+				if !strings.Contains(existingStr, "rtk-instructions") && !strings.Contains(existingStr, "RTK (Rust Token Killer)") {
+					existingStr += "\n\n" + rtkInstructions()
+					modified = true
+				}
 			}
 
 			// Add Cross-Session Communication Rule if enabled and not present.
@@ -342,6 +351,22 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 		} else {
 			// No file exists — write the full template
 			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
+		}
+
+		// The RTK block never goes into a tracked project file unless
+		// rtk.write_rules_files is on: by default it lives in the untracked
+		// CLAUDE.local.md beside the platform context. The flag records that
+		// the instructions are in place by either channel.
+		sess.RTKInstructionsDelivered = false
+		switch {
+		case opt.RTKEnabled && opt.RTKWriteRulesFiles:
+			platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
+			sess.RTKInstructionsDelivered = rtkInRulesFile
+		case opt.RTKEnabled:
+			_, werr := platformcontext.WriteRTKLocalFile(sess.ProjectDir, rtkInstructions())
+			sess.RTKInstructionsDelivered = werr == nil
+		default:
+			platformcontext.RemoveRTKLocalFile(sess.ProjectDir) //nolint:errcheck
 		}
 
 		// The platform context block never goes into a tracked project file:
