@@ -151,7 +151,12 @@ test('a missing weekly share is an Events entry only when the project has an arc
     const withArc = pageAllSubtabs(sb, { name: 'acme', arcs: [{ automation_id: 'a1' }] }, BARE_ROLL, '', null);
     const ev = withArc.slice(withArc.indexOf('id="projectEvents"'));
     assert.ok(withArc.includes('id="projectEvents"'), 'events block present');
-    assert.ok(ev.includes('Weekly share is not set.'), 'entry for the missing share');
+    if (showEmpty) assert.ok(ev.includes('Weekly share is not set.'), 'entry for the missing share');
+    else {
+      // Off: the unset field is counted in the one grouped summary line.
+      assert.ok(!ev.includes('Weekly share is not set.'), 'not listed individually');
+      assert.ok(ev.includes('project-event-summary'), 'grouped summary line');
+    }
     const noArcs = pageAllSubtabs(sb, { name: 'acme' }, { arcs: [] }, '', null);
     assert.ok(!noArcs.includes('Weekly share is not set.'), 'no entry without arcs');
     const withShare = pageAllSubtabs(sb, { name: 'acme', weekly_share: 10 }, BARE_ROLL, '', null);
