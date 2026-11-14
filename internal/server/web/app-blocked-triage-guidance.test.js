@@ -242,13 +242,14 @@ test('the hint key it picks exists in the English bundle with that exact value',
   }
 });
 
-test('the German bundle renders the same English copy for the guidance', () => {
+test('the German bundle renders its own translated guidance (not the English copy)', () => {
   const sandbox = loadAppWith('de');
   const de = bundle('de');
   const html = sandbox.triageCardHtml(blocked({ reason_source: 'verdict' }));
   assert.ok(html.includes(de.triage_unblock_verdict), 'de card shows its unblock line');
   assert.ok(html.includes(de.triage_reason_source_verdict), 'de card shows its source label');
-  assert.equal(de.triage_unblock_verdict, EN.triage_unblock_verdict, 'de keeps the English copy');
+  assert.notEqual(de.triage_unblock_verdict, EN.triage_unblock_verdict, 'de holds a translation, not the English copy');
+  assert.doesNotMatch(de.triage_unblock_verdict, /(?:^|[^A-Za-z])Automat(?:a|on)s?(?:$|[^A-Za-z])/i, 'de has no untranslated Automaton');
   const failed = sandbox.triageCardHtml({ prd_id: 'p', status: 'failed', error: 'x' });
   assert.ok(failed.includes(de.triage_unblock_error), 'de failed hint');
 });

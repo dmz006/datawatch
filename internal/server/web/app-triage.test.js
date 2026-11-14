@@ -392,7 +392,7 @@ test('every triage_* key the card, detail and guidance use exists in every local
   }
 });
 
-test('the non-English bundles keep the English copy for the new guidance keys', () => {
+test('the non-English bundles translate the new guidance keys (no English word, no English copy)', () => {
   const en = bundle('en');
   const keys = [
     'triage_btn_desc_retry', 'triage_btn_desc_resolve_review', 'triage_btn_desc_cancel',
@@ -401,10 +401,14 @@ test('the non-English bundles keep the English copy for the new guidance keys', 
     'triage_reason_source_task_error', 'triage_reason_source_task_review',
     'triage_reason_none',
   ];
+  // Terminology Rule: the English word must not survive into non-English values.
+  const englishAutomaton = /(?:^|[^A-Za-z])Automat(?:a|on)s?(?:$|[^A-Za-z])/i;
   for (const lang of ['de', 'es', 'fr', 'ja']) {
     const b = bundle(lang);
     for (const k of keys) {
-      assert.equal(b[k], en[k], lang + ' ' + k + ' must match the English copy');
+      assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' ' + k + ' missing or empty');
+      assert.ok(!englishAutomaton.test(b[k]), lang + ' ' + k + ' still carries the untranslated English word');
+      assert.notEqual(b[k], en[k], lang + ' ' + k + ' keeps the English copy instead of a translation');
     }
   }
 });
