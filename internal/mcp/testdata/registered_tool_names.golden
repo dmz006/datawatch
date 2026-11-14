@@ -77,6 +77,8 @@ autonomous_defect_tinyfix_check
 autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
+autonomous_gate_repair_run
+autonomous_gate_repair_status
 autonomous_held_questions
 autonomous_infra_retries
 autonomous_lane_fill_status

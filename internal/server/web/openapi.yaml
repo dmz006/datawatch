@@ -3585,6 +3585,71 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/gate-repair:
+    get:
+      summary: Gate repair engine status
+      description: |
+        The gate repair engine: the mode in effect (`off`, `report` or `on`;
+        report records what it would do and acts on nothing, the shipped
+        default), the repair records (`records` — for each failed gate the
+        failure class found, what it would do or did, and how to undo it,
+        newest last) and the spent repair budget keys (`budget`, one
+        `automaton_id/task_id/<class>` key per class already spent). Read-only:
+        reading it repairs nothing, raises no alert and changes no mode; the
+        mode changes only through the existing config set paths
+        (`autonomous.gate_repair.mode`). Needs the autonomous read capability
+        when called by a federated peer.
+      operationId: autonomousGateRepairStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Gate repair engine status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/gate-repair/run:
+    post:
+      summary: Run the gate repair engine now — one failed gate, or one pass across all failed gates
+      description: |
+        Runs the gate repair engine now, in the mode configured for
+        `autonomous.gate_repair.mode` (report records what it would do and acts
+        on nothing; on applies the safe repair once per class per task). Give
+        both `automaton_id` and `task_id` to repair that one failed gate now, or
+        send no targets (an empty body) to run one pass over every currently
+        failed gate. Giving exactly one of the two is refused with a 400. Needs
+        the autonomous run capability when called by a federated peer.
+      operationId: autonomousGateRepairRun
+      tags: [Autonomous]
+      requestBody:
+        description: Optional targets; both or neither.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                automaton_id: {type: string, description: "With task_id, the one failed gate to repair now"}
+                task_id: {type: string, description: "With automaton_id, the one failed gate to repair now"}
+      responses:
+        "200":
+          description: The run outcome(s) and the refreshed status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateRepairRunResponse"
+        "400": {description: Exactly one of automaton_id/task_id was given}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/supervisor-watch:
     get:
       summary: Supervisor watch state
@@ -13161,6 +13226,30 @@ components:
         undo: {type: string, description: How to undo what was done}
         before: {type: string, description: The script text pair of a file edit, before}
         after: {type: string, description: The script text pair of a file edit, after}
+    GateRepairOutcome:
+      type: object
+      description: One gate repair run outcome, as POST /api/autonomous/gate-repair/run returns it.
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: The engine mode in effect}
+        class: {type: string, description: The failure class that was repaired or proposed}
+        would: {type: string, description: What report mode would do (the class's proposed repair)}
+        did: {type: string, description: What on mode actually did}
+        done: {type: string, description: The on-mode outcome text for a hold, refusal or failed repair}
+        before: {type: string, description: The script text pair of an applied file edit, before}
+        after: {type: string, description: The script text pair of an applied file edit, after}
+        held: {type: string, description: The id of the held operator question raised, if any}
+        err: {type: string, description: The outcome error text (a failed repair or a refusal)}
+        kind: {type: string, description: The housekeeping record kind: would, did, failed or skipped}
+        subject: {type: string, description: The record/alert subject (the automaton and task)}
+        found: {type: string, description: The record's finding line (class plus the leading output)}
+    GateRepairRunResponse:
+      type: object
+      description: The POST /api/autonomous/gate-repair/run reply: the run outcome(s) plus a fresh status read.
+      required: [runs, status]
+      properties:
+        runs: {type: array, description: The outcome of the gate(s) repaired; empty for an empty pass, one entry for a single gate, one entry per pass for a full pass}
+          items: {$ref: "#/components/schemas/GateRepairOutcome"}
+        status: {$ref: "#/components/schemas/GateRepairStatus"}
     SupervisorWatchStatus:
       type: object
       description: >-

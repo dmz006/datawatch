@@ -83,6 +83,58 @@ func (m *Manager) GateRepairerStatus() GateRepairStatus {
 	return GateRepairStatus{Mode: config.GateRepairModeReport, Records: []RepairRecord{}}
 }
 
+// RunGateRepair runs the gate repair engine once for one Automaton's one
+// failed task gate, for the POST /api/autonomous/gate-repair/run single-target
+// surface. It delegates to the wired engine (which honours the engine mode and
+// the repair budget); when no engine is wired it returns one refused outcome
+// rather than panicking. The outcome is a plain value — an empty Err means the
+// gate was resolved (or reported), a non-empty Err means it was refused or the
+// repair failed.
+func (m *Manager) RunGateRepair(ctx context.Context, automatonID, taskID string) GateRepairOutcome {
+	if g := m.GateRepairer(); g != nil {
+		return g.Run(ctx, automatonID, taskID)
+	}
+	return GateRepairOutcome{Mode: config.GateRepairModeReport, Err: "gate repair engine is not wired to this daemon"}
+}
+
+// RunGateRepairPass runs the gate repair engine once across the daemon: every
+// currently failed task gate on every Automaton is resolved (report mode only
+// records what it would do; on mode still stops at the repair budget). It is
+// the POST /api/autonomous/gate-repair/run no-target surface. The target list
+// is collected under the read lock and released before any repair runs, and the
+// scan stops early when the request context expires. When no engine is wired it
+// returns an empty list.
+func (m *Manager) RunGateRepairPass(ctx context.Context) []GateRepairOutcome {
+	g := m.GateRepairer()
+	if g == nil || m.store == nil {
+		return []GateRepairOutcome{}
+	}
+	type gateTarget struct{ automatonID, taskID string }
+	var targets []gateTarget
+	for _, p := range m.store.ListPRDs() {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		m.readLocked(func() {
+			for i := range p.Story {
+				for j := range p.Story[i].Tasks {
+					if p.Story[i].Tasks[j].Status == TaskFailed {
+						targets = append(targets, gateTarget{automatonID: p.ID, taskID: p.Story[i].Tasks[j].ID})
+					}
+				}
+			}
+		})
+	}
+	out := make([]GateRepairOutcome, 0, len(targets))
+	for _, t := range targets {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		out = append(out, g.Run(ctx, t.automatonID, t.taskID))
+	}
+	return out
+}
+
 // HousekeepingGateRepairView is the engine's group in the housekeeping
 // repairs read view, newest first within each list.
 func (g *GateRepairer) HousekeepingGateRepairView() HousekeepingRepairGroupView {
