@@ -160,3 +160,28 @@ func TestPoolFallthrough_NoResolverIsInert(t *testing.T) {
 		t.Fatal("no alternates wired: admit must wait")
 	}
 }
+
+// A verifier, judge or planner request never falls through, even when the
+// setting is on, an alternate is idle and the requested pool is full.
+func TestPoolFallthrough_NonWorkerRolesNeverFallThrough(t *testing.T) {
+	for _, role := range []capacity.Role{capacity.RoleVerifier, capacity.RolePlanner} {
+		m, task, prd, sink, _ := fallthroughFixture(t, true)
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		err := m.admit(ctx, prd, task, "a", "m1", role)
+		cancel()
+		if err == nil {
+			t.Fatalf("role %s: admit must keep waiting on the full pool, got success", role)
+		}
+		if _, ok := m.fallthroughOf(task.ID); ok {
+			t.Fatalf("role %s: must not fall through", role)
+		}
+		if n := len(sink.fallThroughs()); n != 0 {
+			t.Fatalf("role %s: no fall-through audit expected, got %d", role, n)
+		}
+		// The picker itself refuses a non-worker request.
+		base := capacity.Request{Holder: task.ID, Pools: []string{"llm:a"}, Role: role}
+		if alt, _ := m.pickFallthrough(m.Capacity(), base, "a", "m1"); alt != nil {
+			t.Fatalf("role %s: pickFallthrough returned %+v", role, alt)
+		}
+	}
+}

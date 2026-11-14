@@ -1118,6 +1118,15 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		advisor = newPlacementAdvisor(cfg, httpServer)
 	}
 	amgr.SetCapacity(led, keys, advisor)
+	// Fall-through alternates: read live on every admission, and used only
+	// when autonomous.capacity_fallthrough is on.
+	amgr.SetCapacityAlternates(capacityAlternatesFor(capacityAlternatesSource{
+		LaneFill: func() autonomous.LaneFillConfig { return amgr.Config().LaneFill },
+		Entries:  registryEntries(httpServer.InferenceRegistry),
+		Caps: newLaneFillCapSource(httpServer.InferenceRegistry,
+			func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }),
+		Inflight: ledgerInflight(led),
+	}))
 	// An LLM entry edit (API, MCP, CLI or config reload) re-plans the waiters
 	// at once; the pool sync ticker covers compute registry changes.
 	replan := replanOnPlacementChange(led, httpServer.InferenceRegistry, httpServer.ComputeRegistry)
