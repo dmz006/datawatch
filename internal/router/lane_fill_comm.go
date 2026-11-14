@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // laneFillChatDecisions is how many of the newest decisions a chat reply shows,
@@ -88,4 +89,16 @@ func (r *Router) replySetLanePreference(args []string) {
 		return
 	}
 	r.reply("autonomous set-lane-preference", prettyJSON(out))
+}
+
+// checkLaneFillConfigure refuses a bad value for the stalled-merge setting
+// before the configure verb writes anything. It applies the same check, with
+// the same message, as PUT /api/config, MCP and the CLI: a whole number >= 0
+// (0 = rule off, default 30). Every other key passes through untouched.
+func checkLaneFillConfigure(key, value string) error {
+	if key != config.LaneFillStalledMergeMinutesKey {
+		return nil
+	}
+	_, err := config.ParseLaneFillStalledMergeMinutes(value)
+	return err
 }

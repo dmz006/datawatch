@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -5234,6 +5235,53 @@ func ValidateLaneFillKindMode(key, mode string) error {
 	default:
 		return fmt.Errorf("autonomous.lane_fill.%s: %q is not a valid value (must be \"off\", \"shadow\" or \"on\")", key, mode)
 	}
+}
+
+// LaneFillStalledMergeMinutesKey is the dotted key of the stalled-merge
+// threshold, the one name every surface uses for it.
+const LaneFillStalledMergeMinutesKey = "autonomous.lane_fill.stalled_merge_minutes"
+
+// ValidateLaneFillStalledMergeMinutes checks a decoded autonomous.lane_fill
+// .stalled_merge_minutes value: a whole number >= 0 (0 turns the rule off,
+// default 30). REST, MCP, the CLI and the comm channel all refuse anything
+// else with this one message.
+func ValidateLaneFillStalledMergeMinutes(v any) error {
+	var f float64
+	switch n := v.(type) {
+	case float64:
+		f = n
+	case int:
+		f = float64(n)
+	case int64:
+		f = float64(n)
+	default:
+		return errLaneFillStalledMergeMinutes()
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < 0 {
+		return errLaneFillStalledMergeMinutes()
+	}
+	return nil
+}
+
+func errLaneFillStalledMergeMinutes() error {
+	return fmt.Errorf("%s: must be a whole number >= 0 (0 turns the stalled-merge rule off, default 30)", LaneFillStalledMergeMinutesKey)
+}
+
+// ParseLaneFillStalledMergeMinutes reads the typed text of the setting (a
+// command line or a chat message) and applies ValidateLaneFillStalledMergeMinutes
+// to it, so the text "30" and the JSON number 30 are judged alike and text that
+// is not a whole number >= 0 is refused with the same message.
+func ParseLaneFillStalledMergeMinutes(text string) (int, error) {
+	var v any
+	trimmed := strings.TrimSpace(text)
+	if err := json.Unmarshal([]byte(trimmed), &v); err != nil {
+		v = trimmed
+	}
+	if err := ValidateLaneFillStalledMergeMinutes(v); err != nil {
+		return 0, err
+	}
+	f, _ := v.(float64)
+	return int(f), nil
 }
 
 // EffectiveMode returns the mode in effect, normalized: an empty value means

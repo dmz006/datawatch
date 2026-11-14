@@ -12442,6 +12442,17 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		fmt.Printf("Set %s = %d\n", key, n)
 		return nil
 	}
+	if key == laneFillStalledMergeConfigKey {
+		n, err := parseStalledMergeMinutesValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
+	}
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	if key == "session.liveness_idle_timeout_overrides" {
 		// A JSON object or backend=seconds pairs; bad text is refused here, and

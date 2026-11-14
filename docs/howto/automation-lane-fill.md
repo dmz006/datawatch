@@ -286,10 +286,10 @@ Every key is settable at runtime with no restart:
 | CLI | `datawatch config set autonomous.lane_fill.mode shadow` |
 | Chat | `configure autonomous.lane_fill.mode=shadow` |
 | REST | `PUT /api/config` with the same key |
-| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`, `lane_fill_stale_after_hours`, `lane_fill_host_down_after_minutes`, `lane_fill_require_confirmed_proposal`, `lane_fill_check_main_carries`, `lane_fill_require_worktree`, `lane_fill_lane_counts_from_caps`, `lane_fill_gpu_mode`, `lane_fill_claude_mode`) |
+| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`, `lane_fill_stale_after_hours`, `lane_fill_host_down_after_minutes`, `lane_fill_stalled_merge_minutes`, `lane_fill_require_confirmed_proposal`, `lane_fill_check_main_carries`, `lane_fill_require_worktree`, `lane_fill_lane_counts_from_caps`, `lane_fill_gpu_mode`, `lane_fill_claude_mode`) |
 | PWA | Settings → General → Autonomous, the Lane fill fields |
 
-A bad value is refused, and nothing is written. An explicit `0` is kept.
+A bad value is refused, and nothing is written. An explicit `0` is kept. `stalled_merge_minutes` takes a whole number `0` or more on every channel (`0` = rule off, default `30`); a negative number, a fraction or text is refused with the same message from REST, MCP, the CLI and chat. The status read (`datawatch autonomous lane-fill`, `autonomous lane-fill` in chat, `autonomous_lane_fill_status`, `GET /api/autonomous/lane-fill`) lists the waiting Automata with the reason for each.
 
 ## Why lane fill skips an Automaton
 
