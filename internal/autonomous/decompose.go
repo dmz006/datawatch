@@ -53,9 +53,27 @@ const planReadOnlyFlagRuleBullet = `- "read_only" (optional boolean): set it to 
   changes no files (a gate, smoke test, suite run, eval, install or
   investigation), and give such a task an empty "files" list. A task that
   writes, edits, creates, moves or removes any file must omit "read_only"
-  or set it false. When unsure, omit it. A read-only task whose only
-  output is a report declares that one path in "report_path" under
-  .datawatch/reports/ and keeps "files" empty.
+  or set it false. When unsure, omit it. A read-only task is never planned
+  with a file to write: if its only output is a report, it declares that
+  one path in "report_path" under .datawatch/reports/ and keeps "files" empty.
+`
+
+// planProjectPathRuleBullet is the Rules bullet, shared by both planning
+// prompts, that keeps every path a spec names inside the project directory.
+// No percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planProjectPathRuleBullet = `- No spec line names a path outside the project directory: write every path
+  repo-relative (no absolute path, no home folder, no "..").
+`
+
+// planReleaseVersionRuleBullet is the Rules bullet, shared by both planning
+// prompts, that limits the release-version rewrite to the release itself.
+// No percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planReleaseVersionRuleBullet = `- Release tasks never contain a fixed version number. The release version is
+  taken at merge time as the next patch above main; write 'next patch above
+  main' in task titles, specs and descriptions for the release version only,
+  and do not repeat a number even if a revision note or earlier plan used one.
+  Keep the version numbers of other things (Python, libraries, tools) exactly
+  as written; 'the next patch above main' never replaces them.
 `
 
 // planRulesAppliedRuleBullet is the Rules bullet, shared by both planning
@@ -117,7 +135,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + planProjectPathRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -128,11 +146,7 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the PRD's allowed directories.
-- Release tasks never contain a fixed version number. The release version is
-  taken at merge time as the next patch above main; write 'next patch above
-  main' in task titles, specs and descriptions instead of a number, and do not
-  repeat a number even if a revision note or earlier plan used one.
-- Do not include markdown fences. Return raw JSON only.
+` + planReleaseVersionRuleBullet + `- Do not include markdown fences. Return raw JSON only.
 
 Feature request:
 %s
@@ -210,7 +224,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + planProjectPathRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -221,11 +235,7 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the directories above.
-- Release tasks never contain a fixed version number. The release version is
-  taken at merge time as the next patch above main; write 'next patch above
-  main' in task titles, specs and descriptions instead of a number, and do not
-  repeat a number even if a revision note or earlier plan used one.
-- Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
+` + planReleaseVersionRuleBullet + `- Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
 
 Feature request:
 %s

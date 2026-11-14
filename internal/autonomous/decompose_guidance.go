@@ -129,7 +129,7 @@ type forbiddenPattern struct {
 // prompt order. The Rule values are the SpecRule* names, so the prompt,
 // the spec lint and the gates cannot drift.
 var forbiddenPatterns = []forbiddenPattern{
-	{SpecRuleReleaseVersionFixed, "a fixed release number", "say 'the next patch above main'"},
+	{SpecRuleReleaseVersionFixed, "a fixed release number", "say 'the next patch above main' for the release version only, and keep the version numbers of other things (Python, libraries) as written"},
 	{SpecRuleTrackerID, "a tracker id", "describe the work itself"},
 	{SpecRuleSystemPath, "a real system path", "use the command name, resolved at runtime with command -v"},
 	{SpecRulePrivateAddress, "a private address", "say 'the target host' or a configured host name"},
