@@ -25424,7 +25424,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'rtk.auto_update', label: 'Auto-update RTK binary', type: 'toggle' },
     { key: 'rtk.update_check_interval', label: 'Update check interval (sec, 0=off)', type: 'number', placeholder: '86400' },
     { key: 'rtk.discover_interval', label: 'Discover interval (sec, 0=off)', type: 'number', placeholder: '0' },
-    { key: 'rtk.write_rules_files', label: 'Also write RTK text into tracked AGENT.md/CLAUDE.md', type: 'toggle' },
+    { key: 'rtk.write_rules_files', label: 'Write RTK instructions into AGENT.md and CLAUDE.md', labelKey: 'settings_rtk_write_rules_files', helpKey: 'settings_rtk_write_rules_files_help', helpDocs: 'rtk-integration.md#where-the-rtk-instructions-go', type: 'toggle' },
   ]},
   { id: 'vision', section: 'Vision (Image Descriptions)', docs: 'config-reference.yaml', fields: [
     { key: 'vision.enabled', label: 'Enable vision backend (image attachment descriptions)', type: 'toggle' },

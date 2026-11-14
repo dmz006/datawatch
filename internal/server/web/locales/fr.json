@@ -5763,5 +5763,7 @@
   "task_routing_export_failed": "Échec de l’export : %1$s",
   "task_routing_imported": "Profil importé",
   "task_routing_detail_row": "ligne %1$s",
-  "task_routing_detail_reason": "pas de ligne : %1$s"
+  "task_routing_detail_reason": "pas de ligne : %1$s",
+  "settings_rtk_write_rules_files": "Écrire les instructions RTK dans AGENT.md et CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "Lorsque l'option est désactivée (valeur par défaut), le daemon n'écrit jamais d'instructions RTK dans AGENT.md ou CLAUDE.md ; elles vont dans un fichier par session non suivi par git. Les fichiers de règles ne sont écrits que par des personnes."
 }
