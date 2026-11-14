@@ -138,6 +138,7 @@ func (m *Manager) MergeCompletedTasks(ctx context.Context, prd *PRD) (int, error
 		return 0, nil
 	}
 	merged := 0
+	var autoFixTask *Task
 	for {
 		progress := false
 		for si := range prd.Story {
@@ -154,10 +155,24 @@ func (m *Manager) MergeCompletedTasks(ctx context.Context, prd *PRD) (int, error
 				if out == MergeOutcomeMerged {
 					merged++
 					progress = true
+					if isAutoFixTask(t) {
+						autoFixTask = t
+					}
 				}
 			}
 		}
 		if !progress {
+			// Auto re-review. An auto-fix's work just landed on the Automaton
+			// branch, moving its head past the completion verdict any block was
+			// made on. Run the completion review once for the new head and, if
+			// it passes, clear the stale block — automatically, with no operator
+			// in the loop (see AutoRejudgeAfterAutoFixMerge, rejudge_autofix.go).
+			// It fires at most once per head, so a review that already answered
+			// this head is a no-op. The merge lock is released before this runs
+			// and the re-judgment takes no merge lock.
+			if autoFixTask != nil {
+				m.AutoRejudgeAfterAutoFixMerge(ctx, prd, autoFixTask)
+			}
 			return merged, nil
 		}
 	}

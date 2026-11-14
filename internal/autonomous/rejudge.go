@@ -207,23 +207,23 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	case prd.Status == PRDNeedsReview && rulesReviewHoldIsLast(prd):
 		heldReview = true
 	case prd.Status == PRDCompleted || prd.Status == PRDArchived:
-		if finishedNotMerged && rulesReviewVerdictPendingOrBlocked(prd) {
-			// finished_not_merged with the review missing or its last
-			// verdict a block: re-run the review once for the current head
-			// commit; a pass clears the stale block records (the record
-			// keeps its completed/archived status).
-			break
+		if !finishedNotMerged {
+			// Work already landed on the base branch, or the merge state is
+			// undetermined: nothing unmerged for the review to clear.
+			return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s but its work is already on the base branch or its merge state is undetermined; rejudgment of a finished record applies only when its merge state is finished_not_merged", prd.ID, prd.Status)
 		}
-		if finishedNotMerged {
-			// The last rules-review verdict passed (pass or warn): the
-			// work is already judged clean at some head — re-judging has
-			// nothing to un-block.
+		// finished_not_merged: the review may run again only when it is still
+		// pending (no verdict yet), its newest verdict is a block, or its last
+		// pass or warn was made on an OLDER head than the record's current
+		// head — the head moved past that verdict, so it no longer describes
+		// the record's tree and the review should run once on the new head.
+		// A pass or warn made at the current head settles the review: there is
+		// no block left to clear, so re-judging has nothing to un-block.
+		finHead := m.currentReviewHead(ctx, prd)
+		if !rejudgeWarrantForFinished(prd, finHead) {
 			last := lastRulesReviewVerdict(prd)
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s and its completion review already passed (last verdict %s, made %s); there is no block left to clear", prd.ID, prd.Status, last.Outcome, last.VerdictAt.Format(time.RFC3339))
 		}
-		// Work already landed on the base branch, or the merge state is
-		// undetermined: nothing unmerged for the review to clear.
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s but its work is already on the base branch or its merge state is undetermined; rejudgment of a finished record applies only when its merge state is finished_not_merged", prd.ID, prd.Status)
 	default:
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not eligible; rejudgment applies to a blocked PRD, a PRD held for review by the rules review, or a completed or archived PRD whose work is not yet merged into the base branch and whose completion review is missing or blocked", prd.ID, prd.Status)
 	}
@@ -514,4 +514,36 @@ func lastRulesReviewVerdict(prd *PRD) *GuardrailVerdict {
 func rulesReviewVerdictPendingOrBlocked(prd *PRD) bool {
 	v := lastRulesReviewVerdict(prd)
 	return v == nil || v.Outcome == "block"
+}
+
+// rejudgeWarrantForFinished reports whether a finished_not_merged record's
+// (completed or archived) completion review is still worth re-running for the
+// record's current head (head, from currentReviewHead):
+//
+//   - the review is pending (no rules-review verdict recorded yet);
+//   - the newest rules-review verdict is a block; or
+//   - the newest verdict passed or warned but was made on an OLDER head than
+//     the record's current head — the head moved past that verdict, so it no
+//     longer describes the record's tree and the review should run once on
+//     the new head (the stale-pass case an auto-fix produces: the fix moves
+//     the head past a verdict, and the review must still run for the new
+//     tree).
+//
+// A pass or warn made at the CURRENT head settles the review — there is no
+// block left to clear and re-judging has nothing to do — and a pass or warn
+// that cannot be proven tied to an older head (no head, no recorded commit)
+// is treated as settled too: the conservative call, so the same verdict is
+// never re-judged on the head it already answered.
+func rejudgeWarrantForFinished(prd *PRD, head string) bool {
+	v := lastRulesReviewVerdict(prd)
+	if v == nil {
+		return true
+	}
+	if v.Outcome == "block" {
+		return true
+	}
+	if head == "" || v.JudgedCommitSHA == "" {
+		return false
+	}
+	return v.JudgedCommitSHA != head
 }

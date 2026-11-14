@@ -504,6 +504,7 @@ func prettyJSON(body string) string {
 //	autonomous cancel <prd-id>
 //	autonomous learnings
 //	autonomous create <spec…> [--parent <automaton-id>]
+//	autonomous rejudge <prd-id> [backend=<name>]
 //
 // `prd` is accepted as a shorter alias for `autonomous`.
 // autonomousCreateUsage is the comm-channel usage line for creating an Automaton.
@@ -980,6 +981,32 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous plan-review", prettyJSON(out))
+	// Rejudge: re-run the completion rules review on the operator's behalf —
+	// a blocked Automaton, a held one with new commits, or a finished
+	// unmerged one (merge state finished_not_merged) whose last verdict is
+	// pending, a block, or a pass on an older review head; a pass clears a
+	// stale block (a finished record keeps its finished status), a block
+	// flips the record back to blocked. Optional backend=<name> pins the
+	// re-judgment on that judge backend (the reroute form of a timed-out
+	// review state).
+	case "rejudge", "re-judge", "re-run-review":
+		if len(args) < 2 {
+			r.reply("autonomous rejudge failed", "usage: autonomous rejudge <prd-id> [backend=<name>]")
+			return
+		}
+		backend := ""
+		for _, arg := range args[2:] {
+			if b, ok := strings.CutPrefix(arg, "backend="); ok {
+				backend = strings.TrimSpace(b)
+			}
+		}
+		body, _ := json.Marshal(map[string]string{"actor": "operator", "backend": backend})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/rejudge?view=compact", string(body))
+		if err != nil {
+			r.reply("autonomous rejudge failed", err.Error())
+			return
+		}
+		r.reply("autonomous rejudge", prettyJSON(out))
 	// Plan-coverage read: the stored coverage record for one Automaton
 	// (mode, min ratio, covered/missing/weakened, findings count, the
 	// suppressed created-file and requirement counts, and the

@@ -1270,6 +1270,8 @@
   "prd_btn_reset_to_draft": "Réinitialiser en Brouillon",
   "prd_btn_reset_to_draft_title": "Réinitialiser en brouillon pour reconfigurer le backend et relancer la décomposition",
   "prd_btn_resume": "Reprendre",
+  "prd_btn_rejudge": "Réévaluer",
+  "prd_btn_rejudge_title": "Relancer la revue de finalisation (réévaluation) ; une réussite lève un blocage périmé et un blocage rétablit l'enregistrement en état bloqué",
   "prd_btn_resume_title": "Reprendre l'exécution mise en pause après le redémarrage du démon",
   "prd_btn_run_rules": "Lancer les règles",
   "prd_btn_run_rules_title": "Lancer la vérification des règles (après scan)",

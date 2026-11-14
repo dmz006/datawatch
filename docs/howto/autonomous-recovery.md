@@ -204,9 +204,11 @@ any task:
 
 - The Automaton must be `blocked`, or held for review with its head moved,
   or `completed`/`archived` with its work branch not yet on the base branch
-  (merge state `finished_not_merged`) and no passing review verdict on
-  record; re-judging anything else — including a finished Automaton whose
-  work is already landed, or whose review already passed — is refused.
+  (merge state `finished_not_merged`) and a review still open to re-running
+  — no verdict on record, a verdict that is a block, or a pass judged on
+  an older head before the work moved on (a stale pass); re-judging anything
+  else — including a finished Automaton whose work is already landed, or
+  whose latest pass covers the current head — is refused.
   The refusal says which states re-judgment applies to.
 - **Every task in every story must be `completed` or `cancelled`, with at
   least one `completed`.** A cancelled task is skipped, not a blocker. If any
@@ -287,6 +289,15 @@ With the head and the rules text unchanged the stored block is reused as
 above: the Automaton stays held, the judge is not asked and a single
 `guardrail_reuse` entry is recorded.
 
+**The re-review runs on its own when an auto-fix lands.** When an auto-fix
+task — the follow-up work a previous block spawned — completes and merges
+back into the Automaton's branch, the merge itself triggers exactly one
+automatic re-review of the new head: the guardrail judges the head that now
+includes the auto-fix, a pass clears the stale block (a finished record
+keeps its finished status), and a block re-blocks with the new reason. You
+run no re-judge for that one; the decision log shows it with the merge and
+the new verdict next to each other.
+
 **Telling a fixed Automaton from a still-broken one.** Read the latest
 verdict in the Automaton's verdict list (`autonomous_prd_get`, or the
 Automaton's detail page) and compare two things on it: the commit it judged
@@ -361,6 +372,33 @@ autonomous_prd_rejudge(id="<prd_id>")
 ```
 
 The MCP tool returns the same compact reply, with the same `message`.
+
+### CLI
+
+```
+datawatch autonomous prd-rejudge <prd_id>     # alias: datawatch autonomous rejudge <prd_id>
+```
+
+Same request, same compact reply: with `--backend <name>` the re-judgment is
+pinned to that judge backend (the Reroute form), without it the stored judge
+order is used. The refusal reason (already passed on this head, work landed)
+comes back verbatim when the record is not eligible.
+
+### Comm
+
+```
+autonomous rejudge <prd_id> [backend=<name>]
+```
+
+The comm verb sends the same request from the messaging side and replies with
+the same compact `message`.
+
+### Web app
+
+The Re-review button on the Automaton's detail header (shown for blocked,
+completed and archived records) sends the same request and shows the same
+`message` in the notice, alongside the Retry / Reroute buttons a timed-out
+review state carries.
 
 ## What happens to Automata when the daemon restarts
 
