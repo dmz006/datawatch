@@ -71,7 +71,39 @@ choice, not a rule; other users change them freely.
 
 Out of scope: task routing decides the LLM when a task is created. It does not
 move a task that is already waiting to a different backend while the Automaton
-runs.
+runs. Where a task actually runs is decided later, when it is admitted; see
+"Which lane a task takes" below.
+
+## Which lane a task takes
+
+The routing table never picks a lane. The lane is chosen when a task is
+**admitted**, from the task's **effective backend**.
+
+- **A task inherits the Automaton's backend unless its spec names one.** With no
+  backend of its own, a task runs on its story's setting, then the Automaton's,
+  then the global default. A row that names only a worker backend and model
+  changes nothing here, as described above.
+- **The lane is chosen at admission, not at planning.** When the task is
+  admitted, its effective backend is read at that moment and the task asks for a
+  slot in that backend's pool.
+- **A full pool can send the task to another allowed pool.** When the task's own
+  pool is full and another allowed pool is free, the other pool is used
+  according to the retry-other-backend rule (pool fall-through, set with
+  `autonomous.capacity_fallthrough`, off by default; see
+  [Automata capacity](automata-capacity.md#pool-fall-through)). The choice and
+  the reason are written to the Automaton's decision log as a
+  `capacity_fallthrough` entry, next to the `task_routing` entries described
+  under "Seeing what was decided".
+- **Changing a task's backend while it waits moves its request at once.** The
+  queued capacity request goes to the new pool straight away, and a reset
+  re-queues the task on the new pool. A task that already holds a slot, is
+  running or has finished is left alone.
+- **A pi task with no compute node waits or moves pools.** If a pi-family task
+  is granted capacity but no node is leased, it waits for a node, or moves to
+  another pool as above, and it is not counted against the content retry budget.
+
+Nothing here adds a setting, an endpoint or a command, so the surfaces in
+"Access from every surface" do not change.
 
 ## The 14 task types
 
