@@ -33,6 +33,10 @@ func LintFindingLine(f LintFinding) string {
 	if sc := strings.TrimSpace(f.Script); sc != "" && !strings.Contains(msg, sc) {
 		msg += " (verification script: " + sc + ")"
 	}
+	// Quote the offending line so the finding names the task and the line.
+	if m := strings.TrimSpace(f.Matched); m != "" && !strings.Contains(msg, m) {
+		msg += " [line: " + m + "]"
+	}
 	return fmt.Sprintf("[%s] %s %s: %s", f.Severity, f.RuleID, id, msg)
 }
 

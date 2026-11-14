@@ -4459,7 +4459,11 @@ autonomous:
     # verification_script_reason_empty, verification_script_task_files_only
     # (script compares only against the task's own files, never the merge
     # base), verification_script_docs_without_sync (script checks docs
-    # without make sync-docs), kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
+    # without make sync-docs), read_only_writes_outside_report (a read-only
+    # task's spec writes a file other than its report path),
+    # spec_absolute_path_outside_project (a spec line names an absolute
+    # system path outside the project directory), kind (task kind, e.g.
+    # final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.

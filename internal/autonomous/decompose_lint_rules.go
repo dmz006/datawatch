@@ -29,15 +29,31 @@ var decomposeLintRO = true
 // trackerIDPattern is the tracker-id shape the names_tracker_id rule
 // matches; the spec lint (spec_lint.go) compiles the same string so the
 // two never drift.
-const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"
+//
+// A bare #123 is a tracker id only after a tracker word ("issue #123",
+// "fixes #4521"). A bare #\d{3,} on its own is also a CSS hex colour
+// (#123456, #abc123), so it never matches without that context; the
+// trailing \b keeps a digit run that continues into hex letters
+// (#123abc) from matching.
+const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b" +
+	"|\\b(?:issues?|pr|pull request|tickets?|bugs?|fix(?:es|ed)?|close[sd]?|resolve[sd]?|refs?)\\s+#\\d{3,}\\b"
+
+// versionNumberPattern is a dotted version that belongs to a tool or
+// library (a Python, Go or Node version, a library pin) rather than to
+// the release; the version_number_in_spec rule matches it in a spec or
+// title.
+const versionNumberPattern = `(?i)\b(?:python3?|py|node(?:\.?js)?|golang|ruby|java|jdk|rust|rustc|php|perl|django|flask|fastapi|numpy|pandas|scipy|pytorch|torch|tensorflow|react|vue|angular|rails|postgres(?:ql)?|mysql|redis|kubernetes|docker|ollama|cuda|npm|pip|library|package|module|dependency|sdk|runtime|interpreter|compiler)\s*(?:version\s*|v)?\d+\.\d+(?:\.\d+)?\b` +
+	`|\bgo\s*(?:version\s*|v)?1\.\d{1,2}(?:\.\d+)?\b` +
+	`|\b[A-Za-z][A-Za-z0-9_-]*==\d+\.\d+(?:\.\d+)?\b`
 
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Thirteen rules, in the order findings should surface them: the nine
-// block-severity rules (tasks that cross a hard boundary, plus the three
-// verification-script stability rules that follow read_only_unverifiable)
-// first, then the four warn-severity hygiene rules.
+// Sixteen rules, in the order findings should surface them: the eleven
+// block-severity rules (tasks that cross a hard boundary — including the
+// two spec-line rules that follow read_only_unverifiable — plus the three
+// verification-script stability rules) first, then the five warn-severity
+// hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -100,6 +116,24 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "read_only_task_writes_file",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "read_only_task_writes_file: a read-only task's spec tells it to write a file other than its report path; give it a report path under .datawatch/reports instead.",
+			// Needs the task's report_path and the READ-ONLY: marker, so it
+			// is a predicate rather than a regex.
+			Match: config.DecomposeLintMatch{
+				ReadOnlyWritesOutsideReport: true,
+			},
+		},
+		{
+			ID:       "spec_path_outside_allowed_dirs",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "spec_path_outside_allowed_dirs: the spec names an absolute path outside the project directory; use a repo-relative path or drop the line.",
+			Match: config.DecomposeLintMatch{
+				SpecAbsolutePathOutsideProject: true,
+			},
+		},
+		{
 			ID:       "verify_script_task_files_only",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "verify_script_task_files_only: the task's verification script compares only against the task's own files (a literal allowed-file list or a diff of HEAD, the working tree or main) and never against the merge base, so it fails once earlier tasks land; compare against `git merge-base` (directly or via a sourced helper) so the check is cumulative.",
@@ -155,6 +189,17 @@ func DefaultDecomposeLintRules() []Rule {
 				AnyOf: []config.DecomposeLintMatch{
 					{SpecRegex: trackerIDPattern},
 					{TitleRegex: trackerIDPattern},
+				},
+			},
+		},
+		{
+			ID:       "version_number_in_spec",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "Spec or title names a dotted version of a tool or library (not the release); keep it unambiguous: name the tool, never write it as the release number.",
+			Match: config.DecomposeLintMatch{
+				AnyOf: []config.DecomposeLintMatch{
+					{SpecRegex: versionNumberPattern},
+					{TitleRegex: versionNumberPattern},
 				},
 			},
 		},

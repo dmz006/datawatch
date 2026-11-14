@@ -12400,6 +12400,8 @@ components:
             verification_script_reason_empty: {type: boolean, description: "Assert the task states no reason for lacking a verification script"}
             verification_script_task_files_only: {type: boolean, description: "Assert the verification script compares only against the task's own files and never the merge base"}
             verification_script_docs_without_sync: {type: boolean, description: "Assert the verification script checks docs without running make sync-docs"}
+            read_only_writes_outside_report: {type: boolean, description: "Assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path"}
+            spec_absolute_path_outside_project: {type: boolean, description: "Assert a spec line names an absolute system path outside the project directory"}
             kind: {type: string, description: "Assert the task kind (for example final_gate), case-insensitive"}
             files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
             any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}

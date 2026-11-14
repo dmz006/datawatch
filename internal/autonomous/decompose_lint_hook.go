@@ -105,8 +105,12 @@ func decomposeLintFeedback(findings []LintFinding) string {
 	b.WriteString("The operator's decompose-lint check flagged the previous plan. " +
 		"Re-plan so that every one of the following findings is fixed:\n")
 	for _, f := range list {
-		fmt.Fprintf(&b, "- [%s] %s (story %s, task %s): %s\n",
+		fmt.Fprintf(&b, "- [%s] %s (story %s, task %s): %s",
 			strings.ToUpper(strings.TrimSpace(f.Severity)), strings.TrimSpace(f.RuleID), f.Story, f.Task, strings.TrimSpace(f.Message))
+		if m := strings.TrimSpace(f.Matched); m != "" {
+			fmt.Fprintf(&b, " [line: %s]", m)
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }
