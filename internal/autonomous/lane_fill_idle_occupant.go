@@ -142,7 +142,7 @@ func classifyLaneOccupant(f laneOccFacts) laneOccDecision {
 	hasMerge, hasFresh := false, false
 	threshold := time.Duration(f.stalledMergeMinutes) * time.Minute
 	var oldest *Task
-	var oldestSince time.Time
+	var oldestAge time.Duration
 	for _, t := range tasks {
 		if !laneOccMergePending(t) {
 			continue
@@ -151,12 +151,14 @@ func classifyLaneOccupant(f laneOccFacts) laneOccDecision {
 		if f.stalledMergeMinutes <= 0 {
 			continue
 		}
-		since := laneOccMergeSince(t, f.pendingSince, f.now)
-		if f.now.Sub(since) <= threshold {
+		// The age is taskMergePendingAge's, the same source the
+		// stalled-merge pass reads (task_merge_stall.go).
+		age := taskMergePendingAge(t, f.pendingSince, f.now)
+		if age <= threshold {
 			hasFresh = true
 		}
-		if oldest == nil || since.Before(oldestSince) {
-			oldest, oldestSince = t, since
+		if oldest == nil || age > oldestAge {
+			oldest, oldestAge = t, age
 		}
 	}
 	if hasMerge {
@@ -165,7 +167,7 @@ func classifyLaneOccupant(f laneOccFacts) laneOccDecision {
 		}
 		mins := 0
 		if oldest != nil {
-			mins = int(f.now.Sub(oldestSince).Minutes())
+			mins = int(oldestAge.Minutes())
 		}
 		name := "a task branch"
 		if oldest != nil {
