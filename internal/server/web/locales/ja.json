@@ -1575,6 +1575,7 @@
   "header_scope_clear": "クリア",
   "header_scope_help_label": "ヘルプ: スコープ",
   "header_scope_templates_note": "テンプレートはすべてのプロジェクトとプランで表示されます。",
+  "header_scope_global_note": "このセクションはすべてのプロジェクトとプランに適用されます。",
   "server_settings_title": "リモートサーバー",
   "server_test_btn": "テスト",
   "server_token_label": "トークン",

@@ -1575,6 +1575,7 @@
   "header_scope_clear": "Quitar",
   "header_scope_help_label": "Ayuda: ámbito",
   "header_scope_templates_note": "Las plantillas se muestran para todos los proyectos y planes.",
+  "header_scope_global_note": "Esta sección aplica a todos los proyectos y planes.",
   "server_settings_title": "Servidores Remotos",
   "server_test_btn": "Probar",
   "server_token_label": "Token",
