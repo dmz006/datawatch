@@ -14,9 +14,13 @@ const (
 
 // Filter narrows List and Search. Zero fields match everything.
 type Filter struct {
-	Kind         Kind
-	Project      string
-	State        State
+	Kind    Kind
+	Project string
+	State   State
+	// States admits a whole set of states as well; empty means every
+	// state (a State holding one state does what one entry in States
+	// does).
+	States       []State
 	LegacyNumber int
 	// Automaton matches shipped_by, raised_by or a link of kind "automaton".
 	Automaton string
@@ -32,6 +36,9 @@ func (f Filter) matches(r *Record) bool {
 		return false
 	}
 	if f.State != "" && r.State != f.State {
+		return false
+	}
+	if len(f.States) > 0 && !stateIn(f.States, r.State) {
 		return false
 	}
 	if f.LegacyNumber > 0 && r.LegacyNumber != f.LegacyNumber {
@@ -50,6 +57,16 @@ func (f Filter) matches(r *Record) bool {
 		}
 	}
 	return true
+}
+
+// stateIn says whether st is one of the states.
+func stateIn(states []State, st State) bool {
+	for _, s := range states {
+		if s == st {
+			return true
+		}
+	}
+	return false
 }
 
 func (f Filter) page(total int) (lo, hi int) {

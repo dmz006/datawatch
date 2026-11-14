@@ -2146,7 +2146,7 @@ paths:
       parameters:
         - {name: q, in: query, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: A single state, or a comma-separated list of states; without kind a state is valid only in the kind being browsed or both, unknown states answer 400 naming the valid ones, schema: {type: string}}
         - {name: project, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}

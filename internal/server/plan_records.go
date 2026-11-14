@@ -458,6 +458,48 @@ func planStateList(kind planrecords.Kind) string {
 	return strings.Join(parts, ", ")
 }
 
+// stateWords is the state vocabulary a plan-records state query admits.
+// One kind is that kind's vocabulary; several kinds is the union (list and
+// search over both kinds), or the intersection when the route requires a
+// state that every kind knows (browse without a kind).
+func stateWords(kinds []planrecords.Kind, intersect bool) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(st planrecords.State) {
+		if !seen[string(st)] {
+			seen[string(st)] = true
+			out = append(out, string(st))
+		}
+	}
+	if !intersect {
+		for _, k := range kinds {
+			for _, st := range planrecords.States(k) {
+				add(st)
+			}
+		}
+		return out
+	}
+	for _, st := range planrecords.States(kinds[0]) {
+		for _, k := range kinds[1:] {
+			if planrecords.ValidState(k, st) {
+				add(st)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// statesFromWords is the shared parser's trimmed, deduped words back as
+// planrecords.State values.
+func statesFromWords(words []string) []planrecords.State {
+	out := make([]planrecords.State, len(words))
+	for i, w := range words {
+		out[i] = planrecords.State(w)
+	}
+	return out
+}
+
 // planRecordFilter reads the shared list and search filters. fixedKind is the
 // kind a collection route pins; empty for search. It answers 400 itself.
 func planRecordFilter(w http.ResponseWriter, r *http.Request, fixedKind planrecords.Kind) (planrecords.Filter, bool) {
@@ -473,18 +515,16 @@ func planRecordFilter(w http.ResponseWriter, r *http.Request, fixedKind planreco
 		f.Kind = k
 	}
 	if v := q.Get("state"); v != "" {
-		st := planrecords.State(v)
-		valid := false
-		for _, k := range []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding} {
-			if (f.Kind == "" || f.Kind == k) && planrecords.ValidState(k, st) {
-				valid = true
-			}
+		kinds := []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding}
+		if f.Kind != "" {
+			kinds = []planrecords.Kind{f.Kind}
 		}
-		if !valid {
-			planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("state %q is not a valid state for this kind", v))
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds, false))
+		if err != nil {
+			planRecordsError(w, http.StatusBadRequest, err.Error())
 			return f, false
 		}
-		f.State = st
+		f.States = statesFromWords(words)
 	}
 	for name, dst := range map[string]*int{"legacy_number": &f.LegacyNumber, "limit": &f.Limit, "offset": &f.Offset} {
 		v := q.Get(name)

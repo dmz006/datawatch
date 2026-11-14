@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/planrecords"
 )
 
 const (
@@ -33,6 +34,32 @@ var prdListActiveStatuses = map[string]bool{
 	"approved":        true,
 	"blocked":         true,
 	"paused":          true,
+}
+
+// prdListStatusWords is the ?status filter vocabulary of the PRD list: the
+// current and legacy PRD statuses, plus the legacy "shipped" alias that
+// selects records carrying a shipped record. It feeds
+// planrecords.ParseStateList, whose error names exactly these words.
+var prdListStatusWords = []string{
+	string(autonomous.PRDDraft),
+	string(autonomous.PRDPlanning),
+	"decomposing", // legacy alias for planning
+	string(autonomous.PRDNeedsReview),
+	string(autonomous.PRDApproved),
+	string(autonomous.PRDRevisionsAsked),
+	string(autonomous.PRDActive), // legacy alias for running
+	string(autonomous.PRDRunning),
+	"queued",
+	"waiting",
+	"waiting_input",
+	string(autonomous.PRDCompleted),
+	string(autonomous.PRDRejected),
+	string(autonomous.PRDCancelled),
+	string(autonomous.PRDArchived),
+	string(autonomous.PRDBlocked),
+	string(autonomous.PRDFailed),
+	string(autonomous.PRDPaused),
+	"shipped", // legacy alias: carries a shipped record
 }
 
 // prdListResponse is the body of the summary form of GET /api/autonomous/prds.
@@ -122,8 +149,13 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statuses := map[string]bool{}
-	for _, st := range strings.Split(q.Get("status"), ",") {
-		if st = strings.ToLower(strings.TrimSpace(st)); st != "" {
+	if v := q.Get("status"); v != "" {
+		words, err := planrecords.ParseStateList(strings.ToLower(v), "status", prdListStatusWords)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, st := range words {
 			statuses[st] = true
 		}
 	}

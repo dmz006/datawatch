@@ -256,13 +256,16 @@ type SummaryFilter struct {
 	Kind    Kind
 	Project string
 	State   State
-	Limit   int
-	Offset  int
+	// States admits a whole set of states as well; empty means every
+	// state.
+	States []State
+	Limit  int
+	Offset int
 }
 
 func (f SummaryFilter) matches(sm Summary) bool {
 	return (f.Kind == "" || sm.Kind == f.Kind) && (f.Project == "" || sm.Project == f.Project) &&
-		(f.State == "" || sm.State == f.State)
+		(f.State == "" || sm.State == f.State) && (len(f.States) == 0 || stateIn(f.States, sm.State))
 }
 
 // ListSummaries returns one page of summaries and the total before paging.
