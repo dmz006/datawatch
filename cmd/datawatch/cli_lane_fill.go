@@ -1,5 +1,6 @@
 // datawatch autonomous lane-fill [--limit N] [--json]
 // datawatch autonomous prd-set-lane-preference <id> <gpu|claude|any>
+// datawatch config set autonomous.lane_fill.stalled_merge_minutes <minutes>
 //
 // Lane fill status and the per-Automaton lane preference. The lane summary is
 // rendered by the same function the comm channel uses; --json prints the REST
@@ -18,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // laneFillLimitMax is the largest decision count GET /api/autonomous/lane-fill accepts.
@@ -85,4 +87,16 @@ func newAutonomousPRDSetLanePreferenceCmd() *cobra.Command {
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_lane_preference", body)
 		},
 	}
+}
+
+// laneFillStalledMergeConfigKey is the dotted key for how long a verified
+// task's merge may stay pending before the Automaton stops holding its lane.
+// runConfigSet refuses a bad value for it before anything is sent, with the
+// same check and message as PUT /api/config, MCP and the comm channel.
+const laneFillStalledMergeConfigKey = config.LaneFillStalledMergeMinutesKey
+
+// parseStalledMergeMinutesValue reads the typed text of the stalled-merge
+// setting: a whole number >= 0 (0 = rule off, default 30).
+func parseStalledMergeMinutesValue(value string) (int, error) {
+	return config.ParseLaneFillStalledMergeMinutes(value)
 }
