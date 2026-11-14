@@ -45,10 +45,10 @@ func TestAutoRejudgeAfterAutoFixMergePlainTaskRefused(t *testing.T) {
 	}{
 		{"Auto-fix: apply the AGENT.md fix", true},
 		{"Auto-fix: ", true},
-		{"Auto-fix: no separator", true},    // still the prefix; the rest is free text
-		{"Auto-fix:no separator", false},    // the space after the colon is part of the prefix
-		{"autofix: apply", false},           // wrong capitalization
-		{"Fix: Auto-fix: apply", false},    // prefix, not a substring
+		{"Auto-fix: no separator", true}, // still the prefix; the rest is free text
+		{"Auto-fix:no separator", false}, // the space after the colon is part of the prefix
+		{"autofix: apply", false},        // wrong capitalization
+		{"Fix: Auto-fix: apply", false},  // prefix, not a substring
 		{"", false},
 	}
 	for _, c := range cases {

@@ -181,4 +181,3 @@ func TestListUnlandedBranchesExcludesRunningAutomata(t *testing.T) {
 		t.Errorf("a running Automaton must not be unlanded: %+v", got)
 	}
 }
-
