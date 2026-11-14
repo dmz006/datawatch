@@ -504,29 +504,31 @@ td_wait_port_closed() {
   return 0
 }
 
-_td_sigint_ignored() {
-  # 0 iff SIGINT arrived as SIG_IGN (bash cannot install a SIGINT trap then):
-  # bit 2 of the SigIgn mask in this process's /proc status
+_td_signals_ignored() {
+  # 0 iff HUP, INT or TERM arrived as SIG_IGN (bash cannot install a trap for
+  # a signal ignored on entry, as with a background job or nohup): bits 1, 2
+  # and 15 of the SigIgn mask in this process's /proc status
   local mask
   mask=$(sed -n 's/^SigIgn:[[:space:]]*//p' "/proc/$$/status" 2>/dev/null | sed -n 1p)
-  [[ "$mask" =~ ^[0-9a-fA-F]+$ ]] && (( (0x$mask & 2) != 0 ))
+  [[ "$mask" =~ ^[0-9a-fA-F]+$ ]] && (( (0x$mask & 0x4003) != 0 ))
 }
 
 _td_reexec_with_int() {
-  # _td_reexec_with_int [script args...] — if SIGINT was inherited as SIG_IGN
-  # (this script started as a background job), rerun the top-level script
-  # once with its arguments through a launcher that resets the signal to its
-  # default. The guard holds the pid that was rerun (an exec keeps the pid),
+  # _td_reexec_with_int [script args...] — if HUP, INT or TERM was inherited
+  # as SIG_IGN (a background job, or nohup), rerun the top-level script
+  # once with its arguments through a launcher that resets those signals to
+  # their default. The guard holds the pid that was rerun (an exec keeps the pid),
   # so the rerun does not loop while a child script of its own still can.
   # Best effort: without python3, or without a script file to rerun, the
-  # traps are installed anyway (EXIT and TERM still work).
+  # traps are installed anyway (EXIT still works).
   local src="${BASH_SOURCE[${#BASH_SOURCE[@]}-1]:-${0:-}}"
-  if _td_sigint_ignored && [[ "${TD_REEXEC_GUARD:-}" != "$$" && -f "$src" ]] \
+  if _td_signals_ignored && [[ "${TD_REEXEC_GUARD:-}" != "$$" && -f "$src" ]] \
       && command -v python3 >/dev/null 2>&1; then
     export TD_REEXEC_GUARD=$$
     exec python3 -I -c '
 import os, signal, sys
-signal.signal(signal.SIGINT, signal.SIG_DFL)
+for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+    signal.signal(s, signal.SIG_DFL)
 os.execvp("bash", ["bash"] + sys.argv[1:])
 ' "$src" "$@"
   fi
