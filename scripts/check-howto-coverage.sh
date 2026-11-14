@@ -40,6 +40,7 @@ LLM_ONLY=(
     merge-shadow  # conceptual reference for merge shadow mode; no MCP-callable steps
     restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed
     worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
+    automaton-hold  # operator hold: PWA-only for now (no REST/CLI/MCP/comm surface yet), so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when a hold surface lands
 )
 
 ERRORS=0
