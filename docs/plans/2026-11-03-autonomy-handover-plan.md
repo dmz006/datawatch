@@ -379,3 +379,13 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 - 2026-11-13 20:46 Operator, asked whether to file the 20 encryption fixes as one Automation with four waves (gated, throttled) instead of 20 loose Automata: "Yes file it and if it won't work get that feature or bug fixed,  that is exactly what we need to have working". Filing 20 draft Automata plus one Automation (helper running); any gap in Automation fork/join gating or concurrency limits becomes a bug Automaton.
 
 - 2026-11-13 20:52 Operator, on how a release is marked as needing the heavier local checks (test-tier question 4): "my rules answer the question" (look at the rules, no changes). Decision: release tiers stay as AGENT.md Sections A to E define them (bug or patch: A and B plus targeted smoke; minor and first patch of a feature: full smoke and make cross; major: also Section E). No change to AGENT.md. Noted gap: the supervisor merge gates do not run the full release smoke for those releases.
+
+- 2026-11-13 23:05 Operator, asked whether I may turn on autonomous.capacity_fallthrough (a full pool admits a worker task on another allowed backend with room; the Claude tasks were all waiting on the full pi pool while Claude sat idle): "yes". Turned on. The window guard stays the control on the week pace.
+
+- 2026-11-13 23:08 Capacity fall-through turned on at the operator's "yes" proved inert: the alternates resolver is never wired in the daemon (only defined and tested). Filed bug Automaton 2b580001 (priority 96, Claude Sonnet) to wire it and to find why a Claude-set task requests the pi pool.
+
+- 2026-11-14 00:14 Operator, on the six parked evaluation, tiering and matrix Automata (fea73c82, 049f4713, f6a38c29, 3be9c0e5, 9a1a8666, 38b69678): "The effort and tiered and matrix are all held but blocker until after 10.0" and then "Held not blocked". Decision: they stay untouched until after 10.0; filed Automaton 89e70001 (priority 70) to add a held state so they stop showing as blocked.
+
+- 2026-11-14 00:33 Operator, shown the proposed fix for Plans (a plan is a release, 10.0 and later 11.0, with themes inside; registry rows are items that link in, not plans; attach Automata by release; the 389 row-plans become links) and asked whether themes inside the 10.0 plan are wanted: "Yes you have exactly what i wanted". Filed Automaton 80930001 (priority 85).
+
+- 2026-11-14 00:50 Operator, shown the header redesign (server selector and project/plan selector as header icons opening modals, second Sessions server selector removed, filed as draft 1d470001 and held unapproved): "yes". To be approved when decomposed.
