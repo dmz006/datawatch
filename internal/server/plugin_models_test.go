@@ -38,6 +38,28 @@ func (f fakeModelUseSource) ModelUse(_ context.Context, name string) (*plugins.M
 	return nil, ErrModelUseUnknownPlugin
 }
 
+// swappableModelUseSource serves one report per plugin name and lets a
+// test swap the report while the background events task is reading it.
+type swappableModelUseSource struct {
+	mu      sync.Mutex
+	reports map[string]*plugins.ModelUseReport
+}
+
+func (f *swappableModelUseSource) set(name string, rep *plugins.ModelUseReport) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reports[name] = rep
+}
+
+func (f *swappableModelUseSource) ModelUse(_ context.Context, name string) (*plugins.ModelUseReport, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if rep, ok := f.reports[name]; ok {
+		return rep, nil
+	}
+	return nil, ErrModelUseUnknownPlugin
+}
+
 // recorderCapture collects alert/audit sink calls.
 type recorderCapture struct {
 	mu   sync.Mutex
@@ -206,10 +228,10 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 	}, plugins.ModelUseThresholds{})
 
 	rec, cap := newModelUseRecorder(t)
-	reports := map[string]*plugins.ModelUseReport{"imap-mcp": bad}
+	src := &swappableModelUseSource{reports: map[string]*plugins.ModelUseReport{"imap-mcp": bad}}
 	s := pluginModelsServerBare(t)
 	s.SetModelNodeRecorder(rec)
-	s.SetPluginModels(fakeModelUseSource{reports: reports})
+	s.SetPluginModels(src)
 	// The events task raises from the background at a short interval.
 	s.SetModelNodeEventInterval(50 * time.Millisecond)
 	s.StartModelNodeEvents(context.Background(), func() []string { return []string{"imap-mcp"} })
@@ -235,7 +257,7 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 
 	// The node answers again → the task clears the condition (1 clear)
 	// without re-raising.
-	reports["imap-mcp"] = good
+	src.set("imap-mcp", good)
 	waitFor(t, 5*time.Second, "task to clear after recovery", func() bool { return cap.count() >= 4 })
 	if !strings.Contains(cap.joined(), "reachable again") {
 		t.Errorf("no clear recorded: %s", cap.joined())
