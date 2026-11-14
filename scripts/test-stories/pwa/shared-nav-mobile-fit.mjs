@@ -16,8 +16,12 @@
 //
 // Env (the release-smoke and e2e-pwa.sh runners set these):
 //   TEST_TLS / TEST_HTTP    daemon origin; the first one that answers /api/health is used
-//   TEST_TOKEN              daemon auth token
+//   TEST_TOKEN              daemon auth token (may be empty: the release-smoke test
+//                           daemon starts with no auth token)
 //   EVIDENCE_DIR            evidence root; reports go to <EVIDENCE_DIR>/shared-nav-mobile-fit
+//   PROBE_OUT_DIR           report dir override (default <EVIDENCE_DIR or tmpdir>/shared-nav-mobile-fit)
+//   PROBE_CHROME_PROFILE    chrome --user-data-dir override (default <PROBE_OUT_DIR>/chrome-profile;
+//                           the release-smoke section passes a throwaway dir under its $TMPD)
 //   SHARED_NAV_GATE_THEMES  themes to gate, comma-separated (default light,dark)
 //   DW_CHROME_PATH          Chrome binary (default /usr/bin/google-chrome, as the probe)
 
@@ -43,7 +47,7 @@ const origin = [process.env.TEST_TLS, process.env.TEST_HTTP]
   .find((base) => spawnSync('curl', ['-skf', '--max-time', '5', '-o', '/dev/null', `${base}/api/health`]).status === 0);
 if (!origin) skip('no daemon answers at TEST_TLS or TEST_HTTP');
 
-const outDir = path.join(process.env.EVIDENCE_DIR || tmpdir(), 'shared-nav-mobile-fit');
+const outDir = process.env.PROBE_OUT_DIR || path.join(process.env.EVIDENCE_DIR || tmpdir(), 'shared-nav-mobile-fit');
 mkdirSync(outDir, { recursive: true });
 
 const res = spawnSync(process.execPath, [probe], {
@@ -53,7 +57,7 @@ const res = spawnSync(process.execPath, [probe], {
     SHARED_NAV_MODE: 'gate',
     SHARED_NAV_GATE_THEMES: process.env.SHARED_NAV_GATE_THEMES || 'light,dark',
     PROBE_OUT_DIR: outDir,
-    PROBE_CHROME_PROFILE: path.join(outDir, 'chrome-profile'),
+    PROBE_CHROME_PROFILE: process.env.PROBE_CHROME_PROFILE || path.join(outDir, 'chrome-profile'),
   },
   stdio: 'inherit',
 });
