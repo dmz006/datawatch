@@ -1634,7 +1634,7 @@ Project + cluster profile CRUD (F10 sprint 2).
 |---|---|
 | `list` | List the registered project aliases |
 | `get <name>` | Show one alias and its record |
-| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier (set it back with `policy set`); `--description` sets the description; without it the call sends an empty one and the stored description is cleared (unlike `set`, which keeps the stored description). See [howto/projects-tab](howto/projects-tab.md) |
+| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier (set it back with `policy set`); `--description` and `--backend` set the stored values, and a flag you do not pass keeps the stored value — an explicit empty value clears it, the same as `set`. See [howto/projects-tab](howto/projects-tab.md) |
 | `delete <name>` | Remove an alias; the directory is not touched |
 | `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
 | `show <name> [--window N]` | The record (description included) plus the roll-up: plans, Automata, tasks, points and throughput |
