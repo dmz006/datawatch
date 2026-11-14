@@ -149,6 +149,10 @@ type rollupInput struct {
 	// landed (zero time = unknown). It is asked only for a cancelled or
 	// archived Automaton with no shipped record. Nil means not merged.
 	Merged func(p *autonomous.PRD) (merged bool, at time.Time)
+	// ReleaseHeld says whether a release plan holds an Automaton. An Automaton
+	// no arc holds that a release plan holds is attributed to that plan, so it
+	// is left out of the unassigned group. Nil means no release plans.
+	ReleaseHeld func(automatonID string) bool
 
 	// seenTasks keeps a task from being counted twice in the throughput.
 	seenTasks map[string]bool
@@ -234,6 +238,11 @@ func buildProjectRollup(in rollupInput) projectRollup {
 		if i, ok := arcIndex[auto]; ok && auto != "" {
 			g = &out.Arcs[i]
 		} else if resolved == in.Project {
+			if in.ReleaseHeld != nil && in.ReleaseHeld(p.ID) {
+				// A release plan holds it, so it is attributed: the plans
+				// block lists it, and it is not unassigned.
+				continue
+			}
 			g = &out.Unassigned
 		} else if resolved == "" && (auto == "" || !in.ArcHeld[auto]) {
 			g = &out.WithoutProject
@@ -457,6 +466,7 @@ func (s *Server) projectRollupFor(w http.ResponseWriter, r *http.Request, name s
 		ArcHeld:        rollupArcHeld(s.cfg.Projects),
 		Merged:         s.rollupMergedFn(mgr),
 		ShippedEnabled: s.shippedSettings().EffectiveEnabled(),
+		ReleaseHeld:    s.releaseHeldFunc(),
 	}), true
 }
 

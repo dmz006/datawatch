@@ -114,6 +114,14 @@ type planRecordView struct {
 	CreatedAt      string             `json:"created_at"`
 	UpdatedAt      string             `json:"updated_at"`
 	ClosedAt       string             `json:"closed_at,omitempty"`
+	// PlanKind and Release mark a release plan and name its release; the
+	// archive fields mark a plan taken out of the default lists. All are
+	// plans only and are left out when empty.
+	PlanKind      planrecords.PlanKind `json:"plan_kind,omitempty"`
+	Release       string               `json:"release,omitempty"`
+	Archived      bool                 `json:"archived,omitempty"`
+	ArchivedAt    string               `json:"archived_at,omitempty"`
+	ArchiveReason string               `json:"archive_reason,omitempty"`
 }
 
 func newPlanRecordView(r planrecords.Record) planRecordView {
@@ -123,6 +131,8 @@ func newPlanRecordView(r planrecords.Record) planRecordView {
 		ShippedBy: r.ShippedBy, RaisedBy: r.RaisedBy, ShippedVersion: r.ShippedVersion,
 		Links: r.Links, Aliases: r.Aliases, NeedsReview: r.NeedsReview, ReviewReason: r.ReviewReason,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ClosedAt: r.ClosedAt,
+		PlanKind: r.PlanKind, Release: r.Release,
+		Archived: r.Archived, ArchivedAt: r.ArchivedAt, ArchiveReason: r.ArchiveReason,
 	}
 	if v.Links == nil {
 		v.Links = []planrecords.Link{}
