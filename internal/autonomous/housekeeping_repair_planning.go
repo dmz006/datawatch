@@ -130,6 +130,9 @@ func (o ManagerPlanningOps) Drafts(_ context.Context) []PlanningDraftView {
 		if !ok {
 			continue
 		}
+		if prd.Status == PRDHeld {
+			continue // a held Automaton is never replanned or reworded
+		}
 		d := PlanningDraftView{ID: prd.ID, Title: prd.Title, Draft: prd.Status == PRDDraft, Stories: len(prd.Story), Spec: prd.Spec}
 		if fr := prd.LastDecomposeFailure; fr != nil {
 			d.Failed, d.Retryable, d.Source, d.Detail = true, fr.Retryable, fr.Source, fr.Detail

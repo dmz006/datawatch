@@ -336,6 +336,9 @@ func (r advanceJudgeRepair) Detect(_ context.Context) []RepairFinding {
 	prds := st.ListPRDs()
 	st.WithLock(func() {
 		for _, prd := range prds {
+			if prd.Status == PRDHeld {
+				continue // no repair for a held Automaton or its tasks
+			}
 			for i := range prd.Story {
 				for j := range prd.Story[i].Tasks {
 					t := &prd.Story[i].Tasks[j]

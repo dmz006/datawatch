@@ -133,6 +133,9 @@ func (m *Manager) ReconcileVerifiers(host VerifierHost) []VerifierAction {
 	}
 	var done []VerifierAction
 	for _, a := range PlanVerifierReconcile(host.LiveVerifiers(), lookup) {
+		if held, ok := lookup(a.TaskID); ok && m.prdIsHeld(held.PRDID) {
+			continue // a held Automaton's tasks and record are left exactly as they are
+		}
 		switch a.Kind {
 		case verifierActionEnd:
 			if err := host.End(a.SessionID, a.Reason); err != nil {
