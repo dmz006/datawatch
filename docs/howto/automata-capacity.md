@@ -361,6 +361,12 @@ requested pool has room, or no alternate does, nothing changes and the task
 waits as usual. Only worker tasks fall through; verifiers, judges and
 planners do not.
 
+The requested pool is the one the task's **effective backend** maps to. The
+backend is resolved in this order: task, story, PRD, Automaton, the
+Automaton's lane preference (the Claude or GPU lane backend), then the
+daemon default (`execution_backend`). A task that falls back to its lane
+preference is judged against that lane's pool, not the daemon default's.
+
 The alternates for a task requested on a backend and model, in order:
 
 1. **The lane fill pair.** The other of the Claude lane backend and the GPU
