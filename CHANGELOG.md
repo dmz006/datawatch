@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
+
+### Fixed
+
+- **The daemon no longer aborts at start on a typed-nil model-use source.** `internal/server/plugin_models.go` now passes a true nil interface, never a nil pointer wrapped in one, when no default model-use source exists, and the default source is safe on a nil receiver. Regression tests cover the typed-nil case and the node-event path.
+- **The release smoke's shared-navigation section honors the section filter.** With a section filter such as `SMOKE_ONLY=1,2,3,4` the section is skipped, the probe receives its four environment variables, and a run with no browser available skips instead of failing. A new shell test covers the section; the how-tos on navigation fit and on testing against a running daemon describe the behavior.
+- **The test daemon helper cleans up on HUP, INT and TERM even when the signal arrives ignored.** `scripts/test-daemon-lib.sh` now reruns the script with those signals reset to their defaults, so `tests/ci` daemon cleanup works when the shell started the script with SIGHUP ignored (a background job or `nohup`). Two new tests in `tests/ci/daemon_cleanup_test.go` cover it.
+- **The release smoke no longer aborts on an undefined counter.** A stray increment of a variable that was never defined ended the priority-source section and aborted the whole run with "unbound variable" even when the section was skipped. It is removed, and a new shell test fails if the script increments a counter it does not initialise.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed
