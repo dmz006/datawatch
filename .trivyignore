@@ -464,36 +464,6 @@ CVE-2026-15308
 # release cycle (BL398 Phase 1's live rescan baseline).
 CVE-2026-53613
 
-# rsync -- CVE-2026-53783, CVE-2026-53784, CVE-2026-53785, CVE-2026-53789, CVE-2026-53790, CVE-2026-53791, CVE-2026-53793, CVE-2026-53795, CVE-2026-53802, CVE-2026-53803, CVE-2026-70452, CVE-2026-70455, CVE-2026-70456, CVE-2026-70457, CVE-2026-70458, CVE-2026-70460, CVE-2026-70461, CVE-2026-70463, CVE-2026-70464
-# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
-# rsync included in agent-base for file-sync use by autonomous agent tasks. All
-# 19 CVEs require a malicious rsync server, local privilege escalation paths, or
-# daemon mode -- none configured in this image; the container runs rsync as a
-# client only, connecting to operator-controlled remotes.
-# By far the largest single block (19 of 70 entries). No fix available in Debian
-# bookworm. BL398 Phase 3's top removal candidate -- is rsync genuinely used by
-# autonomous agent tasks, or legacy-unused? Removing it would close all 19 at
-# once.
-CVE-2026-53783
-CVE-2026-53784
-CVE-2026-53785
-CVE-2026-53789
-CVE-2026-53790
-CVE-2026-53791
-CVE-2026-53793
-CVE-2026-53795
-CVE-2026-53802
-CVE-2026-53803
-CVE-2026-70452
-CVE-2026-70455
-CVE-2026-70456
-CVE-2026-70457
-CVE-2026-70458
-CVE-2026-70460
-CVE-2026-70461
-CVE-2026-70463
-CVE-2026-70464
-
 # libsystemd0, libudev1 -- CVE-2026-16742
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
 # Transitive dependencies of the base image; the datawatch service is a Go
@@ -558,19 +528,6 @@ CVE-2026-84782
 # code uses, the way CVE-2026-19445 was traced this session.
 CVE-2026-19553
 
-# http-cache-semantics (npm) -- CVE-2026-93748
-# severity: high; images: agent-gemini
-# Information disclosure via the max-stale cache-control directive. Transitive
-# dependency of @google/gemini-cli's own package.json. Whether any gemini-cli
-# dependency path actually exercises max-stale-aware caching against
-# attacker-influenced content (vs. just Google's own API responses) was not
-# independently traced.
-# No newer published npm version exists as of this migration. NOT independently
-# traced (self-admitted caveat). Unlike most entries here this is an actively
-# maintained package, not a slow Debian backport -- check for a fix each cycle,
-# not just on expiry.
-CVE-2026-93748
-
 # libpython3.11-minimal -- CVE-2026-19445
 # severity: high; images: agent-aider, agent-gemini
 # Use-after-free of a server-side SSLContext when sni_callback switches contexts
@@ -587,87 +544,6 @@ CVE-2026-93748
 # TRACED: grep of installed site-packages in networkless container (docker run
 # --entrypoint /bin/sh --network none)
 CVE-2026-19445
-
-# libexpat1 -- CVE-2026-77214
-# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
-# Heap buffer over-read in XML_ParseBuffer, triggered by
-# malformed/attacker-controlled XML. Scanned every file in the image for a
-# dynamic link to libexpat1: only /usr/lib/git-core/git-http-push links it. That
-# binary is git's legacy dumb-HTTP/WebDAV push path, superseded by the
-# smart-HTTP protocol git push has used by default since ~2010; it is never
-# invoked by any datawatch code path, the image's own git usage, or a normal
-# `git push` to a modern remote (GitHub/GitLab/etc. all serve smart HTTP). Even
-# in the dumb-HTTP case the exposure is on push, not fetch, requiring the
-# operator's own configured remote to be malicious -- not an attacker-controlled
-# input.
-# Found live by image-refresh.yaml's blocking scan (new since the BL398
-# migration baseline -- not in the original 70). No fix available in Debian
-# bookworm. Independently traced and confirmed unreachable this session.
-# TRACED: ldd scan of every executable in a networkless container (docker run
-# --entrypoint /bin/sh --network none) to find every real linker to libexpat1,
-# then traced each caller's actual invocation path
-CVE-2026-77214
-
-# openjdk-17-jre-headless -- CVE-2026-91403
-# severity: critical; images: parent-full
-# The JRE is installed in parent-full for one reason only: to run signal-cli
-# (see the comment above the install line in Dockerfile.parent-full). A source
-# trace of the repository shows java is started only by internal/signal
-# (signalcli.go, javafix.go). CVE-2026-91403 distrusts eMudhra intermediate CA
-# certificates; it affects signal-cli only if the Signal service chain used an
-# eMudhra intermediate, and Signal pins its own trust root, so it does not.
-# CVE-2026-91415 is a font-rendering hardening fix (Oracle CPU 2026-10); it
-# needs AWT text rendering, and signal-cli is a headless messaging client that
-# never renders text. Both paths are unreachable from datawatch code.
-# No fix available in Debian bookworm (status affected, no fixed version). Found
-# live by the Release workflow blocking parent-full scan on the 9.5.93 tag.
-# Moved from a hand edit of .trivyignore into this registry on 2026-10-24.
-# Re-check for a fix each cycle; re-trace only if signal-cli use of the JRE
-# changes.
-# TRACED: source grep of every java invocation in the repository (source trace;
-# not a container linker scan)
-CVE-2026-91403
-
-# openjdk-17-jre-headless -- CVE-2026-91415
-# severity: high; images: parent-full
-# The JRE is installed in parent-full for one reason only: to run signal-cli
-# (see the comment above the install line in Dockerfile.parent-full). A source
-# trace of the repository shows java is started only by internal/signal
-# (signalcli.go, javafix.go). CVE-2026-91403 distrusts eMudhra intermediate CA
-# certificates; it affects signal-cli only if the Signal service chain used an
-# eMudhra intermediate, and Signal pins its own trust root, so it does not.
-# CVE-2026-91415 is a font-rendering hardening fix (Oracle CPU 2026-10); it
-# needs AWT text rendering, and signal-cli is a headless messaging client that
-# never renders text. Both paths are unreachable from datawatch code.
-# No fix available in Debian bookworm (status affected, no fixed version). Same
-# package and trace as CVE-2026-91403. Moved from a hand edit of .trivyignore
-# into this registry on 2026-10-24.
-# TRACED: source grep of every java invocation in the repository (source trace;
-# not a container linker scan)
-CVE-2026-91415
-
-# libbrotli1 -- CVE-2026-111497
-# severity: critical; images: agent-base
-# A buffer overflow in the Brotli decoder, reachable only when something decodes
-# attacker-supplied Brotli data. ldd scan of every executable and shared library
-# in the agent-base image found exactly these linkers to libbrotlidec:
-# /usr/bin/curl, libcurl and libcurl-gnutls, and git's HTTP helpers
-# (git-remote-http, git-http-fetch, git-http-push, git-imap-send). Nothing else
-# in the image, and no datawatch code, decodes Brotli. The data reaches the
-# decoder only if an HTTP server the tool talks to answers with Content-Encoding
-# br: curl asks for it only with --compressed (no datawatch script uses it) and
-# git's HTTP transport accepts whatever libcurl supports, so the exposure is a
-# git remote that the operator configured and that is controlled by an attacker,
-# over a TLS connection the attacker cannot alter in transit. The remotes agents
-# use are the operator's own (GitHub and local mirrors). Not exploitable without
-# a hostile remote.
-# No fix available in Debian bookworm (status affected). Found live by the
-# Release workflow blocking agent-base scan on the 9.5.111 tag. Moved from a
-# hand edit of .trivyignore into this registry on 2026-10-24. Re-check for a fix
-# each cycle; re-trace only if a new Brotli-linked tool is added to the image.
-# TRACED: ldd scan in a networkless container of the built agent-base image
-# (docker run --entrypoint /bin/sh --network none)
-CVE-2026-111497
 
 # openjdk-17-jre-headless -- CVE-2026-114820
 # severity: high; images: parent-full
@@ -902,41 +778,6 @@ CVE-2026-119374
 # bookworm vulnerable, fixed only in sid 3.54.1-2. A built parent-full image was
 # not inspected.
 CVE-2026-119379
-
-# rsync -- CVE-2026-119741
-# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
-# A denial of service in rsync before 3.5.2: in the delta-transfer sender,
-# hash_search() does unbounded strong-checksum work when the peer that receives
-# the file supplies weak checksums that collide with consecutive rolling
-# windows. The attacker must be the receiving peer of a transfer in which this
-# rsync is the sender, in practice an unauthenticated client pulling from an
-# rsync daemon module. The image runs no rsync daemon (RSYNC_ENABLE=false, no
-# rsyncd.conf, port 873 not exposed), has no ssh server through which a remote
-# rsync could start a sender, and the only repo use of rsync is a local
-# directory copy in the Makefile docs sync. The remaining case is a worker
-# session that is told to push files with rsync to an attacker controlled host,
-# which is an operator or agent action and not a datawatch code path; its impact
-# would be CPU exhaustion of one disposable worker container. rsync stays
-# installed on purpose as a general worker tool.
-# The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222)
-# lists CVE-2026-119741 (HIGH) on rsync 3.2.7-1+deb12u6 as affected with no
-# fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as
-# vulnerable with no fixed bookworm version; re-check
-# security-tracker.debian.org each release and remove this entry when a fix
-# ships.
-# TRACED: docker run --network none --entrypoint sh on the built agent-base
-# 9.93.0 image: dpkg -l rsync shows 3.2.7-1+deb12u6, identical to the scanned
-# version; /etc/rsyncd.conf and /etc/rsync* do not exist; /etc/default/rsync has
-# RSYNC_ENABLE=false; no sshd binary is present (which sshd and ls
-# /usr/sbin/sshd fail); docker inspect shows ENTRYPOINT tini --
-# datawatch-entrypoint, CMD start --foreground and exposed ports 8080, 8081 and
-# 8443 only (no 873); grep of the datawatch-entrypoint script finds no rsync.
-# Repo grep for rsync: Dockerfile.agent-base installs it (builder stage for make
-# sync-docs, runtime stage in the tool list), Makefile line 23 runs a local
-# rsync -a between two local directories, and no Go source runs rsync (only the
-# smoke-config lint regex mentions the word). Debian tracker page read: bookworm
-# and bookworm-security are vulnerable, fixed only in sid 3.5.2+ds1-1.
-CVE-2026-119741
 
 # zlib1g -- CVE-2026-85091
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
