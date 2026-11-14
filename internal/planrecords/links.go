@@ -71,6 +71,9 @@ type Summary struct {
 	Goal string `json:"goal,omitempty"`
 	// LinkedAutomata are the Automaton ids a registry row or finding links to.
 	LinkedAutomata []string `json:"linked_automata,omitempty"`
+	// PlanKind and Release mark a release plan and say which release (plans only).
+	PlanKind PlanKind `json:"plan_kind,omitempty"`
+	Release  string   `json:"release,omitempty"`
 }
 
 // PlanRef names the plan an Automaton or Automation belongs to.
@@ -105,6 +108,9 @@ type linkIndex struct {
 	planAutomations map[string][]string
 	// rowPlan maps a registry row id to the uid of the plan made from it.
 	rowPlan map[string]string
+	// rowHolders maps "registry_row:<uid>" / "backlog_item:<uid>" to the uids of
+	// the plans that hold that row or backlog item.
+	rowHolders map[string][]string
 }
 
 func newLinkIndex() linkIndex {
@@ -114,6 +120,7 @@ func newLinkIndex() linkIndex {
 		planAutomata:    map[string][]string{},
 		planAutomations: map[string][]string{},
 		rowPlan:         map[string]string{},
+		rowHolders:      map[string][]string{},
 	}
 }
 
@@ -122,6 +129,7 @@ func linkKey(kind, id string) string { return kind + ":" + id }
 func summarize(r *Record) Summary {
 	sm := summarizeBase(r)
 	sm.Goal = r.Goal
+	sm.PlanKind, sm.Release = r.PlanKind, r.Release
 	if r.Kind != KindPlan {
 		for _, l := range r.Links {
 			if l.Kind == linkAutomaton && strings.TrimSpace(l.Ref) != "" {
@@ -165,6 +173,9 @@ func (s *Store) reindexLinks(old, next *Record) {
 				if l.Kind == linkRegistryRow && li.rowPlan[l.Ref] == old.UID {
 					delete(li.rowPlan, l.Ref)
 				}
+				if isRowLinkKind(l.Kind) {
+					li.dropRowHolder(linkKey(l.Kind, strings.TrimSpace(l.Ref)), old.UID)
+				}
 			}
 		}
 	}
@@ -191,7 +202,23 @@ func (s *Store) reindexLinks(old, next *Record) {
 		if l.Kind == linkRegistryRow && l.Ref != "" {
 			li.rowPlan[l.Ref] = next.UID
 		}
+		if isRowLinkKind(l.Kind) && strings.TrimSpace(l.Ref) != "" {
+			k := linkKey(l.Kind, strings.TrimSpace(l.Ref))
+			if indexOf(li.rowHolders[k], next.UID) < 0 {
+				li.rowHolders[k] = append(li.rowHolders[k], next.UID)
+			}
+		}
 	}
+}
+
+// dropRowHolder removes a plan from the holders of one row or backlog item key.
+func (li *linkIndex) dropRowHolder(key, planUID string) {
+	left := removeID(li.rowHolders[key], planUID)
+	if len(left) == 0 {
+		delete(li.rowHolders, key)
+		return
+	}
+	li.rowHolders[key] = left
 }
 
 // planOrderKey sorts plans: lowest order first, an unset order last, then
@@ -495,6 +522,8 @@ func (s *Store) detach(kind, rawID string) (Record, error) {
 	} else {
 		next.Automations = removeID(next.Automations, id)
 	}
+	// An item taken out of the plan leaves its theme too.
+	next.Themes = removeFromThemes(next.Themes, kind, id)
 	delete(next.LinkInfo, linkKey(kind, id))
 	if len(next.LinkInfo) == 0 {
 		next.LinkInfo = nil
