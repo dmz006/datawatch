@@ -12400,6 +12400,11 @@ components:
             verification_script_reason_empty: {type: boolean, description: "Assert the task states no reason for lacking a verification script"}
             verification_script_task_files_only: {type: boolean, description: "Assert the verification script compares only against the task's own files and never the merge base"}
             verification_script_docs_without_sync: {type: boolean, description: "Assert the verification script checks docs without running make sync-docs"}
+            verification_script_rejects_own_files: {type: boolean, description: "Assert the verification script's literal allowed-file list omits the task's own files or the standard allowed set"}
+            verification_script_needs_later_task_output: {type: boolean, description: "Assert the verification script requires a file or phrase only a task it does not depend on creates"}
+            verification_script_sh_for_bash: {type: boolean, description: "Assert the verification script uses bash-only syntax under an sh shebang, or a bash script is run with sh"}
+            verification_script_pipe_grep_q: {type: boolean, description: "Assert the verification script pipes into grep -q"}
+            verification_script_hex_pattern: {type: boolean, description: "Assert a grep pattern in the verification script matches CSS hex colours as tracker ids"}
             read_only_writes_outside_report: {type: boolean, description: "Assert the task is read-only and a spec line tells it to write, create or edit a file other than its report path"}
             spec_absolute_path_outside_project: {type: boolean, description: "Assert a spec line names an absolute system path outside the project directory"}
             kind: {type: string, description: "Assert the task kind (for example final_gate), case-insensitive"}

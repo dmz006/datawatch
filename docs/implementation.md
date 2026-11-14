@@ -2675,6 +2675,14 @@ section above) — no new config key is introduced here.
   /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
   A planner-written final gate off the last story is rejected by the plan check
   (`verification_script_coverage.go`).
+- **Script-content rules:** five more block rules read the script text and
+  quote the offending line (`verify_script_rejects_own_files`,
+  `verify_script_needs_later_task_output`, `verify_script_sh_for_bash`,
+  `verify_script_pipe_grep_q`, `verify_script_hex_pattern`), via the
+  `verification_script_*` match predicates in
+  `internal/autonomous/decompose_lint_verify_script_rules.go`. The
+  needs-later-task-output check reads the whole plan (`newLintPlan`, built in
+  `LintTasksInDir`) and honours task and story `depends_on`.
 - **Still to review (operator):** the three stability rules ship at `block`
   severity (operator decision 2026-11-12, option 2); whether `shadow` should
   precede `enforce`, and a live run confirming planners write stable scripts

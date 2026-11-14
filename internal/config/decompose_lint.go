@@ -169,6 +169,39 @@ type DecomposeLintMatch struct {
 	// or how-to coverage but does not run `make sync-docs`. A script
 	// that does not exist yet is skipped. Absent (false) = do not check.
 	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+	// VerificationScriptRejectsOwnFiles asserts the task's verification
+	// script (and followed helpers) builds an allowed-file list or a
+	// "fail on any changed file outside a short list" check from literals
+	// only — without the shared allowed list — that omits a file the task
+	// itself plans or the standard allowed set (changelog, README, docs,
+	// locales, tests). The offending line is the finding excerpt. A script
+	// that does not exist yet is skipped. Absent (false) = do not check.
+	VerificationScriptRejectsOwnFiles bool `yaml:"verification_script_rejects_own_files,omitempty" json:"verification_script_rejects_own_files,omitempty"`
+	// VerificationScriptNeedsLaterTaskOutput asserts the script requires
+	// a file (a path test or a grep target) or a phrase that only a task
+	// it does not depend on creates, judged against the files and
+	// files_generated of every other task in the plan and the depends_on
+	// edges of the task and its story. Needs the whole plan, so it holds
+	// only inside a plan-wide lint. A script that does not exist yet is
+	// skipped. Absent (false) = do not check.
+	VerificationScriptNeedsLaterTaskOutput bool `yaml:"verification_script_needs_later_task_output,omitempty" json:"verification_script_needs_later_task_output,omitempty"`
+	// VerificationScriptShForBash asserts the script uses bash-only syntax
+	// ([[ ]], arrays, process substitution, pipefail) under an sh
+	// shebang, or that the task's spec (or a line of the script) runs a
+	// bash script with sh instead of bash. A script that does not exist
+	// yet is skipped. Absent (false) = do not check.
+	VerificationScriptShForBash bool `yaml:"verification_script_sh_for_bash,omitempty" json:"verification_script_sh_for_bash,omitempty"`
+	// VerificationScriptPipeGrepQ asserts the script pipes into
+	// grep -q (the early exit of grep -q breaks the producer with SIGPIPE
+	// under pipefail). A script that does not exist yet is skipped.
+	// Absent (false) = do not check.
+	VerificationScriptPipeGrepQ bool `yaml:"verification_script_pipe_grep_q,omitempty" json:"verification_script_pipe_grep_q,omitempty"`
+	// VerificationScriptHexPattern asserts a grep pattern in the script
+	// matches a bare #<digits> run — the tracker-id shape that also matches
+	// CSS hex colours (#123456) — without a tracker word before it. A
+	// script that does not exist yet is skipped. Absent (false) = do not
+	// check.
+	VerificationScriptHexPattern bool `yaml:"verification_script_hex_pattern,omitempty" json:"verification_script_hex_pattern,omitempty"`
 	// ReadOnlyWritesOutsideReport asserts the task is read-only (the
 	// read_only flag, or a spec whose first non-empty line opens with
 	// the READ-ONLY: marker) and a spec line tells it to write, create

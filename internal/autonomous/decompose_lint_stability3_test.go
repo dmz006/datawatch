@@ -66,8 +66,8 @@ func TestStability3_PackShape(t *testing.T) {
 	for id := range want {
 		t.Errorf("rule %s missing from the default pack", id)
 	}
-	if len(rules) != 16 || block != 11 || warn != 5 {
-		t.Errorf("pack = %d rules (%d block, %d warn), want 16 (11 block, 5 warn)", len(rules), block, warn)
+	if len(rules) != 21 || block != 16 || warn != 5 {
+		t.Errorf("pack = %d rules (%d block, %d warn), want 21 (16 block, 5 warn)", len(rules), block, warn)
 	}
 	if err := (config.DecomposeLintConfig{Rules: rules}).Validate(); err != nil {
 		t.Errorf("default pack does not validate: %v", err)
