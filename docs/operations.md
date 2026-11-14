@@ -7096,7 +7096,7 @@ Details and the question's wording: [howto/automaton-decompose-lint.md](howto/au
 
 ## Gate repair (`autonomous.gate_repair.mode`)
 
-When the script gate of an Automaton final gate fails for a cause the daemon owns, the gate repair engine works it out **of band, after the verdict is in**: it classifies the failure, and in `on` mode applies the safe repair and re-runs the gate once. Its result never changes the gate's verdict — the gate still ended failed in every case — and it never guesses. The mode is read live from the config on each failed gate, so a `configure` change applies to the next failure with no restart. The walkthrough is [howto/automaton-gate-repairs.md](howto/automaton-gate-repairs.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#gate-repair).
+When the script gate of an Automaton final gate fails for a cause the daemon owns, the gate repair engine works it out **of band, after the verdict is in**: it classifies the failure, and in `on` mode applies the safe repair and re-runs the gate once. Its result never changes the gate's verdict — the gate still ended failed in every case — and it never guesses. The mode is read live from the config on each failed gate, so a `configure` change applies to the next failure with no restart. The walkthrough is [howto/automaton-gate-repair.md](howto/automaton-gate-repair.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#gate-repair).
 
 **The failure classes and their repairs (checked in this order).**
 
