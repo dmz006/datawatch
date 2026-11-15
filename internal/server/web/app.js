@@ -10024,6 +10024,9 @@ function showCardCmds(fullId) {
 
 function cardHandleQuickCmd(sel, fullId) {
   const val = sel.value;
+  // The option's display text ("approve") is the label the operator
+  // pressed; the value ("yes") is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -10033,7 +10036,7 @@ function cardHandleQuickCmd(sel, fullId) {
     return;
   }
   event.stopPropagation();
-  cardSendCmd(fullId, val);
+  cardSendCmd(fullId, val, label);
 }
 
 function cardSendCustom(fullId, shortId) {
@@ -10050,7 +10053,7 @@ function cardSendKey(fullId, keyName) {
   showToast('Sent: ' + keyName, 'success', 1500);
 }
 
-function cardSendCmd(fullId, cmd) {
+function cardSendCmd(fullId, cmd, label) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
   } else if (cmd === '__esc__') {
@@ -10070,7 +10073,12 @@ function cardSendCmd(fullId, cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: fullId, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(fullId, label || cmd, cmd, () => {
+      send('send_input', { session_id: fullId, text: cmd });
+    });
+    return;
   }
   showToast('Sent', 'success', 1500);
 }
@@ -12756,14 +12764,18 @@ window.stopArrowRepeat = function() {
 };
 
 // GH#172 D68 — chat quick-reply chips (Yes/No/Stop), shown only while a
-// session is waiting_input. Fills the composer and sends through the
-// same path as a typed reply (tmux or channel routing already handled
-// inside sendSessionInput).
+// session is waiting_input. Routed through the open-question gate: with an
+// open question for this session the chip answers it (nothing typed); with
+// none it fills the composer and sends through the same path as a typed
+// reply (tmux or channel routing already handled inside sendSessionInput).
 function chatQuickReply(text) {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  inputEl.value = text;
-  sendSessionInput();
+  if (!state.activeSession) { inputEl.value = text; sendSessionInput(); return; }
+  quickReplyRoute(state.activeSession, text, text, () => {
+    inputEl.value = text;
+    sendSessionInput();
+  });
 }
 
 // Image-send pending indicator — while a session input carrying
@@ -13838,6 +13850,9 @@ function loadSavedCmdsQuick(sessionId) {
 
 function handleQuickCmd(sel) {
   const val = sel.value;
+  // The option's display text is the label the operator pressed; the value
+  // is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -13862,7 +13877,7 @@ function handleQuickCmd(sel) {
     }).catch(err => showToast('Guardrail error: ' + String(err), 'error', 3000));
     return;
   }
-  sendSavedCmd(val);
+  sendSavedCmd(val, label);
 }
 
 function sendCustomCmd() {
@@ -13880,7 +13895,7 @@ function hideCustomCmd() {
   if (input) input.value = '';
 }
 
-function sendSavedCmd(cmd) {
+function sendSavedCmd(cmd, label) {
   if (!state.activeSession) return;
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: state.activeSession, text: '' });
@@ -13903,7 +13918,12 @@ function sendSavedCmd(cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: state.activeSession, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(state.activeSession, label || cmd, cmd, () => {
+      send('send_input', { session_id: state.activeSession, text: cmd });
+    });
+    return;
   }
 }
 
@@ -45975,6 +45995,113 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
+// ── quick-reply → open question routing ──────────────────────────────────────
+// quickReplyRoute is the single gate every Sessions-page quick reply goes
+// through before a label's text is typed into a session (the card quick
+// commands, the session quick commands, the chat Yes/No/Stop chips, and the
+// alerts quick-reply select). It checks whether this session has an open
+// question and routes the reply there instead of typing it:
+//   - no open question for the session → the caller's type-into-session
+//     fallback runs, exactly as before;
+//   - one open question and the reply matches one of its options (text
+//     equal to an option id or label, case-insensitive, plus the small
+//     approve/reject synonym set) → the option is posted to
+//     POST /api/questions/{id}/answer with surface pwa and nothing is
+//     typed into the session;
+//   - one open question but no matching option, or more than one open
+//     question → the reply is refused with a plain message (naming the
+//     pressed label and the question's option labels, or pointing to the
+//     Questions page) and nothing is sent anywhere;
+//   - a failed answer (409 no longer open, 400 the server refusing the
+//     text) → the server's message shows as a toast and nothing is typed.
+// On success the toast names the option that was chosen and the question
+// card refreshes through window.refreshAutomationQuestions when it exists.
+// The typeIntoSession callback is the caller's previous send path; it runs
+// only in the no-question case.
+const _QUICK_REPLY_SYNONYM_GROUPS = [
+  ['yes', 'approve', 'approved'],
+  ['no', 'reject', 'rejected'],
+];
+
+// _quickReplyQuestionForSession reports whether a question record belongs
+// to the session a quick reply was pressed for. The record's session_id
+// may carry the short or the full id, so both sides compare on the raw id
+// and on the last dash segment.
+function _quickReplyQuestionForSession(q, sessionId) {
+  const qid = q && q.session_id ? String(q.session_id) : '';
+  const sid = String(sessionId || '');
+  if (!qid || !sid) return false;
+  if (qid === sid) return true;
+  const short = n => String(n).split('-').pop();
+  return qid === short(sid) || short(qid) === short(sid);
+}
+window._quickReplyQuestionForSession = _quickReplyQuestionForSession;
+
+// _quickReplyOptionFor resolves a pressed quick reply (its label and the
+// text it would type) against one question's options and returns the
+// matched option's id, or '' when it must not guess: no match, or more
+// than one option matching. A direct hit is the option's id or label
+// equal to the label or the value, case-insensitive; a synonym hit is the
+// approve/approved/yes and reject/rejected/no groups, so "Approved" and
+// "yes" both resolve to a Yes option.
+function _quickReplyOptionFor(options, label, value) {
+  const cands = [label, value]
+    .map(w => String(w == null ? '' : w).trim().toLowerCase())
+    .filter(Boolean);
+  const opts = (Array.isArray(options) ? options : []).filter(o => o && (o.id || o.label));
+  if (!cands.length || !opts.length) return '';
+  const direct = opts.filter(o => cands.includes(String(o.id).toLowerCase()) || cands.includes(String(o.label || '').toLowerCase()));
+  if (direct.length === 1) return String(direct[0].id);
+  if (direct.length > 1) return '';
+  for (const c of cands) {
+    const group = _QUICK_REPLY_SYNONYM_GROUPS.find(g => g.includes(c));
+    if (!group) continue;
+    const m = opts.filter(o => group.includes(String(o.id).toLowerCase()) || group.includes(String(o.label || '').toLowerCase()));
+    if (m.length === 1) return String(m[0].id);
+    if (m.length > 1) return '';
+  }
+  return '';
+}
+window._quickReplyOptionFor = _quickReplyOptionFor;
+
+function quickReplyRoute(sessionId, label, value, typeIntoSession) {
+  const sid = String(sessionId || '');
+  const fallback = typeof typeIntoSession === 'function' ? typeIntoSession : null;
+  const runFallback = () => { if (fallback) fallback(); };
+  if (!sid) { runFallback(); return Promise.resolve(); }
+  return apiFetch('/api/questions?state=open&limit=50')
+    .catch(() => null)
+    .then(body => {
+      const open = ((body && Array.isArray(body.questions)) ? body.questions : [])
+        .filter(q => _quickReplyQuestionForSession(q, sid));
+      if (!open.length) { runFallback(); return; }
+      if (open.length > 1) {
+        showToast(String(t('quick_reply_multiple_questions') || 'This session has more than one open question. Answer them on the Questions page (Automation view).'), 'error', 6000);
+        return;
+      }
+      const q = open[0];
+      const optionId = _quickReplyOptionFor(q.options, label, value);
+      if (!optionId) {
+        const labels = (Array.isArray(q.options) ? q.options : [])
+          .map(o => (o && (o.label || o.id)) ? String(o.label || o.id) : '')
+          .filter(Boolean).join(', ');
+        showToast(String(t('quick_reply_refused_no_option') || "Quick reply %1$s doesn't match any option of this session's open question. Options: %2$s")
+          .replace('%1$s', String(label || value || '')).replace('%2$s', labels), 'error', 6000);
+        return;
+      }
+      return _questionAnswerSubmit(q.id, '', optionId, '')
+        .then(() => {
+          const optLabel = _questionAnswerOptionLabel(q.options, optionId) || optionId;
+          showToast(String(t('quick_reply_answered') || 'Answered with option %1$s').replace('%1$s', optLabel), 'success');
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        })
+        .catch(err => {
+          showToast(_questionAnswerErrorMessage(err), 'error', 6000);
+        });
+    });
+}
+window.quickReplyRoute = quickReplyRoute;
+
 // _questionContextSafeViewerURL gives the viewer link back only when it is a
 // same-origin relative link: it starts with a single slash and carries no
 // backslash, whitespace or control characters. Anything else is '' and the
@@ -50117,9 +50244,14 @@ function switchAlertTab(tab) {
 }
 
 function alertSendCmd(sessID, command) {
-  apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
-    .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
-    .catch(e => showToast('Error: ' + e.message, 'error'));
+  // Routed through the open-question gate: with an open question for this
+  // session the reply answers it (nothing typed); with none it sends the
+  // text into the session, exactly as before.
+  quickReplyRoute(sessID, command, command, () => {
+    apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
+      .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
+      .catch(e => showToast('Error: ' + e.message, 'error'));
+  });
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────

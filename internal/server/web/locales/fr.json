@@ -5766,5 +5766,8 @@
   "task_routing_export_failed": "Échec de l’export : %1$s",
   "task_routing_imported": "Profil importé",
   "task_routing_detail_row": "ligne %1$s",
-  "task_routing_detail_reason": "pas de ligne : %1$s"
+  "task_routing_detail_reason": "pas de ligne : %1$s",
+  "quick_reply_answered": "Répondu avec l'option %1$s",
+  "quick_reply_refused_no_option": "La réponse rapide %1$s ne correspond à aucune option de la question ouverte de cette session. Options : %2$s",
+  "quick_reply_multiple_questions": "Cette session a plus d'une question ouverte. Répondez-les sur la page des questions (vue Automation)."
 }

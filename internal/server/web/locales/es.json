@@ -5766,5 +5766,8 @@
   "task_routing_export_failed": "Falló la exportación: %1$s",
   "task_routing_imported": "Perfil importado",
   "task_routing_detail_row": "fila %1$s",
-  "task_routing_detail_reason": "sin fila: %1$s"
+  "task_routing_detail_reason": "sin fila: %1$s",
+  "quick_reply_answered": "Respondida con la opción %1$s",
+  "quick_reply_refused_no_option": "La respuesta rápida %1$s no coincide con ninguna opción de la pregunta abierta de esta sesión. Opciones: %2$s",
+  "quick_reply_multiple_questions": "Esta sesión tiene más de una pregunta abierta. Resuélvelas en la página de preguntas (vista de Automation)."
 }
