@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [usage, backoff, back-off, rate-limit, capacity, restart, burn-guard, alerts]
+  topics: [usage, backoff, back-off, rate-limit, capacity, restart, burn-guard, alerts, review-reserve]
 exec_steps:
   - tool: usage_backoff_status
-    description: Read every active back-off flag first (backend, until, reason, source), plus the effective mode and maximum wait
+    description: Read every active back-off flag first (backend, until, reason, source), plus the effective mode, maximum wait and review-reserve settings, and the reserve's per-backend window usage
     args: {}
     read_only: true
   - tool: usage_backoff_set
@@ -26,13 +26,18 @@ exec_steps:
 # Usage back-off
 
 A **usage back-off flag** tells the daemon that one backend has run out of
-usage, so it should stop starting new Automaton work on that backend until a
-deadline. The flag is per backend: backing off `claude-code` never affects `pi`
-or `ollama`.
+usage, so it should stop starting new **worker** sessions on that backend until
+a deadline. The flag is per backend: backing off `claude-code` never affects
+`pi` or `ollama`.
 
 **A flag only holds new work. It never ends, kills or signals a session that is
 already running.** Interactive session starts you make by hand are never blocked
 either.
+
+The one carve-out in the hold: while a flag is up, the review roles — guardrail
+judges, verifiers and decompose/planning sessions — may still run on that
+backend through its [review reserve](#what-a-flag-does-not-hold-the-review-reserve).
+A back-off must not block the work that reviews and plans the work.
 
 ## What a flag holds
 
@@ -59,6 +64,64 @@ There are three kinds of flag, told apart by `source` and the reason:
 The automatic path is switched by `autonomous.usage_backoff` (`pause_backend`,
 the default, or `off`). A manual set always works, even with the mode `off`.
 
+## What a flag does not hold: the review reserve
+
+New worker sessions are refused for the whole flag, exactly as before. The
+review roles — **guardrail judges, verifiers, and decompose/planning sessions** —
+are admitted on the held backend through its **review reserve**: a bounded
+number of live session slots plus, optionally, a rolling one-hour token budget.
+
+Two keys bound the reserve, both under `autonomous`:
+
+- **`backoff_reserve_for_review`** — how many live session slots the reserve
+  holds. Default `1`. Set `0` to disable the reserve entirely: with no reserve,
+  every new session on the held backend, review roles included, is refused —
+  the pre-reserve behavior.
+- **`backoff_reserve_tokens_per_hour`** — a rolling one-hour token budget for
+  review work admitted through the reserve on that backend. Default `0` (no
+  token budget). It is enforced only when token usage for the sessions is
+  reported; without usage reports the slot bound alone applies.
+
+Details worth knowing:
+
+- **Live review sessions count.** A verifier or planner session already running
+  on the backend holds one of the reserve's slots for its lifetime; the reserve
+  never evicts it.
+- **Reserve full.** A review request that cannot get a slot — or that would
+  exceed the token budget — waits with the reason
+  `pool llm:<backend> backpressure: back-off, review reserve in use`, which is
+  classified as a back-off wait and shows the flag's reset time. The PWA and the
+  task wait displays label that wait **Back-off, review reserve in use**, so it
+  is not confused with a plain worker back-off wait.
+- **Audited.** Each admission or refusal through the reserve writes one
+  operator audit entry — `autonomous_usage_backoff_reserve_admitted` or
+  `autonomous_usage_backoff_reserve_refused` — carrying the backend, the role,
+  and the slot and token figures at decision time (`slots`, `used_slots`,
+  `tokens_used`, `token_cap`).
+- **Config is live.** Both keys are read at decision time, so a change needs no
+  daemon restart. The reserve's in-memory state (the rolling token stamps) is
+  not persisted and does not survive a restart; the flags themselves do, as
+  described below.
+- **Surfaces.** Both keys are settable from every config surface, and every
+  `usage-backoff` status shows the effective values:
+  - **YAML.** `autonomous.backoff_reserve_for_review` and
+    `autonomous.backoff_reserve_tokens_per_hour` in `config.yaml`.
+  - **REST.** `PUT /api/config` with `{"autonomous.backoff_reserve_for_review": 2}`
+    (and/or `autonomous.backoff_reserve_tokens_per_hour`); `GET /api/config`
+    returns the effective values, and `GET /api/usage-backoff` shows them in its
+    `config` object (as `reserve_for_review` and
+    `reserve_tokens_per_hour`) with the per-backend window usage in its
+    `reserve` array.
+  - **MCP.** `autonomous_config_set` with `backoff_reserve_for_review` and/or
+    `backoff_reserve_tokens_per_hour`; read them back in `usage_backoff_status`
+    (`config.reserve_for_review`, `config.reserve_tokens_per_hour`, `reserve`).
+  - **CLI.** `datawatch config set autonomous.backoff_reserve_for_review=2`;
+    `datawatch usage-backoff status` prints the effective values and the
+    reserve's window usage per backed-off backend.
+  - **Comm channels.** `configure autonomous.backoff_reserve_for_review=2`;
+    `usage_backoff status` shows the effective values and window usage.
+  - **PWA.** The two *Usage back-off review reserve* fields in Settings.
+
 ## Set, check and clear a flag
 
 | Surface | Status | Set | Clear |
@@ -66,7 +129,7 @@ the default, or `off`). A manual set always works, even with the mode `off`.
 | MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason` | `usage_backoff_clear` with `backend` (omit or `all` for every flag) |
 | REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` |
 | CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text]` | `datawatch usage-backoff clear [backend\|all]` |
-| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes> [reason]` | `usage_backoff clear [backend\|all]` |
+| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes\|until> [reason]` | `usage_backoff clear [backend\|all]` |
 
 With neither `minutes` nor `until`, a set holds the backend for 30 minutes.
 `minutes` must be 1 or more and `until` must be in the future.
@@ -92,8 +155,9 @@ back after the next restart.
 
 ## What boot-time resume does with a backed-off backend
 
-When the daemon resumes work at start, it does not start new sessions for a
-backed-off backend:
+When the daemon resumes work at start, it does not start new worker sessions
+for a backed-off backend (review roles still go through their
+[review reserve](#what-a-flag-does-not-hold-the-review-reserve)):
 
 - An Automaton task for that backend waits in the capacity queue with the same
   `backoff: ...` wait reason as for a flag set during this run, and starts when
@@ -135,6 +199,13 @@ A restored flag is the daemon's saved state, not a fresh reading, so check it:
   `autonomous_usage_backoff_cleared`.
 - **A burn-guard flag you want gone.** Clearing it works, but the guard may set it
   again next interval. Change the guard instead (see [Burn guard](burn-guard.md)).
+- **Work is waiting on a held backend with a review reason.** The wait reason
+  reads `back-off, review reserve in use`: the backend is held, and a judge,
+  verifier or planning session is asking for the reserve whose slot (or
+  one-hour token budget) is taken, or `backoff_reserve_for_review` is `0`.
+  Check the reserve's audit entries (`autonomous_usage_backoff_reserve_refused`
+  via `audit_query`) for the slot and token figures; the wait ends when the
+  flag clears.
 
 ## See also
 

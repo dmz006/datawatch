@@ -255,7 +255,11 @@ func (r *Router) handleCooldown(cmd Command) {
 }
 
 // handleUsageBackoff serves "usage_backoff status|set|clear" through the
-// /api/usage-backoff loopback, mirroring the cooldown verbs.
+// /api/usage-backoff loopback, mirroring the cooldown verbs. Status and
+// recheck pass the REST body through verbatim, so the review-reserve config
+// fields (config.reserve_for_review, config.reserve_tokens_per_hour) and the
+// live reserve array (one {backend, tokens_used} per backed-off backend)
+// reach the chat surface without any local parsing or key list.
 func (r *Router) handleUsageBackoff(cmd Command) {
 	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all] | recheck]"
 	switch cmd.UsageBackoffVerb {

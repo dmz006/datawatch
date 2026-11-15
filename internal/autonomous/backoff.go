@@ -207,8 +207,17 @@ func (b *Backoff) Live() []Entry {
 
 // UsageBackoffConfig is the config half of the usage back-off status.
 type UsageBackoffConfig struct {
-	Mode           string `json:"mode"`
-	MaxWaitMinutes int    `json:"max_wait_minutes"`
+	Mode                 string `json:"mode"`
+	MaxWaitMinutes       int    `json:"max_wait_minutes"`
+	ReserveForReview     int    `json:"reserve_for_review"`
+	ReserveTokensPerHour int64  `json:"reserve_tokens_per_hour"`
+}
+
+// ReserveUsage is how much of the review-reserve per-hour token budget one
+// backed-off backend has already spent in the current window.
+type ReserveUsage struct {
+	Backend    string `json:"backend"`
+	TokensUsed int64  `json:"tokens_used"`
 }
 
 // UsageBackoffStatus is the body shared by GET /api/usage-backoff and the
@@ -216,6 +225,10 @@ type UsageBackoffConfig struct {
 type UsageBackoffStatus struct {
 	Active []Entry            `json:"active"`
 	Config UsageBackoffConfig `json:"config"`
+	// Reserve carries the live per-hour reserve usage per backed-off
+	// backend; it is present only when the daemon runs the review-reserve
+	// gate and at least one flag is live.
+	Reserve []ReserveUsage `json:"reserve,omitempty"`
 	// PatternsVersion is the short fingerprint of the effective rate-limit
 	// detection patterns; PatternsStale is true when it differs from the one
 	// an operator last rechecked (pattern-drift guard). ClaudeCLIVersion is
@@ -235,10 +248,10 @@ type PatternsStatusFunc func() (version, claudeCLIVersion string, stale bool)
 type BudgetsStatusFunc func() []BudgetStatus
 
 // BuildUsageBackoffStatus snapshots the live flags of b (nil = none) with
-// the effective mode and maximum back-off. Active is never nil, so it
-// always marshals as an array.
-func BuildUsageBackoffStatus(b *Backoff, mode string, maxWaitMinutes int) UsageBackoffStatus {
-	st := UsageBackoffStatus{Active: []Entry{}, Config: UsageBackoffConfig{Mode: mode, MaxWaitMinutes: maxWaitMinutes}}
+// the effective back-off config. Active is never nil, so it always
+// marshals as an array.
+func BuildUsageBackoffStatus(b *Backoff, cfg UsageBackoffConfig) UsageBackoffStatus {
+	st := UsageBackoffStatus{Active: []Entry{}, Config: cfg}
 	if b != nil {
 		st.Active = b.Live()
 	}

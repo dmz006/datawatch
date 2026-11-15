@@ -19,6 +19,15 @@ const (
 	// BackoffMaxWaitDefaultMinutes is the back-off applied when a rate limit
 	// carries no reset time.
 	BackoffMaxWaitDefaultMinutes = 60
+	// DefaultBackoffReserveForReview is the number of live session slots a
+	// backed-off backend keeps for review work when the reserve setting is
+	// unset: one, so a backed-off backend can always admit exactly one
+	// guardrail judge, verifier or planning session while workers wait.
+	DefaultBackoffReserveForReview = 1
+	// DefaultBackoffTokensPerHour is the reserve's rolling one-hour token
+	// budget when the setting is unset: 0, meaning no cap (the slot count
+	// alone bounds the reserve).
+	DefaultBackoffTokensPerHour = int64(0)
 )
 
 var usageBackoffWarnOnce sync.Once
@@ -69,4 +78,27 @@ func ValidateUsageBackoff(v string) error {
 // reader should act on, applying the same defaults as config load.
 func EffectiveUsageBackoff(mode string, maxWaitMinutes int) (string, int) {
 	return normalizeUsageBackoff(mode), normalizeBackoffMaxWaitMinutes(maxWaitMinutes)
+}
+
+// ReserveForReviewSlots resolves the reserve-for-review setting: unset takes
+// the default of one slot per backed-off backend, a negative value clamps to
+// zero (reserve off). The resolution is a plain read, so it may be called
+// from under the capacity ledger's lock rule.
+func ReserveForReviewSlots(v *int) int {
+	if v == nil {
+		return DefaultBackoffReserveForReview
+	}
+	if *v < 0 {
+		return 0
+	}
+	return *v
+}
+
+// ReserveTokensPerHour resolves the reserve's rolling one-hour token
+// budget: unset or negative read as 0, which means no cap.
+func ReserveTokensPerHour(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
 }

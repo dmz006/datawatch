@@ -405,6 +405,10 @@ type Server struct {
 	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// backoffReserve is the review-reserve gate (nil = not wired); the usage
+	// back-off status uses it to report the per-hour reserve usage per
+	// backed-off backend.
+	backoffReserve *autonomous.BackoffReserve
 	// budgetLedger is the per-LLM dollar budget ledger (nil = not wired).
 	budgetLedger *autonomous.BudgetLedger
 	// capacityAdmit gates an interactive (non-autonomous) session start on
@@ -6735,8 +6739,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
-			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
-			"backoff_max_wait_minutes": usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
+			"usage_backoff":                   usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
+			"backoff_max_wait_minutes":        usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
+			"backoff_reserve_for_review":      usageBackoffReserveForReviewDisplay(s.cfg.Autonomous.BackoffReserveForReview),
+			"backoff_reserve_tokens_per_hour": usageBackoffReserveTokensPerHourDisplay(s.cfg.Autonomous.BackoffReserveTokensPerHour),
 			// tier -> max-inflight table; a nil table renders as an empty
 			// object (rather than null) so clients treat "absent tier" and
 			// "empty table" the same way: kind defaults apply.
@@ -7373,6 +7379,20 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["autonomous.backoff_max_wait_minutes"]; ok {
 		if _, verr := parseBackoffMaxWaitMinutes(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The reserve knobs must be whole non-negative numbers; a negative or
+	// fractional value is rejected before anything is applied.
+	if v, ok := patch["autonomous.backoff_reserve_for_review"]; ok {
+		if _, verr := parseBackoffReserveForReview(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.backoff_reserve_tokens_per_hour"]; ok {
+		if _, verr := parseBackoffReserveTokensPerHour(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -10082,6 +10102,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.backoff_max_wait_minutes":
 			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
 				cfg.Autonomous.BackoffMaxWaitMinutes = n
+			}
+		case "autonomous.backoff_reserve_for_review":
+			// Validated in handlePutConfig. Stored as a pointer so an explicit
+			// 0 (no slot reserve) survives the unset-defaults path.
+			if n, err := parseBackoffReserveForReview(v); err == nil {
+				cfg.Autonomous.BackoffReserveForReview = &n
+			}
+		case "autonomous.backoff_reserve_tokens_per_hour":
+			// Validated in handlePutConfig; 0 = no per-hour token budget.
+			if n, err := parseBackoffReserveTokensPerHour(v); err == nil {
+				cfg.Autonomous.BackoffReserveTokensPerHour = n
 			}
 		case "autonomous.verifier_policy.mode", "autonomous.verifier_policy.backends",
 			"autonomous.verifier_policy.claude_session_cap", "autonomous.verifier_policy.claude_cap_window_minutes",
