@@ -121,9 +121,18 @@ CVE-2026-93990, which was never actually in `.trivyignore` — a stale
 entry this regeneration drops). Do not hand-edit the table below; edit
 the registry and run `python3 scripts/gen_trivyignore.py`.
 
+**Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
+was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
+which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
+guards the floor in CI). The removed entry was untraced, so the "independently
+traced" count is unchanged. Confirm the next Release scan of agent-aider is
+clean, and re-scope the remaining agent-aider `python3.11` entries if they no
+longer apply to aider. See
+[container image refresh](howto/container-image-refresh.md#agent-aider-python-and-the-soupsieve-floor).
+
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**108 suppressed container CVEs across 8 images, 41 independently traced.**
+**106 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -165,8 +174,6 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-11940 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-119741 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
 | CVE-2026-12064 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-126190 | `soupsieve` | high | agent-aider | yes | 2026-12-13 | The Release scan of agent-aider lists CVE-2026-126190 (HIGH) on soupsieve 2.10, ... |
-| CVE-2026-126191 | `soupsieve` | high | agent-aider | no | 2026-12-13 | The Release scan of agent-aider lists CVE-2026-126191 (HIGH, exponential ReDoS i... |
 | CVE-2026-15308 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-16742 | `libsystemd0, libudev1` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-19445 | `libpython3.11-minimal` | high | agent-gemini, agent-aider | yes | 2027-01-06 | No fix available in Debian bookworm. Independently traced and confirmed unreacha... |
