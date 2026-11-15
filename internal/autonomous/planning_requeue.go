@@ -258,8 +258,9 @@ func (m *Manager) requeuePlanningRun(prdID, actor, oldBackend, oldModel string) 
 	// immediately (no further ledger poll).
 	m.mu.Lock()
 	keysFn, choicesFn := m.capacityKeys, m.capacityChoices
-	priority := prd.Priority
 	m.mu.Unlock()
+	var priority int
+	m.store.WithLock(func() { priority = prd.Priority })
 	var (
 		pools   = res.NewPools
 		node    string
@@ -345,18 +346,30 @@ func (m *Manager) RestartPlanning(prdID string) *PlanningRequeueResult {
 
 // notePlanningRequeue records the requeue decision on the PRD (audit) and
 // emits its update so the surfaces pick it up.
+//
+// The stored PRD is shared: the decompose goroutine mutates and persists it
+// (clearPRDWaitReason / setPRDWaitReason → Store.MutatePRD, which encodes the
+// record) while a requeue runs on an API goroutine. The append therefore
+// happens inside Store.MutatePRD, under the store lock, never on the pointer
+// GetPRD returns. The Decisions trim and the Rev bump SavePRD applied are kept.
 func (m *Manager) notePlanningRequeue(prdID, actor string, res *PlanningRequeueResult) {
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok {
-		return
-	}
-	prd.Decisions = append(prd.Decisions, Decision{
+	dec := Decision{
 		At: time.Now(), Kind: "planning_requeue", Actor: actor,
 		Note: fmt.Sprintf("outcome=%s old=%s/%s pools=%s new=%s/%s pools=%s reason=%s",
 			res.Outcome, res.OldBackend, res.OldModel, strings.Join(res.OldPools, ","),
 			res.NewBackend, res.NewModel, strings.Join(res.NewPools, ","), res.Reason),
+	}
+	var (
+		prd    *PRD
+		status PRDStatus
+	)
+	applied := m.store.MutatePRD(prdID, func(p *PRD) bool {
+		p.Decisions = trimDecisions(append(p.Decisions, dec))
+		p.Rev++
+		prd, status = p, p.Status
+		return true
 	})
-	if m.store.SavePRD(prd) == nil {
-		m.emitPRDStatus(prd, prd.Status, nil, nil)
+	if applied {
+		m.emitPRDStatus(prd, status, nil, nil)
 	}
 }
