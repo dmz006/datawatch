@@ -62,7 +62,7 @@ candidates so you can repeat the call with an id.
 | Surface | How |
 |---|---|
 | REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state` (one state, or a comma-separated list), `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
-| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
+| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. `list` and `search` take `state`, one state or a comma-separated list of them. |
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. The `list` and `search` `--state` filter takes one state, or a comma-separated list of them. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S[,S...]]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
