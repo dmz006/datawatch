@@ -46,7 +46,7 @@ func tick(t *testing.T, l *Ladder, p Projection, s LadderSettings, at time.Time)
 }
 
 func TestBurnGuardAskOnChangeFalseRaisesNoQuestion(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	s := settings()
 	s.AskOnChange = false
 	at := time.Now()
@@ -66,7 +66,7 @@ func TestBurnGuardAskOnChangeFalseRaisesNoQuestion(t *testing.T) {
 }
 
 func TestBurnGuardAskOnChangeTrueQuestionsEachClimbAndStepBack(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	at := time.Now()
 	for i := 0; i < 3; i++ {
 		d := tick(t, l, proj(20), settings(), at)
@@ -89,7 +89,7 @@ func TestBurnGuardAskOnChangeTrueQuestionsEachClimbAndStepBack(t *testing.T) {
 
 func TestBurnGuardAskOnChangeFalseOnNoOpStepAndOnRelease(t *testing.T) {
 	// a climb that cannot lower the cap (already 1, so 1 to 1) changes no setting
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	at := time.Now()
 	s := settings()
 	s.Ladder = []string{RungLowerInflight}
@@ -109,7 +109,7 @@ func TestBurnGuardAskOnChangeFalseOnNoOpStepAndOnRelease(t *testing.T) {
 		t.Fatalf("no-op release: %+v", d)
 	}
 	// a disabled release never questions, even with ask_on_change on
-	l, _ = NewLadder(&memStore{})
+	l, _ = newTestLadder(&memStore{})
 	tick(t, l, proj(20), settings(), at)
 	s = settings()
 	s.Enabled = false
@@ -119,7 +119,7 @@ func TestBurnGuardAskOnChangeFalseOnNoOpStepAndOnRelease(t *testing.T) {
 }
 
 func TestBurnGuardAskOnChangeWithdrawOnEveryChangedStep(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	at := time.Now()
 	if d := tick(t, l, proj(20), settings(), at); d.Withdraw != d.Changed || !d.Withdraw {
 		t.Fatalf("climb: %+v", d)
@@ -147,7 +147,7 @@ func TestBurnGuardAskOnChangeWithdrawOnEveryChangedStep(t *testing.T) {
 }
 
 func TestBurnGuardAskOnChangeAlertNamesProjectionTargetAndSetting(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	s := settings()
 	s.AskOnChange = false
 	d := tick(t, l, proj(20), s, time.Now())
@@ -163,7 +163,7 @@ func TestBurnGuardAskOnChangeAlertNamesProjectionTargetAndSetting(t *testing.T) 
 		}
 	}
 	// with ask_on_change on the alert stops carrying the hint
-	l, _ = NewLadder(&memStore{})
+	l, _ = newTestLadder(&memStore{})
 	if d := tick(t, l, proj(20), settings(), time.Now()); strings.Contains(d.AlertText, "ask_on_change") {
 		t.Fatalf("alert should not mention the setting while questions are on: %q", d.AlertText)
 	}
@@ -204,7 +204,7 @@ func TestActionKindsAreAdmissionOnly(t *testing.T) {
 
 func TestClimbsOneRungPerTickThenHolds(t *testing.T) {
 	st := &memStore{}
-	l, _ := NewLadder(st)
+	l, _ := newTestLadder(st)
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	d := tick(t, l, proj(20), settings(), at)
 	if d.Direction != DirectionClimb || d.Rung != RungLowerInflight || d.Level != 1 {
@@ -217,7 +217,7 @@ func TestClimbsOneRungPerTickThenHolds(t *testing.T) {
 		t.Fatalf("texts: %q / %q", d.AlertText, d.QuestionText)
 	}
 	d = tick(t, l, proj(20), settings(), at.Add(time.Hour))
-	if d.Rung != RungRoutePiPrompt || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].To != PiBackend {
+	if d.Rung != RungRoutePiPrompt || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].To != testTarget.RouteTo || d.Actions[0].Backend != testTarget.Backend {
 		t.Fatalf("tick 2: %+v", d)
 	}
 	d = tick(t, l, proj(20), settings(), at.Add(2*time.Hour))
@@ -234,7 +234,7 @@ func TestClimbsOneRungPerTickThenHolds(t *testing.T) {
 }
 
 func TestMarginHolds(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	at := time.Now()
 	for _, o := range []float64{2, 1, 0, -1, -2} {
 		if d := tick(t, l, proj(o), settings(), at); d.Changed || !strings.HasPrefix(d.Reason, "within the margin") {
@@ -250,7 +250,7 @@ func TestMarginHolds(t *testing.T) {
 }
 
 func TestStepsBackOneRungPerTick(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	at := time.Now()
 	for i := 0; i < 3; i++ {
 		tick(t, l, proj(20), settings(), at)
@@ -272,7 +272,7 @@ func TestStepsBackOneRungPerTick(t *testing.T) {
 }
 
 func TestInflightRestoreValue(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	tick(t, l, proj(20), settings(), time.Now())
 	d := tick(t, l, proj(-10), settings(), time.Now())
 	if a := d.Actions[0]; a.Kind != ActionSetInflight || !a.Release || a.Value != 3 {
@@ -281,7 +281,7 @@ func TestInflightRestoreValue(t *testing.T) {
 }
 
 func TestStepBackOff(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	s := settings()
 	s.StepBack = false
 	tick(t, l, proj(20), s, time.Now())
@@ -292,14 +292,14 @@ func TestStepBackOff(t *testing.T) {
 }
 
 func TestDisabledLadder(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	s := settings()
 	s.Enabled = false
 	if d := tick(t, l, proj(50), s, time.Now()); d.Changed || d.Direction != DirectionDisabled || d.Level != 0 {
 		t.Fatalf("%+v", d)
 	}
 	// turned off while rungs are in force: they are all released
-	l, _ = NewLadder(nil)
+	l, _ = newTestLadder(nil)
 	tick(t, l, proj(20), settings(), time.Now())
 	tick(t, l, proj(20), settings(), time.Now())
 	d := tick(t, l, proj(50), s, time.Now())
@@ -312,7 +312,7 @@ func TestDisabledLadder(t *testing.T) {
 }
 
 func TestOneRungLadder(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	s := settings()
 	s.Ladder = []string{RungHoldClaude}
 	d := tick(t, l, proj(30), s, time.Now())
@@ -330,7 +330,7 @@ func TestOneRungLadder(t *testing.T) {
 }
 
 func TestNeedsHolds(t *testing.T) {
-	l, _ := NewLadder(nil)
+	l, _ := newTestLadder(nil)
 	tick(t, l, proj(20), settings(), time.Now())
 	d := tick(t, l, Projection{Needs: "reading"}, settings(), time.Now())
 	if d.Changed || d.Level != 1 || !strings.Contains(d.Reason, "reading") {
@@ -340,13 +340,13 @@ func TestNeedsHolds(t *testing.T) {
 
 func TestRestartWithPersistedState(t *testing.T) {
 	st := &memStore{}
-	l, _ := NewLadder(st)
+	l, _ := newTestLadder(st)
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	tick(t, l, proj(20), settings(), at)
 	tick(t, l, proj(20), settings(), at.Add(time.Hour))
 
 	// the daemon restarts: a new ladder over the same store, with a different current cap
-	l2, err := NewLadder(st)
+	l2, err := newTestLadder(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestRestartWithPersistedState(t *testing.T) {
 
 func TestSaveErrorStillDecides(t *testing.T) {
 	st := &memStore{err: errors.New("disk full")}
-	l, _ := NewLadder(st)
+	l, _ := newTestLadder(st)
 	d, err := l.Tick(TickInput{Projection: proj(20), Settings: settings(), Now: time.Now(), InflightCap: 3})
 	if err == nil || !d.Changed || d.Level != 1 {
 		t.Fatalf("err=%v d=%+v", err, d)
@@ -382,7 +382,7 @@ func TestFridayNightReplayThroughLadder(t *testing.T) {
 	f := loadFixture(t)
 	loc := ny(t)
 	limitHit := time.Date(2026, 10, 31, 5, 30, 0, 0, loc)
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 
 	var climbs []time.Time
 	levelAtLimit := 0
@@ -432,7 +432,7 @@ func gapSettings(limit float64) LadderSettings {
 }
 
 func TestGapUsesLowerProjectionWhenGapOverLimit(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	d := tick(t, l, gapProj(50, 90), gapSettings(25), time.Now())
 	if d.Changed || d.Direction != DirectionHold {
 		t.Fatalf("lower projection (57%%) is under target; no rung should apply: %+v", d)
@@ -449,7 +449,7 @@ func TestGapUsesLowerProjectionWhenGapOverLimit(t *testing.T) {
 }
 
 func TestGapForcesClimbWhenReadingOverLine(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	d := tick(t, l, gapProj(99, 90), gapSettings(25), time.Now())
 	if d.Direction != DirectionClimb || d.Rung != RungLowerInflight || d.Changed == false {
 		t.Fatalf("reading over the line must still climb one rung: %+v", d)
@@ -465,7 +465,7 @@ func TestGapForcesClimbWhenReadingOverLine(t *testing.T) {
 }
 
 func TestGapNamesBothProjectionsInQuestion(t *testing.T) {
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	d := tick(t, l, gapProj(99, 90), gapSettings(25), time.Now())
 	if !strings.Contains(d.QuestionText, "guard 173.7%, advice 57.0%, using the lower") {
 		t.Fatalf("question %q does not name both projections", d.QuestionText)
@@ -474,7 +474,7 @@ func TestGapNamesBothProjectionsInQuestion(t *testing.T) {
 
 func TestGapLimitZeroOrWithinLimitUsesGuard(t *testing.T) {
 	for _, limit := range []float64{0, 200} {
-		l, _ := NewLadder(&memStore{})
+		l, _ := newTestLadder(&memStore{})
 		d := tick(t, l, gapProj(50, 90), gapSettings(limit), time.Now())
 		if d.Direction != DirectionClimb || d.OverBy != 75.7 {
 			t.Fatalf("limit %v: guard projection should decide: %+v", limit, d)
@@ -490,9 +490,14 @@ func TestGapLowerNeverSkipsRungWhenOverLine(t *testing.T) {
 	p := gapProj(99, 90)
 	p.AdviceProjected = 150
 	p.Projected = 173.7
-	l, _ := NewLadder(&memStore{})
+	l, _ := newTestLadder(&memStore{})
 	d := tick(t, l, p, gapSettings(10), time.Now())
 	if d.Direction != DirectionClimb || len(d.Applied) != 1 {
 		t.Fatalf("expected a single climb: %+v", d)
 	}
 }
+
+// testTarget is the entry the ladder tests act on; the names are arbitrary.
+var testTarget = EntryTarget{Backend: "paid-a", RouteTo: "local-b"}
+
+func newTestLadder(store StateStore) (*Ladder, error) { return NewEntryLadder(store, testTarget) }

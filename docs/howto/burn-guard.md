@@ -60,6 +60,40 @@ restart is needed. The effort ceiling and the Claude retry limit are published
 from the `enabled` setting as before, so the billing mode does not switch them
 off.
 
+### Guarding several paid LLM entries (`entries`)
+
+The guard evaluates **once per paid LLM entry**. With `usage.burn_guard.entries`
+unset it guards one entry, `claude-code`, routing to `pi-prompt` — the behaviour
+above. Set `entries` to guard more than one; each entry has its own readings,
+projection, pace line, ladder and held models:
+
+| Field | Meaning |
+|---|---|
+| `llm` | The LLM entry name (required, unique). |
+| `usage_source` | `readings` (the readings that name this entry) or `none`. **An entry with no usage source is never held**; anything it had in force is released. |
+| `plan` | `flat` (a weekly percentage) or `metered` (a spend figure in dollars). |
+| `period_target` | The ceiling: a percentage for `flat` (0 means 100), dollars for `metered` (required). |
+| `model` | The model whose own cost rate (the per-model `in/out/cache_read/cache_write_per_k` on the LLM entry) prices the entry's tokens; empty is the entry's first model. |
+| `ladder` | This entry's rungs; empty uses the guard-wide `ladder`. The route rung sends new work to `route_to`; the hold rung holds the entry. |
+| `held_models` | Limit the hold rung to these models of the entry; empty holds the whole entry. |
+| `route_to` | Where the route rung sends new work; empty makes the route rung change nothing. |
+| `points_per_usd` | For a `flat` entry, converts its dollar-priced tokens to points; 0 keeps the fitted cache coefficients. |
+
+A metered entry projects from its newest spend reading of the period, adds its
+tokens priced at its model's rate, and carries the burn (priced tokens over the
+trailing window, or the spend between readings) to the reset. Its margin is
+`margin_points` percent of the target.
+
+A reading names its entry with `llm` (REST body, `usage_reading_add` `llm`,
+`datawatch usage reading add --llm NAME`, comm `usage reading 72 llm=NAME`, the
+web reading form's LLM entry field). A reading that names no entry is the
+**first** entry's, so today's single reading series keeps working. Set the list
+with `datawatch config set usage.burn_guard.entries '[{"llm":"...","usage_source":"readings","plan":"metered","period_target":200}]'`
+(or the same key through `PUT /api/usage/burn-guard/config`, MCP
+`burn_guard_config_set`, or the comm `configure` verb). The status
+(`GET /api/usage/burn-guard`) carries one `entries[]` block per entry; the
+top-level fields repeat the first entry's.
+
 ## What it does each interval
 
 1. Reads the session transcripts and counts input, output, cache-write and

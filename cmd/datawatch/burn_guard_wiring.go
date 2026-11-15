@@ -153,6 +153,26 @@ func (a burnGuardAdmission) HoldNewWork(backend string, on bool) error {
 	return nil
 }
 
+// HoldModels holds (on) or releases (off) new work on some models of backend only: the
+// guarded entry's held models. The flag carries the models, so work on the backend's
+// other models keeps running.
+func (a burnGuardAdmission) HoldModels(backend string, models []string, on bool) error {
+	if a.bo == nil {
+		return fmt.Errorf("no back-off registry")
+	}
+	if !on {
+		a.bo.Clear(backend)
+		return nil
+	}
+	now := time.Now
+	if a.now != nil {
+		now = a.now
+	}
+	until, resetKnown := a.holdDeadline(now())
+	a.bo.SetWithModels(backend, until.In(time.Local), "burn guard: the entry's burn projects over its pace line", burnGuardBackoffSource, resetKnown, burnguard.RungHoldClaude, models)
+	return nil
+}
+
 // holdDeadline is the deadline of the hold flag: the earlier of the next weekly reset
 // (from the usage calculator settings) and the next guard reading (now plus the guard's
 // tick interval). The guard renews the flag on every tick that keeps the hold rung

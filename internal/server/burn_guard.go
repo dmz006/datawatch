@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
@@ -46,6 +47,12 @@ type BurnGuardAdmission interface {
 	RouteBackend(from, to string, on bool) error
 	// HoldNewWork holds (on) or releases (off) admission of new work for the backend.
 	HoldNewWork(backend string, on bool) error
+}
+
+// BurnGuardModelHold is the optional seam that holds new work on some models of a
+// backend only (an entry's held models). Without it a hold covers the whole backend.
+type BurnGuardModelHold interface {
+	HoldModels(backend string, models []string, on bool) error
 }
 
 // BurnGuardSessions is a read-only view of the session manager. It deliberately has no
@@ -67,6 +74,16 @@ type BurnGuardInputs struct {
 	MarginPoints func() *float64
 	// TranscriptDir is the directory of Claude transcripts (~/.claude/projects layout).
 	TranscriptDir string
+	// Tokens returns an entry's hourly token buckets since the given time and how far
+	// the data goes; first is true for the first entry. nil means the transcript
+	// directory for the first entry and no tokens for the others.
+	Tokens func(ctx context.Context, entry string, first bool, since time.Time) ([]burnguard.Bucket, time.Time, error)
+	// Rate returns the entry's model's own cost rate (the per-model rate of the LLM
+	// entry configuration); false when none is configured. nil means no rates.
+	Rate func(entry config.BurnGuardEntryConfig) (burnguard.ModelRate, bool)
+	// StoreFor returns where an entry other than the first saves its ladder state; nil
+	// means no persistence for those entries.
+	StoreFor func(entry string) burnguard.StateStore
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 	// Applies reports whether the guard acts on the backend: true for an allowance
@@ -102,6 +119,25 @@ type BurnGuardStatus struct {
 	LastFit        *burnguard.FitResult   `json:"last_fit,omitempty"`
 	LastError      string                 `json:"last_error,omitempty"`
 	Counters       BurnGuardCounters      `json:"counters"`
+	// Entries is one status per guarded entry, the first entry first. The fields
+	// above repeat the first entry's.
+	Entries []BurnGuardEntryStatus `json:"entries,omitempty"`
+}
+
+// BurnGuardEntryStatus is one guarded entry's state.
+type BurnGuardEntryStatus struct {
+	LLM            string                `json:"llm"`
+	Plan           string                `json:"plan"`
+	HasUsageSource bool                  `json:"has_usage_source"`
+	Enabled        bool                  `json:"enabled"`
+	State          string                `json:"state"`
+	Level          int                   `json:"level"`
+	Rung           string                `json:"rung,omitempty"`
+	Applied        []string              `json:"applied,omitempty"`
+	HeldModels     []string              `json:"held_models,omitempty"`
+	RouteTo        string                `json:"route_to,omitempty"`
+	LastProjection *burnguard.Projection `json:"last_projection,omitempty"`
+	LastDecision   *burnguard.Decision   `json:"last_decision,omitempty"`
 }
 
 // BurnGuardCounters are the monotonic counts since the daemon started.
@@ -131,6 +167,7 @@ type BurnGuard struct {
 	status        BurnGuardStatus
 	refitWake     chan struct{}
 	questionStore autonomous.BurnGuardQuestionStore
+	entries       map[string]*guardedEntry // entries other than the first, by name
 	rungSink      func(oldRung, newRung string)
 }
 
@@ -250,7 +287,8 @@ func (g *BurnGuard) Status() BurnGuardStatus {
 	return s
 }
 
-// Tick runs one evaluation and applies its decision. It returns the decision.
+// Tick evaluates every guarded entry once and applies each entry's decision. It returns
+// the first entry's decision (the entry the guard acted on before per-entry guarding).
 func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	g.tickMu.Lock()
 	defer g.tickMu.Unlock()
@@ -260,28 +298,133 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	autonomous.SetBurnGuardLimits(&autonomous.BurnGuardLimits{
 		Enabled: cfg.Enabled, EffortCeiling: cfg.EffortCeiling, RetryLimitClaude: cfg.RetryLimitClaude,
 	})
-	set := burnguard.LadderSettings{
-		Enabled: cfg.Enabled, Ladder: cfg.Ladder, StepBack: cfg.StepBack, MarginPoints: cfg.MarginPoints,
-		MaxProjectionGapPoints: cfg.MaxProjectionGapPoints, AskOnChange: cfg.AskOnChange,
+	entries := cfg.EffectiveEntries()
+	usagecalc.SetDefaultReadingEntry(entries[0].LLM)
+
+	// The readings are read once for every entry; each entry keeps its own.
+	var all []usagecalc.Reading
+	var extra float64
+	var reset usagecalc.ResetSpec
+	var readErr error
+	readingsRead := false
+	readings := func() ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error) {
+		if !readingsRead {
+			readingsRead = true
+			all, extra, reset, readErr = g.in.Readings(ctx)
+		}
+		return all, extra, reset, readErr
 	}
 
-	if g.in.Applies != nil && !g.in.Applies(burnguard.ClaudeBackend) {
-		// The entry in use is api or local with no dollar budget: nothing to guard.
-		cfg.Enabled = false
-		set.Enabled = false
+	var first burnguard.Decision
+	var statuses []BurnGuardEntryStatus
+	for i, e := range entries {
+		es := g.entryState(e, i == 0)
+		d, proj, enabled := g.tickEntry(ctx, cfg, e, i == 0, len(entries) > 1, es, now, readings)
+		st := BurnGuardEntryStatus{
+			LLM: e.LLM, Plan: e.Plan, HasUsageSource: e.HasUsageSource(), Enabled: enabled,
+			Level: d.Level, Applied: d.Applied, HeldModels: e.HeldModels, RouteTo: e.RouteTo,
+			Rung: currentRung(d.Applied), State: entryStateName(enabled, d, proj),
+		}
+		if enabled {
+			p := proj
+			st.LastProjection = &p
+		}
+		dc := d
+		st.LastDecision = &dc
+		statuses = append(statuses, st)
+		if i == 0 {
+			first = d
+			g.recordFirst(cfg, enabled, proj, d, now)
+		}
+	}
+	g.mu.Lock()
+	g.status.Entries = statuses
+	g.mu.Unlock()
+	return first
+}
+
+// entryStateName is the State of one entry, with the meanings of BurnGuardStatus.State.
+func entryStateName(enabled bool, d burnguard.Decision, proj burnguard.Projection) string {
+	switch {
+	case !enabled && d.Level == 0:
+		return "off"
+	case d.Level > 0:
+		return "guarding"
+	case proj.Needs != "":
+		return "waiting"
+	default:
+		return "idle"
+	}
+}
+
+// guardedEntry is the runner's state for one entry: its ladder and its cost model.
+type guardedEntry struct {
+	ladder *burnguard.Ladder
+	fitter *burnguard.Fitter
+}
+
+// entryState returns (building on first use) the state of entry e. The first entry uses
+// the ladder and fitter the runner was built with, so its saved state is the one saved
+// before per-entry guarding.
+func (g *BurnGuard) entryState(e config.BurnGuardEntryConfig, first bool) *guardedEntry {
+	target := burnguard.EntryTarget{Backend: e.LLM, RouteTo: e.RouteTo, HeldModels: append([]string(nil), e.HeldModels...)}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if first {
+		g.ladder.SetTarget(target)
+		return &guardedEntry{ladder: g.ladder, fitter: g.fitter}
+	}
+	if es, ok := g.entries[e.LLM]; ok {
+		es.ladder.SetTarget(target)
+		return es
+	}
+	var store burnguard.StateStore
+	if g.in.StoreFor != nil {
+		store = g.in.StoreFor(e.LLM)
+	}
+	ladder, err := burnguard.NewEntryLadder(store, target)
+	if err != nil {
+		log.Printf("[burn-guard] %s: %v; starting with no rung in force", e.LLM, err)
+		ladder, _ = burnguard.NewEntryLadder(nil, target)
+	}
+	cfg := g.in.Config()
+	es := &guardedEntry{ladder: ladder, fitter: burnguard.NewFitter(burnguard.Coefficients{
+		CacheWritePerM: cfg.CacheWritePointsPerMillion, CacheReadPerM: cfg.CacheReadPointsPerMillion,
+	})}
+	if g.entries == nil {
+		g.entries = map[string]*guardedEntry{}
+	}
+	g.entries[e.LLM] = es
+	return es
+}
+
+// tickEntry runs one entry's evaluation and applies its decision. An entry with no usage
+// source, or one the billing mode says is not guarded, is evaluated as a disabled ladder:
+// it is never held, and anything left in force is released.
+func (g *BurnGuard) tickEntry(ctx context.Context, cfg config.BurnGuardConfig, e config.BurnGuardEntryConfig, first, many bool, es *guardedEntry, now time.Time,
+	readings func() ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error)) (burnguard.Decision, burnguard.Projection, bool) {
+	ladderRungs := cfg.Ladder
+	if len(e.Ladder) > 0 {
+		ladderRungs = e.Ladder
+	}
+	enabled := cfg.Enabled && e.HasUsageSource()
+	if enabled && g.in.Applies != nil && !g.in.Applies(e.LLM) {
+		// The entry is api or local with no dollar budget: nothing to guard.
+		enabled = false
+	}
+	set := burnguard.LadderSettings{
+		Enabled: enabled, Ladder: ladderRungs, StepBack: cfg.StepBack, MarginPoints: cfg.MarginPoints,
+		MaxProjectionGapPoints: cfg.MaxProjectionGapPoints, AskOnChange: cfg.AskOnChange,
 	}
 	var proj burnguard.Projection
-	if cfg.Enabled {
-		proj = g.project(ctx, cfg, now)
+	if enabled {
+		proj = g.project(ctx, cfg, e, first, es, now, readings)
 	}
-	in := burnguard.TickInput{
-		Projection: proj, Settings: set, Now: now,
-		InflightCap: g.adm.InflightCap(burnguard.ClaudeBackend),
-	}
-	oldRung := currentRung(g.ladder.State().Applied)
-	d, saveErr := g.ladder.Tick(in)
+	in := burnguard.TickInput{Projection: proj, Settings: set, Now: now, InflightCap: g.adm.InflightCap(e.LLM)}
+	oldRung := currentRung(es.ladder.State().Applied)
+	d, saveErr := es.ladder.Tick(in)
 	if saveErr != nil {
-		g.fail("ladder state not saved: %v", saveErr)
+		g.fail("%s: ladder state not saved: %v", e.LLM, saveErr)
 	}
 	applyErr := g.apply(d)
 	if applyErr != nil {
@@ -293,33 +436,26 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	// carries through its actions above, and a step back or release clears
 	// them, so only an unchanged hold is renewed here.
 	if !d.Changed && g.holdApplied(d.Applied) {
-		if err := g.adm.HoldNewWork(burnguard.ClaudeBackend, true); err != nil {
+		if err := g.hold(e.LLM, e.HeldModels, true); err != nil {
 			g.fail("renew hold: %v", err)
 		}
 	}
 	if d.Changed {
-		g.announce(d)
-		g.mu.Lock()
-		sink := g.rungSink
-		g.mu.Unlock()
-		if sink != nil {
-			sink(oldRung, currentRung(d.Applied))
+		label := ""
+		if many {
+			label = e.LLM
+		}
+		g.announce(d, label)
+		if first {
+			g.mu.Lock()
+			sink := g.rungSink
+			g.mu.Unlock()
+			if sink != nil {
+				sink(oldRung, currentRung(d.Applied))
+			}
 		}
 	}
-
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.status.Enabled = cfg.Enabled
-	g.status.Coefficients = g.fitter.Coefficients()
-	t := now
-	g.status.LastTickAt = &t
-	g.status.Counters.Ticks++
-	if cfg.Enabled {
-		p := proj
-		g.status.LastProjection = &p
-	}
-	dc := d
-	g.status.LastDecision = &dc
 	switch d.Direction {
 	case burnguard.DirectionClimb:
 		g.status.Counters.Climbs++
@@ -328,58 +464,110 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	case burnguard.DirectionHold:
 		g.status.Counters.Holds++
 	}
-	switch {
-	case !cfg.Enabled && d.Level == 0:
-		g.status.State = "off"
-	case d.Level > 0:
-		g.status.State = "guarding"
-	case proj.Needs != "":
-		g.status.State = "waiting"
-	default:
-		g.status.State = "idle"
-	}
-	if applyErr == nil && saveErr == nil {
+	if applyErr == nil && saveErr == nil && first {
 		g.status.LastError = ""
 	}
-	return d
+	g.mu.Unlock()
+	return d, proj, enabled
 }
 
-// project reads the data and builds the projection. A failure is recorded and returned as a
-// projection that needs a reading, so the ladder holds.
-func (g *BurnGuard) project(ctx context.Context, cfg config.BurnGuardConfig, now time.Time) burnguard.Projection {
-	readings, extra, reset, err := g.in.Readings(ctx)
+// recordFirst copies the first entry's result onto the top-level status fields.
+func (g *BurnGuard) recordFirst(cfg config.BurnGuardConfig, enabled bool, proj burnguard.Projection, d burnguard.Decision, now time.Time) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.status.Enabled = enabled
+	g.status.Coefficients = g.fitter.Coefficients()
+	t := now
+	g.status.LastTickAt = &t
+	g.status.Counters.Ticks++
+	if enabled {
+		p := proj
+		g.status.LastProjection = &p
+	}
+	dc := d
+	g.status.LastDecision = &dc
+	g.status.State = entryStateName(enabled, d, proj)
+}
+
+// project reads one entry's data and builds its projection. A failure is recorded and
+// returned as a projection that needs a reading, so the ladder holds.
+func (g *BurnGuard) project(ctx context.Context, cfg config.BurnGuardConfig, e config.BurnGuardEntryConfig, first bool, es *guardedEntry, now time.Time,
+	read func() ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error)) burnguard.Projection {
+	all, extra, reset, err := read()
 	if err != nil {
 		g.fail("usage readings: %v", err)
 		return burnguard.Projection{Needs: "readings unavailable"}
 	}
-	var buckets []burnguard.Bucket
-	var through time.Time
-	if g.in.TranscriptDir != "" {
-		u, err := burnguard.ReadDir(g.in.TranscriptDir, burnguard.ReadOptions{Since: now.Add(-8 * 24 * time.Hour)})
-		if err != nil {
-			g.fail("transcripts: %v", err)
-		} else {
-			buckets, through = u.Buckets, u.Through
-		}
+	readings := usagecalc.ReadingsForEntry(all, e.LLM, first)
+	buckets, through := g.tokens(ctx, e, first, now)
+	rate, hasRate := burnguard.ModelRate{}, false
+	if g.in.Rate != nil {
+		rate, hasRate = g.in.Rate(e)
+		hasRate = hasRate && !rate.IsZero()
 	}
-	if cfg.RefitOnReading {
-		if res, did := g.fitter.Observe(buckets, readings, through); did {
-			g.mu.Lock()
-			g.status.Counters.Refits++
-			r := res
-			g.status.LastFit = &r
-			g.mu.Unlock()
+	var coef burnguard.Coefficients
+	switch {
+	case e.IsMetered():
+		// A metered entry projects from spend: its tokens are priced in dollars at the
+		// model's own rate (none: the spend readings alone carry the burn).
+		if hasRate {
+			coef = burnguard.CoefficientsFromRate(rate, 1)
 		}
+	case hasRate && e.PointsPerUSD > 0:
+		coef = burnguard.CoefficientsFromRate(rate, e.PointsPerUSD)
+	default:
+		if cfg.RefitOnReading {
+			if res, did := es.fitter.Observe(buckets, readings, through); did {
+				g.mu.Lock()
+				g.status.Counters.Refits++
+				if first {
+					r := res
+					g.status.LastFit = &r
+				}
+				g.mu.Unlock()
+			}
+		}
+		coef = es.fitter.Coefficients()
 	}
 	var margin *float64
 	if g.in.MarginPoints != nil {
 		margin = g.in.MarginPoints()
 	}
-	return burnguard.Project(burnguard.ProjectInput{
-		Readings: readings, Reset: reset, Now: now,
-		Buckets: buckets, Through: through, Coef: g.fitter.Coefficients(),
-		MarginPoints: margin, ExtraCreditPoints: extra,
+	if !first {
+		// Bought extra credit is the account reading's (the first entry's).
+		extra = 0
+	}
+	return burnguard.ProjectEntry(burnguard.EntryProjectInput{
+		ProjectInput: burnguard.ProjectInput{
+			Readings: readings, Reset: reset, Now: now,
+			Buckets: buckets, Through: through, Coef: coef,
+			MarginPoints: margin, ExtraCreditPoints: extra,
+		},
+		Metered: e.IsMetered(), PeriodTarget: e.PeriodTarget,
 	})
+}
+
+// tokens reads one entry's token buckets: from the Tokens source when one is wired, else
+// the transcript directory for the first entry only.
+func (g *BurnGuard) tokens(ctx context.Context, e config.BurnGuardEntryConfig, first bool, now time.Time) ([]burnguard.Bucket, time.Time) {
+	since := now.Add(-8 * 24 * time.Hour)
+	if g.in.Tokens != nil {
+		b, through, err := g.in.Tokens(ctx, e.LLM, first, since)
+		if err != nil {
+			g.fail("%s tokens: %v", e.LLM, err)
+			return nil, time.Time{}
+		}
+		return b, through
+	}
+	if !first || g.in.TranscriptDir == "" {
+		return nil, time.Time{}
+	}
+	u, err := burnguard.ReadDir(g.in.TranscriptDir, burnguard.ReadOptions{Since: since})
+	if err != nil {
+		g.fail("transcripts: %v", err)
+		return nil, time.Time{}
+	}
+	return u.Buckets, u.Through
 }
 
 // apply carries out a decision's actions on the admission seam. It never touches a session.
@@ -393,7 +581,7 @@ func (g *BurnGuard) apply(d burnguard.Decision) error {
 		case burnguard.ActionRouteBackend:
 			err = g.adm.RouteBackend(a.Backend, a.To, !a.Release)
 		case burnguard.ActionHoldNewWork:
-			err = g.adm.HoldNewWork(a.Backend, !a.Release)
+			err = g.hold(a.Backend, a.Models, !a.Release)
 		default:
 			err = fmt.Errorf("unknown action kind %q", a.Kind)
 		}
@@ -408,9 +596,18 @@ func (g *BurnGuard) apply(d burnguard.Decision) error {
 	return errors.Join(errs...)
 }
 
+// hold holds or releases new work on backend: on its held models only when the entry
+// lists some and the admission seam can hold by model, else the whole backend.
+func (g *BurnGuard) hold(backend string, models []string, on bool) error {
+	if mh, ok := g.adm.(BurnGuardModelHold); ok && len(models) > 0 {
+		return mh.HoldModels(backend, models, on)
+	}
+	return g.adm.HoldNewWork(backend, on)
+}
+
 // announce raises the alert and the queue question of a step. The text carries the numbers
 // and what was done, and says that running sessions were left alone.
-func (g *BurnGuard) announce(d burnguard.Decision) {
+func (g *BurnGuard) announce(d burnguard.Decision, entry string) {
 	if g.notify == nil {
 		return
 	}
@@ -419,6 +616,9 @@ func (g *BurnGuard) announce(d burnguard.Decision) {
 		running = fmt.Sprintf(" %d running session(s) were left alone.", g.sessions.RunningCount())
 	}
 	title := "Burn guard: " + string(d.Direction) + " " + d.Rung
+	if entry != "" {
+		title += " (" + entry + ")"
+	}
 	g.notify.Alert(alerts.LevelWarn, title, d.AlertText+running)
 	g.mu.Lock()
 	store, ask := g.questionStore, g.in.Config().AskOnChange
@@ -438,7 +638,7 @@ func (g *BurnGuard) announce(d burnguard.Decision) {
 	}
 }
 
-// holdApplied reports whether the hold rung (hold_claude) is in force after the decision.
+// holdApplied reports whether the hold rung is in force after the decision.
 func (g *BurnGuard) holdApplied(applied []string) bool {
 	for _, rung := range applied {
 		if rung == burnguard.RungHoldClaude {
@@ -582,6 +782,10 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 			return UsageCalculatorSettings(s.cfg.Usage).SafetyPoints
 		},
 	}
+	in.Rate = s.burnGuardEntryRate
+	in.StoreFor = func(entry string) burnguard.StateStore {
+		return burnGuardFileStore{path: filepath.Join(s.usageDataDir(), "burn_guard_state."+safeEntryFileName(entry)+".json")}
+	}
 	g, err := NewBurnGuard(in, adm, sessions, burnGuardNotifier{s: s},
 		burnGuardFileStore{path: filepath.Join(s.usageDataDir(), "burn_guard_state.json")})
 	if err != nil {
@@ -595,6 +799,42 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 	}
 	s.burnGuard = g
 	return nil
+}
+
+// burnGuardEntryRate is the entry's model's own cost rate: the per-model rate on the LLM
+// entry, falling back field by field to the backend's cost_rates (built-in defaults
+// merged under the configured ones).
+func (s *Server) burnGuardEntryRate(e config.BurnGuardEntryConfig) (burnguard.ModelRate, bool) {
+	l, ok := s.llmEntry(e.LLM)
+	if !ok {
+		return burnguard.ModelRate{}, false
+	}
+	rates := map[string]config.CostRateConfig{}
+	for k, v := range session.DefaultCostRates() {
+		rates[k] = config.CostRateConfig{InPerK: v.InPerK, OutPerK: v.OutPerK}
+	}
+	if s.cfg != nil {
+		for k, v := range s.cfg.Session.CostRates {
+			rates[k] = v
+		}
+	}
+	// The entry name is the backend name (as admission resolves it).
+	r := config.ResolveModelCostRate(l, e.Model, l.Name, rates)
+	if r.Source == "" {
+		return burnguard.ModelRate{}, false
+	}
+	return burnguard.ModelRate{InPerK: r.InPerK, OutPerK: r.OutPerK, CacheReadPerK: r.CacheReadPerK, CacheWritePerK: r.CacheWritePerK}, true
+}
+
+// safeEntryFileName keeps letters, digits, dot, dash and underscore of an entry name.
+func safeEntryFileName(name string) string {
+	b := []byte(name)
+	for i, c := range b {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
+			b[i] = '_'
+		}
+	}
+	return string(b)
 }
 
 // handleBurnGuardStatus serves GET /api/usage/burn-guard (usage:read): the guard's state, last
