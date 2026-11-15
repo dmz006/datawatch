@@ -2849,24 +2849,39 @@ terminal. See `docs/claude-channel.md` for details.
 
 ### Alerts quick reply answers the operator question
 
-On the web app, a **Quick reply** picked on a prompt alert for a session
-that is waiting on an operator question now answers that question: the
-question is recorded as answered (visible in the question list and its
-history) and the session resumes. Before the fix the reply was typed as
-text into the session (`send <id>: <text>`), so the question stayed open.
-A session with no pending question still gets the reply as session input.
-No setting, endpoint or locale key is added. See
+On the web app, every quick reply — the **Quick reply** dropdown on a
+prompt alert, the session-detail Yes/No/Stop chips, the session quick
+commands, and the card quick commands — first goes through an
+open-question gate before its text would be typed into a session:
+
+- The session has an open question and the reply matches one of its
+  options (option id or label, case-insensitive, plus the approve/yes and
+  reject/no synonyms) → the reply **answers that question** through the
+  same path as the question card (`POST /api/questions/{id}/answer`,
+  surface `pwa`); the question is recorded as answered (visible in the
+  question list and its history) and the session resumes. Before the fix
+  the reply was typed as text into the session (`send <id>: <text>`), so
+  the question stayed open.
+- The session has an open question but the reply matches none of its
+  options → the reply is refused with a toast naming the pressed label
+  and the question's options; nothing is sent anywhere.
+- The session has more than one open question → the reply is refused and
+  points to the Questions card in the Automation view.
+- The session has no open question → the reply is typed into the session
+  exactly as before (session input; for the alert dropdown, the
+  `send <id>: <text>` command).
+
+No setting or endpoint is added; the three toast strings ship in the five
+web-app locales (`en`, `es`, `fr`, `de`, `ja`). See
 [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md).
 
-**Operator review required:**
+**Still needs operator review:**
 
-- The code fix is pending on this branch: `alertSendCmd` in
-  `internal/server/web/app.js` still posts `send <id>: <text>` to
-  `/api/command`. Confirm this section matches the fix once it lands.
-- Confirm the fallback (no pending question → session input) is the
-  shipped behavior.
-- Mobile parity: the Android and iPhone apps need the same quick-reply
-  behavior; file or link the datawatch-app parity issue.
+- Mobile parity: the Android and iPhone apps do not have this
+  quick-reply→question routing yet; file or link the datawatch-app
+  parity issue.
+- Confirm the answered/refused toasts read well on a real device (the
+  behavior itself is covered by the web-app test suite).
 
 ### Alerts tab (help link, state row, refresh)
 

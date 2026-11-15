@@ -166,17 +166,30 @@ datawatch alerts --mark-all-read
      no viewport-specific branching
    - Sessions sorted: `waiting_input` → `running` → `completed`
    - Prompt alerts include a **Quick reply** dropdown for saved commands.
-     When the session is waiting on an operator question, picking a
-     quick reply **answers that question** (the same path as answering it
-     from the question card), so the question is marked answered and the
-     session resumes. It no longer types the reply as text into the
-     session's terminal, which left the question open. A session with no
-     pending question still receives the reply as session input.
-     *Operator review:* the web app code change for this fix is not yet
-     in this tree (`alertSendCmd` in `internal/server/web/app.js` still
-     posts `send <id>: <text>`); confirm this text matches the shipped
-     fix, including the no-pending-question fallback, and track the same
-     behavior for the Android and iPhone apps in datawatch-app.
+     Every quick reply on the web app — this dropdown, the session-detail
+     Yes/No/Stop chips, the session quick commands, and the card quick
+     commands — first goes through an **open-question gate**:
+     - The session has an open question and the reply matches one of its
+       options (option id or label, case-insensitive, plus the
+       approve/yes and reject/no synonyms) → the reply **answers that
+       question** through the same path as answering from the question
+       card (`POST /api/questions/{id}/answer`, surface `pwa`), so the
+       question is marked answered and the session resumes. Nothing is
+       typed into the session's terminal — typing the reply left the
+       question open.
+     - The session has an open question but the reply matches none of its
+       options → the reply is **refused** with a message naming the
+       pressed label and the question's options; nothing is sent anywhere.
+     - The session has more than one open question → the reply is refused
+       and points you to the Questions card in the Automation view.
+     - The session has **no** open question → the reply is typed into the
+       session as before (session input; for this dropdown, the
+       `send <id>: <text>` command), exactly the pre-fix behavior.
+     No setting, endpoint, or REST/CLI/comm surface changes; the three
+     toast strings ship in the five web-app locales.
+     *Operator review:* the same quick-reply behavior is not yet in the
+     Android and iPhone apps — track it in datawatch-app; and confirm the
+     answered/refused toasts read well on a real device.
    - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
      triggers one immediate refetch through the Alerts list loader —
      the card repaints in place (cached rows stay, the fetch runs
