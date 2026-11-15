@@ -75,7 +75,7 @@ func TestBackoffBackpressure_GatesOnlyLLMPools(t *testing.T) {
 	bo := autonomous.NewBackoff()
 	bo.Clock = clk.Now
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
-	bp := backoffBackpressure(bo)
+	bp := backoffPoolGate(bo)
 
 	blocked, why := bp("llm:claude-code")
 	if !blocked || !strings.HasPrefix(why, "backoff: ") || !strings.Contains(why, "claude-code") {
@@ -90,7 +90,7 @@ func TestBackoffBackpressure_GatesOnlyLLMPools(t *testing.T) {
 	if b, _ := bp("llm:claude-code"); b {
 		t.Error("llm:claude-code must pass once the clock is past until")
 	}
-	if b, _ := backoffBackpressure(nil)("llm:claude-code"); b {
+	if b, _ := backoffBackpressure(nil)("llm:claude-code", ""); b {
 		t.Error("a nil registry blocks nothing")
 	}
 }
@@ -103,9 +103,9 @@ func TestBackoffBackpressure_InteractiveStartNeverBlocked(t *testing.T) {
 	bo.Clock = clk.Now
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
 	led := capacity.New(capacity.Options{
-		PollInterval:           time.Second,
-		Clock:                  clk,
-		AutonomousBackpressure: backoffBackpressure(bo),
+		PollInterval:                time.Second,
+		Clock:                       clk,
+		AutonomousModelBackpressure: backoffBackpressure(bo),
 	})
 	pools := []string{"host", "llm:claude-code"}
 
@@ -138,5 +138,29 @@ func TestBackoffBackpressure_InteractiveStartNeverBlocked(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("autonomous request not admitted after the back-off expired")
+	}
+}
+
+// backoffPoolGate adapts the model-aware back-off gate to a pool-only gate
+// for work that names no model.
+func backoffPoolGate(bo *autonomous.Backoff) func(pool string) (bool, string) {
+	gate := backoffBackpressure(bo)
+	return func(pool string) (bool, string) { return gate(pool, "") }
+}
+
+// A flag holding a model list blocks autonomous work on a listed model and
+// admits work on any other model of the same backend.
+func TestBackoffBackpressure_ModelListAdmitsUnlistedModel(t *testing.T) {
+	clk := &backoffTestClock{now: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
+	bo := autonomous.NewBackoff()
+	bo.Clock = clk.Now
+	bo.SetWithModels("claude-code", clk.Now().Add(time.Hour), "hold", autonomous.BackoffSourceOperator, true, "", []string{" Opus "})
+	led := capacity.New(capacity.Options{PollInterval: time.Second, Clock: clk, AutonomousModelBackpressure: backoffBackpressure(bo)})
+	pools := []string{"llm:claude-code"}
+	if err := led.Acquire(context.Background(), capacity.Request{Holder: "verifier-1", Pools: pools, Model: "sonnet"}, time.Second, nil, nil); err != nil {
+		t.Fatalf("work on an unlisted model must start: %v", err)
+	}
+	if blocked, why := backoffBackpressure(bo)("llm:claude-code", "opus"); !blocked || !strings.Contains(why, "opus") {
+		t.Fatalf("listed model must be held with its name in the reason, got %v %q", blocked, why)
 	}
 }

@@ -11,6 +11,7 @@ package autonomous
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -43,6 +44,47 @@ type Entry struct {
 	// guard's hold_claude hold). It is empty on rate-limit and operator
 	// entries, which older clients still read without it.
 	Rung string `json:"rung,omitempty"`
+	// Models, when non-empty, limits the flag to these models of the backend
+	// (normalised: trimmed, lower-case, unique, sorted). Work on any other
+	// model, or work that names no model, is admitted as usual. Empty means
+	// the whole backend is held, as before the list existed.
+	Models []string `json:"models,omitempty"`
+}
+
+// NormalizeModels trims, lower-cases, de-duplicates and sorts a model list,
+// dropping empty names. It returns nil when nothing is left.
+func NormalizeModels(models []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range models {
+		m = strings.ToLower(strings.TrimSpace(m))
+		if m == "" || seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// HoldsModel reports whether the entry holds work on model. A whole-backend
+// entry (no Models) holds everything; a model-scoped entry holds only its
+// listed models, so an unlisted or empty model is not held.
+func (e Entry) HoldsModel(model string) bool {
+	if len(e.Models) == 0 {
+		return true
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
+		return false
+	}
+	for _, h := range e.Models {
+		if h == m {
+			return true
+		}
+	}
+	return false
 }
 
 // Backoff is a goroutine-safe in-memory registry of per-backend back-off
@@ -59,6 +101,10 @@ type Backoff struct {
 	// mutation is written to; saveErr is the last write error.
 	persistPath string
 	saveErr     error
+
+	// KnownModels, when set, lists the models a backend can run; the status
+	// read uses it to name the open (not held) models of a model-scoped flag.
+	KnownModels func(backend string) []string
 }
 
 // NewBackoff returns an empty registry using the wall clock.
@@ -98,12 +144,18 @@ func (b *Backoff) SetWithReset(backend string, until time.Time, reason string, s
 // hold_claude hold) while the free-form text stays in Reason. An empty rung
 // behaves like SetWithReset.
 func (b *Backoff) SetWithRung(backend string, until time.Time, reason string, source string, resetKnown bool, rung string) {
+	b.SetWithModels(backend, until, reason, source, resetKnown, rung, nil)
+}
+
+// SetWithModels is SetWithRung limited to a list of models. The list is
+// normalised (see NormalizeModels); an empty list holds the whole backend.
+func (b *Backoff) SetWithModels(backend string, until time.Time, reason string, source string, resetKnown bool, rung string, models []string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.entries == nil {
 		b.entries = map[string]Entry{}
 	}
-	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung}
+	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung, Models: NormalizeModels(models)}
 	_ = b.saveLocked() // the error is kept in saveErr for the status read
 }
 
@@ -131,20 +183,28 @@ func (b *Backoff) ClearAll() int {
 
 // Blocked reports whether backend is currently backed off — only while its
 // deadline is still in the future — and, when it is, a wait reason that
-// includes the human-readable deadline.
+// includes the human-readable deadline. It names no model, so a flag limited
+// to a model list does not block it (see BlockedModel).
 func (b *Backoff) Blocked(backend string) (bool, string) {
+	return b.BlockedModel(backend, "")
+}
+
+// BlockedModel is Blocked for work on one model. A whole-backend flag blocks
+// every model; a model-scoped flag blocks only its listed models, so work on
+// an unlisted model, or naming no model, is admitted.
+func (b *Backoff) BlockedModel(backend, model string) (bool, string) {
 	now := b.now()
 	b.mu.Lock()
 	e, ok := b.entries[backend]
 	b.mu.Unlock()
-	if !ok || !e.Until.After(now) {
+	if !ok || !e.Until.After(now) || !e.HoldsModel(model) {
 		return false, ""
 	}
 	note := ""
 	if e.Source == BackoffSourceOperator {
 		note = e.Reason
 	}
-	return true, BackoffWaitText(b.now, backend, e.Until, e.ResetKnown, note)
+	return true, BackoffModelsWaitText(b.now, backend, e.Models, e.Until, e.ResetKnown, note)
 }
 
 // Sweep removes entries whose deadline is at or before now and returns the
@@ -214,7 +274,9 @@ type UsageBackoffConfig struct {
 // UsageBackoffStatus is the body shared by GET /api/usage-backoff and the
 // usage_backoff field of the autonomous status.
 type UsageBackoffStatus struct {
-	Active []Entry            `json:"active"`
+	Active []Entry `json:"active"`
+	// Holds names, per backend with a live flag, the held and open models.
+	Holds  []BackendHold      `json:"holds"`
 	Config UsageBackoffConfig `json:"config"`
 	// PatternsVersion is the short fingerprint of the effective rate-limit
 	// detection patterns; PatternsStale is true when it differs from the one
@@ -238,9 +300,53 @@ type BudgetsStatusFunc func() []BudgetStatus
 // the effective mode and maximum back-off. Active is never nil, so it
 // always marshals as an array.
 func BuildUsageBackoffStatus(b *Backoff, mode string, maxWaitMinutes int) UsageBackoffStatus {
-	st := UsageBackoffStatus{Active: []Entry{}, Config: UsageBackoffConfig{Mode: mode, MaxWaitMinutes: maxWaitMinutes}}
+	st := UsageBackoffStatus{Active: []Entry{}, Holds: []BackendHold{}, Config: UsageBackoffConfig{Mode: mode, MaxWaitMinutes: maxWaitMinutes}}
 	if b != nil {
 		st.Active = b.Live()
+		st.Holds = b.Holds()
 	}
 	return st
+}
+
+// BackendHold describes what one live flag holds. WholeBackend is true when
+// the flag has no model list. HeldModels is the model list; OpenModels names
+// the known models of the backend that are not held (from KnownModels), and
+// OtherModelsOpen is true when any model outside HeldModels is admitted.
+type BackendHold struct {
+	Backend         string   `json:"backend"`
+	WholeBackend    bool     `json:"whole_backend"`
+	HeldModels      []string `json:"held_models"`
+	OpenModels      []string `json:"open_models"`
+	OtherModelsOpen bool     `json:"other_models_open"`
+}
+
+// HoldFor builds the hold view of one entry, with known listing the models
+// the backend can run (may be nil).
+func HoldFor(e Entry, known []string) BackendHold {
+	h := BackendHold{Backend: e.Backend, HeldModels: []string{}, OpenModels: []string{}}
+	if len(e.Models) == 0 {
+		h.WholeBackend = true
+		return h
+	}
+	h.HeldModels = append(h.HeldModels, e.Models...)
+	h.OtherModelsOpen = true
+	for _, m := range NormalizeModels(known) {
+		if !e.HoldsModel(m) {
+			h.OpenModels = append(h.OpenModels, m)
+		}
+	}
+	return h
+}
+
+// Holds returns the hold view of every live flag, ordered by backend.
+func (b *Backoff) Holds() []BackendHold {
+	out := []BackendHold{}
+	for _, e := range b.Live() {
+		var known []string
+		if b.KnownModels != nil {
+			known = b.KnownModels(e.Backend)
+		}
+		out = append(out, HoldFor(e, known))
+	}
+	return out
 }

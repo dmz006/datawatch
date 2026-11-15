@@ -516,14 +516,16 @@ func syncLLMRates(cfg *config.Config, reg *inference.Registry, led *capacity.Led
 // AutonomousBackpressure, which requests marked Interactive skip, so operator
 // session starts are never held back by a back-off. It runs under the capacity
 // ledger lock (rule on capacity.Options): Backoff.Blocked only reads an
-// in-memory map under its own short mutex.
-func backoffBackpressure(bo *autonomous.Backoff) func(pool string) (bool, string) {
-	return func(pool string) (bool, string) {
+// in-memory map under its own short mutex. It gets the request's model: a
+// flag limited to a model list holds only those models, so verifiers, judges
+// and first attempts on a model that is not held start as usual.
+func backoffBackpressure(bo *autonomous.Backoff) func(pool, model string) (bool, string) {
+	return func(pool, model string) (bool, string) {
 		backend, ok := strings.CutPrefix(pool, "llm:")
 		if !ok || bo == nil {
 			return false, ""
 		}
-		if blocked, why := bo.Blocked(backend); blocked {
+		if blocked, why := bo.BlockedModel(backend, model); blocked {
 			return true, "backoff: " + why
 		}
 		return false, ""
@@ -1082,17 +1084,15 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	verifierHeadroom := newVerifierNodeCache()
 	verifierHeadroomCache = verifierHeadroom
 	opts := capacity.Options{
-		External:     external,
-		Backpressure: backpressure,
-		NodeHealthy:  nodeHealth.healthy,
-		NodeGate:     nodeHealth.gate,
-		NodeState:    nodeHealth.state,
-		AutonomousBackpressure: composeBackpressure(
-			backoffBackpressure(autonomousBackoff),
-			budgetBackpressure(autonomousBudget),
-		),
-		HeldBackpressure: sharedNodeBackpressure(),
-		VerifierHeadroom: verifierHeadroom.blocked,
+		External:                    external,
+		Backpressure:                backpressure,
+		NodeHealthy:                 nodeHealth.healthy,
+		NodeGate:                    nodeHealth.gate,
+		NodeState:                   nodeHealth.state,
+		AutonomousBackpressure:      budgetBackpressure(autonomousBudget),
+		AutonomousModelBackpressure: backoffBackpressure(autonomousBackoff),
+		HeldBackpressure:            sharedNodeBackpressure(),
+		VerifierHeadroom:            verifierHeadroom.blocked,
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)

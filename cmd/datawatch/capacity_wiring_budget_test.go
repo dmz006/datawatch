@@ -130,7 +130,7 @@ func TestBudgetPressureComposed(t *testing.T) {
 	bo.Clock = clk.Now
 	bo.Set("pi-prompt", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
 	bo.Set("claude-code", clk.Now().Add(time.Minute), "rate-limit", autonomous.BackoffSourceRateLimit)
-	gate := composeBackpressure(backoffBackpressure(bo), budgetBackpressure(bl))
+	gate := composeBackpressure(backoffPoolGate(bo), budgetBackpressure(bl))
 
 	if blocked, why := gate("llm:pi-prompt"); !blocked || !strings.HasPrefix(why, "backoff: ") {
 		t.Errorf("llm:pi-prompt should be blocked by its back-off, got %v %q", blocked, why)
