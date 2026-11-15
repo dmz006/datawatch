@@ -13,13 +13,12 @@ import (
 // Attach, so the fixture is the state the conversion meets in practice.
 
 type rowPlanFixture struct {
-	s      *Store
-	evs    *[]auditEv
-	r10    Record
-	r11    Record
-	rows   map[string]Record
-	conv   []map[string]any
-	rowIDs map[string]string
+	s    *Store
+	evs  *[]auditEv
+	r10  Record
+	r11  Record
+	rows map[string]Record
+	conv []map[string]any
 }
 
 func releasePlanRecord(label string) Record {

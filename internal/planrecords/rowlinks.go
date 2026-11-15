@@ -127,7 +127,7 @@ func (s *Store) holdRow(kind, planRef, itemRef string) (Record, error) {
 		if namesAutomaton(item) {
 			return Record{}, invalid("%q already has an Automaton, so it is not a backlog item", item.ID)
 		}
-		if item.Kind == KindFinding && item.AttachKind != "" && !(item.AttachKind == AttachPlan && item.AttachRef == plan.ID) {
+		if item.Kind == KindFinding && item.AttachKind != "" && (item.AttachKind != AttachPlan || item.AttachRef != plan.ID) {
 			return Record{}, &ErrLinkConflict{Kind: "finding", ID: item.ID, Holder: item.AttachKind + ":" + item.AttachRef}
 		}
 	}
