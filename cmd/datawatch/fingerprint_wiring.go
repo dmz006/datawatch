@@ -217,10 +217,12 @@ func fingerprintPeerRefs(store *multiserver.Store) func() []fingerprint.PeerRef 
 				continue
 			}
 			out = append(out, fingerprint.PeerRef{
-				Name:    e.Name,
-				URL:     e.URL,
-				Token:   e.Token,
-				OptedIn: e.FingerprintSync,
+				Name:               e.Name,
+				URL:                e.URL,
+				Token:              e.Token,
+				OptedIn:            e.FingerprintSync,
+				TLSSkipVerify:      e.TLSSkipVerify,
+				TLSCertFingerprint: e.TLSCertFingerprint,
 			})
 		}
 		return out

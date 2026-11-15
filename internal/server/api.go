@@ -13454,7 +13454,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
 
-	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)
+	client := multiserver.PeerHTTPClient(remote.TLSSkipVerify, remote.TLSCertFingerprint, 30*time.Second)
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)

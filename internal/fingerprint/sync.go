@@ -69,26 +69,28 @@ type Syncer struct {
 
 // clientFor returns the client for one peer pull. An injected Client wins;
 // otherwise one client per peer is built from the entry's tls_skip_verify
-// and reused until that setting changes.
+// and pinned certificate fingerprint (the same shared builder as every
+// other peer call) and reused until either setting changes.
 func (s *Syncer) clientFor(e multiserver.Entry) *http.Client {
 	if s.Client != nil {
 		return s.Client
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c, ok := s.clients[e.Name]; ok && c.skipVerify == e.TLSSkipVerify {
+	if c, ok := s.clients[e.Name]; ok && c.skipVerify == e.TLSSkipVerify && c.pin == e.TLSCertFingerprint {
 		return c.client
 	}
 	if s.clients == nil {
 		s.clients = map[string]syncClient{}
 	}
-	c := multiserver.PeerHTTPClient(e.TLSSkipVerify, "", syncTimeout)
-	s.clients[e.Name] = syncClient{skipVerify: e.TLSSkipVerify, client: c}
+	c := multiserver.PeerHTTPClient(e.TLSSkipVerify, e.TLSCertFingerprint, syncTimeout)
+	s.clients[e.Name] = syncClient{skipVerify: e.TLSSkipVerify, pin: e.TLSCertFingerprint, client: c}
 	return c
 }
 
 type syncClient struct {
 	skipVerify bool
+	pin        string
 	client     *http.Client
 }
 

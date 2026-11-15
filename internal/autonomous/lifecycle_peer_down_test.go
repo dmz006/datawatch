@@ -241,7 +241,7 @@ func newPeerDownRig(t *testing.T, timeout time.Duration, attempts int) *peerDown
 			s.MaxAttempts = attempts
 			return s
 		},
-		NewClient: func(_ bool, d time.Duration) *http.Client { return &http.Client{Timeout: d} },
+		NewClient: func(_ bool, _ string, d time.Duration) *http.Client { return &http.Client{Timeout: d} },
 		Audit: func(_ string, details map[string]any) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -624,7 +624,7 @@ func TestPeerDownRecovers(t *testing.T) {
 				s.MaxAttempts = 2
 				return s
 			},
-			NewClient: func(_ bool, d time.Duration) *http.Client { return &http.Client{Timeout: d} },
+			NewClient: func(_ bool, _ string, d time.Duration) *http.Client { return &http.Client{Timeout: d} },
 			Audit: func(_ string, details map[string]any) {
 				audits.Lock()
 				defer audits.Unlock()
