@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
 ## v9.175.2 — Stop writing the instance-level server token into project files
 
 ### Changed
