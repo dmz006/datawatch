@@ -1571,7 +1571,7 @@
   "header_scope_all_plans": "Tous les plans",
   "header_scope_badge_label": "Filtre actif",
   "header_scope_banner": "Filtré sur %1$s",
-  "projects_scope_unassigned_not_in_plan": "Les Automata non assignés ne font partie d'aucun plan ; aucun n'est affiché pour ce plan.",
+  "projects_scope_unassigned_not_in_plan": "Les automates non assignés ne font partie d'aucun plan ; aucun n'est affiché pour ce plan.",
   "header_scope_clear": "Effacer",
   "header_scope_help_label": "Aide : périmètre",
   "header_scope_templates_note": "Les modèles sont affichés pour tous les projets et plans.",

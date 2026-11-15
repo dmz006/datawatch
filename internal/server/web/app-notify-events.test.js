@@ -16,6 +16,7 @@ const { buildSandbox, loadScript, makeStubElement } = require('./testutil_browse
 // setTimeout(0) fetch-stub microtask chain inside app.js — the PRD
 // settings modal mount + save toasts land only after a real-time wait.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const waitFor = async (cond, ms = 2000) => { const end = Date.now() + ms; while (!cond() && Date.now() < end) await sleep(5); };
 
 const APP_JS = path.join(__dirname, 'app.js');
 const LOCALES_DIR = path.join(__dirname, 'locales');
@@ -273,7 +274,7 @@ test('settings modal: explicit list renders non-inherit with checked rows only',
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) {
     diag(s); throw e;
   }
-  await sleep(25);
+  await waitFor(() => !!s.modal() && s.modal().innerHTML.includes("prdSettingsNotifyInherit"));
   // Mount path: apiFetch(prd) → ensureLLMModelLists → _prdMountModal → body.appendChild → form submit listener.
   assert.ok(!!s.modal(), 'modal element should be appended');
   const html = s.modal().innerHTML;

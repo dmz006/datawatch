@@ -1571,7 +1571,7 @@
   "header_scope_all_plans": "Alle Pläne",
   "header_scope_badge_label": "Filter aktiv",
   "header_scope_banner": "Gefiltert nach %1$s",
-  "projects_scope_unassigned_not_in_plan": "Nicht zugeordnete Automata gehören zu keinem Plan, daher werden für diesen Plan keine angezeigt.",
+  "projects_scope_unassigned_not_in_plan": "Nicht zugeordnete Automaten gehören zu keinem Plan, daher werden für diesen Plan keine angezeigt.",
   "header_scope_clear": "Zurücksetzen",
   "header_scope_help_label": "Hilfe: Bereich",
   "header_scope_templates_note": "Vorlagen werden für jedes Projekt und jeden Plan angezeigt.",
