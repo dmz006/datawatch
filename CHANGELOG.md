@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
 ## v9.174.0 — Usage back-off must not block verification, judging and planning
 
 ### Changed
