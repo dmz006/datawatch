@@ -640,6 +640,12 @@ arguments:
 - Comm channels: `usage_backoff status`,
   `usage_backoff set <backend> <minutes> [reason]`, `usage_backoff clear`.
 
+A set and a clear can carry an optional `models` list (an array on MCP and
+REST, `--models a,b` on the CLI, `models=a,b` on the comm channel): a set with
+it holds only those models of the backend, and a clear with it removes only
+those models from the flag. A clear-all is never model-scoped. See
+[Usage back-off](usage-backoff.md) (`### Holding only certain models`).
+
 Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
 maximum wait. The capacity status (`datawatch capacity`, the PWA Capacity

@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Usage back-off set and clear accept an optional `models` list, on every surface.** A set with it holds only the named models of the backend and the others keep running; a set without it holds the whole backend as before. A clear with it removes only the named models from the flag's list (dropping the flag when that empties the list) and requires a named backend; a clear-all is never model-scoped, and a models clear never touches a whole-backend flag. Model names are compared lower-cased, and a `models` list with no usable names is an operator error on every surface: MCP `usage_backoff_set`/`usage_backoff_clear` array `models`, `POST`/`DELETE /api/usage-backoff` with `"models": ["opus", "sonnet"]`, `datawatch usage-backoff set|clear --models opus,sonnet`, and comm `usage_backoff set|clear … models=opus,sonnet`. The web app's back-off card displays the flag; its models control follows in a separate change. Audit entries (`autonomous_usage_backoff_set`/`autonomous_usage_backoff_cleared`) carry the normalised list. See [howto/usage-backoff.md](docs/howto/usage-backoff.md) (`### Holding only certain models`).
+
 ## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
 
 ### Added

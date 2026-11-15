@@ -38,9 +38,15 @@ func TestUsageBackoff_ToolNamesAndRequiredArgs(t *testing.T) {
 	if len(set.InputSchema.Required) != 1 || set.InputSchema.Required[0] != "backend" {
 		t.Errorf("set required = %v, want [backend]", set.InputSchema.Required)
 	}
-	for _, arg := range []string{"backend", "minutes", "until", "reason"} {
+	for _, arg := range []string{"backend", "minutes", "until", "reason", "models"} {
 		if _, ok := set.InputSchema.Properties[arg]; !ok {
 			t.Errorf("usage_backoff_set missing %q argument", arg)
+		}
+	}
+	// models is optional: it must not join the required list.
+	for _, r := range set.InputSchema.Required {
+		if r == "models" {
+			t.Errorf("usage_backoff_set required = %v, want models optional", set.InputSchema.Required)
 		}
 	}
 	rc := s.toolUsageBackoffRecheck()
@@ -78,6 +84,9 @@ func TestUsageBackoff_ToolNamesAndRequiredArgs(t *testing.T) {
 	if _, ok := clr.InputSchema.Properties["backend"]; !ok {
 		t.Error("usage_backoff_clear missing backend argument")
 	}
+	if _, ok := clr.InputSchema.Properties["models"]; !ok {
+		t.Error("usage_backoff_clear missing models argument")
+	}
 }
 
 func TestUsageBackoff_SetArgValidation(t *testing.T) {
@@ -94,6 +103,8 @@ func TestUsageBackoff_SetArgValidation(t *testing.T) {
 		{"minutes zero", map[string]any{"backend": "b", "minutes": 0.0}, "minutes must be >= 1"},
 		{"minutes negative", map[string]any{"backend": "b", "minutes": -3.0}, "minutes must be >= 1"},
 		{"both minutes and until", map[string]any{"backend": "b", "minutes": 5.0, "until": "2099-01-01T00:00:00Z"}, "exactly one of minutes or until"},
+		{"empty models list", map[string]any{"backend": "b", "minutes": 5.0, "models": []any{}}, "at least one model name"},
+		{"blank-only models list", map[string]any{"backend": "b", "minutes": 5.0, "models": []any{"  ", ""}}, "at least one model name"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -124,6 +135,84 @@ func TestUsageBackoff_LoopbackUnavailable(t *testing.T) {
 	res, _ = s.handleUsageBackoffClear(context.Background(), usageBackoffReq(nil))
 	if !res.IsError {
 		t.Error("clear: want error when loopback is unavailable")
+	}
+}
+
+func TestUsageBackoff_ClearModelsValidation(t *testing.T) {
+	s := &Server{}
+	cases := []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"models without a backend", map[string]any{"models": []any{"opus"}}, "name a backend"},
+		{"models with all", map[string]any{"backend": "all", "models": []any{"opus"}}, "name a backend"},
+		{"empty models list", map[string]any{"backend": "b", "models": []any{}}, "at least one model name"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res, err := s.handleUsageBackoffClear(context.Background(), usageBackoffReq(c.args))
+			if err != nil {
+				t.Fatalf("err = %v, want tool error result", err)
+			}
+			if !res.IsError {
+				t.Fatalf("want IsError result, got %q", usageBackoffText(t, res))
+			}
+			if txt := usageBackoffText(t, res); !strings.Contains(txt, c.want) {
+				t.Errorf("error = %q, want it to contain %q", txt, c.want)
+			}
+		})
+	}
+}
+
+func TestUsageBackoff_ModelsDispatchToREST(t *testing.T) {
+	var path, method string
+	var body map[string]any
+	s := newRejudgeTestServer(t, &path, &method, &body)
+	call := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error), args map[string]any) {
+		t.Helper()
+		path, method, body = "", "", map[string]any{}
+		res, err := fn(context.Background(), usageBackoffReq(args))
+		if err != nil || res.IsError {
+			t.Fatalf("call failed: err=%v res=%v", err, res)
+		}
+	}
+
+	// A set with models forwards the list; without it, models stays absent.
+	call(s.handleUsageBackoffSet, map[string]any{"backend": "claude-code", "minutes": 45.0, "models": []any{"opus", "sonnet"}})
+	if method != "POST" || path != "/api/usage-backoff" {
+		t.Errorf("set -> %s %s", method, path)
+	}
+	models, _ := body["models"].([]any)
+	if len(models) != 2 || models[0] != "opus" || models[1] != "sonnet" {
+		t.Errorf("set body models = %v", body["models"])
+	}
+	if body["backend"] != "claude-code" || body["minutes"] != 45.0 {
+		t.Errorf("set body = %v", body)
+	}
+	call(s.handleUsageBackoffSet, map[string]any{"backend": "pi", "minutes": 5.0})
+	if _, ok := body["models"]; ok {
+		t.Errorf("set without models carried models: %v", body)
+	}
+
+	// A model-scoped clear forwards the named models.
+	call(s.handleUsageBackoffClear, map[string]any{"backend": "claude-code", "models": []any{"opus"}})
+	if method != "DELETE" || path != "/api/usage-backoff" || body["backend"] != "claude-code" {
+		t.Errorf("clear -> %s %s %v", method, path, body)
+	}
+	models, _ = body["models"].([]any)
+	if len(models) != 1 || models[0] != "opus" {
+		t.Errorf("clear body models = %v", body["models"])
+	}
+
+	// A plain clear and a clear-all carry no models key.
+	call(s.handleUsageBackoffClear, map[string]any{"backend": "pi"})
+	if _, ok := body["models"]; ok {
+		t.Errorf("plain clear carried models: %v", body)
+	}
+	call(s.handleUsageBackoffClear, nil)
+	if _, ok := body["models"]; ok {
+		t.Errorf("clear-all carried models: %v", body)
 	}
 }
 

@@ -9929,7 +9929,7 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
-      summary: Set a back-off flag for a backend (minutes or until, optional reason)
+      summary: Set a back-off flag for a backend (minutes or until, optional reason, optional models array holding only those models of the backend)
       operationId: usageBackoffSet
       tags: [Singletons]
       requestBody:
@@ -9944,9 +9944,13 @@ paths:
                 minutes: {type: integer, minimum: 1}
                 until: {type: string, format: date-time}
                 reason: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Hold only these models of the backend; omit to hold the whole backend
       responses: {"200": {description: OK}, "400": {description: Invalid request}}
     delete:
-      summary: Clear one backend's back-off flag, or all flags when no backend is given
+      summary: Clear one backend's back-off flag, or all flags when no backend is given (optional models array narrows the clear to those models of the named backend; a clear-all is never model-scoped)
       operationId: usageBackoffClear
       tags: [Singletons]
       requestBody:
@@ -9957,6 +9961,10 @@ paths:
               type: object
               properties:
                 backend: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Remove only these models from the flag; requires a named backend
       responses: {"200": {description: OK}}
   /api/usage-backoff/recheck:
     post:

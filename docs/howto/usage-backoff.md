@@ -8,10 +8,10 @@ exec_steps:
     args: {}
     read_only: true
   - tool: usage_backoff_set
-    description: Worked example, a state-changing call. Hold new Automaton dispatch to claude-code for 45 minutes. Give minutes or until, never both
+    description: Worked example, a state-changing call. Hold new Automaton dispatch to claude-code for 45 minutes. Give minutes or until, never both. With a models array (e.g. ["opus", "sonnet"]) the flag holds only those models of the backend
     args: {backend: "claude-code", minutes: 45, reason: "weekly cap"}
   - tool: usage_backoff_clear
-    description: Worked example, a state-changing call. Clear the flag for one backend (omit backend, or pass all, to clear every flag)
+    description: Worked example, a state-changing call. Clear the flag for one backend (omit backend, or pass all, to clear every flag). With a models array (e.g. ["opus"]) it removes only that model from the flag
     args: {backend: "claude-code"}
   - tool: capacity_admission
     description: Ask whether a start on the backend would be admitted now or wait (changes nothing)
@@ -42,6 +42,7 @@ either.
 | `until` | When the flag lifts, as a time. After it passes the flag is gone |
 | `reason` | A short text shown in the wait reason and in capacity output |
 | `source` | Who set it: `rate_limit` or `operator` |
+| `models` | Optional list limiting the flag to these models of the backend. Absent or empty means the whole backend; with a list, only the listed models are held and the others keep running |
 
 There are three kinds of flag, told apart by `source` and the reason:
 
@@ -50,7 +51,8 @@ There are three kinds of flag, told apart by `source` and the reason:
   printed, or, when none can be parsed, the maximum back-off
   (`autonomous.backoff_max_wait_minutes`, default 60).
 - **Operator flag** (`source: operator`). Set by you, on any surface below, when
-  you know the limit or want a backend paused.
+  you know the limit or want a backend paused. With a `models` list it holds
+  only those models of the backend; without one it holds the whole backend.
 - **Burn-guard flag.** Set by a rung of the [burn guard](burn-guard.md) (for
   example `hold_claude`). It carries the rung name, shown as
   `burn guard rung <rung>: <reason>` in capacity output, and the guard clears it
@@ -63,13 +65,32 @@ the default, or `off`). A manual set always works, even with the mode `off`.
 
 | Surface | Status | Set | Clear |
 |---|---|---|---|
-| MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason` | `usage_backoff_clear` with `backend` (omit or `all` for every flag) |
-| REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` |
-| CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text]` | `datawatch usage-backoff clear [backend\|all]` |
-| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes> [reason]` | `usage_backoff clear [backend\|all]` |
+| MCP | `usage_backoff_status` | `usage_backoff_set` with `backend`, and `minutes` or `until`, and optional `reason`, and optional `models` (an array) | `usage_backoff_clear` with `backend` (omit or `all` for every flag), and optional `models` (an array, requires a named backend) |
+| REST | `GET /api/usage-backoff` | `POST /api/usage-backoff` with `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}` (`until`, an RFC3339 time in the future, replaces `minutes`; `"models": ["opus", "sonnet"]` holds only those models) | `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` (add `"models": ["opus"]` to remove only that model from the flag) |
+| CLI | `datawatch usage-backoff status` | `datawatch usage-backoff set <backend> <minutes\|until> [--reason text] [--models opus,sonnet]` | `datawatch usage-backoff clear [backend\|all] [--models opus,sonnet]` |
+| Comm channel | `usage_backoff status` | `usage_backoff set <backend> <minutes> [reason] [models=a,b]` | `usage_backoff clear [backend\|all] [models=a,b]` |
 
 With neither `minutes` nor `until`, a set holds the backend for 30 minutes.
 `minutes` must be 1 or more and `until` must be in the future.
+
+### Holding only certain models
+
+A set or clear can carry a `models` list (an array on MCP and REST, a
+comma-separated list on the CLI and the comm channel). Model names are compared
+lower-cased, so `Opus` and `opus` are the same model.
+
+- **Set with models** holds only the named models of the backend. Work on other
+  models of that backend keeps running, and a check that names the backend with
+  no model (for example the capacity queue's plain check) is admitted.
+- **Clear with models** removes only the named models from the flag's list. The
+  flag is dropped when that empties the list; models not named stay held.
+- **A clear-all is never model-scoped.** Clearing with models requires a named
+  backend; the daemon refuses `clear all` with a models list.
+- **A models clear never touches a whole-backend flag.** Only flags that already
+  carry a model list are narrowed.
+
+A `models` list with no usable names is an operator error on every surface, not
+a fall-back to the whole backend.
 
 To confirm the effect, run `datawatch capacity` (or the comm verb `capacity`, or
 the capacity card in the web app). Each active flag prints as
