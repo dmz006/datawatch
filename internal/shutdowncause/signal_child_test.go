@@ -20,6 +20,10 @@ import (
 // any testing machinery runs.
 const signalChildRole = "signal-parent"
 
+// childStartedLine is the line the signal-parent helper child writes to its
+// stdout once it is running, before it sends any signal.
+const childStartedLine = "child-started"
+
 // runSignalParentRole is the child role: send SIGTERM to the exact PID
 // given by the parent — nothing else, ever — then stay alive until the
 // parent closes our stdin (EOF) or the 120 second safety cap runs out,
@@ -118,16 +122,10 @@ func TestSignalChildProcScan(t *testing.T) {
 		_ = cmd.Wait()
 	}()
 
-	// Wait for the child to announce it has started, with a bounded
-	// timeout, instead of relying on scheduling.
-	if line, err := readLineWithTimeout(childStdout, 30*time.Second); err != nil || line != childStartedLine {
-		t.Fatalf("child pid %d did not announce start: line=%q err=%v", cmd.Process.Pid, line, err)
-	}
-	go func() { _, _ = io.Copy(io.Discard, childStdout) }()
-	// The child's own /proc entry must show its cmdline before the scan.
-	if got, err := waitForCmdline(cmd.Process.Pid, "kill "+strconv.Itoa(myPID), 10*time.Second, readProcCmdline); err != nil {
-		t.Fatalf("child cmdline not visible: %v (last %q)", err, got)
-	}
+	// Wait for the child to announce it has started and for its own /proc
+	// entry to show its cmdline, both with bounded timeouts, instead of
+	// relying on scheduling.
+	awaitChildReady(t, childStdout, cmd.Process.Pid, "kill "+strconv.Itoa(myPID))
 
 	var sig os.Signal
 	select {

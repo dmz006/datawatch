@@ -1,3 +1,5 @@
+//go:build linux
+
 package shutdowncause
 
 import (
@@ -7,12 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 )
-
-// childStartedLine is the line the signal-parent helper child writes to its
-// stdout once it is running, before it sends any signal.
-const childStartedLine = "child-started"
 
 // readLineWithTimeout reads one line from r, giving up after d. It never
 // sleeps: it returns as soon as the line (or an error) arrives.
@@ -65,5 +64,21 @@ func waitForCmdline(pid int, want string, deadline time.Duration, read func(int)
 			return last, fmt.Errorf("pid %d cmdline %q (err %v) did not contain %q within %s", pid, last, lastErr, want, deadline)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// awaitChildReady blocks until the re-executed signal-parent child has
+// announced its start on stdout (read through the pipe with a bounded
+// timeout) and its own /proc entry shows a cmdline containing want
+// (polled with a bounded deadline and early exit). After the
+// announcement the rest of stdout is drained so the child never blocks.
+func awaitChildReady(t *testing.T, stdout io.Reader, pid int, want string) {
+	t.Helper()
+	if line, err := readLineWithTimeout(stdout, 30*time.Second); err != nil || line != childStartedLine {
+		t.Fatalf("child pid %d did not announce start: line=%q err=%v", pid, line, err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, stdout) }()
+	if got, err := waitForCmdline(pid, want, 10*time.Second, readProcCmdline); err != nil {
+		t.Fatalf("child cmdline not visible: %v (last %q)", err, got)
 	}
 }
