@@ -730,6 +730,10 @@ type Server struct {
 	// Nil when not wired; handleBL312Servers falls back to the legacy
 	// static-list handler in that case.
 	serverStore *multiserver.Store
+	// tlsPeerWarn — dedupes the warn-level system alert for peers whose
+	// certificate is not verified (see TLSPeerWarnTracker). Nil until
+	// wired from main.go; handlers remain warning-free of panics.
+	tlsPeerWarn *TLSPeerWarnTracker
 
 	// BL316 — custom federation capability groups store.
 	// Nil when not wired; group endpoints return builtin-only lists.
