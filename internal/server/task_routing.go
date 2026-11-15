@@ -26,6 +26,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -118,7 +119,14 @@ func writeTaskRoutingError(w http.ResponseWriter, code int, msg string, problems
 // is not valid. It reports whether the table was applied.
 func (s *Server) commitTaskRouting(w http.ResponseWriter, r *http.Request, in config.TaskRoutingConfig, auditAction string) bool {
 	in = config.TaskRoutingWithDefaults(in)
-	if errs := config.ValidateTaskRouting(in, s.taskRoutingChecks()); len(errs) > 0 {
+	chk := s.taskRoutingChecks()
+	// Rows already in force are not re-checked against the LLM registry,
+	// so a fresh daemon whose shipped default rows name backends it does
+	// not have can still save, switch or delete profiles.
+	if cur, err := s.taskRoutingCurrent(); err == nil {
+		chk.Baseline = &cur
+	}
+	if errs := config.ValidateTaskRouting(in, chk); len(errs) > 0 {
 		writeTaskRoutingError(w, http.StatusBadRequest, "the routing table is not valid; nothing was changed", taskRoutingProblems(errs))
 		return false
 	}
@@ -436,7 +444,11 @@ func (s *Server) handleAutomatonTaskRouting(w http.ResponseWriter, r *http.Reque
 		writeTaskRoutingError(w, code, msg, nil)
 		return
 	}
+	// A typed nil slice (an Automaton with no tasks yet, such as a fresh
+	// draft) is not == nil inside the interface; it would encode as null.
 	if out == nil {
+		out = []any{}
+	} else if rv := reflect.ValueOf(out); rv.Kind() == reflect.Slice && rv.IsNil() {
 		out = []any{}
 	}
 	key := "tasks"
