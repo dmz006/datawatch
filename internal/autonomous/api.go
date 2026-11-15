@@ -1140,7 +1140,7 @@ func (a *API) Cancel(id string) error {
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
-	a.M.emitPRDStatus(prd, old, lastDecision(prd, "cancel"), nil)
+	a.M.emitPRDStatus(prd, old, a.M.lastDecisionLocked(prd, "cancel"), nil)
 	a.M.EmitPRDUpdate(id)
 	// Worktree cleanup — cancelled end path: release the work branch
 	// and its work tree if the work is on the base branch and the

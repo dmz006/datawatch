@@ -562,6 +562,7 @@ func TestPlacementAskDedupesAcrossAttempts(t *testing.T) {
 	// waiting for the answer; the answer is given only after both did.
 	parked := make(chan string, 2)
 	p.rig.m.placementAskParkedHook = func(qid string) { parked <- qid }
+	t.Cleanup(func() { p.rig.m.placementAskParkedHook = nil })
 	results := make(chan result, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
@@ -571,14 +572,17 @@ func TestPlacementAskDedupesAcrossAttempts(t *testing.T) {
 	}
 	var qids []string
 	for i := 0; i < 2; i++ {
+		deadline := time.NewTimer(10 * time.Second)
 		select {
 		case qid := <-parked:
 			qids = append(qids, qid)
 		case r := <-results:
+			deadline.Stop()
 			t.Fatalf("an attempt ended before the ask was answered: %+v", r)
-		case <-time.After(10 * time.Second):
+		case <-deadline.C:
 			t.Fatalf("only %d of 2 attempts parked on the placement ask", len(qids))
 		}
+		deadline.Stop()
 	}
 	if qids[0] != qids[1] {
 		t.Fatalf("both attempts must wait on one question, got %v", qids)

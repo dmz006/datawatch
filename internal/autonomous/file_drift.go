@@ -562,7 +562,7 @@ func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (
 	// detected" warn alert is raised: informational only, raised in both
 	// warn and block mode, and the mode handling below stays as is. The
 	// event's Link ("?alert=<id>") names the alert the sink recorded.
-	m.emitScopeWarning(prd, t, findings, lastDecision(prd, "undeclared_edit_detected"), alertID)
+	m.emitScopeWarning(prd, t, findings, m.lastDecisionLocked(prd, "undeclared_edit_detected"), alertID)
 	if mode == "block" {
 		m.store.WithLock(func() {
 			t.Status = TaskBlocked

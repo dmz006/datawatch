@@ -2310,7 +2310,7 @@ func (m *Manager) ConsumeVerifierResult(prdID, taskID string, verdict Verificati
 	if serr := m.store.SavePRD(prd); serr != nil {
 		log.Printf("[autonomous] verifier-resume: save prd=%s: %v", prdID, serr)
 	}
-	m.emitPendingTaskEvents(prd, []pendingTaskEvent{ev}, lastDecision(prd, verifyingResolution))
+	m.emitPendingTaskEvents(prd, []pendingTaskEvent{ev}, m.lastDecisionLocked(prd, verifyingResolution))
 	log.Printf("[autonomous] verifier-resume: prd=%s task %s (was %s) applied consumed verdict OK=%v", prdID, t.ID, prevStatus, verdict.OK)
 	return true
 }
@@ -2980,7 +2980,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
 		return
 	}
-	m.emitPendingTaskEvents(prd, reset, lastDecision(prd, verifyingResolution))
+	m.emitPendingTaskEvents(prd, reset, m.lastDecisionLocked(prd, verifyingResolution))
 }
 
 // resetKilledTasksForResume checks a PRDFailed PRD: if every failed task has
@@ -3080,7 +3080,7 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
 		return false
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "boot_resume_recovery"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "boot_resume_recovery"), nil)
 	return true
 }
 
@@ -3491,7 +3491,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	// error (see plan_review.go).
 	m.runPlanReview(prd, s, "")
 	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
-	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
+	m.emitPRDStatus(prd, reviewOld, m.lastDecisionLocked(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -4132,7 +4132,7 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		return nil, err
 	}
 	// BL427 — fired after the save.
-	m.emitPRDStatus(prd, old, lastDecision(prd, "approve"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "approve"), nil)
 	m.emitPendingTaskEvents(prd, gated, nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -4160,7 +4160,7 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "reject"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "reject"), nil)
 	// A rejected PRD never ran (or, if it was running, the operator
 	// has still declared it dead) — clean up any decompose-time
 	// worktree now rather than leave it orphaned until someone
@@ -4194,7 +4194,7 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "request_revision"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "request_revision"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -4238,7 +4238,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "reset_to_draft"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "reset_to_draft"), nil)
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
 }
@@ -4274,7 +4274,7 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "archive"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "archive"), nil)
 	// Universal orphan-cleanup backstop: by the time a PRD reaches
 	// Archive, the operator has said "done with this forever" —
 	// whatever Decision 5's "keep for inspection" grace period on a
@@ -4618,7 +4618,7 @@ func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*P
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, kind), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, kind), nil)
 	updated, _ := m.store.GetPRD(prd.ID)
 	return updated, nil
 }
@@ -4870,9 +4870,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 		return nil, err
 	}
 	if prd.Status != resetOld {
-		m.emitPRDStatus(prd, resetOld, lastDecision(prd, kind), nil)
+		m.emitPRDStatus(prd, resetOld, m.lastDecisionLocked(prd, kind), nil)
 	}
-	emitReset(lastDecision(prd, kind))
+	emitReset(m.lastDecisionLocked(prd, kind))
 	// A reset of a waiting-capacity task re-admits it: the task is pending
 	// again and its capacity wait must stay live. requeueQueuedCapacity moves
 	// the task's single live ledger request to the pool the task now resolves
@@ -4960,7 +4960,7 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	found := false
 	var cancelled []pendingTaskEvent
 	// BL427 — fired after the SavePRD below succeeds.
-	emitCancelled := func() { m.emitPendingTaskEvents(prd, cancelled, lastDecision(prd, "cancel_story")) }
+	emitCancelled := func() { m.emitPendingTaskEvents(prd, cancelled, m.lastDecisionLocked(prd, "cancel_story")) }
 	for si := range prd.Story {
 		if prd.Story[si].ID == storyID {
 			if terminalStory[prd.Story[si].Status] {
@@ -5054,7 +5054,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 					t.UpdatedAt = now
 				})
 				// BL427 — fired after the SavePRD below succeeds.
-				emitCancelled = func() { m.emitTaskStatus(prd, t, oldStatus, lastDecision(prd, "cancel_task"), nil) }
+				emitCancelled = func() { m.emitTaskStatus(prd, t, oldStatus, m.lastDecisionLocked(prd, "cancel_task"), nil) }
 				found = true
 				break
 			}
@@ -5129,7 +5129,7 @@ func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
 		return
 	}
 	if reopened {
-		m.emitPRDStatus(prd, old, lastDecision(prd, reviewDecisionKind), nil)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, reviewDecisionKind), nil)
 	}
 }
 
@@ -5588,7 +5588,7 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 					if t.Status == TaskAwaitingApproval {
 						t.Status = TaskPending
 						// BL427 — fired after the SavePRD below succeeds.
-						emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
+						emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, m.lastDecisionLocked(prd, "approve_task"), nil) }
 					}
 					// Operator-approved a blocked task: release it back to
 					// pending for re-run (matching checkForeignFileDrift's
@@ -5599,7 +5599,7 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 					if t.Status == TaskBlocked {
 						t.Status = TaskPending
 						t.Error = ""
-						emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, lastDecision(prd, "approve_task"), nil) }
+						emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, m.lastDecisionLocked(prd, "approve_task"), nil) }
 					}
 					t.UpdatedAt = now
 					found = true
@@ -6475,7 +6475,7 @@ func (m *Manager) Pause(prdID, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "pause"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "pause"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -6501,7 +6501,7 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, old, lastDecision(prd, "resume"), nil)
+	m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "resume"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -6546,7 +6546,7 @@ func (m *Manager) ResumeParked(prdID, actor, note string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	m.emitPRDStatus(prd, PRDBlocked, lastDecision(prd, "resume"), nil)
+	m.emitPRDStatus(prd, PRDBlocked, m.lastDecisionLocked(prd, "resume"), nil)
 	reason := "operator resumed the parked PRD"
 	if note != "" {
 		reason += ": " + note
@@ -7123,7 +7123,7 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 	}
 	if newPRD.Status == PRDNeedsReview {
 		// Freshly created PRD: no prior status, so OldStatus is empty.
-		m.emitPRDStatus(newPRD, "", lastDecision(newPRD, "template_instantiate"), nil)
+		m.emitPRDStatus(newPRD, "", m.lastDecisionLocked(newPRD, "template_instantiate"), nil)
 	}
 	updated, _ := m.store.GetPRD(newPRD.ID)
 	return updated, nil
@@ -7521,7 +7521,7 @@ func (m *Manager) reconcileStuckTasks() {
 		if err := m.store.SavePRD(prd); err != nil {
 			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
 		} else {
-			m.emitPendingTaskEvents(prd, reset, lastDecision(prd, "boot_reconcile"))
+			m.emitPendingTaskEvents(prd, reset, m.lastDecisionLocked(prd, "boot_reconcile"))
 		}
 	}
 }

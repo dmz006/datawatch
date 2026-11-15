@@ -332,7 +332,7 @@ func (m *Manager) parkPRDForBootResume(prd *PRD, prior PRDStatus, reason string)
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
-	m.emitPRDStatus(prd, prior, lastDecision(prd, bootResumeParkedKind), nil)
+	m.emitPRDStatus(prd, prior, m.lastDecisionLocked(prd, bootResumeParkedKind), nil)
 	m.EmitPRDUpdate(prd.ID)
 	if alert != nil {
 		was := "left running"

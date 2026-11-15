@@ -493,8 +493,33 @@ func (m *Manager) readLocked(f func()) {
 	m.store.WithLock(f)
 }
 
+// lastDecisionLocked returns a copy of the most recent Decision of kind on
+// prd, or nil. Unlike lastDecision it performs the read under the store
+// lock: concurrent goroutines (executeOne, boot-resume) mutate the same
+// PRD's Decisions slice under that lock in Store.SavePRD, and an unlocked
+// read of the slice header is a data race. The returned pointer points at
+// the local copy, so holding it afterwards is safe.
+func (m *Manager) lastDecisionLocked(prd *PRD, kind string) *Decision {
+	if prd == nil {
+		return nil
+	}
+	var found *Decision
+	m.readLocked(func() {
+		for i := len(prd.Decisions) - 1; i >= 0; i-- {
+			if prd.Decisions[i].Kind == kind {
+				c := prd.Decisions[i]
+				found = &c
+				return
+			}
+		}
+	})
+	return found
+}
+
 // lastDecision returns a pointer to the most recent Decision of kind on
-// prd, or nil. Used to attach the Decision a write site just appended.
+// prd, or nil. Test-only helper: tests are the sole writer of the PRD
+// they read, so the unlocked read is safe there. Production code must
+// use Manager.lastDecisionLocked.
 func lastDecision(prd *PRD, kind string) *Decision {
 	if prd == nil {
 		return nil

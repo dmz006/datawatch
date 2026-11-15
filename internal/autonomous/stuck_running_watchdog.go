@@ -163,7 +163,7 @@ func (m *Manager) sweepStuckRunning() {
 				"bound_seconds": int(bound.Seconds()), "old_status": string(old), "new_status": string(PRDBlocked),
 			})
 		}
-		m.emitPRDStatus(prd, old, lastDecision(prd, "stuck_running_blocked"), nil)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "stuck_running_blocked"), nil)
 	}
 
 	m.mu.Lock()

@@ -401,7 +401,7 @@ func (m *Manager) reopenAfterUncommittedAnswer(prd *PRD) {
 		log.Printf("[autonomous] %s uncommitted-work: save Automaton: %v", prd.ID, err)
 	}
 	if changed {
-		m.emitPRDStatus(prd, old, lastDecision(prd, uncommittedResolvedDecisionKind), nil)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, uncommittedResolvedDecisionKind), nil)
 	}
 }
 

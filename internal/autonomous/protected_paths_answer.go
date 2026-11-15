@@ -190,7 +190,7 @@ func (m *Manager) answerProtectedPathsApprove(ctx context.Context, r *protectedP
 	}
 	m.reopenAfterProtectedPathsAnswer(prd)
 	m.auditProtectedPathsAnswer(r)
-	m.emitTaskStatus(prd, t, old, lastDecision(prd, protectedPathsApprovedDecisionKind), nil)
+	m.emitTaskStatus(prd, t, old, m.lastDecisionLocked(prd, protectedPathsApprovedDecisionKind), nil)
 	log.Printf("[autonomous] %s/%s protected-paths: approved %d path(s)", prd.ID, t.ID, len(r.hold.Paths))
 	return true
 }
@@ -213,7 +213,7 @@ func (m *Manager) reopenAfterProtectedPathsAnswer(prd *PRD) {
 		log.Printf("[autonomous] %s protected-paths: save Automaton: %v", prd.ID, err)
 	}
 	if changed {
-		m.emitPRDStatus(prd, old, lastDecision(prd, protectedPathsApprovedDecisionKind), nil)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, protectedPathsApprovedDecisionKind), nil)
 	}
 }
 

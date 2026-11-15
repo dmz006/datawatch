@@ -253,7 +253,7 @@ func (m *Manager) recoverInfraDependents(prd *PRD) []string {
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] prd=%s: save recovered infra dependents: %v", prd.ID, err)
 	}
-	dec := lastDecision(prd, infraDependentsRecoveredKind)
+	dec := m.lastDecisionLocked(prd, infraDependentsRecoveredKind)
 	ids := make([]string, 0, len(resets))
 	for _, r := range resets {
 		ids = append(ids, r.t.ID)

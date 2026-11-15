@@ -250,7 +250,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	m.mu.Unlock()
 	// BL427 — the running event fires only once the "run" Decision
 	// below is saved; an early return (worktree setup) emits nothing.
-	emitRunning := func() { m.emitPRDStatus(prd, runOld, lastDecision(prd, "run"), nil) }
+	emitRunning := func() { m.emitPRDStatus(prd, runOld, m.lastDecisionLocked(prd, "run"), nil) }
 	// BL407 Phase 1 — a PRD with no explicit ProjectDir/ProjectProfile/
 	// ClusterProfile never has to run bare in the daemon's own
 	// checkout: when the operator has configured WorktreeBaseRepo,
@@ -1093,7 +1093,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// status the task/story guardrail "block" outcome already
 		// uses above.
 		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block", ""); ok {
-			m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
+			m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "project_rules_block"), nil)
 		}
 		return nil
 	}
@@ -1164,7 +1164,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			baseRev, _ = m.store.PRDRev(prd.ID)
 			baseOwn = m.rollupOwnSaves(prd.ID)
 			if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDNeedsReview, "rules_review_fix_failed", blockedReasonFromVerdicts(prd.Verdicts)); ok {
-				m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_failed"), lastBlockVerdict(prd.Verdicts))
+				m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "rules_review_fix_failed"), lastBlockVerdict(prd.Verdicts))
 			}
 			return nil
 		}
@@ -1192,7 +1192,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if err := m.store.SavePRD(prd); err != nil {
 				return err
 			}
-			m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_awaiting_approval"), lastBlockVerdict(prd.Verdicts))
+			m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "rules_review_fix_awaiting_approval"), lastBlockVerdict(prd.Verdicts))
 			return nil
 		}
 		_ = m.savePRDOwn(prd)
@@ -1244,7 +1244,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		return err
 	} else if blocked {
 		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, uncommittedRollupReason, uncommittedRollupBlockedReason(prd)); ok {
-			m.emitPRDStatus(prd, old, lastDecision(prd, uncommittedHeldDecisionKind), nil)
+			m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, uncommittedHeldDecisionKind), nil)
 		}
 		return nil
 	}

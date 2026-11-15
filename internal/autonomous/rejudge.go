@@ -385,7 +385,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			prd.Status = PRDCompleted
 			prd.BlockedReason = ""
 		})
-		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), nil)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "guardrail_rejudge"), nil)
 		m.recordProgressMilestone(prd.ID)
 		return prd, nil
 	}
@@ -408,7 +408,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s: record block outcome: %w", prd.ID, serr)
 	}
 	if bl := lastBlockVerdict(prd.Verdicts); bl != nil {
-		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), bl)
+		m.emitPRDStatus(prd, old, m.lastDecisionLocked(prd, "guardrail_rejudge"), bl)
 	}
 	m.EmitPRDUpdate(prd.ID)
 	return prd, nil
