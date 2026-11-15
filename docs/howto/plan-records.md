@@ -63,7 +63,7 @@ candidates so you can repeat the call with an id.
 |---|---|
 | REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state` (one state, or a comma-separated list), `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
 | MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
-| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
+| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. The `list` and `search` `--state` filter takes one state, or a comma-separated list of them. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S[,S...]]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
@@ -112,7 +112,10 @@ prefix) and `get "Old title"` (an older title) all reach the same record when
 the match is unique. When two projects use the same title, add `--project`
 (`project` on the other surfaces) to choose. `datawatch plan-record search
 <words>` looks through titles, older titles and notes, with title hits first,
-and `list` filters by `project`, `state` or `legacy_number`.
+and `list` filters by `project`, `state` (one state, or a comma-separated
+list of them) or `legacy_number`; `search` takes the same filters along with
+the words. A state the kind does not accept is refused with a message naming
+the states it does.
 
 ## Importing the old files
 
@@ -352,7 +355,10 @@ with `limit` (default 50, most 500) and `offset`.
   the plan you asked about.
 - `GET /api/plan-records/browse` lists every registry row and finding with the
   plan and Automata each links to. Filter with `q` (words in the title), `kind`,
-  `state` and `project`.
+  `state` and `project`. The `state` filter takes one state, or a
+  comma-separated list of them; without a `kind` a state of either kind is
+  admitted, with a `kind` only the states of that kind, and a state neither
+  vocabulary knows is refused naming the valid states.
 
 Points are usage points, never dollars; an Automaton with no figure counts as 0.
 The lists read the plan-record summary index, so they stay fast with thousands of

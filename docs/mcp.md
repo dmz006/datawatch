@@ -1829,7 +1829,8 @@ matches. Create takes `project` (a registered project alias, required) and
 array of `{"kind","ref"}`), `aliases`, `needs_review` and `review_reason`.
 Update takes the same fields except `project`, `kind` and `legacy_number`, which
 cannot change, and `add_aliases` in place of `aliases`. List and search take
-`project`, `state`, `limit` and `offset`; list also takes `automaton`, `q` and
+`project`, `state` (one state, or a comma-separated list), `limit` and `offset`;
+list also takes `automaton`, `q` and
 `legacy_number`. The daemon returns 50 records by default and at most 500 per
 call. Import takes `project` (default `datawatch`), `source` (`registry`,
 `findings` or `all`), `conflict_policy` (`suffix`, `rename` or `skip`) and

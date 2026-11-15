@@ -3266,7 +3266,7 @@ The **Helm version pin** is `scripts/helm-version.txt`, a file holding one `vX.Y
 
 ## Plan records
 
-A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
+A **plan record** is a registry row or a finding kept as a datawatch record instead of a numbered line in `docs/plans/README.md` or a findings file. Records are read and changed through REST (`/api/plan-records`), the MCP `plan_record_*` tools, `datawatch plan-record`, the `autonomous plan-record` chat verbs and the Plan records section of the Projects page. The `state` list filter (REST query, CLI `--state`, MCP `state` argument, chat `state=`) takes one state, or a comma-separated list of them; a state outside the vocabulary of the kinds being listed is refused naming the valid states. See [howto/plan-records.md](howto/plan-records.md) and [operations.md](operations.md#plan-records-store-and-import).
 
 ### Plan
 
@@ -3310,7 +3310,7 @@ The **plans write API** creates, orders and links plans: `POST /api/plans`, `PUT
 
 ### Plans read API
 
-The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
+The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. The `state` filter of the `browse` route takes one state, or a comma-separated list; without `kind` a state of the registry-row or the finding vocabulary is admitted, with `kind` only the states of that kind. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
 
 ### Next marker
 
