@@ -1738,20 +1738,25 @@ func (r *Router) AlertText(a *alerts.Alert) string { return AlertText(r.hostname
 // group. Called by main.go's alert listener for each active messaging
 // backend. The body carries through untruncated (see AlertText).
 func (r *Router) SendAlert(a *alerts.Alert) {
-	// Append quick-reply hints when a session is waiting for input and saved commands exist.
+	// Append quick-reply hints when a session is waiting for input: the
+	// answer words of its open question when it has one, otherwise the
+	// saved command names.
 	quickHints := ""
-	if a.SessionID != "" && r.cmdLib != nil {
+	if a.SessionID != "" && r.manager != nil {
 		sess, ok := r.manager.GetSession(a.SessionID)
 		if ok && sess.State == session.StateWaitingInput {
-			cmds := r.cmdLib.List()
-			if len(cmds) > 0 {
-				names := make([]string, 0, len(cmds))
-				for _, c := range cmds {
-					names = append(names, c.Name)
+			if words := r.quickReplyAnswerHint(sess.ID, sess.FullID); words != "" {
+				quickHints = fmt.Sprintf("\nReply: send %s: <answer>  answers: %s",
+					sess.ID, words)
+			} else if r.cmdLib != nil {
+				if cmds := r.cmdLib.List(); len(cmds) > 0 {
+					names := make([]string, 0, len(cmds))
+					for _, c := range cmds {
+						names = append(names, c.Name)
+					}
+					quickHints = fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
+						sess.ID, strings.Join(names, " | "))
 				}
-				shortID := sess.ID
-				quickHints = fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
-					shortID, strings.Join(names, " | "))
 			}
 		}
 	}
@@ -2333,6 +2338,10 @@ func (r *Router) handleSend(cmd Command) {
 	// Expand saved commands: !name or /name looks up the command library
 	text := cmd.Text
 	text = r.expandSavedCommand(text)
+
+	if r.tryQuickReplyQuestion(sess.ID, sess.FullID, cmd.Text, text) {
+		return
+	}
 
 	if err := r.manager.SendInput(sess.FullID, text, r.backend.Name()); err != nil {
 		r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, sess.ID, err))
