@@ -15,7 +15,7 @@ import (
 // fakeEnv is an in-memory getenv for tests.
 func fakeEnv(vars map[string]string) func(string) string {
 	return func(key string) string {
-		v, _ := vars[key]
+		v := vars[key]
 		return v
 	}
 }
