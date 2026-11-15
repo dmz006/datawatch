@@ -2564,6 +2564,19 @@ Added in v8.73.32. Prompted by a live operator report (federation to `peer-d` fa
 | CLI (`federation peer add/update`, `server add/update`, `setup server`) | No | No | New `--tls-skip-verify` flags + an interactive prompt in `setup server`, mirroring existing flag patterns | Not exercised live this pass |
 | PWA (Remote Servers + Federation Peers forms) | No | No | Checkbox added to both forms, wired into `saveServer()`/`submitFedPeerForm()`; 2 new locale keys × 5 bundles | Not click-tested in a real browser this pass — code-reviewed against the existing `enabled`/`federated` checkbox wiring it mirrors |
 
+## Peer TLS verification by default + `tls_cert_fingerprint` leaf pin
+
+The outbound peer client verifies certificates by default; a per-peer `tls_cert_fingerprint` (64-hex SHA-256 of the leaf; chain not checked, leaf must match; wins over `tls_skip_verify`; malformed → rejected at write / fails closed at runtime) is the recommended way to trust a self-signed peer, and a skipped, unpinned peer is announced with a response `warnings` array plus a warn-level **Peer certificate not verified** system alert (≤1 per peer per daemon run, startup sweep included).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `multiserver.PeerTLSConfig` / `PeerHTTPClient` / `ValidatePeerTLS` / `TLSWarning` | Yes | Yes | `internal/server/multiserver/peer_client_test.go` — default/skip/pinned modes, a genuinely self-signed `httptest` server (pin match + mismatch), malformed pin fails closed, normalization + both-set + bad-length validation, warning only for skip-without-pin | Mismatch errors carry the two fingerprints, never the peer URL |
+| REST (`POST`/`PUT /api/servers`, `POST`/`PUT /api/federation/peers`, `…/test`) | Yes | Yes | `internal/server/tls_pin_surfaces_test.go` — pin accepted + normalized, malformed rejected, pin+skip rejected, skip → `warnings` array in body, verified/pinned → no warning; the fed-peer add/update variants; pinning a peer afterwards removes the warning | Response-shape checked against the real handler |
+| Warn-level alert dedupe | Yes | Yes | `TestTLSPeerWarnTracker_DedupeAndNilSafety` — one alert per peer per run, repeated creates/updates do not re-fire, nil-safety | Emitted through the daemon's alert store with title **Peer certificate not verified** |
+| MCP (`server_add`/`server_update`, `federation_peer_add`/`federation_peer_update`) | Yes | Partial | `internal/mcp/tls_pin_mcp_test.go` — `tls_cert_fingerprint` forwarded into the request body (update only when given), both fed-peer tools | Not exercised against a live daemon this pass |
+| CLI (`datawatch server add/update`, `federation peer add/update`) | No | No | `--tls-cert-fingerprint` / `--tls-skip-verify` flags + local both-set refusal, mirroring the skip flag's existing pattern | Not exercised live this pass |
+| PWA (Servers + Federation Peers forms) | No | No | Checkbox + fingerprint field, mutually exclusive in the form, 2 new locale key pairs × 5 bundles | Not click-tested in a real browser this pass |
+
 
 
 ## BL398 Phases 0-2 + registry adoption (GH#197) — .trivyignore reconciliation, live rescan baseline, CVE tracing, structured registry
