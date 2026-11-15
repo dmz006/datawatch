@@ -256,6 +256,18 @@ While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.
 Same call over MCP: `automation_create` with the same members in `members_json`.
 
+### Which wait is this?
+
+When a member shows a wait, the status names the cause. Use this table to tell them apart and to see what moves it on:
+
+| Status | Cause | What moves it on |
+|---|---|---|
+| `waiting_for_slot` | The max parallel limit is full | A running member finishes, or you raise the limit |
+| `waiting_for_stage` | An earlier stage has unfinished members (stage gate on) | Finish or skip those members, or turn the gate off |
+| `waiting_for_operator` | A decision wait is asking you a question | Answer the question in the Inbox |
+
+None of the three is a failure: the Automation is not blocked and nothing needs a retry. A member that is `blocked` is different, and it keeps holding the later stage until you resume or skip it.
+
 ### A plan with three chains
 
 One plan that uses all three run-shape controls together: two check chains and a sign-off chain under a single fork, a two-member limit, and a `check` before `ship` stage gate:
