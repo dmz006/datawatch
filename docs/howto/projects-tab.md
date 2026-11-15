@@ -24,7 +24,7 @@ exec_steps:
     args: {name: core-api}
     read_only: true
   - tool: project_upsert
-    description: Set the record fields of a project. Pass the whole record you want to keep; an absent record field keeps its stored value. Owner, repository and default branch are set here with the target, lane defaults and weekly share
+    description: Set the record fields of a project. An absent record field (owner, target, lane defaults, weekly share, the description and the default backend) keeps its stored value; an explicit empty value clears the field you sent
     args: {name: core-api, dir: /srv/projects/core-api, owner: platform-team, target: {name: "Core API 2.0", definition_of_done: "All v1 endpoints served by v2 and the v1 routes removed"}, lane_defaults: {lane: gpu, backend: claude-code, model: qwen3.8:27b}, weekly_share: 40, branch_retention_days: 14}
   - tool: project_set_arcs
     description: Deprecated old name and plan list (arcs); the registry plan records replace it (see plan_migrate). Replace the ordered plan list of a project. The array order is the plan order; each plan has an automation id, a priority and a state (planned, active or done). Sending an empty list clears the plans
@@ -132,6 +132,10 @@ Project  "core-api"
    sideways; the header title reads **Projects** in its short form so it stays on
    one line (see
    [Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width)).
+   The whole page also stays inside the screen width on a phone: the picker and
+   the **Show empty** checkbox wrap onto their own line, long event lines, paths
+   and card text wrap, and wide code or table content scrolls inside its own box
+   instead of widening the page. Only the page sub-tab strip scrolls sideways.
    The Inbox count follows this picker too: with a project picked it counts only
    that project's items, and under **Overview** it counts all projects (see
    [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
@@ -148,7 +152,7 @@ an error is showing; otherwise it is collapsed.
 | To do this | Do this |
 |---|---|
 | Add a project | Fill in **Name**, **Directory (absolute path)** and, if you want, **Description** and **Default backend**, then choose **Add project**. Name and directory are required; the page says "Enter a project name." or "Enter the project directory." when one is missing |
-| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only. Change the directory, description or default backend and choose **Save changes**, or **Cancel** |
+| Edit a project | Choose **Edit** on its row. The form switches to "Edit project <name>", with the name read-only and the stored directory, description and default backend pre-filled. Change what you want and choose **Save changes** — a new description is stored, taking the place of the old one in the list and the project page, and a directory or backend change never blanks it — or **Cancel** |
 | Remove a project | Choose **Remove** on its row and confirm. Only the project record is removed. Running sessions and Automaton work are not stopped, and the directory is not touched |
 
 After a save or a remove the list and the picker reload and the page shows
@@ -156,9 +160,9 @@ After a save or a remove the list and the picker reload and the page shows
 change, its message is shown above the form and nothing is changed. Removing the
 project you are viewing returns the picker to **Overview**.
 
-Editing sends the project's whole record back with only these three fields
-changed, so its policy, plans, owner, target and other record fields keep their
-stored values. The block is the web form of `POST /api/projects` and
+Editing changes only the directory, default backend and
+description, so its policy, plans, owner, target and other record fields keep
+their stored values. The block is the web form of `POST /api/projects` and
 `DELETE /api/projects/{name}`; the same actions are on the CLI, MCP and comm
 channel below.
 
@@ -266,7 +270,7 @@ group of the same Automata settings card.
 | Gantt | Gantt | One expandable timeline. It opens with one row per plan and a bar from the plan's first to its last task, coloured by its status (Completed, Running, Waiting, Blocked, Failed or Cancelled; a shipped Automaton reads Completed, whatever its record says). Each bar runs the row's own span — an Automaton from its first task start to its last task end — and work still running is drawn to now and reads "now". Hover or focus a bar for its status, dates and, for a shipped Automaton, its release. Click a row's arrow to open the Automata under the plan, and an Automaton's arrow to open its tasks; a plan with no activity yet reads **Planned** with no bar. Automata that no plan holds sit in the **Automata with no plan** group at the foot. The range selector offers **All time** (the default), 90, 30 and 7 days; **All time** fits the rows that are showing, expanded Automata and tasks included, with a 2 percent margin at each end, and the mouse wheel zooms and a drag pans the chart. Rows you open later are ordered by completion, then running and waiting work by start, with a task or Automaton below the ones it depends on. **Edges** draws thin arrows between the rows that are showing: from the end of a task to the start of each task that waits for it, and from an Automaton to the Automata that follow it. Hover a bar, or tab to it, to light its own edges and dim the rest. **Edges** turns the arrows off, and **All edges** (shown while they are on) lifts the cap of 120 drawn edges, beyond which only the edges of the hovered bar show. The choice is remembered in this browser only. Each plan row has a **Focus** button (see [Focus on one Automation](#focus-on-one-automation)). It reads the project timeline (see [The project timeline](#the-project-timeline)) one level at a time, so children load only when you expand a row. It draws at most 40 rows and says "Showing 40 of N rows." when there are more, and a level with more children than one page has **Load more**. On a wide browser it is capped at 720 pixels wide, left-aligned; on a phone the chart keeps a minimum width inside a sideways-scrolling frame and the label column stays visible |
 | Unassigned | Unassigned Automata, Automata without a project | One card per Automaton: the plain title, a badge from its status (shipped and merged read a green **shipped**/**merged** badge; **active** blue, **planned** neutral, **failed** red; shipped and merged work never shows a cancelled badge), the time it was created as its age, and the project directory as a detail line, cut at 100 characters with the full path in a tooltip. The unassigned cards carry three actions: **Assign** (asks for a project name, suggesting the first configured one, and saves it to the Automaton with the same call the Automaton settings use, then reloads the roll-up), **Open** (the Automaton view) and **Dismiss** (hides just this card in this browser; it is remembered in the browser's local storage, key `cs_projects_unassigned_hidden`, not by the daemon, and the daemon keeps tracking the Automaton; a small **Undo** link below the list clears the hidden list). Below them, Automata with no project link and no directory match are listed once in a separate **Automata without a project** group (`without_project`), the same whichever project you open and not counted in any total (see [Which Automata belong to a project](#which-automata-belong-to-a-project)); those cards are read-only and keep **Open** only |
 | History | History | Finished and archived Automata and daily progress snapshots, newest first, one card each. An Automaton card has a badge from its status (never cancelled for shipped or merged work), the plain title, the finished moment as its age, a "done/total tasks" detail and an **Open** action that opens the Automaton. A snapshot card has a neutral **snapshot** badge, the taken time as its title and age, and a "Progress on …: n of m tasks done" line. **Load more** at the foot pages the rest |
-| Events | Notes, event stream | Notes for empty sections (no plans, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share; below them, the event stream filtered to this project (the section's own note names the queue it reads) drawn as one card per event: a badge from the event kind, a readable title from the kind, the event time as the age, and the automation id and task id as detail lines when the event carries them. This page sub-tab is not in the strip while the project has no notes |
+| Events | Notes, event stream | Notes for empty sections (no plans, no unassigned Automata), an Automaton with no sessions, a failed roll-up and a missing weekly share; below them, the event stream filtered to this project (the section's own note names the queue it reads) drawn as one card per event: a badge from the event kind, a readable title from the kind, the event time as the age, and the automation id and task id as detail lines when the event carries them. With **Show empty lines and sections** off, the empty or never-state notes are grouped into one summary line with a count; tick the checkbox to list them one per line (see [The show-empty checkbox](#the-show-empty-checkbox)). This page sub-tab is not in the strip while the project has no notes |
 
 A page sub-tab that holds one block (Plans, Gantt, Unassigned, History) shows
 that block directly, with no card around it. A page sub-tab that holds more than
@@ -377,9 +381,34 @@ left out. Tick it to see every line and section, with
 remembered per viewer in the browser, not by the daemon, so it has no REST,
 MCP, CLI, chat or configuration form, and a browser that blocks storage starts
 hidden each time. Nothing is lost while it is off: a section that needs
-attention still appears, and a missing weekly share is reported in the page's
-Events list whenever the project has a plan or an unassigned Automaton that
-needs one.
+attention still appears, and a missing weekly share is still counted in the
+page's Events list whenever the project has a plan or an unassigned Automaton
+that needs one.
+
+**Empty lines in Events are grouped.** Some **Events** lines say only that
+something is empty or has never happened: an Automaton with no sessions yet, a
+plan with no Automata, no plans, no unassigned Automata, or a missing weekly
+share. While the checkbox is off, the page does not list them one by one.
+It folds them into a single summary line with a count, for example "3 empty or
+not-started items hidden. Check Show empty lines and sections to list them."
+The summary comes after the other lines. Tick the checkbox and each of those
+lines is listed on its own, in the order it was found, with no summary line.
+Lines that report something real, such as a roll-up that failed to load, are
+always listed one per line and are never folded into the count. If a project
+has only empty lines and the box is off, the **Events** page sub-tab shows just
+the summary line.
+
+#### Phone width
+
+The Projects page fits the phone width on every page sub-tab, and on the
+**Overview** cross-project view too. Nothing makes the page itself scroll
+sideways: long lines (event lines, paths, titles and card text) wrap onto the
+next line instead of running off the screen. The strip of page sub-tabs is the
+one row that is wider than the screen, and it scrolls sideways inside its own
+box, so every sub-tab stays reachable without moving the page. Wide content such
+as the Gantt chart or a code block likewise scrolls inside its own frame. This is
+a display rule of the web app only, with no setting and no REST, MCP, CLI, chat
+or configuration form.
 
 #### Cards, tiles and compact
 
@@ -783,7 +812,7 @@ capability; a federated peer is checked against the same two.
 | Tool | Parameters | Purpose |
 |---|---|---|
 | `project_list` | none | List the aliases and their records |
-| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update; omit a field to keep it |
+| `project_upsert` | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` | Create or update. The record fields (default backend, description, owner, repository, default branch, target, lane defaults, weekly share, retention, major trigger) keep their stored value when omitted; an explicit empty value clears the field you sent. `policy` is written as sent: a call without one clears the stored policy |
 | `project_set_arcs` | `name`, `arcs` (required) | Replace the plans; `[]` clears them |
 | `project_rollup` | `name`; `window` | The roll-up |
 | `project_history` | `name`; `limit`, `cursor` | One history page |
@@ -812,9 +841,9 @@ Example call, set the plans:
 |---|---|
 | `datawatch projects list` | List the aliases |
 | `datawatch projects get <name>` | One alias and its record |
-| `datawatch projects upsert <name> --dir <abs> [--backend …] [--description …]` | Create or update an alias (replaces the policy; see the note in Setup) |
+| `datawatch projects upsert <name> --dir <abs> [--backend …] [--description …]` | Create or update an alias (replaces the policy; see the note in Setup); a flag you do not pass keeps the stored value, an explicit empty value clears |
 | `datawatch projects show <name> [--window N]` | Record plus roll-up |
-| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass |
+| `datawatch projects set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags you pass; the stored description, default backend, policy and record fields come along and are kept |
 | `datawatch projects arcs <name>` | Print the plans in order |
 | `datawatch projects arcs <name> --set id:priority:state,…` | Replace the plans; `--set ""` clears them |
 | `datawatch projects history <name> [--limit N] [--cursor …]` | History page |
@@ -857,6 +886,7 @@ the lane defaults. Use REST, MCP or the CLI for those.
 | `arcs` returns 400 "automation_id is required" or "duplicate automation_id" | Each plan needs a unique id; a plan whose state is not `planned`, `active` or `done` is refused |
 | `set --weekly-share 150` is refused | Weekly share must be 0 to 100 |
 | `set --branch-retention-days -1` is refused | Retention cannot be negative |
+| The saved description is gone after a change | Every operator surface keeps a stored description the change does not mention: the **Manage projects** form pre-fills and re-sends it, and CLI `projects upsert`, CLI `projects set`, MCP `project_upsert` and the comm channel carry the stored one forward. The one writer that still replaces it is a raw REST `POST /api/projects` — it writes the description it is sent, blank when the field is missing (its `default_backend` the same way) — so a script of yours that updated the alias that way without the description is the usual suspect; restore it from the form, with `projects upsert --description`, comm `project set <name> description …` or MCP, and an explicit empty description is the deliberate clear |
 | Policy disappeared after an `upsert` | `upsert` writes the policy it is sent, which is none; set the policy again with `datawatch projects policy set`, or use `set` and `arcs` for later changes |
 | Plan documents, design documents or issues show "none recorded" | The plan record has no fields for them yet, so the page cannot show them. The plan section shows what the record holds |
 
@@ -873,6 +903,19 @@ the lane defaults. Use REST, MCP or the CLI for those.
 
 ## For the operator to review
 
+- **Phone-width containment (Events sub-tab).** The Projects page used to scroll
+  sideways on a phone (seen on a project's Events page sub-tab). The page, toolbar,
+  picker, cards and event lines now shrink to the viewport and wrap; only the page
+  sub-tab strip scrolls. Confirm on a real phone (a project with long event lines,
+  Events page sub-tab) that the page itself no longer scrolls sideways. Web app
+  only; Android and iPhone are tracked in datawatch-app.
+- **Grouped empty lines (Events sub-tab).** With **Show empty lines and sections**
+  off, the empty or never-started notes on a project's Events page sub-tab are one
+  summary line with a count. Confirm on a project with several empty notes that the
+  summary count matches, that ticking the checkbox lists each note, and that a real
+  problem (a failed roll-up) is never folded into the count. The summary text is
+  translated in the German, Spanish, French and Japanese locales; have a native
+  reader check the wording.
 - **Mobile parity.** The Android and iPhone apps still show Projects as its own
   screen and a project as one screen. Moving Projects under Automata, matching
   page sub-tabs, and the Manage projects add, edit and remove controls are tracked
@@ -933,6 +976,20 @@ the lane defaults. Use REST, MCP or the CLI for those.
 - **Edit keeps the record.** The page says editing keeps the policy, plans, owner,
   target and other record fields. That follows the shipped form's behavior as
   documented in the change; confirm it on a project that has a policy and plans.
+- **Description handling is aligned across the update surfaces.** Saving a new
+  description from the **Manage projects** form updates the stored one, and the
+  Manage projects list and the project page show it; a form change of the
+  directory or backend never blanks the stored description, because the form
+  pre-fills it and re-sends it. The CLI's `projects upsert` and `projects set`,
+  MCP `project_upsert` and the comm channel all carry a stored description
+  forward when a change sends none, and an explicit empty value is the
+  intentional clear from those surfaces. The one writer that still replaces
+  what it is sent is a raw REST `POST /api/projects` (its description and
+  default backend are written as sent — an absent or empty value clears the
+  stored one), so a script that updates the alias that way must send the
+  description to keep it. The `policy` field is unchanged by this: it is
+  still written as sent, and a CLI `upsert` or MCP `project_upsert` call
+  without one still clears the tier. Confirm your update patterns against that.
 
 - **Gantt edges and ordering (2026-11-12).** The Gantt now draws dependency edges, an
   **Edges** toggle and a hover highlight, fits **All time** to the visible rows, and orders

@@ -69,7 +69,12 @@ Exit codes:
 
 A skip does not fail the target. Read the summary line before you call a run clean.
 
-To run against a daemon you already have, set `TEST_HTTP`, `TEST_TLS` and `TEST_TOKEN` together. The runner then starts nothing and checks that daemon. Use a sandbox daemon, not your production one.
+To run against a daemon you already have, set `TEST_HTTP`, `TEST_TLS` and `TEST_TOKEN` together. The runner then starts nothing and checks that daemon. Use a sandbox daemon, not your production one. You can also run the group directly against any such daemon:
+
+```bash
+cd scripts/test-stories/pwa
+TEST_HTTP=http://127.0.0.1:8080 TEST_TOKEN=... node run-all.mjs --group shared-nav
+```
 
 ## Where the report is written
 
@@ -81,6 +86,30 @@ The gate writes two files into the run's evidence folder:
 In local mode the evidence folder is `dw-e2e-pwa-XXXXXX/evidence/` inside `${TMPDIR:-/tmp}`. The runner removes the whole `dw-e2e-pwa-XXXXXX` folder when the run passes, so the report is gone after a pass. When the run fails, the runner keeps the folder and prints its path, with the daemon log.
 
 Setting `EVIDENCE_DIR` does not move the report in local mode: the runner resets it. To keep the report of a passing run, copy the two files out while the run is still going.
+
+## Release smoke
+
+`scripts/release-smoke.sh` section **79a — "Shared navigation bar fits phone widths in light and dark"** (next to the slow-network load section 79) runs this same scenario through the runner's `shared-nav` group, against the smoke daemon:
+
+```bash
+SMOKE_ONLY=79a bash scripts/release-smoke.sh # run section 79a alone
+```
+
+Section numbers match by prefix: `SMOKE_ONLY=79a` selects only this section, while the bare prefix `79` selects it together with section 79 (load) and 79b (settings).
+
+The section passes the probe its full environment: `TEST_HTTP` and `TEST_TLS` are the smoke daemon's base, `TEST_TOKEN` is the daemon's token (empty when the daemon starts with no auth, so the probe's empty-token default applies), and `PROBE_OUT_DIR` and `PROBE_CHROME_PROFILE` point at throwaway dirs under the smoke's temp dir, removed on every exit path. `TMUX` and `TMUX_TMPDIR` are scrubbed from the run, and the run is bounded by `SMOKE_SHARED_NAV_TIMEOUT` (default 600 s) through `timeout` when that command is available.
+
+| the runner's outcome | the section records |
+|---|---|
+| exit 0 with a pass | PASS |
+| exit 0 with 0 passed, 0 failed (no browser or daemon available) | SKIP |
+| exit 2 (the runner's skip) | SKIP with the runner's reason |
+| the `SMOKE_SHARED_NAV_TIMEOUT` bound | FAIL (timeout) |
+| any nav finding at phone widths | FAIL — a finding is never a skip here |
+
+That last row is the difference from the load section: in 79a a layout finding is a failure, never a skip.
+
+A shell test, `bash scripts/tests/release-smoke-shared-nav_test.sh`, exercises the section's skip/fail/timeout mapping with a fake `node` on `PATH`, so it needs no browser, no daemon and no network. See N7 in [testing.md](../testing.md) for the record of the section and its test.
 
 ## Read a finding
 
@@ -145,13 +174,15 @@ What you see:
 - **Tap targets.** Each tab and each action button in these strips is at least 40 px tall (the 44 px line above is the bottom bar's check, not these strips').
 - **Short header title.** On the Automata view the header shows the Projects sub-tab as **Projects** from its own short-name text (`nav_projects_short`), so a longer translation does not push the title onto a second line. The header title font is slightly smaller at phone width.
 
+On the Projects page only the strip scrolls sideways; the rest of the page (toolbar, picker, cards, event lines) stays within the screen width, long text wraps and wide `pre` and table content scrolls in its own box. See [Projects tab](projects-tab.md#for-the-operator-to-review).
+
 The Observer and Dashboard views have no tab strip. The rule was audited at 320 and 360 px.
 
 What is not covered: the strips are not part of the `make test-e2e-shared-nav` gate, and there is no automated pixel check of the fade. The unit tests under `internal/server/web/` (`app-automation-subtab-load.test.js`, `app-automation-tab-registry.test.js`, `app-automaton-detail-tab-strip.test.js`) cover the scripts, not how the strip looks.
 
 ## Other modes
 
-The probe has two more modes. Both run through the same environment variables as the gate, and both are run directly rather than through `make`:
+The probe has two more modes. Both run through the same environment variables as the gate, and both are run directly rather than through `make`. Only the daemon origin is required — `TEST_TLS`, falling back to `TEST_HTTP` — the rest have defaults: `TEST_TOKEN` defaults to empty (a daemon with no auth), `PROBE_OUT_DIR` defaults to `<EVIDENCE_DIR or tmpdir>/shared-nav-mobile-fit`, and `PROBE_CHROME_PROFILE` defaults to `<PROBE_OUT_DIR>/chrome-profile`.
 
 - **Report-only** (the default mode of the probe). It audits every tab at six phone widths in one theme. It writes `report-only.json` and `occurrences.json` to `PROBE_OUT_DIR`. It never fails a run. Use it to see what the next fix has to cover.
 - **Baseline** (`SHARED_NAV_MODE=baseline`). It records the bottom bar's boxes at 768x1024, 1024x768 and 1280x800, in both themes, to `nav-baseline.json`, with the tolerance (2 px or 1 percent) written into the file. The probe does not compare a later run against that file; the comparison is a separate step.

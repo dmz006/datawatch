@@ -43,6 +43,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -69,12 +70,14 @@ type Client struct {
 // Config bundles the constructor inputs. ParentURL + Name are
 // required; everything else has sensible defaults.
 type Config struct {
-	ParentURL string        // primary datawatch base URL ("https://primary:8443")
-	Name      string        // stable peer name (hostname / agent id)
-	Shape     string        // "A" agent / "B" standalone / "C" cluster — defaults to "B"
-	TokenPath string        // file to persist the bearer token; "" disables persistence
-	Insecure  bool          // skip TLS verify (dev / self-signed parent)
-	Timeout   time.Duration // per-request timeout; defaults to 10s
+	ParentURL    string        // primary datawatch base URL ("https://primary:8443")
+	Name         string        // stable peer name (hostname / agent id)
+	Shape        string        // "A" agent / "B" standalone / "C" cluster — defaults to "B"
+	TokenPath    string        // file to persist the bearer token; "" disables persistence
+	Insecure     bool          // skip TLS verify (dev / self-signed parent) — warns once via Warn
+	PinnedSHA256 string        // hex SHA-256 of the parent's leaf cert (case-insensitive, colons and spaces ignored). When set, the chain is NOT checked and the leaf must match; it wins over Insecure. A malformed pin makes New fail.
+	Warn         func(string)  // sink for security warnings (e.g. the Insecure notice); nil writes to stderr
+	Timeout      time.Duration // per-request timeout; defaults to 10s
 	// BL-stats v6.22.5 — when true, emit a per-request debug line to
 	// stderr on every register/push attempt: URL, token-prefix, response
 	// code, body snippet. Unblocks operator diagnosis of remote-Node
@@ -101,9 +104,28 @@ func New(cfg Config) (*Client, error) {
 			return nil, fmt.Errorf("mkdir token dir: %w", err)
 		}
 	}
+	warn := cfg.Warn
+	if warn == nil {
+		warn = func(s string) { fmt.Fprintln(os.Stderr, s) }
+	}
 	tr := &http.Transport{}
-	if cfg.Insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- opt-in via cfg.Insecure for self-signed peer parents; default off; pinning lands in S15
+	switch {
+	case strings.TrimSpace(cfg.PinnedSHA256) != "":
+		// A pin wins over Insecure: the chain is not checked and the
+		// leaf SHA-256 must equal the pin. Pinning reuses
+		// compute.NodeTLSConfig, the single fingerprint implementation
+		// shared with the Ollama node pool; a malformed pin fails closed.
+		tlsCfg, _, err := compute.NodeTLSConfig(&compute.Node{TLSCertFingerprint: cfg.PinnedSHA256})
+		if err != nil {
+			return nil, fmt.Errorf("observerpeer: certificate pin: %w", err)
+		}
+		tr.TLSClientConfig = tlsCfg
+	case cfg.Insecure:
+		tr.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, // #nosec G402 -- explicit opt-in via cfg.Insecure (warned once via Warn); pinning via cfg.PinnedSHA256 takes precedence
+		}
+		warn(insecurePushWarning(parentHost(parent)))
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {

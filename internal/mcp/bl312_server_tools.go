@@ -69,7 +69,8 @@ func (s *Server) toolServerAdd() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("bearer token for the remote instance (optional)")),
 		mcpsdk.WithString("label", mcpsdk.Description("human-readable label (optional)")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("whether the server is active (default true)")),
-		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this server only (self-signed/local-dev server on a trusted network; default false)")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this server only (self-signed/local-dev server on a trusted network; default false). Prefer tls_cert_fingerprint: when both are set the request is rejected.")),
+		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("optional — pin this server's leaf certificate: 64 hex chars (SHA-256, colons/spaces ignored). Wins over tls_skip_verify; the request is rejected when both are set or the pin is malformed.")),
 	)
 }
 
@@ -89,6 +90,7 @@ func (s *Server) toolServerUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("label", mcpsdk.Description("human-readable label")),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("whether the server is active")),
 		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this server only")),
+		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("optional — pin this server's leaf certificate: 64 hex chars (SHA-256). Wins over tls_skip_verify; rejected when both are set or the pin is malformed.")),
 	)
 }
 
@@ -150,6 +152,9 @@ func (s *Server) handleServerAddMCP(ctx context.Context, req mcpsdk.CallToolRequ
 	if req.GetBool("tls_skip_verify", false) {
 		body["tls_skip_verify"] = true
 	}
+	if pin := mustString(req, "tls_cert_fingerprint"); pin != "" {
+		body["tls_cert_fingerprint"] = pin
+	}
 	out, err := s.proxyJSON("POST", "/api/servers", body)
 	if err != nil {
 		return nil, err
@@ -179,6 +184,9 @@ func (s *Server) handleServerUpdateMCP(ctx context.Context, req mcpsdk.CallToolR
 		}
 		if _, has := argsMap["tls_skip_verify"]; has {
 			body["tls_skip_verify"] = req.GetBool("tls_skip_verify", false)
+		}
+		if pin, has := argsMap["tls_cert_fingerprint"]; has && pin != "" {
+			body["tls_cert_fingerprint"] = pin
 		}
 	}
 	out, err := s.proxyJSON("PUT", "/api/servers/"+name, body)

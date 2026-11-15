@@ -182,7 +182,7 @@ session:
 
 memory:    # see cross-agent-memory.md
 mcp:       # see mcp-tools.md
-observer:  # see federated-observer.md
+observer:  # see federated-observer.md (push TLS: verified by default; opt-out is startup-warned)
 agents:    # see container-workers.md + tailscale-mesh.md
 secrets:   # see secrets-manager.md
 channels:  # see comm-channels.md

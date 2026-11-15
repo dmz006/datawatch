@@ -1714,6 +1714,18 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 - **Runner side effect.** `make test-e2e-shared-nav` runs `npm ci` in `scripts/test-stories/pwa`. That replaces the tracked symlink `scripts/test-stories/pwa/node_modules` (it points to `/home/<user>/workspace/datawatch/scripts/test-stories/pwa/node_modules`) with a real directory, which git shows as a deleted file. The symlink was restored with `git checkout` after each run.
 - **Runner `EVIDENCE_DIR`.** `scripts/e2e-pwa.sh` line 41 sets `EVIDENCE_DIR=""`, so an `EVIDENCE_DIR` set in the environment is ignored. In local mode a passing run deletes its report. The record copied the gate reports out during the run (`make-run/gate-reports/`). Fixing the script is a separate change.
 
+### N7 — Release smoke section 79a (shared nav) and its shell test
+
+- **Section.** `scripts/release-smoke.sh` section `79a. Shared navigation bar fits phone widths in light and dark` runs the shared-nav scenario through the PWA runner's `shared-nav` group (`node run-all.mjs --group shared-nav` in `scripts/test-stories/pwa`) against the smoke daemon only: `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN` come from the smoke daemon's `$BASE`/`$TOK`, the node invocation is scrubbed of `TMUX`/`TMUX_TMPDIR`, and the run is bounded by `SMOKE_SHARED_NAV_TIMEOUT` (default 600 s) through `timeout` when available. Unlike the load section, a navigation layout finding at phone widths is a failure (FAIL), never a skip.
+- **SMOKE_ONLY id.** The section is selectable by its numbered id `79a` (e.g. `SMOKE_ONLY=79a bash scripts/release-smoke.sh`; the `79` prefix selects it together with the load section `79. Web UI slow-network load scenarios…`). When `SMOKE_ONLY` is set to other ids, the section prints its `(skipped — not in SMOKE_ONLY=…)` line and does nothing — in particular it never calls `node`. The adjacent load section has the same guarantee.
+- **Probe variables.** The section passes the probe's required variables in full: `TEST_TLS` and `TEST_TOKEN` from `$BASE`/`$TOK` (the smoke daemon starts with no auth token, so `TEST_TOKEN` may be empty and the probe's empty-token default applies), `PROBE_OUT_DIR` the evidence dir, and `PROBE_CHROME_PROFILE` a throwaway Chrome profile under the smoke's temp dir; both dirs are removed again on every path.
+- **Exit 2 is a skip.** When the browser at `DW_CHROME_PATH` is missing (or the daemon does not answer) the runner ends with exit 2 and a `0 passed 0 failed` summary; the section records that as SKIP, and exit 0 with `0 passed 0 failed` is also a SKIP. Any other non-zero exit (including the timeout bound) is a FAIL.
+- **Shell test.** `scripts/tests/release-smoke-shared-nav_test.sh` covers both sections without a browser, daemon or network: it extracts the section bodies and the `H`/`ok`/`ko`/`skip` helpers from `scripts/release-smoke.sh` and evaluates them in a harness whose PATH carries a fake `node` (and fake `timeout`) that records its environment and arguments and exits with a test-chosen status. Cases: another section id in `SMOKE_ONLY` skips both sections with no `node` call; a selected run (own id `79a`, and empty `SMOKE_ONLY`) calls `node run-all.mjs --group shared-nav` once with `PROBE_OUT_DIR`, `PROBE_CHROME_PROFILE`, `TEST_TLS` and `TEST_TOKEN` non-empty in the node's environment and leaves no throwaway dirs behind; a `0 passed 0 failed` run (exit 0) and an exit-2 run are SKIPs with no FAIL; a failing run is a FAIL. Run it with:
+
+```
+bash scripts/tests/release-smoke-shared-nav_test.sh
+```
+
 ## TS-817 — Two pi-prompt workers hold different compute nodes (sandbox daemon)
 
 | Field | Details |

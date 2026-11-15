@@ -22,7 +22,7 @@ supervisor session, should own landing.
   files the branch adds exist on main.
 - The REST list at `/api/autonomous/prds` shows 81 records (29 archived); the other branches belong to
   records already removed, which the audit reports as "no Automaton record".
-- Scratch data: `/home/dmz/workspace/supervisor-scratch` (`res4.json`, `audit.txt`).
+- Scratch data: the supervisor scratch folder (res4.json, audit.txt), not kept in the repository.
 
 Line counts below are per-branch diffs against the merge base; they overlap where several branches
 edit the same shared files (CHANGELOG, operations docs, `app.js`), so totals are upper bounds.

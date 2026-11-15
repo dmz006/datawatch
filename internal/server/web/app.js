@@ -3570,11 +3570,11 @@ function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
     .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
   const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
-  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+  return `<div id="projectsView" class="projects-view" style="padding:12px 16px;">${errLine}
+    <div class="projects-toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
-      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
-      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+      <select id="projectsPicker" class="projects-picker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" class="projects-show-empty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);">
         <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
         ${escHtml(t('projects_show_empty') || 'Show empty')}
       </label>
@@ -3752,7 +3752,16 @@ function toggleProjectsShowEmpty(checked) {
 // it loads); rollErr is the roll-up's load failure, if any.
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
-  const events = [];
+  // Informative Events lines are always shown, one each. emptyEvents holds the
+  // lines whose only content is that something is empty, absent, unset or has
+  // never happened (no sessions yet, empty plan, no plans, no unassigned
+  // Automata, a field that is not set). Those are listed one per line only
+  // while Show empty lines and sections is on; otherwise one summary line
+  // carries their count. Every line keeps its push order in eventOrder.
+  const emptyEvents = [];
+  const eventOrder = [];
+  const addEvent = text => { eventOrder.push({ text, empty: false }); };
+  const addEmptyEvent = text => { emptyEvents.push(text); eventOrder.push({ text, empty: true }); };
   // Only a missing weekly share matters, and only when the project has an arc
   // or an unassigned Automaton that needs a share. Other empty fields are hidden
   // and produce no Events entry.
@@ -3760,7 +3769,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
     (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
   const unset = key => {
-    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    if (key === 'projects_page_weekly_share' && needsShare) addEmptyEvent(t('projects_event_unset', [t(key)]));
     return '';
   };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
@@ -3790,7 +3799,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const automatonHTML = a => {
     const title = a.title || a.id;
     const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
-    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    if (!sessions.length) addEmptyEvent(t('projects_event_automaton_no_sessions', [title]));
     const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
     return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
       <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
@@ -3812,7 +3821,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
-      events.push(t('projects_event_plan_empty', [arc.automation_id]));
+      addEmptyEvent(t('projects_event_plan_empty', [arc.automation_id]));
       return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
@@ -3823,16 +3832,16 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let unassignedBody = '';
   const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
-    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
     overviewBody = loadingLine;
     arcsBody = loadingLine;
     unassignedBody = loadingLine;
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    overviewBody = _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs) + _projectUnattributedChipHTML();
     if (!arcs.length) {
-      events.push(t('projects_event_no_plans'));
+      addEmptyEvent(t('projects_event_no_plans'));
       if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
@@ -3849,7 +3858,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
       unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
     } else {
-      events.push(t('projects_event_no_unassigned'));
+      addEmptyEvent(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
@@ -3857,10 +3866,18 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
-  const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+  const eventLine = (e, cls) => `<div class="${cls}" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(e)}</div>`;
+  // Informative lines always show; empty-state lines show one per line with
+  // Show empty on, or fold into one counted summary line with it off. The
+  // summary comes after the real events and never replaces them.
+  const eventLines = eventOrder.filter(e => showEmpty || !e.empty).map(e => eventLine(e.text, 'project-event-line'));
+  if (!showEmpty && emptyEvents.length > 0) {
+    eventLines.push(eventLine(t('projects_event_empty_summary', [emptyEvents.length]), 'project-event-line project-event-summary'));
+  }
+  const evs = eventLines.length
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${eventLines.join('')}</div>`)
     : '';
-  const hasEvents = events.length > 0;
+  const hasEvents = eventLines.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
     overview: head + _projectOverviewSummaryHTML(p),
@@ -5826,6 +5843,14 @@ function _plansBrowserFresh(project) {
     error: '', notice: '',
     seq: 0,
     q: '', stateFilter: '',
+    // archived is the archive scope (GET ?archived=): 'exclude' is the default
+    // and sends no parameter, 'include' shows archived plans after the live
+    // ones, 'only' shows only them.
+    archived: 'exclude',
+    // archiveAsk names the plan whose Archive button switched to the reason
+    // form, archiveReason is that form's current text.
+    archiveAsk: '',
+    archiveReason: '',
     matchPlans: null,   // plan ids with a registry row or finding that matches q
     detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
     links: { status: 'idle', rows: [] },
@@ -5868,12 +5893,17 @@ function _plansBrowserLoad(more) {
   const seq = ++st.seq;
   if (st.status === 'idle') st.status = 'loading';
   const params = ['limit=' + _PLANS_PAGE, 'offset=' + (more === 'plans' ? st.plans.length : 0), 'backlog_offset=' + (more === 'backlog' ? st.backlog.length : 0)];
+  if (st.archived === 'include' || st.archived === 'only') params.push('archived=' + st.archived);
   return apiFetch('/api/projects/' + encodeURIComponent(name) + '/plans?' + params.join('&')).then(r => {
     if (_plansBrowser !== st || seq !== st.seq) return;
     const plans = r && Array.isArray(r.plans) ? r.plans : [];
     const back = r && r.backlog && Array.isArray(r.backlog.plans) ? r.backlog.plans : [];
     if (more !== 'backlog') st.plans = more === 'plans' ? st.plans.concat(plans) : plans;
     if (more !== 'plans') st.backlog = more === 'backlog' ? st.backlog.concat(back) : back;
+    // Release plans lead their group: they collect every state, so the order
+    // is a display priority, not a re-ordering write.
+    st.plans = st.plans.filter(pl => pl && pl.plan_kind === 'release').concat(st.plans.filter(pl => !(pl && pl.plan_kind === 'release')));
+    st.backlog = st.backlog.filter(pl => pl && pl.plan_kind === 'release').concat(st.backlog.filter(pl => !(pl && pl.plan_kind === 'release')));
     st.total = Number(((r || {}).page || {}).total) || st.plans.length;
     st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
     st.status = 'ready'; st.error = '';
@@ -5904,13 +5934,29 @@ function _plansLoadLinks() {
 
 function _plansLoadDetail(plan) {
   const st = _plansBrowser;
-  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
   d.status = 'loading';
   return apiFetch(_plansPath(plan, '/automata?limit=500')).then(r => {
     if (_plansBrowser !== st) return;
     d.automata = r && Array.isArray(r.automata) ? r.automata : [];
     d.status = 'ready'; d.error = '';
     _plansBrowserPaint();
+    // A release plan also carries its theme layout, read alongside its
+    // Automata; a plan without themes still shows its Automations and rows.
+    const pl = (st.plans || []).concat(st.backlog || []).find(x => x && String(x.id) === String(plan)) || null;
+    if (!pl || pl.plan_kind !== 'release' || d.themesStatus === 'loading' || d.themesStatus === 'ready') return null;
+    d.themesStatus = 'loading'; d.themesError = '';
+    _plansBrowserPaint();
+    return apiFetch(_plansPath(plan, '/themes')).then(th => {
+      if (_plansBrowser !== st) return null;
+      d.themes = th && typeof th === 'object' ? th : { themes: [], unplaced: [] };
+      d.themesStatus = 'ready';
+      _plansBrowserPaint();
+    }).catch(err2 => {
+      if (_plansBrowser !== st) return;
+      d.themesStatus = 'error'; d.themesError = _plansErrText(err2);
+      _plansBrowserPaint();
+    });
   }).catch(err => {
     if (_plansBrowser !== st) return;
     d.status = 'error'; d.error = _plansErrText(err);
@@ -5920,7 +5966,7 @@ function _plansLoadDetail(plan) {
 
 function _plansLoadTasks(plan, more) {
   const st = _plansBrowser;
-  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
   d.tasksStatus = 'loading';
   return apiFetch(_plansPath(plan, '/tasks?limit=' + _PLANS_TASK_PAGE + '&offset=' + (more ? d.tasks.length : 0))).then(r => {
     if (_plansBrowser !== st) return;
@@ -6047,7 +6093,7 @@ function _plansExpandedHTML(st, plan) {
   const linked = st.links.rows.filter(r => r.plan_id === plan.id);
   const fin = linked.filter(r => r.kind === 'finding');
   const rows = linked.filter(r => r.kind !== 'finding');
-  return `<div class="plans-browser-expanded">${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+  return `<div class="plans-browser-expanded">${plan.plan_kind === 'release' ? plansReleaseThemesHTML(st, plan) : ''}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
     ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${_plansAttachFormHTML(st, plan)}</div>`;
@@ -6060,14 +6106,17 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
   const label = t('plans_browser_progress', [Number(pg.done) || 0, Number(pg.total) || 0, pct]);
   const next = plan.next && plan.next.title ? `<span class="plans-browser-next" style="font-size:12px;color:var(--text2);">${escHtml(t('plans_browser_next_marker'))}: ${escHtml(plan.next.title)}</span>` : '';
   const moves = canMove ? _plansMoveButtons(_plansCall('plansBrowserMovePlan', plan.id, -1), _plansCall('plansBrowserMovePlan', plan.id, 1), idx > 0, idx < list.length - 1) : '';
+  const isRelease = plan.plan_kind === 'release';
+  const badge = isRelease ? `<span class="plans-release-badge" data-plan-kind="release" style="display:inline-block;margin-left:2px;padding:0 8px;border:1px solid var(--accent,#3b82f6);border-radius:10px;font-size:11px;color:var(--accent,#3b82f6);background:transparent;" title="${escHtml(t('plans_release_badge'))}">${escHtml(t('plans_release_badge'))}${plan.release ? `<span style="opacity:.85;"> · ${escHtml(t('plans_release_label', [String(plan.release || '')]))}</span>` : ''}</span>` : '';
+  const arch = _plansArchiveCtlHTML(_plansBrowser, plan);
   return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
     <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
-      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>
+      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>${badge}
       <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
       <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
         <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
-      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${moves}
+      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${arch}${moves}
     </div>${plan.goal ? `<div class="plans-browser-goal" style="margin:2px 0 0 14px;font-size:13px;color:var(--text2);">${escHtml(plan.goal)}</div>` : ''}${open ? _plansExpandedHTML(st, plan) : ''}</div>`;
 }
 
@@ -6102,18 +6151,732 @@ function plansBrowserListHTML(st) {
 
 function plansBrowserHTML(p) {
   const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
+  _plansBrowserEnsureUnattributed();
   const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  const archOpts = ['exclude', 'include', 'only'].map(v => `<option value="${v}"${st && st.archived === v ? ' selected' : ''}>${escHtml(t(v === 'exclude' ? 'plans_release_archived_live' : v === 'include' ? 'plans_release_archived_with' : 'plans_release_archived_only'))}</option>`).join('');
+  const docsUrl = '/diagrams.html#docs/howto/plan-records.md';
   const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
     <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
-    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select></div>
+    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select>
+    <select id="plansBrowserArchived" class="form-select" aria-label="${escHtml(t('plans_release_archived_label'))}" style="font-size:12px;" onchange="plansReleaseSetArchived(this.value)">${archOpts}</select>
+    <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_docs_help'))} <a href="${escHtml(docsUrl)}" style="font-size:11px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>
     <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
       <input id="plansBrowserNewTitle" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_title_ph'))}" placeholder="${escHtml(t('plans_browser_create_title_ph'))}" style="flex:1;min-width:140px;font-size:12px;">
       <input id="plansBrowserNewGoal" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_goal_ph'))}" placeholder="${escHtml(t('plans_browser_create_goal_ph'))}" style="flex:2;min-width:160px;font-size:12px;">
       <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="plansBrowserCreate(document.getElementById('plansBrowserNewTitle').value,document.getElementById('plansBrowserNewGoal').value);return false;">＋ ${escHtml(t('plans_browser_create_btn'))}</button></div>`;
   return `<div class="plans-browser" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     ${controls}
-    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div></div>`;
+    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div>
+    <div id="plansReleaseUnattributed" style="margin-top:14px;">${plansReleaseUnattributedSectionHTML()}</div>
+    <div id="plansReleaseMigrate" style="margin-top:14px;">${plansReleaseMigrateHTML()}</div>
+    <div id="plansReleaseRowPlans" style="margin-top:14px;">${plansReleaseRowPlansHTML()}</div></div>`;
 }
+
+// ── Release plans: archive, unattributed, themes, migrations ─────────────────────────────
+// All of this lives beside the Plans browser and reuses its state, helpers
+// (_plansWrite, _plansPath, _plansMatch) and render helpers (escHtml, _plansCall).
+// User-facing wording is Automaton/Automata; "release plan" is the only plan
+// wording that reaches the UI, and it is the operator-facing name already used
+// by the plan records docs.
+
+let _plansReleaseBusy = false;
+
+// Unattributed Automata: read from the dedicated endpoint (GET /api/plans/unattributed),
+// which counts only Automata no release plan holds.
+let _plansUnattributed = { status: 'idle', total: 0, rows: [], error: '' };
+// Per-row attach panel: openIdx is the row index whose inline panel is open.
+let _plansUnattribAttachOpen = -1;
+// Bulk selection: all flag + explicit per-row checked map keyed by row id.
+let _plansUnattribSel = { all: false, ids: Object.create(null) };
+// Latest attach results (single or bulk), newest first; the bulk refusals show here.
+let _plansUnattribResults = null;   // null | { busy, error, results: [] }
+// Release migration panel state.
+let _plansReleaseMigrate = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', nextRelease: '', currentRelease: '', marks: {} };
+// Row-plans conversion panel state.
+let _plansReleaseRowPlans = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', currentRelease: '' };
+
+function _releasePaint() {
+  if (typeof _projectsActive === 'function' && _projectsActive() && typeof _projectsPaint === 'function') _projectsPaint();
+}
+
+function _plansBrowserEnsureUnattributed() {
+  if (_plansReleaseBusy) return;
+  if (_plansUnattributed.status === 'loading' || _plansUnattributed.status === 'ready') return;
+  const name = _projectsState.selected;
+  if (!name || !(Array.isArray(_projectsState.list) && _projectsState.list.some(p2 => p2 && p2.name === name))) return;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); });
+}
+
+function plansReleaseViewUnattributed() {
+  if (typeof selectProjectsSubtab === 'function') selectProjectsSubtab('plans');
+  const el = document.getElementById('plansReleaseUnattributed');
+  if (el && el.scrollIntoView) el.scrollIntoView();
+}
+
+function _projectUnattributedChipHTML() {
+  const u = _plansUnattributed;
+  if (!u || u.status !== 'ready') return '';
+  const box = inner => `<div class="project-unattributed-chip plans-release-unattributed-chip" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">${inner}</div>`;
+  if (u.total > 0) return box(`<span style="font-weight:600;">${u.total}</span> ${escHtml(t('plans_release_unattributed_chip'))}<a href="#" style="font-size:12px;margin-left:8px;" onclick="plansReleaseViewUnattributed();return false;">${escHtml(t('plans_release_unattributed_view'))}</a>`);
+  return `<div class="project-unattributed-chip plans-release-unattributed-empty" style="margin-top:8px;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unattributed_none'))}</div>`;
+}
+
+function _plansReleasePlansList() {
+  const st = _plansBrowser;
+  if (!st || st.status !== 'ready') return [];
+  const seen = Object.create(null);
+  const out = [];
+  (st.plans || []).concat(st.backlog || []).forEach(p => {
+    if (p && p.plan_kind === 'release' && p.id && !seen[p.id]) { seen[p.id] = true; out.push(p); }
+  });
+  return out;
+}
+
+function _plansReleasePlanOptions() {
+  return _plansReleasePlansList().filter(r => !r.archived).length
+    ? _plansReleasePlansList().filter(r => !r.archived)
+    : _plansReleasePlansList();
+}
+
+function _plansUnattribRowKey(r) { return String((r && r.id) || ''); }
+
+function _plansUnattribRowSelected(r) {
+  return !!(r && (_plansUnattribSel.all || _plansUnattribSel.ids[_plansUnattribRowKey(r)]));
+}
+
+function plansReleaseUnattribRowSelect(id, checked) {
+  if (String(id) === '__bulkPlan') {
+    if (String(checked || '')) _plansUnattribSel.ids['__bulkPlan'] = String(checked);
+    else delete _plansUnattribSel.ids['__bulkPlan'];
+    _releasePaint();
+    return;
+  }
+  if (checked) _plansUnattribSel.ids[String(id)] = true;
+  else { delete _plansUnattribSel.ids[String(id)]; _plansUnattribSel.all = false; }
+  _releasePaint();
+}
+
+function plansReleaseUnattribSelectAll(checked) {
+  const ids = Object.create(null);
+  if (_plansUnattribSel && typeof _plansUnattribSel.ids === 'object') {
+    for (const k of Object.keys(_plansUnattribSel.ids)) if (String(k).indexOf('__') === 0) ids[k] = _plansUnattribSel.ids[k];
+  }
+  _plansUnattribSel = { all: !!checked, ids };
+  _releasePaint();
+}
+
+function plansReleaseUnattribAttachToggle(idx) {
+  _plansUnattribAttachOpen = _plansUnattribAttachOpen === idx ? -1 : idx;
+  _releasePaint();
+}
+
+function _plansUnattribThemeOfInput(id) {
+  const el = id ? document.getElementById(id) : null;
+  return el ? String(el.value || '').trim() : '';
+}
+
+function _plansUnattribRowFromIdx(idx) {
+  return (_plansUnattributed.rows || [])[Number(idx)] || null;
+}
+
+function _plansAttachRowResultHTML(res, extra) {
+  const keyMap = { attached: 'plans_release_attach_attached', already_attached: 'plans_release_attach_already', refused: 'plans_release_attach_refused', not_found: 'plans_release_attach_not_found', placement_failed: 'plans_release_attach_placement_failed', failed: 'plans_release_attach_failed' };
+  const key = keyMap[res && res.status] || 'plans_release_attach_failed';
+  const err = res && res.error ? ' <span style="color:var(--error);overflow-wrap:anywhere;">' + escHtml(String(res.error)) + '</span>' : '';
+  const thm = res && res.theme ? ' <span style="color:var(--text2);">· ' + escHtml(String(res.theme)) + '</span>' : '';
+  return `<div style="font-size:12px;margin:2px 0;" data-attach-result="${escHtml(res ? String(res.id || '') : '')}" data-status="${escHtml(res ? String(res.status || '') : '')}">${escHtml(t(key))}${thm}${extra || ''}${err}</div>`;
+}
+
+function _releaseNotice(msg) { if (_plansBrowser) _plansBrowser.notice = String(msg || ''); }
+
+// Attach one Automaton to the operator's release plan (bulk form with one id,
+// one result line for it).
+function plansReleaseUnattribAttachGo(idx) {
+  const row = _plansUnattribRowFromIdx(idx);
+  if (!row || _plansReleaseBusy) return Promise.resolve();
+  const id = _plansUnattribRowKey(row);
+  const plan = _plansUnattribSel.ids['__rowPlan_' + id] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseRowTheme_' + id);
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _plansReleaseBusy = false;
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: [row.id], theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _plansUnattribAttachOpen = -1; _releasePaint(); });
+}
+
+// Bulk attach: one request for all checked rows; the per-Automaton refusals
+// from the server are shown item by item below the list.
+function plansReleaseUnattribBulkGo() {
+  const rows = (_plansUnattributed.rows || []).filter(_plansUnattribRowSelected);
+  if (!rows.length || _plansReleaseBusy) return Promise.resolve();
+  const ids = rows.map(r => r.id).filter(Boolean);
+  const plan = _plansUnattribSel.ids['__bulkPlan'] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseBulkTheme');
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansUnattribResults = { busy: true, error: '', results: [] };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: ids, theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => {
+      if (_plansUnattribResults && !_plansUnattribResults.busy) _plansUnattribSel = { all: false, ids: Object.create(null) };
+      _plansReleaseBusy = false;
+      _releasePaint();
+    });
+}
+
+function _plansUnattributedRefresh() {
+  if (_plansUnattributed.status !== 'ready' && _plansUnattributed.status !== 'loading') return Promise.resolve(null);
+  const name = _projectsState.selected;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  _releasePaint();
+  return apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); })
+    .catch(() => { _releasePaint(); });
+}
+_plansUnattributedRefresh;
+function _plansUnattributedFresh() { return _plansUnattributedRefresh(); }
+_plansUnattributedFresh;
+
+function _plansUnattributedResultsHTML() {
+  if (!_plansUnattribResults) return '';
+  const bu = _plansUnattribResults;
+  const rowsHtml = (bu.results || []).filter(r => r && r.id).map(r => _plansAttachRowResultHTML(r, ' <span style="color:var(--text2);">' + escHtml(String(r.title || '')) + '</span>')).join('');
+  const body = bu.busy
+    ? `<div style="color:var(--text2);font-size:12px;">${escHtml(t('plans_browser_loading'))}</div>`
+    : (rowsHtml || (bu.error ? `<div role="alert" style="color:var(--error);font-size:12px;overflow-wrap:anywhere;">${escHtml(bu.error)}</div>` : ''));
+  return `<div class="plans-release-unattributed-results" style="margin:6px 0 4px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">${body}</div>`;
+}
+
+function _plansUnattribRowHTML(r, idx) {
+  const sug = (r && (r.suggested_release || r.suggested_theme))
+    ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('plans_release_unattributed_suggest'))} ${escHtml([r.suggested_release, r.suggested_theme].filter(Boolean).map(String).join(' · '))}</span>`
+    : '';
+  const sel = _plansUnattribRowSelected(r);
+  const id = _plansUnattribRowKey(r);
+  const planOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const open = _plansUnattribAttachOpen === idx;
+  const attachPanel = open
+    ? `<div class="plans-release-unattributed-attach" style="margin:4px 0 4px 8px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <select class="form-select" id="plansReleaseRowPlan_${escHtml(id)}" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowPlan(${_plansCallArg(id)},this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${planOpts}</select>
+        <input type="text" class="form-input" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" id="plansReleaseRowTheme_${escHtml(id)}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseUnattribAttachGo', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach_confirm'))}</button>
+        <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}">${escHtml(t('plans_release_archive_cancel'))}</button></div>`
+    : '';
+  return `<div class="plans-release-unattributed-row" data-automaton="${escHtml(String(r && r.id || ''))}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);">
+    <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseRowSel_${escHtml(id)}" ${sel ? 'checked' : ''} aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribRowSelect(${_plansCallArg(id)},this.checked)" style="margin:0;"></span>
+    <span style="font-size:13px;font-weight:500;" title="${escHtml(String(r && r.title || ''))}">${escHtml(String((r && r.title) || (r && r.id) || ''))}</span>
+    ${r && r.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(r.state))}</span>` : ''}
+    ${r && r.holding_plan ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_unattributed_holding', [String(r.holding_plan)]))}</span>` : ''}
+    ${sug}
+    <button type="button" class="btn-secondary plans-release-unattributed-attach-btn" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach'))}</button>
+  </div>${attachPanel}`;
+}
+
+function plansReleaseUnattribRowPlan(id, val) {
+  const key = '__rowPlan_' + String(id);
+  if (String(val || '')) _plansUnattribSel.ids[key] = String(val);
+  else delete _plansUnattribSel.ids[key];
+  _releasePaint();
+}
+function _plansCallArg(v) { return JSON.stringify(String(v)).replace(/"/g, '&quot;'); }
+
+function plansReleaseUnattributedSectionHTML() {
+  const u = _plansUnattributed;
+  const plansOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const head = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+    <span style="font-weight:600;font-size:14px;" class="plans-release-unattributed-title">${escHtml(t('plans_release_unattributed_title'))}${u.status === 'ready' ? ` <span style="font-weight:400;color:var(--text2);">(${u.total})</span>` : ''}</span>
+    <span style="font-size:12px;color:var(--text2);"><a href="${escHtml('/diagrams.html#docs/datawatch-definitions.md')}" style="font-size:12px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>`;
+  if (u.status === 'error') return `<div class="plans-release-unattributed" role="alert">${head}<div style="color:var(--error);font-size:13px;margin-top:6px;overflow-wrap:anywhere;">${escHtml(t('plans_browser_failed', [u.error || '']))}</div></div>`;
+  if (u.status !== 'ready') return `<div class="plans-release-unattributed">${head}<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_browser_loading'))}</div></div>`;
+  const rows = u.rows || [];
+  const list = rows.length
+    ? `<div class="plans-release-unattributed-rows">${rows.map((r2, i) => _plansUnattribRowHTML(r2, i)).join('')}</div>
+      <div class="plans-release-unattributed-bulkbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+        <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseUnattribAll" checked="${_plansUnattribSel.all ? 'true' : ''}" aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribSelectAll(this.checked)" style="margin:0;"><label for="plansReleaseUnattribAll" style="font-size:12px;color:var(--text2);cursor:pointer;">${escHtml(t('plans_release_unattributed_select_all'))}</label></span>
+        <select class="form-select" id="plansReleaseBulkPlan" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowSelect('__bulkPlan',this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${plansOpts}</select>
+        <input type="text" class="form-input" id="plansReleaseBulkTheme" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary plans-release-unattributed-bulk" style="font-size:12px;padding:2px 10px;" onclick="plansReleaseUnattribBulkGo()" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_bulk'))}</button></div>`
+    : `<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_release_unattributed_empty'))}</div>`;
+  return `<div class="plans-release-unattributed">${head}${list}${_plansUnattributedResultsHTML()}</div>`;
+}
+
+// Archive / restore: confirm + reason on archive, one click on restore.
+function _plansArchiveCtlHTML(st, plan) {
+  if (!st || st.status !== 'ready') return '';
+  const style = { fontSize: '12px', padding: '2px 8px' };
+  if (st.archiveAsk === plan.id) {
+    const reasonVal = escHtml(st.archiveReason || '');
+    return `<span class="plans-release-archive-ask" role="group" style="display:inline-flex;gap:4px;align-items:center;margin-left:6px;">
+      <input type="text" value="${reasonVal}" placeholder="${escHtml(t('plans_release_archive_reason_ph'))}" aria-label="${escHtml(t('plans_release_archive_reason_ph'))}" oninput="plansReleaseArchiveReason(this.value)" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-archive-confirm" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveSubmit', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive_confirm'))}</button>
+      <button type="button" class="btn-secondary plans-release-archive-cancel" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveCancel')}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_archive_cancel'))}</button></span>`;
+  }
+  if (plan.archived) {
+    return `<button type="button" class="btn-secondary plans-release-restore" style="${style.css}" onclick="${_plansCall('plansReleaseRestore', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_restore_help'))}">${escHtml(t('plans_release_restore'))}</button>`;
+  }
+  return `<button type="button" class="btn-secondary plans-release-archive" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveAsk', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive'))}</button>`;
+}
+
+function plansReleaseArchiveAsk(id) {
+  const st = _plansBrowser;
+  st.archiveAsk = String(id);
+  st.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveReason(v) {
+  _plansBrowser.archiveReason = String(v || '');
+}
+function plansReleaseArchiveCancel() {
+  _plansBrowser.archiveAsk = '';
+  _plansBrowser.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveSubmit(id) {
+  const st = _plansBrowser;
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/archive'), 'POST', { reason: (st.archiveReason || '').trim() })
+    .then(r => {
+      st.archiveAsk = '';
+      st.archiveReason = '';
+      if (r) return _plansReloadAfterWrite('');
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseRestore(id) {
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/restore'), 'POST', {})
+    .then(r => { if (r) return _plansReloadAfterWrite(''); return null; })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseSetArchived(scope) {
+  if (_plansBrowser.archived === scope) return;
+  _plansBrowser.archived = scope === 'include' || scope === 'only' ? scope : 'exclude';
+  _plansBrowserLoad(false);
+}
+
+// Theme layout for a release plan: ordered themes with their members, the
+// unplaced group, place-in-theme and reorder. The editor keeps a local copy
+// (d._themeEdits); the PUT sends the whole desired layout and the server
+// writes it atomically (with its audit entries).
+function plansReleaseThemesHTML(st, plan) {
+  if (typeof plan === 'string' && st && Array.isArray(st.plans)) { const found = st.plans.find(x => x && x.id === plan); if (found) plan = found; }
+  const d = st.detail[plan.id] || {};
+  const box = inner => `<div class="plans-release-themes" data-plan="${escHtml(plan.id)}" style="margin:8px 0 4px 12px;border-left:2px solid var(--border);padding-left:10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+      <span style="font-weight:600;font-size:13px;" class="plans-release-themes-title">${escHtml(t('plans_release_themes'))}</span>
+      <button type="button" class="btn-secondary plans-release-theme-add" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseThemeAdd', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))}">${escHtml(t('plans_release_theme_add'))}</button></div>
+    ${inner}</div>`;
+  if (d.themesStatus === 'error') return box(`<div role="alert" style="color:var(--error);font-size:13px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('plans_release_theme_error', [(d.themesError || '').toString()]))}</div>`);
+  if (!d.themes || d.themesStatus !== 'ready') return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_loading'))}</div>`);
+  const local = _plansThemesLocal(plan.id);
+  if (!local) return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_theme_error', ['']))}</div>`);
+  const themeNames = local.themes.map(x => x.name).filter(Boolean);
+  const member = (m, where, mIdx) => {
+    const listLen = where === 'unplaced' ? local.unplaced.length : (local.themes[Number(where)] ? local.themes[Number(where)].items.length : 0);
+    const up = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, -1)}" ${mIdx <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button>`;
+    const down = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, 1)}" ${mIdx >= listLen - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button>`;
+    const unplaceBtn = where === 'unplaced' ? '' : `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_unplace'))}" onclick="${_plansCall('plansReleaseUnplace', plan.id, where, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unplace_short'))}</button>`;
+    const placeCtl = where === 'unplaced'
+      ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+          <select class="form-select" id="plansReleasePlaceSel_${escHtml(plan.id)}_${mIdx}" aria-label="${escHtml(t('plans_release_place'))}" style="font-size:11px;padding:1px 2px;max-width:150px;">
+            <option value="">${escHtml(t('plans_release_place_none'))}</option>
+            ${themeNames.map(nm => `<option value="${escHtml(nm)}">${escHtml(nm)}</option>`).join('')}
+            <option value="__new__">${escHtml(t('plans_release_theme_new', ['']))}</option>
+          </select>
+          <input type="text" class="form-input" id="plansReleasePlaceName_${escHtml(plan.id)}_${mIdx}" value="" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" style="font-size:11px;width:120px;">
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:0 6px;" onclick="${_plansCall('plansReleasePlaceGo', plan.id, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_place'))}">${escHtml(t('plans_release_place_short'))}</button>
+        </span>`
+      : '';
+    const kindLabel = m && m.kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+    return `<div class="plans-release-theme-item" data-item="${escHtml(m ? String(m.id || '') : '')}" data-kind="${escHtml(m ? String(m.kind || 'automaton') : '')}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:baseline;margin:2px 0;font-size:13px;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(kindLabel)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(m ? String(m.title || m.id || '') : '')}</span>
+      ${m && m.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(m.state))}</span>` : ''}
+      ${up}${down}${unplaceBtn}${placeCtl}</div>`;
+  };
+  const themeBlocks = local.themes.map((th, ti) => {
+    const del = `<button type="button" class="btn-secondary plans-release-theme-delete" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_delete'))}" onclick="${_plansCall('plansReleaseThemeDelete', plan.id, ti)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_theme_delete_short'))}</button>`;
+    const rename = `<input type="text" class="form-input" value="${escHtml(th.name)}" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" onchange="plansReleaseThemeRename(${_plansCallArg(plan.id)},${ti},this.value)" style="font-size:12px;min-width:140px;max-width:240px;">`;
+    return `<div class="plans-release-theme-block" data-theme="${escHtml(th.name)}" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${rename}${del}
+        <span style="font-size:11px;color:var(--text2);margin-left:auto;display:inline-flex;gap:2px;align-items:center;"><span>${escHtml(t('plans_release_theme_items'))}</span><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, -1)}" ${ti <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, 1)}" ${ti >= local.themes.length - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button></span></div>
+      ${th.items.length ? th.items.map((m2, i2) => member(m2, String(ti), i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_members_empty'))}</div>`}</div>`;
+  }).join('');
+  const unplacedBlock = `<div class="plans-release-unplaced-block" style="margin:6px 0;padding:6px 8px;border:1px dashed var(--border);border-radius:5px;">
+    <div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unplaced'))}</div>
+    ${local.unplaced.length ? local.unplaced.map((m2, i2) => member(m2, 'unplaced', i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_unplaced_empty'))}</div>`}</div>`;
+  return box(themeBlocks + unplacedBlock + ((!local.themes.length && !local.unplaced.length) ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_empty'))}</div>` : ''));
+}
+
+function _plansThemesLocal(planId) {
+  const d = _plansBrowser && _plansBrowser.detail[planId];
+  if (!d || !d.themes) return null;
+  if (!d._themeEdits) {
+    const th = d.themes;
+    d._themeEdits = {
+      themes: (Array.isArray(th.themes) ? th.themes : []).map(x => ({
+        id: (x && x.id) || '',
+        name: String((x && x.name) || ''),
+        items: (x && Array.isArray(x.items) ? x.items : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+      })),
+      unplaced: (Array.isArray(th.unplaced) ? th.unplaced : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+    };
+  }
+  return d._themeEdits;
+}
+
+function _plansThemesSave(planId) {
+  const st = _plansBrowser;
+  const d = st && st.detail[planId];
+  const ed = _plansThemesLocal(planId);
+  if (!d || !ed) return Promise.resolve(null);
+  const body = { themes: ed.themes.map(x => ({ id: x.id || '', name: x.name, automata: x.items.filter(m2 => (m2.kind || 'automaton') === 'automaton').map(m2 => m2.id), automations: x.items.filter(m2 => m2.kind === 'automation').map(m2 => m2.id) })) };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(planId, '/themes'), 'PUT', body)
+    .then(r => {
+      if (r && r.themes != null) { delete d._themeEdits; d.themes = r; d.themesStatus = 'ready'; }
+      else if (!r) { d.themesStatus = 'error'; d.themesError = (st.notice || '').toString(); }
+      return r ? _plansReloadAfterWrite(planId) : null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+
+function plansReleaseThemeAdd(planId) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  let nm = String(t('plans_release_theme_new', [ed.themes.length + 1]));
+  while (ed.themes.some(x => x.name === nm)) nm += '\u00b7';
+  ed.themes.push({ id: '', name: nm, items: [] });
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeRename(planId, ti, name) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const th = ed.themes[Number(ti)];
+  if (!th) return;
+  th.name = String(name || '').trim();
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeDelete(planId, ti) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return false;
+  const removed = ed.themes.splice(Number(ti), 1)[0];
+  if (removed && removed.items.length) ed.unplaced = ed.unplaced.concat(removed.items);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleaseThemeMove(planId, ti, delta) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const j = Number(ti) + Number(delta);
+  if (j < 0 || j >= ed.themes.length) return;
+  const tmp = ed.themes[Number(ti)]; ed.themes[Number(ti)] = ed.themes[j]; ed.themes[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function _plansThemeEditAt(planId, where, mIdx) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return null;
+  const j = Number(mIdx);
+  if (String(where) === 'unplaced') return { ed, list: ed.unplaced, j };
+  const th = ed.themes[Number(where)];
+  if (!th) return null;
+  return { ed, list: th.items, j };
+}
+
+function plansReleaseItemMove(planId, where, mIdx, delta) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return;
+  const j = e.j + Number(delta);
+  if (j < 0 || j >= e.list.length) return;
+  const tmp = e.list[e.j]; e.list[e.j] = e.list[j]; e.list[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+// Remove a theme without a confirm dialog: the server still enforces the
+// rules; a refused delete lands as an error state and the layout is reloaded.
+function plansReleaseUnplace(planId, where, mIdx) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return false;
+  if (String(where) === 'unplaced') return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (item) e.ed.unplaced.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleasePlaceGo(planId, mIdx) {
+  const selEl = document.getElementById('plansReleasePlaceSel_' + planId + '_' + mIdx);
+  const nmEl = document.getElementById('plansReleasePlaceName_' + planId + '_' + mIdx);
+  let name = selEl ? String(selEl.value || '') : '';
+  if (name === '__new__') name = nmEl ? String(nmEl.value || '').trim() : '';
+  if (_plansReleaseBusy) return false;
+  const e = _plansThemeEditAt(planId, 'unplaced', mIdx);
+  if (!e || !e.list.length) return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (!item) { _releasePaint(); return false; }
+  if (!name) { e.ed.unplaced.push(item); _releasePaint(); return _plansThemesSave(planId); }
+  let th = e.ed.themes.find(x => x.name === name);
+  if (!th) { th = { id: '', name, items: [] }; e.ed.themes.push(th); }
+  th.items.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+// Release migration: preview first (apply=false), then approve with the
+// preview id. Attached items may be marked for the next release with an
+// optional theme; marks apply at approve. Nothing is written on preview.
+function _plansMigrateItemHTML(it, ms, markable, i) {
+  const kind = it && it.kind ? String(it.kind) : 'automaton';
+  const label = kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+  const extra = [];
+  if (it && it.release) extra.push(String(it.release));
+  if (it && it.theme) extra.push(String(it.theme) + (it.theme_source ? ' (' + String(it.theme_source) + ')' : ''));
+  if (it && it.plan_id) extra.push(String(it.plan_id));
+  if (it && it.holding_plan) extra.push(String(it.holding_plan));
+  if (it && it.reason) extra.push(String(it.reason));
+  const mk = ms && ms.marks ? ms.marks[String(i)] : null;
+  const mark = markable ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+      <input type="checkbox" id="plansReleaseMarkOn_${i}" ${mk && mk.on ? 'checked' : ''} aria-label="${escHtml(t('plans_release_migrate_mark'))}" onchange="plansReleaseMigrateMark(${i},this.checked)" style="margin:0;">
+      <label style="font-size:11px;color:var(--text2);" for="plansReleaseMarkOn_${i}">${escHtml(t('plans_release_migrate_mark'))}</label>
+      <input type="text" class="form-input" id="plansReleaseMarkTheme_${i}" value="${escHtml(mk ? mk.theme : '')}" placeholder="${escHtml(t('plans_release_migrate_theme_ph'))}" aria-label="${escHtml(t('plans_release_migrate_theme_ph'))}" oninput="plansReleaseMigrateTheme(${i},this.value)" style="font-size:11px;width:110px;"></span>` : '';
+  return `<div style="font-size:12.5px;margin:2px 0;overflow-wrap:anywhere;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(label)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(it ? String(it.title || it.id || '') : '')}</span>
+      ${extra.length ? `<span style="font-size:11px;color:var(--text2);"> &middot; ${escHtml(extra.join(' &middot; '))}</span>` : ''}
+      ${mark}</div>`;
+}
+
+function _plansMigrateSection(ms, head, list, emptyKey, markable) {
+  if (!list || !list.length) return `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t(emptyKey))}</div>`;
+  return `<div style="margin:6px 0;"><div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t(head))}</div>${list.map((it, i) => _plansMigrateItemHTML(it, ms, markable, i)).join('')}</div>`;
+}
+
+function plansReleaseMigrateMark(i, on) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: !!on, theme: cur.theme || '' };
+}
+function plansReleaseMigrateTheme(i, val) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: cur.on, theme: String(val || '') };
+}
+
+function plansReleaseMigrateHTML() {
+  const ms = _plansReleaseMigrate;
+  const busy = ms.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_current_ph'))}" value="${escHtml(ms.currentRelease)}" aria-label="${escHtml(t('plans_release_migrate_current_ph'))}" onchange="_plansReleaseMigrate.currentRelease=this.value" style="font-size:12px;width:170px;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_next_ph'))}" value="${escHtml(ms.nextRelease)}" aria-label="${escHtml(t('plans_release_migrate_next_ph'))}" onchange="_plansReleaseMigrate.nextRelease=this.value" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-migrate-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseMigratePreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_preview'))}</button>
+    </div>`;
+  if (ms.preview) {
+    const pr = ms.preview;
+    inner += `
+    ${ms.applied ? '' : `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(ms.note || '')}</div>`}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_counts', [(Array.isArray(pr.created) ? pr.created.length : 0), (Array.isArray(pr.attached) ? pr.attached.length : 0), (Array.isArray(pr.unplaced) ? pr.unplaced.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(ms, 'plans_release_migrate_created_head', pr.created, 'plans_release_migrate_created_none', false)}
+    ${ms.applied ? '' : _plansMigrateSection(ms, 'plans_release_migrate_attached_head', pr.attached, 'plans_release_migrate_attached_none', true)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_unplaced_head', pr.unplaced, 'plans_release_migrate_unplaced_none', false)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_conflicts_head', pr.conflicts, 'plans_release_migrate_conflicts_none', false)}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_unchanged_note', [Array.isArray(pr.unchanged) ? pr.unchanged.length : 0]))}</div>
+    ${!ms.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-migrate-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseMigrateApprove')}" ${busy || !ms.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (ms.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(ms.error)}</div>`;
+  }
+  if (ms.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(ms.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-migrate panel" style="margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-migrate-title">${escHtml(t('plans_release_migrate_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_migrate_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseMigratePreview() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy) return Promise.resolve();
+  if (!String(ms.nextRelease || '').trim()) {
+    ms.error = String(t('plans_release_migrate_next_required'));
+    _releasePaint();
+    return Promise.resolve();
+  }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: false, preview_id: '', marks: [] })
+    .then(r => {
+      if (r && r.preview_id) {
+        ms.preview = r; ms.previewId = String(r.preview_id); ms.note = r.note || ''; ms.applied = false; ms.appliedNote = '';
+        ms.marks = {};
+        (r.attached || []).forEach((it, i) => { ms.marks[String(i)] = { on: false, theme: (it && it.theme) ? String(it.theme) : '' }; });
+      } else {
+        ms.preview = null; ms.previewId = '';
+        ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      }
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+function plansReleaseMigrateApprove() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy || !ms.previewId) return Promise.resolve();
+  const marks = [];
+  const keys = Object.keys(ms.marks).sort((a, b) => (Number(a) < Number(b) ? -1 : 1));
+  for (const k of keys) { const mk = ms.marks[k]; if (mk && mk.on) marks.push({ release: String(ms.nextRelease).trim(), theme: String(mk.theme || '') }); }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: true, preview_id: ms.previewId, marks: marks })
+    .then(r => {
+      if (r) {
+        ms.applied = true; ms.appliedNote = r.note || t('plans_release_migrate_done'); ms.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+// Row-plans migration: converts row plans into themes + an unplaced group.
+// Preview first, then approve with this panel's own preview id.
+function plansReleaseRowPlansHTML() {
+  const rp = _plansReleaseRowPlans;
+  const busy = rp.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <button type="button" class="btn-secondary plans-release-rowplans-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseRowPlansPreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_preview'))}</button>
+    </div>`;
+  if (rp.preview) {
+    const pr = rp.preview;
+    inner += `
+    ${!rp.applied ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(rp.note || '')}</div>` : ''}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_rowplans_counts', [(Array.isArray(pr.link_rows) ? pr.link_rows.length : 0), (Array.isArray(pr.backlog_items) ? pr.backlog_items.length : 0), (Array.isArray(pr.waiting) ? pr.waiting.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(null, 'plans_release_rowplans_link_head', pr.link_rows, 'plans_release_rowplans_link_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_backlog_head', pr.backlog_items, 'plans_release_rowplans_backlog_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_waiting_head', pr.waiting, 'plans_release_rowplans_waiting_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_conflicts_head', pr.conflicts, 'plans_release_rowplans_conflicts_none', false)}
+    ${!rp.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-rowplans-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseRowPlansApprove')}" ${busy || !rp.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (rp.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(rp.error)}</div>`;
+  }
+  if (rp.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(rp.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-rowplans panel" style="margin:10px 0;padding:10px;border:1px dashed var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-rowplans-title">${escHtml(t('plans_release_rowplans_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_rowplans_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseRowPlansPreview() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: false })
+    .then(r => {
+      if (r && r.preview_id) {
+        rp.preview = r; rp.previewId = String(r.preview_id); rp.note = r.note || ''; rp.applied = false; rp.appliedNote = '';
+      } else {
+        rp.preview = null; rp.previewId = '';
+        rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      }
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+
+function plansReleaseRowPlansApprove() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy || !rp.previewId) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: true, preview_id: rp.previewId })
+    .then(r => {
+      if (r) {
+        rp.applied = true; rp.appliedNote = r.note || t('plans_release_migrate_done'); rp.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+window.plansReleaseArchiveAsk = plansReleaseArchiveAsk;
+window.plansReleaseArchiveReason = plansReleaseArchiveReason;
+window.plansReleaseArchiveCancel = plansReleaseArchiveCancel;
+window.plansReleaseArchiveSubmit = plansReleaseArchiveSubmit;
+window.plansReleaseRestore = plansReleaseRestore;
+window.plansReleaseSetArchived = plansReleaseSetArchived;
+window.plansReleaseViewUnattributed = plansReleaseViewUnattributed;
+window.plansReleaseUnattribRowSelect = plansReleaseUnattribRowSelect;
+window.plansReleaseUnattribSelectAll = plansReleaseUnattribSelectAll;
+window.plansReleaseUnattribAttachToggle = plansReleaseUnattribAttachToggle;
+window.plansReleaseUnattribAttachGo = plansReleaseUnattribAttachGo;
+window.plansReleaseUnattribBulkGo = plansReleaseUnattribBulkGo;
+window.plansReleaseUnattribRowPlan = plansReleaseUnattribRowPlan;
+window.plansReleaseThemeAdd = plansReleaseThemeAdd;
+window.plansReleaseThemeRename = plansReleaseThemeRename;
+window.plansReleaseThemeDelete = plansReleaseThemeDelete;
+window.plansReleaseThemeMove = plansReleaseThemeMove;
+window.plansReleaseItemMove = plansReleaseItemMove;
+window.plansReleaseUnplace = plansReleaseUnplace;
+window.plansReleasePlaceGo = plansReleasePlaceGo;
+window.plansReleaseMigratePreview = plansReleaseMigratePreview;
+window.plansReleaseMigrateApprove = plansReleaseMigrateApprove;
+window.plansReleaseMigrateMark = plansReleaseMigrateMark;
+window.plansReleaseMigrateTheme = plansReleaseMigrateTheme;
+window.plansReleaseRowPlansPreview = plansReleaseRowPlansPreview;
+window.plansReleaseRowPlansApprove = plansReleaseRowPlansApprove;
 window.plansBrowserHTML = plansBrowserHTML;
 window.plansBrowserListHTML = plansBrowserListHTML;
 
@@ -16759,8 +17522,13 @@ function renderSettingsView() {
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
                 <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev server on a trusted network'}">
-                  <input type="checkbox" id="serverFormTLSSkipVerify" />
+                  <input type="checkbox" id="serverFormTLSSkipVerify" onchange="tlsPinPairSync('serverForm')" />
                   ${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}
+                </label>
+                <div id="serverFormTLSWarn" style="display:none;font-size:11px;color:var(--warning,#e0a030);margin-top:2px;">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this server — use only on a trusted network.')}</div>
+                <label style="font-size:12px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this server: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'} (optional)<br>
+                  <input type="text" id="serverFormTLSCertFingerprint" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('serverForm')" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
                 </label>
                 <div id="serverFormCapsWrap" style="display:none;">
                   <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
@@ -16798,7 +17566,12 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" onchange="tlsPinPairSync('fedPeerForm')" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div id="fedPeerFormTLSWarn" style="grid-column:1/-1;display:none;font-size:11px;color:var(--warning,#e0a030);">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this peer — use only on a trusted network.')}</div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this peer: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'}<br>
+                  <input id="fedPeerFormTLSCertFingerprint" class="form-input" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('fedPeerForm')" style="width:100%;font-size:11px;margin-top:2px;" />
+                </label></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
                 <!-- Observer pull protocol: per-peer opt-in plus the two
                      numeric overrides. A blank number field stays 0 on the
@@ -18238,6 +19011,8 @@ function buildLLMForm(l) {
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;"><input type="checkbox" id="fe_llm_fallthrough_target" ${l.fallthrough_target ? 'checked' : ''} /> ${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</label>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
     ${buildLLMBudgetGroup(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_roles')||'Workload roles (comma-separated; empty = none)')}</label>
     <input id="fe_llm_roles" class="form-input" placeholder="planning, review" value="${escHtml((l.roles||[]).join(', '))}" />
@@ -18263,6 +19038,7 @@ function collectLLMForm(originalRecord) {
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
+  out.fallthrough_target = !!(document.getElementById('fe_llm_fallthrough_target')||{}).checked;
   out.budget = collectLLMBudget();
   // Roles: always sent, so clearing the box clears the stored list (an
   // omitted field would keep it).
@@ -18469,6 +19245,13 @@ window._renderLLMEditPanel = function(existing) {
           <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}</span>
           <label class="toggle-switch"><input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} /><span class="toggle-slider"></span></label>
         </div>
+      </div>
+      <div class="wizard-field" id="llmFallthroughTargetSect">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</span>
+          <label class="toggle-switch"><input type="checkbox" id="llmEditFallthroughTarget" ${existing.fallthrough_target ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
@@ -18770,6 +19553,7 @@ window._llmSaveDraft = function() {
   if (!isEdit && !name) { showError('LLM name required'); return; }
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
+  const fallthroughTarget = !!(document.getElementById('llmEditFallthroughTarget')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
@@ -18794,7 +19578,7 @@ window._llmSaveDraft = function() {
   const method = isEdit ? 'PUT' : 'POST';
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
-    auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+    auto_add_models: autoAddModels, fallthrough_target: fallthroughTarget, compute_nodes: computeNodes, api_key_ref: apiKey,
     timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
@@ -24938,6 +25722,12 @@ const GENERAL_CONFIG_FIELDS = [
     // and interactive session starts are never blocked.
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
+    // Review reserve: while a backed-off backend holds nothing else, keep a
+    // few of its live slots for review work (guardrail judging, verifying,
+    // planning) — workers never take a reserve slot. Slot count 0 = off
+    // (default 1); the reserve's rolling one-hour token budget 0 = no cap.
+    { key: 'autonomous.backoff_reserve_for_review', label: 'Usage back-off review reserve (review session slots kept per backed-off backend, 0 = off, default 1)', labelKey: 'settings_backoff_reserve_for_review', type: 'number', placeholder: '1', min: 0, step: 1, default: '1' },
+    { key: 'autonomous.backoff_reserve_tokens_per_hour', label: 'Usage back-off review reserve token cap (rolling one-hour tokens the reserve may use per backend, 0 = no cap)', labelKey: 'settings_backoff_reserve_tokens_per_hour', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Host load check — off does nothing, alert (default) raises one alert per sustained breach, reap also ends proven-orphan processes of ended sessions.
@@ -29645,6 +30435,32 @@ function loadServersList() {
   });
 }
 
+// ── TLS pin / skip-verify pair (server + federation peer forms) ──────────────
+// The daemon refuses a peer that carries both a tls_cert_fingerprint pin and
+// tls_skip_verify, so the two controls stay mutually exclusive on the client
+// too: typing a pin while the checkbox is on reverts the checkbox, and
+// checking the box while a pin is typed reverts the checkbox. The inline
+// warning line follows the checkbox on every change and on form load.
+function tlsPinPairSync(prefix) {
+  const skipEl = document.getElementById(prefix + 'TLSSkipVerify');
+  const pinEl = document.getElementById(prefix + 'TLSCertFingerprint');
+  const warnEl = document.getElementById(prefix + 'TLSWarn');
+  if (skipEl && pinEl && (pinEl.value || '').trim() && skipEl.checked) skipEl.checked = false;
+  if (warnEl) warnEl.style.display = (skipEl && skipEl.checked) ? '' : 'none';
+}
+window.tlsPinPairSync = tlsPinPairSync;
+
+// The REST layer appends a `warnings` array to server/peer create, update and
+// test responses when the stored TLS posture is insecure. Surface every entry
+// through the existing toast helper instead of dropping it silently.
+function _surfaceResponseWarnings(d) {
+  if (!d || !Array.isArray(d.warnings)) return;
+  for (const w of d.warnings) {
+    if (typeof w === 'string' && w.trim()) showToast(w.trim(), 'warning');
+  }
+}
+window._surfaceResponseWarnings = _surfaceResponseWarnings;
+
 function showServerForm(entry) {
   const wrap = document.getElementById('serverFormWrap');
   const nameEl = document.getElementById('serverFormName');
@@ -29663,6 +30479,11 @@ function showServerForm(entry) {
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
   if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!(entry && entry.tls_skip_verify);
+  // Certificate pin: editing pre-fills the saved pin; adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
+  if (fpEl) fpEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('serverForm');
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
   if (fedEl) {
     fedEl.checked = !!(entry && entry.federated);
@@ -29697,6 +30518,7 @@ function saveServer() {
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
   const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -29706,6 +30528,10 @@ function saveServer() {
   }
   const editName = editNameEl ? editNameEl.value : '';
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true, tls_skip_verify: tlsSkipVerifyEl ? tlsSkipVerifyEl.checked : false };
+  if (fpEl) {
+    const fp = (fpEl.value || '').trim();
+    if (fp) body.tls_cert_fingerprint = fp;
+  }
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
   if (fedEl && fedEl.checked) {
@@ -29716,7 +30542,7 @@ function saveServer() {
   const method = isEdit ? 'PUT' : 'POST';
   const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';
   apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    .then(() => { closeServerForm(); loadServersList(); })
+    .then(d => { _surfaceResponseWarnings(d); closeServerForm(); loadServersList(); })
     .catch(e => { if (errEl) errEl.textContent = e.message || 'Save failed.'; });
 }
 
@@ -29731,6 +30557,7 @@ function testServerEntry(name, btnEl) {
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
   apiFetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' })
     .then(d => {
+      _surfaceResponseWarnings(d);
       const msg = d.ok ? `${d.latency_ms}ms v${d.version||'?'}` : `fail: ${d.error||'err'}`;
       showToast(`${name}: ${msg}`, d.ok ? 'success' : 'error');
     })
@@ -35161,7 +35988,11 @@ function capacityBackoffHtml(backoff) {
     const rung = b.rung
       ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
       : '';
-    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
+    // The daemon sends the reserve reason in its built-in English wording
+    // ("back-off, review reserve in use"); show it translated here, keeping
+    // any pool prefix the ledger added. Every other reason shows as sent.
+    const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
+    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
     return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
@@ -35172,11 +36003,17 @@ function capacityBackoffHtml(backoff) {
 // and the holdings line. Field names cover both payload shapes: the task
 // views (cause, resets_at, pools, node) and the session status automaton
 // block (wait_cause, wait_resets_at, holds).
-function _taskWaitCauseLabel(cause) {
+// A back-off wait narrows to the review-reserve chip when its reason names
+// the reserve (a review slot or the reserve's hourly token budget is in
+// use), so the chip says why instead of a bare back-off; every other
+// back-off keeps the original label.
+function _taskWaitCauseLabel(cause, reason) {
   switch (cause) {
     case 'pool_full': return t('task_wait_cause_pool_full') || 'Pool full';
     case 'node_busy': return t('task_wait_cause_node_busy') || 'Node busy';
-    case 'backoff': return t('task_wait_cause_backoff') || 'Back-off';
+    case 'backoff':
+      if (/review reserve in use/.test(String(reason || ''))) return t('task_wait_cause_backoff_reserve') || 'Back-off, review reserve in use';
+      return t('task_wait_cause_backoff') || 'Back-off';
     case 'budget': return t('task_wait_cause_budget') || 'Budget';
     case 'global_cooldown': return t('task_wait_cause_global_cooldown') || 'Cool-down';
     case 'await_external': return t('task_wait_cause_await_external') || 'Awaiting external';
@@ -35199,7 +36036,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = _taskWaitCauseLabel(cause);
+  const label = _taskWaitCauseLabel(cause, reason);
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
@@ -57428,6 +58265,12 @@ function showFedPeerForm(entry) {
     if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
     if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!entry.tls_skip_verify;
   }
+  // Certificate pin (tls_cert_fingerprint) — same round-trip discipline as
+  // fingerprint_sync: editing pre-fills the saved pin, adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const pinEl = document.getElementById('fedPeerFormTLSCertFingerprint');
+  if (pinEl) pinEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('fedPeerForm');
 }
 window.showFedPeerForm = showFedPeerForm;
 
@@ -57452,6 +58295,7 @@ function submitFedPeerForm() {
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const tlsCertFingerprint = ((document.getElementById('fedPeerFormTLSCertFingerprint') || {}).value || '').trim();
   const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
   // Observer pull protocol. observer_pull is always sent explicitly on PUT
   // (the server merge keeps existing values for omitted keys, so an
@@ -57474,15 +58318,17 @@ function submitFedPeerForm() {
       editBody.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
     }
     if (token) editBody.token = token;
+    if (tlsCertFingerprint) editBody.tls_cert_fingerprint = tlsCertFingerprint;
     if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
     apiFetch('/api/federation/peers/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(editBody) })
-      .then(() => { hideFedPeerForm(); loadFederationPeersPanel(); })
+      .then(d => { _surfaceResponseWarnings(d); hideFedPeerForm(); loadFederationPeersPanel(); })
       .catch(err => { if (errEl) { errEl.textContent = err.message || String(err); errEl.style.display = ''; } });
     return;
   }
 
   const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
+  if (tlsCertFingerprint) body.tls_cert_fingerprint = tlsCertFingerprint;
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend
@@ -57507,8 +58353,9 @@ function submitFedPeerForm() {
       return;
     }
     if (!resp.ok) { resp.text().then(t => { if (errEl) { errEl.textContent = t; errEl.style.display = ''; } }); return; }
-    hideFedPeerForm();
-    loadFederationPeersPanel();
+    const finishPost = () => { hideFedPeerForm(); loadFederationPeersPanel(); };
+    if (resp.json) resp.json().then(d => { _surfaceResponseWarnings(d); finishPost(); }).catch(finishPost);
+    else finishPost();
   }).catch(err => {
     if (errEl) { errEl.textContent = String(err); errEl.style.display = ''; }
   });
@@ -57522,6 +58369,7 @@ function testFedPeer(name) {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
+    _surfaceResponseWarnings(d);
     const msg = d.ok ? `OK — ${d.latency_ms}ms (${d.version || 'unknown version'})` : `FAIL: ${d.error || 'no error'}`;
     showToast('federation peer test: ' + name + ' → ' + msg);
   }).catch(err => showToast('test error: ' + String(err)));

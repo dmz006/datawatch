@@ -1634,11 +1634,11 @@ Project + cluster profile CRUD (F10 sprint 2).
 |---|---|
 | `list` | List the registered project aliases |
 | `get <name>` | Show one alias and its record |
-| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier; see [howto/projects-tab](howto/projects-tab.md) |
+| `upsert <name> --dir <abs> [--backend …] [--description …]` | Register or update an alias. Sends no policy, so it clears the stored policy tier (set it back with `policy set`); `--description` and `--backend` set the stored values, and a flag you do not pass keeps the stored value — an explicit empty value clears it, the same as `set`. See [howto/projects-tab](howto/projects-tab.md) |
 | `delete <name>` | Remove an alias; the directory is not touched |
 | `policy show\|set\|unset` | The per-project policy tier; `policy show <name> --effective [--automaton <id>]` resolves each setting with its tier. See [howto/project-automation-policy](howto/project-automation-policy.md) |
-| `show <name> [--window N]` | The record plus the roll-up: plans, Automata, tasks, points and throughput |
-| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields keep their stored value |
+| `show <name> [--window N]` | The record (description included) plus the roll-up: plans, Automata, tasks, points and throughput |
+| `set <name> [--owner …] [--repository …] [--default-branch …] [--target …] [--weekly-share N] [--branch-retention-days N] [--major-trigger …]` | Change only the flags given; the other fields — description included — keep their stored value |
 | `arcs <name> [--set id:priority:state,…]` | Print the plans in order, or replace them (`--set ""` clears). Deprecated old name and plan list (arcs): the registry plan records replace it, see `datawatch plans migrate [--apply]` and [howto/plan-records](howto/plan-records.md#building-plans-from-arcs-and-rows) |
 | `history <name> [--limit N] [--cursor …]` | One page of finished Automata, daily progress and Gantt rows |
 | `timeline <name> [--level arcs\|automata\|tasks] [--parent <arc>\|none] [--automaton <id>] [--focus <arc>\|none] [--limit N] [--cursor …]` | One level of the project timeline: start, end and status (completed, running, waiting, blocked, failed or cancelled) per plan, Automaton and task, with task dependencies and Automaton chain edges (the CLI prints the daemon reply unchanged); chat: `project timeline <name> [level=…] [parent=…] [automaton=…] [focus=…] [limit=…] [cursor=…]`. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline) |
@@ -1670,6 +1670,61 @@ Order and link plans (the registry records of what you are working on).
 | `migrate [--apply]` | Build plans from the older project plan list (arcs) and registry rows; see below |
 
 Same calls on REST (`POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach|detach`), MCP (`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`) and chat (`autonomous plan list <project>`, `plan new <project> <title...>`, `plan move <project> <plan> <position>`, `plan move <plan> automaton <id> <position>`, `plan attach|detach <plan> automaton|automation|finding <id>`; `arcs` still works in place of `plan`). See [howto/plan-records](howto/plan-records.md#ordering-and-linking-plans).
+
+### `datawatch plan` release plan commands
+
+`datawatch plan` is the same command as `datawatch plans`. A release plan stands
+for one release and holds that release's Automata, grouped in themes.
+
+| Subcommand | Description |
+|---|---|
+| `theme list <plan> [--json]` | A release plan's themes in order, the items in each, then the unplaced items |
+| `theme add <plan> <name>` / `rename <plan> <theme> <new-name>` / `remove <plan> <theme>` | Add an empty theme, rename one, or remove one (its items stay in the plan, unplaced) |
+| `theme place <plan> <theme> (--automaton ID \| --automation ID)` / `unplace <plan> (--automaton ID \| --automation ID)` | Put an item the plan holds into a theme, or take it out of its theme |
+| `theme reorder <plan> <theme>...` / `reorder-items <plan> <theme> --kind automaton\|automation <id>...` | Set the theme order, or the order of one kind of item inside a theme; list every one once |
+| `archive <plan> [--reason TEXT] [--protect PLAN]` | Archive a plan; a mark only, nothing is deleted. A protected plan that holds Automata is refused |
+| `restore <plan>` | Clear the archive mark |
+| `unattributed [--project P] [--current-release R] [--next-release R] [--limit N] [--offset N] [--json]` | The Automata no release plan holds, with the release and theme the rules suggest; one held by an ordinary plan names it |
+| `attach <plan> --automaton ID... \| --automation ID... [--theme THEME]` | Attach several (repeat the flag or separate ids with commas), each with its own result line; an item attached to another plan is refused with the holder named and the command exits non-zero. One id and no theme is the older single attach |
+| `migrate --release --project P [--current-release R] [--next-release R] [--marks JSON]` | File a project's Automata under release plans and themes. Previews and prints a preview id; writes nothing |
+| `migrate --release --project P --apply --preview-id ID` | Write exactly that preview. With `--apply` and no `--preview-id` it prints the preview and refuses to write; a stale id is refused by the daemon |
+| `row-plans list [--project P] [--json]` | The plans the plans migration made from registry rows |
+| `row-plans convert [--project P] [--current-release R] [--apply --preview-id ID]` | Convert them into release plan items; previews, and writes only with `--apply` and the preview id. Each converted plan is archived, not deleted |
+
+Same calls on REST (`GET` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive|restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`), MCP (`plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_migrate`, `plan_row_plan_list`, `plan_row_plan_convert`) and chat (`autonomous plan themes <plan>`, `plan theme add|rename|remove|place|unplace|reorder|reorder-items <plan> ...`, `plan archive <plan> [protect=<plan>] [reason...]`, `plan restore <plan>`, `plan unattributed [project=P] [current=R] [next=R]`, `plan migrate release project=P [current=R] [next=R]`, `plan migrate release approve <preview-id> project=P`, `plan attach <plan> automaton|automation <id> <id>... [theme=T]`). The chat approve step carries the preview id and is refused without it. See [howto/plan-records](howto/plan-records.md#release-plans-and-themes).
+
+A theme is named by its id, or in chat by its name when it is one word. The two
+migrations (`migrate --release` and `row-plans convert`) preview by default, print
+a preview id and write only when run again with `--apply --preview-id`; a missing
+id is refused before anything is written and a stale id is refused by the
+daemon, so preview again. `--marks` takes a JSON object of Automaton id to
+`{"release","theme"}` and must be given to the approving run as it was to the
+preview. `datawatch plan attach` with several ids exits non-zero when any id was
+not attached. Archive and restore never delete anything.
+
+#### Chat verbs for release plans (`autonomous plan ...`)
+
+| Verb | What it does |
+|---|---|
+| `plan themes <plan>` | A release plan's themes in order, the items in each, then the unplaced items (a read) |
+| `plan theme add <plan> <name...>` | Add an empty theme |
+| `plan theme rename <plan> <theme> <new name...>` | Rename a theme |
+| `plan theme remove <plan> <theme>` | Remove a theme; its items stay in the plan, unplaced |
+| `plan theme place <plan> <theme> automaton\|automation <id>` | Put an item the plan holds into a theme |
+| `plan theme unplace <plan> automaton\|automation <id>` | Take an item out of its theme |
+| `plan theme reorder <plan> <theme> [<theme>...]` | Set the theme order (every theme once) |
+| `plan theme reorder-items <plan> <theme> automaton\|automation <id> [<id>...]` | Set the order of one kind of item in a theme (every item once) |
+| `plan archive <plan> [protect=<plan>] [reason...]` | Archive a plan (a mark only); a protected plan that holds Automata is refused |
+| `plan restore <plan>` | Clear the archive mark |
+| `plan unattributed [project=P] [current=R] [next=R]` | The Automata no release plan holds, with the release and theme the rules suggest (a read) |
+| `plan attach <plan> automaton\|automation <id> [<id>...] [theme=T]` | Attach one or several; each id gets its own line and a refused id names the holder |
+| `plan migrate release project=P [current=R] [next=R]` | Preview the release migration; prints the preview id and writes nothing |
+| `plan migrate release approve <preview-id> project=P [current=R] [next=R]` | Write exactly that preview; refused without the id |
+
+There is no chat verb for the row-plan conversion or for `--marks`; use the CLI,
+MCP, REST or the web app for those. Every verb calls the same route as the other
+surfaces, so the channel's sender checks come first and then the route's own
+capability check. `arcs` is accepted in place of `plan`.
 
 ### `datawatch cooldown <subcommand>`
 

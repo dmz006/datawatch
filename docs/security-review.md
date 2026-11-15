@@ -60,7 +60,7 @@ The goroutines already respect `ctx.Done()` for cancellation in addition to a pr
 |-----------|---------|---------|
 | `internal/agents/tls.go:95` | parent↔worker pinned mTLS — paired with VerifyPeerCertificate fingerprint check | False positive |
 | `internal/agents/client.go:124` | parent↔worker mTLS client — same pinning pattern | False positive |
-| `internal/observerpeer/client.go:96` | observer-peer push — pinning planned in S15; currently opt-in via config (default off) | Accept (documented) |
+| `internal/observerpeer/client.go:126` | observer-peer push — pinning + verify-by-default landed (worker/peers pushes pin or verify against the system trust store); `Insecure` remains opt-in (default off, startup-warned) | Accept (documented) |
 | `internal/observer/cluster_k8s.go:139,142` | k8s API server cert verification skipped for cluster-internal traffic via in-cluster ServiceAccount | Accept (k8s convention) |
 | `cmd/datawatch/main.go:6250,6392` | self-update binary fetch + datawatch-app heartbeat probe — both gated behind operator opt-in | Accept (documented) |
 

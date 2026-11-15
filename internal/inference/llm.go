@@ -257,6 +257,12 @@ type LLM struct {
 	// when used as a verifier. Empty means generate. Validated on Add,
 	// Update and registry load.
 	VerificationMode VerificationMode `yaml:"verification_mode,omitempty" json:"verification_mode,omitempty"`
+
+	// FallthroughTarget marks this entry as an allowed fall-through target:
+	// when autonomous.capacity_fallthrough is on and a worker's requested pool
+	// is full, the daemon may admit the worker on this entry instead. Default
+	// false, so no entry is a target until the operator marks it.
+	FallthroughTarget bool `yaml:"fallthrough_target,omitempty" json:"fallthrough_target,omitempty"`
 }
 
 // EffectiveVerificationMode returns the entry's verification mode, with an

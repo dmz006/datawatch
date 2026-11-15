@@ -2013,6 +2013,7 @@ paths:
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
         - {name: backlog_limit, in: query, schema: {type: integer, minimum: 1, maximum: 500}}
         - {name: backlog_offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: archived, in: query, schema: {type: string, enum: [exclude, include, only], default: exclude}, description: "exclude (the default) leaves archived plans out, include adds them, only lists archived plans alone; each plan row carries plan_kind, release and archived"}
       responses:
         "200":
           description: One page of plans and one page of the Backlog group
@@ -2039,8 +2040,12 @@ paths:
         progress and points, one line per active plan with its state and progress
         (percent, for a bar), what is next (the first waiting Automaton of the first
         active plan; blocked and held ones are skipped), and record counts for plans,
-        registry rows and findings by state. Answers from the plan-record summary
-        index. Needs the autonomous read capability when called by a federated peer.
+        registry rows and findings by state. `counts.plans.archived` is how many plans
+        the project has archived (they are not in the other plan counts), and
+        `counts.unattributed.automata` is how many of the project's Automata no
+        release plan holds (left out while the Automata manager is not available).
+        Answers from the plan-record summary index. Needs the autonomous read
+        capability when called by a federated peer.
       operationId: projectOverviewSummary
       tags: [Autonomous]
       parameters:
@@ -2182,6 +2187,22 @@ paths:
         at most 100 characters; a row with no real title takes the title of the Automaton or Automation it names, and
         only a row with neither becomes "Plan: (untitled row N)". The counts include `titles_derived`,
         `titles_from_linked` and `titles_fell_back` for the plans this run makes.
+
+        `mode` `release` is a different migration: it files a project's Automata and
+        Automations under two release plans, the current release and the next one
+        (made when absent, found by their release label). Shipped or planned work
+        goes to the current release plan; work held for after it, planned for the
+        next release, or marked for it goes to the next release plan. Each item is
+        placed in a theme by the migration's rules, or by your `marks`; an item no
+        rule matches is `unplaced` and attached with no theme. An item already
+        attached to another plan is a conflict: it is named and never moved. The
+        default is a preview that writes nothing and returns a `preview_id`. A
+        written run needs `apply` true and the `preview_id` of the preview you
+        approved: a missing id is refused with 400, a stale one with 409, and nothing
+        is written. A second written run changes nothing, and nothing is deleted.
+        The write is audit-logged with the actor. The answer lists `created`,
+        `attached`, `unplaced`, `conflicts`, `unchanged` and `skipped`. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
       operationId: plansMigrate
       tags: [Autonomous]
       requestBody:
@@ -2191,7 +2212,20 @@ paths:
             schema:
               type: object
               properties:
-                apply: {type: boolean, default: false}
+                apply: {type: boolean, default: false, description: "True writes; false (the default) previews"}
+                mode: {type: string, enum: [arcs, release], default: arcs, description: "arcs (the default) builds plans from the older plan list and the registry rows; release files the work under release plans"}
+                project: {type: string, description: "A registered project alias; required for mode release"}
+                current_release: {type: string, description: "Release label of the current release plan (mode release); default 10.0"}
+                next_release: {type: string, description: "Release label of the next release plan (mode release); default 11.0; its major number must come after the current one"}
+                marks:
+                  type: object
+                  description: "Your own choice per Automaton or Automation id (mode release); a mark wins over the rules"
+                  additionalProperties:
+                    type: object
+                    properties:
+                      release: {type: string, description: "The current or next release label to file it under"}
+                      theme: {type: string, description: "The theme name to place it in (made when absent)"}
+                preview_id: {type: string, description: "The preview_id of the approved preview; required when mode is release and apply is true"}
       responses:
         "200":
           description: The counts and the would-create, would-link, skipped-existing and conflict lists
@@ -2202,21 +2236,36 @@ paths:
                 properties:
                   note: {type: string}
                   counts: {type: object, additionalProperties: {type: integer}}
-                  result: {type: object}
-        "400": {description: Bad body}
+                  result: {type: object, description: "The arcs migration's lists (mode arcs)"}
+                  mode: {type: string, description: "release for the release migration"}
+                  applied: {type: boolean, description: "True after a written run (mode release)"}
+                  preview_id: {type: string, description: "A stable hash of this preview; quote it to write exactly this (mode release)"}
+                  current_release: {type: string}
+                  next_release: {type: string}
+                  created: {type: array, items: {type: object}, description: "Release plans and themes made or to be made (mode release)"}
+                  attached: {type: array, items: {type: object}, description: "Items attached, with the release and theme (mode release)"}
+                  unplaced: {type: array, items: {type: object}, description: "Attached items no rule or mark placed in a theme (mode release)"}
+                  conflicts: {type: array, items: {type: object}, description: "Items refused, such as one attached to another plan, with the plan that holds it (mode release)"}
+                  unchanged: {type: array, items: {type: object}, description: "Release plans and items already as they should be (mode release)"}
+                  skipped: {type: array, items: {type: object}, description: "Items outside the two releases, with the reason (mode release)"}
+        "400": {description: Bad body, unknown mode, an unregistered or missing project, a bad release label, or a written release run with no preview_id}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
-        "503": {description: Plan records are not available}
+        "409": {description: The preview_id is stale, because the data changed or the id is wrong; run the preview again}
+        "503": {description: Plan records are not available, or the Automata manager is not available to read the Automata (mode release)}
   /api/plans:
     post:
       summary: Create a plan
       description: |
         Creates a plan in a registered project. The plan goes last in the plan order.
         The title must be unique within the project; a taken title answers 409 with
-        the plan that holds it. Needs the autonomous write capability when called by
-        a federated peer.
+        the plan that holds it. A release plan has `plan_kind` `release` and a
+        `release` label, and a project has one per release; a second answers 409
+        naming the first. The stored plan carries `plan_kind` and `release`. Needs the
+        autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
       operationId: planCreate
       tags: [Autonomous]
       requestBody:
@@ -2231,6 +2280,8 @@ paths:
                 title: {type: string}
                 goal: {type: string}
                 state: {type: string}
+                plan_kind: {type: string, enum: [ordinary, release], description: "Empty or ordinary for an ordinary plan; release for a release plan, which also needs release"}
+                release: {type: string, maxLength: 64, description: "The release label a release plan stands for, such as 10.0; a project has one release plan per release (compared trimmed, ignoring case)"}
       responses:
         "201":
           description: The stored plan, title first
@@ -2240,12 +2291,12 @@ paths:
                 type: object
                 properties:
                   plan: {type: object}
-        "400": {description: Missing title, unknown project or invalid state}
+        "400": {description: Missing title, unknown project, invalid state or plan kind, a release plan with no release, or a release on an ordinary plan}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Plan records are turned off}
-        "409": {description: The title is already used in the project}
+        "409": {description: The title is already used in the project, or the project already has a release plan for that release (the answer names it)}
         "503": {description: Plan records are not available}
   /api/plans/order:
     put:
@@ -2332,6 +2383,17 @@ paths:
         attached elsewhere, answers 409 naming the holder and nothing changes: detach
         it first. Attaching the same item to the same plan again changes nothing.
         Needs the autonomous write capability when called by a federated peer.
+
+        To attach several at once send `ids` (a list of Automaton ids, or of
+        Automation ids with `kind` `automation`) instead of `id`. The answer then has
+        one entry in `results` per id, so an id that is attached elsewhere is
+        reported (`refused`, naming the holder) while the others succeed; an unknown
+        id is `not_found`, and an id already on the plan is `already_attached`. The
+        request is 200 whenever it was valid. `theme` (an id or name of a theme of a
+        release plan; it must exist) places every attached item in that theme, and a
+        theme that does not exist refuses the whole request before anything is
+        attached. At most 500 ids. How-to: docs/howto/plan-records.md, "Release plans
+        and themes".
       operationId: planAttach
       tags: [Autonomous]
       parameters:
@@ -2342,13 +2404,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [kind, id]
               properties:
-                kind: {type: string, enum: [automaton, automation, finding]}
-                id: {type: string}
+                kind: {type: string, enum: [automaton, automation, finding], description: "What is attached; required with id, and automaton when left out with ids"}
+                id: {type: string, description: "The Automaton or Automation id, or the finding reference; send id or ids, not both"}
+                ids: {type: array, maxItems: 500, items: {type: string}, description: "Automaton ids (or Automation ids with kind automation) to attach in one call"}
+                theme: {type: string, description: "A theme of the release plan, by id or name, to place each attached Automaton or Automation in"}
       responses:
         "200":
-          description: What was attached and the plan (or finding) after the change
+          description: What was attached and the plan (or finding) after the change; with ids, one result per id with a status (attached, already_attached, refused, not_found, placement_failed or failed) and counts
           content:
             application/json:
               schema: {type: object}
@@ -2393,6 +2456,361 @@ paths:
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: No such plan, or the item is not linked}
         "409": {description: The item belongs to a different plan, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/themes:
+    get:
+      summary: A release plan's themes and the items no theme holds
+      description: |
+        Lists the plan's themes in order. Each theme lists its Automata first and
+        then its Automations, each with the title and state last reported for it.
+        `unplaced` lists the plan's Automata and Automations that are in no theme.
+        An ordinary plan has no themes, so every item is unplaced. The `plan` block
+        carries `plan_kind` and `release` for a release plan and `archived` for an
+        archived one. Needs the autonomous read capability when called by a
+        federated peer. How-to: docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemes
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      responses:
+        "200":
+          description: The plan, its themes in order and its unplaced items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "Title, id and state of the plan; plan_kind and release for a release plan; archived when archived"}
+                  themes:
+                    type: array
+                    description: The themes in the plan's theme order
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, description: "The theme id, stable across renames"}
+                        name: {type: string, description: "The theme name, unique in the plan ignoring case"}
+                        order: {type: integer, description: "Position of the theme, 1 first"}
+                        items:
+                          type: array
+                          description: "The theme's Automata first, then its Automations, each in the theme's order"
+                          items:
+                            type: object
+                            properties:
+                              kind: {type: string, enum: [automaton, automation]}
+                              id: {type: string}
+                              title: {type: string, description: "Title last reported for the item"}
+                              state: {type: string, description: "State last reported for the item"}
+                  unplaced:
+                    type: array
+                    description: "Automata and Automations the plan holds that are in no theme"
+                    items: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "503": {description: Plan records are not available}
+    put:
+      summary: Set the whole theme layout of a release plan
+      description: |
+        Sets the plan's themes to the list in the body, in that order. A theme named
+        by `id` is kept (and renamed when `name` differs); a theme with no `id` is
+        found by `name` or made new. A theme the list leaves out is removed, and its
+        items stay in the plan, unplaced. An item the plan holds that no theme lists
+        becomes unplaced, and a listed item moves into its theme, in the listed
+        order. An item is in one theme only. An item the plan does not hold, a
+        theme listed twice and a name used twice are refused for the whole request
+        and nothing is written. Only a release plan has themes. Needs the autonomous
+        write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemesSet
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [themes]
+              properties:
+                themes:
+                  type: array
+                  description: "Every theme of the plan, in the order it should have. An empty list removes every theme."
+                  items:
+                    type: object
+                    properties:
+                      id: {type: string, description: "An existing theme id, to keep (and rename) that theme"}
+                      name: {type: string, description: "The theme name, at most 100 characters; required for a new theme"}
+                      automata: {type: array, items: {type: string}, description: "Automaton ids the plan holds, in the order they should have in this theme"}
+                      automations: {type: array, items: {type: string}, description: "Automation ids the plan holds, in the order they should have in this theme"}
+      responses:
+        "200":
+          description: The themes view after the change (same shape as GET)
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Not a release plan, an unnamed or duplicate theme, or an item the plan does not hold}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan or theme, or plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Change one theme of a release plan
+      description: |
+        One theme change, chosen by `action`. `create` adds an empty theme last;
+        `rename` renames one; `delete` removes one, and its items stay in the plan,
+        unplaced; `place` puts an Automaton or Automation the plan holds last in a
+        theme (an item already in another theme moves); `unplace` takes an item out
+        of its theme; `reorder` sets the order of the themes; `reorder_items` sets
+        the order of one kind of item inside a theme. A theme is named by its id or
+        its name. Only a release plan has themes. Each change is audit-logged. Needs
+        the autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemeAction
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [create, rename, delete, place, unplace, reorder, reorder_items], description: "Which change to make"}
+                theme: {type: string, description: "Theme id or name (rename, delete, place, reorder_items)"}
+                name: {type: string, description: "The theme name (create, rename); at most 100 characters, unique in the plan ignoring case"}
+                kind: {type: string, enum: [automaton, automation], description: "What kind of item (place, unplace, reorder_items)"}
+                id: {type: string, description: "The Automaton or Automation id (place, unplace)"}
+                themes: {type: array, items: {type: string}, description: "Every theme of the plan, by id or name, in the new order (reorder)"}
+                items: {type: array, items: {type: string}, description: "Every item of that kind the theme holds, in the new order (reorder_items)"}
+      responses:
+        "200":
+          description: The themes view after the change (same shape as GET), the action, and for create the new theme
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Unknown action, a missing field, not a release plan, a duplicate name, or an item the plan does not hold}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan or theme, an item in no theme (unplace), or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/archive:
+    post:
+      summary: Archive a plan
+      description: |
+        Marks the plan archived and takes it out of the default plan lists, the
+        backlog and the project overview counts. Nothing is deleted: the plan's file,
+        its Automata, Automations, findings, registry rows, themes and its order all
+        stay, and no Automaton or Automation is touched. Archiving an archived plan
+        changes nothing (`changed` is false). `protected_plan` names one plan
+        (usually the current release plan) that is refused while it holds Automata.
+        Only plans can be archived. The change is audit-logged with the actor. Needs
+        the autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Archiving a plan".
+      operationId: planArchive
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 1000, description: "Why the plan is archived, at most 1000 characters; longer is refused, not cut"}
+                protected_plan: {type: string, description: "A plan (id, uid or title) that must not be archived while it holds Automata"}
+      responses:
+        "200":
+          description: The plan after the call, how many Automata it holds (they stay linked), and whether anything changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "The plan, with archived, archived_at and archive_reason"}
+                  automata_held: {type: integer, description: "Automata the plan holds; they stay linked"}
+                  changed: {type: boolean, description: "False when the plan was already archived and nothing was written"}
+        "400": {description: The reference is not a plan, or the reason is too long}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or the protected plan does not exist, or plan records are turned off}
+        "409": {description: The plan is the protected plan and holds Automata, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/restore:
+    post:
+      summary: Restore an archived plan
+      description: |
+        Clears the archive mark. The plan returns to the place its order gave it, with
+        every link it held. Restoring a plan that is not archived changes nothing
+        (`changed` is false). The change is audit-logged with the actor. Needs the
+        autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Archiving a plan".
+      operationId: planRestore
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      responses:
+        "200":
+          description: The plan after the call and whether anything changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "The plan, without the archive mark"}
+                  changed: {type: boolean, description: "False when the plan was not archived"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/unattributed:
+    get:
+      summary: The Automata no release plan holds, with a suggested release and theme
+      description: |
+        Lists the Automata that no release plan holds (an archived release plan does
+        not count), sorted by project and title, each with its title, state, project
+        and tags. `suggested_release` and `suggested_theme` come from the release
+        migration's own rules, so the list shows where the migration would file the
+        Automaton; they are left out when no rule files it. `holding_plan` names an
+        ordinary plan that already holds the Automaton: it cannot join a release plan
+        until it is detached from that plan. Paged with `limit` and `offset` (default
+        50, at most 500). The count of these Automata is also in the project overview
+        summary. Needs the autonomous read capability when called by a federated
+        peer. How-to: docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansUnattributed
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Only this project's Automata (a registered project alias); all projects when left out"}
+        - {name: current_release, in: query, schema: {type: string}, description: "Label of the current release the suggestions use; default 10.0"}
+        - {name: next_release, in: query, schema: {type: string}, description: "Label of the next release the suggestions use; default 11.0"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of the Automata no release plan holds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automata:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title: {type: string}
+                        id: {type: string, description: "The Automaton id"}
+                        state: {type: string}
+                        project: {type: string, description: "The project the Automaton resolves to"}
+                        tags: {type: array, items: {type: string}, description: "The Automaton's tag names"}
+                        suggested_release: {type: string, description: "The release the migration rules file it under"}
+                        suggested_theme: {type: string, description: "The theme the migration rules place it in; empty when no rule matches"}
+                        suggested_theme_source: {type: string, enum: [rule], description: "Where the suggested theme came from"}
+                        holding_plan: {type: string, description: "Title of an ordinary plan that already holds it"}
+                        holding_plan_id: {type: string, description: "Id of that plan"}
+                  page: {type: object, description: "total, limit and offset"}
+                  current_release: {type: string, description: "The current release label the suggestions used"}
+                  next_release: {type: string, description: "The next release label the suggestions used"}
+        "400": {description: A paging value is not a whole number, the project is not registered, or a release label is not valid}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available, or the Automata manager is not available to list the Automata}
+  /api/plans/migrate/row-plans:
+    get:
+      summary: List the plans the plans migration made from registry rows
+      description: |
+        The plans migration made one plan for every registry row. This lists them
+        (archived ones included) in plan order, each with its row, the Automata and
+        Automations it holds, and the release plan that holds those Automata. A plan
+        is a row-plan only when it carries the migration's source marker and its
+        title has the migration's form, never by title alone. Needs the autonomous
+        read capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansRowPlans
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Only this project's row-plans (a registered project alias)"}
+      responses:
+        "200":
+          description: The row-plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  row_plans: {type: array, items: {type: object}, description: "Each row-plan with plan_id, title, project, state, archived, source, the row, its Automata and Automations, and the release plan that holds them"}
+                  total: {type: integer, description: "How many row-plans"}
+        "400": {description: The project is not registered}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Convert row-plans into release plan items (preview by default)
+      description: |
+        A release plan now holds the work, so a row-plan is turned into an item of a
+        release plan and archived. A row-plan that holds Automata becomes a
+        registry-row link of the release plan that holds those Automata (the first
+        by plan order when they sit on several). A row-plan that holds no Automaton
+        becomes a backlog item of the current release plan. A row-plan whose
+        Automata no release plan holds yet is left alone as `waiting`. Nothing is
+        deleted: the row, findings and Automata stay, and the only change to a
+        row-plan is its archive mark. The default is a preview that writes nothing
+        and returns a `preview_id`. A written run needs `apply` true and the
+        `preview_id` of the preview you approved: a missing id is refused with 400, a
+        stale one with 409, and nothing is written. A second written run changes
+        nothing. The write is audit-logged with the actor. Needs the autonomous
+        write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansRowPlansConvert
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Only this project's row-plans (a registered project alias); all projects when left out"}
+                current_release: {type: string, description: "Label of the current release plan that takes the backlog items; default 10.0"}
+                apply: {type: boolean, default: false, description: "True writes; false (the default) previews"}
+                preview_id: {type: string, description: "The preview_id of the approved preview; required when apply is true"}
+      responses:
+        "200":
+          description: The preview or the written run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: {type: string}
+                  applied: {type: boolean, description: "True after a written run"}
+                  preview_id: {type: string, description: "A stable hash of this preview; quote it to write exactly this"}
+                  current_release: {type: string}
+                  counts: {type: object, additionalProperties: {type: integer}}
+                  link_rows: {type: array, items: {type: object}, description: "Row-plans turned into a registry-row link of a release plan"}
+                  backlog_items: {type: array, items: {type: object}, description: "Row-plans turned into a backlog item of the current release plan"}
+                  waiting: {type: array, items: {type: object}, description: "Row-plans left alone until the release migration files what they hold"}
+                  conflicts: {type: array, items: {type: object}, description: "Row-plans left alone because the row is gone or a link was refused"}
+                  unchanged: {type: array, items: {type: object}, description: "Row-plans archived already"}
+        "400": {description: Bad body or project, or a written run with no preview_id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The preview_id is stale, because the data changed or the id is wrong; run the preview again}
         "503": {description: Plan records are not available}
   /api/autonomous/decision-records:
     post:
@@ -9924,7 +10342,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/usage-backoff:
     get:
-      summary: Active per-backend usage back-off flags, effective config, pattern staleness (patterns_version, patterns_stale) and claude_cli_version
+      summary: Active per-backend usage back-off flags, effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), the reserve array (current-window per-hour reserve usage per backed-off backend; omitted when the review-reserve gate is not wired or no flag is live), pattern staleness (patterns_version, patterns_stale) and claude_cli_version
       operationId: usageBackoffGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -10468,7 +10886,7 @@ paths:
         Groups the project's Automata by the plan whose Automation holds them.
         Each plan reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
-        project that no plan holds are in `unassigned`. An Automaton is placed in a
+        project that no plan holds and no release plan holds are in `unassigned`. An Automaton is placed in a
         project by its own project link, then the project of the Automation holding
         it, then its parent Automaton's project, then its directory; one resolved to
         another project is never in this project. Automata without a project (no
@@ -13899,6 +14317,9 @@ components:
         enabled: {type: boolean}
         plan_tier: {type: string}
         max_inflight: {type: integer, nullable: true}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target. When autonomous.capacity_fallthrough is on and a worker's requested pool is full, the daemon may admit the worker on this entry. Default false; omitted from the entry while false.
         roles:
           type: array
           items: {type: string}
@@ -13914,6 +14335,9 @@ components:
       properties:
         name: {type: string}
         kind: {type: string}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target (default false). On update, omit to keep the stored value; false clears it.
         roles:
           type: array
           items: {type: string}

@@ -5,6 +5,82 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
+### Fixed
+
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
+## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
+
+### Fixed
+
+- A test helper assigned a map lookup to the blank identifier, which the CI lint version flags; it now reads the value directly.
+
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
+## v9.175.2 — Stop writing the instance-level server token into project files
+
+### Changed
+
+- Stop writing the instance-level server token into project files.
+
+## v9.175.1 — Fix: a saved project description is stored, returned and shown on every surface
+
+### Changed
+
+- Fix: a saved project description is stored, returned and shown on every surface.
+
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
+## v9.174.0 — Usage back-off must not block verification, judging and planning
+
+### Changed
+
+- Usage back-off must not block verification, judging and planning.
+
+## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
+
+### Added
+
+- **Pool fall-through now has alternates to fall through to.** With `autonomous.capacity_fallthrough` on, a worker whose requested pool is full is offered, in order, the other lane fill backend (the Claude lane backend or the GPU lane backend, on its default model) and then every LLM entry marked as an allowed fall-through target. An alternate whose backend is disabled, already at its in-flight cap or unable to serve the model is skipped, and verifiers, judges and planners never fall through.
+- **New LLM entry setting `fallthrough_target`** (default false) marks an entry as an allowed fall-through target. Set it with `datawatch llm add|update --fallthrough-target`, MCP `llm_add` / `llm_update`, comm `llm update <name> fallthrough_target=true`, `PUT /api/llms/{name}`, `fallthrough_target: true` in the `llms:` list, or the **Allowed fall-through target** switch in the web app LLM settings. Omitting it on an update keeps the stored value. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+
+### Fixed
+
+- **Turning on pool fall-through now reaches tasks that are already waiting.** A task decided about fall-through once, when it was queued, so a task waiting on a full pool stayed there after `autonomous.capacity_fallthrough` was switched on until it was re-queued or the daemon restarted. A waiting worker now re-reads the setting and asks for an idle alternate on every wait pass, keeping its queue place and wait timeout. The fall-through audit entry (`autonomous_capacity_admitted` with `fall_through`, `from_pools`, `to_pools` and a note) says when the task's backend was set explicitly (`explicit backend; fall-through setting on`), and an explicit-backend task still falls through only while the setting is on. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+- **A task of an Automaton that prefers the Claude lane no longer asks for the daemon default's capacity pool.** When no task, story, PRD or Automaton worker was named, the worker fell back to the daemon default (often pi-prompt) and the task queued on `pool llm:pi-prompt` even though its lane preference was Claude. The lane preference is now a level of the worker order: task, story, PRD, Automaton, lane preference, then the daemon default. A `claude` preference falls back to the Claude lane backend, a `gpu` preference to the GPU lane backend, and `any` or none keeps the default. Lane fill and lane utilization read the same order.
+
+## v9.173.5 — Projects page phone overflow and empty Events grouping
+
+### Fixed
+
+- **The Projects page no longer scrolls sideways on a phone.** At 600 px or less only the page sub-tab strip scrolls horizontally; the picker row wraps, long event, card and directory text wraps, and wide `pre` and table content scrolls inside its own box. First seen on the Events page sub-tab of a project.
+- **Empty notes on a project's Events page are grouped.** Notes that only say something is empty or has never happened are collapsed into one summary line with a count while **Show empty lines and sections** is off; tick it to list them one per line. Notes that report something real are always listed.
+
+## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
+
+### Fixed
+
+- **The daemon no longer aborts at start on a typed-nil model-use source.** `internal/server/plugin_models.go` now passes a true nil interface, never a nil pointer wrapped in one, when no default model-use source exists, and the default source is safe on a nil receiver. Regression tests cover the typed-nil case and the node-event path.
+- **The release smoke's shared-navigation section honors the section filter.** With a section filter such as `SMOKE_ONLY=1,2,3,4` the section is skipped, the probe receives its four environment variables, and a run with no browser available skips instead of failing. A new shell test covers the section; the how-tos on navigation fit and on testing against a running daemon describe the behavior.
+- **The test daemon helper cleans up on HUP, INT and TERM even when the signal arrives ignored.** `scripts/test-daemon-lib.sh` now reruns the script with those signals reset to their defaults, so `tests/ci` daemon cleanup works when the shell started the script with SIGHUP ignored (a background job or `nohup`). Two new tests in `tests/ci/daemon_cleanup_test.go` cover it.
+- **The release smoke no longer aborts on an undefined counter.** A stray increment of a variable that was never defined ended the priority-source section and aborted the whole run with "unbound variable" even when the section was skipped. It is removed, and a new shell test fails if the script increments a counter it does not initialise.
+
 ## v9.173.3 — Projects cards and Gantt fix
 
 ### Fixed

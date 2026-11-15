@@ -523,6 +523,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_node_model",
 		"capacity_node_unreachable",
 		"capacity_node_gpu_util",
+		// Server / federation-peer form: TLS skip-verify warning line and the
+		// certificate-pin field (label + tip) every bundle must carry.
+		"server_tls_cert_fingerprint_label",
+		"server_tls_cert_fingerprint_tip",
+		"server_tls_skip_verify_warning",
 		// Acknowledge-unauthenticated-listeners setting: label + help keys.
 		"settings_acknowledge_unauthenticated",
 		"settings_acknowledge_unauthenticated_help",

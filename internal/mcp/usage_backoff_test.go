@@ -217,3 +217,62 @@ func TestUsageBackoff_ConfigSetForwardsNewKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestUsageBackoffConfigSetForwardsReserveKeys(t *testing.T) {
+	var path, method string
+	var body map[string]any
+	s := newRejudgeTestServer(t, &path, &method, &body)
+
+	body = map[string]any{}
+	if _, err := s.handleAutonomousConfigSet(context.Background(), usageBackoffReq(map[string]any{
+		"backoff_reserve_for_review": 2.0, "backoff_reserve_tokens_per_hour": 250000.0,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/api/autonomous/config" || method != "PUT" {
+		t.Errorf("reserve keys -> %s %s, want PUT /api/autonomous/config", method, path)
+	}
+	if body["backoff_reserve_for_review"] != 2.0 || body["backoff_reserve_tokens_per_hour"] != 250000.0 {
+		t.Errorf("reserve body = %v", body)
+	}
+
+	// An explicit 0 is forwarded (it is meaningful: no slot reserve / no
+	// per-hour budget), just like backoff_max_wait_minutes.
+	body = map[string]any{}
+	if _, err := s.handleAutonomousConfigSet(context.Background(), usageBackoffReq(map[string]any{
+		"backoff_reserve_for_review": 0.0,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if body["backoff_reserve_for_review"] != 0.0 {
+		t.Errorf("explicit zero slot reserve not forwarded: %v", body)
+	}
+
+	// Unset keys are not sent, so the stored values are kept.
+	body = map[string]any{}
+	if _, err := s.handleAutonomousConfigSet(context.Background(), usageBackoffReq(map[string]any{"poll_interval_seconds": 5.0})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["backoff_reserve_for_review"]; ok {
+		t.Errorf("backoff_reserve_for_review sent although unset: %v", body)
+	}
+	if _, ok := body["backoff_reserve_tokens_per_hour"]; ok {
+		t.Errorf("backoff_reserve_tokens_per_hour sent although unset: %v", body)
+	}
+
+	props := s.toolAutonomousConfigSet().InputSchema.Properties
+	for _, k := range []string{"backoff_reserve_for_review", "backoff_reserve_tokens_per_hour"} {
+		if _, ok := props[k]; !ok {
+			t.Errorf("autonomous_config_set missing %q argument", k)
+		}
+	}
+}
+
+func TestUsageBackoffStatusDescriptionNamesReserveFields(t *testing.T) {
+	desc := (&Server{}).toolUsageBackoffStatus().Description
+	for _, field := range []string{"reserve_for_review", "reserve_tokens_per_hour", "reserve"} {
+		if !strings.Contains(desc, field) {
+			t.Errorf("usage_backoff_status description does not name %q", field)
+		}
+	}
+}

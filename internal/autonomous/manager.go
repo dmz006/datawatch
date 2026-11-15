@@ -235,6 +235,16 @@ type Config struct {
 	// unset mirror must not overwrite the value held in config.Config.
 	UsageBackoff          string `json:"usage_backoff,omitempty"`
 	BackoffMaxWaitMinutes int    `json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview and BackoffReserveTokensPerHour mirror the
+	// review-reserve knobs (autonomous.backoff_reserve_for_review,
+	// autonomous.backoff_reserve_tokens_per_hour) so both autonomous config
+	// surfaces agree and handleAutonomousConfig's round-trip into
+	// config.AutonomousConfig keeps them. The gate itself reads config.Config
+	// through the daemon's wiring (cmd/datawatch/capacity_backoff_reserve.go).
+	// The pointer field exists so an explicit 0 (no slot reserve) survives
+	// the unset-defaults path; omitempty, deliberately, like the pair above.
+	BackoffReserveForReview     *int  `json:"backoff_reserve_for_review,omitempty"`
+	BackoffReserveTokensPerHour int64 `json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// PlanTierMaxInflight mirrors the tier -> max-inflight table
 	// (autonomous.plan_tier_max_inflight) so the two autonomous config
 	// surfaces (/api/config and /api/autonomous/config) agree. The manager
@@ -4867,7 +4877,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	if wasWaiting {
 		if up, ok := m.store.GetPRD(prdID); ok {
 			if tk, story := findTaskInPRD(up, taskID); tk != nil {
-				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), m.cfg.ExecutionBackend); backend != "" {
+				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), executionFallbackBackend(m.cfg, up)); backend != "" {
 					m.requeueQueuedCapacity(up, tk, backend, model)
 				}
 				m.resetCapacityWait(tk.ID)
@@ -7246,7 +7256,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
+					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), executionFallbackBackend(m.cfg, p))
 					if backend == "" {
 						backend = "unknown"
 					}

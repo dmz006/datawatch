@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.173.3 (2026-11-13).** The Projects view shows cards (Cards, Tiles, Compact) with Assign, Open and Dismiss on the Unassigned board, the Policy sub-tab is replaced by a link to Settings, and the Gantt spans each Automaton from its first task start to its last task end. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.175.3 (2026-11-15).** Verify peer TLS certificates by default. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

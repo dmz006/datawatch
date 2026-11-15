@@ -67,3 +67,21 @@ func (m *Manager) SetPRDLanePreference(prdID, pref string) error {
 	}
 	return ErrPRDStale
 }
+
+// executionFallbackBackend is the backend a task falls back to when neither the
+// task, its story, its PRD nor its Automaton names one. An Automaton that
+// prefers the claude or gpu lane falls back to that lane's backend; any other
+// Automaton, and a nil one, falls back to the daemon default
+// (Config.ExecutionBackend). It is the lane preference level of the worker
+// resolution order: task, story, PRD, Automaton, lane preference, default.
+func executionFallbackBackend(cfg Config, prd *PRD) string {
+	if prd != nil {
+		switch p, _ := NormalizeLanePreference(prd.LanePreference); p {
+		case LanePreferenceClaude:
+			return cfg.LaneFill.EffectiveClaudeBackend()
+		case LanePreferenceGPU:
+			return cfg.LaneFill.EffectiveGPUBackend()
+		}
+	}
+	return cfg.ExecutionBackend
+}

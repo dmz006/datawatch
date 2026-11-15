@@ -14,6 +14,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -110,14 +111,12 @@ func newGuardLedger(t *testing.T) *capacity.Ledger {
 	bl.Preload()
 	var gpuMu sync.Mutex
 	return capacity.New(capacity.Options{
-		External:     hostExternalCount(guardLister{}),
-		Backpressure: gpuNodeBackpressure(func() int { return 90 }, &gpuMu, map[string]float64{}),
-		AutonomousBackpressure: composeBackpressure(
-			backoffBackpressure(bo),
-			budgetBackpressure(bl),
-		),
-		HeldBackpressure: sharedNodeBackpressure(),
-		PollInterval:     50 * time.Millisecond,
+		External:               hostExternalCount(guardLister{}),
+		Backpressure:           gpuNodeBackpressure(func() int { return 90 }, &gpuMu, map[string]float64{}),
+		RoleBackpressure:       backoffReserveBackpressure(bo, backoffReserveGate(&config.Config{})),
+		AutonomousBackpressure: budgetBackpressure(bl),
+		HeldBackpressure:       sharedNodeBackpressure(),
+		PollInterval:           50 * time.Millisecond,
 	})
 }
 

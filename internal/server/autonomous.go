@@ -160,6 +160,34 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 			}
+			// Reserve knobs: whole non-negative numbers, same rejection rule as
+			// PUT /api/config. null is absent and passes.
+			if raw, ok := top["backoff_reserve_for_review"]; ok {
+				var n interface{}
+				if json.Unmarshal(raw, &n) != nil {
+					http.Error(w, "autonomous.backoff_reserve_for_review: must be a whole number of slots >= 0", http.StatusBadRequest)
+					return
+				}
+				if n != nil {
+					if _, verr := parseBackoffReserveForReview(n); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
+			if raw, ok := top["backoff_reserve_tokens_per_hour"]; ok {
+				var n interface{}
+				if json.Unmarshal(raw, &n) != nil {
+					http.Error(w, "autonomous.backoff_reserve_tokens_per_hour: must be a whole number of tokens >= 0", http.StatusBadRequest)
+					return
+				}
+				if n != nil {
+					if _, verr := parseBackoffReserveTokensPerHour(n); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
 			// verifier_policy: an unknown mode, an empty backend entry or a
 			// negative cap rejects the whole PUT. null is absent and passes.
 			if raw, ok := top["verifier_policy"]; ok && string(raw) != "null" {

@@ -160,13 +160,22 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/plans/{ref}/tasks` | — | Not in MCP | a plan's tasks, read when the plan is expanded; paged |
 | `GET /api/plan-records/browse` | — | Not in MCP | all registry rows and findings with plan and Automaton links; `q`, `kind`, `state`, `project`; paged |
 | `GET /api/projects/{name}/arcs` | — | Not in MCP | deprecated alias of the roll-up plans, with plans added |
-| `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?}`; the plan goes last in the plan order; a taken title is 409 |
+| `POST /api/plans` | `plan_create` | Complete | body `{project, title, goal?, plan_kind?, release?}`; `plan_kind` `release` with a `release` label makes a release plan; the plan goes last in the plan order; a taken title is 409 |
 | `PUT /api/plans/order` | `plan_reorder` | Complete | body `{plans[]}`; the listed plans take positions 1 to n, the rest follow in their old order; a missing or repeated plan fails the whole call |
 | `PUT /api/plans/{ref}/automata/order` | `plan_reorder_automata` | Complete | body `{automata[]}` naming every Automaton of the plan once; the answer is the run view whose next marker skips blocked and held Automata |
 | `POST /api/plans/{ref}/attach` | `plan_attach` | Complete | body `{kind: automaton\|automation\|finding, id}`; the id is checked first (404 when unknown); an item linked or attached elsewhere is 409 naming the holder |
+| `POST /api/plans/{ref}/attach` (the `ids` form) | `plan_attach_bulk` | Complete | body `{kind: automaton\|automation, ids[], theme?}`; one result line per id (attached, already_attached, refused with the holder named, not_found, placement_failed, failed); a refused id never stops the others |
 | `POST /api/plans/{ref}/detach` | `plan_detach` | Complete | same body; the item must belong to the plan in the path, else 409 naming the plan it is in |
+| `GET /api/plans/{ref}/themes` | `plan_theme_list` | Complete | a release plan's themes in order with their items, then the unplaced items |
+| `POST /api/plans/{ref}/themes` | `plan_theme_set` | Complete | body `{action: create\|rename\|delete\|place\|unplace\|reorder\|reorder_items, ...}`; one action per call; answers the themes after the change |
+| `PUT /api/plans/{ref}/themes` | — | Not in MCP | sets the whole theme layout in one call; the MCP tool changes one thing at a time with `plan_theme_set` |
+| `POST /api/plans/{ref}/archive` | `plan_archive` | Complete | body `{reason?, protected_plan?}`; a mark only, nothing is deleted; a protected plan that holds Automata is 409 |
+| `POST /api/plans/{ref}/restore` | `plan_restore` | Complete | clears the archive mark; restoring a plan that is not archived changes nothing |
+| `GET /api/plans/unattributed` | `plan_unattributed_list` | Complete | the Automata no release plan holds, with the suggested release and theme; an Automaton held by an ordinary plan names it; `project`, `current_release`, `next_release`, `limit`, `offset` |
+| `GET /api/plans/migrate/row-plans` | `plan_row_plan_list` | Complete | the plans the plans migration made from registry rows; `project` |
+| `POST /api/plans/migrate/row-plans` | `plan_row_plan_convert` | Complete | previews unless `apply` is `true`; a write needs the `preview_id` of the preview that was read (400 without it, 409 when stale); each converted plan is archived, not deleted |
 | `PUT /api/projects/{name}/arcs` | `project_set_arcs` | Complete | deprecated alias kept for the older plan list (arcs); the registry plan records replace it |
-| `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; builds plans from the older project plan lists (arcs) and registry rows; never changes an existing plan or link |
+| `POST /api/plans/migrate` | `plan_migrate` | Complete | previews unless `apply` is `true`; mode `arcs` (the default) builds plans from the older project plan lists (arcs) and registry rows and never changes an existing plan or link; mode `release` files a project's Automata under release plans and themes, needs `project`, and writes only with the `preview_id` of the preview that was read (400 without it, 409 when stale) |
 | `GET /api/autonomous/tags/registry` | — | Not in MCP | Keeper-to-peer protocol route that serves the keeper's snapshot to peers. Not an operator action; the status tool shows this daemon's registry object instead |
 | `POST /api/autonomous/tags/registry/write` | — | Not in MCP | Keeper-to-peer protocol route that applies one forwarded tag write on the keeper. Not an operator action; peers call it, operators use the tag routes on the peer |
 | `POST /api/autonomous/prds/{id}/set_tags` | `autonomous_prd_set_tags` | Complete | body `{tag_ids[], primary_tag_id?}`, MCP args `tag_ids_json` and `primary_tag_id`; replaces the list (empty clears), and `primary_tag_id` alone keeps the tags |
@@ -231,6 +240,7 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/compute/nodes/{name}/headroom` | `compute_node_headroom_measure` | Complete | measure the node now while idle and store it; 409 while it holds a lease, 403 when the served or resident model is not on the model-pull consent list, 404 unknown node, 502 probe failed; never runs on a timer; the comm verb is `compute headroom measure <node>` and the CLI is `datawatch compute headroom measure <node>` |
 | `GET /api/compute/nodes/{name}/headroom` | `compute_node_headroom_get` | Complete | the stored measurement with `age_seconds`, `fresh` and `supported_cap` (read only; 404 when never measured); the comm verb is `compute headroom <node>` and the CLI is `datawatch compute headroom get <node>` |
 | `POST /api/llms`, `PUT /api/llms/{name}` (`verification_mode`) | `llm_add` / `llm_update` | Complete | `classify` or `generate` (empty = `generate`); unknown values are rejected on add, update and registry load; CLI `--verification-mode`, comm `verification_mode=` |
+| `POST /api/llms`, `PUT /api/llms/{name}` (`fallthrough_target`) | `llm_add` / `llm_update` | Complete | boolean, default false: marks the entry as an allowed capacity fall-through target (see `autonomous.capacity_fallthrough`); omit on update to keep the stored value, false clears it; CLI `--fallthrough-target`, comm `fallthrough_target=`, web app LLM edit switch |
 | `GET /api/llm/classifier`, `GET`/`POST /api/llm/classifier/publishers`, `GET /api/llm/classifier/verdicts` | `llm_classifier` (`action`: `status`, `publishers`, `add_publisher`, `verdicts`) | Complete | one tool because no existing LLM or Automaton tool fits probe status, calibration status, the allowlist or the verdict record; `add_publisher` needs `confirm=true`; CLI `datawatch llm classifier status|publishers|add-publisher|verdicts`, comm `llm classifier ...` |
 | `GET /api/compute/placements` | `compute_placement_list` | Complete | the pending placement asks (model present on no eligible node, `compute_placement.missing_model=ask`); read-only |
 | `POST /api/compute/placements/{id}/approve`, `POST /api/compute/placements/{id}/deny` | `compute_placement_answer` | Complete | arguments `id` and `decision` (`approve` or `deny`); one-shot, an already decided or expired ask is refused; needs the compute write capability for a federated peer |
@@ -257,6 +267,45 @@ documenting coverage gaps and the reasoning behind them.
 | `PUT /api/config` keys `autonomous.branch_refresh_enabled`, `autonomous.branch_refresh_behind_limit` | `config_set` | Complete | The two daemon-wide branch refresh settings go through the existing `config_set` tool (`key`, `value`); a refused value returns the daemon's message and changes nothing. Read back with `get_config` section `autonomous` |
 | `POST /api/autonomous/prds/{id}/resolve_task_review` (body `{task_id, action, spec, backend, model, effort, files, read_only, report_path, note, actor}`) | `autonomous_prd_resolve_task_review` | Complete | `action` is `retry` or `cancel`; a 409 when the task is not held for review — [howto](howto/failure-escalation.md) |
 | `GET /api/config` and `PUT /api/config` keys `autonomous.failure_escalation.enabled`, `.max_failures`, `.steps` | `config_set` / `get_config` | Complete | `steps` takes a JSON array or the text `backend:model[@attempts],...` — [howto](howto/failure-escalation.md) |
+
+### Release plans, themes, archive and migration (every surface)
+
+A plan is a release, themes group its Automata, and registry rows and findings
+are items that link into a plan. The rows above give the REST to MCP mapping;
+this table gives the same calls on every surface, one row per call: the MCP
+tool, the REST route, the CLI command (`datawatch plan` is the same command as
+`datawatch plans`), the chat verb (after `autonomous`) and the web app control
+on the project's Plans sub-tab. Walkthroughs:
+[howto/plan-records.md](howto/plan-records.md#release-plans-and-themes).
+
+| MCP tool | REST route | CLI command | Comm verb | Web app |
+|----------|------------|-------------|-----------|---------|
+| `plan_theme_list` | `GET /api/plans/{ref}/themes` | `plan theme list <plan>` | `plan themes <plan>` | Themes section |
+| `plan_theme_set` `create` | `POST /api/plans/{ref}/themes` `{action: "create", name}` | `plan theme add <plan> <name>` | `plan theme add <plan> <name...>` | Add theme |
+| `plan_theme_set` `rename` | same, `{action: "rename", theme, name}` | `plan theme rename <plan> <theme> <new-name>` | `plan theme rename <plan> <theme> <new name...>` | theme name field |
+| `plan_theme_set` `delete` | same, `{action: "delete", theme}` | `plan theme remove <plan> <theme>` | `plan theme remove <plan> <theme>` | Delete |
+| `plan_theme_set` `place` | same, `{action: "place", theme, kind, id}` | `plan theme place <plan> <theme> --automaton ID` | `plan theme place <plan> <theme> automaton <id>` | Place in theme |
+| `plan_theme_set` `unplace` | same, `{action: "unplace", kind, id}` | `plan theme unplace <plan> --automaton ID` | `plan theme unplace <plan> automaton <id>` | Unplace |
+| `plan_theme_set` `reorder` | same, `{action: "reorder", themes}` | `plan theme reorder <plan> <theme>...` | `plan theme reorder <plan> <theme>...` | theme arrows |
+| `plan_theme_set` `reorder_items` | same, `{action: "reorder_items", theme, kind, items}` | `plan theme reorder-items <plan> <theme> --kind automaton <id>...` | `plan theme reorder-items <plan> <theme> automaton <id>...` | — |
+| — (not in MCP) | `PUT /api/plans/{ref}/themes` `{themes: [...]}` | — | — | every theme edit |
+| `plan_create` `plan_kind` `release` | `POST /api/plans` `{plan_kind: "release", release}` | — | — | — |
+| `plan_archive` | `POST /api/plans/{ref}/archive` | `plan archive <plan> [--reason TEXT] [--protect PLAN]` | `plan archive <plan> [protect=<plan>] [reason...]` | Archive |
+| `plan_restore` | `POST /api/plans/{ref}/restore` | `plan restore <plan>` | `plan restore <plan>` | Restore |
+| — (not in MCP) | `GET /api/projects/{name}/plans?archived=exclude\|include\|only` | — | — | archived filter |
+| `plan_unattributed_list` | `GET /api/plans/unattributed` | `plan unattributed [--project P]` | `plan unattributed [project=P] [current=R] [next=R]` | Unattributed chip |
+| `plan_attach` | `POST /api/plans/{ref}/attach` `{kind, id}` | `plan attach <plan> --automaton ID` | `plan attach <plan> automaton <id>` | Attach |
+| `plan_attach_bulk` | `POST /api/plans/{ref}/attach` `{kind, ids, theme?}` | `plan attach <plan> --automaton a1,a2 [--theme T]` | `plan attach <plan> automaton <id> <id>... [theme=T]` | Bulk attach |
+| `plan_migrate` `mode` `release` (preview) | `POST /api/plans/migrate` `{mode: "release", project, ...}` | `plan migrate --release --project P` | `plan migrate release project=P` | Preview migration |
+| `plan_migrate` `mode` `release` `apply` | same, `{apply: true, preview_id}` | `plan migrate --release --project P --apply --preview-id ID` | `plan migrate release approve <preview-id> project=P` | Approve migration |
+| `plan_row_plan_list` | `GET /api/plans/migrate/row-plans` | `plan row-plans list` | — | — |
+| `plan_row_plan_convert` (preview) | `POST /api/plans/migrate/row-plans` | `plan row-plans convert` | — | Preview row-plans migration |
+| `plan_row_plan_convert` `apply` | same, `{apply: true, preview_id}` | `plan row-plans convert --apply --preview-id ID` | — | Approve |
+
+A dash means the surface has no form of that call. Both migrations preview by
+default and write only with the `preview_id` of the preview that was read;
+every surface refuses a write without it, and the daemon answers 400 for a
+missing id and 409 for a stale one.
 
 ### Operator questions
 
@@ -399,6 +448,15 @@ Opt-in rides on the peer record (`federation_peer_add` / `federation_peer_update
 and the billing-group label on LLM entries (`llm_add` / `llm_update`
 `billing_group`). Decisions are audit-logged (`fingerprint_match_decision`).
 
+The same peer record carries the TLS trust posture: `tls_cert_fingerprint`
+(64-hex SHA-256 leaf pin) and `tls_skip_verify` (both set → request rejected),
+accepted on `federation_peer_add` / `federation_peer_update` (and the REST
+`POST`/`PUT` on `/api/servers` and `/api/federation/peers`). The
+create/update responses — and the `test` endpoints (MCP
+`federation_peer_test`, REST `POST /api/servers/{name}/test`) — carry a
+`warnings` array when the peer's certificate is not verified.
+See [`howto/peer-tls-verification.md`](howto/peer-tls-verification.md).
+
 ### Routing rules
 
 | API Endpoint | MCP Tool | Status | Notes |
@@ -419,7 +477,7 @@ and the billing-group label on LLM entries (`llm_add` / `llm_update`
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
 | `GET /api/projects` | `project_list` | Complete | Each entry carries the stored `policy` block; CLI `datawatch projects policy show <name>` and comm `project policy <name>` read it |
-| `POST /api/projects` | `project_upsert` | Complete | Also carries the optional project record fields (`owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger`); an absent field keeps its stored value, and the entry is validated (400 on error). Also carries the per-project policy tier (optional `policy` object, the layer between the daemon defaults and the Automaton's own overrides); CLI `datawatch projects policy set` / `unset` and the PWA Project policy panel write through it |
+| `POST /api/projects` | `project_upsert` | Complete | Also carries the optional project record fields (`owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger`); an absent record field keeps its stored value, while `description`, `default_backend` and `policy` are written as sent (left out they clear the stored values), and the entry is validated (400 on error). Also carries the per-project policy tier (optional `policy` object, the layer between the daemon defaults and the Automaton's own overrides); CLI `datawatch projects policy set` / `unset` and the PWA Project policy panel write through it |
 | `PUT /api/projects/{name}/arcs` | `project_set_arcs` | Complete | Replaces the project's ordered plan list (`automation_id`, `priority`, `state`; array position is the order). Validated; 400 on an invalid list, 404 for an unknown project. Writes need `CapAutonomousWrite` |
 | `GET /api/projects/{name}/rollup` | `project_rollup` | Complete | Plans in order with their Automata, task progress, cost in points and throughput; optional `window` (days, 1–365, default 7). Reads need `CapAutonomousRead` |
 | `GET /api/projects/{name}/history` | `project_history` | Complete | Finished and archived Automata, daily progress and Gantt rows; paged with `limit` and `cursor`. Reads need `CapAutonomousRead` |

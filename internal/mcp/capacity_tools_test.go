@@ -318,3 +318,18 @@ func TestCapacityStatus_PassesCurrentWaitReasonThrough(t *testing.T) {
 		t.Fatalf("capacity_status altered the wait reason:\n%s", text)
 	}
 }
+
+func TestLLMBody_FallthroughTarget(t *testing.T) {
+	on := llmBodyFromReq(callReq(map[string]any{"name": "l", "kind": "ollama", "fallthrough_target": "true"}))
+	if on["fallthrough_target"] != true {
+		t.Fatalf("llm body: %v", on)
+	}
+	off := llmBodyFromReq(callReq(map[string]any{"name": "l", "kind": "ollama", "fallthrough_target": "false"}))
+	if off["fallthrough_target"] != false {
+		t.Fatalf("llm body: %v", off)
+	}
+	absent := llmBodyFromReq(callReq(map[string]any{"name": "l", "kind": "ollama"}))
+	if _, ok := absent["fallthrough_target"]; ok {
+		t.Fatalf("absent value must stay absent: %v", absent)
+	}
+}
