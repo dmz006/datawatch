@@ -5252,7 +5252,7 @@ function _planRecordsFresh(project) {
     project: project || '',
     status: 'idle',      // idle | loading | ready | error | disabled
     kind: 'registry_row',
-    stateFilter: '',
+    states: [],         // selected state keys (a set; [] === all states)
     q: '',
     recs: [],
     total: 0,
@@ -5514,11 +5514,11 @@ function planRecordsStateChipsHtml(kind, st) {
     total: (st && st.kind === kind) ? st.total : null,
     onChange: function (sel) {
       if (window._stateChipsSeeding) return;
-      _planRecords.stateFilter = sel.join(',');
+      _planRecords.states = sel.slice();
       _planRecordsLoad(false);
     },
   });
-  if (st) st.stateFilter = chips.get().join(',');
+  if (st) st.states = chips.get();
   return chips.html();
 }
 
@@ -5575,11 +5575,11 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
-  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.stateFilter = window._stateChipSets.planRecordsState.get().join(',');
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.states = window._stateChipSets.planRecordsState.get();
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   let url;
   if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
   else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
@@ -5608,14 +5608,14 @@ window.planRecordsSetKind = function(kind) {
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
   if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
-  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  st.kind = kind; st.states = []; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
   const csv = String(state || '');
-  _planRecords.stateFilter = csv;
+  _planRecords.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
@@ -5850,7 +5850,7 @@ function _plansBrowserFresh(project) {
     backlog: [], backlogTotal: 0,
     error: '', notice: '',
     seq: 0,
-    q: '', stateFilter: '',
+    q: '', states: [],  // selected state keys (a set; [] === all states)
     matchPlans: null,   // plan ids with a registry row or finding that matches q
     detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
     links: { status: 'idle', rows: [] },
@@ -5967,7 +5967,7 @@ function _plansLower(s) { return String(s || '').toLowerCase(); }
 // loaded Automata, or a registry row or finding linked to it matches. The row
 // and finding part is answered by the browse search route (matchPlans).
 function _plansMatch(st, p) {
-  const sel = String(st.stateFilter || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const sel = Array.isArray(st.states) ? st.states : [];
   if (sel.length && sel.indexOf(p.state) < 0) return false;
   const q = _plansLower(st.q).trim();
   if (!q) return true;
@@ -5996,7 +5996,7 @@ window.plansBrowserSearchInput = function(val) {
 window.plansBrowserSetState = function(v) {
   const csv = String(v || '');
   if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
-  _plansBrowser.stateFilter = csv;
+  _plansBrowser.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   _plansBrowserPaint();
 };
 
@@ -6104,7 +6104,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
   const shown = list.filter(p => _plansMatch(st, p));
-  const filtering = !!(st.stateFilter || st.q.trim());
+  const filtering = !!(st.states.length || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
     ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
@@ -6120,8 +6120,8 @@ function plansBrowserListHTML(st) {
   const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
   const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
   let html = notice + main.rows + main.more;
-  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
-    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
   if (st.backlogTotal > 0 || back.count) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
@@ -6141,11 +6141,11 @@ function plansBrowserStateChipsHtml(st) {
     items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
     onChange: function (sel) {
       if (window._stateChipsSeeding) return;
-      _plansBrowser.stateFilter = sel.join(',');
+      _plansBrowser.states = sel.slice();
       _plansBrowserPaint();
     },
   });
-  if (st) st.stateFilter = chips.get().join(',');
+  if (st) st.states = chips.get();
   return chips.html();
 }
 
@@ -6283,7 +6283,7 @@ const _RECORDS_TAB_PAGE = 50;
 const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
 
 function _recordsTabFresh(project) {
-  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+  return { project: project || '', status: 'idle', q: '', kind: '', states: [], rows: [], total: 0, error: '', seq: 0 };
 }
 let _recordsTab = _recordsTabFresh('');
 
@@ -6295,11 +6295,11 @@ function _recordsTabLoad(more) {
   const st = _recordsTab;
   const seq = ++st.seq;
   if (!more) st.status = 'loading';
-  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.stateFilter = window._stateChipSets.recordsTabState.get().join(',');
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.states = window._stateChipSets.recordsTabState.get();
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
   if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
   if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
     if (_recordsTab !== st || seq !== st.seq) return;
     const rows = r && Array.isArray(r.records) ? r.records : [];
@@ -6357,11 +6357,11 @@ function recordsTabStateChipsHtml(st) {
     total: (st && st.status === 'ready') ? st.total : null,
     onChange: function (sel) {
       if (window._stateChipsSeeding) return;
-      _recordsTab.stateFilter = sel.join(',');
+      _recordsTab.states = sel.slice();
       _recordsTabLoad(false);
     },
   });
-  if (st) st.stateFilter = chips.get().join(',');
+  if (st) st.states = chips.get();
   return chips.html();
 }
 
@@ -6393,7 +6393,7 @@ window.recordsTabSearchInput = function(v) {
 window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
 window.recordsTabSetState = function(v) {
   const csv = String(v || '');
-  _recordsTab.stateFilter = csv;
+  _recordsTab.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
   return _recordsTabLoad(false);
 };
