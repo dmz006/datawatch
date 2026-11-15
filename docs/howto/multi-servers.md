@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "header server button", "switching servers", "Showing:"]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "header server button", "header server icon", "server picker", "switching servers", "three-finger swipe", "unreachable", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -23,12 +23,12 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by one header server picker in the fixed app header (a compact button that opens a picker window):
+Five surfaces. In the web app the server choice is one **server icon button** in the fixed app header. It replaces the old dropdown and the per-page chip rows: the button opens a **Servers** window listing **All**, **This server** and every registered peer, and it is the only server selector in the app:
 
 | Surface | What was added |
 |---------|---------------|
 | PWA Settings → Comms → **Remote Servers** card | Add / edit / delete / test remote server connections |
-| PWA header server button | One compact server button (icon, status dot and short name) in the fixed app header, present on every page; it opens the server picker window and the app remembers the entry this browser picked (see [Switch between servers (header server button)](#switch-between-servers-header-server-button), below) |
+| PWA header server icon button | One compact button (server icon, status dot and, on wider screens, a short name) in the fixed app header, present on every page; it opens the **Servers** window and the app remembers the entry this browser picked (see [Switch between servers (header server button)](#switch-between-servers-header-server-button), below) |
 | REST | `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
@@ -138,16 +138,25 @@ store raw tokens in config files.
 
 ## Switch between servers (header server button)
 
-Every page has a **server button** in the fixed app header (`id="serverPickerBtn"`).
-It shows a server icon, a small status dot and — on screens wider than a
-phone — the selected server's short name (about 14 characters, then an
+Every page has a **server button** in the fixed app header
+(`id="serverPickerBtn"`). It replaces the old server dropdown. It shows a
+server icon, a small status dot and — on screens wider than a phone
+(over 600 px) — the selected server's short name (about 14 characters, then an
 ellipsis); on a phone only the icon and the dot show, so the header never
 wraps or pushes its other controls off screen. The dot tells the choices apart:
 one colour for this server, another for a remote peer, another for **All
 servers**, and the warning colour when the selected peer is not answering.
 The full name is always in the button's tooltip and its accessible name
-(**Server: \<name\>**). Pressing the button opens the **Servers** window — the
-same window the three-finger swipe up opens — with one row per choice:
+(**Server: \<name\>**).
+
+There are two ways to open the same **Servers** window:
+
+| How | What to do |
+|-----|-----------|
+| Mouse, touch or keyboard | Press the header server button (focus it with **Tab**, then **Enter** or **Space**) |
+| Three-finger swipe up | On a touch screen, put three fingers on any page and drag up by at least 64 px (the average of the three fingers is measured). It opens the same window as the button, from any page. A second swipe within half a second is ignored, and you lift your fingers and start again to repeat it |
+
+The window has one row per choice:
 
 | Entry | Behaviour |
 |------|-----------|
@@ -155,25 +164,41 @@ same window the three-finger swipe up opens — with one row per choice:
 | **This server** (labelled with this daemon's real hostname once `/api/health` resolves it; the generic **This server** word until then — never the word "Local") | Show only this daemon's data (the boot default only while this browser has no saved choice) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
+The active row is marked with a filled dot (**●**) and the others with an empty
+one (**○**); the active row is also marked as the current one for screen readers.
 While a remote server is selected the window also offers **Back to
 \<hostname\>**, and it always has **+ Add server** (opens Settings → Comms →
 Remote Servers) and **Close**. A **?** link in its title row opens this page.
 
-The window is a proper dialog: keyboard focus moves into it (onto the active
-row, which is marked as the current one for screen readers), **Tab** stays inside
-it, **Escape** or a click outside closes it, and focus returns to the header
-button. Every row is a real button, so the keyboard reaches all of them.
-Picking a row switches server and closes the window.
+### Keyboard use and Escape
+
+The window is a proper dialog, so it works without a mouse:
+
+- When it opens, keyboard focus moves into it, onto the active row (or onto the
+  first button if no row is active).
+- **Tab** and **Shift+Tab** stay inside the window and wrap from the last
+  control to the first and back; focus cannot wander to the page behind it.
+- Every row, **+ Add server**, **Close** and the **?** link is a real button or
+  link, so the keyboard reaches all of them; **Enter** or **Space** picks a row.
+- **Escape** closes the window. So do **Close** and a click outside it.
+- Picking a row switches server and closes the window.
+- On close, focus returns to the header server button, and its expanded state is
+  reset.
+
+If the peer list or this server's hostname arrives while the window is open, the
+rows are redrawn without taking focus away from the row you are on.
 
 The button is shared by all pages, so **All servers** can be chosen
 anywhere — but the **Observer** and **Settings** views are the two that have
 no "all servers" form: while **All servers** is the active entry they are
 deliberately not re-rendered, so they keep showing the single server whose
 data they last rendered (operator decision, 2026-10-07). The Sessions page
-has no server selector of its own any more; use the header button.
+has no server selector of its own any more — there is no second server select in
+its toolbar; use the header button.
 
 The active entry is remembered by the browser, per device (this browser's
-local storage): the button follows you as you navigate between pages, and
+local storage, under the key `dw_server_choice`; nothing is stored on the
+daemon): the button follows you as you navigate between pages, and
 when you reload the page or come back later the same entry is already
 selected — the boot round of data fetches runs against it, so restoring the
 choice costs no second refresh. A saved peer name is validated against the
@@ -205,10 +230,10 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 `/api/cost/aggregated`); the other panels have no aggregated variant.
 
 > **Confirm this on your setup before relying on it.** The in-place switch
-> is recorded under **v9.112.9 — “Switch the page to the chosen
-> federated host from the server picker”** (### Fixed, “Found
-> 2026-11-08”) in the [changelog](../../CHANGELOG.md), and that entry
-> records that no live verification had been run when it was recorded. It is
+> is recorded in the [changelog](../../CHANGELOG.md) under “Switch the page
+> to the chosen federated host from the server picker” (Fixed, found
+> 2026-11-08), and that entry records that no live verification had been run
+> when it was recorded. It is
 > implemented in this tree's `internal/server/web/app.js` — `selectServer`
 > re-renders the tab you're on, and the **Automata** re-render spans the
 > whole tab, **Automation** sub-tab included — with PWA tests for the
@@ -228,13 +253,15 @@ Behaviours worth knowing:
   New session form) are not re-rendered by a switch; they keep their
   contents until you leave them.
 - **\<label\> (unreachable).** A peer whose background reachability check
-  failed (a 4-second-capped `/api/proxy/\<name\>/api/health` probe) keeps its
-  entry, suffixed ** (unreachable)** — the entry stays listed and selectable
-  (never disabled), and choosing it is exactly how the authoritative error
-  surfaces. The marker patches the single row of an open window in place (it
-  never re-renders the whole list mid-interaction, so keyboard focus is not
-  lost), and the header button's dot turns to the warning colour when the
-  selected peer is the one that is not answering.
+  failed (a 4-second-capped `/api/proxy/\<name\>/api/health` probe, run once
+  per peer for as long as the page stays open) keeps its row, with
+  **(unreachable)** after its name — the row stays listed and selectable
+  (never disabled and never hidden), and choosing it is exactly how the
+  authoritative error surfaces. The marker is added to the single row of an
+  open window in place (it never re-renders the whole list mid-interaction, so
+  keyboard focus is not lost), and the header button's dot turns to the warning
+  colour, and its tooltip reads **(unreachable)**, when the selected peer is the
+  one that is not answering. **All** and **This server** are never marked.
 - **Back to \<hostname\>.** Extra one-tap ways to return to local data
   (where \<hostname\> is this daemon's own name), in addition to the
   always-present **This server** entry — they all perform the same "go back
