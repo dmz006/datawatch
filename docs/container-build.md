@@ -30,7 +30,7 @@ make container-agent-claude PUSH=false
 | `agent-claude` | Anthropic Claude Code (236MB native ELF) | ~520MB |
 | `agent-opencode` | OpenCode | ~600MB |
 | `agent-gemini` | Google Gemini CLI | ~580MB |
-| `agent-aider` | Aider + litellm | ~1.4GB |
+| `agent-aider` | Aider + litellm, in its own venv on a uv-managed Python 3.12 (soupsieve 4 needs Python >= 3.11.5; Debian 12's 3.11.2 is too old). `scripts/check-dockerfile-soupsieve.sh` guards the soupsieve floor in CI | ~1.4GB |
 | `lang-go` | Go 1.25 + gopls + golangci-lint + delve | ~890MB |
 | `lang-node` | Node 22 + pnpm + ts + tsx + eslint + bun | ~950MB |
 | `lang-python` | Python + uv + poetry + ruff + pyright | ~810MB |
