@@ -16,3 +16,10 @@ An LLM entry setting (`fallthrough_target`, default off). With pool
 fall-through on, a marked entry may receive a worker whose requested pool is
 full. The other lane fill backend is tried first and needs no mark. See
 [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-through).
+
+## Quick reply
+
+A saved command offered on a web app prompt alert. When the session is
+waiting on an operator question, the quick reply answers that question;
+otherwise it is sent as session input. See
+[howto/alerts-and-notifications.md](howto/alerts-and-notifications.md).

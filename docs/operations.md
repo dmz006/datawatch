@@ -2847,6 +2847,27 @@ suppressed after the channel connects (`channel_ready: true`). This eliminates t
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
 
+### Alerts quick reply answers the operator question
+
+On the web app, a **Quick reply** picked on a prompt alert for a session
+that is waiting on an operator question now answers that question: the
+question is recorded as answered (visible in the question list and its
+history) and the session resumes. Before the fix the reply was typed as
+text into the session (`send <id>: <text>`), so the question stayed open.
+A session with no pending question still gets the reply as session input.
+No setting, endpoint or locale key is added. See
+[`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md).
+
+**Operator review required:**
+
+- The code fix is pending on this branch: `alertSendCmd` in
+  `internal/server/web/app.js` still posts `send <id>: <text>` to
+  `/api/command`. Confirm this section matches the fix once it lands.
+- Confirm the fallback (no pending question → session input) is the
+  shipped behavior.
+- Mobile parity: the Android and iPhone apps need the same quick-reply
+  behavior; file or link the datawatch-app parity issue.
+
 ### Alerts tab (help link, state row, refresh)
 
 The PWA's Alerts tab was tidied for a narrow phone viewport (operator
