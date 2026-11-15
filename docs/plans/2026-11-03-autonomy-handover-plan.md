@@ -405,3 +405,7 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 
 - 2026-11-14, on the authentication and authorization layer: "For the auth, file it but it is an 11.0 feature". Filed as the design Automaton 2fbf0001, kept as a draft with the later-release tag and no decompose or approval until the operator releases the hold. Earlier the same day the operator raised the direction ("we are getting to a point where we need an Auth layer and with it multi user, local, interfaces and api, a token worked for a while but full Auth with oauth compatible").
 - 2026-11-14, on the instance-level MCP config admin token (question q-18e80740ce702fa71cbc from Automaton e9e90001): "Don't change mcp for now". Answer: proceed with the opt-in legacy mode, the admin-token instance file stays as it is; the scoped session credential change is not made for the MCP config now.
+
+## 2026-11-15: Merge scripts Automaton stays in Release 10.0 (operator answer)
+
+Question: the Automaton "Merge scripts in the repository with shadow pipeline comparison" is running and was unattached; should it stay in Release 10.0 or move to 11.0? Operator, 2026-11-15: "that is key to our 10.0 release with datawatch managing releses of course it i sin 10.0!!" Result: attached to plan release-10-0.
