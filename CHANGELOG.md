@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Task routing profiles can be saved on a daemon without the default backends.** Saving, switching or deleting a routing profile no longer fails with HTTP 400 when the shipped default rows name LLM backends this daemon does not have. Rows already in force are not looked up again; a new or changed row naming an unknown backend is still refused.
+- **The task routing dry run for an Automaton with no tasks returns an empty list.** A fresh draft Automaton now answers `"entries": []` (and `"tasks": []` on the routing read) instead of `null`.
+- **Release smoke creates its throwaway Automata again.** The scratch daemon now allows `/tmp` as a project root, so the Automation chain and capacity sections are no longer refused by the allowed project roots check. A refused create now prints the HTTP code and the response body, as does a refused routing profile save.
+
 ## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
 
 ### Added
