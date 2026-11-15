@@ -121,6 +121,15 @@ CVE-2026-93990, which was never actually in `.trivyignore` — a stale
 entry this regeneration drops). Do not hand-edit the table below; edit
 the registry and run `python3 scripts/gen_trivyignore.py`.
 
+**Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
+was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
+which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
+guards the floor in CI). The removed entry was untraced, so the "independently
+traced" count is unchanged. Confirm the next Release scan of agent-aider is
+clean, and re-scope the remaining agent-aider `python3.11` entries if they no
+longer apply to aider. See
+[container image refresh](howto/container-image-refresh.md#agent-aider-python-and-the-soupsieve-floor).
+
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
 **106 suppressed container CVEs across 8 images, 40 independently traced.**
