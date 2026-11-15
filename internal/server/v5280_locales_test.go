@@ -555,6 +555,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_child_inherit",
 		"settings_automation_merge_pending_mode",
 		"settings_automation_merge_pending_alert_minutes",
+		"settings_automation_merge_pending_include_terminal",
+		"merge_shadow_decisions_counts",
 		"merge_state_pending",
 		"merge_state_needs_look",
 		"safe_delete_card_title",

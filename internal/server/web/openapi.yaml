@@ -3243,12 +3243,18 @@ paths:
         The merge-pending state of the finished Automata. `mode` is the
         `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
         or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
-        whole minutes (0 = alerts off). `automata` has one entry per completed
-        Automaton that has a work branch: its id, name, branch, the merge state, the
+        whole minutes (0 = alerts off). `automata` has one entry per Automaton that has
+        a work branch and is either completed or, while
+        `autonomous.automation.merge_pending_include_terminal` is on (the default when
+        unset; off covers only completed), in a terminal state (archived, needs_review,
+        blocked or failed): its id, name, branch, the merge state, the
         commits it is ahead of main, when it was first seen merge pending
         (`pending_since`) and when the alert fired (`alerted_at`); both are null when
-        they do not apply. In shadow mode each entry also carries `would_alert`, and
-        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        they do not apply. In shadow mode each entry also carries `would_alert`,
+        `shadow_decisions` lists what the pass recorded without acting (newest first),
+        and `shadow_decisions_total` and `shadow_decisions_false` count every recorded
+        decision and the ones later found to have been false (both absent while the
+        mode is `off`).
         The state is read from the coordinator's in-memory cache, so a read never runs
         git and no field is added to the Automaton; an Automaton the pass has not
         compared yet reads `unknown`. While the mode is `off` both lists are empty.
