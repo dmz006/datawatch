@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.174.0 — Usage back-off must not block verification, judging and planning
+
+### Changed
+
+- Usage back-off must not block verification, judging and planning.
+
 ## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
 
 ### Added
