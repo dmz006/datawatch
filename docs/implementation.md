@@ -2900,6 +2900,19 @@ global default. Web surface: settings card *Pi (worker backend)*
   `DetectLoop` turn window. Web surface: the autonomous settings card
   (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
   `settings_loop_detect_turns` in all 5 locales.
+- **`autonomous.unlanded_alert_enabled`** / **`autonomous.unlanded_alert_threshold`**
+  (`Autonomous.UnlandedAlertEnabled *bool` / `UnlandedAlertThreshold *int` in
+  `internal/config/config.go`; `internal/config/unlanded_alert.go`: `nil` →
+  on / 3, `0` threshold alerts on any pending branch, negative rejected by
+  `ValidateUnlandedAlertThreshold` at load and every write edge). Mirrored on
+  `autonomous.Config`; the daily check (`internal/autonomous/unlanded_alert.go`,
+  started from the poll loop in `Manager.run`) reads the live manager Config on
+  each tick and persists the last-alerted day in `unlanded_alert.json`. REST
+  keys in `internal/server/unlanded_alert_config.go`; the
+  `/api/autonomous/config` path validates in `autonomous.validateUnlandedAlertPatch`.
+  Web surface: the autonomous settings card with labels
+  `settings_unlanded_alert_enabled` / `settings_unlanded_alert_threshold` in all
+  5 locales.
 
 ### Tests
 

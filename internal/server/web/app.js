@@ -25557,6 +25557,11 @@ const GENERAL_CONFIG_FIELDS = [
     // turns the live loop detector compares ("Pi worker observability" in
     // docs/operations.md). 0 turns loop detection off (default 3).
     { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
+    // Daily pending-branch alert: once per calendar day, one alert naming the
+    // oldest pending Automaton branch when more than the threshold wait for
+    // cleanup (default on, threshold 3; 0 alerts on any pending branch).
+    { key: 'autonomous.unlanded_alert_enabled', label: 'Daily pending-branch alert', labelKey: 'settings_unlanded_alert_enabled', helpKey: 'settings_unlanded_alert_enabled_help', type: 'toggle', default: true },
+    { key: 'autonomous.unlanded_alert_threshold', label: 'Pending-branch alert threshold (default 3)', labelKey: 'settings_unlanded_alert_threshold', helpKey: 'settings_unlanded_alert_threshold_help', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', labelKey: 'settings_auto_fix_retries', helpKey: 'settings_auto_fix_retries_help', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },

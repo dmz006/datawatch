@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Daily pending-branch alert: once per calendar day, when more pending Automaton branches wait for cleanup than `autonomous.unlanded_alert_threshold` (default 3) and `autonomous.unlanded_alert_enabled` is on (default true), the daemon raises one alert naming the oldest pending branch and its age. The last-alerted day is stored, so a restart the same day does not repeat it. Both settings are on YAML, `PUT /api/config`, `PUT /api/autonomous/config`, the CLI, the comm channel, MCP and the web Settings card.
+
 ## v9.175.2 — Stop writing the instance-level server token into project files
 
 ### Changed

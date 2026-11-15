@@ -4653,6 +4653,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
 			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
 			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
+			UnlandedAlertEnabled:             acfgIn.UnlandedAlertEnabled,
+			UnlandedAlertThreshold:           acfgIn.UnlandedAlertThreshold,
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
