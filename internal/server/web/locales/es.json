@@ -1571,7 +1571,7 @@
   "header_scope_all_plans": "Todos los planes",
   "header_scope_badge_label": "Filtro activo",
   "header_scope_banner": "Filtrado por %1$s",
-  "projects_scope_unassigned_not_in_plan": "Los Automata sin asignar no forman parte de ningún plan, así que no se muestra ninguno para este plan.",
+  "projects_scope_unassigned_not_in_plan": "Los autómatas sin asignar no forman parte de ningún plan, así que no se muestra ninguno para este plan.",
   "header_scope_clear": "Quitar",
   "header_scope_help_label": "Ayuda: ámbito",
   "header_scope_templates_note": "Las plantillas se muestran para todos los proyectos y planes.",
