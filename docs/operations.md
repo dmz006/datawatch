@@ -2875,8 +2875,25 @@ No setting or endpoint is added; the three toast strings ship in the five
 web-app locales (`en`, `es`, `fr`, `de`, `ja`). See
 [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md).
 
+**Messaging channels.** `send <id>: <text>` from a messaging channel
+uses the same gate when the text is a saved command (`!name`/`/name`),
+an approve/reject word, or an option id/label of the session's open
+question: one open question with one matching option → answered
+(surface `comm:<channel>`, reply `question answered`); no single match
+or several open questions → `quick reply refused` with the options or
+question ids, nothing sent; no open question or ordinary text → typed
+into the session as before. Waiting-input alerts now hint
+`Reply: send <id>: <answer>  answers: …` when the session has exactly
+one open question, and fall back to the saved command list otherwise.
+See [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
 **Still needs operator review:**
 
+- Messaging channels: if the daemon's questions API is unreachable the
+  router silently falls back to typing the text into the session;
+  confirm that fallback is acceptable.
+- A plain `yes`/`no` sent to a session with an open question now answers
+  the question instead of typing the word; confirm on a live channel.
 - Mobile parity: the Android and iPhone apps do not have this
   quick-reply→question routing yet; file or link the datawatch-app
   parity issue.

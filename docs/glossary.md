@@ -25,5 +25,9 @@ through an open-question gate: if the session has an open question and
 the reply matches one of its options, it **answers that question**
 (nothing is typed into the session); with no open question it is sent as
 session input. A reply matching no option, or a session with more than one
-open question, is refused with a message and nothing is sent. See
-[howto/alerts-and-notifications.md](howto/alerts-and-notifications.md).
+open question, is refused with a message and nothing is sent. Messaging
+channels apply the same gate to `send <id>: <text>` when the text is a
+saved command (`!name` / `/name`), an approve/reject word, or an option
+id or label of the session's open question; other text is typed into the
+session as before. See
+[howto/alerts-and-notifications.md](howto/alerts-and-notifications.md#messaging-channel-quick-replies).

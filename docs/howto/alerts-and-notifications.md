@@ -539,3 +539,42 @@ hard-refresh of the PWA tab on the phone.
 - [howto/audit-logging](audit-logging.md)
 - [howto/automaton-lifecycle-subscriptions](automaton-lifecycle-subscriptions.md) — Automaton warnings (a task touching files outside its scope, a guardrail `warn` verdict) also arrive as opt-in notify events, `scope_warning` and `guardrail_warn`, deliverable to queues, sessions, alerts and comm sinks; off by default
 - [datawatch-definitions](../datawatch-definitions.md)
+
+## Messaging channel quick replies
+
+A quick reply sent from a messaging channel (Signal, Slack, Telegram,
+Matrix, email and the other comm backends) goes through the same
+open-question gate as the web app.
+
+**Alert hint.** When a session is waiting for input, its alert ends with a
+reply hint. If the session has exactly one open question the hint lists
+that question's answers:
+
+```
+Reply: send <id>: <answer>  answers: Approve | Reject
+```
+
+Otherwise it lists the saved command names, as before
+(`Reply: send <id>: !<cmd>  options: ...`).
+
+**`send <id>: <text>`.** The text counts as a quick reply when it is a
+saved command (`!name` or `/name`), an approve/reject word (`yes`,
+`approve`, `approved`, `no`, `reject`, `rejected`), or an option id or
+label of the session's open question (case-insensitive). Then:
+
+- One open question and the reply matches exactly one option → the
+  question is **answered** (`POST /api/questions/{id}/answer`, surface
+  `comm:<channel>`, actor = the sender's comm identity). The channel
+  replies `question answered` with the question, option and the text you
+  sent. Nothing is typed into the session.
+- One open question and no single option matches (or several do) →
+  `quick reply refused`, listing the options and the
+  `question answer <id> <option>` command. Nothing is sent.
+- More than one open question → `quick reply refused`, listing each
+  question id and label. Nothing is sent; answer with
+  `question answer <id> <option>`.
+- No open question, the daemon's questions API unreachable, or ordinary
+  text that is not a quick reply → typed into the session exactly as
+  before.
+
+No setting, endpoint or command is added.
