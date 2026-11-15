@@ -123,7 +123,20 @@ func TestScanCandidates(t *testing.T) {
 		_ = neg2.Wait()
 	}()
 
-	time.Sleep(150 * time.Millisecond) // let the children settle
+	// Wait for each child's own /proc entry to show its final cmdline
+	// (exec -a happens after fork), polling with a bounded deadline.
+	for _, w := range []struct {
+		pid  int
+		want string
+	}{
+		{pos.Process.Pid, "systemctl --user stop datawatch"}, // service-scope-ok fake cmdline, never executed
+		{neg.Process.Pid, "sleep 30"},
+		{neg2.Process.Pid, "datawatch serve"},
+	} {
+		if got, err := waitForCmdline(w.pid, w.want, 10*time.Second, readProcCmdline); err != nil {
+			t.Fatalf("child cmdline not ready: %v (last %q)", err, got)
+		}
+	}
 
 	cands := scanCandidates(ownPID)
 	var found *candidateProc

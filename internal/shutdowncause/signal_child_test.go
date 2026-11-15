@@ -31,6 +31,9 @@ func runSignalParentRole() int {
 		fmt.Fprintf(os.Stderr, "signal-parent role: bad parent pid %q: %v\n", raw, err)
 		return 2
 	}
+	// Announce that we are running (our /proc cmdline is now set) before
+	// sending anything; the parent waits for this line through a pipe.
+	fmt.Fprintln(os.Stdout, childStartedLine)
 	if err := signalProc(pid, syscall.SIGTERM); err != nil {
 		fmt.Fprintf(os.Stderr, "signal-parent role: kill %d: %v\n", pid, err)
 		return 3
@@ -93,8 +96,11 @@ func TestSignalChildProcScan(t *testing.T) {
 		"DW_SHUTDOWNCAUSE_ROLE="+signalChildRole,
 		"DW_SHUTDOWNCAUSE_PARENT_PID="+strconv.Itoa(myPID),
 	)
-	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
+	childStdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe for child: %v", err)
+	}
 	// Hold a stdin pipe to the child open for as long as we need it: the
 	// child blocks on it (with its own safety cap), so it cannot exit
 	// between sending SIGTERM and our procscan attribution check. The
@@ -111,6 +117,17 @@ func TestSignalChildProcScan(t *testing.T) {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}()
+
+	// Wait for the child to announce it has started, with a bounded
+	// timeout, instead of relying on scheduling.
+	if line, err := readLineWithTimeout(childStdout, 30*time.Second); err != nil || line != childStartedLine {
+		t.Fatalf("child pid %d did not announce start: line=%q err=%v", cmd.Process.Pid, line, err)
+	}
+	go func() { _, _ = io.Copy(io.Discard, childStdout) }()
+	// The child's own /proc entry must show its cmdline before the scan.
+	if got, err := waitForCmdline(cmd.Process.Pid, "kill "+strconv.Itoa(myPID), 10*time.Second, readProcCmdline); err != nil {
+		t.Fatalf("child cmdline not visible: %v (last %q)", err, got)
+	}
 
 	var sig os.Signal
 	select {
