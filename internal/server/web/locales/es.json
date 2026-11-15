@@ -5785,5 +5785,10 @@
   "usage_backoff_whole_backend": "Todos los modelos en pausa",
   "usage_backoff_held_models": "Modelos en pausa",
   "usage_backoff_open_models": "Modelos abiertos",
-  "usage_backoff_other_models_open": "Los demás modelos siguen abiertos"
+  "usage_backoff_other_models_open": "Los demás modelos siguen abiertos",
+  "llm_model_rate_in_per_k": "Entrada $/1K",
+  "llm_model_rate_out_per_k": "Salida $/1K",
+  "llm_model_rate_cache_read_per_k": "Lectura caché $/1K",
+  "llm_model_rate_cache_write_per_k": "Escritura caché $/1K",
+  "llm_model_rate_hint": "Tarifas USD opcionales por modelo por 1K tokens; vacío usa las tarifas del backend"
 }

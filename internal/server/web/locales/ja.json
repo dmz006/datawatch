@@ -5785,5 +5785,10 @@
   "usage_backoff_whole_backend": "全モデル保留中",
   "usage_backoff_held_models": "保留中のモデル",
   "usage_backoff_open_models": "利用可能なモデル",
-  "usage_backoff_other_models_open": "他のモデルは利用可能です"
+  "usage_backoff_other_models_open": "他のモデルは利用可能です",
+  "llm_model_rate_in_per_k": "入力 $/1K",
+  "llm_model_rate_out_per_k": "出力 $/1K",
+  "llm_model_rate_cache_read_per_k": "キャッシュ読取 $/1K",
+  "llm_model_rate_cache_write_per_k": "キャッシュ書込 $/1K",
+  "llm_model_rate_hint": "モデルごとの任意の1Kトークン当たりUSD料金。空欄はバックエンドの料金を使用"
 }
