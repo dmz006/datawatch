@@ -5501,6 +5501,27 @@ function planRecordsBodyHtml(v) {
 
 // planRecordsSectionHtml is the whole Records section for one state object
 // (see _planRecordsFresh). It is empty until the first answer has come, and
+// planRecordsStateChipsHtml builds the card's state chip set for the current
+// view kind: one chip per state of that kind, so a view is filterable by any
+// combination of them — the server accepts the states together as
+// state=one,two,three. The selection has its own cs_state_chips_* key via the
+// shared helper; the chip's own change handler is the mutation path (it seeds
+// the card's mirror and refetches).
+function planRecordsStateChipsHtml(kind, st) {
+  const chips = createStateChipSet({
+    name: 'planRecordsState',
+    items: (Array.isArray(_PLAN_RECORD_STATES[kind]) ? _PLAN_RECORD_STATES[kind] : []).map(function (s) { return { key: s, label: _planRecordsStateLabel(s) }; }),
+    total: (st && st.kind === kind) ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _planRecords.stateFilter = sel.join(',');
+      _planRecordsLoad(false);
+    },
+  });
+  if (st) st.stateFilter = chips.get().join(',');
+  return chips.html();
+}
+
 // stays empty while the feature is off or not wired.
 function planRecordsSectionHtml(v) {
   if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
@@ -5508,7 +5529,7 @@ function planRecordsSectionHtml(v) {
   const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
   const controls = v.view === 'list'
     ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <div id="planRecordsStateFilter" class="state-chip-row" style="display:inline-block;vertical-align:middle;">${planRecordsStateChipsHtml(kind, v)}</div>
         <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
         <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
         <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
@@ -5554,6 +5575,7 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.stateFilter = window._stateChipSets.planRecordsState.get().join(',');
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
@@ -5585,13 +5607,16 @@ window.planRecordsSetKind = function(kind) {
   const st = _planRecords;
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
   st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
-  _planRecords.stateFilter = String(state || '');
+  const csv = String(state || '');
+  _planRecords.stateFilter = csv;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
 // planRecordsSearchInput waits for a pause in typing, then calls the search
@@ -5942,7 +5967,8 @@ function _plansLower(s) { return String(s || '').toLowerCase(); }
 // loaded Automata, or a registry row or finding linked to it matches. The row
 // and finding part is answered by the browse search route (matchPlans).
 function _plansMatch(st, p) {
-  if (st.stateFilter && p.state !== st.stateFilter) return false;
+  const sel = String(st.stateFilter || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (sel.length && sel.indexOf(p.state) < 0) return false;
   const q = _plansLower(st.q).trim();
   if (!q) return true;
   if (_plansLower(p.title).indexOf(q) >= 0) return true;
@@ -5967,7 +5993,12 @@ window.plansBrowserSearchInput = function(val) {
     _plansBrowserPaint();
   }, 250);
 };
-window.plansBrowserSetState = function(v) { _plansBrowser.stateFilter = String(v || ''); _plansBrowserPaint(); };
+window.plansBrowserSetState = function(v) {
+  const csv = String(v || '');
+  if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
+  _plansBrowser.stateFilter = csv;
+  _plansBrowserPaint();
+};
 
 // ── HTML ────────────────────────────────────────────────────────────────────
 function _plansStateLabel(state) {
@@ -6100,12 +6131,30 @@ function plansBrowserListHTML(st) {
   return html;
 }
 
+// plansBrowserStateChipsHtml is the browser's state filter as a multi-select
+// chip set: one chip per registry state, any combination selectable. The
+// selection has its own cs_state_chips_* key via the shared helper, and the
+// chip's own change handler is the mutation path (seeds the mirror, repaints).
+function plansBrowserStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'plansBrowserState',
+    items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _plansBrowser.stateFilter = sel.join(',');
+      _plansBrowserPaint();
+    },
+  });
+  if (st) st.stateFilter = chips.get().join(',');
+  return chips.html();
+}
+
 function plansBrowserHTML(p) {
   const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
-  const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  const stateSel = plansBrowserStateChipsHtml(st);
   const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
     <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
-    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select></div>
+    <div id="plansBrowserState" class="state-chip-row" style="vertical-align:middle;">${stateSel}</div></div>
     <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
       <input id="plansBrowserNewTitle" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_title_ph'))}" placeholder="${escHtml(t('plans_browser_create_title_ph'))}" style="flex:1;min-width:140px;font-size:12px;">
       <input id="plansBrowserNewGoal" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_goal_ph'))}" placeholder="${escHtml(t('plans_browser_create_goal_ph'))}" style="flex:2;min-width:160px;font-size:12px;">
@@ -6246,6 +6295,7 @@ function _recordsTabLoad(more) {
   const st = _recordsTab;
   const seq = ++st.seq;
   if (!more) st.status = 'loading';
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.stateFilter = window._stateChipSets.recordsTabState.get().join(',');
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
   if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
   if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
@@ -6294,11 +6344,32 @@ function recordsTabListHTML(st) {
   return status + st.rows.map(_recordsTabRowHTML).join('') + more;
 }
 
+// recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
+// chip set: one chip per state of the selected plan/finding type, any
+// combination selectable (the server accepts the states as
+// state=one,two,three). Its selection has its own cs_state_chips_* key via
+// the shared helper; the chip's own change handler is the mutation path
+// (seeds the tab's mirror and reloads).
+function recordsTabStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'recordsTabState',
+    items: _RECORDS_TAB_STATES.map(function (s) { return { key: s, label: _recordsTabStateLabel(s) }; }),
+    total: (st && st.status === 'ready') ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _recordsTab.stateFilter = sel.join(',');
+      _recordsTabLoad(false);
+    },
+  });
+  if (st) st.stateFilter = chips.get().join(',');
+  return chips.html();
+}
+
 function recordsTabHTML(p) {
   const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
   const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
   const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
-  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const stateSel = `<div id="recordsTabStateFilter" class="records-tab-state-filter state-chip-row" style="vertical-align:middle;">${recordsTabStateChipsHtml(st)}</div>`;
   const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
   return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
@@ -6320,7 +6391,12 @@ window.recordsTabSearchInput = function(v) {
   window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
 };
 window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
-window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) {
+  const csv = String(v || '');
+  _recordsTab.stateFilter = csv;
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
+  return _recordsTabLoad(false);
+};
 window.recordsTabMore = function() { return _recordsTabLoad(true); };
 
 // recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
@@ -9249,6 +9325,20 @@ window.stateChipsClear = function (name) {
   const s = (window._stateChipSets || {})[name];
   if (s) s.clear();
 };
+
+// _stateChipsReconcile brings a built chip set's selection in line with a
+// comma-separated state list (a programmatic setter's new value) without
+// letting the chip's own change handler load the page for every toggle.
+function _stateChipsReconcile(chips, csv) {
+  const want = String(csv || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  window._stateChipsSeeding = true;
+  try {
+    chips.get().forEach(function (k) { if (want.indexOf(k) < 0) chips.toggle(k); });
+    want.forEach(function (k) { if (!chips.isSelected(k)) chips.toggle(k); });
+  } finally {
+    window._stateChipsSeeding = false;
+  }
+}
 
 // Shared chip markup so the full paint and the in-place patch always agree
 // byte-for-byte (the patch skips the write when they already do).
