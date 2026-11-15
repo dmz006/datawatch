@@ -8108,7 +8108,7 @@ Surfaces that set it:
 
 | Surface | How |
 |---------|-----|
-| PWA | Settings → Comms → Servers Add/Edit form: **Skip TLS certificate verification** checkbox (warning line: "TLS certificate verification is disabled for this server — use only on a trusted network.") + **Certificate fingerprint (SHA-256 pin)** field, mutually exclusive in the form; the Observer → Federation Peers card's add/edit peer form carries the same pair |
+| PWA | Settings → Comms → Servers Add/Edit form: **Skip TLS certificate verification** checkbox (warning line: "TLS certificate verification is disabled for this server — use only on a trusted network.") + **Certificate fingerprint (pin)** field, mutually exclusive in the form; the Observer → Federation Peers card's add/edit peer form carries the same pair |
 | CLI | `datawatch server add/update --tls-skip-verify \| --tls-cert-fingerprint <64-hex>`; `datawatch federation peer add/update` take the same flags (`--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`; on update, omitting `--tls-cert-fingerprint` leaves the pin unchanged) |
 | REST | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` and `/api/federation/peers`; pin + skip together or a malformed pin → `400` |
 | MCP | `server_add`, `server_update`, `federation_peer_add`, `federation_peer_update` accept `tls_cert_fingerprint` (the skip flag is `tls_skip_verify`) |

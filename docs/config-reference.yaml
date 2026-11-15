@@ -4940,8 +4940,9 @@ observer:
     peer_name: ""
     # Seconds between federation pushes (default 10).
     push_interval_seconds: 10
-    # Registration token persisted across restarts
-    # (default <data_dir>/observer/federation.token).
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
     token_path: ""
     # Last-resort: skip TLS certificate verification on the parent
     # (dev / self-signed root). Default false — the parent's

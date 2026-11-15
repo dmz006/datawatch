@@ -87,7 +87,7 @@ peers from — they all write the same field:
   <64-hex>` (refused together with `--tls-skip-verify`).
 - **YAML**: `tls_cert_fingerprint: "<64-hex>"` on the `servers:` entry
   (daemon restart required).
-- **PWA**: the **Certificate fingerprint (SHA-256 pin)** field in the server
+- **PWA**: the **Certificate fingerprint (pin)** field in the server
   Add/Edit form.
 
 Read it back with `federation_peer_get`, `GET /api/servers`, or the PWA
