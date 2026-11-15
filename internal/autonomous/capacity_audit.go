@@ -132,19 +132,28 @@ func (r *CapacityAudit) admissionNames(taskID, prdID, reason string) AdmissionNa
 // BackoffSet records a back-off flag set on backend until the given time. The
 // actor is AuditActorAutonomous for rate-limit detection and AuditActorOperator
 // (or the operator-surface caller's own actor) for a flag set by hand; source
-// is the Backoff source constant.
-func (r *CapacityAudit) BackoffSet(actor, backend string, until time.Time, source string) {
-	r.Record(actor, audit.ActionUsageBackoffSet, backend, map[string]any{
+// is the Backoff source constant. models, when non-empty, limits the flag to
+// those models (it is recorded normalised).
+func (r *CapacityAudit) BackoffSet(actor, backend string, until time.Time, source string, models []string) {
+	details := map[string]any{
 		"backend": backend,
 		"until":   until.UTC().Format(time.RFC3339),
 		"source":  source,
-	})
+	}
+	if m := NormalizeModels(models); len(m) > 0 {
+		details["models"] = m
+	}
+	r.Record(actor, audit.ActionUsageBackoffSet, backend, details)
 }
 
 // BackoffCleared records a back-off flag cleared by hand: one backend, or
-// "all".
-func (r *CapacityAudit) BackoffCleared(actor, backend string) {
-	r.Record(actor, audit.ActionUsageBackoffCleared, backend, map[string]any{"backend": backend})
+// "all". When the clear was model-scoped, models carries the named models.
+func (r *CapacityAudit) BackoffCleared(actor, backend string, models []string) {
+	details := map[string]any{"backend": backend}
+	if m := NormalizeModels(models); len(m) > 0 {
+		details["models"] = m
+	}
+	r.Record(actor, audit.ActionUsageBackoffCleared, backend, details)
 }
 
 // BackoffAutoCleared records the sweeper clearing a back-off flag whose

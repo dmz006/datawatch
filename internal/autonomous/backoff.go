@@ -10,6 +10,7 @@
 package autonomous
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -169,6 +170,44 @@ func (b *Backoff) Clear(backend string) bool {
 		_ = b.saveLocked() // the error is kept in saveErr for the status read
 	}
 	return ok
+}
+
+// ClearModels narrows a clear to the named models: it removes them from the
+// model list of the flag on backend and drops the flag entirely when that
+// empties the list. A whole-backend flag (no model list) is never touched, and
+// a model-scoped flag whose list is not covered by the named models is left
+// unchanged. It reports whether the flag was changed.
+func (b *Backoff) ClearModels(backend string, models []string) bool {
+	given := NormalizeModels(models)
+	if len(given) == 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	e, ok := b.entries[backend]
+	if !ok || len(e.Models) == 0 {
+		return false
+	}
+	kept := make([]string, 0, len(e.Models))
+	changed := false
+	for _, m := range e.Models {
+		if slices.Contains(given, m) {
+			changed = true
+			continue
+		}
+		kept = append(kept, m)
+	}
+	if !changed {
+		return false
+	}
+	if len(kept) == 0 {
+		delete(b.entries, backend)
+	} else {
+		e.Models = kept
+		b.entries[backend] = e
+	}
+	_ = b.saveLocked() // the error is kept in saveErr for the status read
+	return true
 }
 
 // ClearAll removes every flag and returns how many were removed.

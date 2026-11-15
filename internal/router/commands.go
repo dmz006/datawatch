@@ -530,11 +530,16 @@ type Command struct {
 	//   UsageBackoffMinutes / UsageBackoffUntil: set deadline — minutes (>= 1)
 	//     or an RFC3339 time; the parser fills whichever the operator gave
 	//   UsageBackoffReason: optional operator note for set
+	//   UsageBackoffModels: optional models=a,b parameter for set/clear —
+	//     set with it holds only those models of the backend, and clear with
+	//     it removes only those models from the flag (dropping it when that
+	//     empties the list); whole-backend flags and clear-all are untouched
 	UsageBackoffVerb    string
 	UsageBackoffBackend string
 	UsageBackoffMinutes int
 	UsageBackoffUntil   string
 	UsageBackoffReason  string
+	UsageBackoffModels  []string
 
 	// CmdBudget fields. BudgetLLM names one LLM; empty = every budgeted LLM.
 	BudgetLLM string
@@ -2017,8 +2022,8 @@ cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
 usage_backoff                    show per-backend usage back-off flags, config and the patterns_version/patterns_stale/claude_cli_version drift guard
-usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
-usage_backoff clear [backend|all]  clear one back-off, or all (default)
+usage_backoff set <backend> <minutes> [reason …] [models=a,b]  hold autonomous dispatch to a backend (or only the named models of it)
+usage_backoff clear [backend|all] [models=a,b]  clear one back-off, or all (default); models=a,b narrows the clear to those models of the named backend
 usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
 budget [status] [<llm>]          per-LLM dollar spend, ceiling, window end and rollover
 usage                            account usage calculator: verdict, lanes, advice
@@ -2250,6 +2255,17 @@ func parseUsageBackoff(rest string) Command {
 		if len(fields) > 1 && !strings.EqualFold(fields[1], "all") {
 			cmd.UsageBackoffBackend = fields[1]
 		}
+		if len(fields) > 2 {
+			for _, f := range fields[2:] {
+				if m, ok := parseUsageBackoffModels(f); ok {
+					if m == nil {
+						cmd.UsageBackoffVerb = "invalid"
+						return cmd
+					}
+					cmd.UsageBackoffModels = m
+				}
+			}
+		}
 		return cmd
 	case "set":
 		cmd.UsageBackoffVerb = "set"
@@ -2264,12 +2280,40 @@ func parseUsageBackoff(rest string) Command {
 			}
 		}
 		if len(fields) > 3 {
-			cmd.UsageBackoffReason = strings.Join(fields[3:], " ")
+			var reasonWords []string
+			for _, f := range fields[3:] {
+				if m, ok := parseUsageBackoffModels(f); ok {
+					if m == nil {
+						cmd.UsageBackoffVerb = "invalid"
+						return cmd
+					}
+					cmd.UsageBackoffModels = m
+					continue
+				}
+				reasonWords = append(reasonWords, f)
+			}
+			cmd.UsageBackoffReason = strings.Join(reasonWords, " ")
 		}
 		return cmd
 	}
 	cmd.UsageBackoffVerb = "invalid"
 	return cmd
+}
+
+// parseUsageBackoffModels recognizes a "models=a,b" tail token. ok is false
+// for a plain word; ok is true and models nil when the parameter was given
+// with no usable names (an operator error the handler turns into usage);
+// otherwise models is the trimmed, non-empty name list.
+func parseUsageBackoffModels(field string) (models []string, ok bool) {
+	if !strings.HasPrefix(field, "models=") {
+		return nil, false
+	}
+	for _, p := range strings.Split(strings.TrimPrefix(field, "models="), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			models = append(models, p)
+		}
+	}
+	return models, true
 }
 
 // handleDashboardConsole is the operator console one-glance over chat: the
