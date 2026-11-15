@@ -13308,6 +13308,19 @@ components:
           example: "a1b2"
         enabled:
           type: boolean
+          description: Whether this remote is active.
+        tls_cert_fingerprint:
+          type: string
+          description: "Optional leaf-certificate pin: SHA-256 of the peer's leaf certificate, 64 hex chars (colons/spaces accepted, stored as 64 lowercase hex). When set, the chain is not checked and the leaf must match. Wins over tls_skip_verify; the request is rejected when both are set or the pin is malformed."
+          example: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        tls_skip_verify:
+          type: boolean
+          description: "Opt-out: skip TLS certificate verification for this peer only. Announced in the create/update response `warnings` array and a warn-level system alert. Rejected when combined with tls_cert_fingerprint. Default false (verify against the system trust store)."
+        warnings:
+          type: array
+          items:
+            type: string
+          description: "Response-only (create/update and the `test` endpoint). Present when the peer's certificate is not verified (tls_skip_verify set, no pin)."
 
     SavedCommand:
       type: object

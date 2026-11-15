@@ -121,6 +121,10 @@ An `http://` parent has no TLS to verify: no pin, no opt-out, no notice.
   certificate (a trusted CA, or self-signed into the system store)
   rather than opting out.
 
+  Cross-link reference for all three peer links (peers, worker push,
+  primary → root), with the openssl derivation and the upgrade note:
+  [howto/peer-tls-verification](peer-tls-verification.md).
+
 **What stays the same:** the worker **bootstrap** channel for a
 TLS-less parent keeps its existing unverified fallback (unchanged);
 and `datawatch-stats` is a separate binary with its own `--insecure-tls`

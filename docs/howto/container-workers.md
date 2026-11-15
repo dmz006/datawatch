@@ -38,7 +38,8 @@ host.
 > the bootstrap channel) or, if that is absent, the system trust
 > store; skipping is the startup-warned `DATAWATCH_OBSERVER_PUSH_INSECURE`
 > opt-out. See [federated-observer → Push-channel TLS
-> (verified by default)](federated-observer.md#push-channel-tls-verified-by-default).
+> (verified by default)](federated-observer.md#push-channel-tls-verified-by-default)
+> and the cross-link reference [peer-tls-verification](peer-tls-verification.md).
 
 ## What it is
 

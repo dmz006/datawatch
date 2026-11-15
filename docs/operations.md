@@ -8114,7 +8114,7 @@ Surfaces that set it:
 | MCP | `server_add`, `server_update`, `federation_peer_add`, `federation_peer_update` accept `tls_cert_fingerprint` (the skip flag is `tls_skip_verify`) |
 | YAML | `tls_cert_fingerprint` or `tls_skip_verify` on the `servers:` entry (restart required; builtins are read-only in the UI) |
 
-**Operator review before rolling out:** peers you reached before by trusting their CA only in the browser are not covered — the daemon's own proxy and health calls need the CA in the daemon's system trust store, a pin, or the explicit skip. Prefer the pin (or a trusted CA) over `tls_skip_verify`; every skipped, unpinned peer shows up in the Alerts tab as **Peer certificate not verified**, which is the review queue. A pinned peer needs its pin refreshed when the peer's leaf certificate changes. See [howto/multi-servers.md](howto/multi-servers.md#peer-tls-verified-by-default) for the walkthrough.
+**Operator review before rolling out:** peers you reached before by trusting their CA only in the browser are not covered — the daemon's own proxy and health calls need the CA in the daemon's system trust store, a pin, or the explicit skip. Prefer the pin (or a trusted CA) over `tls_skip_verify`; every skipped, unpinned peer shows up in the Alerts tab as **Peer certificate not verified**, which is the review queue. A pinned peer needs its pin refreshed when the peer's leaf certificate changes. See [howto/multi-servers.md](howto/multi-servers.md#peer-tls-verified-by-default) for the walkthrough, and [howto/peer-tls-verification](howto/peer-tls-verification.md) for the cross-link reference covering all three peer links.
 
 ## Observer push TLS (verify by default)
 
@@ -8129,7 +8129,7 @@ Observer pushes — a worker's Shape A push into its parent, and the primary →
 
 What does not change: the bootstrap channel's existing unverified fallback for a TLS-less parent, and `datawatch-stats` (a separate binary with its own `--insecure-tls`).
 
-**Operator review before upgrading a fleet:** a peer that pushed to a self-signed or private-CA `https://` parent was working only because verification was off; after the upgrade the push fails the TLS handshake unless the parent's leaf fingerprint is pinned or the opt-out is set. A primary pushing into a self-signed root needs the root's certificate in the system trust store, or the (warned) `observer.federation.insecure: true`. The walkthrough with the openssl derivation is in [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default).
+**Operator review before upgrading a fleet:** a peer that pushed to a self-signed or private-CA `https://` parent was working only because verification was off; after the upgrade the push fails the TLS handshake unless the parent's leaf fingerprint is pinned or the opt-out is set. A primary pushing into a self-signed root needs the root's certificate in the system trust store, or the (warned) `observer.federation.insecure: true`. The walkthrough with the openssl derivation is in [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default), with the cross-link reference in [howto/peer-tls-verification](howto/peer-tls-verification.md).
 
 ## LLM billing mode
 
