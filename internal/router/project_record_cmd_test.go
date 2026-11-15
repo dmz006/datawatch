@@ -363,3 +363,45 @@ func TestFormatProjectProgressWithoutProject(t *testing.T) {
 		t.Fatalf("empty group must not print: %s", got)
 	}
 }
+
+// Single-field `project set` on the record's own fields: changing the
+// description keeps the stored default_backend (and every other field), and
+// changing the backend keeps the stored description — the comm channel never
+// blanks a field the operator did not touch.
+func TestProjectSetBodyOwnFieldKeepsRecord(t *testing.T) {
+	out, err := projectSetBody(projectRecordBody, "description", "Acme platform, phase 2")
+	if err != nil {
+		t.Fatalf("projectSetBody description: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got["description"] != "Acme platform, phase 2" {
+		t.Errorf("description=%v want the new value", got["description"])
+	}
+	if got["default_backend"] != "claude-code" {
+		t.Errorf("default_backend=%v want the stored claude-code kept", got["default_backend"])
+	}
+	if got["owner"] != "platform" || got["default_branch"] != "main" {
+		t.Errorf("other stored fields not echoed: %v", got)
+	}
+
+	out, err = projectSetBody(projectRecordBody, "default_backend", "pi")
+	if err != nil {
+		t.Fatalf("projectSetBody default_backend: %v", err)
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got["default_backend"] != "pi" {
+		t.Errorf("default_backend=%v want pi", got["default_backend"])
+	}
+	if got["description"] != "Acme platform" {
+		t.Errorf("description=%v want the stored Acme platform kept", got["description"])
+	}
+	// The policy block must round-trip untouched too — the upsert replaces it.
+	if p, _ := got["policy"].(map[string]any); p == nil || p["max_concurrent_tasks"] != float64(2) {
+		t.Errorf("policy not echoed: %v", got["policy"])
+	}
+}

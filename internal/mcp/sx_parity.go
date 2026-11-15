@@ -261,8 +261,8 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 			"Register or update a project alias (BL27), and optionally its per-project policy tier — the layer between the daemon-wide defaults and the Automaton's own overrides. Unset policy keys keep the daemon tier; the daemon re-validates the block and refuses it, naming the offending field, if a key holds a value that key does not know."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Project alias")),
 		mcpsdk.WithString("dir", mcpsdk.Required(), mcpsdk.Description("Absolute directory")),
-		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend")),
-		mcpsdk.WithString("description", mcpsdk.Description("Description")),
+		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend. Omit to keep the stored value; an empty string clears it.")),
+		mcpsdk.WithString("description", mcpsdk.Description("Description. Omit to keep the stored value; an empty string clears it.")),
 		mcpsdk.WithObject("policy",
 			mcpsdk.Description(
 				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")),
@@ -281,11 +281,30 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 		mcpsdk.WithString("major_trigger", mcpsdk.Description("Optional major-release trigger. Omit to keep; empty clears.")))
 }
 func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	args := req.GetArguments()
+	name := req.GetString("name", "")
 	body := map[string]any{
-		"name":            req.GetString("name", ""),
-		"dir":             req.GetString("dir", ""),
-		"default_backend": req.GetString("default_backend", ""),
-		"description":     req.GetString("description", ""),
+		"name": name,
+		"dir":  req.GetString("dir", ""),
+	}
+	// Fix (project-upsert wiping stored values): description and
+	// default_backend were forwarded on every upsert — an empty string when
+	// the caller omitted them — and the daemon's upsert overwrites both
+	// whenever they are absent or empty, so a partial update silently wiped
+	// the description the operator had saved. Now each field is forwarded
+	// only when the caller sent it (an explicit empty string still clears it,
+	// as with owner, repository, ...), and when it is omitted the handler
+	// carries the stored value instead (see below).
+	for _, k := range []string{"default_backend", "description"} {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		str, isStr := v.(string)
+		if !isStr {
+			return toolErrorf("project_upsert", "%s must be a string", k), nil
+		}
+		body[k] = str
 	}
 	if raw, ok := req.GetArguments()["policy"]; ok && raw != nil {
 		var obj map[string]any
@@ -307,14 +326,68 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 		// []byte would marshal as a base64 string.
 		body["policy"] = json.RawMessage(b)
 	}
-	if err := applyProjectRecordArgs(req.GetArguments(), body); err != nil {
+	if err := applyProjectRecordArgs(args, body); err != nil {
 		return toolErrorf("project_upsert", "%v", err), nil
+	}
+	// An omitted field must not be forwarded as an empty string (or dropped
+	// from the body): the daemon's upsert overwrites description and
+	// default_backend whenever they are absent or empty, so a partial update
+	// that leaves either field out silently wipes the stored value. The
+	// readback fires for either field being omitted — not only the description
+	// — and carries the stored value back for every omitted field, the same
+	// read-back that `datawatch projects set` and the comm channel's
+	// `project set` do. A provided empty string still forwards as a clear
+	// (that is the documented way to blank a field), and a read failure (for a
+	// new registration the GET 404s) simply leaves the field out of the body —
+	// there is no stored value to lose in that case.
+	anyOmitted := false
+	for _, k := range []string{"description", "default_backend"} {
+		if v, present := args[k]; !present || v == nil {
+			anyOmitted = true
+			break
+		}
+	}
+	if anyOmitted {
+		if stored, err := storedProjectRecordFields(s, name, "description", "default_backend"); err == nil {
+			for _, k := range []string{"description", "default_backend"} {
+				if v, present := args[k]; present && v != nil {
+					continue // provided (even "" to clear) → keep it in the body
+				}
+				if w, ok := stored[k]; ok {
+					body[k] = w
+				}
+			}
+		}
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
 		return toolError("project_upsert", err), nil
 	}
 	return textOK(string(out)), nil
+}
+
+// storedProjectRecordFields reads the named project's stored record once and
+// returns the stored values of the requested string fields (description,
+// default_backend). A read error — including a not yet registered project,
+// where the GET 404s — yields no values: the caller then omits those keys
+// from the upsert body. The daemon omits unset values (omitempty), so a key
+// present in the response always carries its stored content.
+func storedProjectRecordFields(s *Server, name string, fields ...string) (map[string]string, error) {
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name), nil)
+	if err != nil {
+		return nil, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(out, &rec); err != nil {
+		return nil, err
+	}
+	got := make(map[string]string, len(fields))
+	for _, k := range fields {
+		if v, ok := rec[k].(string); ok && v != "" {
+			got[k] = v
+		}
+	}
+	return got, nil
 }
 
 func (s *Server) toolProjectAliasDelete() mcpsdk.Tool {
