@@ -160,6 +160,8 @@ who can read the machine.
 | **Certificates and hashed tokens** | Certificates are public; plugin and observer tokens are stored only as hashes. |
 | **Network transit** | Not an at-rest feature. Peer, worker and observer connections rely on TLS. Certificate checking can be turned off per peer (`tls_skip_verify`), and worker observer pushes default to skipping verification. |
 
+**What remains in the daemon-written `.mcp.json` files, and why they stay plain.** The launched tool (the MCP host of claude-code, opencode and others) reads `DATAWATCH_TOKEN` out of these files before it talks to the daemon, so there is no decryption step datawatch can put in front of it — the files must be plain text, and the exposure is minimized by what *remains* in them rather than by what is sealed. What remains is small and disposable by design: the starting session's scoped credential in each project file (dead once the session ends or is killed), an instance-scoped credential in the data-directory file that is valid about an hour, refreshed at each session launch, and revoked when the last live session ends or the daemon shuts down — with the `datawatch` entry (and the file, if it held nothing else) removed from disk — plus any server entries the operator added, whose credentials are the operator's own. Every daemon-written file is `0600`. A workflow that reads `DATAWATCH_TOKEN` out of these files to obtain a long-lived admin bearer is broken by design: give it the daemon's real server token from its own secure source (its own MCP host config or a secrets store), or a federation peer token with the capabilities it actually needs.
+
 ### Note on `daemon.log` vs `daemon-app.log`
 
 Two log files exist when `--secure` is active:
