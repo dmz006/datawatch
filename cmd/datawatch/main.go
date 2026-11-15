@@ -7703,7 +7703,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 			// Make the task->session link durable before the task text is delivered.
 			mgr.SetOnSessionCreated(func(s *session.Session) {
-				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+				amgr.LinkCreatedSession(autonomouspkg.SessionInfo{ID: s.FullID, Name: s.Name, PRDID: s.PRDID, TaskID: s.TaskID})
 			})
 			// Retry resume reads the previous session's context size. TokensIn is the
 			// session's running input total: it overstates the live context, so the

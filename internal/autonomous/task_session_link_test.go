@@ -62,3 +62,18 @@ func TestTaskSessionLinkSurvivesRestartBeforeFirstPrompt(t *testing.T) {
 		}
 	})
 }
+
+// A verifier, guardrail judge or planner session carries the task id too. Linking it would
+// replace the worker's session id on the task, so only the worker session is linked.
+func TestLinkCreatedSessionLinksOnlyTheWorkerSession(t *testing.T) {
+	m, _, prd, task := linkFixture(t)
+	const worker = "sess-worker"
+	m.LinkCreatedSession(SessionInfo{ID: worker, Name: "autonomous:task", PRDID: prd.ID, TaskID: task.ID})
+	for _, role := range []string{"autonomous:verify:" + task.ID, "autonomous:guardrail:" + task.ID, "autonomous:decompose", "autonomous:plan", "autonomous:judge", "autonomous:council", "autonomous:eval"} {
+		m.LinkCreatedSession(SessionInfo{ID: "sess-" + role, Name: role, PRDID: prd.ID, TaskID: task.ID})
+		got, _ := m.Store().GetTask(task.ID)
+		if got.SessionID != worker {
+			t.Fatalf("after a %q session was created the task session is %q, want the worker session %q", role, got.SessionID, worker)
+		}
+	}
+}

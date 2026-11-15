@@ -2348,6 +2348,19 @@ func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
 	m.sessionAliveFn = fn
 }
 
+// LinkCreatedSession is the session-created hook's entry point. Only the task's worker
+// session is the task's session: a verifier, guardrail judge, planner or other role
+// session also carries the task id, and linking it would replace the worker's session id
+// on the task as soon as the verifier starts (and the restart matrix's session_id_stable
+// check, which compares the id before and after a restart, would fail). Those sessions are
+// found by their role name and task id instead.
+func (m *Manager) LinkCreatedSession(s SessionInfo) {
+	if !isTaskWorkerSession(s) {
+		return
+	}
+	m.LinkTaskSession(s.PRDID, s.TaskID, s.ID)
+}
+
 // LinkTaskSession records sessionID on the task before the worker receives its
 // prompt, saves the task and binds the capacity ledger entry. It is the callback
 // the session manager invokes once a new session record is persisted. Unknown

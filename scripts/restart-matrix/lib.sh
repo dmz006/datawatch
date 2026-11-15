@@ -276,6 +276,11 @@ server:
   tls_port: $RM_TLS_PORT
   token: ""
   proxy_sandbox_port: 0 # the sandbox never binds the default proxy port (8444)
+  # A request-supplied project dir must lie under an allowed project root, and the
+  # throwaway sandbox dir is under none of the default roots. Every state that creates
+  # an Automaton (worker-running, waiting-capacity, waiting-external, git-operation,
+  # automation-branches, ...) needs this, not only the pi-node states.
+  allowed_project_roots: ["$RM_SB"]
 memory:
   enabled: false
 session:
@@ -304,7 +309,7 @@ autonomous:
   task_templates:
     enabled: false
 EOF
-  # Opt-in only: states that do not set RM_PI_NODES keep the config above, byte for byte.
+  # Opt-in only: the pi backends are added only for states that set RM_PI_NODES.
   [[ "${RM_PI_NODES:-0}" == 1 ]] && rm_write_config_pi
   return 0
 }
@@ -312,9 +317,6 @@ EOF
 # rm_write_config_pi — extends the sandbox config when RM_PI_NODES=1: the pi and
 # pi-prompt backends run the fake pi that rm_pi_nodes_setup writes into the sandbox.
 rm_write_config_pi() {
-  # A PRD's project dir must lie under an allowed project root; the sandbox dir is not under
-  # the default roots, so name it (inside the server block, after its last key).
-  sed -i "/^  proxy_sandbox_port:/a\\  allowed_project_roots: [\"$RM_SB\"]" "$RM_CONFIG"
   cat >>"$RM_CONFIG" <<EOF
 pi:
   enabled: true
@@ -435,7 +437,8 @@ rm_verify_sandbox_pid() {
 
 rm_daemon_start() {
   rm_launch_daemon || return 1
-  rm_verify_sandbox_pid "$RM_DAEMON_PID" || rm_die "started daemon pid $RM_DAEMON_PID does not verify as this sandbox's daemon"
+  # The contract stays strict; a miss only says which half failed, so the fault is diagnosable.
+  rm_verify_sandbox_pid "$RM_DAEMON_PID" || rm_die "started daemon pid $RM_DAEMON_PID does not verify as this sandbox's daemon (alive: $(kill -0 "$RM_DAEMON_PID" 2>/dev/null && echo yes || echo no); cmdline: $(tr '\0' ' ' <"/proc/$RM_DAEMON_PID/cmdline" 2>/dev/null | head -c 300); want: datawatch + $RM_CONFIG; log: $RM_DAEMON_LOG)"
   rm_log "sandbox daemon up: pid $RM_DAEMON_PID, $RM_BASE"
 }
 
@@ -667,10 +670,21 @@ rm_write_plan() {
     }' >"$RM_CTRL/plan.json"
 }
 
+# rm_prd_post BODY — creates a PRD from a JSON body and prints its id. When the daemon
+# answers without an id (a refused project dir, a bad backend) the answer is logged on
+# stderr, so the state's "could not create" line comes with the daemon's own reason.
+rm_prd_post() {
+  local resp id
+  resp="$(rm_api POST /api/autonomous/prds "$1")"
+  id="$(jq -r '.id // .prd.id // empty' <<<"$resp" 2>/dev/null)"
+  [[ -n "$id" ]] || rm_log "daemon refused to create the PRD: ${resp:-<no answer>}"
+  printf '%s' "$id"
+}
+
 rm_prd_create() { # prints the PRD id
   local body
   body="$(jq -n --arg dir "$RM_PROJECT" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "shell"}')"
-  rm_api POST /api/autonomous/prds "$body" | jq -r '.id // .prd.id // empty'
+  rm_prd_post "$body"
 }
 
 rm_prd_json() { rm_api GET "/api/autonomous/prds/$1"; }
