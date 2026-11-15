@@ -8154,3 +8154,11 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-line { display: block; }
 }
 
+
+/* Unlanded work counts block (Housekeeping card) */
+.unlanded-counts { padding: 4px 0 6px; font-size: 12px; min-width: 0; }
+.unlanded-counts-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 2px 0; }
+.unlanded-counts-label { color: var(--text2, #888); }
+.unlanded-counts-chip { padding: 1px 6px; border-radius: 8px; background: rgba(128,128,128,.15); white-space: nowrap; }
+.unlanded-counts-oldest { margin-top: 2px; overflow-wrap: anywhere; }
+.unlanded-counts-over { margin-top: 2px; color: var(--error, #e5534b); font-weight: 600; }

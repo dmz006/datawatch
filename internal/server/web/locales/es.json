@@ -5867,5 +5867,16 @@
   "plans_release_attach_not_found": "No encontrado.",
   "plans_release_attach_placement_failed": "Asignado, pero la asignación al tema falló.",
   "plans_release_attach_refused": "Rechazado por el servidor.",
-  "plans_release_rowplans_conflicts_head": "Conflictos:"
+  "plans_release_rowplans_conflicts_head": "Conflictos:",
+  "unlanded_counts_by_state": "Por estado:",
+  "unlanded_counts_by_age": "Por antigüedad:",
+  "unlanded_counts_landed": "%1$s integradas",
+  "unlanded_counts_pending": "%1$s pendientes",
+  "unlanded_counts_live": "%1$s activas",
+  "unlanded_counts_unlanded": "%1$s sin integrar",
+  "unlanded_counts_under_one_day": "%1$s de menos de un día",
+  "unlanded_counts_under_one_week": "%1$s de menos de una semana",
+  "unlanded_counts_older": "%1$s más antiguas",
+  "unlanded_counts_oldest": "Pendiente más antigua: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Por encima del umbral de alerta: %1$s pendientes (umbral %2$s)"
 }
