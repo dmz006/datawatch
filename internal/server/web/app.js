@@ -35190,7 +35190,7 @@ function capacityBackoffHtml(backoff) {
       ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
       : '';
     const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
-    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
+    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${typeof usageBackoffModelsHtml === 'function' ? usageBackoffModelsHtml(b) : ''}${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
 }
@@ -35610,6 +35610,7 @@ window.usageCalcFrameHtml = function (body, opts) {
     if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
+  parts.push(`<div id="usageBackoffCard">${window.usageBackoffCardHtml()}</div>`);
   parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
   return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
@@ -36291,6 +36292,178 @@ function usageCalcRerender() {
   if (ctl) ctl.paint();
 }
 
+// Usage back-off card on the usage page: the live holds from GET /api/usage/backoff
+// (each with its held and open models) and a set/clear control. The optional
+// models field limits a set or clear to those models of the backend; empty holds
+// or clears the whole backend. Only the status block repaints on refresh, so
+// typed values in the form survive a poll.
+const USAGE_BACKOFF_REFRESH_MS = 30000;
+window._usageBackoff = window._usageBackoff || { status: null, error: '', message: '' };
+
+// Splits the models field on commas and whitespace, trims, drops blanks and
+// repeats. Returns [] for an empty field (= whole backend).
+window.usageBackoffParseModels = function (text) {
+  const out = [];
+  String(text == null ? '' : text).split(/[\s,]+/).forEach(m => {
+    const v = m.trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+};
+
+// Builds the POST body for a set from the form values. Returns {error} when a
+// value is not acceptable, otherwise {body}.
+window.usageBackoffBuildSetBody = function (vals) {
+  vals = vals || {};
+  const backend = String(vals.backend || '').trim();
+  if (!backend) return { error: t('usage_backoff_backend_required') || 'Backend is required' };
+  const body = { backend };
+  const minRaw = String(vals.minutes == null ? '' : vals.minutes).trim();
+  if (minRaw !== '') {
+    const n = Number(minRaw);
+    if (!Number.isInteger(n) || n < 1 || n > 525600) return { error: t('usage_backoff_minutes_invalid') || 'Minutes must be a whole number from 1 to 525600' };
+    body.minutes = n;
+  }
+  const reason = String(vals.reason || '').trim();
+  if (reason) body.reason = reason;
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) body.models = models;
+  return { body };
+};
+
+// The held/open models line shared by the capacity card and the back-off card.
+// Field names follow both bodies: whole_backend/held_models/open_models.
+function usageBackoffModelsHtml(h) {
+  if (!h) return '';
+  const held = Array.isArray(h.held_models) ? h.held_models : [];
+  const open = Array.isArray(h.open_models) ? h.open_models : [];
+  const parts = [];
+  if (h.whole_backend || held.length === 0) {
+    if (h.whole_backend) parts.push(`<span class="backoff-held-all">${escHtml(t('usage_backoff_whole_backend') || 'All models held')}</span>`);
+  } else {
+    parts.push(`<span class="backoff-held-models">${escHtml(t('usage_backoff_held_models') || 'Held models')}: ${escHtml(held.join(', '))}</span>`);
+  }
+  if (open.length) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_open_models') || 'Open models')}: ${escHtml(open.join(', '))}</span>`);
+  } else if (!h.whole_backend && held.length && h.other_models_open) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_other_models_open') || 'Other models stay open')}</span>`);
+  }
+  if (!parts.length) return '';
+  return `<div class="backoff-models" style="font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px;">${parts.join('')}</div>`;
+}
+window.usageBackoffModelsHtml = usageBackoffModelsHtml;
+
+window.usageBackoffStatusHtml = function (status) {
+  const holds = status && Array.isArray(status.holds) ? status.holds : [];
+  const active = status && Array.isArray(status.active) ? status.active : [];
+  if (!holds.length && !active.length) return `<div style="color:var(--text2);font-size:12px;">${escHtml(t('usage_backoff_none') || 'No back-off is active')}</div>`;
+  const byBackend = {};
+  active.forEach(e => { if (e && e.backend) byBackend[e.backend] = e; });
+  const list = holds.length ? holds : active.map(e => ({ backend: e.backend, whole_backend: !(e.models && e.models.length), held_models: e.models || [], open_models: [] }));
+  return list.map(h => {
+    const e = byBackend[h.backend] || {};
+    const until = e.until ? `${escHtml(t('capacity_card_backoff_resets') || 'Resets')}: ${escHtml(typeof budgetTime === 'function' ? budgetTime(e.until) : e.until)}` : '';
+    const reason = e.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(e.reason)}</div>` : '';
+    return `<div class="usage-backoff-hold" data-backend="${escHtml(h.backend || '')}" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(h.backend || '')}</span><span>${until}</span></div>${window.usageBackoffModelsHtml(h)}${reason}</div>`;
+  }).join('');
+};
+
+window.usageBackoffCardHtml = function () {
+  const st = window._usageBackoff || {};
+  const lbl = (k, d) => escHtml(t(k) || d);
+  const inp = 'style="min-width:0;max-width:100%;padding:4px 6px;"';
+  const msg = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  return `<div class="usage-backoff-card" style="border:1px solid var(--border,#333);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;">`
+    + `<div style="font-weight:600;">${lbl('usage_backoff_card_title', 'Usage back-off')}</div>`
+    + `<div id="usageBackoffStatus">${window.usageBackoffStatusHtml(st.status)}</div>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;">`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_backend', 'Backend')}<input id="usageBackoffBackend" type="text" placeholder="claude-code" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_minutes', 'Minutes')}<input id="usageBackoffMinutes" type="number" min="1" step="1" placeholder="60" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_models', 'Models (optional, comma separated)')}<input id="usageBackoffModels" type="text" placeholder="${lbl('usage_backoff_models_placeholder', 'empty = whole backend')}" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_reason', 'Reason')}<input id="usageBackoffReason" type="text" ${inp}></label>`
+    + `<button class="btn-secondary" onclick="usageBackoffSet()">${lbl('usage_backoff_set', 'Set back-off')}</button>`
+    + `<button class="btn-secondary" onclick="usageBackoffClear()">${lbl('usage_backoff_clear', 'Clear')}</button>`
+    + `</div>`
+    + `<div style="font-size:11px;color:var(--text2);">${lbl('usage_backoff_models_hint', 'Name models to hold or clear only those models of the backend; leave empty for the whole backend.')}</div>`
+    + `<div id="usageBackoffMsg">${msg}</div>`
+    + `</div>`;
+};
+
+function _usageBackoffPaint(full) {
+  const st = window._usageBackoff;
+  const s = document.getElementById('usageBackoffStatus');
+  if (s) s.innerHTML = window.usageBackoffStatusHtml(st.status);
+  const m = document.getElementById('usageBackoffMsg');
+  if (m) m.innerHTML = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  if (full) {
+    const c = document.getElementById('usageBackoffCard');
+    if (c && !s) c.innerHTML = window.usageBackoffCardHtml();
+  }
+}
+
+function _usageBackoffFormValues() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  return { backend: v('usageBackoffBackend'), minutes: v('usageBackoffMinutes'), models: v('usageBackoffModels'), reason: v('usageBackoffReason') };
+}
+
+window.usageBackoffRefresh = function () {
+  return Promise.resolve(apiFetch('/api/usage/backoff')).then(body => {
+    window._usageBackoff.status = body; window._usageBackoff.error = '';
+    _usageBackoffPaint(true);
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err);
+    _usageBackoffPaint(true);
+  });
+};
+
+window.usageBackoffSet = function () {
+  const built = window.usageBackoffBuildSetBody(_usageBackoffFormValues());
+  if (built.error) { window._usageBackoff.error = built.error; window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve(); }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'POST', body: JSON.stringify(built.body) })).then(body => {
+    window._usageBackoff.status = body || window._usageBackoff.status;
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_saved') || 'Back-off set';
+    _usageBackoffPaint();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffClear = function () {
+  const vals = _usageBackoffFormValues();
+  const body = { backend: String(vals.backend || '').trim() };
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) {
+    if (!body.backend || body.backend.toLowerCase() === 'all') {
+      window._usageBackoff.error = t('usage_backoff_models_need_backend') || 'Name a backend to clear only some models';
+      window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve();
+    }
+    body.models = models;
+  }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'DELETE', body: JSON.stringify(body) })).then(() => {
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_cleared') || 'Back-off cleared';
+    return window.usageBackoffRefresh();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffStartPolling = function () {
+  if (window._usageBackoffInterval) return;
+  window._usageBackoffInterval = setInterval(() => {
+    if (!document.getElementById('usageBackoffCard')) { window.usageBackoffStopPolling(); return; }
+    window.usageBackoffRefresh();
+  }, USAGE_BACKOFF_REFRESH_MS);
+};
+window.usageBackoffStopPolling = function () {
+  if (window._usageBackoffInterval) { clearInterval(window._usageBackoffInterval); window._usageBackoffInterval = null; }
+};
+
 // ── Burn guard card ─────────────────────────────────────────────────────────
 // The burn guard (GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config,
 // POST /api/usage/burn-guard/run) watches the weekly burn against the pace line and
@@ -36489,6 +36662,7 @@ window.burnGuardStopPolling = function () {
   if (window._burnGuardInterval) { clearInterval(window._burnGuardInterval); window._burnGuardInterval = null; }
 };
 
+
 // The usage card's loader, registered like the capacity card's: a skeleton on
 // the first load, the daemon's error plainly with Retry, and the last good body
 // kept beneath it. It does not poll; the card refreshes when the operator asks
@@ -36505,6 +36679,8 @@ function _automationUsageLoader() {
       _usageCalc.error = '';
       if (typeof window.burnGuardRefresh === 'function') window.burnGuardRefresh();
       if (typeof window.burnGuardStartPolling === 'function') window.burnGuardStartPolling();
+      if (typeof window.usageBackoffRefresh === 'function') window.usageBackoffRefresh();
+      if (typeof window.usageBackoffStartPolling === 'function') window.usageBackoffStartPolling();
       return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
     },
     failedText: msg => t('usage_calc_error', [msg]),
