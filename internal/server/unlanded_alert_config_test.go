@@ -162,3 +162,37 @@ func TestUnlandedAlertConfig_AutonomousConfigSetPath(t *testing.T) {
 		t.Fatalf("threshold after refused write = %d", *got)
 	}
 }
+
+// A set through PUT /api/config (the CLI, comm channel and MCP config_set
+// path) is visible on /api/autonomous/config (MCP autonomous_config_get) and
+// in the saved YAML file, and a YAML file loads back the same values.
+func TestUnlandedAlertConfig_CrossSurfaceVisibility(t *testing.T) {
+	s, _ := newUnlandedAlertManagerServer(t)
+	if rr := putPatch(t, s, map[string]interface{}{unlandedAlertEnabledKey: "false", unlandedAlertThresholdKey: "9"}); rr.Code != http.StatusOK {
+		t.Fatalf("PUT = %d: %s", rr.Code, rr.Body.String())
+	}
+	rr := httptest.NewRecorder()
+	s.handleAutonomousConfig(rr, httptest.NewRequest(http.MethodGet, "/api/autonomous/config", nil))
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if string(out["unlanded_alert_enabled"]) != "false" || string(out["unlanded_alert_threshold"]) != "9" {
+		t.Fatalf("autonomous config = %s / %s", out["unlanded_alert_enabled"], out["unlanded_alert_threshold"])
+	}
+	if err := config.Save(s.cfg, s.cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(s.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.UnlandedAlertEnabledEffective(loaded.Autonomous.UnlandedAlertEnabled) ||
+		config.UnlandedAlertThresholdEffective(loaded.Autonomous.UnlandedAlertThreshold) != 9 {
+		t.Fatalf("YAML round trip = %v / %v", loaded.Autonomous.UnlandedAlertEnabled, loaded.Autonomous.UnlandedAlertThreshold)
+	}
+	view := autonomousSection(t, getConfigView(t, s))
+	if view["unlanded_alert_enabled"] != false || view["unlanded_alert_threshold"] != float64(9) {
+		t.Fatalf("GET /api/config = %v / %v", view["unlanded_alert_enabled"], view["unlanded_alert_threshold"])
+	}
+}

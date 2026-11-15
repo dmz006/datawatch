@@ -1148,6 +1148,11 @@ func (r *Router) configureWrite(key, value string) error {
 			return &configureRefused{msg: err.Error()}
 		}
 	}
+	if key == unlandedAlertEnabledKey || key == unlandedAlertThresholdKey {
+		if err := checkUnlandedAlertValue(key, value); err != nil {
+			return &configureRefused{msg: err.Error()}
+		}
+	}
 	if err := checkDependencyUpdateConfigure(key, value); err != nil {
 		return &configureRefused{msg: err.Error()}
 	}
