@@ -368,10 +368,14 @@ func (s *Server) toolLLMRefreshModels() mcpsdk.Tool {
 
 func (s *Server) toolLLMAddModel() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_add_model",
-		mcpsdk.WithDescription("alpha.37 — add an enabled model (node+model pair) to an LLM."),
+		mcpsdk.WithDescription("alpha.37 — add an enabled model (node+model pair) to an LLM. Optional per-model USD rates per 1K tokens override the per-backend cost_rates; unset rates fall back to them."),
 		mcpsdk.WithString("llm", mcpsdk.Required()),
 		mcpsdk.WithString("node", mcpsdk.Description("ComputeNode name (empty for SaaS kinds)")),
 		mcpsdk.WithString("model", mcpsdk.Required()),
+		mcpsdk.WithNumber("in_per_k", mcpsdk.Description("optional USD per 1K input tokens for this model")),
+		mcpsdk.WithNumber("out_per_k", mcpsdk.Description("optional USD per 1K output tokens for this model")),
+		mcpsdk.WithNumber("cache_read_per_k", mcpsdk.Description("optional USD per 1K cache-read tokens (provider-dependent)")),
+		mcpsdk.WithNumber("cache_write_per_k", mcpsdk.Description("optional USD per 1K cache-write tokens (provider-dependent)")),
 	)
 }
 
@@ -433,7 +437,14 @@ func (s *Server) handleLLMAddModelMCP(_ context.Context, req mcpsdk.CallToolRequ
 		return nil, err
 	}
 	models, _ := body["models"].([]any)
-	models = append(models, map[string]any{"node": node, "model": model})
+	entry := map[string]any{"node": node, "model": model}
+	args := req.GetArguments()
+	for _, k := range modelRateKeys {
+		if v, ok := args[k].(float64); ok {
+			entry[k] = v
+		}
+	}
+	models = append(models, entry)
 	body["models"] = models
 
 	out, err := s.proxyJSON("PUT", "/api/llms/"+llmName, body)
@@ -493,3 +504,7 @@ func (s *Server) handleLLMListModelsMCP(_ context.Context, req mcpsdk.CallToolRe
 	out, _ := json.Marshal(map[string]any{"models": models})
 	return textOK(string(out)), nil
 }
+
+// modelRateKeys — the optional per-model rate fields on an LLM entry's
+// models list (configuration only; see config.ResolveModelCostRate).
+var modelRateKeys = []string{"in_per_k", "out_per_k", "cache_read_per_k", "cache_write_per_k"}

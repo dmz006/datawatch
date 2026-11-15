@@ -18426,6 +18426,7 @@ window._renderLLMEditPanel = function(existing) {
     `<tr data-node="${escHtml(em.node||'')}" data-model="${escHtml(em.model||'')}">
       <td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(em.node||'—')}</code></td>
       <td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(em.model||'')}</code></td>
+      ${_llmModelRateCell(em)}
       <td style="padding:4px 0;text-align:right;">
         <button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button>
       </td>
@@ -18706,6 +18707,7 @@ window._llmAddModelRow = function() {
   tr.dataset.model = model;
   tr.innerHTML = `<td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(node||'—')}</code></td>` +
     `<td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(model)}</code></td>` +
+    _llmModelRateCell({}) +
     `<td style="padding:4px 0;text-align:right;"><button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button></td>`;
   tbody.appendChild(tr);
   modelEl.value = '';
@@ -18733,11 +18735,29 @@ window._llmRefreshTestModelSel = function() {
 window._llmCollectModels = function() {
   const tbody = document.getElementById('llmModelsBody');
   if (!tbody) return [];
-  return Array.from(tbody.querySelectorAll('tr')).map(tr => ({
-    node: tr.dataset.node || '',
-    model: tr.dataset.model || '',
-  })).filter(em => em.model);
+  return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+    const em = { node: tr.dataset.node || '', model: tr.dataset.model || '' };
+    // Optional per-model rates (USD per 1K tokens); blank = per-backend cost_rates.
+    tr.querySelectorAll('input.llm-model-rate').forEach(inp => {
+      const v = String(inp.value || '').trim();
+      if (v !== '' && !isNaN(parseFloat(v))) em[inp.dataset.rate] = parseFloat(v);
+    });
+    return em;
+  }).filter(em => em.model);
 };
+
+// Per-model cost-rate inputs (configuration only, provider-dependent).
+// Blank fields fall back to the per-backend cost_rates entry.
+const _LLM_MODEL_RATE_KEYS = ['in_per_k', 'out_per_k', 'cache_read_per_k', 'cache_write_per_k'];
+function _llmModelRateCell(em) {
+  em = em || {};
+  const inputs = _LLM_MODEL_RATE_KEYS.map(k => {
+    const v = (em[k] === undefined || em[k] === null) ? '' : String(em[k]);
+    const label = t('llm_model_rate_' + k) || k;
+    return `<input type="number" step="any" min="0" class="llm-model-rate" data-rate="${k}" value="${escHtml(v)}" placeholder="${escHtml(label)}" title="${escHtml(label)}" style="width:72px;font-size:11px;" />`;
+  }).join(' ');
+  return `<td style="padding:4px 8px;" title="${escHtml(t('llm_model_rate_hint') || '')}">${inputs}</td>`;
+}
 
 window._llmProbeNodeModels = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
