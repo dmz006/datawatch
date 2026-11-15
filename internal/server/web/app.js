@@ -16759,8 +16759,13 @@ function renderSettingsView() {
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
                 <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev server on a trusted network'}">
-                  <input type="checkbox" id="serverFormTLSSkipVerify" />
+                  <input type="checkbox" id="serverFormTLSSkipVerify" onchange="tlsPinPairSync('serverForm')" />
                   ${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}
+                </label>
+                <div id="serverFormTLSWarn" style="display:none;font-size:11px;color:var(--warning,#e0a030);margin-top:2px;">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this server — use only on a trusted network.')}</div>
+                <label style="font-size:12px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this server: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'} (optional)<br>
+                  <input type="text" id="serverFormTLSCertFingerprint" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('serverForm')" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
                 </label>
                 <div id="serverFormCapsWrap" style="display:none;">
                   <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
@@ -16798,7 +16803,12 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" onchange="tlsPinPairSync('fedPeerForm')" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div id="fedPeerFormTLSWarn" style="grid-column:1/-1;display:none;font-size:11px;color:var(--warning,#e0a030);">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this peer — use only on a trusted network.')}</div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this peer: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'}<br>
+                  <input id="fedPeerFormTLSCertFingerprint" class="form-input" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('fedPeerForm')" style="width:100%;font-size:11px;margin-top:2px;" />
+                </label></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
                 <!-- Observer pull protocol: per-peer opt-in plus the two
                      numeric overrides. A blank number field stays 0 on the
@@ -29645,6 +29655,32 @@ function loadServersList() {
   });
 }
 
+// ── TLS pin / skip-verify pair (server + federation peer forms) ──────────────
+// The daemon refuses a peer that carries both a tls_cert_fingerprint pin and
+// tls_skip_verify, so the two controls stay mutually exclusive on the client
+// too: typing a pin while the checkbox is on reverts the checkbox, and
+// checking the box while a pin is typed reverts the checkbox. The inline
+// warning line follows the checkbox on every change and on form load.
+function tlsPinPairSync(prefix) {
+  const skipEl = document.getElementById(prefix + 'TLSSkipVerify');
+  const pinEl = document.getElementById(prefix + 'TLSCertFingerprint');
+  const warnEl = document.getElementById(prefix + 'TLSWarn');
+  if (skipEl && pinEl && (pinEl.value || '').trim() && skipEl.checked) skipEl.checked = false;
+  if (warnEl) warnEl.style.display = (skipEl && skipEl.checked) ? '' : 'none';
+}
+window.tlsPinPairSync = tlsPinPairSync;
+
+// The REST layer appends a `warnings` array to server/peer create, update and
+// test responses when the stored TLS posture is insecure. Surface every entry
+// through the existing toast helper instead of dropping it silently.
+function _surfaceResponseWarnings(d) {
+  if (!d || !Array.isArray(d.warnings)) return;
+  for (const w of d.warnings) {
+    if (typeof w === 'string' && w.trim()) showToast(w.trim(), 'warning');
+  }
+}
+window._surfaceResponseWarnings = _surfaceResponseWarnings;
+
 function showServerForm(entry) {
   const wrap = document.getElementById('serverFormWrap');
   const nameEl = document.getElementById('serverFormName');
@@ -29663,6 +29699,11 @@ function showServerForm(entry) {
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
   if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!(entry && entry.tls_skip_verify);
+  // Certificate pin: editing pre-fills the saved pin; adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
+  if (fpEl) fpEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('serverForm');
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
   if (fedEl) {
     fedEl.checked = !!(entry && entry.federated);
@@ -29697,6 +29738,7 @@ function saveServer() {
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
   const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -29706,6 +29748,10 @@ function saveServer() {
   }
   const editName = editNameEl ? editNameEl.value : '';
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true, tls_skip_verify: tlsSkipVerifyEl ? tlsSkipVerifyEl.checked : false };
+  if (fpEl) {
+    const fp = (fpEl.value || '').trim();
+    if (fp) body.tls_cert_fingerprint = fp;
+  }
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
   if (fedEl && fedEl.checked) {
@@ -29716,7 +29762,7 @@ function saveServer() {
   const method = isEdit ? 'PUT' : 'POST';
   const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';
   apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    .then(() => { closeServerForm(); loadServersList(); })
+    .then(d => { _surfaceResponseWarnings(d); closeServerForm(); loadServersList(); })
     .catch(e => { if (errEl) errEl.textContent = e.message || 'Save failed.'; });
 }
 
@@ -29731,6 +29777,7 @@ function testServerEntry(name, btnEl) {
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
   apiFetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' })
     .then(d => {
+      _surfaceResponseWarnings(d);
       const msg = d.ok ? `${d.latency_ms}ms v${d.version||'?'}` : `fail: ${d.error||'err'}`;
       showToast(`${name}: ${msg}`, d.ok ? 'success' : 'error');
     })
@@ -57428,6 +57475,12 @@ function showFedPeerForm(entry) {
     if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
     if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!entry.tls_skip_verify;
   }
+  // Certificate pin (tls_cert_fingerprint) — same round-trip discipline as
+  // fingerprint_sync: editing pre-fills the saved pin, adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const pinEl = document.getElementById('fedPeerFormTLSCertFingerprint');
+  if (pinEl) pinEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('fedPeerForm');
 }
 window.showFedPeerForm = showFedPeerForm;
 
@@ -57452,6 +57505,7 @@ function submitFedPeerForm() {
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const tlsCertFingerprint = ((document.getElementById('fedPeerFormTLSCertFingerprint') || {}).value || '').trim();
   const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
   // Observer pull protocol. observer_pull is always sent explicitly on PUT
   // (the server merge keeps existing values for omitted keys, so an
@@ -57474,15 +57528,17 @@ function submitFedPeerForm() {
       editBody.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
     }
     if (token) editBody.token = token;
+    if (tlsCertFingerprint) editBody.tls_cert_fingerprint = tlsCertFingerprint;
     if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
     apiFetch('/api/federation/peers/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(editBody) })
-      .then(() => { hideFedPeerForm(); loadFederationPeersPanel(); })
+      .then(d => { _surfaceResponseWarnings(d); hideFedPeerForm(); loadFederationPeersPanel(); })
       .catch(err => { if (errEl) { errEl.textContent = err.message || String(err); errEl.style.display = ''; } });
     return;
   }
 
   const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
+  if (tlsCertFingerprint) body.tls_cert_fingerprint = tlsCertFingerprint;
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend
@@ -57507,8 +57563,9 @@ function submitFedPeerForm() {
       return;
     }
     if (!resp.ok) { resp.text().then(t => { if (errEl) { errEl.textContent = t; errEl.style.display = ''; } }); return; }
-    hideFedPeerForm();
-    loadFederationPeersPanel();
+    const finishPost = () => { hideFedPeerForm(); loadFederationPeersPanel(); };
+    if (resp.json) resp.json().then(d => { _surfaceResponseWarnings(d); finishPost(); }).catch(finishPost);
+    else finishPost();
   }).catch(err => {
     if (errEl) { errEl.textContent = String(err); errEl.style.display = ''; }
   });
@@ -57522,6 +57579,7 @@ function testFedPeer(name) {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
+    _surfaceResponseWarnings(d);
     const msg = d.ok ? `OK — ${d.latency_ms}ms (${d.version || 'unknown version'})` : `FAIL: ${d.error || 'no error'}`;
     showToast('federation peer test: ' + name + ' → ' + msg);
   }).catch(err => showToast('test error: ' + String(err)));
