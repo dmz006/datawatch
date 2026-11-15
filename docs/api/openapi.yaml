@@ -12087,6 +12087,8 @@ components:
           type: array
           description: What the pass recorded in shadow mode, newest first
           items: {$ref: "#/components/schemas/MergeShadowDecision"}
+        shadow_decisions_total: {type: integer, description: "How many shadow decisions have been made over the whole persisted history (0 while mode is off)"}
+        shadow_decisions_false: {type: integer, description: "How many would_alert shadow decisions were later found false: the episode ended with the branch empty or needs_look, not merged"}
     MergeAutomaton:
       type: object
       description: A completed Automaton with a work branch, as the merge-pending pass last compared it
@@ -12094,6 +12096,7 @@ components:
       properties:
         automaton_id: {type: string}
         name: {type: string, description: The Automaton's title, or its id when it has none}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state; the non-completed states are listed while merge_pending_include_terminal is on"}
         branch: {type: string, description: The Automaton's work branch}
         state:
           type: string
@@ -12122,6 +12125,8 @@ components:
         state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
         commits_ahead: {type: integer}
         would_alert: {type: boolean}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state when the decision was made"}
+        found_false: {type: boolean, description: "True when this would_alert decision's episode later ended with the branch empty or needs_look rather than merged"}
         repeat_count: {type: integer, description: How many polls chose the same decision again}
         last_seen_at: {type: string, format: date-time}
     SafeDeleteReport:

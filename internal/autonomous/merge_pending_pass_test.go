@@ -137,7 +137,7 @@ func newMergePendingHarness(t *testing.T, mode string, alertMinutes int) (*triag
 	return th, git
 }
 
-const mergeAlertPrefix = "warn|Automaton alpha merge pending|"
+const mergeAlertPrefix = "warn|Automaton alpha merge pending (completed, branch automaton/alpha-work)|"
 
 func TestMergePendingPass_BranchWithCommitsNotOnMain_AlertsAfterThreshold(t *testing.T) {
 	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
