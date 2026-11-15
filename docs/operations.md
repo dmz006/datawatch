@@ -8095,6 +8095,27 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
 
+## Peer TLS (verify by default)
+
+Every outbound connection the daemon makes to a registered peer — remote servers (`servers:` / proxy mode) and federation peers — **verifies the peer's TLS certificate against the system trust store by default**. An `https://` peer with a trusted-CA certificate works with no extra setting; a peer with a self-signed or private-CA certificate fails the TLS handshake until one of the per-peer options below is set.
+
+Per-peer options (all independent — every other peer keeps full verification):
+
+- `tls_cert_fingerprint` — pin the peer's leaf certificate: the SHA-256 of that one certificate, 64 hex characters (colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. A malformed value is rejected when saved (REST `400`, CLI error), and the pin **wins over** `tls_skip_verify` — the two cannot both be set (CLI refuses locally, REST returns `400`). The pin stops matching when the peer's leaf changes (renewal, re-issue): the peer then goes unreachable until the pin is updated. Derive it with `openssl s_client -connect <host:port>` to save the leaf, then `openssl x509 -noout -fingerprint -sha256 -in <leaf.pem>`.
+- `tls_skip_verify: true` — turn verification off for that peer only (self-signed/local-dev peer on a trusted network). Saving or seeding such a peer is announced three ways: the create/update response carries a `warnings` array (`POST /api/servers/{name}/test` and the federation `test` endpoint do too), the daemon logs the one line `<name>: this peer's certificate is not verified (tls_skip_verify is set); set tls_cert_fingerprint to pin its leaf certificate instead`, and it emits a warn-level system alert titled **Peer certificate not verified** — at most once per peer per daemon run (a startup sweep also covers peers that were already seeded or stored, so they warn exactly once per run).
+
+Surfaces that set it:
+
+| Surface | How |
+|---------|-----|
+| PWA | Settings → Comms → Servers Add/Edit form: **Skip TLS certificate verification** checkbox (warning line: "TLS certificate verification is disabled for this server — use only on a trusted network.") + **Certificate fingerprint (pin)** field, mutually exclusive in the form; the Observer → Federation Peers card's add/edit peer form carries the same pair |
+| CLI | `datawatch server add/update --tls-skip-verify \| --tls-cert-fingerprint <64-hex>`; `datawatch federation peer add/update` take the same flags (`--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`; on update, omitting `--tls-cert-fingerprint` leaves the pin unchanged) |
+| REST | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` and `/api/federation/peers`; pin + skip together or a malformed pin → `400` |
+| MCP | `server_add`, `server_update`, `federation_peer_add`, `federation_peer_update` accept `tls_cert_fingerprint` (the skip flag is `tls_skip_verify`) |
+| YAML | `tls_cert_fingerprint` or `tls_skip_verify` on the `servers:` entry (restart required; builtins are read-only in the UI) |
+
+**Operator review before rolling out:** peers you reached before by trusting their CA only in the browser are not covered — the daemon's own proxy and health calls need the CA in the daemon's system trust store, a pin, or the explicit skip. Prefer the pin (or a trusted CA) over `tls_skip_verify`; every skipped, unpinned peer shows up in the Alerts tab as **Peer certificate not verified**, which is the review queue. A pinned peer needs its pin refreshed when the peer's leaf certificate changes. See [howto/multi-servers.md](howto/multi-servers.md#peer-tls-verified-by-default) for the walkthrough.
+
 ## Observer push TLS (verify by default)
 
 Observer pushes — a worker's Shape A push into its parent, and the primary → root federation push (`observer.federation`) — now verify the counterpart's TLS certificate. Before this change the worker push ran with certificate checking off unconditionally.

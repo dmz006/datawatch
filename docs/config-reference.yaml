@@ -1131,6 +1131,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/

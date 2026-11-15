@@ -41,6 +41,13 @@ Via comm channel (Telegram, Signal, etc.):
 federation peer add peer-alpha http://198.51.100.2:8080 token=tok-peer-alpha
 ```
 
+> **`https://` peers:** the peer's certificate is verified against the
+> system trust store by default. For a self-signed peer, pin its leaf with
+> `--tls-cert-fingerprint <64-hex>` (recommended) or explicitly opt out
+> with `--tls-skip-verify` (announced with a warning and a warn-level
+> **Peer certificate not verified** alert) — the two cannot both be set.
+> See [multi-servers.md](multi-servers.md#peer-tls-verified-by-default).
+
 ### 2. Grant specific capabilities
 
 ```bash
