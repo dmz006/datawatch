@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -403,6 +403,50 @@ returns the branch, the bundle path and the worktree path it removed.
 | Comm channel | `autonomous unlanded-work`; `autonomous unlanded-work keep\|archive-branch\|delete-worktree <branch>` (delete needs the word `confirm`) |
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
+
+### Daily pending-branch alert
+
+A **pending** branch is one the list marks `superseded`: later work replaced it
+and it only waits for cleanup. Once per calendar day (the daemon host's local
+day) the daemon counts the pending branches. When the count is strictly above
+`autonomous.unlanded_alert_threshold` and `autonomous.unlanded_alert_enabled` is
+on, it raises one `warn` alert, "Pending Automaton branches above threshold",
+that gives the count, the threshold, and the oldest pending branch with the age
+of its last commit. At or below the threshold nothing is raised; with the alert
+off nothing is raised.
+
+- At most one alert per day. The day of the last alert is stored in
+  `unlanded_alert.json` in the Automata data folder, so a daemon restart on the
+  same day does not raise it again. The next day raises it again if the count is
+  still above the threshold.
+- The check runs when the Automata loop starts and on every poll tick. It reads
+  the branch list at most once an hour while that day's alert is not yet raised,
+  and not at all after it is raised. The loop only runs when `autonomous.enabled`
+  is true.
+- Each alert is also written to the audit log as `autonomous_unlanded_alert`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `autonomous.unlanded_alert_enabled` | `true` (unset reads true) | Turns the daily alert on or off |
+| `autonomous.unlanded_alert_threshold` | `3` (unset reads 3) | The alert fires when more pending branches than this exist. A whole number of 0 or more; 0 alerts on any pending branch; a negative value is refused |
+
+A change applies on the next check without a restart.
+
+| Method | How |
+|---|---|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `unlanded_alert_enabled: true`, `unlanded_alert_threshold: 3` |
+| **CLI** | `datawatch config set autonomous.unlanded_alert_enabled false`; `datawatch config set autonomous.unlanded_alert_threshold 5` |
+| **Web UI** | Settings → **Autonomous Automata planning** card → **Daily pending-branch alert** toggle and **Pending-branch alert threshold** |
+| **REST API** | `PUT /api/config` with `{"autonomous.unlanded_alert_threshold": 5}`, or `PUT /api/autonomous/config` with `{"unlanded_alert_threshold": 5}`; read back with `GET /api/config` (section `autonomous`) or `GET /api/autonomous/config` |
+| **Comm channel** | `configure autonomous.unlanded_alert_threshold=5` |
+| **MCP** | `autonomous_config_set` with `unlanded_alert_enabled` / `unlanded_alert_threshold`, or `config_set` with the full key; read with `autonomous_config_get` or `get_config` |
+
+| Where to see | What you see |
+|---|---|
+| **Web UI** | The alerts list (bell), level `warn` |
+| **Messaging channels** | The alert, where alerts are routed to channels |
+| **REST API** | `GET /api/alerts` |
+| **MCP** | `get_alerts` |
 
 The branch audit script (`scripts/branch-audit.py`) reports the same finding from
 the command line: an `UNLANDED` row is an archived Automaton branch (cancelled,
