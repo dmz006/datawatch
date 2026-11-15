@@ -5766,5 +5766,8 @@
   "task_routing_export_failed": "Export fehlgeschlagen: %1$s",
   "task_routing_imported": "Profil importiert",
   "task_routing_detail_row": "Zeile %1$s",
-  "task_routing_detail_reason": "keine Zeile: %1$s"
+  "task_routing_detail_reason": "keine Zeile: %1$s",
+  "quick_reply_answered": "Beantwortet mit der Option %1$s",
+  "quick_reply_refused_no_option": "Der Schnellbefehl %1$s passt zu keiner Option der offenen Frage dieser Sitzung. Optionen: %2$s",
+  "quick_reply_multiple_questions": "Diese Sitzung hat mehr als eine offene Frage. Beantworte sie auf der Fragen-Seite (Ansicht Automation)."
 }

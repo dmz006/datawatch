@@ -5766,5 +5766,8 @@
   "task_routing_export_failed": "エクスポートに失敗しました: %1$s",
   "task_routing_imported": "プロファイルをインポートしました",
   "task_routing_detail_row": "行 %1$s",
-  "task_routing_detail_reason": "行なし: %1$s"
+  "task_routing_detail_reason": "行なし: %1$s",
+  "quick_reply_answered": "オプション %1$s で回答しました",
+  "quick_reply_refused_no_option": "クイックリプライ「%1$s」はこのセッションの未回答の質問のどのオプションにも一致しません。オプション: %2$s",
+  "quick_reply_multiple_questions": "このセッションには複数の未回答の質問があります。質問ページ（Automation 表示）で回答してください。"
 }
