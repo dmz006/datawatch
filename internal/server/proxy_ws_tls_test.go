@@ -35,7 +35,7 @@ func newTLSPeerWS(t *testing.T) (*httptest.Server, string) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			return
@@ -74,7 +74,7 @@ func proxyWSEcho(t *testing.T, remote config.RemoteServerConfig) (string, error)
 		}
 		return "", &proxyWSStatusErr{status: resp, body: body}
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
 		t.Fatalf("client write: %v", err)
 	}
