@@ -3721,6 +3721,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					remoteDispatcher.SetStore(msStore)
 					// BL343 — background peer health monitor.
 					server.StartPeerHealthMonitor(context.Background(), msStore, alertStore)
+					// Peer certificate non-verification: warn-level system
+					// alert, at most once per peer per daemon run (the
+					// one-line warning itself is also logged and surfaced in
+					// create/update responses).
+					tlsWarnTracker := server.NewTLSPeerWarnTracker(func(peerName, warning string) {
+						alertStore.AddSystem(
+							alertspkg.LevelWarn,
+							"Peer certificate not verified",
+							warning,
+						)
+					})
+					httpServer.SetTLSPeerWarnTracker(tlsWarnTracker)
+					// Startup sweep: a seeded/stored peer whose certificate
+					// is not verified warns once for this daemon run.
+					for _, e := range msStore.List() {
+						tlsWarnTracker.Notify(e)
+					}
 				} else {
 					fmt.Printf("[servers] store init failed: %v\n", msErr)
 				}
