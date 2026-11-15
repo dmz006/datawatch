@@ -227,7 +227,7 @@ func TestInstanceMCPEnvTokenIsScopedAndNeverServerToken(t *testing.T) {
 			minter := &fakeInstanceTokenMinter{}
 			cfg := &channel.InstanceMCPConfig{
 				DataDir:       dir,
-				ChannelJSPath: "/home/dmz/.datawatch/channel/channel.js",
+				ChannelJSPath: "/opt/datawatch/channel/channel.js",
 				BaseEnv:       baseEnv,
 				Caps:          caps,
 				Minter:        minter,
