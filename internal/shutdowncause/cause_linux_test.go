@@ -4,6 +4,7 @@ package shutdowncause
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -123,7 +124,20 @@ func TestScanCandidates(t *testing.T) {
 		_ = neg2.Wait()
 	}()
 
-	time.Sleep(150 * time.Millisecond) // let the children settle
+	// Wait for each child's own /proc entry to show its final cmdline
+	// (exec -a happens after fork), polling with a bounded deadline.
+	for _, w := range []struct {
+		pid  int
+		want string
+	}{
+		{pos.Process.Pid, "systemctl --user stop datawatch"}, // service-scope-ok fake cmdline, never executed
+		{neg.Process.Pid, "sleep 30"},
+		{neg2.Process.Pid, "datawatch serve"},
+	} {
+		if got, err := waitForCmdline(w.pid, w.want, 10*time.Second, readProcCmdline); err != nil {
+			t.Fatalf("child cmdline not ready: %v (last %q)", err, got)
+		}
+	}
 
 	cands := scanCandidates(ownPID)
 	var found *candidateProc
@@ -225,4 +239,43 @@ func TestInstallBasics(t *testing.T) {
 	set := unix.Sigset_t{}
 	set.Val[syscall.SIGINT/64] |= 1 << (uint32(syscall.SIGINT) % 64)
 	_ = unix.PthreadSigmask(unix.SIG_UNBLOCK, &set, nil)
+}
+
+// TestRankCandidates checks, with fake candidate data, that a process
+// naming the daemon's own pid outranks lower-pid processes that only
+// match on the unit word, and that ordering is otherwise by pid.
+func TestRankCandidates(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []candidateProc
+		want []int
+	}{
+		{"empty", nil, []int{}},
+		{"pid token beats lower-pid unit match", []candidateProc{
+			{pid: 100, cmdline: "systemctl --user stop datawatch-foreign-1"}, // service-scope-ok fake cmdline, never executed
+			{pid: 200, cmdline: "test.bin kill 50", namesPID: true},
+		}, []int{200, 100}},
+		{"pid order within groups", []candidateProc{
+			{pid: 30, cmdline: "service datawatch stop"},
+			{pid: 20, cmdline: "kill 50", namesPID: true},
+			{pid: 10, cmdline: "systemctl restart datawatch"}, // service-scope-ok fake cmdline, never executed
+			{pid: 5, cmdline: "pkill --pid=50", namesPID: true},
+		}, []int{5, 20, 10, 30}},
+		{"no pid tokens sorts by pid", []candidateProc{
+			{pid: 9, cmdline: "datawatch stop"},
+			{pid: 3, cmdline: "datawatch restart"},
+		}, []int{3, 9}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rankCandidates(tc.in)
+			got := make([]int, 0, len(tc.in))
+			for _, c := range tc.in {
+				got = append(got, c.pid)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Fatalf("order = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
