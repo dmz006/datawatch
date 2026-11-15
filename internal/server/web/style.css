@@ -5951,6 +5951,23 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   background: var(--accent2);
   color: #fff;
 }
+/* ── Shared multi-select state chip set (createStateChipSet, app.js) ──
+   Same row geometry as the Sessions status-filter chips (gap 4px, chip
+   family .backend-filter-badge): flex-wrap is the phone guarantee — the row
+   wraps onto more lines at narrow widths instead of overflowing, and a
+   single overlong label is bounded to the container instead of stretching the
+   page. The chips themselves stay single-line (white-space: nowrap above). */
+.state-chip-set { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 4px; width: 100%; box-sizing: border-box; }
+.state-chip-set .backend-filter-badge { max-width: 100%; }
+.state-chip-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 4px 4px; font-size: 11px; color: var(--text2); width: 100%; box-sizing: border-box; }
+.state-chip-summary .state-chip-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.state-chip-clear-all { background: transparent; border: 0; color: var(--accent2, var(--text2)); font-size: 11px; cursor: pointer; padding: 2px 4px; white-space: nowrap; }
+.state-chip-clear-all:hover { color: var(--accent2); }
+@media (max-width: 599px) {
+  .state-chip-set { padding: 2px 0; gap: 3px; }
+  .state-chip-set .backend-filter-badge { max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+  .state-chip-summary { padding: 0 0 4px; }
+}
 .session-filter-wrap {
   flex: 1;
   position: relative;

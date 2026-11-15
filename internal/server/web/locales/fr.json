@@ -5763,5 +5763,9 @@
   "task_routing_export_failed": "Échec de l’export : %1$s",
   "task_routing_imported": "Profil importé",
   "task_routing_detail_row": "ligne %1$s",
-  "task_routing_detail_reason": "pas de ligne : %1$s"
+  "task_routing_detail_reason": "pas de ligne : %1$s",
+  "state_chips_all": "Tous",
+  "state_chips_selected": "Filtres sélectionnés",
+  "state_chips_clear_all": "Tout effacer",
+  "state_chips_remove": "Retirer %1$s"
 }
