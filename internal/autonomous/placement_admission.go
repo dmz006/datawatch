@@ -289,6 +289,9 @@ func (m *Manager) placementAsk(ctx context.Context, t *Task, model, node string,
 	}
 	m.setWaiting(t, "model placement awaiting approval")
 	defer m.clearWaiting(t)
+	if hook := m.placementAskParkedHook; hook != nil {
+		hook(questionID)
+	}
 	return m.awaitPlacementDecision(ctx, t, raised.ID, timeout), questionID
 }
 

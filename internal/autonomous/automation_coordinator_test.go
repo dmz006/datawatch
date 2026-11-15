@@ -54,6 +54,13 @@ type coordHarness struct {
 
 func newCoordHarness(t *testing.T, nPRDs int) *coordHarness {
 	t.Helper()
+	// The coordinator's triage pass runs the temp-file sweep over
+	// os.TempDir() (cleanup mode defaults to report). Left on the host's
+	// real temp root, every pass walks whatever the machine has there —
+	// thousands of entries, seconds per pass under -race — so a test that
+	// counts idle ticks against a deadline fails on a busy host. A throwaway
+	// temp root keeps the harness hermetic.
+	t.Setenv("TMPDIR", t.TempDir())
 	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
 	if err != nil {
 		t.Fatal(err)

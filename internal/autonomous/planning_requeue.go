@@ -78,10 +78,27 @@ func plannerHolder(prdID string) string { return "plan:" + prdID }
 // plannerPairFor mirrors the per-PRD resolution Decompose /
 // DecomposeStreaming perform: the PRD's decomposition_profile (falling back
 // to the effective planning backend) plus the same model fallback chain.
+//
+// prd is usually the live record shared with the store, and SetPRDLLM writes
+// these fields (under the store lock) while a queued planner may be reading
+// them at grant time on another goroutine. The fields are therefore copied
+// under the store lock before use. Callers must not hold the store lock.
 func (m *Manager) plannerPairFor(prd *PRD) (backend, model string) {
 	m.mu.Lock()
 	cfg := m.cfg
 	m.mu.Unlock()
+	var view PRD
+	m.store.WithLock(func() {
+		view = PRD{
+			ID:                   prd.ID,
+			AutomationID:         prd.AutomationID,
+			Backend:              prd.Backend,
+			Model:                prd.Model,
+			DecompositionProfile: prd.DecompositionProfile,
+			DecompositionModel:   prd.DecompositionModel,
+		}
+	})
+	prd = &view
 	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), cfg)
 	backend = prd.DecompositionProfile
 	if backend == "" {
