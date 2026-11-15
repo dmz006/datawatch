@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source, header scope, scope button, scope modal, filter active]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -138,6 +138,42 @@ Project  "core-api"
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
    the plans. Each step is shown in the walkthrough.
+
+## The header scope button
+
+The fixed app header carries a **scope button** (`id="headerScopeBtn"`, a funnel
+icon) that replaces the old project and plan selectors. It is shown **only on
+the Automata view**; on every other page it is hidden, and the scope you chose
+is kept while it is hidden. A small **Filter active** badge sits on the icon
+while a project is chosen; with **All** chosen there is no badge. The button's
+tooltip and accessible name read **Scope: \<label\>** (**All**, a project, or
+*project / plan*).
+
+Pressing it opens the **Scope** window (a dialog: focus moves in, **Tab** stays
+inside, **Escape**, **Close** or a click outside closes it and focus returns to
+the button; a **?** link in its title opens this page). The window lists **All**,
+then every project under **Project**. A project with plans shows them under
+**Plan** when you pick it, starting with **All plans**; a project with no plans
+is chosen at once. Choosing a row applies the scope and closes the window.
+
+| Scope | What changes |
+|---|---|
+| **All** | Nothing is filtered; pages are exactly as before |
+| A project | The Projects pages (Overview, Plans, Records, Gantt, Unassigned, History, Events), the Automata list, Events and the Automation sub-tabs show only that project's work; a **Filtered to \<scope\>** banner with a **Clear** button sits above the list |
+| A project and a plan | The same, narrowed to the plan's Automata and plan records |
+
+Pages that are not per project are not filtered and say so in a one-line note:
+the **Templates** sub-tab (**Templates are shown for every project and plan.**)
+and the global sections such as Resources and Housekeeping (**This section
+applies to every project and plan.**).
+
+The scope is remembered per browser (local storage key `dw_scope`; nothing is
+stored on the daemon). On the Projects page it also shows in the address:
+`#projects/<name>` and, with a plan, `#projects/<name>?plan=<automation-id>`;
+opening such an address applies it. A saved project that has since been removed,
+or a plan that is no longer one of the project's plans, falls back to **All**
+once the project list has loaded; a project list that fails to load never clears
+the scope. On a phone only the icon (and badge) show, so the header does not wrap.
 
 ## Manage projects in the web app
 
@@ -722,8 +758,9 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Action | Where |
 |---|---|
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
-| Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
+| Pick a project | **Project** picker at the top of the Projects sub-tab (**Overview** is the cross-project view), or the header **scope button**, which filters every Automata page to that project (and plan) — see [The header scope button](#the-header-scope-button) |
 | Switch between the Overview sub-tabs (Inbox, Automations, ...) | With **Overview** picked, the strip under the picker; the choice is remembered in this browser |
+| Filter by project and plan everywhere on Automata | Header **scope button** (funnel icon, Automata view only) opens the **Scope** window; **Clear** in the *Filtered to …* banner or **All** removes it; remembered in this browser (`dw_scope`) |
 | Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
 | Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `plans` (the old `arcs` still works), `records`, `gantt`, `unassigned`, `history` or `events`; no sub-tab in the address opens **Overview**, and the old `policy` falls back to it |
 | Switch between Overview, Plans, Records, Gantt, Unassigned, History and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
