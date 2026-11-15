@@ -5763,5 +5763,9 @@
   "task_routing_export_failed": "Export fehlgeschlagen: %1$s",
   "task_routing_imported": "Profil importiert",
   "task_routing_detail_row": "Zeile %1$s",
-  "task_routing_detail_reason": "keine Zeile: %1$s"
+  "task_routing_detail_reason": "keine Zeile: %1$s",
+  "state_chips_all": "Alle",
+  "state_chips_selected": "Ausgewählte Filter",
+  "state_chips_clear_all": "Alle löschen",
+  "state_chips_remove": "%1$s entfernen"
 }
