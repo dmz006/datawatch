@@ -4566,14 +4566,20 @@ sys.exit(1 if any(b.get("backend") == os.environ["UC_B"] for b in (d.get("backof
   fi
 
   # (c) Budget wait and rollover, on a throwaway LLM with a tiny rolling ceiling.
+  # The entry must resolve to a budgeted billing mode: budgets are read only
+  # for api/allowance entries (the burn guard and budget read the resolved
+  # billing mode), and kind ollama defaults to local, where a budget is
+  # stored but never surfaced — GET /api/budget would 404 and the entry would
+  # be filtered out of GET /api/budget and /api/capacity. PUT replaces the
+  # whole entry, so the mode must be re-sent on the budget PUT as well.
   add_cleanup llm "$UC_BUD"
   UC_BMK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}]}" "$BASE/api/llms" 2>/dev/null || true)
+    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"billing_mode\":\"api\"}" "$BASE/api/llms" 2>/dev/null || true)
   if ! echo "$UC_BMK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
     skip "capacity budget: throwaway LLM create refused (${UC_BMK:0:100})"
   else
     UC_BPUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
-      -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" \
+      -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"billing_mode\":\"api\",\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" \
       "$BASE/api/llms/$UC_BUD" 2>/dev/null || true)
     UC_BST=$(curl "${curl_args[@]}" "$BASE/api/budget?llm=$UC_BUD" 2>/dev/null || true)
     if echo "$UC_BST" | python3 -c '
@@ -4604,6 +4610,24 @@ sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") ==
       ok "GET /api/capacity budgets array carries the throwaway budget with spend, ceiling and window end"
     else
       ko "GET /api/capacity budgets array does not carry $UC_BUD"
+    fi
+    # Contract regression in the negative direction: a local-mode entry (kind
+    # ollama with no billing mode) stores the budget fine but no read surface
+    # may surface it — this is the deliberate budget-by-billing-mode contract,
+    # and it is exactly what this section used to trip over.
+    UC_LBUD="${UC_BUD}-local"
+    add_cleanup llm "$UC_LBUD"
+    UC_LB=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"$UC_LBUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" "$BASE/api/llms" 2>/dev/null || true)
+    if echo "$UC_LB" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+      UC_LCODE=$(curl "${curl_args[@]}" -s -o /dev/null -w "%{http_code}" "$BASE/api/budget?llm=$UC_LBUD" 2>/dev/null || true)
+      if [[ "$UC_LCODE" == "404" ]]; then
+        ok "local-mode budget is stored but not surfaced (GET /api/budget?llm=404)"
+      else
+        ko "local-mode budget was surfaced: expected 404, got $UC_LCODE"
+      fi
+    else
+      skip "local-mode budget contract not asserted: throwaway LLM create refused (${UC_LB:0:100})"
     fi
     skip "budget window full reason and autonomous_budget_ceiling_wait audit entry not exercised: the public REST surface has no way to record spend (GET /api/budget is read-only, spend comes only from real session usage); unit tests with an injectable clock cover it"
     skip "autonomous_budget_window_rollover audit entry not exercised: it needs a filled window and a boundary passing, which cannot be produced without recording spend; unit tests with an injectable clock cover it"
