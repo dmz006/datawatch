@@ -7203,6 +7203,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						URL:                e.URL,
 						Token:              e.Token,
 						TLSSkipVerify:      e.TLSSkipVerify,
+						TLSCertFingerprint: e.TLSCertFingerprint,
 						Federated:          e.Federated,
 						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
 						HasAutonomousRead:  federation.Check(caps, federation.CapAutonomousRead),
@@ -7246,9 +7247,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					LookupPeer: lifecycleLookupPeer,
 					LocalHost:  lifecycleLocalHost,
 					Settings:   lifecycleForwardSettings,
-					// The daemon's peer client: a peer's TLS skip-verify setting
-					// behaves as on every other peer call.
-					NewClient: multiserver.HTTPClient,
+					// The daemon's peer client: the peer's TLS pin and
+					// skip-verify behave as on every other peer call.
+					NewClient: multiserver.PeerHTTPClient,
 					Audit:     lifecycleAuditFn,
 					RaiseAlert: func(level, title, body string) {
 						lv := alertspkg.LevelInfo
@@ -7272,7 +7273,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						LookupPeer: lifecycleLookupPeer,
 						LocalHost:  lifecycleLocalHost,
 						Settings:   lifecycleForwardSettings,
-						NewClient:  multiserver.HTTPClient,
+						NewClient:  multiserver.PeerHTTPClient,
 						Audit:      lifecycleAuditFn,
 						RaiseAlert: func(level, title, body string) {
 							lv := alertspkg.LevelInfo
@@ -16945,7 +16946,7 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 
 	// Test connectivity
 	fmt.Printf("Testing connection to %s ...\n", url)
-	client := multiserver.HTTPClient(tlsSkipVerify, 5*time.Second)
+	client := multiserver.PeerHTTPClient(tlsSkipVerify, "", 5*time.Second)
 	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(url, "/")+"/api/health", nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)

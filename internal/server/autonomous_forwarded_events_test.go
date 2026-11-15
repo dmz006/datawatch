@@ -445,7 +445,7 @@ func TestForwardedEvents_ForwardedEventNotForwardedAgain(t *testing.T) {
 		LookupPeer: func(name string) (autonomous.PeerRef, bool) {
 			return autonomous.PeerRef{Name: name, URL: fake.URL, Token: fwdPeerToken, Federated: true, HasAutonomousWrite: true}, true
 		},
-		NewClient: multiserver.HTTPClient,
+		NewClient: multiserver.PeerHTTPClient,
 	})
 	s, mgr, _, _ := fwdReceiver(t, "daemon-b", true)
 	pq := autonomous.NewPendingEventQueue(64)
@@ -585,7 +585,7 @@ func newFwdDaemon(t *testing.T, name, peerName, token string, peerURL func() str
 			}
 			return autonomous.PeerRef{Name: peerName, URL: peerURL(), Token: token, Federated: true, HasAutonomousWrite: true}, true
 		},
-		NewClient: multiserver.HTTPClient,
+		NewClient: multiserver.PeerHTTPClient,
 	})
 	fwdSubscriptionEngine(t, mgr, "events-"+name, "", d.queue, nil, nil)
 	return d

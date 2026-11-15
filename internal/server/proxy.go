@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -87,8 +86,16 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	if remote.TLSSkipVerify {
-		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- operator-opted-in per peer, documented risk
+	// The peer's TLS policy comes from the one shared builder: a pinned
+	// fingerprint wins over TLSSkipVerify, and a malformed pin is refused
+	// here, before the dial, instead of dialing with default verification.
+	tlsCfg, tlsErr := multiserver.PeerTLSConfig(remote.TLSSkipVerify, remote.TLSCertFingerprint)
+	if tlsErr != nil {
+		http.Error(w, fmt.Sprintf("invalid peer TLS pin: %v", tlsErr), http.StatusInternalServerError)
+		return
+	}
+	if tlsCfg != nil {
+		dialer.TLSClientConfig = tlsCfg
 	}
 	remoteConn, _, err := dialer.Dial(wsURL, header)
 	if err != nil {
@@ -149,7 +156,7 @@ func (s *Server) findServer(name string) *config.RemoteServerConfig {
 	}
 	if s.serverStore != nil {
 		if e, ok := s.serverStore.Get(name); ok && e.Enabled {
-			return &config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: e.Enabled, TLSSkipVerify: e.TLSSkipVerify}
+			return &config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: e.Enabled, TLSSkipVerify: e.TLSSkipVerify, TLSCertFingerprint: e.TLSCertFingerprint}
 		}
 	}
 	return nil
@@ -170,7 +177,7 @@ func (s *Server) runtimeServers() []config.RemoteServerConfig {
 		for _, e := range s.serverStore.List() {
 			if e.Enabled && !seen[e.Name] {
 				seen[e.Name] = true
-				out = append(out, config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: true, TLSSkipVerify: e.TLSSkipVerify})
+				out = append(out, config.RemoteServerConfig{Name: e.Name, URL: e.URL, Token: e.Token, Enabled: true, TLSSkipVerify: e.TLSSkipVerify, TLSCertFingerprint: e.TLSCertFingerprint})
 			}
 		}
 	}
@@ -205,7 +212,7 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 
 	for _, sv := range remotes {
 		go func(sv config.RemoteServerConfig) {
-			client := multiserver.HTTPClient(sv.TLSSkipVerify, 5*time.Second)
+			client := multiserver.PeerHTTPClient(sv.TLSSkipVerify, sv.TLSCertFingerprint, 5*time.Second)
 			apiURL := strings.TrimRight(sv.URL, "/") + "/api/sessions"
 			req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 			if err != nil {
@@ -346,7 +353,7 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)
+	client := multiserver.PeerHTTPClient(remote.TLSSkipVerify, remote.TLSCertFingerprint, 30*time.Second)
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("remote PWA error: %v", err), http.StatusBadGateway)

@@ -22,7 +22,7 @@ import (
 type RemoteDispatcher struct {
 	servers []config.RemoteServerConfig
 	// clients holds one HTTP client per server name, rebuilt only when that
-	// entry's tls_skip_verify changes.
+	// entry's tls_skip_verify or pinned certificate fingerprint changes.
 	clientMu sync.Mutex
 	clients  map[string]peerClient
 
@@ -53,24 +53,26 @@ func NewRemoteDispatcher(servers []config.RemoteServerConfig) *RemoteDispatcher 
 
 type peerClient struct {
 	skipVerify bool
+	pin        string
 	client     *http.Client
 }
 
 const remoteRequestTimeout = 10 * time.Second
 
 // clientFor returns the reusable client for one server, honouring that
-// entry's tls_skip_verify.
+// entry's tls_skip_verify and pinned certificate fingerprint, rebuilding it
+// when either changes.
 func (d *RemoteDispatcher) clientFor(sv *config.RemoteServerConfig) *http.Client {
 	d.clientMu.Lock()
 	defer d.clientMu.Unlock()
-	if c, ok := d.clients[sv.Name]; ok && c.skipVerify == sv.TLSSkipVerify {
+	if c, ok := d.clients[sv.Name]; ok && c.skipVerify == sv.TLSSkipVerify && c.pin == sv.TLSCertFingerprint {
 		return c.client
 	}
 	if d.clients == nil {
 		d.clients = make(map[string]peerClient)
 	}
-	c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, "", remoteRequestTimeout)
-	d.clients[sv.Name] = peerClient{skipVerify: sv.TLSSkipVerify, client: c}
+	c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, sv.TLSCertFingerprint, remoteRequestTimeout)
+	d.clients[sv.Name] = peerClient{skipVerify: sv.TLSSkipVerify, pin: sv.TLSCertFingerprint, client: c}
 	return c
 }
 
@@ -96,14 +98,15 @@ func (d *RemoteDispatcher) effectiveServers() []config.RemoteServerConfig {
 	out := make([]config.RemoteServerConfig, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, config.RemoteServerConfig{
-			Name:          e.Name,
-			URL:           e.URL,
-			Token:         e.Token,
-			Enabled:       e.Enabled,
-			Federated:     e.Federated,
-			AuthType:      e.AuthType,
-			Capabilities:  e.Capabilities,
-			TLSSkipVerify: e.TLSSkipVerify,
+			Name:               e.Name,
+			URL:                e.URL,
+			Token:              e.Token,
+			Enabled:            e.Enabled,
+			Federated:          e.Federated,
+			AuthType:           e.AuthType,
+			Capabilities:       e.Capabilities,
+			TLSSkipVerify:      e.TLSSkipVerify,
+			TLSCertFingerprint: e.TLSCertFingerprint,
 		})
 	}
 	return out

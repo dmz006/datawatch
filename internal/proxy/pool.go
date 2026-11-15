@@ -38,14 +38,14 @@ func DefaultPoolConfig() PoolConfig {
 
 // ServerHealth tracks a single remote server's health state.
 type ServerHealth struct {
-	Name          string    `json:"name"`
-	URL           string    `json:"url"`
-	Healthy       bool      `json:"healthy"`
-	LastCheck     time.Time `json:"last_check"`
-	LastError     string    `json:"last_error,omitempty"`
-	ConsecFails   int       `json:"consec_fails"`
-	BreakerOpen   bool      `json:"breaker_open"`
-	BreakerUntil  time.Time `json:"breaker_until,omitempty"`
+	Name         string    `json:"name"`
+	URL          string    `json:"url"`
+	Healthy      bool      `json:"healthy"`
+	LastCheck    time.Time `json:"last_check"`
+	LastError    string    `json:"last_error,omitempty"`
+	ConsecFails  int       `json:"consec_fails"`
+	BreakerOpen  bool      `json:"breaker_open"`
+	BreakerUntil time.Time `json:"breaker_until,omitempty"`
 }
 
 // Pool manages HTTP clients and circuit breakers for remote servers.
@@ -57,7 +57,7 @@ type Pool struct {
 	health  map[string]*ServerHealth // name → health
 	clients map[string]*http.Client  // name → persistent client
 
-	stopCh chan struct{}
+	stopCh   chan struct{}
 	stopOnce sync.Once
 }
 
@@ -79,15 +79,24 @@ func NewPool(servers []config.RemoteServerConfig, cfg PoolConfig) *Pool {
 			URL:     sv.URL,
 			Healthy: true, // optimistic start
 		}
-		c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, "", cfg.RequestTimeout)
-		tr, ok := c.Transport.(*http.Transport)
-		if !ok {
-			tr = &http.Transport{}
-			c.Transport = tr
+		c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, sv.TLSCertFingerprint, cfg.RequestTimeout)
+		// Tune the pooled transport only when it is safe to replace: a
+		// malformed pin gives PeerHTTPClient a fail-closed transport whose
+		// error every request must surface — never swap that out. A nil
+		// transport (plain http or default TLS verification) gets a tuned
+		// one.
+		switch tr := c.Transport.(type) {
+		case *http.Transport:
+			tr.MaxIdleConns = 10
+			tr.MaxIdleConnsPerHost = 5
+			tr.IdleConnTimeout = 90 * time.Second
+		case nil:
+			t := &http.Transport{}
+			t.MaxIdleConns = 10
+			t.MaxIdleConnsPerHost = 5
+			t.IdleConnTimeout = 90 * time.Second
+			c.Transport = t
 		}
-		tr.MaxIdleConns = 10
-		tr.MaxIdleConnsPerHost = 5
-		tr.IdleConnTimeout = 90 * time.Second
 		p.clients[sv.Name] = c
 	}
 	return p
