@@ -16,7 +16,10 @@ import (
 )
 
 // fakePlacementAdvisory answers the load gate's planner with a fixed verdict.
+// Plan is called from every admission attempt, and attempts of one task can
+// run concurrently, so the recorded pin is guarded by mu.
 type fakePlacementAdvisor struct {
+	mu      sync.Mutex
 	plan    PlacementPlan
 	timeout time.Duration
 	gotPin  string // records the pinnedTo argument from the last Plan call
@@ -26,12 +29,21 @@ type fakePlacementAdvisor struct {
 }
 
 func (f *fakePlacementAdvisor) Plan(backend, model, pinnedTo string) PlacementPlan {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.gotPin = pinnedTo
 	plan := f.plan
 	if f.followPin && pinnedTo != "" {
 		plan.Chosen = pinnedTo
 	}
 	return plan
+}
+
+// pin returns the pinnedTo argument of the last Plan call.
+func (f *fakePlacementAdvisor) pin() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.gotPin
 }
 
 func (f *fakePlacementAdvisor) AskTimeout() time.Duration {
@@ -335,8 +347,8 @@ func TestPlacementPinsTaskNode(t *testing.T) {
 		t.Fatal("no advisor wired")
 	}
 	fake := adv.(*fakePlacementAdvisor)
-	if fake.gotPin != "alpha" {
-		t.Fatalf("the gate should pass the task's leased node as the pin, got %q", fake.gotPin)
+	if got := fake.pin(); got != "alpha" {
+		t.Fatalf("the gate should pass the task's leased node as the pin, got %q", got)
 	}
 	// The lease should land on alpha (the planner's choice, which matches the pin).
 	if got := p.rig.led.LeaseOf(p.rig.task.ID); got == nil || got.Node != "alpha" {
@@ -546,6 +558,10 @@ func TestPlacementAskDedupesAcrossAttempts(t *testing.T) {
 		target placementTarget
 		err    error
 	}
+	// Each attempt signals once it has raised or joined the ask and is
+	// waiting for the answer; the answer is given only after both did.
+	parked := make(chan string, 2)
+	p.rig.m.placementAskParkedHook = func(qid string) { parked <- qid }
 	results := make(chan result, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
@@ -553,15 +569,20 @@ func TestPlacementAskDedupesAcrossAttempts(t *testing.T) {
 			results <- result{tg, err}
 		}()
 	}
-	// Wait until both attempts are parked on the single open question.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(store.List(QuestionFilter{Asker: placementQuestionAsker, State: QuestionOpen})) > 0 {
-			break
+	var qids []string
+	for i := 0; i < 2; i++ {
+		select {
+		case qid := <-parked:
+			qids = append(qids, qid)
+		case r := <-results:
+			t.Fatalf("an attempt ended before the ask was answered: %+v", r)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d of 2 attempts parked on the placement ask", len(qids))
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond)
+	if qids[0] != qids[1] {
+		t.Fatalf("both attempts must wait on one question, got %v", qids)
+	}
 	if n := len(store.List(QuestionFilter{Asker: placementQuestionAsker})); n != 1 {
 		t.Fatalf("two attempts of one (task, model, node) must raise one ask, got %d", n)
 	}
@@ -701,7 +722,7 @@ func TestPlacementTaskPinIsRespected(t *testing.T) {
 	if err := p.rig.admitErr(t); err != nil {
 		t.Fatalf("a pinned task must admit, got %v", err)
 	}
-	if got := p.rig.m.getPlacementAdvisor().(*fakePlacementAdvisor).gotPin; got != "beta" {
+	if got := p.rig.m.getPlacementAdvisor().(*fakePlacementAdvisor).pin(); got != "beta" {
 		t.Fatalf("the planner must receive the task pin, got %q", got)
 	}
 	if got := p.rig.led.LeaseOf(p.rig.task.ID); got == nil || got.Node != "beta" {

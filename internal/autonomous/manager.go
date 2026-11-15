@@ -1563,6 +1563,13 @@ type Manager struct {
 	// Production never sets it.
 	savePRDHook func(*PRD) error
 
+	// placementAskParkedHook is a test seam: when non-nil, placementAsk calls
+	// it with the question id once an attempt has raised (or joined) the
+	// placement ask and is about to wait for the answer, so a test can wait
+	// on that signal instead of sleeping. Set before the Manager is used;
+	// production never sets it.
+	placementAskParkedHook func(questionID string)
+
 	// mergeResolveFn / mergeVerifyFn are the model and the verification the
 	// task merge uses for a conflict the mechanical pass cannot settle
 	// (task_merge.go). Guarded by mu. Nil means no model resolution.

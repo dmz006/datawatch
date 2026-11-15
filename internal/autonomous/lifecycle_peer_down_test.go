@@ -560,7 +560,18 @@ func TestPeerDownRecovers(t *testing.T) {
 
 		r.m.emit(peerDownEvent(1))
 		r.requireLocal(1)
-		peerDownWaitUntil(t, peerDownDeadline, "the forward to be delivered", func() bool { return recv.hits.Load() == 1 })
+		// The peer counts the hit inside its handler, before it answers; the
+		// forwarder records "delivered" only after it has read that answer
+		// (lifecycle_forward.go, case res.ok). Waiting on the hit alone reads
+		// the outcomes while the delivered record may still be in flight, so
+		// wait for the forward to finish: the hit plus a terminal outcome.
+		peerDownWaitUntil(t, peerDownDeadline, "the forward to be delivered", func() bool {
+			if recv.hits.Load() != 1 {
+				return false
+			}
+			out := r.outcomes()
+			return len(out) > 0 && out[len(out)-1] != WebhookOutcomeRetry
+		})
 		if got := fmt.Sprint(recv.eventIDs()); got != "[ev-1]" {
 			t.Errorf("peer received %s, want [ev-1]", got)
 		}

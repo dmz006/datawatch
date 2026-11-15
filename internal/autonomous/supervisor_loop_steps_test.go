@@ -3,6 +3,7 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -425,23 +426,36 @@ func TestSupervisorLoopStepApplyAnswersAndChain(t *testing.T) {
 
 func TestSupervisorLoopStepIdleTickRunsOnePassPerTick(t *testing.T) {
 	var merges, ticks int32
+	ran := make(chan struct{}, 16)
 	h, steps, _ := newStepsRig(t, SupervisorLoopHooks{
 		MergeUntilConflict: func(context.Context) (SupervisorMergeResult, error) {
 			atomic.AddInt32(&merges, 1)
+			select { // signal the test; never block the loop
+			case ran <- struct{}{}:
+			default:
+			}
 			return SupervisorMergeResult{}, errors.New("always fails")
 		},
 	})
+	// Every tick's triage pass runs the temp-file sweep; the harness must
+	// point it at an empty throwaway root, not the host's real temp dir
+	// (walking that cost seconds per pass and starved this test).
+	if res := h.m.SweepDaemonTempPass(); len(res.Skipped)+len(res.Errors)+res.Considered != 0 {
+		t.Fatalf("the harness temp sweep walked a non-empty temp root %s: %+v", os.TempDir(), res)
+	}
 	h.c.SetSupervisorLoopSteps(steps)
 	h.c.idleTick = 5 * time.Millisecond
 	h.c.idleTickHook = func() { atomic.AddInt32(&ticks, 1) }
 	h.c.Start()
-	deadline := time.After(5 * time.Second)
-	for atomic.LoadInt32(&merges) < 3 {
+	// Wait for three step runs on an explicit signal. The deadline only
+	// bounds a hung loop; it is not a timing assumption about the passes.
+	deadline := time.After(60 * time.Second)
+	for i := 0; i < 3; i++ {
 		select {
+		case <-ran:
 		case <-deadline:
 			h.c.Stop()
-			t.Fatal("the idle tick never ran the steps")
-		case <-time.After(5 * time.Millisecond):
+			t.Fatalf("the idle tick never ran the steps (%d of 3 runs)", i)
 		}
 	}
 	h.c.Stop()

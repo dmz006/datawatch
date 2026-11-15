@@ -78,10 +78,27 @@ func plannerHolder(prdID string) string { return "plan:" + prdID }
 // plannerPairFor mirrors the per-PRD resolution Decompose /
 // DecomposeStreaming perform: the PRD's decomposition_profile (falling back
 // to the effective planning backend) plus the same model fallback chain.
+//
+// prd is usually the live record shared with the store, and SetPRDLLM writes
+// these fields (under the store lock) while a queued planner may be reading
+// them at grant time on another goroutine. The fields are therefore copied
+// under the store lock before use. Callers must not hold the store lock.
 func (m *Manager) plannerPairFor(prd *PRD) (backend, model string) {
 	m.mu.Lock()
 	cfg := m.cfg
 	m.mu.Unlock()
+	var view PRD
+	m.store.WithLock(func() {
+		view = PRD{
+			ID:                   prd.ID,
+			AutomationID:         prd.AutomationID,
+			Backend:              prd.Backend,
+			Model:                prd.Model,
+			DecompositionProfile: prd.DecompositionProfile,
+			DecompositionModel:   prd.DecompositionModel,
+		}
+	})
+	prd = &view
 	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), cfg)
 	backend = prd.DecompositionProfile
 	if backend == "" {
@@ -241,8 +258,9 @@ func (m *Manager) requeuePlanningRun(prdID, actor, oldBackend, oldModel string) 
 	// immediately (no further ledger poll).
 	m.mu.Lock()
 	keysFn, choicesFn := m.capacityKeys, m.capacityChoices
-	priority := prd.Priority
 	m.mu.Unlock()
+	var priority int
+	m.store.WithLock(func() { priority = prd.Priority })
 	var (
 		pools   = res.NewPools
 		node    string
@@ -328,18 +346,30 @@ func (m *Manager) RestartPlanning(prdID string) *PlanningRequeueResult {
 
 // notePlanningRequeue records the requeue decision on the PRD (audit) and
 // emits its update so the surfaces pick it up.
+//
+// The stored PRD is shared: the decompose goroutine mutates and persists it
+// (clearPRDWaitReason / setPRDWaitReason → Store.MutatePRD, which encodes the
+// record) while a requeue runs on an API goroutine. The append therefore
+// happens inside Store.MutatePRD, under the store lock, never on the pointer
+// GetPRD returns. The Decisions trim and the Rev bump SavePRD applied are kept.
 func (m *Manager) notePlanningRequeue(prdID, actor string, res *PlanningRequeueResult) {
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok {
-		return
-	}
-	prd.Decisions = append(prd.Decisions, Decision{
+	dec := Decision{
 		At: time.Now(), Kind: "planning_requeue", Actor: actor,
 		Note: fmt.Sprintf("outcome=%s old=%s/%s pools=%s new=%s/%s pools=%s reason=%s",
 			res.Outcome, res.OldBackend, res.OldModel, strings.Join(res.OldPools, ","),
 			res.NewBackend, res.NewModel, strings.Join(res.NewPools, ","), res.Reason),
+	}
+	var (
+		prd    *PRD
+		status PRDStatus
+	)
+	applied := m.store.MutatePRD(prdID, func(p *PRD) bool {
+		p.Decisions = trimDecisions(append(p.Decisions, dec))
+		p.Rev++
+		prd, status = p, p.Status
+		return true
 	})
-	if m.store.SavePRD(prd) == nil {
-		m.emitPRDStatus(prd, prd.Status, nil, nil)
+	if applied {
+		m.emitPRDStatus(prd, status, nil, nil)
 	}
 }
