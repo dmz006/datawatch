@@ -314,14 +314,19 @@ datawatch mcp status
     file whose session is over is dead-credential behaviour: start a
     session (the daemon rewrites the file with the starting session's
     credential) or use a live session's bridge.
-  - For the **instance-level** `<data_dir>/.mcp.json`, the token is
-    *today* the daemon's long-lived `server.token` — so a 401 there means
-    the admin bearer rotated or was regenerated (or the daemon is not
-    reachable): sync the file with the daemon's current `server.token`
-    (regenerate one with `datawatch token rotate` if it is lost). The 2026-11-13 encryption audit proposes
-    scoping this write and deleting the file with the session (fix 13,
-    row K9); that fix is **not implemented in this release**, so the
-    instance-level file still holds the admin token.
+  - For the **instance-level** `<data_dir>/.mcp.json`, the token is an
+    **instance-scoped, short-lived credential** (the `session-default`
+    group by default, valid about an hour) — not the daemon's long-lived
+    `server.token`, which is **no longer written there**. It is refreshed
+    when a session starts and revoked when no live session remains (the
+    file may even have been removed by then), so a 401 there means the
+    credential expired or was revoked — or the daemon is not reachable.
+    Start a session (the write is refreshed at launch) or use a
+    live session's bridge; for standing access, point your own MCP host
+    config at the daemon with the daemon's bearer or a federation peer
+    token. `datawatch token rotate` no longer helps this file: the
+    instance write does not use a rotated admin token. Do not write the
+    daemon's `server.token` back into that file.
   Capability model: [howto/federation-cbac](federation-cbac.md).
 - **ACL denies a call.** Daemon returns the denied scope set; check
   `mcp.per_tool_acl` and adjust.
