@@ -3395,8 +3395,9 @@ admin `server.token` either. Its `DATAWATCH_TOKEN` is the **instance-
 scoped, expiring credential**: the same `session-default` capability group
 by default (override: `session.capabilities`; [howto/federation-cbac](howto/federation-cbac.md)),
 valid about an hour. Each session launch refreshes it — the existing
-token is reused while more than half its lifetime remains, re-minted once
-it has expired — so repeated launches do not stack credentials and the
+token is reused while more than half its lifetime remains, and re-minted
+on the next launch once it is down to the last half (even before it
+would expire) — so repeated launches do not stack credentials and the
 file tracks the current bridge (JS→Go) without admin exposure. When no
 live session remains — the last one ends, or the daemon shuts down — the
 credential is revoked and the `datawatch` entry (with the file, if it was
