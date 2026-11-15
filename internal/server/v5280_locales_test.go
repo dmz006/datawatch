@@ -853,7 +853,8 @@ func TestLocalesStateChipSetParity(t *testing.T) {
 //	settings_defect_queue_tiny_fix_operator_visible_path_globs
 //
 // TestDefectQueueLocales asserts all five locales carry every defect_queue key.
-func TestDefectQueueLocales(t *testing.T) {	en := loadLocaleBundle(t, "en")
+func TestDefectQueueLocales(t *testing.T) {
+	en := loadLocaleBundle(t, "en")
 	var want []string
 	for k := range en {
 		if strings.HasPrefix(k, "settings_defect_queue_") {
