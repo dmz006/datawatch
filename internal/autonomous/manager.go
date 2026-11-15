@@ -806,6 +806,13 @@ type AutomationConfig struct {
 	// turns the alert off and survives a merge round trip.
 	MergePendingAlertMinutes *int `json:"merge_pending_alert_minutes,omitempty"`
 
+	// MergePendingIncludeTerminal: whether the merge-pending check also
+	// covers archived, needs_review, blocked and failed Automata. Pointer:
+	// unset (nil) reads config.DefaultMergePendingIncludeTerminal (true), an
+	// explicit false keeps the check to completed Automata. Mirrors
+	// autonomous.automation.merge_pending_include_terminal.
+	MergePendingIncludeTerminal *bool `json:"merge_pending_include_terminal,omitempty"`
+
 	// MergedMemberPolicy: completed | manual | block (empty reads as
 	// completed). Mirrors autonomous.automation.merged_member_policy.
 	MergedMemberPolicy string `json:"merged_member_policy,omitempty"`
@@ -965,6 +972,16 @@ func (c AutomationConfig) EffectiveMergePendingMode() string {
 		return config.MergePendingModeOff
 	}
 	return c.MergePendingMode
+}
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending
+// check covers archived, needs_review, blocked and failed Automata as well as
+// completed ones: true when unset, the explicit value otherwise.
+func (c AutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return config.DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergedMemberPolicy returns the merged-member policy in effect: an

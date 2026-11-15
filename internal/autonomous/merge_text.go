@@ -95,6 +95,9 @@ func RenderMergeState(ms MergeStatus) string {
 			}
 			fmt.Fprintf(&b, "  Automaton %q (id %s): branch %s is %s, %d commit(s) ahead of %s",
 				name, e.AutomatonID, e.Branch, e.State, e.CommitsAhead, mergeBaseText(e.Base))
+			if e.AutomatonState != "" {
+				fmt.Fprintf(&b, ", Automaton is %s", e.AutomatonState)
+			}
 			if e.PendingSince != nil {
 				fmt.Fprintf(&b, ", merge pending since %s", mergeTimeText(e.PendingSince))
 			}
@@ -120,11 +123,20 @@ func RenderMergeState(ms MergeStatus) string {
 			}
 			fmt.Fprintf(&b, "  %s Automaton %q (id %s): branch %s %s, %d commit(s) ahead, %s",
 				d.At.Format(time.RFC3339), name, d.AutomatonID, d.Branch, d.State, d.CommitsAhead, alert)
+			if d.AutomatonState != "" {
+				fmt.Fprintf(&b, ", Automaton was %s", d.AutomatonState)
+			}
+			if d.FoundFalse {
+				b.WriteString(", found false")
+			}
 			if d.RepeatCount > 1 {
 				fmt.Fprintf(&b, " (seen %d times, last %s)", d.RepeatCount, d.LastSeenAt.Format(time.RFC3339))
 			}
 			b.WriteString("\n")
 		}
+	}
+	if ms.ShadowDecisionsTotal > 0 {
+		fmt.Fprintf(&b, "Shadow decisions made: %d, later found false: %d.\n", ms.ShadowDecisionsTotal, ms.ShadowDecisionsFalse)
 	}
 	b.WriteString("Nothing has been merged, deleted or pushed.\n")
 	return b.String()
