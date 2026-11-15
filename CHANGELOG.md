@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
 ## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
 
 ### Changed
