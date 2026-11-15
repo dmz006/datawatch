@@ -3038,7 +3038,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
 | Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
-| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints; picking a server in the header dropdown re-renders the current view in place |
+| Multi-server management | [`howto/multi-servers.md`](howto/multi-servers.md) | v7.2.0 | REST proxy + aggregated endpoints; picking a server from the header server icon button (Servers window) re-renders the current view in place |
 | MCP Prompts | [`howto/mcp-prompts.md`](howto/mcp-prompts.md) | v7.1.0 | MCP protocol spec |
 | MCP Resources | [`howto/mcp-resources.md`](howto/mcp-resources.md) | v7.1.0 | MCP protocol spec |
 | MCP Sampling | [`howto/mcp-sampling.md`](howto/mcp-sampling.md) | v7.1.0 | MCP protocol spec |

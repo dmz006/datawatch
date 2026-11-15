@@ -241,6 +241,15 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 > [operations.md](../operations.md), under "Still to review (operator)"
 > in the multi-server section.
 
+> **Still to review (operator): header icons.** The server icon button,
+> its status dot and the **Servers** window, and the funnel **scope button**
+> with its **Scope** window (see
+> [The header scope button](projects-tab.md#the-header-scope-button)), are
+> pinned by PWA tests but have not been checked in a live browser. Confirm on
+> the build in use: the header no longer wraps on a phone, the dot colours
+> tell This server / peer / All / unreachable apart, the three-finger swipe
+> opens the same window, and the scope button shows only on Automata pages.
+
 Behaviours worth knowing:
 
 - **Re-selecting the active server is a no-op.** Choosing the entry that is
