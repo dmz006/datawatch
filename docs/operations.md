@@ -2875,7 +2875,9 @@ open-question gate before its text would be typed into a session:
 
 No setting or endpoint is added; the three toast strings ship in the five
 web-app locales (`en`, `es`, `fr`, `de`, `ja`). See
-[`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md).
+[`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md),
+[`howto/operator-questions-answering.md`](howto/operator-questions-answering.md#quick-replies-answer-the-sessions-question)
+and the [Quick reply](glossary.md#quick-reply) glossary entry.
 
 **Messaging channels.** `send <id>: <text>` from a messaging channel
 uses the same gate when the text is a saved command (`!name`/`/name`),
@@ -2901,6 +2903,8 @@ See [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md#mess
   parity issue.
 - Confirm the answered/refused toasts read well on a real device (the
   behavior itself is covered by the web-app test suite).
+- The parity-status row for this change marks Android and iPhone as not
+  built; update it once the companion-app parity issue lands.
 
 ### Alerts tab (help link, state row, refresh)
 
