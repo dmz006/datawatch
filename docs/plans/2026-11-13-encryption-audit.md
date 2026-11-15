@@ -514,7 +514,7 @@ These change scope or behaviour that the audit does not decide:
 - Whether `secure_tracking: full` becomes the default under `--secure` (G6), given that tracker files stop being readable with `cat`.
 - Whether embeddings stay plain (the audit's default) or move to an in-memory index (G12).
 - Whether a plain export is the default with a confirmation, or the default is a passphrase-sealed export (G15).
-- Whether to stop writing the instance-level server token into project files, which changes how launched tools authenticate (row K9, fix 13).
+- ~~Whether to stop writing the instance-level server token into project files~~ — **resolved: fix 13 is done** (see its Status below; row K9). What stays with the operator is the workflows that read `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to keep a standing admin bearer: move them to the daemon's real server token from their own secure source, or a federation peer token.
 - Whether the Automaton store migration (G10) runs automatically at start, or only on an explicit command with progress.
 
 ## Prioritised fixes
