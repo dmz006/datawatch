@@ -8,11 +8,37 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // UnlandedWorkList is the body of GET /api/autonomous/unlanded-work.
 type UnlandedWorkList struct {
+	Counts   *UnlandedCounts  `json:"counts,omitempty"`
 	Branches []UnlandedBranch `json:"branches"`
+}
+
+// NewUnlandedWorkList builds the read body: the branches plus their counts
+// against now.
+func NewUnlandedWorkList(branches []UnlandedBranch, now time.Time) UnlandedWorkList {
+	if branches == nil {
+		branches = []UnlandedBranch{}
+	}
+	c := CountUnlandedBranches(branches, now)
+	return UnlandedWorkList{Counts: &c, Branches: branches}
+}
+
+// renderUnlandedCounts writes the counts block shown before the branches.
+func renderUnlandedCounts(b *strings.Builder, c *UnlandedCounts) {
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(b, "Counts: %d landed, %d pending, %d live, %d unlanded\n",
+		c.ByState[LandingLanded], c.ByState[LandingPending], c.ByState[LandingLive], c.ByState[LandingUnlanded])
+	fmt.Fprintf(b, "Age: %d under one day, %d under one week, %d older\n",
+		c.ByAge[AgeUnderDay], c.ByAge[AgeUnderWeek], c.ByAge[AgeOlder])
+	if o := c.OldestPending; o != nil {
+		fmt.Fprintf(b, "Oldest pending: %s (%s), %s\n", o.Title, o.Branch, o.AgeText)
+	}
 }
 
 // ParseUnlandedWorkList reads the body of GET /api/autonomous/unlanded-work.
@@ -34,6 +60,7 @@ func ParseUnlandedWorkList(body []byte) (UnlandedWorkList, error) {
 // action commands.
 func RenderUnlandedWorkList(l UnlandedWorkList) string {
 	var b strings.Builder
+	renderUnlandedCounts(&b, l.Counts)
 	if len(l.Branches) == 0 {
 		b.WriteString("No archived Automaton has work that is not on the default branch.\n")
 		return b.String()
