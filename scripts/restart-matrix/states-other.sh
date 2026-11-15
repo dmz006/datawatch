@@ -70,7 +70,7 @@ ot_project_new() {
 ot_prd_create() {
   local body
   body="$(jq -n --arg dir "$1" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "shell"}')"
-  rm_api POST /api/autonomous/prds "$body" | jq -r '.id // .prd.id // empty'
+  rm_prd_post "$body"
 }
 
 # ot_plan PRD — asks the daemon to plan PRD and waits until the plan is reviewable.
@@ -172,7 +172,7 @@ ot_boot_pi() {
 ot_prd_create_pi() {
   local body
   body="$(jq -n --arg dir "$1" --arg model "$RM_PI_MODEL" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "pi-prompt", model: $model}')"
-  rm_api POST /api/autonomous/prds "$body" | jq -r '.id // .prd.id // empty'
+  rm_prd_post "$body"
 }
 
 # ot_node_held NODE — what GET /api/capacity says node:<NODE> holds.
