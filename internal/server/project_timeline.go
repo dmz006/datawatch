@@ -128,6 +128,9 @@ type timelineInput struct {
 	Parent      string // level=automata: an arc's Automation id, or "none"; empty means all
 	Automaton   string // level=tasks: the Automaton id
 	Focus       string // an arc's Automation id (or "none"); overrides Level
+	// ReleaseHeld says whether a release plan holds an Automaton. One that no
+	// arc holds but a release plan does is attributed, so it is not unassigned.
+	ReleaseHeld func(automatonID string) bool
 	Limit       int
 	Cursor      *historyCursor
 	Now         time.Time
@@ -148,6 +151,8 @@ type projectMembership struct {
 	memberOf map[string]string // PRD id -> Automation id holding it as a member
 	arcs     map[string]bool   // Automation ids that are arcs of the project
 	cleanDir string
+	// held says whether a release plan holds an Automaton; nil means none.
+	held func(automatonID string) bool
 }
 
 func newProjectMembership(arcs []config.ProjectArc, automations []*autonomous.Automation, dir string) projectMembership {
@@ -185,6 +190,9 @@ func (m projectMembership) place(p *autonomous.PRD) (arc string, unassigned, ok 
 		return auto, false, true
 	}
 	if p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == m.cleanDir {
+		if m.held != nil && m.held(p.ID) {
+			return "", false, false
+		}
 		return "", true, true
 	}
 	return "", false, false
@@ -617,6 +625,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 	out := projectTimeline{Project: in.Project, GeneratedAt: in.Now, Level: level, Limit: limit, Rows: []timelineRow{}}
 
 	mem := newProjectMembership(in.Arcs, in.Automations, in.Dir)
+	mem.held = in.ReleaseHeld
 	byArc := map[string][]*autonomous.PRD{}
 	var unassigned, all []*autonomous.PRD
 	for _, p := range in.PRDs {
@@ -822,6 +831,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 		Parent:      q.Get("parent"),
 		Automaton:   q.Get("automaton"),
 		Focus:       q.Get("focus"),
+		ReleaseHeld: s.releaseHeldFunc(),
 		Limit:       limit,
 		Cursor:      cursor,
 		Now:         time.Now(),

@@ -35,6 +35,21 @@
 // Automaton), ListSummaries and SearchTitles without reading a full record.
 // The new fields are optional, so older records load unchanged.
 //
+// Release plans. A plan with PlanKind release and a Release label stands for
+// one release (one release plan per release label inside a project). It may
+// group the Automata and Automations it already holds into ordered Themes; an
+// item is in at most one theme, detaching an item from the plan takes it out
+// of its theme, and removing a theme leaves its items in the plan, unplaced.
+// The theme methods (CreateTheme, RenameTheme, RemoveTheme, PlaceInTheme,
+// UnplaceFromTheme, ReorderThemes, ReorderThemeItems) change release plans
+// only; ThemesOf reads a plan's themes and unplaced items.
+//
+// Row links. A plan also holds registry rows (link kind registry_row) and
+// backlog items (link kind backlog_item, a row or finding with no Automaton) in
+// its Links list, by the record's uid, through AttachRow, DetachRow,
+// AddBacklogItem and RemoveBacklogItem. RowsOf lists them and PlansOfRow and
+// PlansOfBacklogItem find the plans from the row, from the link index.
+//
 // Secure mode. When a Sealer is supplied every record is sealed with the
 // same XChaCha20-Poly1305 file sealing the other per-record data files use
 // (internal/secfile). A sealed file keeps exactly these fields readable so

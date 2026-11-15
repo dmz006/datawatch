@@ -33,6 +33,8 @@
 //	autonomous plan attach <plan> automaton|automation|finding <id>
 //	autonomous plan detach <plan> automaton|automation|finding <id>
 //		link or unlink one; a link held elsewhere is refused and named.
+//	The release plan verbs (themes, archive, restore, unattributed, migrate
+//	release, attach with several ids) are in plans_release_comm.go.
 //	"arcs" is accepted in place of "plan" (autonomous arcs list <project> …).
 //	Each verb calls the loopback REST route, so chat runs the same code as REST.
 
@@ -603,8 +605,20 @@ func (r *Router) handlePlanVerb(args []string) {
 		r.planMove(rest)
 	case "attach", "detach":
 		r.planLink(sub, rest)
+	case "themes":
+		r.planThemes(rest)
+	case "theme":
+		r.planTheme(rest)
+	case "archive":
+		r.planArchive(rest)
+	case "restore":
+		r.planRestore(rest)
+	case "unattributed":
+		r.planUnattributed(rest)
+	case "migrate":
+		r.planMigrate(rest)
 	default:
-		r.reply("autonomous plan failed", planVerbUsage)
+		r.reply("autonomous plan failed", planVerbUsage+" | "+planReleaseVerbUsage)
 	}
 }
 
@@ -803,6 +817,13 @@ func (r *Router) planMoveAutomaton(plan, automaton string, pos int) {
 }
 
 func (r *Router) planLink(verb string, args []string) {
+	// Several ids, or a theme, is the list form of attach (plans_release_comm.go).
+	if verb == "attach" {
+		if words, kv := planKV(args, "theme"); len(words) > 3 || kv["theme"] != "" {
+			r.planAttachMany(args)
+			return
+		}
+	}
 	if len(args) != 3 {
 		r.reply("autonomous plan failed", planVerbUsage)
 		return
