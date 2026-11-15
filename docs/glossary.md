@@ -19,7 +19,11 @@ full. The other lane fill backend is tried first and needs no mark. See
 
 ## Quick reply
 
-A saved command offered on a web app prompt alert. When the session is
-waiting on an operator question, the quick reply answers that question;
-otherwise it is sent as session input. See
+A one-tap reply offered on the web app — the dropdown on a prompt alert,
+the session-detail Yes/No/Stop chips, or a quick command. It first goes
+through an open-question gate: if the session has an open question and
+the reply matches one of its options, it **answers that question**
+(nothing is typed into the session); with no open question it is sent as
+session input. A reply matching no option, or a session with more than one
+open question, is refused with a message and nothing is sent. See
 [howto/alerts-and-notifications.md](howto/alerts-and-notifications.md).
