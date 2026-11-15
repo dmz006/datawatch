@@ -6856,6 +6856,8 @@ Set the Automation limit and the gate on create or update (`max_parallel`, `stag
 
 A daemon restart keeps waiting, held and decision-wait members in place and re-links the one open question to its member. A decision wait needs `autonomous.questions.enabled`; without it the question cannot be raised. A blocked member of an earlier stage keeps holding the later stage until it is resumed or skipped. See [howto/automation-chains.md](howto/automation-chains.md) and the glossary entries in [datawatch-definitions.md](datawatch-definitions.md).
 
+Reading the status: `waiting_for_slot`, `waiting_for_stage` and `waiting_for_operator` are waits, not failures, and raise no failure alert; only a decision wait raises the "Automation waiting for you" alert. Setting `max_parallel` to 0 or omitting it removes the limit; turning `stage_gate` off releases held members at once.
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
 When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each completed Automaton's branch with `main` so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
