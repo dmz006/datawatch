@@ -105,6 +105,10 @@ commit that adds it, same as any other rule change.
   found` and does not fail. Read the SKIP lines: a skipped gate was not
   checked. `docker-agent-base` skips itself when no Dockerfile, containers
   workflow or `security/accepted-risks.yml` changed since the last tag.
+  Its trivy scan runs through `scripts/trivy-scan-image.sh`, which saves
+  the image with `docker save` and scans the archive with
+  `trivy image --input` (docker 29.1.x daemon scans fail with "failed to
+  analyze layer"); a HIGH/CRITICAL finding not in `.trivyignore` fails it.
 - [ ] Each run appends one line to `.datawatch/pre-tag-record` (git-ignored):
   `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>`. Tag only
   when the last line is for the commit being tagged and says `result=pass`.

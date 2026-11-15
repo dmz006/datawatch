@@ -192,8 +192,7 @@ s_docker_agent_base() {
   docker build -f docker/dockerfiles/Dockerfile.agent-base --build-arg VERSION=pre-tag \
     -t datawatch-agent-base:pre-tag . || return 1
   if command -v trivy >/dev/null 2>&1; then
-    trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 \
-      --format table datawatch-agent-base:pre-tag
+    bash scripts/trivy-scan-image.sh datawatch-agent-base:pre-tag
   else
     echo "SKIP [docker-agent-base] trivy scan: trivy not found"
   fi
