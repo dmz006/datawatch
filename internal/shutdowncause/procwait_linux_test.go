@@ -67,18 +67,27 @@ func waitForCmdline(pid int, want string, deadline time.Duration, read func(int)
 	}
 }
 
-// awaitChildReady blocks until the re-executed signal-parent child has
-// announced its start on stdout (read through the pipe with a bounded
-// timeout) and its own /proc entry shows a cmdline containing want
-// (polled with a bounded deadline and early exit). After the
+// awaitChildReadyWith waits until the child has announced its start on
+// stdout (bounded by lineTimeout) and read(pid) shows a cmdline
+// containing want (bounded by cmdTimeout, early exit). After the
 // announcement the rest of stdout is drained so the child never blocks.
-func awaitChildReady(t *testing.T, stdout io.Reader, pid int, want string) {
-	t.Helper()
-	if line, err := readLineWithTimeout(stdout, 30*time.Second); err != nil || line != childStartedLine {
-		t.Fatalf("child pid %d did not announce start: line=%q err=%v", pid, line, err)
+func awaitChildReadyWith(stdout io.Reader, pid int, want string, lineTimeout, cmdTimeout time.Duration, read func(int) (string, error)) error {
+	line, err := readLineWithTimeout(stdout, lineTimeout)
+	if err != nil || line != childStartedLine {
+		return fmt.Errorf("child pid %d did not announce start: line=%q err=%v", pid, line, err)
 	}
 	go func() { _, _ = io.Copy(io.Discard, stdout) }()
-	if got, err := waitForCmdline(pid, want, 10*time.Second, readProcCmdline); err != nil {
-		t.Fatalf("child cmdline not visible: %v (last %q)", err, got)
+	if got, err := waitForCmdline(pid, want, cmdTimeout, read); err != nil {
+		return fmt.Errorf("child cmdline not visible: %v (last %q)", err, got)
+	}
+	return nil
+}
+
+// awaitChildReady is awaitChildReadyWith against the live /proc with the
+// test's bounds (30s for the announcement, 10s for the cmdline).
+func awaitChildReady(t *testing.T, stdout io.Reader, pid int, want string) {
+	t.Helper()
+	if err := awaitChildReadyWith(stdout, pid, want, 30*time.Second, 10*time.Second, readProcCmdline); err != nil {
+		t.Fatal(err)
 	}
 }

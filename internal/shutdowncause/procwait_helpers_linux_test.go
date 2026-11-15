@@ -76,3 +76,27 @@ func TestWaitForCmdline(t *testing.T) {
 		}
 	})
 }
+
+func TestAwaitChildReadyWith(t *testing.T) {
+	okRead := func(int) (string, error) { return "bin kill 7", nil }
+	badRead := func(int) (string, error) { return "bin", nil }
+	cases := []struct {
+		name    string
+		stdout  string
+		read    func(int) (string, error)
+		wantErr bool
+	}{
+		{"announced and visible", childStartedLine + "\n", okRead, false},
+		{"wrong announcement", "hello\n", okRead, true},
+		{"no announcement", "", okRead, true},
+		{"cmdline never visible", childStartedLine + "\n", badRead, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := awaitChildReadyWith(strings.NewReader(tc.stdout), 9, "kill 7", time.Second, 20*time.Millisecond, tc.read)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
