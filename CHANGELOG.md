@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
+### Fixed
+
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
 ## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
 
 ### Fixed
