@@ -172,6 +172,11 @@ datawatch alerts --mark-all-read
      session resumes. It no longer types the reply as text into the
      session's terminal, which left the question open. A session with no
      pending question still receives the reply as session input.
+     *Operator review:* the web app code change for this fix is not yet
+     in this tree (`alertSendCmd` in `internal/server/web/app.js` still
+     posts `send <id>: <text>`); confirm this text matches the shipped
+     fix, including the no-pending-question fallback, and track the same
+     behavior for the Android and iPhone apps in datawatch-app.
    - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
      triggers one immediate refetch through the Alerts list loader —
      the card repaints in place (cached rows stay, the fetch runs
