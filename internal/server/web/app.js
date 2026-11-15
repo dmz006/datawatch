@@ -5269,7 +5269,7 @@ function _planRecordsFresh(project) {
     project: project || '',
     status: 'idle',      // idle | loading | ready | error | disabled
     kind: 'registry_row',
-    stateFilter: '',
+    states: [],         // selected state keys (a set; [] === all states)
     q: '',
     recs: [],
     total: 0,
@@ -5518,6 +5518,27 @@ function planRecordsBodyHtml(v) {
 
 // planRecordsSectionHtml is the whole Records section for one state object
 // (see _planRecordsFresh). It is empty until the first answer has come, and
+// planRecordsStateChipsHtml builds the card's state chip set for the current
+// view kind: one chip per state of that kind, so a view is filterable by any
+// combination of them — the server accepts the states together as
+// state=one,two,three. The selection has its own cs_state_chips_* key via the
+// shared helper; the chip's own change handler is the mutation path (it seeds
+// the card's mirror and refetches).
+function planRecordsStateChipsHtml(kind, st) {
+  const chips = createStateChipSet({
+    name: 'planRecordsState',
+    items: (Array.isArray(_PLAN_RECORD_STATES[kind]) ? _PLAN_RECORD_STATES[kind] : []).map(function (s) { return { key: s, label: _planRecordsStateLabel(s) }; }),
+    total: (st && st.kind === kind) ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _planRecords.states = sel.slice();
+      _planRecordsLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 // stays empty while the feature is off or not wired.
 function planRecordsSectionHtml(v) {
   if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
@@ -5525,7 +5546,7 @@ function planRecordsSectionHtml(v) {
   const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
   const controls = v.view === 'list'
     ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <div id="planRecordsStateFilter" class="state-chip-row" style="display:inline-block;vertical-align:middle;">${planRecordsStateChipsHtml(kind, v)}</div>
         <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
         <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
         <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
@@ -5571,10 +5592,11 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.states = window._stateChipSets.planRecordsState.get();
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   let url;
   if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
   else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
@@ -5602,13 +5624,16 @@ window.planRecordsSetKind = function(kind) {
   const st = _planRecords;
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
-  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
+  st.kind = kind; st.states = []; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
-  _planRecords.stateFilter = String(state || '');
+  const csv = String(state || '');
+  _planRecords.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
 // planRecordsSearchInput waits for a pause in typing, then calls the search
@@ -5842,7 +5867,7 @@ function _plansBrowserFresh(project) {
     backlog: [], backlogTotal: 0,
     error: '', notice: '',
     seq: 0,
-    q: '', stateFilter: '',
+    q: '', states: [],  // selected state keys (a set; [] === all states)
     // archived is the archive scope (GET ?archived=): 'exclude' is the default
     // and sends no parameter, 'include' shows archived plans after the live
     // ones, 'only' shows only them.
@@ -5988,7 +6013,8 @@ function _plansLower(s) { return String(s || '').toLowerCase(); }
 // loaded Automata, or a registry row or finding linked to it matches. The row
 // and finding part is answered by the browse search route (matchPlans).
 function _plansMatch(st, p) {
-  if (st.stateFilter && p.state !== st.stateFilter) return false;
+  const sel = Array.isArray(st.states) ? st.states : [];
+  if (sel.length && sel.indexOf(p.state) < 0) return false;
   const q = _plansLower(st.q).trim();
   if (!q) return true;
   if (_plansLower(p.title).indexOf(q) >= 0) return true;
@@ -6013,7 +6039,12 @@ window.plansBrowserSearchInput = function(val) {
     _plansBrowserPaint();
   }, 250);
 };
-window.plansBrowserSetState = function(v) { _plansBrowser.stateFilter = String(v || ''); _plansBrowserPaint(); };
+window.plansBrowserSetState = function(v) {
+  const csv = String(v || '');
+  if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
+  _plansBrowser.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  _plansBrowserPaint();
+};
 
 // ── HTML ────────────────────────────────────────────────────────────────────
 function _plansStateLabel(state) {
@@ -6122,7 +6153,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
   const shown = list.filter(p => _plansMatch(st, p));
-  const filtering = !!(st.stateFilter || st.q.trim());
+  const filtering = !!(st.states.length || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
     ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
@@ -6138,8 +6169,8 @@ function plansBrowserListHTML(st) {
   const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
   const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
   let html = notice + main.rows + main.more;
-  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
-    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
   if (st.backlogTotal > 0 || back.count) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
@@ -6149,15 +6180,33 @@ function plansBrowserListHTML(st) {
   return html;
 }
 
+// plansBrowserStateChipsHtml is the browser's state filter as a multi-select
+// chip set: one chip per registry state, any combination selectable. The
+// selection has its own cs_state_chips_* key via the shared helper, and the
+// chip's own change handler is the mutation path (seeds the mirror, repaints).
+function plansBrowserStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'plansBrowserState',
+    items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _plansBrowser.states = sel.slice();
+      _plansBrowserPaint();
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function plansBrowserHTML(p) {
   const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
   _plansBrowserEnsureUnattributed();
-  const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  const stateSel = plansBrowserStateChipsHtml(st);
   const archOpts = ['exclude', 'include', 'only'].map(v => `<option value="${v}"${st && st.archived === v ? ' selected' : ''}>${escHtml(t(v === 'exclude' ? 'plans_release_archived_live' : v === 'include' ? 'plans_release_archived_with' : 'plans_release_archived_only'))}</option>`).join('');
   const docsUrl = '/diagrams.html#docs/howto/plan-records.md';
   const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
     <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
-    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select>
+    <div id="plansBrowserState" class="state-chip-row" style="vertical-align:middle;">${stateSel}</div>
     <select id="plansBrowserArchived" class="form-select" aria-label="${escHtml(t('plans_release_archived_label'))}" style="font-size:12px;" onchange="plansReleaseSetArchived(this.value)">${archOpts}</select>
     <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_docs_help'))} <a href="${escHtml(docsUrl)}" style="font-size:11px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>
     <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
@@ -6997,7 +7046,7 @@ const _RECORDS_TAB_PAGE = 50;
 const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
 
 function _recordsTabFresh(project) {
-  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+  return { project: project || '', status: 'idle', q: '', kind: '', states: [], rows: [], total: 0, error: '', seq: 0 };
 }
 let _recordsTab = _recordsTabFresh('');
 
@@ -7009,10 +7058,11 @@ function _recordsTabLoad(more) {
   const st = _recordsTab;
   const seq = ++st.seq;
   if (!more) st.status = 'loading';
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.states = window._stateChipSets.recordsTabState.get();
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
   if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
   if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
     if (_recordsTab !== st || seq !== st.seq) return;
     const rows = r && Array.isArray(r.records) ? r.records : [];
@@ -7057,11 +7107,32 @@ function recordsTabListHTML(st) {
   return status + st.rows.map(_recordsTabRowHTML).join('') + more;
 }
 
+// recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
+// chip set: one chip per state of the selected plan/finding type, any
+// combination selectable (the server accepts the states as
+// state=one,two,three). Its selection has its own cs_state_chips_* key via
+// the shared helper; the chip's own change handler is the mutation path
+// (seeds the tab's mirror and reloads).
+function recordsTabStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'recordsTabState',
+    items: _RECORDS_TAB_STATES.map(function (s) { return { key: s, label: _recordsTabStateLabel(s) }; }),
+    total: (st && st.status === 'ready') ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _recordsTab.states = sel.slice();
+      _recordsTabLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function recordsTabHTML(p) {
   const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
   const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
   const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
-  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const stateSel = `<div id="recordsTabStateFilter" class="records-tab-state-filter state-chip-row" style="vertical-align:middle;">${recordsTabStateChipsHtml(st)}</div>`;
   const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
   return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
@@ -7083,7 +7154,12 @@ window.recordsTabSearchInput = function(v) {
   window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
 };
 window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
-window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) {
+  const csv = String(v || '');
+  _recordsTab.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
+  return _recordsTabLoad(false);
+};
 window.recordsTabMore = function() { return _recordsTabLoad(true); };
 
 // recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
@@ -9870,6 +9946,161 @@ function _sheetRestore(view, snap, patchFn) {
   }
   if (typeof patchFn === 'function') _sheetPatch(root, patchFn);
   return root;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED multi-select state chip set — ONE reusable helper.
+//
+// Renders + manages the Sessions-page status-filter chip row for any other
+// page. Reuses the Sessions implementation's pieces and rules verbatim:
+// same container marker (`.state-filter-chips`), same chip class family
+// (`.backend-filter-badge`, `.active`, `.badge-count`), same colored state
+// dot, same native <button> with aria-pressed, same "Label (count)" tooltip,
+// same multi-select semantics (an empty selection === all states; a second
+// click clears that one chip; the "All" chip clears the whole group; 0-count
+// chips hide until picked, then stay visible so the pick can be backed out)
+// and the same per-viewer localStorage pattern — Sessions persists under
+// `cs_session_state_chips`; every other page gets its OWN `cs_state_chips_<name>`
+// key and never shares one with another page.
+//
+//   const chips = createStateChipSet({
+//     name: 'alerts-kind',            // → storage key cs_state_chips_alerts_kind
+//     total: 12,                      // optional — the "All" chip's count
+//     items: [                        // display order
+//       { key: 'failed', label: t('session_chip_failed'),
+//         count: 3, color: 'var(--error,#ef4444)' },
+//     ],
+//     onChange: (selected) => {},     // optional — after every change
+//   });
+//   chips.html();        // '<div class="state-filter-chips state-chip-set">…</div>' — re-call after data changes
+//   chips.summaryHTML(); // compact line: removable chips + "Clear all" ('' when nothing selected)
+//   chips.get();         // selected keys; [] === all states
+//   chips.toggle(key); chips.clear(); chips.isSelected(key); chips.match(key);
+//
+// Every page passes its OWN `name` so its filter is stored under its own
+// per-viewer key — two pages must not reuse one, or their filters would
+// track each other.
+// ─────────────────────────────────────────────────────────────────────────────
+window._stateChipSets = window._stateChipSets || {};
+
+function createStateChipSet(opts) {
+  const o = opts || {};
+  const name = String(o.name || 'chips').replace(/[^a-zA-Z0-9]+/g, '_');
+  const storageKey = 'cs_state_chips_' + name;
+  const items = (Array.isArray(o.items) ? o.items : [])
+    .filter(it => it && (it.key != null))
+    .map(it => ({
+      key: String(it.key),
+      label: String((it.label != null && it.label !== '') ? it.label : it.key),
+      color: it.color ? String(it.color) : '',
+      count: (it.count != null) ? it.count : null,
+    }));
+  const known = new Set(items.map(it => it.key));
+  let sel = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(raw)) sel = raw.map(String).filter(k => known.has(k));
+  } catch (_) { sel = []; } // corrupt/absent entry: start from "all"
+
+  function persist(next) {
+    try {
+      if (next.length) localStorage.setItem(storageKey, JSON.stringify(next));
+      else localStorage.removeItem(storageKey); // empty set === all: don't keep an empty array around
+    } catch (_) { /* storage blocked: the selection still lives in memory for this page */ }
+  }
+  function emit(next) {
+    if (typeof o.onChange === 'function') {
+      try { o.onChange(next.slice()); } catch (_) { /* a page callback must never kill the control */ }
+    }
+  }
+  function chipInner(it) {
+    // Same dot + label + count composition as _sessionsSheetStateChips().
+    return (it.color ? `<span style="color:${it.color};">●</span> ` : '')
+      + escHtml(it.label)
+      + (it.count != null ? `<span class="badge-count">${it.count}</span>` : '');
+  }
+
+  const api = {
+    name: name,
+    storageKey: storageKey,
+    // Empty array === all states selected.
+    get: () => sel.slice(),
+    isSelected: key => sel.indexOf(String(key)) >= 0,
+    // Row predicate for the page's list: passes everything when nothing is picked.
+    match: stateKey => sel.length === 0 || sel.indexOf(String(stateKey)) >= 0,
+    toggle: function (key) {
+      key = String(key);
+      if (!known.has(key)) return;
+      const next = sel.slice();
+      const i = next.indexOf(key);
+      if (i >= 0) next.splice(i, 1); else next.push(key); // second click clears that one chip
+      sel = next;
+      persist(next); emit(next);
+    },
+    clear: function () { // the "All" chip / summary "Clear all": whole group → all states
+      if (!sel.length) return;
+      sel = [];
+      persist(sel); emit(sel);
+    },
+    html: function () {
+      const allLabel = _stx('state_chips_all', 'All');
+      const hasTotal = (o.total != null) && o.total >= 0;
+      const allActive = sel.length === 0;
+      const allTitle = hasTotal ? `${allLabel} (${o.total})` : allLabel;
+      const allBtn = `<button class="backend-filter-badge ${allActive ? 'active' : ''}" type="button" onclick="stateChipsClear('${escJsAttr(name)}')" title="${escAttr(allTitle)}" aria-pressed="${allActive ? 'true' : 'false'}">${escHtml(allLabel)}${hasTotal ? `<span class="badge-count">${o.total}</span>` : ''}</button>`;
+      // GATE (operator 2026-05-10), same rule as Sessions: hide 0-count chips
+      // unless already picked; chips without a count are always shown.
+      const visible = items.filter(it => it.count == null || it.count > 0 || sel.indexOf(it.key) >= 0);
+      const chipsHtml = visible.map(it => {
+        const active = sel.indexOf(it.key) >= 0;
+        const title = (it.count != null) ? `${it.label} (${it.count})` : it.label;
+        return `<button class="backend-filter-badge ${active ? 'active' : ''}" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(it.key)}')" title="${escAttr(title)}" aria-pressed="${active ? 'true' : 'false'}"${it.color ? ` style="border-left:3px solid ${it.color};"` : ''}>${chipInner(it)}</button>`;
+      }).join('');
+      return `<div class="state-filter-chips state-chip-set">${allBtn}${chipsHtml}</div>`;
+    },
+    summaryHTML: function () {
+      // Compact summary line with a removable chip per selected value + a
+      // "Clear all" (same shape as the Sessions selected-filter line).
+      if (!sel.length) return '';
+      const byKey = {};
+      items.forEach(it => { byKey[it.key] = it; });
+      const selChips = sel.map(k => {
+        const it = byKey[k] || { label: k, color: '', count: null };
+        const removeTitle = _stx('state_chips_remove', 'Remove %1$s').replace('%1$s', it.label);
+        return `<button class="backend-filter-badge active" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(k)}')" title="${escAttr(removeTitle)}">${chipInner(it)}<span aria-hidden="true">✕</span></button>`;
+      }).join('');
+      const label = _stx('state_chips_selected', 'Selected filters');
+      const clearBtn = `<button type="button" class="state-chip-clear-all" onclick="stateChipsClear('${escJsAttr(name)}')">${escHtml(_stx('state_chips_clear_all', 'Clear all'))}</button>`;
+      return `<div class="state-chip-summary"><span class="state-chip-label">${escHtml(label)}:</span>${selChips}${clearBtn}</div>`;
+    },
+  };
+  // Registry the inline onclick handlers dispatch through (re-created on
+  // every page render with the same name — the fresh instance wins).
+  window._stateChipSets[name] = api;
+  return api;
+}
+window.createStateChipSet = createStateChipSet;
+window.stateChipsToggle = function (name, key) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.toggle(key);
+};
+window.stateChipsClear = function (name) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.clear();
+};
+
+// _stateChipsReconcile brings a built chip set's selection in line with a
+// comma-separated state list (a programmatic setter's new value) without
+// letting the chip's own change handler load the page for every toggle.
+function _stateChipsReconcile(chips, csv) {
+  const want = String(csv || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  window._stateChipsSeeding = true;
+  try {
+    chips.get().forEach(function (k) { if (want.indexOf(k) < 0) chips.toggle(k); });
+    want.forEach(function (k) { if (!chips.isSelected(k)) chips.toggle(k); });
+  } finally {
+    window._stateChipsSeeding = false;
+  }
 }
 
 // Shared chip markup so the full paint and the in-place patch always agree

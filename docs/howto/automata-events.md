@@ -71,7 +71,7 @@ directly.
 
 **In the PWA**
 
-- **Kind** chips toggle one or more event kinds on and off.
+- **Kind** chips toggle one or more event kinds on and off: no chip picked means every kind shows, several picked means an event matches *any* of the picked kinds, and a second tap on a picked chip removes exactly that one. They are multi-select, like the state chip sets on the Projects pages.
 - **Project** narrows the list to one project; *All projects* clears it.
 - **Search events** matches text in the summary, detail, project and the
   Automaton/Automation names, case-insensitively.

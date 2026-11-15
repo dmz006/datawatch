@@ -1726,6 +1726,27 @@ MCP, REST or the web app for those. Every verb calls the same route as the other
 surfaces, so the channel's sender checks come first and then the route's own
 capability check. `arcs` is accepted in place of `plan`.
 
+### `datawatch plan-record <subcommand>`
+
+Plan records: registry rows and findings. Alias `plan-records`. Reads need `autonomous:read`, writes `autonomous:write`; a 404 for any of these routes means plan records are turned off (`autonomous.plan_records.enabled`). See [howto/plan-records](howto/plan-records.md).
+
+| Subcommand | Description |
+|---|---|
+| `list [registry-row\|finding]` | One kind — both when left out — most recently updated first; `--project`, `--state`, `--limit` (the daemon returns 50 by default and 500 at most), `--offset`, `--json` |
+| `get <ref>` | One record. `ref` is an id, a uid, `row-<n>` (the old row number), an exact or older title, or a unique title prefix; a title that matches more than one record prints the candidates and exits non-zero. `--kind`, `--project`, `--json` |
+| `create` | `--kind registry-row\|finding`, `--project` and `--title` are required. Content: `--body` or `--body-file` (`-` for standard input), `--state`, `--legacy-number`, `--legacy-source`, `--shipped-by`, `--raised-by`, `--shipped-version`, `--needs-review`, `--review-reason`, `--link kind=ref` (repeatable) and `--alias` (repeatable). `--json` |
+| `update <ref>` | A flag you leave out leaves that field alone. The same content flags as `create`, except `--legacy-number`/`--alias` in favour of `--add-alias` (repeatable). `project`, `kind` and the old row number cannot change; a rename keeps the old title as an alias |
+| `search <text>` | Search both kinds by words; a title hit ranks above an older-title hit, which ranks above a body hit. Narrow with `--kind`, `--project`, `--state`, `--limit`, `--offset`, `--json` |
+| `import` | Import a project's registry rows and findings files; previews by default, add `--dry-run=false` to write. `--project` (default `datawatch`), `--source registry\|findings\|all`, `--policy suffix\|rename\|skip`; conflicts land on the record as a review flag. `--json` |
+
+The `--state` filter of `list` and `search` takes **one state or a comma-separated list** of them. The valid states depend on the kind: registry rows `open, planned, in_progress, blocked, shipped, done, deferred, cancelled`; findings `open, triaged, fixed, wontfix, duplicate`. A state a kind does not admit is refused with the valid names — with no `--kind`, a state that fits only one kind simply lists that one. Add `--json` to any subcommand for the raw daemon reply.
+
+```
+datawatch plan-record list --state open,in_progress
+datawatch plan-record search widget --state open
+datawatch plan-record import --dry-run=false
+```
+
 ### `datawatch cooldown <subcommand>`
 
 | Subcommand | Description |

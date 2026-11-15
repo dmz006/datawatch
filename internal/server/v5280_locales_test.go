@@ -171,6 +171,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_housekeeping_task_chain_help",
 		"settings_housekeeping_advance_judge",
 		"settings_housekeeping_advance_judge_help",
+		// Settings groups / card titles / nav labels
+		"state_chips_all",
+		"state_chips_selected",
+		"state_chips_clear_all",
+		"state_chips_remove",
 		"settings_housekeeping_lane_fill",
 		"settings_housekeeping_lane_fill_help",
 		"settings_housekeeping_leftovers",
@@ -798,6 +803,36 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 			if _, ok := bundle[k]; !ok {
 				t.Errorf("locale %s missing required key %q", lang, k)
 			}
+		}
+	}
+}
+
+// TestLocalesStateChipSetParity asserts the shared multi-select state chip
+// helper (createStateChipSet in app.js) is fully labeled in every locale:
+// the same four chrome keys exist in all five bundles with a non-empty value,
+// so no language can fall back to the raw key name on the chip row, the
+// "All" chip, the summary line or the Remove tooltip.
+func TestLocalesStateChipSetParity(t *testing.T) {
+	keys := []string{
+		"state_chips_all",
+		"state_chips_selected",
+		"state_chips_clear_all",
+		"state_chips_remove",
+	}
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		for _, k := range keys {
+			if v, ok := bundle[k]; !ok || strings.TrimSpace(v) == "" {
+				t.Errorf("locale %s is missing (or empty) state-chip key %q", lang, k)
+			}
+		}
+	}
+	// The %1$s placeholder in state_chips_remove must survive translation —
+	// the helper substitutes the picked label into it.
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		if !strings.Contains(bundle["state_chips_remove"], "%1$s") {
+			t.Errorf("locale %s state_chips_remove must keep the %%1$s placeholder, got %q", lang, bundle["state_chips_remove"])
 		}
 	}
 }

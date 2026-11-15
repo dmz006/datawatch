@@ -3306,7 +3306,9 @@ The **Plans browser** is the body of the **Plans** page sub-tab on the Projects 
 
 ### Records sub-tab
 
-The **Records** page sub-tab (third in the Projects page, after Overview and Plans) lists every registry row and finding of the project with the Plan and Automata each links to, read from `GET /api/plan-records/browse`. It has a search box, a kind filter and **Load more**; a Plan link opens the Plans sub-tab on that Plan. The Overview page sub-tab shows a summary: the active Plans with state and progress, what is next, and counts of Plans, registry rows and findings.
+The **Records** page sub-tab (third in the Projects page, after Overview and Plans) lists every registry row and finding of the project with the Plan and Automata each links to, read from `GET /api/plan-records/browse`. It has a search box, a kind filter and a multi-select state chip set (no chip picked means all states, several picked match *any* of the picked states, a second tap on a picked chip removes exactly that one, the **All** chip, active while nothing is picked, clears the whole set, and the picked chip set is remembered in this browser only, never shared with the Plans browser or the registry card), plus **Load more**; a Plan link opens the Plans sub-tab on that Plan. The Overview page sub-tab shows a summary: the active Plans with state and progress, what is next, and counts of Plans, registry rows and findings.
+
+The **Registry and findings** section, under the Records page sub-tab, filters its Registry rows and Findings views with the same kind of multi-select state chip set: one chip per state of the shown kind, no chip picked means all states, several picked match *any* of them (sent to the daemon as `state=one,two`), and **All** clears the set. Its picks are remembered in this browser only, separately from the Records sub-tab and the Plans browser. See [howto/plan-records](howto/plan-records.md).
 
 ### Plan record
 
@@ -3383,7 +3385,7 @@ The **plans write API** creates, orders and links plans: `POST /api/plans`, `PUT
 
 ### Plans read API
 
-The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
+The **plans read API** shows a project as plans in priority order: `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks` and `GET /api/plan-records/browse`. It reads the plan-record summary index and pages every list with `limit` and `offset`. The `state` filter of the `browse` route takes one state, or a comma-separated list; without `kind` a state of the registry-row or the finding vocabulary is admitted, with `kind` only the states of that kind. See [howto/plan-records.md](howto/plan-records.md#reading-plans).
 
 ### Next marker
 

@@ -5866,5 +5866,9 @@
   "plans_release_attach_not_found": "No encontrado.",
   "plans_release_attach_placement_failed": "Asignado, pero la asignación al tema falló.",
   "plans_release_attach_refused": "Rechazado por el servidor.",
-  "plans_release_rowplans_conflicts_head": "Conflictos:"
+  "plans_release_rowplans_conflicts_head": "Conflictos:",
+  "state_chips_all": "Todos",
+  "state_chips_selected": "Filtros seleccionados",
+  "state_chips_clear_all": "Limpiar todo",
+  "state_chips_remove": "Quitar %1$s"
 }

@@ -295,8 +295,11 @@ type SummaryFilter struct {
 	Kind    Kind
 	Project string
 	State   State
-	Limit   int
-	Offset  int
+	// States admits a whole set of states as well; empty means every
+	// state.
+	States []State
+	Limit  int
+	Offset int
 	// IncludeArchived adds archived plans to the result; ArchivedOnly returns
 	// only archived plans. With neither set, archived plans are left out.
 	IncludeArchived bool
@@ -305,7 +308,7 @@ type SummaryFilter struct {
 
 func (f SummaryFilter) matches(sm Summary) bool {
 	return (f.Kind == "" || sm.Kind == f.Kind) && (f.Project == "" || sm.Project == f.Project) &&
-		(f.State == "" || sm.State == f.State) &&
+		(f.State == "" || sm.State == f.State) && (len(f.States) == 0 || stateIn(f.States, sm.State)) &&
 		ArchiveScope{IncludeArchived: f.IncludeArchived, ArchivedOnly: f.ArchivedOnly}.allows(sm.Archived)
 }
 

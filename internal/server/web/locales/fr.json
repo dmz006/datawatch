@@ -5866,5 +5866,9 @@
   "plans_release_attach_not_found": "Non trouvé.",
   "plans_release_attach_placement_failed": "Rattaché, mais le placement dans le thème a échoué.",
   "plans_release_attach_refused": "Refusé par le serveur.",
-  "plans_release_rowplans_conflicts_head": "Conflits :"
+  "plans_release_rowplans_conflicts_head": "Conflits :",
+  "state_chips_all": "Tous",
+  "state_chips_selected": "Filtres sélectionnés",
+  "state_chips_clear_all": "Tout effacer",
+  "state_chips_remove": "Retirer %1$s"
 }

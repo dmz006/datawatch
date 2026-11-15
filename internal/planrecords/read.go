@@ -273,9 +273,12 @@ func (s *Store) OverviewIn(project string, maxActive int, scope ArchiveScope) Pr
 // BrowseFilter narrows Browse. Zero fields match everything. Kind is empty for
 // both kinds, else registry_row or finding.
 type BrowseFilter struct {
-	Query   string
-	Kind    Kind
-	State   State
+	Query string
+	Kind  Kind
+	State State
+	// States admits a whole set of states as well; empty means every
+	// state.
+	States  []State
 	Project string
 	Page
 }
@@ -305,6 +308,7 @@ func (s *Store) Browse(f BrowseFilter) ([]BrowseRow, int) {
 			continue
 		}
 		if (f.Kind != "" && sm.Kind != f.Kind) || (f.State != "" && sm.State != f.State) ||
+			(len(f.States) > 0 && !stateIn(f.States, sm.State)) ||
 			(f.Project != "" && sm.Project != f.Project) {
 			continue
 		}

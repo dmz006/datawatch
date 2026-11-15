@@ -5866,5 +5866,9 @@
   "plans_release_attach_not_found": "見つかりません。",
   "plans_release_attach_placement_failed": "アタッチしましたが、テーマへの配置に失敗しました。",
   "plans_release_attach_refused": "サーバーに拒否されました。",
-  "plans_release_rowplans_conflicts_head": "競合:"
+  "plans_release_rowplans_conflicts_head": "競合:",
+  "state_chips_all": "すべて",
+  "state_chips_selected": "選択中のフィルター",
+  "state_chips_clear_all": "すべてクリア",
+  "state_chips_remove": "%1$s を外す"
 }
