@@ -490,9 +490,13 @@ func (s *Server) handlePlanRecordBrowse(w http.ResponseWriter, r *http.Request) 
 		if f.Kind != "" {
 			kinds = []planrecords.Kind{f.Kind}
 		}
-		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds, f.Kind == ""))
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds))
 		if err != nil {
 			planRecordsError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if len(words) == 0 {
+			planRecordsError(w, http.StatusBadRequest, "state must be one of "+strings.Join(stateWords(kinds), ", "))
 			return
 		}
 		f.States = statesFromWords(words)

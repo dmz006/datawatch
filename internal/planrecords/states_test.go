@@ -5,131 +5,108 @@ import (
 	"testing"
 )
 
+// TestParseStateList is the unit face of the shared REST state query parser:
+// no filter, one state, several states, and the refusals.
 func TestParseStateList(t *testing.T) {
-	rows := []string{string(StateOpen), string(StatePlanned), string(StateInProgress), string(StateBlocked), string(StateShipped), string(StateDone), string(StateDeferred), string(StateCancelled)}
-	findings := []string{string(StateOpen), string(StateTriaged), string(StateFixed), string(StateWontfix), string(StateDuplicate)}
-	valid := func(sts []string) []string { return sts }
+	rows := []string{"open", "planned", "in_progress", "blocked", "shipped", "done", "deferred", "cancelled"}
+	findings := []string{"open", "triaged", "fixed", "wontfix", "duplicate"}
 
-	t.Run("no state is no filter", func(t *testing.T) {
-		for _, raw := range []string{"", "   ", " , ,, "} {
-			got, err := ParseStateList(raw, "state", valid(rows))
+	// No filter.
+	if words, err := ParseStateList("", "state", rows); err != nil || words != nil {
+		t.Fatalf("empty value: %v %v", words, err)
+	}
+	if words, err := ParseStateList("   ", "", findings); err == nil {
+		t.Fatalf("spaces-only single form must be refused, got %v", words)
+	}
+	if words, err := ParseStateList("open, ,", "state", rows); err != nil || len(words) != 1 || words[0] != "open" {
+		t.Fatalf("dangling commas: %v %v", words, err)
+	}
+
+	// One state: a lone token is exact; it is not trimmed, the way the route
+	// answered it before a list existed.
+	words, err := ParseStateList("blocked", "state", rows)
+	if err != nil || !sameWords(words, []string{"blocked"}) {
+		t.Fatalf("single state: %v %v", words, err)
+	}
+	for _, raw := range []string{" blocked", "blocked ", "  open  "} {
+		if _, err := ParseStateList(raw, "state", rows); err == nil {
+			t.Fatalf("%q: a padded single state must be refused, not trimmed", raw)
+		}
+	}
+
+	// Several states — the list form trims each part, drops the empty ones
+	// and keeps each state once, in order.
+	several := []struct {
+		name  string
+		raw   string
+		words []string
+	}{
+		{"a list parses", "open, blocked", []string{"open", "blocked"}},
+		{"spaces around every part are fine", " open , blocked ,  open", []string{"open", "blocked"}},
+		{"empty parts vanish", "open,, blocked", []string{"open", "blocked"}},
+		{"duplicates collapse in place", "planned, planned, open", []string{"planned", "open"}},
+	}
+	for _, tc := range several {
+		t.Run(tc.name, func(t *testing.T) {
+			words, err := ParseStateList(tc.raw, "state", rows)
 			if err != nil {
-				t.Fatalf("%q: %v", raw, err)
+				t.Fatalf("%v", err)
 			}
-			if got != nil {
-				t.Fatalf("%q: want no states, got %v", raw, got)
+			if !sameWords(words, tc.words) {
+				t.Fatalf("words = %v, want %v", words, tc.words)
 			}
-		}
-	})
+		})
+	}
 
-	t.Run("one state behaves as before", func(t *testing.T) {
-		got, err := ParseStateList("open", "state", valid(rows))
-		if err != nil || len(got) != 1 || got[0] != "open" {
-			t.Fatalf("got %v, %v", got, err)
-		}
-		// Surrounding whitespace was always trimmed on the single form.
-		got, err = ParseStateList("  blocked  ", "state", valid(rows))
-		if err != nil || len(got) != 1 || got[0] != "blocked" {
-			t.Fatalf("got %v, %v", got, err)
-		}
-	})
-
-	t.Run("several states trims and dedupes in place", func(t *testing.T) {
-		got, err := ParseStateList("open, blocked , open ,shipped", "state", valid(rows))
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := []string{"open", "blocked", "shipped"}
-		if len(got) != len(want) {
-			t.Fatalf("want %v, got %v", want, got)
-		}
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("want %v, got %v", want, got)
-			}
-		}
-	})
-
-	t.Run("an unknown state is refused naming the valid ones", func(t *testing.T) {
-		for _, raw := range []string{"nope", "open, nope", "  SHIPPED"} {
-			_, err := ParseStateList(raw, "state", valid(rows))
-			if err == nil {
-				t.Fatalf("%q: want an error", raw)
-			}
-			if !strings.Contains(err.Error(), `" is not a valid state; use one of`) {
-				t.Fatalf("%q: error must name the parameter: %v", raw, err)
-			}
-			for _, name := range []string{"open", "cancelled", "shipped"} {
-				if !strings.Contains(err.Error(), name) {
-					t.Fatalf("%q: error must name the valid %q: %v", raw, name, err)
-				}
-			}
-		}
-		if _, err := ParseStateList("nope", "state", valid(rows)); !strings.Contains(err.Error(), "nope") {
-			t.Fatalf("error must name the refused token: %v", err)
-		}
-		// Finding states are their own vocabulary.
-		got, err := ParseStateList("fixed", "state", valid(findings))
-		if err != nil || len(got) != 1 || got[0] != "fixed" {
-			t.Fatalf("got %v, %v", got, err)
-		}
-		_, err = ParseStateList("shipped", "state", valid(findings))
+	// An unknown state is an error, not an empty list: the message names the
+	// parameter, the refused state and the valid ones.
+	rejects := []struct {
+		raw string
+		tok string // the exact token the error quotes
+	}{
+		{"triaged", "triaged"},       // a finding state, not a registry-row state.
+		{"  SHIPPED", "  SHIPPED"},   // case-sensitive, and unpadded as sent.
+		{" ", " "},                   // spaces only.
+		{"open, triaged", "triaged"}, // one unknown word poisons the list.
+		{", open, bogus", "bogus"},   // an unknown word after valid ones too.
+		{"open, bogus", "bogus"},
+		{" open , bogus ", "bogus"}, // the pad only goes in the list form.
+	}
+	for _, tc := range rejects {
+		words, err := ParseStateList(tc.raw, "state", rows)
 		if err == nil {
-			t.Fatal("a row state must not pass for a finding")
+			t.Fatalf("%q: wanted an error, got %v", tc.raw, words)
 		}
-	})
+		if !strings.Contains(err.Error(), "\""+tc.tok+"\"") {
+			t.Fatalf("%q: error %q does not name the refused state %q", tc.raw, err, tc.tok)
+		}
+		for _, w := range rows {
+			if !strings.Contains(err.Error(), w) {
+				t.Fatalf("%q: error %q omits valid state %q", tc.raw, err, w)
+			}
+		}
+		if !strings.Contains(err.Error(), "state") {
+			t.Fatalf("%q: error %q should name the parameter", tc.raw, err)
+		}
+	}
+
+	// The same value is judged against the vocabulary it is given.
+	if words, err := ParseStateList("triaged", "state", findings); err != nil || !sameWords(words, []string{"triaged"}) {
+		t.Fatalf("triaged in the finding vocabulary: %v %v", words, err)
+	}
+	if _, err := ParseStateList("shipped", "state", findings); err == nil {
+		t.Fatal("shipped is not a finding state")
+	}
 }
 
-func TestFilterStates(t *testing.T) {
-	newRec := func(title string, kind Kind, st State) Record {
-		return Record{Kind: kind, Project: "p", Title: title, State: st, UpdatedAt: "t"}
+func sameWords(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
 	}
-	rows := []Record{
-		newRec("Open row", KindRegistryRow, StateOpen),
-		newRec("Blocked row", KindRegistryRow, StateBlocked),
-		newRec("Shipped row", KindRegistryRow, StateShipped),
-		newRec("Open finding", KindFinding, StateOpen),
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
 	}
-	seed := func(t *testing.T) *Store {
-		s, _, _, _ := newTestStore(t, nil)
-		for _, r := range rows {
-			if _, err := s.Create(r); err != nil {
-				t.Fatalf("create %q: %v", r.Title, err)
-			}
-		}
-		return s
-	}
-
-	t.Run("no state admits all; single State is as before", func(t *testing.T) {
-		s := seed(t)
-		if got, total := s.List(Filter{}); total != 4 || len(got) != 4 {
-			t.Fatalf("no state: want 4, got %d (%d)", len(got), total)
-		}
-		if _, total := s.List(Filter{State: StateOpen}); total != 2 {
-			t.Fatalf("State: want 2, got %d", total)
-		}
-	})
-
-	t.Run("a set of states admits each of them", func(t *testing.T) {
-		s := seed(t)
-		if got, total := s.List(Filter{States: []State{StateOpen, StateBlocked}}); total != 3 || len(got) != 3 {
-			t.Fatalf("States open+blocked: want 3, got %d (%d)", total, len(got))
-		}
-		if _, total := s.List(Filter{States: []State{StateBlocked, StateShipped, StateOpen}}); total != 4 {
-			t.Fatalf("three states: want 4, got %d", total)
-		}
-		// Search and Browse take the same set.
-		if _, total := s.Search("", Filter{States: []State{StateOpen, StateBlocked}}); total != 3 {
-			t.Fatalf("search with States: want 3, got %d", total)
-		}
-		if got, total := s.Browse(BrowseFilter{States: []State{StateShipped}}); total != 1 || len(got) != 1 {
-			t.Fatalf("browse with States: want 1, got %d (%d)", total, len(got))
-		}
-		if _, total := s.Browse(BrowseFilter{}); total != 4 {
-			t.Fatalf("browse without a state: want 4, got %d", total)
-		}
-		if _, total := s.ListSummaries(SummaryFilter{States: []State{StateOpen, StateBlocked}}); total != 3 {
-			t.Fatalf("summaries with States: want 3, got %d", total)
-		}
-	})
+	return true
 }

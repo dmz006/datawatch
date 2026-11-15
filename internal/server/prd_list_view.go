@@ -150,7 +150,13 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 
 	statuses := map[string]bool{}
 	if v := q.Get("status"); v != "" {
-		words, err := planrecords.ParseStateList(strings.ToLower(v), "status", prdListStatusWords)
+		sv := strings.ToLower(v)
+		// The PRD list always trimmed a single status, so keep the old single
+		// form: lowercase, then trim when no comma is present at all.
+		if !strings.ContainsRune(sv, ',') {
+			sv = strings.TrimSpace(sv)
+		}
+		words, err := planrecords.ParseStateList(sv, "status", prdListStatusWords)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

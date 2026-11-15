@@ -459,33 +459,13 @@ func planStateList(kind planrecords.Kind) string {
 }
 
 // stateWords is the state vocabulary a plan-records state query admits.
-// One kind is that kind's vocabulary; several kinds is the union (list and
-// search over both kinds), or the intersection when the route requires a
-// state that every kind knows (browse without a kind).
-func stateWords(kinds []planrecords.Kind, intersect bool) []string {
+// One kind is that kind's vocabulary; a route without a kind (list or
+// search over both kinds, browse without a kind) is the union of the two
+// kinds' states, each state once, in first-occurrence order.
+func stateWords(kinds []planrecords.Kind) []string {
 	var out []string
-	seen := map[string]bool{}
-	add := func(st planrecords.State) {
-		if !seen[string(st)] {
-			seen[string(st)] = true
-			out = append(out, string(st))
-		}
-	}
-	if !intersect {
-		for _, k := range kinds {
-			for _, st := range planrecords.States(k) {
-				add(st)
-			}
-		}
-		return out
-	}
-	for _, st := range planrecords.States(kinds[0]) {
-		for _, k := range kinds[1:] {
-			if planrecords.ValidState(k, st) {
-				add(st)
-				break
-			}
-		}
+	for _, st := range planrecords.StatesForKinds(kinds...) {
+		out = append(out, string(st))
 	}
 	return out
 }
@@ -519,9 +499,13 @@ func planRecordFilter(w http.ResponseWriter, r *http.Request, fixedKind planreco
 		if f.Kind != "" {
 			kinds = []planrecords.Kind{f.Kind}
 		}
-		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds, false))
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds))
 		if err != nil {
 			planRecordsError(w, http.StatusBadRequest, err.Error())
+			return f, false
+		}
+		if len(words) == 0 {
+			planRecordsError(w, http.StatusBadRequest, "state must be one of "+strings.Join(stateWords(kinds), ", "))
 			return f, false
 		}
 		f.States = statesFromWords(words)

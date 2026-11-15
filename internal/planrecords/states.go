@@ -11,18 +11,30 @@ import (
 	"strings"
 )
 
-// ParseStateList splits a comma-separated state value. It trims the
-// surrounding whitespace of each state and de-duplicates them, keeping the
-// first occurrence in place. An unknown state is refused with a plain
-// message naming the valid states in the order given. A value without
-// states (empty, or only commas and whitespace) returns nil: no state
-// filter. The single-state form is unchanged — one token must itself be a
-// valid state, and the same value that used to be accepted still is.
+// ParseStateList splits a comma-separated state value. The list form trims
+// the surrounding whitespace of each part, skips parts that vanish and
+// de-duplicates in order, keeping the first occurrence. An unknown state is
+// refused with a plain message naming the parameter, the refused state and
+// the valid states in the order given: %s %q is not a valid %s; use one of …
+// A value without states (empty, or only commas and whitespace) returns
+// nil: no state filter.
+//
+// The single form is kept exact the way the route had it before a list
+// existed: without a comma the token must itself be a valid state, so a
+// value padded with spaces is refused rather than trimmed — and so is an
+// unknown state.
 func ParseStateList(raw, name string, valid []string) ([]string, error) {
-	var out []string
+	if raw == "" {
+		return nil, nil
+	}
+	list := strings.ContainsRune(raw, ',')
+	out := make([]string, 0, 2)
 	seen := make(map[string]bool, len(valid))
 	for _, part := range strings.Split(raw, ",") {
-		tok := strings.TrimSpace(part)
+		tok := part
+		if list {
+			tok = strings.TrimSpace(tok)
+		}
 		if tok == "" || seen[tok] {
 			continue
 		}
