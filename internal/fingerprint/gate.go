@@ -23,6 +23,11 @@ type PeerRef struct {
 	URL     string
 	Token   string
 	OptedIn bool
+	// TLSSkipVerify and TLSCertFingerprint are the peer's outbound TLS
+	// settings (empty pin = default CA-chain verification). The usage
+	// cache's client builder reads them; the gate's decisions never do.
+	TLSSkipVerify      bool
+	TLSCertFingerprint string
 }
 
 // capacityPoolView is everything the gate reads out of a peer's

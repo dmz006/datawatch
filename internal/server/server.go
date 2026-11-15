@@ -1129,6 +1129,17 @@ func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	}
 }
 
+// SetTLSPeerWarnTracker wires the peer certificate non-verification
+// warning tracker (log + once-per-peer-per-run system alert) into the
+// server's create/update handlers. Nil (unwired) is safe: the handlers
+// only nil-check the tracker when they run, and it is only invoked from
+// the server side.
+func (s *HTTPServer) SetTLSPeerWarnTracker(t *TLSPeerWarnTracker) {
+	if s.api != nil {
+		s.api.SetTLSPeerWarnTracker(t)
+	}
+}
+
 // FederationSessions returns this host's sessions and each enabled peer's, with
 // a per-peer error for each peer that could not be read.
 func (s *HTTPServer) FederationSessions() FederationResponse {

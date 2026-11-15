@@ -28,8 +28,8 @@
 // Import cycle: the registry, the local host name, the settings, the HTTP
 // client factory, the audit writer and the alert store are injected function
 // values (PeerForwarderConfig). This package does not import internal/server
-// or internal/session. The daemon passes multiserver.HTTPClient, so a peer's
-// TLS skip-verify setting behaves like every other peer call.
+// or internal/session. The daemon passes multiserver.PeerHTTPClient, so a
+// peer's TLS pin and skip-verify settings behave like every other peer call.
 
 package autonomous
 
@@ -162,6 +162,10 @@ type PeerRef struct {
 	URL           string
 	Token         string
 	TLSSkipVerify bool
+	// TLSCertFingerprint is the peer's pinned leaf-certificate SHA-256
+	// (empty = default CA-chain verification). It flows into the NewClient
+	// seam, the same shared builder every other peer call uses.
+	TLSCertFingerprint string
 	// Federated is the registry's Federated flag: only a federation peer
 	// (added through the federation peer API) may receive forwarded events.
 	Federated bool
@@ -198,8 +202,10 @@ type PeerForwarderConfig struct {
 	// Settings returns the live settings; it is called on every forward.
 	Settings func() ForwardSettings
 	// NewClient builds the HTTP client for one attempt (the daemon passes
-	// multiserver.HTTPClient). The peer's TLS skip-verify setting is passed in.
-	NewClient func(skipVerify bool, timeout time.Duration) *http.Client
+	// multiserver.PeerHTTPClient). The peer's TLS skip-verify setting and
+	// pinned certificate fingerprint (empty = default verification) are
+	// passed in.
+	NewClient func(skipVerify bool, pinnedSHA256 string, timeout time.Duration) *http.Client
 	// Audit records one JSON-lines + CEF audit entry (the SetAuditFn path).
 	Audit func(action string, details map[string]any)
 	// RaiseAlert records an alert in the alert store.
@@ -498,7 +504,7 @@ func (f *PeerForwarder) forward(ctx context.Context, sub Subscription, ev Lifecy
 // peer's TLS setting and timeout; a factory-supplied client can never follow a
 // redirect either, so the bearer token is never sent to a second host.
 func (f *PeerForwarder) client(peer PeerRef, set ForwardSettings) *http.Client {
-	c := f.cfg.NewClient(peer.TLSSkipVerify, set.Timeout)
+	c := f.cfg.NewClient(peer.TLSSkipVerify, peer.TLSCertFingerprint, set.Timeout)
 	if c == nil {
 		c = &http.Client{Timeout: set.Timeout}
 	}

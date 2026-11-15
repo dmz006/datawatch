@@ -44,7 +44,7 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
     - `DATAWATCH_AGENT_ID` — its own UUID
     - `DATAWATCH_TASK` — the operator's task string
     - `DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS` — operator-tunable (S3.4)
-    - `DATAWATCH_PARENT_CERT_FINGERPRINT` — TLS pin (S4.3, when TLS enabled)
+    - `DATAWATCH_PARENT_CERT_FINGERPRINT` — TLS pin (S4.3, when TLS enabled); the worker's F10 observer push, when enabled, pins to the same fingerprint
    And — when the project has a Git URL and a TokenBroker is wired —
    the parent mints a short-lived git token (S5.1) for this worker
    that rides home in the bootstrap response (NOT in the spawn env).
@@ -901,6 +901,14 @@ tests/integration/spawn_k8s.sh    [BASE_URL]   # kind=k8s — honours
   projection. When the parent has no TLS cert configured, workers
   fall back to `InsecureSkipVerify` — explicit dev/legacy mode,
   logged as a warning.
+* **Observer push TLS (F10)** — the worker's observer push into the
+  parent verifies the parent's certificate: against that same
+  fingerprint when `DATAWATCH_PARENT_CERT_FINGERPRINT` is set (a
+  malformed pin fails closed; the pin wins over the opt-out), or the
+  system trust store when it is not (one startup notice says so).
+  `DATAWATCH_OBSERVER_PUSH_INSECURE=1|true|yes|on` is the explicit
+  skip, honored only when no pin is set, with a startup warning naming
+  the parent host (no tokens).
 
 ## Known gaps (Sprint 3 scope)
 

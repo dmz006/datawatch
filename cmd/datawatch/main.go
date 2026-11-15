@@ -2473,7 +2473,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			parentFingerprint = fp
 		} else {
 			fmt.Fprintf(os.Stderr,
-				"[warn] could not fingerprint TLS cert at %s: %v (workers will fall back to InsecureSkipVerify)\n",
+				"[warn] could not fingerprint TLS cert at %s: %v (the bootstrap channel keeps its existing unverified fallback, while observer pushes verify against the system trust store unless a pin is set or explicitly opted out)\n",
 				cfg.Server.TLSCert, err)
 		}
 	}
@@ -3769,6 +3769,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					remoteDispatcher.SetStore(msStore)
 					// BL343 — background peer health monitor.
 					server.StartPeerHealthMonitor(context.Background(), msStore, alertStore)
+					// Peer certificate non-verification: warn-level system
+					// alert, at most once per peer per daemon run (the
+					// one-line warning itself is also logged and surfaced in
+					// create/update responses).
+					tlsWarnTracker := server.NewTLSPeerWarnTracker(func(peerName, warning string) {
+						alertStore.AddSystem(
+							alertspkg.LevelWarn,
+							"Peer certificate not verified",
+							warning,
+						)
+					})
+					httpServer.SetTLSPeerWarnTracker(tlsWarnTracker)
+					// Startup sweep: a seeded/stored peer whose certificate
+					// is not verified warns once for this daemon run.
+					for _, e := range msStore.List() {
+						tlsWarnTracker.Notify(e)
+					}
 				} else {
 					fmt.Printf("[servers] store init failed: %v\n", msErr)
 				}
@@ -7255,6 +7272,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						URL:                e.URL,
 						Token:              e.Token,
 						TLSSkipVerify:      e.TLSSkipVerify,
+						TLSCertFingerprint: e.TLSCertFingerprint,
 						Federated:          e.Federated,
 						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
 						HasAutonomousRead:  federation.Check(caps, federation.CapAutonomousRead),
@@ -7298,9 +7316,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					LookupPeer: lifecycleLookupPeer,
 					LocalHost:  lifecycleLocalHost,
 					Settings:   lifecycleForwardSettings,
-					// The daemon's peer client: a peer's TLS skip-verify setting
-					// behaves as on every other peer call.
-					NewClient: multiserver.HTTPClient,
+					// The daemon's peer client: the peer's TLS pin and
+					// skip-verify behave as on every other peer call.
+					NewClient: multiserver.PeerHTTPClient,
 					Audit:     lifecycleAuditFn,
 					RaiseAlert: func(level, title, body string) {
 						lv := alertspkg.LevelInfo
@@ -7324,7 +7342,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						LookupPeer: lifecycleLookupPeer,
 						LocalHost:  lifecycleLocalHost,
 						Settings:   lifecycleForwardSettings,
-						NewClient:  multiserver.HTTPClient,
+						NewClient:  multiserver.PeerHTTPClient,
 						Audit:      lifecycleAuditFn,
 						RaiseAlert: func(level, title, body string) {
 							lv := alertspkg.LevelInfo
@@ -11345,7 +11363,23 @@ func federationSelfName(peerName string) string {
 	return "datawatch-primary"
 }
 
+// federationInsecureWarning returns the operator-facing warning for a
+// federation push link with TLS verification skipped, or "" when
+// verification is on. It never contains a token.
+func federationInsecureWarning(fed observerpkg.FederationCfg) string {
+	if !fed.Insecure {
+		return ""
+	}
+	return "TLS certificate verification is SKIPPED for the federation root " +
+		fed.ParentURL + ". Anything on the network path can read and alter the " +
+		"pushed stats. Remove observer.federation.insecure to verify the " +
+		"root's certificate normally."
+}
+
 func startFederationPusher(coll *observerpkg.Collector, fed observerpkg.FederationCfg, selfName, version string) {
+	if w := federationInsecureWarning(fed); w != "" {
+		fmt.Printf("[observer/federation] WARNING: %s\n", w)
+	}
 	tokenPath := fed.TokenPath
 	if tokenPath == "" {
 		// Best-effort: nest under <data_dir>/observer/. We don't
@@ -16981,7 +17015,7 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 
 	// Test connectivity
 	fmt.Printf("Testing connection to %s ...\n", url)
-	client := multiserver.HTTPClient(tlsSkipVerify, 5*time.Second)
+	client := multiserver.PeerHTTPClient(tlsSkipVerify, "", 5*time.Second)
 	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(url, "/")+"/api/health", nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -17956,13 +17990,39 @@ switching to the Go bridge.`,
 	return cmd
 }
 
+// workerObserverPushConfig derives the observer push client config for an
+// F10 worker pushing to the given parent. TLS trust posture comes from the
+// worker's environment via WorkerTLSSettings: a parent certificate
+// fingerprint pin wins and the leaf is verified against it; otherwise the
+// link verifies against the system trust store. DATAWATCH_OBSERVER_PUSH_INSECURE
+// is an explicit, warned opt-out for existing self-signed setups — it is only
+// honoured when no pin is set. The returned warnings are operator-facing and
+// must all be printed.
+func workerObserverPushConfig(peerName, parentURL string, getenv func(string) string) (observerpeerpkg.Config, []string) {
+	pin, insecure, warnings := observerpeerpkg.WorkerTLSSettings(getenv, parentURL)
+	return observerpeerpkg.Config{
+		ParentURL:    parentURL,
+		Name:         peerName,
+		Shape:        "A",
+		PinnedSHA256: pin,
+		Insecure:     insecure,
+	}, warnings
+}
+
 // startWorkerObserverPush — S13. Boots an in-process Shape A
 // observer collector inside an F10 worker and pushes
 // StatsResponse v2 to the parent every 5s. The peer token was
 // minted by the parent's Manager.Spawn and delivered through the
-// bootstrap-env injection. Insecure-TLS is on by default — workers
-// already trust the parent through the bootstrap-channel pinning;
-// the observer push reuses the same trust boundary.
+// bootstrap-env injection.
+//
+// TLS trust posture: when the parent injects its certificate
+// fingerprint pin (the bootstrap-env variable), the push verifies
+// the parent's leaf against that pin; otherwise certificate
+// verification runs against the system trust store normally.
+// DATAWATCH_OBSERVER_PUSH_INSECURE is an explicit, warned opt-out
+// that skips verification for existing self-signed setups — it is
+// only honoured when no pin is set. Each derived warning is printed
+// to stderr.
 //
 // One immediate push at boot so short-lived workers (some F10 agents
 // finish in seconds) still show non-zero envelopes in the parent's
@@ -17977,12 +18037,11 @@ func startWorkerObserverPush(peerName, peerToken, parentURL string) {
 	col := observerpkg.NewCollector(cfg)
 	col.Start(context.Background())
 
-	pc, err := observerpeerpkg.New(observerpeerpkg.Config{
-		ParentURL: parentURL,
-		Name:      peerName,
-		Shape:     "A",
-		Insecure:  true,
-	})
+	pcCfg, warnings := workerObserverPushConfig(peerName, parentURL, os.Getenv)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "[worker] WARNING: %s\n", w)
+	}
+	pc, err := observerpeerpkg.New(pcCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[worker] observer peer client: %v\n", err)
 		return

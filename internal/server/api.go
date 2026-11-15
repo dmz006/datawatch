@@ -738,6 +738,10 @@ type Server struct {
 	// Nil when not wired; handleBL312Servers falls back to the legacy
 	// static-list handler in that case.
 	serverStore *multiserver.Store
+	// tlsPeerWarn — dedupes the warn-level system alert for peers whose
+	// certificate is not verified (see TLSPeerWarnTracker). Nil until
+	// wired from main.go; handlers remain warning-free of panics.
+	tlsPeerWarn *TLSPeerWarnTracker
 
 	// BL316 — custom federation capability groups store.
 	// Nil when not wired; group endpoints return builtin-only lists.
@@ -13489,7 +13493,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
 
-	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)
+	client := multiserver.PeerHTTPClient(remote.TLSSkipVerify, remote.TLSCertFingerprint, 30*time.Second)
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)

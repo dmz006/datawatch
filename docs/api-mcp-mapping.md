@@ -448,6 +448,15 @@ Opt-in rides on the peer record (`federation_peer_add` / `federation_peer_update
 and the billing-group label on LLM entries (`llm_add` / `llm_update`
 `billing_group`). Decisions are audit-logged (`fingerprint_match_decision`).
 
+The same peer record carries the TLS trust posture: `tls_cert_fingerprint`
+(64-hex SHA-256 leaf pin) and `tls_skip_verify` (both set → request rejected),
+accepted on `federation_peer_add` / `federation_peer_update` (and the REST
+`POST`/`PUT` on `/api/servers` and `/api/federation/peers`). The
+create/update responses — and the `test` endpoints (MCP
+`federation_peer_test`, REST `POST /api/servers/{name}/test`) — carry a
+`warnings` array when the peer's certificate is not verified.
+See [`howto/peer-tls-verification.md`](howto/peer-tls-verification.md).
+
 ### Routing rules
 
 | API Endpoint | MCP Tool | Status | Notes |

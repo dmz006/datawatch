@@ -108,6 +108,7 @@ you already have a daemon you can talk to.
 | [Pipeline + session chaining](pipeline-chaining.md) | Chain tasks into DAG pipelines with before/after gates; combine with manual sessions |
 | [Cross-agent memory](cross-agent-memory.md) | Use episodic memory + the knowledge graph across builds, tests, and federated peers |
 | [Federated observer](federated-observer.md) | Multi-host stats + envelope tree across primary + Shape A/B/C peers |
+| [Peer TLS verification](peer-tls-verification.md) | Every `https://` peer link verifies by default: the `tls_cert_fingerprint` leaf pin (all 5 surfaces), the warned `tls_skip_verify` / `DATAWATCH_OBSERVER_PUSH_INSECURE` / `observer.federation.insecure` opt-outs, deriving the fingerprint with openssl, and what breaks when upgrading a fleet |
 | [Daemon operations](daemon-operations.md) | Day-two operator workflow: start / stop / restart / upgrade / diagnose / reload / logs |
 | [Testing against a running daemon](testing-against-a-running-daemon.md) | Point the functional-smoke and E2E test scripts at a daemon you already have running (CI-deployed, sandbox, dev) instead of a fresh throwaway one — `DW_BASE` / `TEST_BASE` reference |
 | [Navigation at phone widths](navigation-mobile-fit.md) | The phone-width check of the PWA bottom bar: what it measures, `make test-e2e-shared-nav` and release-smoke section 79a, where the report goes, how to read a finding, and what the bar shows now (ellipsis labels, full names on hover, 40 px minimum tap targets) |

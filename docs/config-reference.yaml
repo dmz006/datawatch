@@ -1144,6 +1144,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
@@ -4983,6 +4992,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"
