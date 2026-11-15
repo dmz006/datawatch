@@ -31,12 +31,15 @@ same groups, counts and state mixes.
 ## What it is
 
 The Sessions page keeps all of its main controls in **one compact toolbar
-line** that never splits into multiple rows, at any width: a **server
-select** (All servers, this server, one entry per enabled peer), a
+line** that never splits into multiple rows, at any width: a
 **search** box, a **Filters** button (with a badge counting what is active),
 a **Fold all** button (while a grouping with openable groups is active) and
-a **view mode select** with the three modes **List / Tiles / Compact**. One
-line below the toolbar, the **Tree** and **History** buttons sit with the
+a **view mode select** with the three modes **List / Tiles / Compact**. The
+toolbar has **no server selector**: choosing the server (All servers, this
+server or one peer) is the **server icon button in the fixed header**, the same
+on every page (see
+[multi-servers](multi-servers.md#switch-between-servers-header-server-button)).
+One line below the toolbar, the **Tree** and **History** buttons sit with the
 clickable **🌐 <name>** indicator that appears only while a federated server
 is the active one and returns you to this server when clicked (see
 [multi-servers](multi-servers.md#switch-between-servers-header-server-button)). Behind the Filters
@@ -63,10 +66,11 @@ its controls packed into fewer rows. There is no new setting, and the
 daemon, REST, MCP, CLI and comm channel behave exactly as before.
 
 ```
-header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
+header (fixed, every page):   …  [ ▤ ● server icon ]  → opens the Servers window:
+                                  All │ This server │ server-a │ server-b
 
-Sessions (one toolbar line, at phone and wide widths):
-┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
+Sessions (one toolbar line, at phone and wide widths; no server select):
+┌─[ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
 │  (⊟ Fold all shows only while a grouping is active; the line below the
 │   toolbar carries Tree and History — and the 🌐 server-a indicator,
 │   shown only while a federated server is active)
@@ -124,12 +128,14 @@ Everything you need to find sessions sits in one non-splitting line at the
 top of the page, at any width, in this order: **search**,
 **Filters**, **Fold all** (while grouping) and the **view mode select**:
 
-- **No server select here** — the server picker is the header's server
-  button, on every page: it opens a window listing **All**, **This server**
-  and one row per enabled peer (a peer whose reachability check failed is
-  marked `(unreachable)`). Picking a row re-renders the page you're on against
-  that server (its sessions, its counts, its search text), and picking the
-  active one is a no-op. See [multi-servers: Switch between
+- **No server select here** — the Sessions page has no server selector of its
+  own. Use the **server icon button in the header**, on every page: it opens a
+  window listing **All**, **This server** and one row per enabled peer (a peer
+  whose reachability check failed is marked `(unreachable)`); on a touch
+  screen a three-finger swipe up opens the same window. Picking a row
+  re-renders the page you're on against that server (its sessions, its counts,
+  its search text), and picking the active one is a no-op. See
+  [multi-servers: Switch between
   servers](multi-servers.md#switch-between-servers-header-server-button).
 - **Search box** — type to narrow the list. It matches a session's name, its
   id, its backend, its tag text and its state, so `claude`, `a1f2`,
@@ -739,7 +745,7 @@ in your tag registry.
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
-| Server picker (All / this server / each federated peer) | header server button (opens the server picker window; the Sessions page has no second selector) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the header server button is the only server selector, on every page; **All** aggregates local + federated; not one of the sheet's filters |
+| Server picker (All / this server / each federated peer) | header server icon button (opens the Servers window; the Sessions page has no second selector) | page-wide, not part of the Sessions toolbar; remembered per browser (`dw_server_choice`), so a reload starts on the same entry | one shared picker: the header server button is the only server selector, on every page; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
