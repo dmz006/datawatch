@@ -4929,6 +4929,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"
