@@ -33,6 +33,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/planrecords"
 )
 
 const (
@@ -306,17 +307,23 @@ func parseAutomataEventLogQuery(v url.Values) (automataEventLogQuery, error) {
 	}
 	q.cursor = cursor
 	if raw := strings.TrimSpace(v.Get("kind")); raw != "" {
-		q.kinds = make(map[AutomataEventKind]bool)
-		for _, part := range strings.Split(raw, ",") {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			k := AutomataEventKind(part)
-			if !automataEventKindKnown(k) {
-				return q, fmt.Errorf("unknown kind %q", part)
-			}
-			q.kinds[k] = true
+		if q.kinds == nil {
+			q.kinds = make(map[AutomataEventKind]bool)
+		}
+		words, err := planrecords.ParseStateList(raw, "kind", []string{
+			string(AutomataEventWatch),
+			string(AutomataEventDecision),
+			string(AutomataEventRetry),
+			string(AutomataEventCheck),
+			string(AutomataEventCleanup),
+			string(AutomataEventAlert),
+			string(AutomataEventError),
+		})
+		if err != nil {
+			return q, err
+		}
+		for _, word := range words {
+			q.kinds[AutomataEventKind(word)] = true
 		}
 		if len(q.kinds) == 0 {
 			q.kinds = nil

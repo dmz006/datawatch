@@ -1726,7 +1726,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: legacy_number, in: query, schema: {type: integer, minimum: 1}}
         - {name: automaton, in: query, schema: {type: string}}
@@ -1837,7 +1837,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
@@ -1944,7 +1944,7 @@ paths:
         - {name: q, in: query, required: true, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states from either vocabulary; a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
@@ -2146,7 +2146,7 @@ paths:
       parameters:
         - {name: q, in: query, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; without kind a state is valid in either vocabulary, and a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
         - {name: project, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
@@ -6172,6 +6172,7 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+        - {name: status, in: query, required: false, description: "A single status, or a comma-separated list of statuses (case-insensitive); an unknown status answers 400 naming the valid statuses", schema: {type: string}}
         - name: shipped
           in: query
           required: false
