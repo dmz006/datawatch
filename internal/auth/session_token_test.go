@@ -276,7 +276,7 @@ func TestSessionTokenStore_ExpiresAtRoundTripsThroughReload(t *testing.T) {
 	if len(list) != 1 || list[0].Token != tok || list[0].ExpiresAt.IsZero() {
 		t.Fatalf("expected one on-disk record with a set expires_at, got %+v", list)
 	}
-	if list[0].ExpiresAt.Sub(time.Now()) > time.Hour || list[0].ExpiresAt.Before(time.Now()) {
+	if time.Until(list[0].ExpiresAt) > time.Hour || list[0].ExpiresAt.Before(time.Now()) {
 		t.Errorf("persisted ExpiresAt %v not ~1h in the future (now %v)", list[0].ExpiresAt, time.Now())
 	}
 

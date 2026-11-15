@@ -120,7 +120,6 @@ func (c *InstanceMCPConfig) Refresh() (bool, error) {
 		}
 		c.lastTok = tok
 		c.issuedAt = c.now()
-		reuse = true
 	}
 	tok := c.lastTok
 	c.mu.Unlock()
