@@ -3828,6 +3828,32 @@ paths:
                 type: object
                 required: [branches]
                 properties:
+                  counts:
+                    type: object
+                    description: Per landing state and per last-commit age band; every key present, 0 when empty. pending = superseded, unlanded = needs_decision, live = no settled recommendation.
+                    properties:
+                      total: {type: integer}
+                      by_state:
+                        type: object
+                        properties:
+                          landed: {type: integer}
+                          pending: {type: integer}
+                          live: {type: integer}
+                          unlanded: {type: integer}
+                      by_age:
+                        type: object
+                        properties:
+                          under_one_day: {type: integer}
+                          under_one_week: {type: integer}
+                          older: {type: integer}
+                      oldest_pending:
+                        type: object
+                        description: Absent when nothing is pending.
+                        properties:
+                          branch: {type: string}
+                          title: {type: string}
+                          age: {type: string, description: "Plain words, such as 3d 4h"}
+                          age_ns: {type: integer, format: int64}
                   branches:
                     type: array
                     items:

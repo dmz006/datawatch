@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Unlanded work counts: every read of the unlanded work list (`GET /api/autonomous/unlanded-work`, `datawatch autonomous unlanded-work`, the chat verb and the `autonomous_unlanded_work` MCP tool) now carries a `counts` block with the total, a count per landing state (landed, pending, live, unlanded), a count per last-commit age band (under one day, under one week, older) and the oldest pending branch with its age. The text output prints them before the rows. See [Automaton worktree cleanup](docs/howto/automaton-worktree-cleanup.md#counts-per-state-and-per-age).
 - Daily pending-branch alert: once per calendar day, when more pending Automaton branches wait for cleanup than `autonomous.unlanded_alert_threshold` (default 3) and `autonomous.unlanded_alert_enabled` is on (default true), the daemon raises one alert naming the oldest pending branch and its age. The last-alerted day is stored, so a restart the same day does not repeat it. Both settings are on YAML, `PUT /api/config`, `PUT /api/autonomous/config`, the CLI, the comm channel, MCP and the web Settings card.
 
 ## v9.175.2 — Stop writing the instance-level server token into project files
