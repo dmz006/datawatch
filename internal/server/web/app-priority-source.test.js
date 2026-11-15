@@ -15,12 +15,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 const LOCALE_LIST = ['en', 'de', 'es', 'fr', 'ja'];
 const LOCALE_DIR = path.join(__dirname, 'locales');
 
-function loadApp() {
-  const sandbox = buildSandbox();
+function loadApp(byId) {
+  const sandbox = buildSandbox({ byId: byId || {} });
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n.bundle = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
@@ -194,4 +194,38 @@ test('the english badge template carries both placeholders', () => {
   const en = JSON.parse(fs.readFileSync(path.join(LOCALE_DIR, 'en.json'), 'utf8'));
   assert.match(en.priority_source_badge, /%1\$[sd]/);
   assert.match(en.priority_source_badge, /%2\$[sd]/);
+});
+
+// The autonomous card must actually draw both rows, each carrying its config
+// key in data-cfg-key so the PWA story (TS-841) and any tooling can find the
+// input without depending on its class or value. This fails if the row stops
+// rendering, drops the hook, or loses its localized label.
+async function renderAutonomousCard(cfg) {
+  const el = makeStubElement();
+  const sb = loadApp({ gcfg_autonomous: el });
+  sb.apiFetch = p => Promise.resolve(p === '/api/config' ? cfg : (p === '/api/interfaces' ? [] : { llms: [] }));
+  sb.loadGeneralConfig();
+  await flushAsync();
+  return el.innerHTML;
+}
+
+test('the autonomous settings card renders the priority_by_kind and defect intake rows with a data-cfg-key hook', async () => {
+  const html = await renderAutonomousCard({ autonomous: {
+    priority_by_kind: { bug: 80, maintenance: 70, feature: 20, other: 0 },
+    defect_intake_automation: 'triage',
+  } });
+  const pbk = html.match(/<input[^>]*data-cfg-key="autonomous\.priority_by_kind"[^>]*>/);
+  assert.ok(pbk, 'priority_by_kind input missing or has no data-cfg-key');
+  assert.match(pbk[0], /value="bug=80, feature=20, maintenance=70, other=0"/);
+  assert.match(pbk[0], /saveGeneralField\('autonomous\.priority_by_kind', this\.value\)/);
+  assert.match(html, /Capacity priority by kind/);
+  const dia = html.match(/<input[^>]*data-cfg-key="autonomous\.defect_intake_automation"[^>]*>/);
+  assert.ok(dia, 'defect_intake_automation input missing or has no data-cfg-key');
+  assert.match(dia[0], /value="triage"/);
+  assert.match(html, /Defect intake Automation/);
+});
+
+test('the priority_by_kind row still renders when the config reports no table', async () => {
+  const html = await renderAutonomousCard({ autonomous: {} });
+  assert.match(html, /<input[^>]*data-cfg-key="autonomous\.priority_by_kind"[^>]*placeholder="bug=80, maintenance=70, feature=20, other=0"/);
 });
