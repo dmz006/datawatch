@@ -92,6 +92,28 @@ lower-cased, so `Opus` and `opus` are the same model.
 A `models` list with no usable names is an operator error on every surface, not
 a fall-back to the whole backend.
 
+A task held by a model-limited flag names the models in its wait reason, for
+example `backend claude-code backed off for models opus, sonnet until 14:30 UTC
+(resets in 42m)`. A whole-backend flag reads as before, with no `for models`
+part.
+
+The status call (`GET /api/usage-backoff`, `usage_backoff_status`,
+`datawatch usage-backoff status`) lists each flag with its `models`, and a
+`holds` list that says per backend whether the whole backend is held
+(`whole_backend`), which models are held (`held_models`), and which models stay
+open (`open_models`, or `other_models_open` when the open models are not
+listed).
+
+### In the web app
+
+The **Usage back-off** card on the Automata **Usage** page sets, shows and clears
+flags. It has a Backend, Minutes, Reason and **Models (optional, comma
+separated)** field. Leave Models empty to hold or clear the whole backend; fill
+it to hold or clear only those models. Clearing some models needs a backend. Each
+active flag shows **All models held**, or **Held models: ...** with **Open
+models: ...** (or **Other models stay open**). The capacity card shows the same
+held and open models under each back-off row.
+
 To confirm the effect, run `datawatch capacity` (or the comm verb `capacity`, or
 the capacity card in the web app). Each active flag prints as
 `claude-code: resets <time> (<reason>)`. An Automaton task held by the flag shows
@@ -110,6 +132,10 @@ file is normal. An unreadable one is logged and the registry starts empty.
 
 Clearing a flag by hand removes it from the file, so a cleared flag does not come
 back after the next restart.
+
+Each flag in the file keeps its model list. A file written before model lists
+existed has no `models` field; its flags load as whole-backend flags, so an
+upgrade changes nothing.
 
 ## What boot-time resume does with a backed-off backend
 

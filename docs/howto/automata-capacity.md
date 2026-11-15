@@ -1126,7 +1126,9 @@ always included). The card is left out when there is nothing to show.
   activity is listed as *no cap configured*, so real hardware is not hidden.
 - **Usage back-off.** One row per active flag: the backend, `Resets: <time>`
   when the reset time is known or *reset time unknown* when it is only the
-  maximum back-off, and the reason underneath.
+  maximum back-off, the held and open models when the flag is limited to some
+  models (see [Holding only certain models](usage-backoff.md#holding-only-certain-models)),
+  and the reason underneath.
 - **LLM budgets.** One block per LLM that has a budget: a spend bar
   (`$spend of $ceiling`, with peer spend added), a *budget window full* badge
   when it is full, when the window ends, and when it rolls over. The bar is
