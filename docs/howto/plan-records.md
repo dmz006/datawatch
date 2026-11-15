@@ -68,7 +68,7 @@ candidates so you can repeat the call with an id.
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
-| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
+| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
 `plan_record_updated` audit event; a real import writes one
@@ -257,6 +257,11 @@ Nothing here turns on by itself. These are yours to settle:
   run the migration again.
 - **Backlog order.** Open rows with no Automaton become backlog plans ordered by
   their old row number. Check that this is the order you want.
+- **The state chip sets.** The Plans browser, the Records sub-tab and the
+  Registry and findings card now filter state with multi-select chip sets, and
+  each remembers its picks in the browser that made them. Check that the chip
+  labels — each state's name plus **All**, **Selected filters** and
+  **Clear all** — read well in the languages you use.
 - **Mobile apps.** Android and iPhone do not show plan records yet; that is
   tracked in the datawatch-app repository.
 
@@ -270,6 +275,11 @@ Nothing here turns on by itself. These are yours to settle:
   project root.
 - **A shipped row did not appear.** Check `write_through` is on and the hook
   result in the merge run; with it off the hook edits the README as before.
+- **A state filter seems stuck or surprising.** Its picks are remembered in
+  the browser that made them, separately for the Plans browser, the Records
+  sub-tab and the registry card — on the browser, never the daemon, and in no
+  other browser. Pick the group's **All** chip to clear the whole set; a
+  picked chip clears itself when picked again.
 
 ## Building plans from arcs and rows
 
@@ -381,7 +391,8 @@ row and finding titles and the state filter narrows by plan state — the state 
 is a multi-select chip set: no chip picked means all states, several picked mean a plan
 matches *any* of the picked states, a second tap on a picked chip removes exactly that
 one, and the group's **All** chip, active while nothing is picked, clears the whole set;
-reordering is off while either is in use. Which plans are expanded is remembered in this
+reordering is off while either is in use. The state picks are remembered in this
+browser, separately from the other state filters. Which plans are expanded is remembered in this
 browser only. The **Overview** page sub-tab starts with a summary (active
 plans, what is next, counts), and the **Records** page sub-tab lists every
 registry row and finding. The controls call the routes in the next section.
