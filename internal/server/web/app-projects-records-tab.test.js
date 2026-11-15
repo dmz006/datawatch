@@ -40,9 +40,10 @@ function load(opts = {}) {
       sandbox.__calls.push(u);
       if (opts.fail) return Promise.resolve({ ok: false, status: opts.fail, statusText: 'x', text: () => Promise.resolve(opts.failText || 'broken'), json: () => Promise.resolve({}) });
       const g = k => decodeURIComponent((u.match(new RegExp('[?&]' + k + '=([^&]*)')) || [])[1] || '');
-      const q = g('q').toLowerCase(), kind = g('kind'), state = g('state');
+      const q = g('q').toLowerCase(), kind = g('kind');
+      const states = g('state').split(',').map(s => s.trim()).filter(Boolean); // the server accepts a comma list (any of)
       const off = Number(g('offset') || 0), lim = Number(g('limit') || 50);
-      const rows = (opts.rows || ALL).filter(r => (!q || r.title.toLowerCase().includes(q)) && (!kind || r.kind === kind) && (!state || r.state === state));
+      const rows = (opts.rows || ALL).filter(r => (!q || r.title.toLowerCase().includes(q)) && (!kind || r.kind === kind) && (!states.length || states.indexOf(r.state) >= 0));
       return ok({ records: rows.slice(off, off + lim), page: { total: rows.length } });
     }
     if (u.startsWith('/api/plans') || u.includes('/plans?')) {
@@ -115,6 +116,19 @@ test('the kind and state filters go to the server and reset to the first page', 
   const last = browseCalls(sb).pop();
   assert.ok(last.includes('kind=finding') && last.includes('state=triaged') && last.includes('offset=0'));
   assert.ok(html(sb).includes('Loose finding') && !html(sb).includes('Search misses aliases'));
+});
+
+test('several states are one set, fetched as a comma-separated state query', async () => {
+  const { sb } = load();
+  await open(sb);
+  await sb.recordsTabSetState('open,triaged');
+  await flushAsync();
+  assert.equal(pr(sb, 'JSON.stringify(_recordsTab.states)'), '["open","triaged"]', 'the mirror is a set, not a string');
+  const last = browseCalls(sb).pop();
+  assert.ok(last.includes('state=open%2Ctriaged'), 'the set goes over as one comma-separated query');
+  const h = html(sb);
+  assert.ok(h.includes('Loose finding') && h.includes('Search misses aliases'), 'any of the selected states matches');
+  assert.ok(!h.includes('Passkey registry row'));
 });
 
 test('search waits for a pause in typing and uses the one window timer', async () => {
