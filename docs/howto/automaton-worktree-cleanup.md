@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -378,6 +378,41 @@ landed, the last activity, the recommendation and a one-line reason. The list is
 ordered least settled first (needs a decision, superseded, landed), then newest
 activity first. Branches with nothing ahead, branches that no longer exist and
 Automata that are not archived are not listed.
+
+### Counts per state and per age
+
+Every read of the list also carries a `counts` block, so you can see the size of
+the backlog without reading each row. Each listed branch is counted once per
+landing state and once per age band; every key is present and reads 0 when empty.
+
+| Landing state | Recommendation it counts |
+|---|---|
+| `landed` | `landed` |
+| `pending` | `superseded` (later work replaced it; it waits for cleanup) |
+| `unlanded` | `needs_decision` |
+| `live` | any branch without a settled recommendation yet |
+
+| Age band | Last commit |
+|---|---|
+| `under_one_day` | less than 24 hours ago (a future time from clock skew counts here) |
+| `under_one_week` | from exactly one day up to, not including, seven days ago |
+| `older` | seven days or more ago, or no last-commit time known |
+
+`total` is the number of listed branches, and `oldest_pending` names the oldest
+pending branch (`branch`, `title`, `age` in plain words such as `3d 4h`, and
+`age_ns`); it is absent when nothing is pending. The CLI, the chat verb and the
+text output print the same numbers before the rows:
+
+```
+Counts: 1 landed, 2 pending, 0 live, 1 unlanded
+Age: 1 under one day, 1 under one week, 2 older
+Oldest pending: Fix the widget (automaton/ab12cd34), 9d 3h
+```
+
+The counts come from the same read (`GET /api/autonomous/unlanded-work`, the
+`autonomous_unlanded_work` MCP tool, `datawatch autonomous unlanded-work [--json]`
+and `autonomous unlanded-work`); there is no separate endpoint and no setting.
+The daily pending-branch alert below uses the `pending` count.
 
 ### The actions on an unlanded branch
 
