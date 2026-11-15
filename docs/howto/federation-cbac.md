@@ -165,6 +165,35 @@ minted at spawn and revoked immediately when the session ends:
   session's bridge keeps working across a daemon restart, and revoked
   immediately on session kill — a killed session's token can never be
   reused.
+- The last exposure is **closed**. The one place that still carried the
+  daemon's own `server.token` was the instance-level `.mcp.json` write (in
+  the data directory; the per-session project-dir writes already had the
+  scoped credential). It does not carry it any more: the instance-level
+  entry's `DATAWATCH_TOKEN` is now an **instance-scoped, expiring
+  credential** — the same `session-default` grant by default (override:
+  `session.capabilities`) — valid for an hour by default. Each session
+  pre-launch refreshes it: the existing token is reused while more than
+  half its lifetime remains, and it is re-minted once it has expired, so
+  the file tracks the current bridge without any new admin exposure. When
+  no live session remains — the last one ends, or the daemon shuts down —
+  the credential is revoked and the entry (with the file, if it was the
+  only server) is removed, so no credential sits on disk while the daemon
+  is idle. A failed mint removes the entry rather than leaving a stale
+  credential in place; there is deliberately **no fallback** to the
+  long-lived token. A stale instance entry still holding the daemon's
+  admin token from an earlier daemon is dropped at daemon startup (the
+  log line says the stale server credential was removed from the instance
+  `.mcp.json`; the token value is never logged), and it is never written
+  again. **Operator review:** any helper or script that reads
+  `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a
+  long-lived admin bearer is **broken by design now** — the credential
+  there is granted by the `session-default` group and is dead once the
+  last session ends or its lifetime runs out. Give that workflow its own
+  operator-managed credential (the daemon's bearer in your own MCP host
+  config, or a federation peer token) with the capabilities it actually
+  needs. Your own host configs (`~/.cursor/mcp.json`, `claude mcp add`
+  entries, an IDE-side `mcp.json`) are operator-managed and unchanged: they
+  still authenticate with the daemon's bearer or a peer token.
 - The standalone MCP SSE transport (direct IDE/Cursor connections, not the
   session-bridge path) still uses its own, separate, admin-vs-federation-peer
   gate (`mcpFedCap`) — Design A3 does not change that path; extending the

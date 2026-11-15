@@ -987,6 +987,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// after a later clean start cannot be misreported as that previous stop.
 	fmt.Println(shutdowncause.PreviousShutdownLine(expandHome(cfg.DataDir)))
 
+	// Design A3 — early startup scrub: earlier daemons wrote the daemon's
+	// own long-lived server token into the instance-level .mcp.json. If a
+	// stale credential matching it is still on disk, drop the entry now
+	// (before the channel is wired below and re-mints a scoped token).
+	// The token value is never logged, only that a stale credential went.
+	{
+		if removed, err := channel.ScrubInstanceMCPToken(expandHome(cfg.DataDir), cfg.Server.Token); err != nil {
+			debugf("instance .mcp.json token scrub: %v", err)
+		} else if removed {
+			fmt.Println("[auth] removed stale server credential from instance .mcp.json")
+		}
+	}
+
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
 		cfg.Session.LLMBackend = v
@@ -1531,18 +1544,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetSubprocessBaseURL(loopbackBaseURL(cfg))
 
 	// Per-session MCP channel registration for claude-code multi-session support.
+	// instanceMCP holds the scoped-instance-token lifecycle for the shared
+	// <dataDir>/.mcp.json (see instance_mcp_wiring.go): nil when the channel
+	// is off (also for the shutdown path below).
+	var instanceMCP *channel.InstanceMCPConfig
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
+		// The shared instance env carries NO token: the instance .mcp.json
+		// gets its own short-lived scoped token via instanceMCP.Refresh() at
+		// session pre-launch, and each get-sessions bridge gets its own
+		// scoped session token via the per-session sessionChannelEnv.
 		channelEnv := map[string]string{
 			"DATAWATCH_API_URL": loopbackBaseURL(cfg),
-		}
-		if cfg.Server.Token != "" {
-			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
 		}
 		// Let the bridge verify the daemon's TLS cert instead of skipping
 		// verification: hand it the path of the cert the daemon serves.
 		if cfg.Server.TLSEnabled {
 			channelEnv["DATAWATCH_CA_CERT"] = daemonCertPath(cfg)
+		}
+		// Design A3 — scoped-instance-token lifecycle for the instance-level
+		// .mcp.json: short-lived token for the instance owner (default grant
+		// capabilities), refreshed when stale on session launch, revoked +
+		// entry removed when no live sessions remain or the daemon shuts down.
+		instanceMCP = &channel.InstanceMCPConfig{
+			DataDir:       expandHome(cfg.DataDir),
+			ChannelJSPath: channelJSPath,
+			BaseEnv:       channelEnv,
+			Minter:        sessionTokenStore,
+			Caps:          instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled()),
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
@@ -1566,12 +1595,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// allow_self_config alias is enabled (the default); an
 				// explicit operator grant (session.capabilities) is always
 				// used as-written, which is how the group is removed or
-				// narrowed on purpose.
-				grantCaps := cfg.Session.Capabilities
-				if len(grantCaps) == 0 {
-					grantCaps = federation.SessionDefaultGrantCaps(cfg.MCP.SelfConfigEnabled())
-				}
-				resolved := federation.Resolve(grantCaps, nil)
+				// narrowed on purpose. instanceSessionGrantCaps (shared with
+				// the instance .mcp.json grant) applies the same rule.
+				resolved := instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled())
 				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
 					fmt.Printf("[warn] mint session token for %s: %v (falling back to no token — see DATAWATCH_TOKEN)\n", sess.FullID, err)
 				} else {
@@ -1596,11 +1622,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = bridgePath // logged above; available for future debug use
 			}
 
-			// BL318 — write instance-scoped .mcp.json so it tracks any bridge
-			// upgrade (JS→Go). Targets $DataDir/.mcp.json, never $HOME/.mcp.json,
+			// BL318 — refresh the instance-scoped .mcp.json so it tracks any
+			// bridge upgrade (JS→Go). Targets $DataDir/.mcp.json, never $HOME/.mcp.json,
 			// so test daemons cannot corrupt the production instance's config.
-			if updated, err := channel.WriteInstanceMCPConfig(expandHome(cfg.DataDir), channelJSPath, channelEnv); err != nil {
-				debugf("BL318 write instance .mcp.json: %v", err)
+			// Design A3 — the entry carries the scoped instance token minted by
+			// Refresh (reused while valid), never the daemon's long-lived server
+			// token; a refresh failure is logged and there is deliberately no
+			// server-token fallback (the token store is fatal-if-missing above).
+			if updated, err := instanceMCP.Refresh(); err != nil {
+				debugf("BL318 refresh instance .mcp.json: %v", err)
 			} else if updated {
 				fmt.Printf("[channel] updated instance .mcp.json to current %s bridge\n", channel.BridgeKind())
 			}
@@ -1827,6 +1857,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if err := sessionTokenStore.Revoke(sess.FullID); err != nil {
 					debugf("Design A3 revoke session token for %s: %v", sess.FullID, err)
 				}
+			}
+			// Design A3 — and when this was the last live session, release the
+			// instance .mcp.json scoped token too: revoke it and remove the
+			// entry so no credential is left behind on disk while the daemon
+			// is idle. Any other live session still has a bridge that may use
+			// it, so the token stays until the last one goes.
+			if released := releaseInstanceMCPIfIdle(instanceMCP, mgr.ListSessions(), sess.FullID); released {
+				debugf("instance .mcp.json token released for %s (no live sessions remain)", sess.FullID)
 			}
 			// alpha.34a #202 — clean up the per-session .dw-env file
 			// (chmod 600, contains daemon URL + bearer token + session
@@ -2063,6 +2101,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
+			}
+		}
+		// Design A3 — release the instance .mcp.json scoped token whether the
+		// sessions above were killed or left in place: the daemon is going
+		// away, so no scoped credential should survive it on disk (revoked
+		// now, and the .mcp.json entry removed; the startup scrub picks up
+		// anything an earlier build left behind).
+		if instanceMCP != nil {
+			if err := instanceMCP.Release(); err != nil {
+				debugf("instance .mcp.json release on shutdown: %v", err)
 			}
 		}
 		// The store is not closed here: the serve path drains in-flight

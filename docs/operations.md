@@ -3377,6 +3377,50 @@ On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
 
+### MCP config files the daemon writes
+
+The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
+session sees the `datawatch` bridge (and any `session.extra_mcp_servers` entries):
+
+- **Per-session** — `<project_dir>/.mcp.json`, written (and idempotently rewritten)
+at session start, `0600`; operator-added entries are preserved, only the
+`datawatch` entry and the extras-list entries are managed. Sessions sharing a
+project dir share the file; each start rewrites the `datawatch` entry with the
+starting session's own credential.
+- **Instance-level** — `<data_dir>/.mcp.json`, refreshed at each session
+launch so it tracks the current bridge and carries a current scoped
+credential; not tied to a specific session. Its `datawatch` entry is
+removed when no live session remains, or when the daemon shuts down.
+
+All files are `0600`. The **per-session** project file carries the starting session's **scoped, short-lived credential** as `DATAWATCH_TOKEN` — default grant: the `session-default` capability group ([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's own `server.token`. The credential is minted at session start, persisted `0600` under the data directory (a running session's bridge keeps working across a daemon restart), and revoked when the session ends or is killed, so a leftover project file holds a dead bearer. (Edge fallbacks: if minting the credential fails the entry gets no `DATAWATCH_TOKEN` at all; if the session-token store itself cannot be wired, the per-session write falls back to the admin token — the latter should only happen in tests.)
+
+The **instance-level** file no longer carries the daemon's long-lived
+admin `server.token` either. Its `DATAWATCH_TOKEN` is the **instance-
+scoped, expiring credential**: the same `session-default` capability group
+by default (override: `session.capabilities`; [howto/federation-cbac](howto/federation-cbac.md)),
+valid about an hour. Each session launch refreshes it — the existing
+token is reused while more than half its lifetime remains, and re-minted
+on the next launch once it is down to the last half (even before it
+would expire) — so repeated launches do not stack credentials and the
+file tracks the current bridge (JS→Go) without admin exposure. When no
+live session remains — the last one ends, or the daemon shuts down — the
+credential is revoked and the `datawatch` entry (with the file, if it was
+the only server) is removed, so no credential sits on disk while the
+daemon is idle. A failed mint removes the entry rather than leaving a
+stale credential; there is deliberately **no fallback** to the long-lived
+token. A stale entry still holding the daemon's admin token from an
+earlier daemon is dropped at daemon startup (the startup line says the
+stale server credential was removed from the instance `.mcp.json`; the
+token value is never logged), and it is never written again. (The old
+user-scope (`~/.mcp.json`) sweep is deprecated in favour of the
+data-directory instance-level write.)
+
+**Operator review — flag for you:**
+1. neither daemon-written `.mcp.json` (per-session nor instance-level) carries the daemon's `server.token` any more: both hold scoped, short-lived `0600` credentials that die with the session (per-session) or when no live session remains (instance-level), and the instance entry is removed at daemon shutdown.
+2. anything built on reading `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a long-lived admin bearer (helper scripts in a project, tooling that treated a session's bridge as a standing admin principal) — including the instance-level file on hosts upgraded from an earlier daemon — is **broken by design now**: the credential there is granted by the `session-default` group and is dead once the last session ends or its lifetime runs out. Give those workflows their own operator-managed credential: the daemon's bearer in your own MCP host config, or a federation peer token, with the capabilities they actually need.
+
+Operator-managed configs — `~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side `mcp.json` — are unaffected and still authenticate with the daemon's bearer or a peer token.
+
 ### MCP transport diagnostics (connection drops, stream health)
 
 Every MCP SSE stream is observed: the daemon logs one `STREAM OPEN` / `STREAM CLOSE`
