@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
+
+### Changed
+
+- Give the agent-aider image Python 3.11.5 or newer for soupsieve 4.
+
 ## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
 
 ### Fixed
