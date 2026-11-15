@@ -165,7 +165,13 @@ datawatch alerts --mark-all-read
      width-agnostic: the same rows render at 360 px and 390 px with
      no viewport-specific branching
    - Sessions sorted: `waiting_input` → `running` → `completed`
-   - Prompt alerts include a **Quick reply** dropdown for saved commands
+   - Prompt alerts include a **Quick reply** dropdown for saved commands.
+     When the session is waiting on an operator question, picking a
+     quick reply **answers that question** (the same path as answering it
+     from the question card), so the question is marked answered and the
+     session resumes. It no longer types the reply as text into the
+     session's terminal, which left the question open. A session with no
+     pending question still receives the reply as session input.
    - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
      triggers one immediate refetch through the Alerts list loader —
      the card repaints in place (cached rows stay, the fetch runs
