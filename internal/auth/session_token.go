@@ -159,6 +159,21 @@ func (s *SessionTokenStore) MintScoped(ownerID string, caps []string, ttl time.D
 	return tok, nil
 }
 
+// SetNowForTest overrides the store's clock — the now function backing
+// MintScoped's ExpiresAt stamp and every expiry check — for
+// cross-package tests that must fast-forward time deterministically
+// without sleeping (e.g. internal/server's instance-token tests). Same
+// package tests set the now field directly instead. Production code
+// never calls this; nil restores time.Now.
+func (s *SessionTokenStore) SetNowForTest(now func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now == nil {
+		now = time.Now
+	}
+	s.now = now
+}
+
 // expired reports whether the record carries an expiry that is
 // (inclusively) already due. Callers need not hold s.mu; the record
 // pointer comes from the store's own maps.
