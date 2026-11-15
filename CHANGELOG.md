@@ -5,11 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
 ### Fixed
 
-- **Task routing profiles can be saved on a daemon without the default backends.** Saving, switching or deleting a routing profile no longer fails with HTTP 400 when the shipped default rows name LLM backends this daemon does not have. Rows already in force are not looked up again; a new or changed row naming an unknown backend is still refused.
-- **The task routing dry run for an Automaton with no tasks returns an empty list.** A fresh draft Automaton now answers `"entries": []` (and `"tasks": []` on the routing read) instead of `null`.
-- **Release smoke creates its throwaway Automata again.** The scratch daemon now allows `/tmp` as a project root, so the Automation chain and capacity sections are no longer refused by the allowed project roots check. A refused create now prints the HTTP code and the response body, as does a refused routing profile save.
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
+## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
+
+### Fixed
+
+- A test helper assigned a map lookup to the blank identifier, which the CI lint version flags; it now reads the value directly.
+
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
+## v9.175.2 — Stop writing the instance-level server token into project files
+
+### Changed
+
+- Stop writing the instance-level server token into project files.
+
+## v9.175.1 — Fix: a saved project description is stored, returned and shown on every surface
+
+### Changed
+
+- Fix: a saved project description is stored, returned and shown on every surface.
+
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
+## v9.174.0 — Usage back-off must not block verification, judging and planning
+
+### Changed
+
+- Usage back-off must not block verification, judging and planning.
 
 ## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
 

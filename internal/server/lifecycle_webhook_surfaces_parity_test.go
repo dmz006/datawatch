@@ -199,7 +199,7 @@ func newPWRig(t *testing.T) *pwRig {
 		LookupPeer: lookup,
 		LocalHost:  func() string { return "parity-local" },
 		Settings:   func() autonomous.ForwardSettings { return rig.forward },
-		NewClient: func(_ bool, timeout time.Duration) *http.Client {
+		NewClient: func(_ bool, _ string, timeout time.Duration) *http.Client {
 			return &http.Client{Timeout: timeout}
 		},
 		Sleep: func(time.Duration) {},

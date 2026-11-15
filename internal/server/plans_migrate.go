@@ -1,7 +1,8 @@
 // plans_migrate.go — POST /api/plans/migrate: build plan records from the
-// project arcs and the registry rows.
+// project arcs and the registry rows, or file the work under release plans.
 //
-//	POST /api/plans/migrate   body {"apply": bool}   (autonomous:write)
+//	POST /api/plans/migrate   body {"apply": bool}                     (autonomous:write)
+//	POST /api/plans/migrate   body {"mode": "release", "project": ...} (autonomous:write)
 //
 // The default is a dry run: the answer lists what would be created and
 // linked and nothing is written. {"apply": true} writes. A plan or link that
@@ -9,6 +10,13 @@
 // or config key is deleted. The apply is audit-logged through the plan-record
 // audit hook. autonomous.plan_records.enabled false answers 404. A request
 // only reads and writes record files; it never starts or signals a process.
+//
+// Mode "release" files a project's Automata and Automations under the release
+// plans of the current and the next release (see planrecords.ReleaseMigrate).
+// It is a preview by default; a written run needs {"apply": true} and the
+// preview_id of the preview the operator approved, and a missing or stale id is
+// refused before anything is written. The row-plan conversion has its own path,
+// /api/plans/migrate/row-plans (plans_release_api.go).
 
 package server
 
@@ -22,9 +30,30 @@ import (
 
 const plansMigratePath = "/api/plans/migrate"
 
-// planMigrateBody is the request body.
+// The modes of POST /api/plans/migrate.
+const (
+	planMigrateModeArcs    = "arcs"
+	planMigrateModeRelease = "release"
+)
+
+// planMigrateBody is the request body. Mode is empty or "arcs" for the
+// original migration (only Apply applies) and "release" for the release
+// migration (Project is required; the rest are optional).
 type planMigrateBody struct {
-	Apply bool `json:"apply"`
+	Apply bool   `json:"apply"`
+	Mode  string `json:"mode"`
+	// The release migration's inputs.
+	Project        string                             `json:"project"`
+	CurrentRelease string                             `json:"current_release"`
+	NextRelease    string                             `json:"next_release"`
+	Marks          map[string]planrecords.ReleaseMark `json:"marks"`
+	PreviewID      string                             `json:"preview_id"`
+}
+
+// releaseOnly reports whether the body carries a field only the release
+// migration reads.
+func (b planMigrateBody) releaseOnly() bool {
+	return b.Project != "" || b.CurrentRelease != "" || b.NextRelease != "" || len(b.Marks) > 0 || b.PreviewID != ""
 }
 
 // planMigrateArcs lists every configured project arc with the title and goal
@@ -78,6 +107,27 @@ func (s *Server) runPlanMigration(apply bool, actor string) (planrecords.Migrate
 	})
 }
 
+// runReleaseMigration runs the release migration with the server's resolver and
+// audit hook. A written run carries the preview id the operator approved.
+func (s *Server) runReleaseMigration(b planMigrateBody, actor string) (planrecords.ReleaseMigrateReport, error) {
+	return planrecords.ReleaseMigrate(planrecords.ReleaseMigrateOptions{
+		Store: s.planRecords, Project: b.Project, Resolve: s.releaseResolver(b.Project),
+		CurrentRelease: b.CurrentRelease, NextRelease: b.NextRelease, Marks: b.Marks,
+		Apply: b.Apply, ApprovalToken: b.PreviewID,
+		Audit: PlanRecordsAuditFunc(s.auditLog), Actor: actor,
+	})
+}
+
+// runRowPlanConversion runs the row-plan conversion with the same resolver,
+// audit hook and actor the plans migration uses.
+func (s *Server) runRowPlanConversion(b rowPlansBody, actor string) (planrecords.ConvertRowPlansReport, error) {
+	return planrecords.ConvertRowPlans(planrecords.ConvertRowPlansOptions{
+		Store: s.planRecords, Project: b.Project, CurrentRelease: b.CurrentRelease,
+		Resolve: s.planMigrateResolver(), Apply: b.Apply, ApprovalToken: b.PreviewID,
+		Audit: PlanRecordsAuditFunc(s.auditLog), Actor: actor,
+	})
+}
+
 func (s *Server) handlePlansMigrate(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Autonomous.PlanRecords.EffectiveEnabled() {
 		http.Error(w, "plan records are turned off (autonomous.plan_records.enabled)", http.StatusNotFound)
@@ -97,6 +147,19 @@ func (s *Server) handlePlansMigrate(w http.ResponseWriter, r *http.Request) {
 	}
 	var body planMigrateBody
 	if r.ContentLength != 0 && !decodePlanRecordJSON(w, r, &body) {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(body.Mode)) {
+	case "", planMigrateModeArcs:
+		if body.releaseOnly() {
+			planRecordsError(w, http.StatusBadRequest, `project, current_release, next_release, marks and preview_id belong to mode "release"`)
+			return
+		}
+	case planMigrateModeRelease:
+		s.serveReleaseMigration(w, r, body)
+		return
+	default:
+		planRecordsError(w, http.StatusBadRequest, `mode must be "arcs" (the default) or "release"`)
 		return
 	}
 	rep, err := s.runPlanMigration(body.Apply, s.auditActor(r.Context()))

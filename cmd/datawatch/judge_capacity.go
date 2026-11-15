@@ -270,8 +270,16 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 func judgeNodeAdmitter(amgr *autonomouspkg.Manager, reg *verifierRegistry) func(ctx context.Context, backend, model, unitID, prdID string) (func(), string, error) {
 	return func(ctx context.Context, backend, model, unitID, prdID string) (func(), string, error) {
 		holder := autonomouspkg.JudgeHolder(unitID)
+		// A completed task's guardrail judge runs while the task's OWN worker
+		// lease may still be held (the executor releases it at the end of its
+		// cycle), so on a full pool the judge would wait behind the very slot
+		// it is about to free — the pool self-deadlocks and every downstream
+		// task stalls. Hand that lease to the judge (or release it first when
+		// the pools differ), the same way as the session verifier handoff.
+		// A unit that holds no worker lease (story or PRD guard) admits like
+		// a new request: nothing to hand off.
 		node, release, err := amgr.AdmitJudge(ctx, autonomouspkg.JudgeAdmit{
-			Holder: holder, PRDID: prdID, Backend: backend, Model: model,
+			Holder: holder, WorkerHolder: unitID, PRDID: prdID, Backend: backend, Model: model,
 			Wait: amgr.CapacityWaitDuration(),
 		})
 		if err != nil {

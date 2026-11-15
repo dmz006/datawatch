@@ -22,9 +22,16 @@ type Filter struct {
 	Automaton string
 	Limit     int
 	Offset    int
+	// IncludeArchived adds archived plans to the result; ArchivedOnly returns
+	// only archived plans. With neither set, archived plans are left out.
+	IncludeArchived bool
+	ArchivedOnly    bool
 }
 
 func (f Filter) matches(r *Record) bool {
+	if !(ArchiveScope{IncludeArchived: f.IncludeArchived, ArchivedOnly: f.ArchivedOnly}).allows(r.Archived) {
+		return false
+	}
 	if f.Kind != "" && r.Kind != f.Kind {
 		return false
 	}
@@ -229,6 +236,12 @@ type TitleFilter struct {
 	State   string
 	Limit   int
 	Offset  int
+	// IncludeArchived adds archived plans to the result; ArchivedOnly returns
+	// only archived plans (and the Automata and Automations linked to them).
+	// With neither set, archived plans are left out. An Automaton or Automation
+	// is never hidden because its plan is archived.
+	IncludeArchived bool
+	ArchivedOnly    bool
 }
 
 // TitleHit is one title search result.
@@ -275,12 +288,13 @@ func (s *Store) SearchTitles(query string, f TitleFilter) ([]TitleHit, int) {
 		want[t] = true
 	}
 	wants := func(t string) bool { return len(want) == 0 || want[t] }
+	scope := ArchiveScope{IncludeArchived: f.IncludeArchived, ArchivedOnly: f.ArchivedOnly}
 	s.mu.RLock()
 	var hits []TitleHit
 	order := map[string]int{}
 	for _, sm := range s.li.sums {
 		if !wants(string(sm.Kind)) || (f.Project != "" && sm.Project != f.Project) ||
-			(f.State != "" && string(sm.State) != f.State) {
+			(f.State != "" && string(sm.State) != f.State) || !scope.allows(sm.Archived) {
 			continue
 		}
 		sc := titleScore(sm.Title, toks, phrase)
@@ -300,7 +314,7 @@ func (s *Store) SearchTitles(query string, f TitleFilter) ([]TitleHit, int) {
 		typ, id, _ := strings.Cut(k, ":")
 		plan, ok := s.li.sums[e.planUID]
 		if !ok || !wants(typ) || (f.Project != "" && plan.Project != f.Project) ||
-			(f.State != "" && e.info.State != f.State) {
+			(f.State != "" && e.info.State != f.State) || (scope.ArchivedOnly && !plan.Archived) {
 			continue
 		}
 		sc := titleScore(e.info.Title, toks, phrase)

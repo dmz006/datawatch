@@ -3377,6 +3377,50 @@ On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
 
+### MCP config files the daemon writes
+
+The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
+session sees the `datawatch` bridge (and any `session.extra_mcp_servers` entries):
+
+- **Per-session** — `<project_dir>/.mcp.json`, written (and idempotently rewritten)
+at session start, `0600`; operator-added entries are preserved, only the
+`datawatch` entry and the extras-list entries are managed. Sessions sharing a
+project dir share the file; each start rewrites the `datawatch` entry with the
+starting session's own credential.
+- **Instance-level** — `<data_dir>/.mcp.json`, refreshed at each session
+launch so it tracks the current bridge and carries a current scoped
+credential; not tied to a specific session. Its `datawatch` entry is
+removed when no live session remains, or when the daemon shuts down.
+
+All files are `0600`. The **per-session** project file carries the starting session's **scoped, short-lived credential** as `DATAWATCH_TOKEN` — default grant: the `session-default` capability group ([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's own `server.token`. The credential is minted at session start, persisted `0600` under the data directory (a running session's bridge keeps working across a daemon restart), and revoked when the session ends or is killed, so a leftover project file holds a dead bearer. (Edge fallbacks: if minting the credential fails the entry gets no `DATAWATCH_TOKEN` at all; if the session-token store itself cannot be wired, the per-session write falls back to the admin token — the latter should only happen in tests.)
+
+The **instance-level** file no longer carries the daemon's long-lived
+admin `server.token` either. Its `DATAWATCH_TOKEN` is the **instance-
+scoped, expiring credential**: the same `session-default` capability group
+by default (override: `session.capabilities`; [howto/federation-cbac](howto/federation-cbac.md)),
+valid about an hour. Each session launch refreshes it — the existing
+token is reused while more than half its lifetime remains, and re-minted
+on the next launch once it is down to the last half (even before it
+would expire) — so repeated launches do not stack credentials and the
+file tracks the current bridge (JS→Go) without admin exposure. When no
+live session remains — the last one ends, or the daemon shuts down — the
+credential is revoked and the `datawatch` entry (with the file, if it was
+the only server) is removed, so no credential sits on disk while the
+daemon is idle. A failed mint removes the entry rather than leaving a
+stale credential; there is deliberately **no fallback** to the long-lived
+token. A stale entry still holding the daemon's admin token from an
+earlier daemon is dropped at daemon startup (the startup line says the
+stale server credential was removed from the instance `.mcp.json`; the
+token value is never logged), and it is never written again. (The old
+user-scope (`~/.mcp.json`) sweep is deprecated in favour of the
+data-directory instance-level write.)
+
+**Operator review — flag for you:**
+1. neither daemon-written `.mcp.json` (per-session nor instance-level) carries the daemon's `server.token` any more: both hold scoped, short-lived `0600` credentials that die with the session (per-session) or when no live session remains (instance-level), and the instance entry is removed at daemon shutdown.
+2. anything built on reading `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a long-lived admin bearer (helper scripts in a project, tooling that treated a session's bridge as a standing admin principal) — including the instance-level file on hosts upgraded from an earlier daemon — is **broken by design now**: the credential there is granted by the `session-default` group and is dead once the last session ends or its lifetime runs out. Give those workflows their own operator-managed credential: the daemon's bearer in your own MCP host config, or a federation peer token, with the capabilities they actually need.
+
+Operator-managed configs — `~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side `mcp.json` — are unaffected and still authenticate with the daemon's bearer or a peer token.
+
 ### MCP transport diagnostics (connection drops, stream health)
 
 Every MCP SSE stream is observed: the daemon logs one `STREAM OPEN` / `STREAM CLOSE`
@@ -6495,7 +6539,15 @@ boot-resume pass, so a restart does not release work into a limit that is still
 in force. Expired flags are dropped; a corrupt file is logged and ignored. Each
 restored flag writes a boot-resume entry (`backoff_restored`), a warning alert
 (**Back-off restored after restart**) and an `autonomous_usage_backoff_restored`
-audit event. Restoring never ends or signals a session. Deleting the file while
+audit event. Restoring never ends or signals a session. The review reserve is
+separate: while a restored flag is up, the review roles (guardrail judges,
+verifiers, planning) still get their bounded admission path on that backend,
+built from `autonomous.backoff_reserve_for_review` (default
+`1`; `0` disables it) and `autonomous.backoff_reserve_tokens_per_hour`
+(default `0` = no one-hour token budget), settable from any config surface
+(YAML, REST, MCP, CLI, comm, PWA — see docs/howto/usage-backoff.md). The reserve's own state — the rolling
+token stamps and its in-flight verdicts — is in memory only and does not
+survive a restart. Deleting the file while
 the daemon is stopped forgets all flags; clear a single flag with
 `datawatch usage-backoff clear <backend>` instead.
 
@@ -6510,10 +6562,12 @@ flush) still restores the last flag written by a set or clear, and decide
 whether a flag restored with an unknown reset time should keep its original
 window or restart the maximum wait.
 
-**Reading the history.** Nine actions record the capacity and budget
+**Reading the history.** Eleven actions record the capacity and budget
 machinery: `autonomous_capacity_wait`, `autonomous_capacity_admitted`,
 `autonomous_usage_backoff_set`, `autonomous_usage_backoff_cleared`,
 `autonomous_usage_backoff_auto_cleared`, `autonomous_usage_backoff_restored`,
+`autonomous_usage_backoff_reserve_admitted`,
+`autonomous_usage_backoff_reserve_refused`,
 `autonomous_budget_ceiling_wait`,
 `autonomous_budget_window_resumed` and `autonomous_budget_window_rollover`.
 Each is written once per change, not once per poll. All four surfaces take
@@ -8099,6 +8153,42 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
 
+## Peer TLS (verify by default)
+
+Every outbound connection the daemon makes to a registered peer — remote servers (`servers:` / proxy mode) and federation peers — **verifies the peer's TLS certificate against the system trust store by default**. An `https://` peer with a trusted-CA certificate works with no extra setting; a peer with a self-signed or private-CA certificate fails the TLS handshake until one of the per-peer options below is set.
+
+Per-peer options (all independent — every other peer keeps full verification):
+
+- `tls_cert_fingerprint` — pin the peer's leaf certificate: the SHA-256 of that one certificate, 64 hex characters (colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. A malformed value is rejected when saved (REST `400`, CLI error), and the pin **wins over** `tls_skip_verify` — the two cannot both be set (CLI refuses locally, REST returns `400`). The pin stops matching when the peer's leaf changes (renewal, re-issue): the peer then goes unreachable until the pin is updated. Derive it with `openssl s_client -connect <host:port>` to save the leaf, then `openssl x509 -noout -fingerprint -sha256 -in <leaf.pem>`.
+- `tls_skip_verify: true` — turn verification off for that peer only (self-signed/local-dev peer on a trusted network). Saving or seeding such a peer is announced three ways: the create/update response carries a `warnings` array (`POST /api/servers/{name}/test` and the federation `test` endpoint do too), the daemon logs the one line `<name>: this peer's certificate is not verified (tls_skip_verify is set); set tls_cert_fingerprint to pin its leaf certificate instead`, and it emits a warn-level system alert titled **Peer certificate not verified** — at most once per peer per daemon run (a startup sweep also covers peers that were already seeded or stored, so they warn exactly once per run).
+
+Surfaces that set it:
+
+| Surface | How |
+|---------|-----|
+| PWA | Settings → Comms → Servers Add/Edit form: **Skip TLS certificate verification** checkbox (warning line: "TLS certificate verification is disabled for this server — use only on a trusted network.") + **Certificate fingerprint (pin)** field, mutually exclusive in the form; the Observer → Federation Peers card's add/edit peer form carries the same pair |
+| CLI | `datawatch server add/update --tls-skip-verify \| --tls-cert-fingerprint <64-hex>`; `datawatch federation peer add/update` take the same flags (`--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`; on update, omitting `--tls-cert-fingerprint` leaves the pin unchanged) |
+| REST | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` and `/api/federation/peers`; pin + skip together or a malformed pin → `400` |
+| MCP | `server_add`, `server_update`, `federation_peer_add`, `federation_peer_update` accept `tls_cert_fingerprint` (the skip flag is `tls_skip_verify`) |
+| YAML | `tls_cert_fingerprint` or `tls_skip_verify` on the `servers:` entry (restart required; builtins are read-only in the UI) |
+
+**Operator review before rolling out:** peers you reached before by trusting their CA only in the browser are not covered — the daemon's own proxy and health calls need the CA in the daemon's system trust store, a pin, or the explicit skip. Prefer the pin (or a trusted CA) over `tls_skip_verify`; every skipped, unpinned peer shows up in the Alerts tab as **Peer certificate not verified**, which is the review queue. A pinned peer needs its pin refreshed when the peer's leaf certificate changes. See [howto/multi-servers.md](howto/multi-servers.md#peer-tls-verified-by-default) for the walkthrough, and [howto/peer-tls-verification](howto/peer-tls-verification.md) for the cross-link reference covering all three peer links.
+
+## Observer push TLS (verify by default)
+
+Observer pushes — a worker's Shape A push into its parent, and the primary → root federation push (`observer.federation`) — now verify the counterpart's TLS certificate. Before this change the worker push ran with certificate checking off unconditionally.
+
+| Channel | Knob | Effect |
+|---------|------|--------|
+| Worker push (`https://` parent) | *(none)* | Parent's leaf verified against the system trust store; one startup notice says so. |
+| | `DATAWATCH_PARENT_CERT_FINGERPRINT` (hex SHA-256 of the parent's leaf) | The chain is not checked and the leaf must match; a malformed pin fails closed. **The pin wins over the opt-out.** The parent already injects this variable into container workers for the bootstrap channel. |
+| | `DATAWATCH_OBSERVER_PUSH_INSECURE=1\|true\|yes\|on` | Explicit opt-out, honored only when no pin is set; startup warning names the parent host (never tokens). |
+| Federation push | `observer.federation.insecure: true` | Still skips verification, but the daemon prints `[observer/federation] WARNING: TLS certificate verification is SKIPPED for the federation root <url>…` at startup (no pin knob; trust the root's certificate instead). |
+
+What does not change: the bootstrap channel's existing unverified fallback for a TLS-less parent, and `datawatch-stats` (a separate binary with its own `--insecure-tls`).
+
+**Operator review before upgrading a fleet:** a peer that pushed to a self-signed or private-CA `https://` parent was working only because verification was off; after the upgrade the push fails the TLS handshake unless the parent's leaf fingerprint is pinned or the opt-out is set. A primary pushing into a self-signed root needs the root's certificate in the system trust store, or the (warned) `observer.federation.insecure: true`. The walkthrough with the openssl derivation is in [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default), with the cross-link reference in [howto/peer-tls-verification](howto/peer-tls-verification.md).
+
 ## LLM billing mode
 
 Each LLM entry carries a `billing_mode`: `api` (metered), `allowance` (a bundled
@@ -8163,6 +8253,16 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 **Derived project field.** Automaton and Automation reads carry a read-only `project` field derived from the registered project aliases. It is computed per read and never stored; with no matching alias the field is omitted. Progress counting by project is unchanged: a record with no project still counts under the none key.
 
 **Plans (links, migration, read API).** Plans are records of kind `plan`, stored like the others, with `goal`, `order` and the link lists `automations`, `automata` and `findings`. No new setting: the plans routes follow `autonomous.plan_records.enabled` and answer 404 while it is off. A link is never overwritten (`ErrLinkConflict`, a refusal naming the holder); link and order changes write `plan_record_linked`, `plan_record_unlinked` and `plan_record_reordered`. `datawatch plans migrate` (REST `POST /api/plans/migrate`, MCP `plan_migrate`, chat `autonomous plan-migrate`) previews by default; `--apply` writes plans from the plans and registry rows, each tagged `migrated-from` so a rerun is a no-op, and writes one `plan_record_imported` event with subject `plans migrate`. It deletes no plan, row or config key. The read routes (`/api/projects/{name}/plans`, `overview-summary`, `/api/plans/{ref}/automata`, `.../tasks`, `/api/plan-records/browse`) read the summary index, which is kept in step on every write, so they stay fast at thousands of records; only `.../tasks` opens Automaton records. Writes go through `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order` and `POST /api/plans/{ref}/attach|detach` (MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`; CLI `datawatch plans`; chat `autonomous plan`); they need `autonomous:write` for a federated peer. Not in MCP: the read routes. Android and iPhone do not have the Plans view yet; track it in datawatch-app. The plans route and the roll-up `arcs` field are deprecated and still answer, now with a `plans` list added.
+
+**Release plans, themes, archive and the approval-gated migrations.** A plan can be a release plan (`plan_kind` `release` with a `release` label): a plan is a release, themes group its Automata and Automations inside it, and registry rows and findings are items that link into a plan (registry row links, backlog items, attached findings), never plans of their own. There is no new setting: every route below follows `autonomous.plan_records.enabled` and answers 404 while it is off, a read needs `autonomous:read` and a change needs `autonomous:write` for a federated peer. The operator surfaces are REST (`GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `archived=` on `GET /api/projects/{name}/plans`), MCP (`plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and the release forms of `plan_create` and `plan_migrate`), the CLI (`datawatch plan theme|archive|restore|unattributed|attach|migrate --release|row-plans`), chat (`autonomous plan themes|theme|archive|restore|unattributed|attach|migrate release`; the row-plan conversion has no chat verb) and the release controls of the Plans sub-tab in the web app. The mapping is in [api-mcp-mapping.md](api-mcp-mapping.md#release-plans-themes-archive-and-migration-every-surface), the commands in [commands.md](commands.md#datawatch-plan-release-plan-commands) and the walkthroughs in [plan records](howto/plan-records.md#release-plans-and-themes).
+
+*Archive.* Archive and restore mark a plan `archived` (with `archived_at` and an optional reason of up to 1000 characters). Archiving keeps the plan's file, links, themes and order and never touches an Automaton, Automation, registry row, finding or setting; nothing is deleted, restore clears the mark and the plan returns to the place its order gave it. The default plan lists, the backlog, search and the overview counts leave archived plans out; `archived=include` or `archived=only` on the project plans list (and the web app's archived filter) shows them, and the overview reports `counts.plans.archived`. Both calls are idempotent (a repeat answers `changed: false` and writes no audit event), only plans can be archived, and a caller can name one protected plan (usually the current release plan) that is refused with a 409 while it holds Automata. Audit: `plan_record_archived` and `plan_record_restored` (actor, automata_held, order, and the reason on an archive).
+
+*Approval-gated migrations.* Two calls move many things at once and are gated by an approval: the release migration (`POST /api/plans/migrate` with `mode` `release`) files a project's Automata under the current and next release plans (default labels `10.0` and `11.0`, or the labels the caller gives) and the row-plan conversion (`POST /api/plans/migrate/row-plans`) turns the registry-row plans the earlier plans migration made into registry row links and backlog items and archives them. Both preview by default and return a `preview_id`, a stable hash of what the preview shows. A written run needs `apply` plus that id: a missing id is refused with 400, an id that no longer matches (the plans, the Automata or the operator marks changed since the preview) is refused with 409, and in both cases nothing is written. The CLI prints the preview and refuses `--apply` without `--preview-id`, and chat and MCP refuse before anything is sent. A run holds a lock, so two approvals cannot interleave. An Automaton or Automation another plan already holds is reported as a conflict and never moved; items outside both releases are skipped with a reason; nothing is deleted; a second approved run changes nothing. Operator marks (`marks`, REST, MCP and CLI only) override the target release and theme of one Automaton and are part of what the preview id covers. Audit: each written change is recorded under the store actions `plan_record_release_migrated` and `plan_record_row_plans_converted` (details: actor, `op`, project) and each theme change under `plan_record_theme_changed` (details: `theme_op`); the daemon's audit log shows these three as `plan_record_updated`, so read `op` or `theme_op` in the details to tell them apart.
+
+*Limits and rules.* Themes: at most 50 per plan, names up to 100 characters and unique case-insensitively; an item is in at most one theme; detaching an item removes it from its theme; removing a theme leaves its items unplaced; only a release plan has themes. A project has one release plan per label, and a second is refused naming the holder. A bulk attach takes up to 500 ids and answers one result line per id, so a refused id never stops the others. A record is held by a plan as a registry row link or as a backlog item, not both, and a finding attached to another plan is refused. A row-plan is recognised by its source marker plus the title form, never by title alone; one whose Automata are not all on a release plan yet waits. The release plan, theme, row link, backlog item and archive fields are optional, so older records load unchanged.
+
+*Operator review.* Before approving the release migration read its `conflicts`, `unplaced` and `skipped` lists and the two release labels; before approving the row-plan conversion read `waiting`, `other_release_plans` and the release the backlog items go to. Release plans are created by hand only over REST and MCP; the CLI, chat and web app get them through the release migration. Android and iPhone do not have release plans, themes, the migrations or the archive yet; track it in datawatch-app. Rollback: restore an archived plan to bring it back; detach an Automaton (`datawatch plans detach`) to undo an attach; the migrations delete nothing, so there is nothing to recover.
 
 **Rollback.** Set `autonomous.plan_records.enabled` to `false` to answer every route with 404 and hide the section; records stay on disk. Turn `write_through` off to send the registry hook back to the README. Removing the `plan-records` directory under the data dir discards every record; the original files are untouched and a new import rebuilds them. Rows shipped by write-through while it was on exist only as records, so import or copy them back by hand before discarding the directory.
 

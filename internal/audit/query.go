@@ -24,6 +24,8 @@ var CapacityActions = []string{
 	ActionUsageBackoffAutoCleared,
 	ActionUsageBackoffPatternsRechecked,
 	ActionUsageBackoffRestored,
+	ActionUsageBackoffReserveAdmitted,
+	ActionUsageBackoffReserveRefused,
 	ActionBudgetCeilingWait,
 	ActionBudgetWindowResumed,
 	ActionBudgetWindowRollover,

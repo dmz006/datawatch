@@ -330,7 +330,7 @@ func TestForwardReceive_ForwardedEventNeverForwardedOn(t *testing.T) {
 		LookupPeer: func(name string) (PeerRef, bool) {
 			return PeerRef{Name: name, URL: "https://peer.example.net", Token: "tok", Federated: true, HasAutonomousWrite: true}, true
 		},
-		NewClient: func(bool, time.Duration) *http.Client { return counting },
+		NewClient: func(bool, string, time.Duration) *http.Client { return counting },
 	})
 	m := recvManager(recvEnabled(), recvLocal)
 	got := make(chan LifecycleEvent, 1)
@@ -486,7 +486,7 @@ func TestForwardReceive_PeerSinkPositiveControlAndNoForwardOn(t *testing.T) {
 		LookupPeer: func(name string) (PeerRef, bool) {
 			return PeerRef{Name: name, URL: "https://peer.example.net", Token: "tok-peer", Federated: true, HasAutonomousWrite: true}, true
 		},
-		NewClient: func(bool, time.Duration) *http.Client { return &http.Client{Transport: rt} },
+		NewClient: func(bool, string, time.Duration) *http.Client { return &http.Client{Transport: rt} },
 	})
 	store, err := NewSubscriptionStore(filepath.Join(t.TempDir(), "lifecycle_subscriptions.json"), nil)
 	if err != nil {

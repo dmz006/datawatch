@@ -68,3 +68,15 @@ the handler each button's onclick names:
    bar buttons through the stub, assert `_automationState.subtab` changes and the painted
    body matches, and that `_automataSyncActions` is not called with `automation`.
 4. Optional: give `.projects-subtabs button` the same 40 px phone tap height.
+
+## Parity surface
+
+| Surface | Touched | Notes |
+|---|---|---|
+| Web app (PWA) | yes | the Overview sub-tab bar click handler and its test |
+| REST | no | no endpoint or field changes |
+| MCP | no | no tool changes |
+| CLI | no | no command changes |
+| Messaging channel | no | no verb changes |
+| YAML / configuration | no | no setting |
+| Android and iPhone apps | tracked | the datawatch-app issue for this web change is filed with the release |

@@ -131,14 +131,14 @@ func (s *Server) federationTargets() []federationTarget {
 	if s.cfg != nil {
 		for _, srv := range s.cfg.Servers {
 			if srv.Enabled && srv.URL != "" {
-				targets = append(targets, federationTarget{name: srv.Name, url: srv.URL, token: srv.Token, skipVerify: srv.TLSSkipVerify})
+				targets = append(targets, federationTarget{name: srv.Name, url: srv.URL, token: srv.Token, skipVerify: srv.TLSSkipVerify, pinnedSHA256: srv.TLSCertFingerprint})
 			}
 		}
 	}
 	if s.serverStore != nil {
 		for _, peer := range s.serverStore.ListFederated() {
 			if peer.Enabled && peer.URL != "" {
-				targets = append(targets, federationTarget{name: peer.Name, url: peer.URL, token: peer.Token, skipVerify: peer.TLSSkipVerify})
+				targets = append(targets, federationTarget{name: peer.Name, url: peer.URL, token: peer.Token, skipVerify: peer.TLSSkipVerify, pinnedSHA256: peer.TLSCertFingerprint})
 			}
 		}
 	}

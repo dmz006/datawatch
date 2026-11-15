@@ -64,7 +64,17 @@ func isAutomationObjectKey(key string) bool {
 		// Automation object, so the Automation word is correct there.
 		key == "timeline_card_filter_automation" ||
 		key == "timeline_card_kind_automation" ||
-		key == "settings_placement_automation_template"
+		key == "settings_placement_automation_template" ||
+		// Release-plan UI strings that name the Automation object.
+		key == "plans_release_automation" ||
+		key == "plans_release_unattributed_title" ||
+		key == "plans_release_unattributed_none" ||
+		key == "plans_release_unattributed_empty" ||
+		key == "plans_release_theme_delete" ||
+		key == "plans_release_theme_members_empty" ||
+		key == "plans_release_migrate_help" ||
+		key == "plans_release_archive_help" ||
+		key == "plans_release_restore_help"
 }
 
 // pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the

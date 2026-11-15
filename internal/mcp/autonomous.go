@@ -233,6 +233,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("progress_snapshot_retention_days", mcpsdk.Description("Days saved progress snapshots are kept (autonomous.progress.snapshot_retention_days). Whole number >= 0; 0 = 90.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
+		mcpsdk.WithNumber("backoff_reserve_for_review", mcpsdk.Description("Review slots a backed-off backend may keep for review work while its usage back-off is active: a whole number >= 0 (0 = no slot reserve; unset reads the 1-slot default). Set with autonomous_config_set, read back in usage_backoff_status's config.reserve_for_review.")),
+		mcpsdk.WithNumber("backoff_reserve_tokens_per_hour", mcpsdk.Description("Per-hour token budget the review reserve may spend on a backed-off backend: a whole number >= 0 (0 = no per-hour budget, the default). Set with autonomous_config_set, read back in usage_backoff_status's config.reserve_tokens_per_hour; the reserve array reports the current window's usage.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
 		mcpsdk.WithBoolean("plan_coverage_suppress_created_files", mcpsdk.Description("On (the default), a requirement that appears only on the 'create Y' side of an 'X or create Y' alternative does not count as an unmatched requirement for coverage. Pass false to count every numbered requirement regardless.")),
 		mcpsdk.WithBoolean("plan_coverage_scoped_requirements", mcpsdk.Description("On (the default), only the numbered requirements inside the configured plan-coverage requirement sections count toward the coverage gate. Pass false to count numbered requirements from the whole spec.")),
@@ -480,15 +482,22 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			}
 		}
 	}
-	// Usage back-off (autonomous.usage_backoff / backoff_max_wait_minutes);
-	// the mode is omitted when empty, the maximum is presence-aware so the
-	// REST side validates whatever the caller sent.
+	// Usage back-off (autonomous.usage_backoff / backoff_max_wait_minutes /
+	// backoff_reserve_for_review / backoff_reserve_tokens_per_hour); the mode
+	// is omitted when empty, the numbers are presence-aware so the REST side
+	// validates whatever the caller sent (an explicit 0 is forwarded).
 	if v := req.GetString("usage_backoff", ""); v != "" {
 		body["usage_backoff"] = v
 	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["backoff_max_wait_minutes"]; ok {
 			body["backoff_max_wait_minutes"] = req.GetFloat("backoff_max_wait_minutes", 0)
+		}
+		if _, ok := args["backoff_reserve_for_review"]; ok {
+			body["backoff_reserve_for_review"] = req.GetFloat("backoff_reserve_for_review", 0)
+		}
+		if _, ok := args["backoff_reserve_tokens_per_hour"]; ok {
+			body["backoff_reserve_tokens_per_hour"] = req.GetFloat("backoff_reserve_tokens_per_hour", 0)
 		}
 	}
 	// Automation idle-alert + triage-alert thresholds (autonomous.automation.*);

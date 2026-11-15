@@ -295,4 +295,13 @@ report/replace them when a native pass lands.*
 
 ## Peer TLS behaviour
 
-The federation sessions view now honours each peer's `tls_skip_verify` setting when it contacts that peer. A peer registered with `tls_skip_verify: true` (for example one using a self-signed certificate) is reachable from the sessions view; a peer without it is verified against the system trust store. No endpoint or response shape changed.
+When this daemon contacts a peer it honours that peer's TLS settings: the
+peer's leaf certificate is **verified against the system trust store by
+default**; a peer with `tls_cert_fingerprint` set is reached by pin (the
+chain is not checked, the leaf must match, and the pin wins over
+`tls_skip_verify`); a peer with `tls_skip_verify: true` (for example one
+using a self-signed certificate) is reachable without verification, and is
+announced with the usual one-line warning plus a warn-level system alert
+(at most once per peer per daemon run). No endpoint or response shape
+changed; the settings themselves are managed on the usual surfaces
+(see [multi-servers.md](multi-servers.md#peer-tls-verified-by-default)).

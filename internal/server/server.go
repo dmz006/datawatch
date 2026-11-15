@@ -374,6 +374,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("PUT /api/plans/{ref}/automata/order", api.handlePlanAutomataOrder)            // plans write API: set the order of a plan's Automata
 	apiMux.HandleFunc("POST /api/plans/{ref}/attach", api.handlePlanAttach)                          // plans write API: attach an Automaton, Automation or finding
 	apiMux.HandleFunc("POST /api/plans/{ref}/detach", api.handlePlanDetach)                          // plans write API: detach one of them
+	apiMux.HandleFunc("GET /api/plans/{ref}/themes", api.handlePlanThemesGet)                        // release plans API: a plan's themes and unplaced items
+	apiMux.HandleFunc("PUT /api/plans/{ref}/themes", api.handlePlanThemesPut)                        // release plans API: set the whole theme layout
+	apiMux.HandleFunc("POST /api/plans/{ref}/themes", api.handlePlanThemesAction)                    // release plans API: theme create, rename, delete, place, unplace, reorder
+	apiMux.HandleFunc("POST /api/plans/{ref}/archive", api.handlePlanArchive)                        // release plans API: archive a plan (nothing is deleted)
+	apiMux.HandleFunc("POST /api/plans/{ref}/restore", api.handlePlanRestore)                        // release plans API: clear the archive mark
+	apiMux.HandleFunc("GET /api/plans/unattributed", api.handlePlansUnattributed)                    // release plans API: Automata no release plan holds, with suggestions
 	apiMux.HandleFunc("GET /api/plans/{ref}/tasks", api.handlePlanTasks)                             // plans read API: a plan's tasks (on expand)
 	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)                  // project history: finished/archived Automata, daily progress, Gantt rows
 	apiMux.HandleFunc("GET /api/projects/{name}/timeline", api.handleProjectTimeline)                // project timeline: first/last per arc, Automaton and task, one level at a time
@@ -623,6 +629,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)                       // decision records: create and list (exact path wins over the subtree)
 	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)                      // decision records: one by id, update, withdraw
 	apiMux.HandleFunc("/api/plan-records/", api.handlePlanRecords)                                         // plan records: registry rows, findings, search, import
+	apiMux.HandleFunc("/api/plans/migrate/row-plans", api.handlePlansRowPlans)                             // release plans API: list (GET) and convert (POST, preview by default) the registry-row plans
 	apiMux.HandleFunc("/api/plans/migrate", api.handlePlansMigrate)                                        // plans migrate: dry run by default, {apply:true} writes plans from arcs and registry rows
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                           // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                              // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
@@ -1119,6 +1126,17 @@ func (s *HTTPServer) CheckRoleContention() []string {
 func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {
 		s.api.SetServerStore(st)
+	}
+}
+
+// SetTLSPeerWarnTracker wires the peer certificate non-verification
+// warning tracker (log + once-per-peer-per-run system alert) into the
+// server's create/update handlers. Nil (unwired) is safe: the handlers
+// only nil-check the tracker when they run, and it is only invoked from
+// the server side.
+func (s *HTTPServer) SetTLSPeerWarnTracker(t *TLSPeerWarnTracker) {
+	if s.api != nil {
+		s.api.SetTLSPeerWarnTracker(t)
 	}
 }
 

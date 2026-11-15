@@ -409,9 +409,22 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
-#                            Wrong/missing → 401 on discovery and /api/channel/ready;
-#                            bridge starts but push notifications never work.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the per-session .mcp.json the daemon writes this is the
+#                            session's scoped, short-lived credential (default session-default
+#                            grant) — minted at session start, revoked when the session ends or
+#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            In the instance-level .mcp.json in the data directory the
+#                            credential is the instance-scoped, EXPIRING one: same default
+#                            session-default grant, valid about an hour, refreshed at each
+#                            session launch and revoked when no live session remains (the
+#                            datawatch entry is then removed), so NO daemon-written .mcp.json
+#                            carries the long-lived admin server.token anymore. Operator-
+#                            managed host configs still use server.token or a federation
+#                            peer token. See docs/howto/federation-cbac.md for the
+#                            capability model. Wrong/missing → 401 on discovery and
+#                            /api/channel/ready; bridge starts but push notifications never
+#                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
 #
@@ -1131,6 +1144,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
@@ -3359,6 +3381,8 @@ autonomous:
   # autonomous_usage_backoff_cleared, autonomous_usage_backoff_auto_cleared,
   # autonomous_usage_backoff_restored (a flag read back from
   # <data_dir>/autonomous/backoff.json at daemon start),
+  # autonomous_usage_backoff_reserve_admitted / autonomous_usage_backoff_reserve_refused
+  # (one per review-reserve verdict on a held backend, subject the backend),
   # autonomous_usage_backoff_patterns_rechecked, autonomous_budget_ceiling_wait,
   # autonomous_budget_window_resumed and autonomous_budget_window_rollover.
   # Read them with GET /api/audit (action=autonomous_* lists the family;
@@ -3902,10 +3926,13 @@ autonomous:
   # and docs/plans/2026-10-20-plan-coverage-gate.md.
   plan_coverage_check: block
   # Reactive usage back-off mode. pause_backend (default): when a session on
-  # a backend hits a rate/usage limit, autonomous dispatch to that backend is
-  # held until its reset time (or the max wait below). off: no automatic
-  # flags are set; an operator can still set one by hand. Interactive session
-  # starts are never blocked either way. Reachable via REST PUT /api/config
+  # a backend hits a rate/usage limit, autonomous worker dispatch to that
+  # backend is held until its reset time (or the max wait below). off: no
+  # automatic flags are set; an operator can still set one by hand.
+  # Interactive session starts are never blocked either way. While a flag is
+  # up, review roles (guardrail judges, verifiers, planning sessions) may
+  # still be admitted on that backend through the review reserve below.
+  # Reachable via REST PUT /api/config
   # (this dotted key), MCP autonomous_config_set, CLI `datawatch config set
   # autonomous.usage_backoff=off`, comm `configure autonomous.usage_backoff=off`
   # and the PWA Settings field. Manual flags: `datawatch usage-backoff`,
@@ -3915,6 +3942,38 @@ autonomous:
   # rate-limit message carries no parseable reset time. Default 60; a value
   # below 1 is treated as 60. Same surfaces as autonomous.usage_backoff.
   backoff_max_wait_minutes: 60
+  # Live session slots a usage-backed-off backend keeps for the review roles
+  # (guardrail judges, verifiers, decompose/planning sessions). While a
+  # backend is held, new worker sessions are refused for the whole flag, but
+  # a review-role request is admitted if it fits in this many live slots
+  # (a live verifier or planner session on the backend already holds one) and
+  # within the optional one-hour token budget below; otherwise it waits with
+  # the back-off-classified reason "pool llm:<backend> backpressure:
+  # back-off, review reserve in use" until the flag clears. Default 1;
+  # 0 disables the reserve (every new session on the held backend is refused,
+  # review roles included). Read live at decision time; no restart needed.
+  # Reachable via REST PUT /api/config (this dotted key), MCP
+  # autonomous_config_set, CLI `datawatch config set
+  # autonomous.backoff_reserve_for_review=2`, comm `configure
+  # autonomous.backoff_reserve_for_review=2` and the PWA Settings field.
+  # The reserve's rolling token state is in memory and does not survive a
+  # daemon restart. The effective value and the reserve's per-backend window
+  # usage show in every usage-backoff status. The reserve's verdicts are
+  # audited as autonomous_usage_backoff_reserve_admitted /
+  # autonomous_usage_backoff_reserve_refused. See docs/howto/usage-backoff.md
+  # and docs/howto/automata-capacity.md (The review reserve).
+  backoff_reserve_for_review: 1
+  # Rolling one-hour token budget for review-reserve admissions on a held
+  # backend, in whole tokens. 0 (default) means no token budget: only the
+  # live slot count above bounds the reserve. When set above 0, a
+  # review-reserve admission is refused while the tokens recorded for that
+  # backend inside the current rolling hour are at or above this value,
+  # even with a free slot; enforced only when token usage is reported. Read
+  # live at decision time; no restart needed. Same surfaces as
+  # autonomous.backoff_reserve_for_review (YAML, REST, MCP, CLI, comm, PWA).
+  # See docs/howto/usage-backoff.md (What a flag does not hold: the review
+  # reserve).
+  backoff_reserve_tokens_per_hour: 0
   # Minimum covered/extractable-requirement ratio a plan must meet for
   # coverage to pass. Value must be in (0,1]; zero or negative normalizes to
   # 1.0 (require full coverage) and values above 1 clamp to 1.0 (see
@@ -4933,6 +4992,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"
