@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
+
+### Changed
+
+- Multi-select state filters on Automata, Projects and Plans.
+
 ## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
 
 ### Changed
