@@ -2859,12 +2859,14 @@ open-question gate before its text would be typed into a session:
   reject/no synonyms) → the reply **answers that question** through the
   same path as the question card (`POST /api/questions/{id}/answer`,
   surface `pwa`); the question is recorded as answered (visible in the
-  question list and its history) and the session resumes. Before the fix
+  question list and its history, with who answered and the surface), the
+  confirmation names the chosen option and shows what was sent, and the
+  session resumes. Before the fix
   the reply was typed as text into the session (`send <id>: <text>`), so
   the question stayed open.
 - The session has an open question but the reply matches none of its
-  options → the reply is refused with a toast naming the pressed label
-  and the question's options; nothing is sent anywhere.
+  options → the reply is refused with a plain toast naming the pressed
+  label and the question's options; nothing is sent anywhere.
 - The session has more than one open question → the reply is refused and
   points to the Questions card in the Automation view.
 - The session has no open question → the reply is typed into the session
