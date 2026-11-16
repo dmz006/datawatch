@@ -449,3 +449,9 @@ Done: task routing is on (mechanical task types go to pi, code to Sonnet, no Opu
 Budget at 10:55: week 24% read at 08:45 against a pace line of about 17 (8 points over); window about 49% by the corrected estimate; burn since 08:45 is 0.6 point, all of it the supervisor session on Sonnet. The claude-code back-off was bridged from 11:00 to 16:00 under the guard rule so Claude is never open before the answer.
 
 Question asked: may Claude work resume at 11:00 for these items, in this order, all on Sonnet: (1) judge the held pre-flight fix f79e0001 (the pi judge timed out), (2) plan the two defect drafts, the explicit Claude model and the stale session records, (3) the CodeQL fix PWA tasks, plus merging the parked usage-hold fix through the daemon's Sonnet conflict resolver (about 0.5 point together). The operator's answer is quoted here when given.
+
+## 2026-11-16 12:35 - Operator reading: hold Claude longer
+
+Operator reading: window 8%, week 26% (pace line about 17.6, 8 points over). Operator, quoted: "8% widow,  26% week,  the opus work messed up our usage,  probably need to hold a bit longer right?"
+
+Done: the claude-code back-off is extended to 21:00. By the guard rule the week is within 2 points of the pace line at Monday 23:19, so the hold probably runs to the 02:00 window end; each window end is re-evaluated. The 10:55 question (resume Claude on Sonnet for four items) is answered by this: not yet. The held items wait: judging the pre-flight fix, planning the defect drafts, the CodeQL fix's remaining Sonnet tasks, merging the usage-hold fix. The week estimate multiplier is raised from 1.3 to 2 because the supervisor session counts for more than the burn script shows.
