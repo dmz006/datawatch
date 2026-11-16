@@ -795,6 +795,12 @@ Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
 
+Daily unlanded-work alert, by JSON key (also settable with
+datawatch config set autonomous.<key> <value>):
+
+  unlanded_alert_enabled          true|false: raise an alert when Automaton branches waiting to land pass the threshold (default true)
+  unlanded_alert_threshold        whole number >= 0 of waiting branches that triggers the alert (default 3)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:

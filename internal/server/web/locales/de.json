@@ -2374,6 +2374,10 @@
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
+  "settings_unlanded_alert_enabled": "Tägliche Warnung zu wartenden Branches",
+  "settings_unlanded_alert_enabled_help": "Einmal pro Kalendertag eine Warnung mit dem ältesten wartenden Automat-Branch und seinem Alter auslösen, wenn mehr Branches als der Schwellenwert auf die Bereinigung warten.",
+  "settings_unlanded_alert_threshold": "Schwellenwert für wartende Branches (Standard 3)",
+  "settings_unlanded_alert_threshold_help": "Eine ganze Zahl ab 0. Die tägliche Warnung wird ausgelöst, wenn mehr wartende Automat-Branches vorhanden sind. 0 warnt bei jedem wartenden Branch.",
   "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "Schwelle für Verifier-Infra-Eskalation (0=2)",
   "settings_fallback_verification_backend": "Fallback-Verifikations-Backend (leer=claude-code)",
@@ -5912,5 +5916,16 @@
   "automaton_hold_tooltip_hold": "Diesen Automaten halten (Pausierung, kein Block)",
   "automaton_hold_tooltip_release": "Diesen gehaltenen Automaten jetzt freigeben",
   "automaton_hold_tooltip_extend": "Dieses Halten verlängern (Begründung, Bedingung oder Datum ändern)",
-  "progress_card_col_held": "Gehalten"
+  "progress_card_col_held": "Gehalten",
+  "unlanded_counts_by_state": "Nach Status:",
+  "unlanded_counts_by_age": "Nach Alter:",
+  "unlanded_counts_landed": "%1$s gelandet",
+  "unlanded_counts_pending": "%1$s ausstehend",
+  "unlanded_counts_live": "%1$s aktiv",
+  "unlanded_counts_unlanded": "%1$s nicht gelandet",
+  "unlanded_counts_under_one_day": "%1$s unter einem Tag",
+  "unlanded_counts_under_one_week": "%1$s unter einer Woche",
+  "unlanded_counts_older": "%1$s älter",
+  "unlanded_counts_oldest": "Ältester ausstehender: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Über der Alarmschwelle: %1$s ausstehend (Schwelle %2$s)"
 }

@@ -1325,6 +1325,13 @@ autonomous:
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5
+  # Daily pending-branch alert (docs/howto/automaton-worktree-cleanup.md).
+  # Once per calendar day, when more pending (superseded) Automaton branches
+  # wait for cleanup than unlanded_alert_threshold, raise one alert naming the
+  # oldest pending branch and its age. Unset enabled reads true; unset
+  # threshold reads 3; 0 alerts on any pending branch; negative is refused.
+  unlanded_alert_enabled: true
+  unlanded_alert_threshold: 3
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.

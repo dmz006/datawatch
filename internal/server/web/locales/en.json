@@ -2344,6 +2344,10 @@
   "settings_session_idle_timeout": "Session idle timeout (sec, 0=15min)",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
+  "settings_unlanded_alert_enabled": "Daily pending-branch alert",
+  "settings_unlanded_alert_enabled_help": "Once per calendar day, raise one alert naming the oldest pending Automaton branch and its age when more branches wait for cleanup than the threshold.",
+  "settings_unlanded_alert_threshold": "Pending-branch alert threshold (default 3)",
+  "settings_unlanded_alert_threshold_help": "A whole number, 0 or more. The daily alert fires when the number of pending Automaton branches is above this. 0 alerts on any pending branch.",
   "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "Verifier infra escalation threshold (0=2)",
   "settings_fallback_verification_backend": "Fallback verification backend (empty=claude-code)",
@@ -5912,5 +5916,16 @@
   "automaton_hold_tooltip_hold": "Put this Automaton on hold (paused, not blocked)",
   "automaton_hold_tooltip_release": "Release this held Automaton now",
   "automaton_hold_tooltip_extend": "Extend this hold (change reason, condition or date)",
-  "progress_card_col_held": "Held"
+  "progress_card_col_held": "Held",
+  "unlanded_counts_by_state": "By state:",
+  "unlanded_counts_by_age": "By age:",
+  "unlanded_counts_landed": "%1$s landed",
+  "unlanded_counts_pending": "%1$s pending",
+  "unlanded_counts_live": "%1$s live",
+  "unlanded_counts_unlanded": "%1$s unlanded",
+  "unlanded_counts_under_one_day": "%1$s under a day",
+  "unlanded_counts_under_one_week": "%1$s under a week",
+  "unlanded_counts_older": "%1$s older",
+  "unlanded_counts_oldest": "Oldest pending: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Above alert threshold: %1$s pending (threshold %2$s)"
 }

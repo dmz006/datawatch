@@ -285,6 +285,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("session_start_confirm_seconds", mcpsdk.Description("Bound in seconds for a claude-code autonomous session to produce its first assistant output after start — a session still in waiting_input with no assistant output longer than this is a 'session never started' failure (default 120 = 2m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("stuck_running_seconds", mcpsdk.Description("How long, in seconds, an Automaton may stay running with every task finished, no live worker session and no live executor before the stuck-running watchdog re-fires its completion roll-up once, and then blocks it after a second full bound; when the only blockers are cancelled tasks (every task completed or cancelled, at least one completed) that first step advances it to the completion review and records the skipped cancelled tasks (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("loop_detect_turns", mcpsdk.Description("Turn window the live loop detector looks over when watching a worker session (default 3; 0 turns loop detection off entirely; negative values are rejected)")),
+		mcpsdk.WithBoolean("unlanded_alert_enabled", mcpsdk.Description("Daily pending-branch alert: once per calendar day, raise one alert naming the oldest pending Automaton branch and its age when more than unlanded_alert_threshold branches wait for cleanup (default true)")),
+		mcpsdk.WithNumber("unlanded_alert_threshold", mcpsdk.Description("How many pending Automaton branches are allowed before the daily alert fires; it fires when the count is strictly above this (default 3; 0 alerts on any pending branch; must be a whole number >= 0)")),
 		mcpsdk.WithNumber("task_max_attempt_seconds", mcpsdk.Description("Wall-clock cap on one task attempt in seconds (0 = off, the default; recommended 5400)")),
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
@@ -773,6 +775,15 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["judge_verdict_cache_enabled"]; ok {
 			body["judge_verdict_cache_enabled"] = req.GetBool("judge_verdict_cache_enabled", true)
+		}
+		// Daily pending-branch alert: sent as given when present, so the
+		// daemon refuses a negative or fractional threshold instead of it
+		// being dropped here.
+		if _, ok := args["unlanded_alert_enabled"]; ok {
+			body["unlanded_alert_enabled"] = req.GetBool("unlanded_alert_enabled", true)
+		}
+		if v, ok := args["unlanded_alert_threshold"]; ok {
+			body["unlanded_alert_threshold"] = v
 		}
 	}
 	if v := req.GetFloat("judge_timeout_seconds", -1); v >= 0 {

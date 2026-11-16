@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -379,6 +379,45 @@ ordered least settled first (needs a decision, superseded, landed), then newest
 activity first. Branches with nothing ahead, branches that no longer exist and
 Automata that are not archived are not listed.
 
+### Counts per state and per age
+
+Every read of the list also carries a `counts` block, so you can see the size of
+the backlog without reading each row. Each listed branch is counted once per
+landing state and once per age band; every key is present and reads 0 when empty.
+
+| Landing state | Recommendation it counts |
+|---|---|
+| `landed` | `landed` |
+| `pending` | `superseded` (later work replaced it; it waits for cleanup) |
+| `unlanded` | `needs_decision` |
+| `live` | any branch without a settled recommendation yet |
+
+| Age band | Last commit |
+|---|---|
+| `under_one_day` | less than 24 hours ago (a future time from clock skew counts here) |
+| `under_one_week` | from exactly one day up to, not including, seven days ago |
+| `older` | seven days or more ago, or no last-commit time known |
+
+`total` is the number of listed branches, and `oldest_pending` names the oldest
+pending branch (`branch`, `title`, `age` in plain words such as `3d 4h`, and
+`age_ns`); it is absent when nothing is pending. The CLI, the chat verb and the
+text output print the same numbers before the rows, and the PWA card shows the
+same block: chips per landing state and per age band, the oldest pending branch
+and its age, and an “Above alert threshold” line when the pending count is over
+the configured threshold (the card reads the two settings from
+`GET /api/autonomous/config` for that marker):
+
+```
+Counts: 1 landed, 2 pending, 0 live, 1 unlanded
+Age: 1 under one day, 1 under one week, 2 older
+Oldest pending: Fix the widget (automaton/ab12cd34), 9d 3h
+```
+
+The counts come from the same read (`GET /api/autonomous/unlanded-work`, the
+`autonomous_unlanded_work` MCP tool, `datawatch autonomous unlanded-work [--json]`
+and `autonomous unlanded-work`); there is no separate endpoint and no setting.
+The daily pending-branch alert below uses the `pending` count.
+
 ### The actions on an unlanded branch
 
 | Action | What it does | Destructive |
@@ -391,27 +430,75 @@ Delete is the only destructive action and it is guarded: it refuses unless the
 entry carries a recommendation from the list above, a base repository and a
 worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
-returns the branch, the bundle path and the worktree path it removed.
+returns the branch, the bundle path and the worktree path it removed. Know what the bundle covers: the branch's commits. Uncommitted or untracked work inside the worktree is not in the backup, and delete removes the worktree with the force flag, so that work is gone with the worktree. If the worktree might hold uncommitted work, decide it before deleting (the safe-to-delete report flags it as `held_dirty`).
 
 ### Where to see and act
 
 | Surface | How |
 |---|---|
-| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. Each row shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
+| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. A counts block at the top shows the per-state and per-age chips, the oldest pending branch and its age, and an “Above alert threshold” line while the pending count is over the configured threshold. Each row below it shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
 | REST | `GET /api/autonomous/unlanded-work`; `POST /api/autonomous/unlanded-work/keep`, `/archive-branch` and `/delete-worktree` (the last needs `confirm: true`) |
 | CLI | `datawatch autonomous unlanded-work [--json]`; subcommands `keep <branch> [--note ...]`, `archive-branch <branch>` and `delete-worktree <branch> --confirm` |
 | Comm channel | `autonomous unlanded-work`; `autonomous unlanded-work keep\|archive-branch\|delete-worktree <branch>` (delete needs the word `confirm`) |
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
+### Daily pending-branch alert
+
+A **pending** branch is one the list marks `superseded`: later work replaced it
+and it only waits for cleanup. Once per calendar day (the daemon host's local
+day) the daemon counts the pending branches. When the count is strictly above
+`autonomous.unlanded_alert_threshold` and `autonomous.unlanded_alert_enabled` is
+on, it raises one `warn` alert, "Pending Automaton branches above threshold",
+that gives the count, the threshold, and the oldest pending branch with the age
+of its last commit. At or below the threshold nothing is raised; with the alert
+off nothing is raised.
+
+- At most one alert per day. The day of the last alert is stored in
+  `unlanded_alert.json` in the Automata data folder, so a daemon restart on the
+  same day does not raise it again. The next day raises it again if the count is
+  still above the threshold.
+- The check runs when the Automata loop starts and on every poll tick. It reads
+  the branch list at most once an hour while that day's alert is not yet raised,
+  and not at all after it is raised. The loop only runs when `autonomous.enabled`
+  is true.
+- Each alert is also written to the audit log as `autonomous_unlanded_alert`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `autonomous.unlanded_alert_enabled` | `true` (unset reads true) | Turns the daily alert on or off |
+| `autonomous.unlanded_alert_threshold` | `3` (unset reads 3) | The alert fires when more pending branches than this exist. A whole number of 0 or more; 0 alerts on any pending branch; a negative value is refused |
+
+A change applies on the next check without a restart.
+
+| Method | How |
+|---|---|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `unlanded_alert_enabled: true`, `unlanded_alert_threshold: 3` |
+| **CLI** | `datawatch config set autonomous.unlanded_alert_enabled false`; `datawatch config set autonomous.unlanded_alert_threshold 5` |
+| **Web UI** | Settings → **Autonomous Automata planning** card → **Daily pending-branch alert** toggle and **Pending-branch alert threshold** |
+| **REST API** | `PUT /api/config` with `{"autonomous.unlanded_alert_threshold": 5}`, or `PUT /api/autonomous/config` with `{"unlanded_alert_threshold": 5}`; read back with `GET /api/config` (section `autonomous`) or `GET /api/autonomous/config` |
+| **Comm channel** | `configure autonomous.unlanded_alert_threshold=5` |
+| **MCP** | `autonomous_config_set` with `unlanded_alert_enabled` / `unlanded_alert_threshold`, or `config_set` with the full key; read with `autonomous_config_get` or `get_config` |
+
+| Where to see | What you see |
+|---|---|
+| **Web UI** | The alerts list (bell), level `warn` |
+| **Messaging channels** | The alert, where alerts are routed to channels |
+| **REST API** | `GET /api/alerts` |
+| **MCP** | `get_alerts` |
+
 The branch audit script (`scripts/branch-audit.py`) reports the same finding from
-the command line: an `UNLANDED` row is an archived Automaton branch (cancelled,
-blocked, failed or no record) with work not on main, and the script exits with
-status 1 while any exist. Decide each one with Keep, Archive branch or Delete
+the command line: it reads the daemon's unlanded-work list through
+`datawatch autonomous unlanded-work --json`, an `UNLANDED` row is an archived
+Automaton branch (cancelled, blocked, failed or no record) with work not on
+main, and the script exits with status 1 while any exist. Decide each one with Keep, Archive branch or Delete
 worktree, or merge it.
 
 **Review before relying on this.** Whether a kept branch also suppresses the
-safe-to-delete report is still undecided; the operator must confirm that. The
+safe-to-delete report is still undecided; the operator must confirm that. If the
+force-delete of a worktree is not wanted when it hides uncommitted work, the
+debate over Delete worktree is not yet settled; review that action before using
+it. The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 

@@ -2378,6 +2378,10 @@
   "settings_session_idle_timeout": "Tiempo de espera de sesión inactiva (seg, 0=15min)",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
+  "settings_unlanded_alert_enabled": "Aviso diario de ramas pendientes",
+  "settings_unlanded_alert_enabled_help": "Una vez por día natural, lanza un aviso con la rama pendiente de autómata más antigua y su antigüedad cuando hay más ramas esperando limpieza que el umbral.",
+  "settings_unlanded_alert_threshold": "Umbral del aviso de ramas pendientes (predeterminado 3)",
+  "settings_unlanded_alert_threshold_help": "Un número entero, 0 o más. El aviso diario se lanza cuando el número de ramas pendientes de autómatas supera este valor. 0 avisa con cualquier rama pendiente.",
   "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "Umbral de escalada de fallos de infra del verificador (0=2)",
   "settings_fallback_verification_backend": "Backend de verificación de respaldo (vacío=claude-code)",
@@ -5912,5 +5916,16 @@
   "automaton_hold_tooltip_hold": "Poner este autómata en pausa (pausa, no bloqueo)",
   "automaton_hold_tooltip_release": "Liberar este autómata retenido ahora",
   "automaton_hold_tooltip_extend": "Prolongar la retención (cambiar motivo, condición o fecha)",
-  "progress_card_col_held": "En pausa"
+  "progress_card_col_held": "En pausa",
+  "unlanded_counts_by_state": "Por estado:",
+  "unlanded_counts_by_age": "Por antigüedad:",
+  "unlanded_counts_landed": "%1$s integradas",
+  "unlanded_counts_pending": "%1$s pendientes",
+  "unlanded_counts_live": "%1$s activas",
+  "unlanded_counts_unlanded": "%1$s sin integrar",
+  "unlanded_counts_under_one_day": "%1$s de menos de un día",
+  "unlanded_counts_under_one_week": "%1$s de menos de una semana",
+  "unlanded_counts_older": "%1$s más antiguas",
+  "unlanded_counts_oldest": "Pendiente más antigua: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Por encima del umbral de alerta: %1$s pendientes (umbral %2$s)"
 }

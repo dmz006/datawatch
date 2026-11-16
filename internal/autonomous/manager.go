@@ -404,6 +404,14 @@ type Config struct {
 	// handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	LoopDetectTurns *int `json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled and UnlandedAlertThreshold mirror
+	// autonomous.unlanded_alert_enabled / unlanded_alert_threshold: the daily
+	// pending-branch alert (unlanded_alert.go). nil reads the defaults (on,
+	// threshold 3) through config.UnlandedAlertEnabledEffective /
+	// config.UnlandedAlertThresholdEffective; the check reads this Config on
+	// every tick, so a runtime config set applies without a restart.
+	UnlandedAlertEnabled   *bool `json:"unlanded_alert_enabled,omitempty"`
+	UnlandedAlertThreshold *int  `json:"unlanded_alert_threshold,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -1561,6 +1569,13 @@ type Manager struct {
 	// Owns its own lock; never guarded by mu. Created in NewManager;
 	// nil only for hand-rolled test Managers.
 	cleanupStatus *cleanupStatusRecorder
+
+	// Daily pending-branch alert (unlanded_alert.go) — the persisted
+	// last-alerted day. Owns its own lock; created in NewManager; nil only
+	// for hand-rolled test Managers. unlandedAlertList replaces the branch
+	// listing in tests (nil = UnlandedWork).
+	unlandedAlert     *unlandedAlerter
+	unlandedAlertList func(context.Context) ([]UnlandedBranch, error)
 
 	// safeDeleteCache is the short-lived cache in front of
 	// MergeSafeToDelete (merge_safe_delete_cache.go). Guarded by mu;
@@ -3223,6 +3238,9 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		// keeps the last run and does not re-alert an already-alerted
 		// disk (cleanup_status.go).
 		cleanupStatus: newCleanupStatusRecorder(st.dir),
+		// daily pending-branch alert — the last-alerted day persists in
+		// the same folder so a restart does not repeat today's alert.
+		unlandedAlert: newUnlandedAlerter(st.dir),
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -7624,6 +7642,9 @@ func (m *Manager) run(ctx context.Context) {
 	if due, st := m.CleanupDiskPass(); due {
 		m.alertCleanupDisk(st)
 	}
+	// Daily pending-branch alert: checked at start and on every tick; it
+	// raises at most one alert per calendar day (unlanded_alert.go).
+	m.startUnlandedAlertCheck(ctx)
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {
@@ -7650,6 +7671,7 @@ func (m *Manager) run(ctx context.Context) {
 			m.ExpireHolds(m.holdNow())
 			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
+			m.startUnlandedAlertCheck(ctx)
 		}
 	}
 }

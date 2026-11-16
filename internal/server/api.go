@@ -6810,7 +6810,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
-			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			"loop_detect_turns": config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			// Daily pending-branch alert: effective values (unset reads on
+			// and 3), so the keys are never absent from the read surface.
+			"unlanded_alert_enabled":               config.UnlandedAlertEnabledEffective(s.cfg.Autonomous.UnlandedAlertEnabled),
+			"unlanded_alert_threshold":             config.UnlandedAlertThresholdEffective(s.cfg.Autonomous.UnlandedAlertThreshold),
 			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
@@ -8320,6 +8324,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Branch refresh settings: a non-boolean enabled or a negative or
 	// non-numeric behind limit refuses the whole PUT (branch_refresh_api.go).
 	if err := validateBranchRefreshPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Daily pending-branch alert: a non-boolean enabled or a negative or
+	// non-whole threshold refuses the whole PUT (unlanded_alert_config.go).
+	if err := validateUnlandedAlertPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -10928,6 +10938,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case unlandedAlertEnabledKey, unlandedAlertThresholdKey:
+			// Daily pending-branch alert (unlanded_alert_config.go):
+			// handlePutConfig refuses a bad value first; one that reaches
+			// here is skipped.
+			if _, applied := applyUnlandedAlertConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case branchRefreshEnabledKey, branchRefreshLimitKey:
 			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
 			// refuses a bad value first; one that reaches here is skipped.

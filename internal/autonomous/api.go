@@ -633,6 +633,14 @@ func (a *API) SetConfig(v any) error {
 			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
 		}
 	}
+	// unlanded_alert_enabled / unlanded_alert_threshold — the daily
+	// pending-branch alert. A present enabled key must be a JSON boolean and
+	// a present threshold a whole number >= 0, checked before any merge so
+	// every write path (REST, MCP, comm) refuses a bad value the same way.
+	// null or absent leaves the current value.
+	if verr := validateUnlandedAlertPatch(raw); verr != nil {
+		return verr
+	}
 	// request_watch is checked with the same rules as PUT /api/config, so
 	// every write path (REST, MCP, comm) refuses a bad value the same way
 	// before anything is merged. An omitted or null block passes.

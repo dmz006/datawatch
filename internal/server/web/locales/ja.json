@@ -2378,6 +2378,10 @@
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
   "settings_pi_thinking_level": "Pi thinking level (empty = pi model default; off|minimal|low|medium|high)",
   "settings_loop_detect_turns": "Worker loop detection window (turns, 0=off, default 3)",
+  "settings_unlanded_alert_enabled": "保留ブランチの日次アラート",
+  "settings_unlanded_alert_enabled_help": "クリーンアップ待ちのブランチがしきい値を超えたとき、1 暦日に 1 回、最も古い保留中のオートマトンのブランチとその経過時間を示すアラートを出します。",
+  "settings_unlanded_alert_threshold": "保留ブランチのアラートしきい値（既定値 3）",
+  "settings_unlanded_alert_threshold_help": "0 以上の整数。保留中のオートマトンのブランチ数がこの値を超えると日次アラートが出ます。0 は保留ブランチが 1 つでもあれば通知します。",
   "settings_descendant_stall_seconds": "Descendant stall timeout (sec, 0=45min)",
   "settings_verifier_infra_escalation_threshold": "検証インフラ障害エスカレーションしきい値（0=2）",
   "settings_fallback_verification_backend": "フォールバック検証バックエンド（空=claude-code）",
@@ -5912,5 +5916,16 @@
   "automaton_hold_tooltip_hold": "このオートマトンを保留する（ブロックではなく一時停止）",
   "automaton_hold_tooltip_release": "この保留中のオートマトンを今すぐ解放",
   "automaton_hold_tooltip_extend": "保留を延長する（理由・条件・日付を変更）",
-  "progress_card_col_held": "保留中"
+  "progress_card_col_held": "保留中",
+  "unlanded_counts_by_state": "状態別:",
+  "unlanded_counts_by_age": "経過別:",
+  "unlanded_counts_landed": "統合済み %1$s",
+  "unlanded_counts_pending": "保留 %1$s",
+  "unlanded_counts_live": "進行中 %1$s",
+  "unlanded_counts_unlanded": "未統合 %1$s",
+  "unlanded_counts_under_one_day": "1日未満 %1$s",
+  "unlanded_counts_under_one_week": "1週間未満 %1$s",
+  "unlanded_counts_older": "それ以前 %1$s",
+  "unlanded_counts_oldest": "最も古い保留: %1$s (%2$s)、%3$s",
+  "unlanded_counts_over_threshold": "警告しきい値超過: 保留 %1$s (しきい値 %2$s)"
 }

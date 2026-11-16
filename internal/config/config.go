@@ -3540,6 +3540,15 @@ type AutonomousConfig struct {
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
 	// rejected — see loop_detect_turns.go.
 	LoopDetectTurns *int `yaml:"loop_detect_turns,omitempty" json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled turns the daily pending-branch alert on or off.
+	// *bool: nil = unset → on (DefaultUnlandedAlertEnabled); see
+	// unlanded_alert.go.
+	UnlandedAlertEnabled *bool `yaml:"unlanded_alert_enabled,omitempty" json:"unlanded_alert_enabled,omitempty"`
+	// UnlandedAlertThreshold is how many pending Automaton branches are
+	// allowed before the daily alert fires (it fires when the count is
+	// strictly above). *int: nil = unset → 3; 0 = alert on any pending
+	// branch. Negative values are rejected — see unlanded_alert.go.
+	UnlandedAlertThreshold *int `yaml:"unlanded_alert_threshold,omitempty" json:"unlanded_alert_threshold,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -8712,6 +8721,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
+	}
+	if err := ValidateUnlandedAlertThreshold(cfg.Autonomous.UnlandedAlertThreshold); err != nil {
+		return err
 	}
 	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
 		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
