@@ -119,30 +119,34 @@ func TestResolveVerificationLLM_ModelNeverPairedAcrossLevels(t *testing.T) {
 	}{
 		{
 			// Task overrides backend with no model: the story's and
-			// Automaton's models must not leak onto the task's backend.
+			// Automaton's models must not leak onto the task's backend;
+			// the explicit-model policy then supplies the daemon default
+			// (sonnet) for the claude-code backend.
 			"task backend, no task model",
 			func(prd *PRD, task *Task) {
 				task.VerificationBackend = "claude-code"
 				prd.Story[0].VerificationModel = "story-model"
 				prd.VerificationBackend, prd.VerificationModel = "ollama", "qwen"
 			},
-			VerificationLLM{Backend: "claude-code", Model: "", Effort: "low", Source: VerifierSourceTask},
+			VerificationLLM{Backend: "claude-code", Model: DefaultClaudeModel, Effort: "low", Source: VerifierSourceTask},
 		},
 		{
-			// Story backend wins: the Automaton's model is not paired with it.
+			// Story backend wins: the Automaton's model is not paired with it;
+			// the explicit-model policy then supplies the daemon default.
 			"story backend, prd model ignored",
 			func(prd *PRD, task *Task) {
 				prd.Story[0].VerificationBackend = "claude-code"
 				prd.VerificationBackend, prd.VerificationModel = "ollama", "qwen"
 			},
-			VerificationLLM{Backend: "claude-code", Model: "", Effort: "low", Source: VerifierSourceStory},
+			VerificationLLM{Backend: "claude-code", Model: DefaultClaudeModel, Effort: "low", Source: VerifierSourceStory},
 		},
 		{
 			// Global backend: the global model is not used when the
-			// Automaton picked its own backend.
+			// Automaton picked its own backend; the explicit-model policy
+			// then supplies the daemon default.
 			"prd backend, global model ignored",
 			func(prd *PRD, task *Task) { prd.VerificationBackend = "claude-code" },
-			VerificationLLM{Backend: "claude-code", Model: "", Effort: "low", Source: VerifierSourcePRD},
+			VerificationLLM{Backend: "claude-code", Model: DefaultClaudeModel, Effort: "low", Source: VerifierSourcePRD},
 		},
 		{
 			// Matches resolveTaskBackendModel: a more specific model-only

@@ -22,8 +22,11 @@ func TestResolveTaskBackendModel_TaskBackendOverrideDropsStaleModel(t *testing.T
 	if backend != "claude-code" {
 		t.Errorf("backend = %q, want claude-code", backend)
 	}
-	if model != "" {
-		t.Errorf("model = %q, want empty (backend default) — stale PRD model %q leaked through", model, prd.Model)
+	// The stale PRD model must not leak through; with the explicit-model
+	// policy in place the empty claude-code model resolves to the daemon
+	// default (sonnet) instead of staying empty.
+	if model != DefaultClaudeModel {
+		t.Errorf("model = %q, want %q (daemon default) — the stale PRD model %q must not leak through", model, DefaultClaudeModel, prd.Model)
 	}
 }
 

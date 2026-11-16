@@ -33,7 +33,7 @@ func TestResolveTaskBackendModelAutomationTier(t *testing.T) {
 		{name: "automation level", story: &Story{}, prd: PRD{}, auto: auto, fallback: "fb",
 			wantBackend: "claude-code", wantModel: "sonnet", wantSource: ExecutorSourceAutomation},
 		{name: "automation beats global", prd: PRD{}, auto: &Automation{Backend: "claude-code"}, fallback: "fb",
-			wantBackend: "claude-code", wantModel: "", wantSource: ExecutorSourceAutomation},
+			wantBackend: "claude-code", wantModel: DefaultClaudeModel, wantSource: ExecutorSourceAutomation},
 		{name: "nil automation falls to global", prd: PRD{}, fallback: "fb",
 			wantBackend: "fb", wantModel: "", wantSource: ExecutorSourceGlobal},
 		{name: "automation without backend falls to global", prd: PRD{}, auto: &Automation{Model: "m-auto"}, fallback: "fb",
