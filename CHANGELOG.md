@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
 ## v9.176.2 — Quick replies answer the pending operator question
 
 ### Changed
