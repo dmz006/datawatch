@@ -37,7 +37,7 @@ import (
 // itself, one form per line.
 const usageUsageLines = `usage: usage
 usage: usage advice [variant=V] [policy=P] [lanes=N]
-usage: usage reading <percent> [session=N]
+usage: usage reading <percent> [session=N] [llm=NAME]
 usage: usage extra <points>
 usage: usage work <points|clear>
 usage: usage burn-guard
@@ -46,7 +46,7 @@ A reading is stamped with the running lanes.`
 
 // usageReplyHint closes every usage calculator reply: the forms the operator
 // can send back, one per line, each within the comm channel's 50 columns.
-const usageReplyHint = "reply with one of:\n  usage advice [variant=V] [policy=P] [lanes=N]\n  usage reading <pct> [session=N]\n  usage extra <pts>\n  usage work <pts|clear>\nlanes=N is a what-if, not saved."
+const usageReplyHint = "reply with one of:\n  usage advice [variant=V] [policy=P] [lanes=N]\n  usage reading <pct> [session=N] [llm=E]\n  usage extra <pts>\n  usage work <pts|clear>\nlanes=N is a what-if, not saved."
 
 // handleUsage serves the usage calculator grammar over the REST loopback.
 func (r *Router) handleUsage(cmd Command) {
@@ -76,12 +76,18 @@ func (r *Router) handleUsage(cmd Command) {
 		if cmd.UsageSession != nil {
 			body["session_percent"] = *cmd.UsageSession
 		}
+		if cmd.UsageLLM != "" {
+			body["llm"] = cmd.UsageLLM
+		}
 		jsonBody, _ := json.Marshal(body)
 		if _, err := r.commJSON("POST", "/api/usage/readings", string(jsonBody)); err != nil {
 			r.reply("usage reading failed", err.Error())
 			return
 		}
 		ack := fmt.Sprintf("reading stored: %s%%", formatUsageNumber(cmd.UsagePercent))
+		if cmd.UsageLLM != "" {
+			ack += " for " + cmd.UsageLLM
+		}
 		r.replyUsageAdvice(nil, "usage reading", ack)
 		return
 	case "burn-guard":

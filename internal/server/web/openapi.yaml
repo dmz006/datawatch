@@ -15282,8 +15282,8 @@ components:
         margin_points: {type: number, description: "Points the projection may run over the pace line before the guard acts, 0 to 50. Default 2"}
         ladder:
           type: array
-          items: {type: string, enum: [lower_inflight, route_pi_prompt, hold_claude]}
-          description: "Ordered rungs applied while over the line. Default: all three in that order"
+          items: {type: string, enum: [lower_inflight, route_entry, hold_entry, route_pi_prompt, hold_claude]}
+          description: "Ordered rungs applied while over the pace line. Default: lower_inflight, route_entry, hold_entry. The rung acts on the ladder's entry; route_pi_prompt and hold_claude are legacy first-version names that normalize to route_entry and hold_entry"
         step_back: {type: boolean, description: "Undo rungs in reverse once the projection is back under the line. Default true"}
         ask_on_change:
           type: boolean

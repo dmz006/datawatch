@@ -26,7 +26,71 @@ var burnGuardKeys = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude",
-	"ask_on_change", "max_projection_gap_points",
+	"ask_on_change", "max_projection_gap_points", "entries",
+}
+
+// burnGuardPatchEntries decodes usage.burn_guard.entries: a list of entry objects (or
+// the same list as a JSON string, as the comm channel and CLI send it). Every entry
+// needs an llm name, names are unique, the plan is flat or metered, the usage source is
+// readings or none, a metered entry with a source needs a period target, and every
+// ladder rung is a known rung. An empty list returns to the single default entry.
+func burnGuardPatchEntries(v interface{}) ([]config.BurnGuardEntryConfig, error) {
+	var raw []byte
+	switch t := v.(type) {
+	case string:
+		raw = []byte(t)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("usage.burn_guard.entries: %v", err)
+		}
+		raw = b
+	}
+	var out []config.BurnGuardEntryConfig
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("usage.burn_guard.entries: must be a list of entries: %v", err)
+	}
+	seen := map[string]bool{}
+	for i := range out {
+		e := &out[i]
+		e.LLM = strings.TrimSpace(e.LLM)
+		at := fmt.Sprintf("usage.burn_guard.entries[%d]", i)
+		if e.LLM == "" {
+			return nil, fmt.Errorf("%s: llm is required", at)
+		}
+		if seen[e.LLM] {
+			return nil, fmt.Errorf("%s: llm %q repeated", at, e.LLM)
+		}
+		seen[e.LLM] = true
+		switch strings.ToLower(strings.TrimSpace(e.Plan)) {
+		case "", config.BurnGuardPlanFlat:
+			e.Plan = config.BurnGuardPlanFlat
+		case config.BurnGuardPlanMetered:
+			e.Plan = config.BurnGuardPlanMetered
+		default:
+			return nil, fmt.Errorf("%s.plan: %q (allowed: flat, metered)", at, e.Plan)
+		}
+		switch strings.ToLower(strings.TrimSpace(e.UsageSource)) {
+		case "", config.BurnGuardUsageSourceNone:
+			e.UsageSource = config.BurnGuardUsageSourceNone
+		case config.BurnGuardUsageSourceReadings:
+			e.UsageSource = config.BurnGuardUsageSourceReadings
+		default:
+			return nil, fmt.Errorf("%s.usage_source: %q (allowed: readings, none)", at, e.UsageSource)
+		}
+		if e.PeriodTarget < 0 || e.PointsPerUSD < 0 {
+			return nil, fmt.Errorf("%s: period_target and points_per_usd must be 0 or more", at)
+		}
+		if e.IsMetered() && e.HasUsageSource() && e.PeriodTarget <= 0 {
+			return nil, fmt.Errorf("%s.period_target: a metered entry needs a target in dollars", at)
+		}
+		for _, r := range e.Ladder {
+			if err := config.ValidateBurnGuardRung(r); err != nil {
+				return nil, fmt.Errorf("%s: %v", at, err)
+			}
+		}
+	}
+	return out, nil
 }
 
 func burnGuardPatchBool(key string, v interface{}) (bool, error) {
@@ -101,6 +165,9 @@ func validateBurnGuardValue(key string, v interface{}) error {
 	case "ladder":
 		_, err := burnGuardPatchLadder(v)
 		return err
+	case "entries":
+		_, err := burnGuardPatchEntries(v)
+		return err
 	}
 	f, err := burnGuardPatchNumber(key, v)
 	if err != nil {
@@ -174,6 +241,8 @@ func applyBurnGuardPatchKey(c *config.BurnGuardConfig, fullKey string, v interfa
 		c.AskOnChange, _ = burnGuardPatchBool(key, v)
 	case "ladder":
 		c.Ladder, _ = burnGuardPatchLadder(v)
+	case "entries":
+		c.Entries, _ = burnGuardPatchEntries(v)
 	case "interval_minutes":
 		f, _ := burnGuardPatchNumber(key, v)
 		c.IntervalMinutes = int(f)

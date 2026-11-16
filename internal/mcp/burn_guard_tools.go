@@ -64,7 +64,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Turn the guard on or off")),
 		mcpsdk.WithNumber("interval_minutes", mcpsdk.Description("Minutes between evaluations, a whole number from 1 to 1440")),
 		mcpsdk.WithNumber("margin_points", mcpsdk.Description("Points the projection may run over the pace line before the guard acts, 0 to 50")),
-		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the line: lower_inflight, route_pi_prompt, hold_claude"), mcpsdk.WithStringItems()),
+		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the pace line: lower_inflight, route_entry, hold_entry (the legacy first-version names route_pi_prompt and hold_claude are accepted and normalize to route_entry and hold_entry). Each rung acts on the ladder's entry, not on any fixed backend"), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("step_back", mcpsdk.Description("Undo rungs in reverse once the projection is back under the line")),
 		mcpsdk.WithNumber("cache_write_points_per_million", mcpsdk.Description("Weekly points per million cache-write tokens, above 0 and at most 1000")),
 		mcpsdk.WithNumber("cache_read_points_per_million", mcpsdk.Description("Weekly points per million cache-read tokens, above 0 and at most 1000")),
@@ -72,6 +72,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("retry_limit_claude", mcpsdk.Description("Most retries of one task on Claude, a whole number from 0 to 20")),
 		mcpsdk.WithBoolean("ask_on_change", mcpsdk.Description("When false (default) the guard sends one alert per change and no question; when true it keeps at most one open question")),
 		mcpsdk.WithNumber("max_projection_gap_points", mcpsdk.Description("Points of disagreement between the guard and the usage advice before the guard takes the lower projection; 0 never compares; default 25; see the burn guard how-to")),
+		mcpsdk.WithString("entries", mcpsdk.Description("The paid LLM entries the guard evaluates, as a JSON list: each {llm, usage_source: readings|none, plan: flat|metered, period_target (percent for flat, dollars for metered), model, ladder, held_models, route_to, points_per_usd}. An entry with no usage source is never held. An empty list returns to the single default entry")),
 	)
 }
 
@@ -79,7 +80,7 @@ var burnGuardConfigArgs = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude", "ask_on_change",
-	"max_projection_gap_points",
+	"max_projection_gap_points", "entries",
 }
 
 func (s *Server) handleBurnGuardConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

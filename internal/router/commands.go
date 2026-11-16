@@ -556,6 +556,7 @@ type Command struct {
 	UsageLanesSet bool     // advice: lanes= was given
 	UsagePercent  float64  // reading: the weekly percentage
 	UsageSession  *float64 // reading: session= (the secondary percentage)
+	UsageLLM      string   // reading: llm= (the paid LLM entry; empty is the first entry)
 	UsagePoints   float64  // extra / work: the points figure
 	UsageClear    bool     // work: clear the typed figure
 
@@ -2089,7 +2090,7 @@ func parseBudget(rest string) Command {
 
 // usageKV parses the "key=value" tail tokens shared by the usage calculator's
 // verbs. Recognized keys (case-insensitive, like the verbs): variant, policy,
-// lanes, session. A duplicate or unknown key, or an empty value, makes the
+// lanes, session, llm (a reading's paid LLM entry). A duplicate or unknown key, or an empty value, makes the
 // form invalid; the result is nil so the caller can reject the form. Values
 // pass through verbatim: lanes is validated only by the advice, because a
 // reading ignores it.
@@ -2105,7 +2106,7 @@ func usageKV(tokens []string) (out map[string]string, ok bool) {
 			return nil, false
 		}
 		switch key {
-		case "variant", "policy", "session", "lanes":
+		case "variant", "policy", "session", "lanes", "llm":
 			out[key] = val
 		default:
 			return nil, false
@@ -2188,6 +2189,13 @@ func parseUsage(rest string) Command {
 				return cmd
 			}
 			cmd.UsageSession = &s
+		}
+		if llm, ok := kv["llm"]; ok {
+			cmd.UsageLLM = strings.TrimSpace(llm)
+			if cmd.UsageLLM == "" {
+				cmd.UsageVerb = "invalid"
+				return cmd
+			}
 		}
 		cmd.UsageVerb = "reading"
 		return cmd

@@ -13,7 +13,7 @@ func TestBurnGuardDefaults(t *testing.T) {
 	got := DefaultConfig().Usage.BurnGuard
 	want := BurnGuardConfig{
 		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0, MaxProjectionGapPoints: 25,
-		Ladder:   []string{"lower_inflight", "route_pi_prompt", "hold_claude"},
+		Ladder:   []string{"lower_inflight", "route_entry", "hold_entry"},
 		StepBack: true, CacheWritePointsPerMillion: 0.373, CacheReadPointsPerMillion: 0.0069,
 		RefitOnReading:   true,
 		EffortCeiling:    map[string]string{"docs": "low", "parity": "low", "live_check": "low", "final_gate": "low"},
@@ -81,13 +81,19 @@ func TestBurnGuardNormalize(t *testing.T) {
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.CacheReadPointsPerMillion, 0.01) }, ""},
 		{"ladder unknown rung dropped", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "bogus", "Lower_Inflight"} },
 			func(t *testing.T, c BurnGuardConfig) {
-				if !reflect.DeepEqual(c.Ladder, []string{"hold_claude", "lower_inflight"}) {
+				if !reflect.DeepEqual(c.Ladder, []string{"hold_entry", "lower_inflight"}) {
 					t.Errorf("ladder = %v", c.Ladder)
 				}
 			}, "bogus"},
-		{"ladder duplicate dropped", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "hold_claude"} },
+		{"ladder legacy names normalize to the entry-generic names", func(c *BurnGuardConfig) { c.Ladder = []string{"route_pi_prompt", "hold_claude"} },
 			func(t *testing.T, c BurnGuardConfig) {
-				if !reflect.DeepEqual(c.Ladder, []string{"hold_claude"}) {
+				if !reflect.DeepEqual(c.Ladder, []string{"route_entry", "hold_entry"}) {
+					t.Errorf("ladder = %v", c.Ladder)
+				}
+			}, ""},
+		{"ladder legacy and generic duplicates collapse", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "hold_entry"} },
+			func(t *testing.T, c BurnGuardConfig) {
+				if !reflect.DeepEqual(c.Ladder, []string{"hold_entry"}) {
 					t.Errorf("ladder = %v", c.Ladder)
 				}
 			}, "repeated"},
@@ -160,6 +166,9 @@ func TestBurnGuardYAMLRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := normalizeBurnGuard(back.BurnGuard, nil)
+	// A legacy rung name in a saved config normalises to the entry-generic name;
+	// the rest of the block round-trips as given.
+	in.Ladder = []string{"hold_entry"}
 	if !reflect.DeepEqual(got, in) {
 		t.Errorf("round trip = %+v, want %+v", got, in)
 	}

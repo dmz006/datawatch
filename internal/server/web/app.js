@@ -35479,6 +35479,9 @@ function usageCalcReadingBody(input) {
     if (!isFinite(s) || s < 0 || s > 100) return { error: t('usage_calc_session_range') };
     body.session_percent = s;
   }
+  // The paid LLM entry the reading measures; blank is the first entry.
+  const llm = String(input.llm === undefined || input.llm === null ? '' : input.llm).trim();
+  if (llm !== '') body.llm = llm;
   let at = input.readAt ? new Date(input.readAt) : null;
   if (!at || isNaN(at.getTime())) at = new Date(input.now === undefined ? Date.now() : input.now);
   body.at = at.toISOString();
@@ -35694,6 +35697,7 @@ function _usageCalcReadingForm(res, opts) {
     `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_llm_label'))} <input id="usageCalcLLM" type="text" value="" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
     `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
     `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
@@ -35749,6 +35753,7 @@ window.usageCalcSubmitReading = function () {
   const built = usageCalcReadingBody({
     percent: val('usageCalcPercent'),
     session: val('usageCalcSession'),
+    llm: val('usageCalcLLM'),
     readAt: val('usageCalcReadAt'),
     now: Date.now(),
   });
@@ -36491,8 +36496,8 @@ window.usageBackoffStopPolling = function () {
 // and writes settings back through the config endpoint; it computes nothing itself.
 // The effort ceiling is read-only here: it is set per Automaton with the effort-ceiling
 // tools. Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNGS = ['lower_inflight', 'route_pi_prompt', 'hold_claude'];
-const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
+const BURN_GUARD_RUNGS = ['lower_inflight', 'route_entry', 'hold_entry', 'route_pi_prompt', 'hold_claude'];
+const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_entry: 'burn_guard_rung_route_entry', hold_entry: 'burn_guard_rung_hold_entry', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
 const BURN_GUARD_REFRESH_MS = 60000;

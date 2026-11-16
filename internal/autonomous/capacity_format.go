@@ -25,7 +25,7 @@ type capacityBackoffView struct {
 	Reason     string    `json:"reason"`
 	ResetKnown bool      `json:"reset_known"`
 	// Rung names the ladder rung that set the flag (for example the burn
-	// guard's hold_claude hold); empty on rate-limit and operator back-offs.
+	// guard's hold_entry hold; the legacy first-version name is hold_claude); empty on rate-limit and operator back-offs.
 	Rung string `json:"rung"`
 }
 

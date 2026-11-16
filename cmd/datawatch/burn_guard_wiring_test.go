@@ -5,6 +5,7 @@ import (
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -49,13 +50,16 @@ func TestBurnGuardAdmissionLowersAndRestoresInflight(t *testing.T) {
 func TestBurnGuardAdmissionHoldAndRoute(t *testing.T) {
 	bo := autonomouspkg.NewBackoff()
 	adm := burnGuardAdmission{bo: bo}
-	if err := adm.HoldNewWork("claude-code", true); err != nil {
+	if err := adm.HoldNewWork("claude-code", burnguard.RungHoldEntry, true); err != nil {
 		t.Fatal(err)
 	}
 	if blocked, _ := bo.Blocked("claude-code"); !blocked {
 		t.Fatal("hold did not block new claude-code work")
 	}
-	if err := adm.HoldNewWork("claude-code", false); err != nil {
+	if es := bo.Active(); len(es) != 1 || es[0].Rung != burnguard.RungHoldEntry {
+		t.Fatalf("flag rung = %v, want the hold rung the hold named", es)
+	}
+	if err := adm.HoldNewWork("claude-code", burnguard.RungHoldEntry, false); err != nil {
 		t.Fatal(err)
 	}
 	if blocked, _ := bo.Blocked("claude-code"); blocked {
@@ -98,7 +102,7 @@ func TestBurnGuardHoldDeadlineTracksResetAndZone(t *testing.T) {
 	now := time.Date(2026, 11, 4, 4, 0, 0, 0, loc) // Wednesday; the next Sunday 08:00 reset is days out
 	bo := autonomouspkg.NewBackoff()
 	adm := burnGuardAdmission{cfg: cfg, bo: bo, now: func() time.Time { return now }}
-	if err := adm.HoldNewWork("claude-code", true); err != nil {
+	if err := adm.HoldNewWork("claude-code", burnguard.RungHoldEntry, true); err != nil {
 		t.Fatal(err)
 	}
 	es := bo.Active()
@@ -154,7 +158,7 @@ func TestBurnGuardHoldDeadlineNextReadingWhenEarlier(t *testing.T) {
 	now := time.Date(2026, 11, 2, 12, 0, 0, 0, loc) // Monday noon; the next reset is six days out
 	bo := autonomouspkg.NewBackoff()
 	adm := burnGuardAdmission{cfg: cfg, bo: bo, now: func() time.Time { return now }}
-	if err := adm.HoldNewWork("claude-code", true); err != nil {
+	if err := adm.HoldNewWork("claude-code", burnguard.RungHoldEntry, true); err != nil {
 		t.Fatal(err)
 	}
 	es := bo.Active()
@@ -183,7 +187,7 @@ func TestBurnGuardHoldDeadlineUnresolvableReset(t *testing.T) {
 	now := time.Date(2026, 11, 4, 4, 0, 0, 0, loc)
 	bo := autonomouspkg.NewBackoff()
 	adm := burnGuardAdmission{bo: bo, now: func() time.Time { return now }} // no config: no reset spec
-	if err := adm.HoldNewWork("claude-code", true); err != nil {
+	if err := adm.HoldNewWork("claude-code", burnguard.RungHoldEntry, true); err != nil {
 		t.Fatal(err)
 	}
 	es := bo.Active()
