@@ -291,7 +291,7 @@ func (d *lifecycleDispatcher) Subscribe(filter LifecycleFilter, fn func(Lifecycl
 // subscribeCounted is the internal form of Subscribe that also returns
 // the subscriber record, so a same-package caller (tests) can read one
 // subscriber's own dropped counter instead of conflating it with the
-// drops of every other live subscriber (droppedTotal sums all of them).
+// drops of every other live subscriber.
 func (d *lifecycleDispatcher) subscribeCounted(filter LifecycleFilter, fn func(LifecycleEvent)) (s *lifecycleSub, cancel func()) {
 	if fn == nil {
 		return nil, func() {}
@@ -390,17 +390,6 @@ func (d *lifecycleDispatcher) Close() {
 		d.unsubscribe(s)
 	}
 	d.wg.Wait()
-}
-
-// droppedTotal returns the total events dropped across live subscribers.
-func (d *lifecycleDispatcher) droppedTotal() uint64 {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	var n uint64
-	for _, s := range d.subs {
-		n += s.dropped.Load()
-	}
-	return n
 }
 
 // lifecycleBus returns the Manager's dispatcher, creating it lazily so
