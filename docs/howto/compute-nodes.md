@@ -1151,7 +1151,7 @@ compute node: tls_insecure_skip_verify cannot be combined with tls_ca_file or tl
 ### Set it in the PWA
 
 1. Open **Settings** → **Compute** and click **+ Add ComputeNode**, or the pencil icon on an existing row.
-2. Enter an `https://` address. Under it the **Certificate verification** group has three fields: **CA file (PEM, for a private CA)**, **Certificate fingerprint (SHA-256)** and **Skip certificate verification (not recommended)**. Each has a help link to the definitions page.
+2. Enter an `https://` address. Under it the **Certificate verification** group has three fields — **CA file (PEM, for a private CA)**, **Certificate fingerprint (SHA-256)** and **Skip certificate verification (not recommended)** — plus a fourth, compatibility-only checkbox, **Verify TLS for model pulls (always on; kept for compatibility)**. The checkbox is still sent when you save the node, but it no longer changes anything: model pulls to the node always verify the certificate either way (see [Verify the certificate on model pulls](#verify-the-certificate-on-model-pulls)). Each item has a help link to the definitions page.
 3. Fill in the CA file, the fingerprint or both. Once either has a value, the skip box is disabled; ticking the skip box disables the other two fields and shows a red warning that anyone on the network path can impersonate the node.
 4. Save. The row shows a quiet *pinned* or *CA file* badge when one of those is set, and a red **TLS verification OFF** badge when the skip box is ticked. Hover the red badge for the explanation.
 
