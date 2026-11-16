@@ -450,17 +450,17 @@ migration**: every archived Automaton that has a branch, no landing record, and
 whose branch read-only git cannot prove merged on the default branch gets a
 `pending` record (actor `landing_migration`). It skips records that already carry a landing record, that have no branch, that are not archived, and those whose merge the git evidence proves on the default branch; when the default branch cannot be established it skips rather than guesses. Running it again changes nothing. It changes no status and writes no decision — it only adds the record.
 
-**Review before relying on this.** `kept` and `dropped` and the migration
-exist today only as daemon APIs (`KeepLanding`, `DropLanding`,
-`MigrateLanding`): there is no REST route, CLI verb, comm verb, MCP tool or
-PWA control for them yet, so archive can already be refused on a `pending`
-landing that you cannot yet record a decision for from a surface. Wiring the
-keep/drop decision and the migration to the usual surfaces — and reconciling
-the two keep mechanisms (the unlanded list's **Keep** in `unlanded-keep.json`
-and the record's `kept` landing state) — is the planned follow-up in
-[the archived-unmerged inventory](../plans/2026-11-14-archived-unmerged-automata-inventory.md).
-Until it lands, a `pending` Automaton whose branch you do not want to merge
-still needs its decision recorded through the daemon itself.
+**Keep and drop, on every surface.** Both the record display and the two `pending` decisions — `kept` (the branch is kept on purpose and will not be merged) and `dropped` (the work is abandoned and will not be merged), each with an actor and a non-empty reason — are available on every operator surface:
+
+| Surface | What it shows |
+|---|---|
+| PWA | Automata tab → an Automaton's detail page → **Overview** sub-tab: the landing record — a colored state badge, the commit, actor, time and reason when set. While the state is `pending`, **Keep (branch not merged)** and **Drop (work not merged)** buttons ask for a reason and record the decision. 14 `automata_detail_landing_*` locale keys, in all five bundled locales |
+| REST | `POST /api/autonomous/prds/{id}/landing/keep` and `POST /api/autonomous/prds/{id}/landing/drop`, body `{"actor": "<who>", "reason": "<why>"}` — both need the autonomous write capability, and both refuse a reason-less or already-decided record. The record itself rides on every Automaton read (its `landing` field) |
+| CLI | `datawatch autonomous prd-landing-keep <id> --reason "<why>"` and `datawatch autonomous prd-landing-drop <id> --reason "<why>"` (both take `--actor`, defaulting to `operator`). `datawatch autonomous prd-get <id>` prints the record as the landing line |
+| MCP | `autonomous_landing_keep` and `autonomous_landing_drop` (both need the autonomous write capability); the record comes back in every Automaton read, like `autonomous_prd_get` |
+| comm | `autonomous landing <id>` shows the record's line. `autonomous landing keep <id> <reason...> [actor=<who>]` and `autonomous landing drop <id> <reason...>` record the decision — both orders work (decision word before or after the id) |
+
+All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
 
 ## Processes the worker left running
 

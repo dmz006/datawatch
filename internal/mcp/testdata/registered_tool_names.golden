@@ -79,6 +79,8 @@ autonomous_event_log
 autonomous_events_pending
 autonomous_held_questions
 autonomous_infra_retries
+autonomous_landing_drop
+autonomous_landing_keep
 autonomous_lane_fill_status
 autonomous_lane_utilization
 autonomous_learnings
