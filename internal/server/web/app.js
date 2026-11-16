@@ -32131,6 +32131,7 @@ const _AUTOMATA_STATE_RANK = {
   revisions_asked:  0,
   blocked:          1,
   paused:           1,
+  held:             3,
   running:          2,
   decomposing:      2,
   approved:         3,
@@ -32176,7 +32177,7 @@ window.toggleAutomataWatchFilter = function() {
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','held','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 // _automataBaseList is the Automata list before the tag and facet filters: the
@@ -32511,6 +32512,21 @@ function renderAutomataCard(prd, alsoInHtml) {
     : '';
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
+    : '';
+  // Hold / Release / Extend — the held Automaton's card actions. Hold is a
+  // pause, not a block: the card button stays visible on every state that
+  // is still holdable (server side is authoritative; running/planning/
+  // completed/cancelled/archived refuse a hold), and Release + Extend only
+  // on a held card. Expiry never auto-releases — the card keeps both
+  // buttons and the "ready to review" line.
+  const holdBtn = status !== 'held' && ['draft','needs_review','approved','revisions_asked','paused','blocked','failed'].includes(status)
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_hold')||'Put this Automaton on hold')}" onclick="event.stopPropagation();automataHold(${escId})">⏸ ${escHtml(t('automaton_hold_action')||'Hold')}</button>`
+    : '';
+  const releaseBtn = status === 'held'
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automaton_hold_tooltip_release')||'Release this held Automaton')}" onclick="event.stopPropagation();automataRelease(${escId})">▶ ${escHtml(t('automaton_hold_release')||'Release')}</button>`
+    : '';
+  const extendBtn = status === 'held'
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_extend')||'Extend this hold')}" onclick="event.stopPropagation();automataExtend(${escId})">↻ ${escHtml(t('automaton_hold_extend')||'Extend')}</button>`
     : '';
   // Pin and watch sit in the tile's overflow menu; the marks show their state
   // in the header while the menu is closed.

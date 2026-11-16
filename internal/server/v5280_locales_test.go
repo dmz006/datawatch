@@ -75,6 +75,19 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// Automaton hold: card actions, the hold dialog fields, the held
+		// Automata line, the Inbox Held group (counted separately from blocked
+		// and needs-review) and the Progress card Held column.
+		"automaton_hold_reason_prompt",
+		"automaton_hold_until_prompt",
+		"automaton_hold_release_ask",
+		"automaton_hold_toast_set",
+		"automaton_hold_toast_released",
+		"automaton_hold_toast_extended",
+		"held_automata_inbox_title",
+		"held_automata_inbox_empty",
+		"automation_help_held_automaton",
+		"progress_card_col_held",
 		"projects_subtab_plans",
 		// Plans browser: backlog group, create action, the Automation heading and the move buttons.
 		"plans_browser_backlog",
