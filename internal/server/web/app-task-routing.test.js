@@ -68,11 +68,23 @@ test('card has the enable toggle, profile bar, one row per task type and the pre
 test('row selects come from the registry, keep the stored choice and show effort and second choice', () => {
   const sb = loadApp();
   const row = sb.taskRoutingRowHtml('ui_code', view().profiles.default.ui_code, CTX, []);
-  assert.match(row, /data-field="worker_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="claude-code" selected>/);
-  assert.match(row, /data-field="worker_model"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="sonnet" selected>/);
-  assert.match(row, /data-field="verification_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="pi-prompt" selected>/);
-  assert.match(row, /data-field="effort"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="high" selected>/);
-  assert.match(row, /data-field="second_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="pi-prompt" selected>/);
+  // Each field is one <select data-field="...">…</select>: assert on the exact
+  // rendered markup — the select opens with its data-field and the stored choice
+  // is a selected option inside it.
+  const selectBlock = (row, field) => {
+    const open = row.indexOf(`data-field="${field}"`);
+    assert.ok(open > -1, 'the row has a select for ' + field);
+    const close = row.indexOf('</select>', open);
+    assert.ok(close > open, 'the select for ' + field + ' is closed');
+    return row.slice(open, close);
+  };
+  for (const [field, selected] of [
+    ['worker_backend', '<option value="claude-code" selected>claude-code</option>'],
+    ['worker_model', '<option value="sonnet" selected>sonnet</option>'],
+    ['verification_backend', '<option value="pi-prompt" selected>pi-prompt</option>'],
+    ['effort', '<option value="high" selected>high</option>'],
+    ['second_backend', '<option value="pi-prompt" selected>pi-prompt</option>'],
+  ]) assert.ok(selectBlock(row, field).includes(selected), 'the ' + field + ' select keeps the stored choice');
   // a model the registry no longer lists stays visible
   const stale = sb.taskRoutingRowHtml('ui_code', { worker_backend: 'claude-code', worker_model: 'gone-model' }, CTX, []);
   assert.match(stale, /<option value="gone-model" selected>gone-model<\/option>/);
