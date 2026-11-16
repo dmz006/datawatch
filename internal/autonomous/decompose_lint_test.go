@@ -393,8 +393,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		Rules:         []config.DecomposeLintRule{{ID: "runs_hosting_cli", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}}},
 	}
 	gotD := EffectiveRules(cfgD)
-	if len(gotD) != 12 {
-		t.Fatalf("list-wins: got %v, want 12 rules", idsOf(gotD))
+	if len(gotD) != 13 {
+		t.Fatalf("list-wins: got %v, want 13 rules", idsOf(gotD))
 	}
 	absent(t, gotD, "runs_hosting_cli")
 }
