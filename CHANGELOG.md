@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
+
+### Changed
+
+- Fix the peer-down recovery test that fails in the full package run.
+
 ## v9.182.0 — Build-host toolchain freshness check
 
 ### Changed
