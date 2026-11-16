@@ -2,8 +2,8 @@ package autonomous
 
 import (
 	"os"
-	"reflect"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
