@@ -439,6 +439,11 @@ type PRD struct {
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
 
+	// Landing says whether the Automaton's branch reached the default
+	// branch: pending, landed, kept or dropped (see landing.go). Nil when
+	// the Automaton never had a branch.
+	Landing *Landing `json:"landing,omitempty"`
+
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
 	// BranchRefreshOverride overrides the global branch-refresh setting for

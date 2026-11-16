@@ -7464,6 +7464,63 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/landing/keep:
+    post:
+      summary: Record that the Automaton's branch is kept unmerged on purpose
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        keep records that the branch stays available on purpose, drop that
+        its work will not be merged. Both require a non-empty `actor` and a
+        non-empty `reason`. A branch that has already landed cannot be kept
+        or dropped, and a record that is already kept or dropped is refused
+        (409).
+      operationId: autonomousPRDLandingKeep
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work is not being merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now kept)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
+  /api/autonomous/prds/{id}/landing/drop:
+    post:
+      summary: Record that the Automaton's work will not be merged
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        drop records that the branch and its work will not be merged. Both
+        require a non-empty `actor` and a non-empty `reason`. A branch that
+        has already landed cannot be kept or dropped, and a record that is
+        already kept or dropped is refused (409).
+      operationId: autonomousPRDLandingDrop
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work will not be merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now dropped)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
   /api/autonomous/prds/{id}/set_llm:
     post:
       summary: Set a PRD's worker-LLM override fields

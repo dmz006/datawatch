@@ -248,6 +248,8 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousLandingKeepCmd(),
+		newAutonomousLandingDropCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
@@ -1103,6 +1105,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
+			if line := autonomous.LandingLineFromPRD(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
 			if line := prdReviewLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
@@ -1295,6 +1300,64 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "operator-supplied rejection reason")
+	return cmd
+}
+
+// newAutonomousLandingKeepCmd — landing state: record that the Automaton's
+// work branch is kept unmerged on purpose (its landing record moves from
+// pending to kept, with who decided and why). The landing record (state,
+// commit, actor, at, reason) already rides on `autonomous prd-get`; these
+// two commands are the operator decisions on a pending record.
+func newAutonomousLandingKeepCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-keep <id>",
+		Short: "Record that an Automaton's branch is kept unmerged on purpose",
+		Long: "Record that the Automaton's work branch is kept unmerged on purpose: its landing record moves from " +
+			"pending to kept, named with who decided and the reason. The landing record (state, commit, actor, at, reason) " +
+			"is part of the Automaton's read (autonomous prd-get prints it as the landing line); this command changes it. " +
+			"A reason is required. A branch that has already landed cannot be kept, and a record that is already " +
+			"kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/keep", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work is not being merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
+	return cmd
+}
+
+// newAutonomousLandingDropCmd — landing state: record that the Automaton's
+// work branch is dropped and its work will not be merged (pending to
+// dropped, with who decided and why).
+func newAutonomousLandingDropCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-drop <id>",
+		Short: "Record that an Automaton's branch is dropped and its work will not be merged",
+		Long: "Record that the Automaton's work branch is dropped and its work will not be merged: its landing record " +
+			"moves from pending to dropped, named with who decided and the reason. The landing record (state, commit, " +
+			"actor, at, reason) is part of the Automaton's read (autonomous prd-get prints it as the landing line); this " +
+			"command changes it. A reason is required. A branch that has already landed cannot be kept or dropped, and a " +
+			"record that is already kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/drop", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work will not be merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
 	return cmd
 }
 

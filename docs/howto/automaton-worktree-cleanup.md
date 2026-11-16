@@ -502,6 +502,53 @@ it. The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 
+### The landing record
+
+The list above reviews *branches*. Separately, each **Automaton record** that
+carries a work branch now carries a **landing record** — the record's own
+account of whether that branch's work reached the project's default branch. It
+is the field `landing` on the record (`state`, `commit`, `actor`, `at`,
+`reason`), and it has four states:
+
+| State | Set by |
+|---|---|
+| `pending` | the daemon, when the Automaton's work branch is created. This is the default: an Automaton with a branch starts `pending`. |
+| `landed` | the pipeline's `mark_completed` post-ship hook (through the daemon's completed mark) when the branch ships, naming the merge commit. See [Post-ship hooks](post-ship-hooks.md). |
+| `kept` | you, with an actor and a non-empty reason, when the branch is kept on purpose and will not be merged. |
+| `dropped` | you, with an actor and a non-empty reason, when the work is abandoned and will not be merged. |
+
+`kept` and `dropped` are operator decisions on the record: they need a branch to act on, an actor and a non-empty reason, and are refused when the branch is already `landed` (a landed landing is never rewritten). Each writes one decision on the record's decision log (`landing_keep` or `landing_drop`). The record shows the state, who set it, when and the reason.
+
+**What the record gates: archive.** Archiving the Automaton — by hand on any
+surface, or by the daemon's own close of a finished record — is **refused
+while its landing is still `pending`**, with the branch named:
+
+> `automaton "…" cannot be archived: its branch automaton/… has not landed on the default branch; merge it, or record keep or drop for its landing`
+
+Once the landing is `landed`, `kept` or `dropped` the archive goes through as
+before. An Automaton with **no** landing record — no branch at all, or a record
+that predates this record and was never migrated — archives as it always did.
+So no unlanded work branch can silently disappear behind an archived record,
+and the work the daemon never removes (above) is exactly the work the record
+keeps in view.
+
+**The one-time migration.** The daemon runs a one-time **landing
+migration** at start: every archived Automaton that has a branch, no landing record, and
+whose branch read-only git cannot prove merged on the default branch gets a
+`pending` record (actor `landing_migration`). It skips records that already carry a landing record, that have no branch, that are not archived, and those whose merge the git evidence proves on the default branch; when the default branch cannot be established it skips rather than guesses. Running it again changes nothing. It changes no status and writes no decision — it only adds the record. The count it marked is written to the daemon log and, when above zero, raised as one operator alert (*Archived Automata with unlanded branches*); a done marker (`landing_migration.done`) stops it from running again after a clean pass.
+
+**Keep and drop, on every surface.** Both the record display and the two `pending` decisions — `kept` (the branch is kept on purpose and will not be merged) and `dropped` (the work is abandoned and will not be merged), each with an actor and a non-empty reason — are available on every operator surface:
+
+| Surface | What it shows |
+|---|---|
+| PWA | Automata tab → an Automaton's detail page → **Overview** sub-tab: the landing record — a colored state badge, the commit, actor, time and reason when set. While the state is `pending`, **Keep (branch not merged)** and **Drop (work not merged)** buttons ask for a reason and record the decision. 14 `automata_detail_landing_*` locale keys, in all five bundled locales |
+| REST | `POST /api/autonomous/prds/{id}/landing/keep` and `POST /api/autonomous/prds/{id}/landing/drop`, body `{"actor": "<who>", "reason": "<why>"}` — both need the autonomous write capability, and both refuse a reason-less or already-decided record. The record itself rides on every Automaton read (its `landing` field) |
+| CLI | `datawatch autonomous prd-landing-keep <id> --reason "<why>"` and `datawatch autonomous prd-landing-drop <id> --reason "<why>"` (both take `--actor`, defaulting to `operator`). `datawatch autonomous prd-get <id>` prints the record as the landing line |
+| MCP | `autonomous_landing_keep` and `autonomous_landing_drop` (both need the autonomous write capability); the record comes back in every Automaton read, like `autonomous_prd_get` |
+| comm | `autonomous landing <id>` shows the record's line. `autonomous landing keep <id> <reason...> [actor=<who>]` and `autonomous landing drop <id> <reason...>` record the decision — both orders work (decision word before or after the id) |
+
+All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
+
 ## Processes the worker left running
 
 The cleanup above removes branches and folders. Separately, when a worker session ends (including cancel and failure), the daemon ends processes that worker started and left running. It matches them by `/proc` evidence only (a working directory, executable or script in the session worktree or scratch folder, ancestry to the session, or the session id in the environment), never by name. Read the result as a `session_end_reap` decision on the task or an audit entry of the same name (the decision exists only when the session is bound to a task). If the audit entry shows `survivors` above zero, those processes ignored the signal and are counted only, with no pid or command recorded: look for them by hand, even when the ended count is zero. Details and review notes: [operations](../operations.md#processes-a-session-leaves-behind).

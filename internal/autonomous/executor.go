@@ -288,7 +288,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// so a resumed run never regenerates a second name.
 	if prd.ClusterProfile != "" && prd.Git.Branch == "" {
 		clusterBranch := branchNameFor(prd)
-		m.store.WithLock(func() { prd.Git.Branch = clusterBranch })
+		m.store.WithLock(func() {
+			prd.Git.Branch = clusterBranch
+			markLandingPendingLocked(prd, "autonomous", "branch created")
+		})
 		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, clusterBranch)
 	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts

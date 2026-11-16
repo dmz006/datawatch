@@ -44368,6 +44368,47 @@ function _renderDetailCost(prd) {
 }
 
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
+// Landing state: the operator's record of what happens to an Automaton's
+// unmerged work branch — state (pending / landed / kept / dropped), commit,
+// actor, at, reason — plus the keep/drop decisions once the record is still
+// pending. The record arrives in the PRD JSON (its landing field, part of
+// every Automaton read); keep/drop POST to
+// /api/autonomous/prds/{id}/landing/keep|drop. Renders in the Overview
+// sub-tab of the Automaton detail page.
+function renderLandingState(prd) {
+  const l = prd.landing || prd.Landing;
+  const label = escHtml(t('automata_detail_landing') || 'Landing');
+  if (!l) {
+    return `<div class="prd-detail-landing" style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${label}</div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_detail_landing_none') || 'No landing record yet — the Automaton has no work branch to keep or drop.')}</div>
+    </div>`;
+  }
+  const st = l.state || '';
+  const stMap = { pending: t('automata_detail_landing_state_pending'), landed: t('automata_detail_landing_state_landed'), kept: t('automata_detail_landing_state_kept'), dropped: t('automata_detail_landing_state_dropped') };
+  const stTxt = stMap[st] || st;
+  const color = st === 'landed' ? '#10b981' : st === 'kept' ? '#3b82f6' : st === 'dropped' ? '#ef4444' : '#f59e0b';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  const rows = [];
+  if (l.commit) rows.push([t('automata_detail_landing_commit') || 'Commit', `<code style="font-size:10px;">${escHtml(l.commit)}</code>`]);
+  if (l.actor) rows.push([t('automata_detail_landing_actor') || 'Actor', escHtml(l.actor)]);
+  if (l.at) rows.push([t('automata_detail_landing_at') || 'Time', escHtml(_fmtDate(l.at))]);
+  if (l.reason) rows.push([t('automata_detail_landing_reason') || 'Reason', escHtml(l.reason)]);
+  const decisions = st === 'pending'
+    ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="prd-landing-btn prd-landing-keep" style="font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/keep','reason',${escHtml(JSON.stringify(t('automata_detail_landing_keep_prompt') || 'Reason for keeping this branch unmerged (required)'))})">${escHtml(t('automata_detail_landing_keep_btn') || 'Keep (branch not merged)')}</button>
+        <button class="prd-landing-btn prd-landing-drop" style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid #ef4444;color:#ef4444;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/drop','reason',${escHtml(JSON.stringify(t('automata_detail_landing_drop_prompt') || 'Reason the work will not be merged (required)'))})">${escHtml(t('automata_detail_landing_drop_btn') || 'Drop (work not merged)')}</button>
+      </div>`
+    : '';
+  return `<div class="prd-detail-landing" style="margin-top:10px;display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:11px;margin-bottom:2px;"><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-weight:700;font-size:10px;background:${color}22;color:${color};border:1px solid ${color}55;">${escHtml(stTxt)}</span></div>
+      ${rows.map(([k, v]) => `<div style="font-size:11px;color:var(--text2);">${escHtml(k)}: ${v}</div>`).join('')}
+    </div>
+    ${decisions}
+  </div>`;
+}
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -44407,6 +44448,7 @@ function _renderDetailOverview(prd) {
     ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${renderLandingState(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>

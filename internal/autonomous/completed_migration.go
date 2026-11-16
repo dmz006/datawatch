@@ -280,6 +280,8 @@ func (m *Manager) MarkPRDCompleted(id, release string, mergedAt time.Time, commi
 	m.store.WithLock(func() {
 		switch p.Status {
 		case PRDCompleted:
+			// Already completed: the merge still records the landing.
+			changed = markLandingLandedLocked(p, commit, actor, at)
 			return
 		case PRDCancelled, PRDBlocked, PRDFailed:
 		default:
@@ -289,6 +291,7 @@ func (m *Manager) MarkPRDCompleted(id, release string, mergedAt time.Time, commi
 		from := p.Status
 		e := completedEvidence{at: at, commit: commit, release: release, reason: reason}
 		p.Status = PRDCompleted
+		markLandingLandedLocked(p, commit, actor, at)
 		p.Decisions = append(p.Decisions, Decision{
 			At:    at,
 			Kind:  DecisionCompletedMigration,
