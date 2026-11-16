@@ -5867,5 +5867,16 @@
   "plans_release_attach_not_found": "Nicht gefunden.",
   "plans_release_attach_placement_failed": "Zugeordnet, aber die Zuordnung zum Thema ist fehlgeschlagen.",
   "plans_release_attach_refused": "Vom Server abgelehnt.",
-  "plans_release_rowplans_conflicts_head": "Konflikte:"
+  "plans_release_rowplans_conflicts_head": "Konflikte:",
+  "unlanded_counts_by_state": "Nach Status:",
+  "unlanded_counts_by_age": "Nach Alter:",
+  "unlanded_counts_landed": "%1$s gelandet",
+  "unlanded_counts_pending": "%1$s ausstehend",
+  "unlanded_counts_live": "%1$s aktiv",
+  "unlanded_counts_unlanded": "%1$s nicht gelandet",
+  "unlanded_counts_under_one_day": "%1$s unter einem Tag",
+  "unlanded_counts_under_one_week": "%1$s unter einer Woche",
+  "unlanded_counts_older": "%1$s älter",
+  "unlanded_counts_oldest": "Ältester ausstehender: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Über der Alarmschwelle: %1$s ausstehend (Schwelle %2$s)"
 }

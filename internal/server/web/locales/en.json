@@ -5867,5 +5867,16 @@
   "plans_release_attach_not_found": "Not found.",
   "plans_release_attach_placement_failed": "Attached, but the theme placement failed.",
   "plans_release_attach_refused": "Refused by the server.",
-  "plans_release_rowplans_conflicts_head": "Conflicts:"
+  "plans_release_rowplans_conflicts_head": "Conflicts:",
+  "unlanded_counts_by_state": "By state:",
+  "unlanded_counts_by_age": "By age:",
+  "unlanded_counts_landed": "%1$s landed",
+  "unlanded_counts_pending": "%1$s pending",
+  "unlanded_counts_live": "%1$s live",
+  "unlanded_counts_unlanded": "%1$s unlanded",
+  "unlanded_counts_under_one_day": "%1$s under a day",
+  "unlanded_counts_under_one_week": "%1$s under a week",
+  "unlanded_counts_older": "%1$s older",
+  "unlanded_counts_oldest": "Oldest pending: %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Above alert threshold: %1$s pending (threshold %2$s)"
 }

@@ -5867,5 +5867,16 @@
   "plans_release_attach_not_found": "Non trouvé.",
   "plans_release_attach_placement_failed": "Rattaché, mais le placement dans le thème a échoué.",
   "plans_release_attach_refused": "Refusé par le serveur.",
-  "plans_release_rowplans_conflicts_head": "Conflits :"
+  "plans_release_rowplans_conflicts_head": "Conflits :",
+  "unlanded_counts_by_state": "Par état :",
+  "unlanded_counts_by_age": "Par âge :",
+  "unlanded_counts_landed": "%1$s intégrées",
+  "unlanded_counts_pending": "%1$s en attente",
+  "unlanded_counts_live": "%1$s actives",
+  "unlanded_counts_unlanded": "%1$s non intégrées",
+  "unlanded_counts_under_one_day": "%1$s de moins d'un jour",
+  "unlanded_counts_under_one_week": "%1$s de moins d'une semaine",
+  "unlanded_counts_older": "%1$s plus anciennes",
+  "unlanded_counts_oldest": "Plus ancienne en attente : %1$s (%2$s), %3$s",
+  "unlanded_counts_over_threshold": "Au-dessus du seuil d'alerte : %1$s en attente (seuil %2$s)"
 }

@@ -39857,6 +39857,31 @@ function _unlandedWorkBranches(data) {
   const b = data && typeof data === 'object' ? data.branches : null;
   return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
 }
+// unlandedCountsHtml(counts, alertCfg) draws the compact counts block from the
+// read's counts section: one count per landing state, one per age band, the
+// oldest pending branch, and a marker when the pending count is above the
+// daily alert threshold (alertCfg from GET /api/autonomous/config).
+const UNLANDED_COUNT_STATES = ['landed', 'pending', 'live', 'unlanded'];
+const UNLANDED_COUNT_AGES = ['under_one_day', 'under_one_week', 'older'];
+window.unlandedCountsHtml = function(counts, alertCfg) {
+  if (!counts || typeof counts !== 'object') return '';
+  const num = (m, k) => Number(m && typeof m === 'object' ? m[k] : 0) || 0;
+  const chip = (key, n) => `<span class="unlanded-counts-chip" data-key="${escHtml(key)}">${escHtml(t('unlanded_counts_' + key, [n]))}</span>`;
+  const states = UNLANDED_COUNT_STATES.map(k => chip(k, num(counts.by_state, k))).join('');
+  const ages = UNLANDED_COUNT_AGES.map(k => chip(k, num(counts.by_age, k))).join('');
+  const pending = num(counts.by_state, 'pending');
+  const cfg = alertCfg && typeof alertCfg === 'object' ? alertCfg : null;
+  const threshold = cfg && Number.isFinite(Number(cfg.threshold)) ? Number(cfg.threshold) : null;
+  const over = !!cfg && cfg.enabled !== false && threshold !== null && pending > threshold;
+  const o = counts.oldest_pending;
+  const oldest = o && typeof o === 'object' && o.branch
+    ? `<div class="unlanded-counts-oldest" data-branch="${escHtml(String(o.branch))}">${escHtml(t('unlanded_counts_oldest', [String(o.title || o.branch), String(o.branch), String(o.age || '')]))}</div>` : '';
+  const marker = over ? `<div class="unlanded-counts-over">${escHtml(t('unlanded_counts_over_threshold', [pending, threshold]))}</div>` : '';
+  return `<div class="unlanded-counts">` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_state'))}</span>${states}</div>` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_age'))}</span>${ages}</div>` +
+    oldest + marker + `</div>`;
+};
 window.unlandedWorkCardHtml = function(data) {
   const list = _unlandedWorkBranches(data);
   if (!list.length) return '';
@@ -39873,7 +39898,7 @@ window.unlandedWorkCardHtml = function(data) {
       _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
       `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
   }).join('');
-  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${window.unlandedCountsHtml(data.counts, window._unlandedAlertCfg)}${rows}</div>`;
 };
 
 window.unlandedWorkAct = function(btn, act) {
@@ -39891,6 +39916,12 @@ window.unlandedWorkAct = function(btn, act) {
 };
 
 function _automationUnlandedWorkLoader() {
+  if (!window._unlandedAlertCfgFetched) {
+    window._unlandedAlertCfgFetched = true;
+    apiFetch('/api/autonomous/config').then(ac => {
+      if (ac && typeof ac === 'object') window._unlandedAlertCfg = { enabled: ac.unlanded_alert_enabled !== false, threshold: ac.unlanded_alert_threshold };
+    }).catch(() => { window._unlandedAlertCfgFetched = false; });
+  }
   return window._listLoaders.automation_unlanded_work || listLoader({
     key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
     failedText: msg => t('unlanded_work_failed', [msg]),

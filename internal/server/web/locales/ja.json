@@ -5867,5 +5867,16 @@
   "plans_release_attach_not_found": "見つかりません。",
   "plans_release_attach_placement_failed": "アタッチしましたが、テーマへの配置に失敗しました。",
   "plans_release_attach_refused": "サーバーに拒否されました。",
-  "plans_release_rowplans_conflicts_head": "競合:"
+  "plans_release_rowplans_conflicts_head": "競合:",
+  "unlanded_counts_by_state": "状態別:",
+  "unlanded_counts_by_age": "経過別:",
+  "unlanded_counts_landed": "統合済み %1$s",
+  "unlanded_counts_pending": "保留 %1$s",
+  "unlanded_counts_live": "進行中 %1$s",
+  "unlanded_counts_unlanded": "未統合 %1$s",
+  "unlanded_counts_under_one_day": "1日未満 %1$s",
+  "unlanded_counts_under_one_week": "1週間未満 %1$s",
+  "unlanded_counts_older": "それ以前 %1$s",
+  "unlanded_counts_oldest": "最も古い保留: %1$s (%2$s)、%3$s",
+  "unlanded_counts_over_threshold": "警告しきい値超過: 保留 %1$s (しきい値 %2$s)"
 }
