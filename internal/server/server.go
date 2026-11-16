@@ -511,6 +511,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Cancelled-to-Completed migration: POST /api/autonomous/completed/migrate
 	// [?dry_run=&limit=&id=].
 	apiMux.HandleFunc("/api/autonomous/completed/migrate", api.handleAutonomousCompletedMigrate)
+	// Operator hold: GET /api/autonomous/held (the held group) and
+	// POST /api/autonomous/held/migrate {dry_run,ids,reason,condition,until,actor}.
+	apiMux.HandleFunc("/api/autonomous/held", api.handleAutonomousHeld)
+	apiMux.HandleFunc("/api/autonomous/held/migrate", api.handleAutonomousHeldMigrate)
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
@@ -643,6 +647,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                  // safe-to-delete report of finished Automaton branches and worktrees
+	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list

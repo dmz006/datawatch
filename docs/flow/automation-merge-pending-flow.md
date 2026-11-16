@@ -1,9 +1,11 @@
 # Automation merge-pending flow
 
-How the coordinator's poll decides whether a finished Automaton's work branch
+How the coordinator's poll decides whether an Automaton's work branch
 has reached `main`, how that answer is cached so a quiet poll runs no git, and
-how the one decision splits into two different outputs: a recorded shadow
-decision, or (in `on` mode) a merge-pending record and a single alert. The
+how the one decision splits into three different outputs: a recorded shadow
+decision, or (in `on` mode) a merge-pending record plus a single alert for a
+completed Automaton, or an in-memory episode plus the same single alert for an
+Automaton in another covered state. The
 check only reads; nothing in this flow merges, deletes, pushes or checks out a
 branch.
 
@@ -18,21 +20,29 @@ merge-pending check runs. The check is controlled by
   cache and bookkeeping are pruned empty.
 - `shadow`: the check runs and writes a bounded history of what it decided.
   It writes no record and raises no alert.
-- `on`: the check runs, a pending Automaton gets a `merge_pending` record, and
-  a pending Automaton that has waited long enough raises one alert.
+- `on`: the check runs, a pending Automaton that has waited long enough
+  raises one alert, and a pending completed Automaton additionally gets a
+  `merge_pending` record.
 
-Only an Automaton that is **completed** and has a **work branch** is looked at.
-A failed or blocked Automaton still goes through the triage pass as before.
+Covered is an Automaton that has a **work branch** and whose state the pass
+looks at (the coverage of `merge_pending_include_terminal`): **completed**
+always, and while `autonomous.automation.merge_pending_include_terminal` is on
+(the default) **archived**, **`needs_review`**, **blocked** and **failed** too.
+None of these is a special case to the comparison: the same two-test git
+check applies, and a branch the two tests disagree on is still "needs a
+look", whatever the Automaton's state. The difference is what `on` mode does
+with the answer: a completed Automaton gets a `merge_pending` record, while an
+Automaton in another covered state is tracked as an in-memory episode, so a
+failed or blocked Automaton's existing triage record is left untouched.
 
 ```mermaid
 flowchart TD
     T[idleLoop tick] --> TP[triagePass: one walk over every Automaton]
     TP --> M{merge_pending_mode}
     M -- off --> NOGIT[no branch compared, git never called,<br/>cache and bookkeeping pruned]
-    M -- shadow or on --> S{completed AND has a work branch?}
+    M -- shadow or on --> S{covered by the pass AND has a work branch?}
     S -- no --> OTHER[handled by the triage pass as before]
-    S -- yes --> CLR0[clear any failed or blocked record:<br/>a completed Automaton holds none]
-    CLR0 --> TIPS[read the branch tip and the main tip<br/>from the ref files, no git]
+    S -- yes --> TIPS[read the branch tip and the main tip<br/>from the ref files, no git]
     TIPS --> KEY{cache entry for this branch<br/>with the same two tips?}
     KEY -- yes --> HIT[reuse the cached comparison: no git runs]
     KEY -- no --> CMP[CompareBranchToMain, read-only git]
@@ -42,11 +52,14 @@ flowchart TD
     STORE --> DEC
     HIT --> DEC[state decision]
     DEC --> SPLIT{mode}
-    SPLIT -- shadow --> SH[observe: one shadow decision<br/>state, commits ahead, would_alert<br/>no record, no alert]
+    SPLIT -- shadow --> SH[observe: one shadow decision<br/>state, automaton state, commits ahead, would_alert<br/>no record, no alert]
     SPLIT -- on --> ON{pending?}
-    ON -- no --> CLR[clear a merge_pending record from an earlier episode]
-    ON -- yes --> REC[write or refresh the merge_pending record]
-    REC --> DUE{threshold above 0 AND alert not yet sent<br/>AND record first seen at least threshold ago?}
+    ON -- no --> CLR[clear a merge_pending record (completed) or<br/>end the in-memory episode (other covered state)]
+    ON -- yes --> KEEP{Automaton state}
+    KEEP -- completed --> REC[write or refresh the merge_pending record]
+    KEEP -- archived / needs_review / blocked / failed --> EPI[track the in-memory episode:<br/>no record, the triage record stays untouched]
+    REC --> DUE{threshold above 0 AND alert not yet sent<br/>AND first seen at least threshold ago?}
+    EPI --> DUE
     DUE -- yes --> AL[stamp alerted_at, queue one warn alert]
     DUE -- no --> END
     AL --> END[after the walk: queued alerts go through the alert sink]
@@ -74,9 +87,9 @@ Automaton branch and the tip of `main`.
 4. An `unknown` result is never cached. The reason is logged once per distinct
    failure, so an unchanged failure does not fill the log every poll, and the
    branch is left exactly as it was.
-5. After each walk, cached entries for branches that are no longer finished
+5. After each walk, cached entries for branches that are no longer covered
    Automata with a branch are dropped, so the cache stays bounded by the number
-   of finished Automata.
+   of covered Automata.
 
 The cache lives in memory only. A daemon restart starts it empty and the first
 tick fills it. The merge reads (REST, MCP, CLI, chat, PWA) are served from this
@@ -122,32 +135,50 @@ flowchart LR
     D[state decision] --> SHD{mode}
     SHD -- shadow --> W[shadow history<br/>merge_shadow_decisions.json<br/>newest first, bounded at 1000]
     SHD -- on --> P{state}
-    P -- pending --> R[merge_pending record on the Automaton<br/>first seen, branch, commits ahead]
-    R --> A[one warn alert after the threshold<br/>alerted_at stamped on the record]
-    P -- merged / empty / needs_look --> C[record cleared:<br/>a later pending episode alerts again]
+    P -- pending --> P2{Automaton state}
+    P2 -- completed --> R[merge_pending record<br/>first seen, branch, commits ahead]
+    P2 -- archived / needs_review / blocked / failed --> RP[in-memory episode<br/>no record, triage record untouched]
+    R --> A[one warn alert after the threshold<br/>alerted_at stamped before saving]
+    RP --> A
+    P -- merged / empty / needs_look --> C[record cleared, episode ended:<br/>a later pending episode alerts again]
 ```
 
-**Shadow mode records, and nothing else.** For each finished Automaton with a
+**Shadow mode records, and nothing else.** For each covered Automaton with a
 branch, the tick writes a decision holding the Automaton id and name, the
-branch, the state, the commits ahead and `would_alert`, which says whether an
+Automaton's own state (`automaton_state`: completed, archived, needs_review,
+blocked or failed), the branch, the state, the commits ahead and `would_alert`,
+which says whether an
 alert would have fired by now given `merge_pending_alert_minutes` (always false
-when that is `0`). To work that out shadow mode tracks, in memory, when each
+when that is `0`). To work that out
+shadow mode tracks, in memory, when each
 Automaton was first seen pending. A decision identical to the newest one for
 the same Automaton is not written again: it only raises that entry's repeat
 count and moves its last-seen time, and the file is flushed once per walk, so
 a quiet poll adds no new rows. No merge-pending record is written and no alert
-is raised, and a leftover record from an earlier `on` period is cleared.
+is raised, and a leftover record from an earlier `on` period is cleared. The
+merge read also reports two counters over the whole persisted history,
+`shadow_decisions_total` and `shadow_decisions_false` (would-alert decisions
+later found false: their episode ended with the branch `empty` or `needs_look`
+rather than `merged`); a window with a real number of decisions in which the
+false counter stayed at 0 is the clean shadow signal to switch the mode from
+`shadow` to `on`.
 
-**On mode records and alerts.** A pending Automaton gets a `merge_pending`
+**On mode records or tracks, and alerts once per episode.** A pending completed
+Automaton gets a `merge_pending`
 record stamped with the time it was first seen; the record is refreshed only
-when it changed. Once it has stood for `merge_pending_alert_minutes` (default
-30) and no alert has been sent for it, the tick stamps the alert time on the
-record and queues exactly one `warn` alert, which goes out through the same
-alert sink as the triage alert once the walk finishes. Stamping the time before
+when it changed. A pending Automaton in another covered state (archived,
+`needs_review`, blocked or failed) is tracked instead as an in-memory
+episode: no record is written or cleared, and a failed or blocked Automaton's
+existing triage record is left exactly as it was. In both cases, once
+the episode has stood for `merge_pending_alert_minutes` (default
+30) and no alert has been sent for it, the tick stamps the alert time and queues exactly one `warn` alert, which goes out through the same
+alert sink as the triage alert once the walk finishes; the alert names the
+Automaton, its state and the branch. Stamping the time before
 saving is what stops a reload from alerting again, so the alert fires once per
 episode. `0` turns the alert off while the record is still written and shown.
 When the branch stops being pending (merged, empty or needs a look) the record
-is cleared, so a later pending episode starts again and alerts again. An
+is cleared and the in-memory episode ends, so a later pending episode starts
+again and alerts again. An
 `unknown` branch changes nothing: it neither starts nor ends an episode.
 
 ## Reading the result
@@ -158,7 +189,7 @@ is cleared, so a later pending episode starts again and alerts again. An
 | MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
 | CLI | `datawatch autonomous merge` | `datawatch autonomous safe-to-delete` |
 | Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
-| PWA | merge badge on a finished Automaton and its Automation card | card on the Automation Housekeeping sub-tab |
+| PWA | merge badge on a covered Automaton and its Automation card | card under the event stream on the Automata Events sub-tab |
 
 The safe-to-delete report reuses the same comparison for each local
 `automaton/*` branch but is not part of the poll tick: it is computed when it

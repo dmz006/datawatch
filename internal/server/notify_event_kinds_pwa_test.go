@@ -87,7 +87,7 @@ func TestNotifyEventKinds_MatchPWA(t *testing.T) {
 		autonomous.PRDApproved, autonomous.PRDRevisionsAsked, autonomous.PRDActive,
 		autonomous.PRDRunning, autonomous.PRDCompleted, autonomous.PRDRejected,
 		autonomous.PRDCancelled, autonomous.PRDArchived, autonomous.PRDBlocked,
-		autonomous.PRDFailed, autonomous.PRDPaused,
+		autonomous.PRDFailed, autonomous.PRDPaused, autonomous.PRDHeld,
 	} {
 		valid[autonomous.PRDStatusKind(st)] = true
 	}

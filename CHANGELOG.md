@@ -5,12 +5,72 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.180.2 — Two data races found by the race detector
+
 ### Fixed
 
-- **The eleven open high or critical code scanning alerts on main are fixed, so the CodeQL workflow's "Open high/critical alerts" gate stops failing every push; closure is confirmed when the next gate run on main reports them gone (including alerts 835, 844, 845, 846 and 848).** The path and command injection findings in `internal/autonomous` are closed by validating every value that reaches git or the file system before it is used: the file-drift checker refuses a project folder that is empty, NUL-laden, relative or dash-prefixed, and a revision argument that is not a plain revision is read as "no revision" (git is not started); the daemon-section and daemon-ignore checks read only paths that are demonstrably inside the project folder (a symlink chain that leaves the folder is refused); and the cleanup status resolves its status file once inside the data directory, a data directory that is not usable leaving the recorder inert. The model-pull certificate finding in `internal/compute` is closed by always verifying the node's `https://` certificate on a pull — the system roots, plus `tls_ca_file` when set, and `tls_cert_fingerprint` when pinned — so `verify_tls` is kept for configuration compatibility and no longer turns verification off, and `tls_insecure_skip_verify` (probes only) never applies to a pull. The allocation-size findings in the plans release API are closed by bounding the themes a layout request may name (at most 4096) and the items per theme (at most 4096 per kind) before any of them sizes an allocation.
-  - **How it shows up:** day-to-day, a well-formed setup behaves exactly as before. The one visible change: a pull to an `https://` node whose certificate the system does not trust now fails with `node <name>: certificate verification failed: ...; trust the certificate with tls_ca_file or tls_cert_fingerprint` — set the trust on the node to keep pulling from it. On the scanner: the eleven alerts drop out of the open findings on the next code-scanning run of main; code-scanning engines report on the next analysis, not immediately, so until that gate run is confirmed green, nothing in this repository should be read as claiming they closed.
-  - **Migration:** none for the injection and allocation fixes. For model pulls: an `https://` node with a self-signed or private-CA certificate needs `tls_ca_file` or `tls_cert_fingerprint` set before its next pull; `verify_tls: false` no longer keeps verification off.
-  - **Docs:** [howto/compute-nodes.md](docs/howto/compute-nodes.md#verify-the-certificate-on-model-pulls) states the always-verify pull rule and how to name the trust; the [file drift](docs/howto/file-drift-guardrail.md), [protected-paths](docs/howto/automaton-protected-paths.md), [uncommitted-work](docs/howto/automaton-uncommitted-work.md) and [worktree-cleanup](docs/howto/automaton-worktree-cleanup.md) how-tos name the validation guards; `docs/operations.md` keeps the gate-run confirmation and the node-trust migration open as operator review items.
+- **A model pull answered with a record that its own background pull was still updating.** The compute node model pull handler registered the pull task, started the goroutine that updates it, then encoded the same record into the response. The response is now a copy taken before the goroutine starts. The race detector reported it in `TestModelPullAllowedByModelEntry` and `TestModelPullAllowedByPublisher`.
+- **The observer pull test ticker helper was not safe for the several collector workers that ask it for a ticker at once.** It now holds a lock, which removes the race and the occasional failure of `TestHandleObserverPull_FailedPeerIsStaleWithReason`.
+
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
+## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
+
+### Changed
+
+- Merge-pending sweep covers every terminal state and leaves shadow mode.
+
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
+## v9.176.2 — Quick replies answer the pending operator question
+
+### Changed
+
+- Quick replies answer the pending operator question.
+
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
 
 ## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
 

@@ -330,7 +330,7 @@ func supervisorWatchTriageNamesFailedTask(p *PRD, want TaskStatus) bool {
 // blocked (the two states a held task keeps an Automaton in) and has at
 // least one task in the review state.
 func supervisorWatchHasReviewHeldTask(p *PRD) bool {
-	if p == nil || (p.Status != PRDRunning && p.Status != PRDBlocked) {
+	if p == nil || p.Status == PRDHeld || (p.Status != PRDRunning && p.Status != PRDBlocked) {
 		return false
 	}
 	for i := range p.Story {
@@ -377,6 +377,9 @@ func supervisorWatchQueuedEligible(t LaneType, q LaneFillQueued) int {
 
 // sortedPRDs returns the lister's PRDs in stable Automaton-id order so
 // the check output is deterministic, skipping empties and duplicates.
+// A held Automaton is waiting by the operator's decision, so it is
+// skipped too: it never produces a task-failed, task-review or
+// not-merged finding. The Held group of the read view lists it instead.
 func (w *SupervisorWatchWork) sortedPRDs() []*PRD {
 	prds := w.prdView()
 	if len(prds) == 0 {
@@ -385,7 +388,7 @@ func (w *SupervisorWatchWork) sortedPRDs() []*PRD {
 	out := make([]*PRD, 0, len(prds))
 	seen := map[string]bool{}
 	for _, p := range prds {
-		if p == nil || p.ID == "" || seen[p.ID] {
+		if p == nil || p.ID == "" || seen[p.ID] || p.Status == PRDHeld {
 			continue
 		}
 		seen[p.ID] = true

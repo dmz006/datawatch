@@ -199,6 +199,7 @@ func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error)
 	m.store.WithLock(func() {
 		prd.ProjectDir = path
 		prd.Git.Branch = branch
+		markLandingPendingLocked(prd, "autonomous", "branch created")
 	})
 	return true, nil
 }

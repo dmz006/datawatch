@@ -2402,9 +2402,10 @@ The daemon observes the in-flight model request of a worker or verifier session 
 - **Config keys:** both live on `config.AutonomousAutomationConfig` in `internal/config/config.go`.
   - `autonomous.automation.merge_pending_mode`: `off` (default), `shadow` or `on`. An unset key reads `off` via `EffectiveMergePendingMode`. On config load (`validateLoaded` → `ValidateMergePendingMode`) an empty value is accepted as unset and any other unknown word is an error; the write paths (`validateMergePendingMode` in `internal/server/api.go`: `PUT /api/config` and the Automata config object) refuse an empty string and any unknown word with a 400.
   - `autonomous.automation.merge_pending_alert_minutes`: whole minutes >= 0. Unset reads `DefaultAutomationMergePendingAlertMinutes` (30); an explicit 0 turns the alert off and survives a round trip (`MergePendingAlertMinutes` is a `*int`, read through `EffectiveMergePendingAlertMinutes`). A negative value is refused with a 400 on the write paths (`validateMergePendingAlertMinutes`) and with an error on config load.
+  - `autonomous.automation.merge_pending_include_terminal`: bool, default true (`MergePendingIncludeTerminal` is a `*bool`; unset reads `DefaultMergePendingIncludeTerminal` through `EffectiveMergePendingIncludeTerminal`). When true the pass also covers archived, needs_review, blocked and failed Automata with a work branch; false keeps it to completed Automata. It is bridged into the manager's `AutomationConfig` in `cmd/datawatch/main.go`; the REST/CLI/comm/MCP/PWA write paths for this key are not wired yet, so it is set in YAML.
   - Both are read live on every tick, so a change applies to the next tick with no restart. Chat `configure`, MCP `autonomous_config_set` (`automation_merge_pending_mode`, `automation_merge_pending_alert_minutes`) and the PWA Automata settings fields write the same keys.
 - **Comparison:** `internal/autonomous/merge_compare.go` classifies a finished Automaton's `automaton/<id>` branch against `main` with read-only git (`rev-list`, `cherry`, `log`): `merged`, `pending`, `needs_look` (patch and subject line disagree), `empty` or `unknown` (not compared, or a git error). One comparison is bounded by `mergePendingGitTimeout` (30 seconds, `internal/autonomous/merge_pending_pass.go`) and results are cached while the branch tip and the `main` tip are unchanged.
-- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`.
+- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`. Archived, needs_review, blocked and failed Automata (while `merge_pending_include_terminal` is on) never get a `merge_pending` record — a failed or blocked one keeps its triage record untouched — so their episode is kept in memory by Automaton id (`mergePendingState.episodes`, pruned with the other maps, seeded from a `merge_pending` record carried over from completed); they raise the same one alert per episode, whose title and body name the Automaton, its state and the branch. An episode ends when the branch is merged, empty or `needs_look`. Shadow decisions carry `automaton_state` and `found_false` (a `would_alert` decision whose episode later ended empty or `needs_look`); `merge_shadow_decisions.json` is an object holding `decisions_total`, `decisions_false` and `decisions` (an older bare list still loads), reported as `shadow_decisions_total` and `shadow_decisions_false` by the merge status read.
 - **Report (batched fetch):** `internal/autonomous/merge_safe_delete.go` builds the safe-to-delete report. It issues no command that changes anything, and keeps git work down: a fixed listing cost (one `for-each-ref` with the ahead-behind atom — falling back to a plain ref listing plus one `rev-list --count` per branch on older git — and one `worktree list`, plus one base subject log only when at least one branch is ahead), then per-branch at most two calls (cherry, branch subject log) plus one status read per safe candidate worktree, run through a bounded worker pool (`safeDeleteGitConcurrency`, 4).
 - **Report (cache):** `merge_safe_delete_cache.go` front-loads that: a per-repository in-memory cache for 60 seconds (`safeDeleteCacheTTL`), cold reads single-flight (concurrent readers share one computation, or its unwrapped error), fresh reads served at once, stale reads served at once with `Stale` set and the original computation time still stamped as `ComputedAt` — plus exactly one background refresh per repository at a time, bounded by `safeDeleteRefreshTimeout` (60 s), whose failure keeps the last good report and logs one line (`[autonomous] safe-to-delete cache refresh: repo ...`).
 - **Report (stats):** `merge_safe_delete_stats.go` records the counters (`Refreshes`, `RefreshFailures`, `SlowReports`, `LastDurationMs`, `LastComputedAt`, `Worktrees`) behind `SafeDeleteStats`, and a computation longer than `safeDeleteSlowWarn` (3 s) is logged exactly once with the duration, threshold and worktree count — never repository, branch or worktree names or paths. `merge_status.go` holds the merge status model, `merge_text.go` the shared CLI/comm/alert wording (including the computed-at line and the stale note, both only when the report carries them).
@@ -2900,6 +2901,19 @@ global default. Web surface: settings card *Pi (worker backend)*
   `DetectLoop` turn window. Web surface: the autonomous settings card
   (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
   `settings_loop_detect_turns` in all 5 locales.
+- **`autonomous.unlanded_alert_enabled`** / **`autonomous.unlanded_alert_threshold`**
+  (`Autonomous.UnlandedAlertEnabled *bool` / `UnlandedAlertThreshold *int` in
+  `internal/config/config.go`; `internal/config/unlanded_alert.go`: `nil` →
+  on / 3, `0` threshold alerts on any pending branch, negative rejected by
+  `ValidateUnlandedAlertThreshold` at load and every write edge). Mirrored on
+  `autonomous.Config`; the daily check (`internal/autonomous/unlanded_alert.go`,
+  started from the poll loop in `Manager.run`) reads the live manager Config on
+  each tick and persists the last-alerted day in `unlanded_alert.json`. REST
+  keys in `internal/server/unlanded_alert_config.go`; the
+  `/api/autonomous/config` path validates in `autonomous.validateUnlandedAlertPatch`.
+  Web surface: the autonomous settings card with labels
+  `settings_unlanded_alert_enabled` / `settings_unlanded_alert_threshold` in all
+  5 locales.
 
 ### Tests
 
@@ -3003,14 +3017,34 @@ bucket, not a stored status value.
   with the merge time as the completion time; one `completed_migration`
   decision-log line per record (what, why, how to undo); idempotent; refused
   while a final gate runs; `MarkPRDCompleted` is the single-record write the
-  merge pipeline's `mark_completed` post-ship step and the migration share.
-  It never touches a session.
+  merge pipeline's `mark_completed` post-ship step and the migration share;
+  both paths also record the record's **landing** as `landed` with the merge
+  commit. It never touches a session.
+- **`internal/autonomous/landing.go`** — the per-record **landing record**
+  (`PRD.Landing`, `models.go`): `pending` (set by `markLandingPendingLocked`
+  when the work branch is created — `executor.go`, `worktree.go`), `landed`
+  (`markLandingLandedLocked`, from `MarkPRDCompleted`), `kept` / `dropped`
+  (`KeepLanding` / `DropLanding`, each needing an actor and a non-empty
+  reason, refused when already landed, one `landing_keep` / `landing_drop`
+  decision each). `Archive` (`manager.go`) refuses a `pending` landing, the
+  branch named. `MigrateLanding` (same file) is the one-time backfill:
+  archived, has a branch, no record, git cannot prove merged → `pending`
+  (actor `landing_migration`); idempotent, no status or decision, skips when
+  the default branch is unknown. `RunLandingMigrationOnce` /
+  `StartLandingMigration` (same file) are its only production caller:
+  `cmd/datawatch/main.go` starts it in a goroutine right after `SetAlertFn`;
+  it logs the count, alerts when above zero, and writes
+  `landing_migration.done` after a clean pass. Tests: `landing_test.go`
+  (`TestLandingStates`, `TestLandingKeepDropRequireActorAndReason`,
+  `TestLandingNoBranchNoRecord`, `TestLandingMigration`,
+  `TestLandingMigrationOnceAlertsAndMarksDone`).
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking
   goroutine when `autonomous.shipped.backfill_on_start` is on).
 - **Post-ship step.** `mark_completed` is the fifth post-ship built-in
-  (`internal/mergepipeline/posthook_builtins.go`); the merge helper's
+  (`internal/mergepipeline/posthook_builtins.go`); it marks the Automaton
+  Completed and records its landing as `landed`; the merge helper's
   `completed_mark` step in `scripts/merge-shipped-record.sh` reaches the same
   result through `completed-migrate --id`.
 - **Surfaces**

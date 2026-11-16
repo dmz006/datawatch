@@ -75,6 +75,20 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// Automaton hold: card actions, the hold dialog fields, the held
+		// Automata line, the Inbox Held group (counted separately from blocked
+		// and needs-review) and the Progress card Held column.
+		"automaton_hold_reason_prompt",
+		"automaton_hold_until_prompt",
+		"automaton_hold_release_ask",
+		"automaton_hold_toast_set",
+		"automaton_hold_toast_released",
+		"automaton_hold_toast_extended",
+		"held_automata_inbox_title",
+		"automaton_hold_action",
+		"held_automata_inbox_empty",
+		"automation_help_held_automaton",
+		"progress_card_col_held",
 		"projects_subtab_plans",
 		// Plans browser: backlog group, create action, the Automation heading and the move buttons.
 		"plans_browser_backlog",
@@ -87,6 +101,22 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_observer_peer_silent_alert_minutes",
 		"settings_observer_peer_silent_alert_minutes_hint",
 		"observer_peer_never_pushed",
+		// Automaton detail — landing state block (state, commit, actor, time,
+		// reason) and its keep/drop decision buttons.
+		"automata_detail_landing",
+		"automata_detail_landing_at",
+		"automata_detail_landing_actor",
+		"automata_detail_landing_commit",
+		"automata_detail_landing_drop_btn",
+		"automata_detail_landing_drop_prompt",
+		"automata_detail_landing_keep_btn",
+		"automata_detail_landing_keep_prompt",
+		"automata_detail_landing_none",
+		"automata_detail_landing_reason",
+		"automata_detail_landing_state_dropped",
+		"automata_detail_landing_state_kept",
+		"automata_detail_landing_state_landed",
+		"automata_detail_landing_state_pending",
 		// Projects manage form action keys.
 		"projects_manage_add_action",
 		"projects_manage_save_action",
@@ -565,6 +595,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_child_inherit",
 		"settings_automation_merge_pending_mode",
 		"settings_automation_merge_pending_alert_minutes",
+		"settings_automation_merge_pending_include_terminal",
+		"merge_shadow_decisions_counts",
 		"merge_state_pending",
 		"merge_state_needs_look",
 		"safe_delete_card_title",

@@ -78,6 +78,13 @@ Subcommands:
                                   (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  branch-reap [--json]            The branch reap report: the task sub-branches that would be reaped, the
+                                  ones held, and every backup ref under refs/datawatch/reap-backup/
+                                  (report only, nothing is backed up, deleted or restored)
+  branch-reap-run [--json]        Perform one branch reap pass: each listed branch is backed up first,
+                                  then deleted; held branches are listed (a reaper needs the merge base repo)
+  branch-reap-restore <branch> [--json]
+                                  Recreate one reaped branch from its newest backup ref
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
@@ -248,6 +255,8 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousLandingKeepCmd(),
+		newAutonomousLandingDropCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
@@ -299,6 +308,10 @@ Subcommands:
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
 		newAutonomousCompletedMigrateCmd(),
+		newAutonomousPRDHoldCmd(),
+		newAutonomousPRDReleaseHoldCmd(),
+		newAutonomousHeldCmd(),
+		newAutonomousHeldMigrateCmd(),
 		newAutonomousDefectCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
@@ -355,6 +368,9 @@ Subcommands:
 		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousBranchReapCmd(),
+		newAutonomousBranchReapRunCmd(),
+		newAutonomousBranchReapRestoreCmd(),
 		newAutonomousCleanupCmd(),
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
@@ -791,6 +807,12 @@ Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
 
+Daily unlanded-work alert, by JSON key (also settable with
+datawatch config set autonomous.<key> <value>):
+
+  unlanded_alert_enabled          true|false: raise an alert when Automaton branches waiting to land pass the threshold (default true)
+  unlanded_alert_threshold        whole number >= 0 of waiting branches that triggers the alert (default 3)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:
@@ -1093,6 +1115,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
+			if line := autonomous.LandingLineFromPRD(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
 			if line := prdReviewLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
@@ -1285,6 +1310,64 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "operator-supplied rejection reason")
+	return cmd
+}
+
+// newAutonomousLandingKeepCmd — landing state: record that the Automaton's
+// work branch is kept unmerged on purpose (its landing record moves from
+// pending to kept, with who decided and why). The landing record (state,
+// commit, actor, at, reason) already rides on `autonomous prd-get`; these
+// two commands are the operator decisions on a pending record.
+func newAutonomousLandingKeepCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-keep <id>",
+		Short: "Record that an Automaton's branch is kept unmerged on purpose",
+		Long: "Record that the Automaton's work branch is kept unmerged on purpose: its landing record moves from " +
+			"pending to kept, named with who decided and the reason. The landing record (state, commit, actor, at, reason) " +
+			"is part of the Automaton's read (autonomous prd-get prints it as the landing line); this command changes it. " +
+			"A reason is required. A branch that has already landed cannot be kept, and a record that is already " +
+			"kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/keep", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work is not being merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
+	return cmd
+}
+
+// newAutonomousLandingDropCmd — landing state: record that the Automaton's
+// work branch is dropped and its work will not be merged (pending to
+// dropped, with who decided and why).
+func newAutonomousLandingDropCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-drop <id>",
+		Short: "Record that an Automaton's branch is dropped and its work will not be merged",
+		Long: "Record that the Automaton's work branch is dropped and its work will not be merged: its landing record " +
+			"moves from pending to dropped, named with who decided and the reason. The landing record (state, commit, " +
+			"actor, at, reason) is part of the Automaton's read (autonomous prd-get prints it as the landing line); this " +
+			"command changes it. A reason is required. A branch that has already landed cannot be kept or dropped, and a " +
+			"record that is already kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/drop", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work will not be merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
 	return cmd
 }
 
@@ -2080,7 +2163,7 @@ and inherit from its guardrail profile or the global default set.
 
 Valid kinds:
   prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
-  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.draft prd.failed prd.held prd.needs_review prd.paused prd.planning prd.rejected
   prd.revisions_asked prd.running
   task.awaiting_approval task.blocked task.cancelled task.completed task.failed
   task.in_progress task.pending task.queued task.review_needed task.running_tests

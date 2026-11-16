@@ -385,6 +385,26 @@ def main(argv=None):
     if sh("systemctl --user is-active datawatch").strip() != "active":
         findings.append("DAEMON is not active")
 
+    # Opus is never approved: Claude work runs on Sonnet or Haiku. A session started with no
+    # model gets the account default (Opus), so read the model each recent transcript really used.
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
+        try:
+            if time.time() - os.path.getmtime(f) > 25 * 60:
+                continue
+            last = None
+            with open(f, errors="ignore") as fh:
+                for ln in fh:
+                    m = re.search(r'"model":"(claude-[a-z0-9.-]+)"', ln)
+                    if m:
+                        last = m.group(1)
+            if last and re.search(r"opus|fable", last):
+                msg = ("OPUS session on %s in %s: never approved, end it and name the model (sonnet or haiku)"
+                       % (last, f.split("/")[-2][-48:]))
+                if msg not in findings:
+                    findings.append(msg)
+        except Exception:
+            pass
+
     # models
     for name, url in model_hosts():
         m = models(url)

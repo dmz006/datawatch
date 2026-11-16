@@ -782,6 +782,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
 	mcpSrv.AddTool(s.toolAutonomousCompletedMigrate(), tracked(s.handleAutonomousCompletedMigrate))
+	mcpSrv.AddTool(s.toolAutonomousPRDHold(), tracked(s.handleAutonomousPRDHold))
+	mcpSrv.AddTool(s.toolAutonomousPRDReleaseHold(), tracked(s.handleAutonomousPRDReleaseHold))
+	mcpSrv.AddTool(s.toolAutonomousHeld(), tracked(s.handleAutonomousHeld))
+	mcpSrv.AddTool(s.toolAutonomousHeldMigrate(), tracked(s.handleAutonomousHeldMigrate))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
 	mcpSrv.AddTool(s.toolAutonomousDefectIntake(), tracked(s.handleAutonomousDefectIntake))
 	mcpSrv.AddTool(s.toolAutonomousDefectBatches(), tracked(s.handleAutonomousDefectBatches))
@@ -852,11 +856,18 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousReleaseReadiness(), tracked(s.handleAutonomousReleaseReadiness))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
+
+	// Branch reaper: the report is read-only; the run and the restore are the operator writes.
+	mcpSrv.AddTool(s.toolAutonomousBranchReap(), tracked(s.handleAutonomousBranchReap))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRun(), tracked(s.handleAutonomousBranchReapRun))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRestore(), tracked(s.handleAutonomousBranchReapRestore))
 	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
 	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))         // autonomous_landing_keep: keep the branch unmerged on purpose
+	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))         // autonomous_landing_drop: record that the work will not be merged
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
