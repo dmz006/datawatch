@@ -4625,6 +4625,9 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 			At: time.Now(), Kind: "edit_task", Actor: actor,
 			Note: editTaskNote(taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason),
 		})
+		if verificationScript != "" {
+			applyEditVerifyScriptPreflight(prd, verificationScript)
+		}
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

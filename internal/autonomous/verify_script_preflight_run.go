@@ -42,6 +42,7 @@ func RunVerifyScriptPreflight(dir string, stories []Story) []LintFinding {
 				Message:  fmt.Sprintf("%s:%d %s", f.Script, f.Line, f.Message),
 				Story:    storyID,
 				Task:     taskID,
+				Script:   script,
 			})
 		}
 	}
