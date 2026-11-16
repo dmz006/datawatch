@@ -256,14 +256,14 @@ func TestRankCandidates(t *testing.T) {
 			{pid: 200, cmdline: "test.bin kill 50", namesPID: true},
 		}, []int{200, 100}},
 		{"pid order within groups", []candidateProc{
-			{pid: 30, cmdline: "service datawatch stop"},
+			{pid: 30, cmdline: "service datawatch stop"}, // service-scope-ok fake cmdline, never executed
 			{pid: 20, cmdline: "kill 50", namesPID: true},
 			{pid: 10, cmdline: "systemctl restart datawatch"}, // service-scope-ok fake cmdline, never executed
 			{pid: 5, cmdline: "pkill --pid=50", namesPID: true},
 		}, []int{5, 20, 10, 30}},
 		{"no pid tokens sorts by pid", []candidateProc{
-			{pid: 9, cmdline: "datawatch stop"},
-			{pid: 3, cmdline: "datawatch restart"},
+			{pid: 9, cmdline: "datawatch stop"},    // service-scope-ok fake cmdline, never executed
+			{pid: 3, cmdline: "datawatch restart"}, // service-scope-ok fake cmdline, never executed
 		}, []int{3, 9}},
 	}
 	for _, tc := range cases {

@@ -40,7 +40,7 @@ func TestWaitForCmdline(t *testing.T) {
 		calls   int
 	}{
 		{"immediate", []string{"sleep 30"}, "sleep", false, 1},
-		{"appears after re-exec", []string{"bash -c x", "bash -c x", "systemctl stop datawatch"}, "datawatch", false, 3},
+		{"appears after re-exec", []string{"bash -c x", "bash -c x", "systemctl stop datawatch"}, "datawatch", false, 3}, // service-scope-ok fake cmdline, never executed
 		{"never appears", []string{"bash -c x"}, "datawatch", true, -1},
 	}
 	for _, tc := range cases {
