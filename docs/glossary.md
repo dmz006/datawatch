@@ -20,6 +20,15 @@ full. The other lane fill backend is tried first and needs no mark. See
 ## agent-aider venv Python
 
 The Python that runs aider inside the agent-aider container image: a uv-managed Python 3.12 in a dedicated venv, not Debian 12's system Python 3.11.2. It exists so soupsieve 4.x (needs Python 3.11.5 or newer) can be installed. See [Container image refresh](howto/container-image-refresh.md#agent-aider-python-and-the-soupsieve-floor).
+## Ignored declared file
+
+A file a task declared (planned, generated or under its write directories)
+that the repository's ignore rules ignore and git does not track, such as a
+report under `.datawatch/reports/`. The task commit skips it instead of
+failing, the uncommitted-work check never lists it, and it stays local — it
+never ships with the branch. A tracked file is always staged. See
+[howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).
+
 ## Quick reply
 
 A one-tap reply offered on the web app — the dropdown on a prompt alert,
