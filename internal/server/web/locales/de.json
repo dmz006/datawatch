@@ -1829,6 +1829,7 @@
   "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
   "settings_verifier_min_free_mem_mb": "Mindestfreier Speicher für Verifier (MB; leer = 1024, 0 = Prüfung aus)",
   "settings_verifier_headroom_max_age_hours": "Maximalalter der Verifier-Speicherprüfung (Stunden; 0 oder leer = 24)",
+  "settings_reaped_branch_backup_days": "Sicherung entfernter Automaton-Branches behalten (Tage; 0 oder leer = 30)",
   "settings_version": "Version",
   "settings_web_search_enabled": "Websuche-Injektion aktivieren (opencode + goose-Sitzungen)",
   "settings_web_search_engine": "Suchmaschine (kommagetrennt, Standard: bing)",
