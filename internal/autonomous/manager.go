@@ -4259,7 +4259,7 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	var pendingBranch string
 	m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
 	if pendingBranch != "" {
-		return nil, fmt.Errorf("Automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
+		return nil, fmt.Errorf("automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
 	}
 	now := time.Now()
 	var old PRDStatus

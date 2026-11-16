@@ -436,7 +436,7 @@ is the field `landing` on the record (`state`, `commit`, `actor`, `at`,
 surface, or by the daemon's own close of a finished record — is **refused
 while its landing is still `pending`**, with the branch named:
 
-> `Automaton "…" cannot be archived: its branch automaton/… has not landed on the default branch; merge it, or record keep or drop for its landing`
+> `automaton "…" cannot be archived: its branch automaton/… has not landed on the default branch; merge it, or record keep or drop for its landing`
 
 Once the landing is `landed`, `kept` or `dropped` the archive goes through as
 before. An Automaton with **no** landing record — no branch at all, or a record
@@ -445,10 +445,10 @@ So no unlanded work branch can silently disappear behind an archived record,
 and the work the daemon never removes (above) is exactly the work the record
 keeps in view.
 
-**The one-time migration.** The daemon can run a one-time **landing
-migration**: every archived Automaton that has a branch, no landing record, and
+**The one-time migration.** The daemon runs a one-time **landing
+migration** at start: every archived Automaton that has a branch, no landing record, and
 whose branch read-only git cannot prove merged on the default branch gets a
-`pending` record (actor `landing_migration`). It skips records that already carry a landing record, that have no branch, that are not archived, and those whose merge the git evidence proves on the default branch; when the default branch cannot be established it skips rather than guesses. Running it again changes nothing. It changes no status and writes no decision — it only adds the record.
+`pending` record (actor `landing_migration`). It skips records that already carry a landing record, that have no branch, that are not archived, and those whose merge the git evidence proves on the default branch; when the default branch cannot be established it skips rather than guesses. Running it again changes nothing. It changes no status and writes no decision — it only adds the record. The count it marked is written to the daemon log and, when above zero, raised as one operator alert (*Archived Automata with unlanded branches*); a done marker (`landing_migration.done`) stops it from running again after a clean pass.
 
 **Keep and drop, on every surface.** Both the record display and the two `pending` decisions — `kept` (the branch is kept on purpose and will not be merged) and `dropped` (the work is abandoned and will not be merged), each with an actor and a non-empty reason — are available on every operator surface:
 

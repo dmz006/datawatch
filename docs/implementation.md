@@ -3016,9 +3016,14 @@ bucket, not a stored status value.
   branch named. `MigrateLanding` (same file) is the one-time backfill:
   archived, has a branch, no record, git cannot prove merged → `pending`
   (actor `landing_migration`); idempotent, no status or decision, skips when
-  the default branch is unknown. Tests: `landing_test.go`
+  the default branch is unknown. `RunLandingMigrationOnce` /
+  `StartLandingMigration` (same file) are its only production caller:
+  `cmd/datawatch/main.go` starts it in a goroutine right after `SetAlertFn`;
+  it logs the count, alerts when above zero, and writes
+  `landing_migration.done` after a clean pass. Tests: `landing_test.go`
   (`TestLandingStates`, `TestLandingKeepDropRequireActorAndReason`,
-  `TestLandingNoBranchNoRecord`, `TestLandingMigration`).
+  `TestLandingNoBranchNoRecord`, `TestLandingMigration`,
+  `TestLandingMigrationOnceAlertsAndMarksDone`).
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking

@@ -9,8 +9,11 @@ package autonomous
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -98,17 +101,17 @@ func (m *Manager) decideLanding(id, actor, reason string, state LandingState, ki
 	}
 	p, ok := m.store.GetPRD(id)
 	if !ok {
-		return nil, fmt.Errorf("Automaton %q not found", id)
+		return nil, fmt.Errorf("automaton %q not found", id)
 	}
 	var refuse error
 	m.store.WithLock(func() {
 		branch := strings.TrimSpace(p.Git.Branch)
 		if branch == "" {
-			refuse = fmt.Errorf("Automaton %q has no branch: there is nothing to keep or drop", id)
+			refuse = fmt.Errorf("automaton %q has no branch: there is nothing to keep or drop", id)
 			return
 		}
 		if p.Landing != nil && p.Landing.State == LandingLanded {
-			refuse = fmt.Errorf("Automaton %q branch %s already landed (commit %s)", id, branch, p.Landing.Commit)
+			refuse = fmt.Errorf("automaton %q branch %s already landed (commit %s)", id, branch, p.Landing.Commit)
 			return
 		}
 		now := time.Now()
@@ -137,7 +140,8 @@ type LandingMigrationOpts struct {
 
 // MigrateLanding is the one-time landing migration: every archived Automaton
 // with a branch and no landing record, whose branch read-only git cannot
-// prove merged on the default branch, gets a pending record. Nothing else is
+// prove merged on the default branch and which still has commits ahead of it,
+// gets a pending record. Nothing else is
 // changed (no status, no decision). Records that already carry a landing
 // record are skipped, so running it again changes nothing. It returns and
 // logs the number of Automata marked.
@@ -177,6 +181,14 @@ func (m *Manager) MigrateLanding(ctx context.Context, opts LandingMigrationOpts)
 			errs = append(errs, fmt.Sprintf("Automaton %s: %s", p.ID, proof.Reason))
 			continue
 		}
+		// A branch with no commits ahead of the default branch (its tip is on
+		// the default branch: fast-forward or merge-commit landing, or no work
+		// at all) has nothing left to land. The merge proof reports that as
+		// "empty", not merged, so check it here; the worktree cleanup treats
+		// the same state as safe the same way.
+		if proof.State == MergeStateEmpty {
+			continue
+		}
 		changed := false
 		m.store.WithLock(func() {
 			if p.Landing != nil {
@@ -200,4 +212,56 @@ func (m *Manager) MigrateLanding(ctx context.Context, opts LandingMigrationOpts)
 		return count, fmt.Errorf("landing migration: %s", strings.Join(errs, "; "))
 	}
 	return count, nil
+}
+
+// landingMigrationDoneFile is the durable marker StartLandingMigration writes
+// after a clean pass, so the one-time migration never runs again.
+const landingMigrationDoneFile = "landing_migration.done"
+
+// LandingMigrationDone reports whether the one-time landing migration has
+// already finished cleanly on this daemon's data directory.
+func (m *Manager) LandingMigrationDone() bool {
+	_, err := os.Stat(filepath.Join(m.store.dir, landingMigrationDoneFile))
+	return err == nil
+}
+
+// RunLandingMigrationOnce is the daemon-start pass of MigrateLanding. It does
+// nothing once the done marker exists. Otherwise it runs the migration, logs
+// the count, raises one operator alert (through the alert hook set by
+// SetAlertFn) when any archived Automaton was marked pending, and writes the
+// done marker when the pass finished without errors; a pass with errors (for
+// example an unknown default branch) is retried at the next start. It returns
+// the count and the pass error.
+func (m *Manager) RunLandingMigrationOnce(ctx context.Context, opts LandingMigrationOpts) (int, error) {
+	if m.LandingMigrationDone() {
+		return 0, nil
+	}
+	n, err := m.MigrateLanding(ctx, opts)
+	if err != nil {
+		log.Printf("[autonomous] landing migration: %v", err)
+	}
+	if n > 0 {
+		m.mu.Lock()
+		alert := m.alertFn
+		m.mu.Unlock()
+		if alert != nil {
+			alert("Archived Automata with unlanded branches",
+				fmt.Sprintf("The landing migration marked %d archived Automata pending: their branch is not on the default branch. Merge each branch, or record keep or drop for its landing.", n))
+		}
+	}
+	if err == nil {
+		marker, _ := json.Marshal(map[string]any{"done_at": time.Now().UTC(), "marked": n})
+		if werr := os.WriteFile(filepath.Join(m.store.dir, landingMigrationDoneFile), marker, 0o600); werr != nil {
+			log.Printf("[autonomous] landing migration: done marker: %v", werr)
+		}
+	}
+	return n, err
+}
+
+// StartLandingMigration runs RunLandingMigrationOnce in a goroutine at daemon
+// start, so the read-only git checks never block or fail startup.
+func (m *Manager) StartLandingMigration() {
+	go func() {
+		_, _ = m.RunLandingMigrationOnce(context.Background(), LandingMigrationOpts{})
+	}()
 }

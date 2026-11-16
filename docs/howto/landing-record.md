@@ -140,7 +140,7 @@ Archiving the Automaton — by hand on any surface, or the daemon's own close
 of a finished record — is **refused while its landing is still `pending`**,
 with the branch named:
 
-> `Automaton "ab12cd34" cannot be archived: its branch automaton/ab12cd34 has not landed on the default branch; merge it, or record keep or drop for its landing`
+> `automaton "ab12cd34" cannot be archived: its branch automaton/ab12cd34 has not landed on the default branch; merge it, or record keep or drop for its landing`
 
 Once the record is `landed`, `kept` or `dropped` the archive goes through as
 before. An Automaton with no landing record at all archives as it always
@@ -164,6 +164,9 @@ It deliberately skips, and reports, rather than guesses:
 - records with no branch;
 - records that are not archived;
 - branches whose merge the git evidence proves to be on the default branch;
+- branches with no commit ahead of the default branch (a fast-forward or
+  merge-commit landing puts the branch tip on the default branch, so
+  nothing is left to land);
 - any Automaton whose default branch cannot be established.
 
 Two properties make it safe to run: it is **idempotent** (a second run finds
@@ -182,9 +185,19 @@ with the ones it refused to classify (default branch unknown) named. A count
 of zero on a run means everything the migration looked at already carried a
 record or a provable merge — run it again and it will still say zero.
 
-The migration is a daemon API: it reaches the same store as every other
-landing move, but it is not an operator verb yet — there is no REST route,
-CLI command, MCP tool, chat verb or PWA button for it.
+**When it runs.** The daemon runs the migration once at start, in the
+background, so the read-only git checks never hold up startup. When the
+count is above zero it also raises one operator alert, *Archived Automata
+with unlanded branches*, naming the count — read it in the PWA's alerts, on
+`GET /api/alerts`, or through your messaging channel. After a pass with no
+errors it writes a done marker, `landing_migration.done`, in the autonomous
+data directory (`~/.datawatch/autonomous/` by default), and later starts
+skip the migration. A pass that hit an error (for example an Automaton whose
+default branch is unknown) writes no marker, so the next start tries again.
+To run it again on purpose, stop the daemon, remove the marker and start it.
+
+There is no operator command for it — no REST route, CLI command, MCP tool,
+chat verb or PWA button; the daemon start is its only caller.
 
 ## Related
 
