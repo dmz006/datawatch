@@ -5645,6 +5645,11 @@ paths:
         refused with 400.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
+        `unlanded_alert_enabled` (boolean) and `unlanded_alert_threshold`
+        (whole number >= 0) are the daily pending-branch alert settings
+        (autonomous.unlanded_alert_enabled / autonomous.unlanded_alert_threshold):
+        effective values, always present (unset reads `true` and `3`); a wrong
+        type on either is refused with 400. See `docs/howto/automaton-worktree-cleanup.md`.
         The `automation` object carries the search-before-create settings:
         `create_search_mode` (off|shadow|on, default shadow) and
         `create_search_threshold` (above 0 and at most 1, default 0.5). It also
@@ -5688,6 +5693,15 @@ paths:
                     enum: [off, warn, enforce]
                     default: enforce
                     description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
+                  unlanded_alert_enabled:
+                    type: boolean
+                    default: true
+                    description: "Daily pending-branch alert on/off; effective value, unset reads true; must be a boolean (autonomous.unlanded_alert_enabled)."
+                  unlanded_alert_threshold:
+                    type: integer
+                    minimum: 0
+                    default: 3
+                    description: "The alert fires when the pending-branch count is strictly above this; 0 alerts on any pending branch; a negative value is refused (autonomous.unlanded_alert_threshold)."
                   automation:
                     type: object
                     description: "Search-before-create settings under autonomous.automation"
@@ -5980,6 +5994,13 @@ paths:
                   enum: [off, warn, enforce]
                   default: enforce
                   description: "Pre-spawn scope lint mode (autonomous.scope_lint). off skips the lint; warn spawns the task and records a scope_lint_warn decision; enforce blocks the task before its session starts."
+                unlanded_alert_enabled:
+                  type: boolean
+                  description: "Daily pending-branch alert on/off (autonomous.unlanded_alert_enabled); must be true or false."
+                unlanded_alert_threshold:
+                  type: integer
+                  minimum: 0
+                  description: "Pending-branch alert threshold (autonomous.unlanded_alert_threshold); a whole number >= 0."
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/autonomous/overlap:
     get:

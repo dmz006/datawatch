@@ -401,7 +401,11 @@ landing state and once per age band; every key is present and reads 0 when empty
 `total` is the number of listed branches, and `oldest_pending` names the oldest
 pending branch (`branch`, `title`, `age` in plain words such as `3d 4h`, and
 `age_ns`); it is absent when nothing is pending. The CLI, the chat verb and the
-text output print the same numbers before the rows:
+text output print the same numbers before the rows, and the PWA card shows the
+same block: chips per landing state and per age band, the oldest pending branch
+and its age, and an “Above alert threshold” line when the pending count is over
+the configured threshold (the card reads the two settings from
+`GET /api/autonomous/config` for that marker):
 
 ```
 Counts: 1 landed, 2 pending, 0 live, 1 unlanded
@@ -432,7 +436,7 @@ returns the branch, the bundle path and the worktree path it removed.
 
 | Surface | How |
 |---|---|
-| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. Each row shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
+| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. A counts block at the top shows the per-state and per-age chips, the oldest pending branch and its age, and an “Above alert threshold” line while the pending count is over the configured threshold. Each row below it shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
 | REST | `GET /api/autonomous/unlanded-work`; `POST /api/autonomous/unlanded-work/keep`, `/archive-branch` and `/delete-worktree` (the last needs `confirm: true`) |
 | CLI | `datawatch autonomous unlanded-work [--json]`; subcommands `keep <branch> [--note ...]`, `archive-branch <branch>` and `delete-worktree <branch> --confirm` |
 | Comm channel | `autonomous unlanded-work`; `autonomous unlanded-work keep\|archive-branch\|delete-worktree <branch>` (delete needs the word `confirm`) |
