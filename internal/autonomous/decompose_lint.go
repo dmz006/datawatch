@@ -100,6 +100,7 @@ type compiledMatch struct {
 	reasonEmpty   bool
 	taskFilesOnly bool
 	docsNoSync    bool
+	fixedDate     bool
 	kind          string
 	anyOf         []compiledMatch
 	allOf         []compiledMatch
@@ -156,6 +157,11 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.docsNoSync {
 		if _, ok := verifyScriptDocsWithoutSync(dir, t); !ok {
+			return false
+		}
+	}
+	if m.fixedDate {
+		if _, ok := fixedCalendarDateInTest(t); !ok {
 			return false
 		}
 	}
@@ -232,7 +238,7 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, fixedDate: m.FixedCalendarDateInTest, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -490,6 +496,11 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.docsNoSync {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (checks docs without make sync-docs)")
+	}
+	if m.fixedDate {
+		if d, ok := fixedCalendarDateInTest(t); ok {
+			parts = append(parts, d)
+		}
 	}
 	if len(parts) == 0 {
 		return ""

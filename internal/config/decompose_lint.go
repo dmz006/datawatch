@@ -169,6 +169,11 @@ type DecomposeLintMatch struct {
 	// or how-to coverage but does not run `make sync-docs`. A script
 	// that does not exist yet is skipped. Absent (false) = do not check.
 	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+	// FixedCalendarDateInTest asserts the task writes a test (a test file
+	// in its files list, or an Add/Write title mentioning test) and its
+	// spec contains a fixed ISO calendar date (YYYY-MM-DD). Absent
+	// (false) = do not check.
+	FixedCalendarDateInTest bool `yaml:"fixed_calendar_date_in_test,omitempty" json:"fixed_calendar_date_in_test,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`
