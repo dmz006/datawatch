@@ -32544,6 +32544,10 @@ function renderAutomataCard(prd, alsoInHtml) {
   const full = _automataFullPrd(prd);
   const counts = _tileAutomataCounts(prd);
   const held = _prdHeldBadgeHTML(prd);
+  // The held Automaton's hold record: reason, condition, who/when and the
+  // look-again line (or the "ready to review" line once expired). Shown on
+  // the card body and in the detail view; a release drops it.
+  const holdRec = (status === 'held' || (prd.hold || prd.Hold)) ? _automatonHoldRecordHtml(prd) : '';
   const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
     </details>`;
@@ -32570,9 +32574,9 @@ function renderAutomataCard(prd, alsoInHtml) {
     alsoInHtml,
     updatedAt: prd.updated_at,
     nowMs: Date.now(),
-    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${holdBtn}${releaseBtn}${extendBtn}${approveBtn}`,
     menuHtml: `${watchItem}${pinItem}`,
-    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    bodyHtml: `${position}${holdRec ? `<div class="automaton-hold-record">${holdRec}</div>` : ''}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
     afterHtml: storiesDetail + graphDetail,
   });
 }
@@ -32674,6 +32678,162 @@ window.automataCancel = function(id, status) {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
       .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
       .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  });
+};
+
+// ── Automaton hold: dialog, actions, record line ────────────────────────
+// Holding is a deliberate pause (the Automaton stops advancing, it is not
+// failed or blocked). The same POST /hold endpoint places and extends a
+// hold; the dialog differs only in whether a previous reason carries over.
+// Release is POST /release_hold and restores the status the Automaton had
+// before the hold. Expiry never releases: an expired hold keeps its
+// buttons and gains the "ready to review" line (server wording in
+// next_look_text, mirrored here from the hold record for the card views).
+
+// The read view's look-again line, localized. The server already computes
+// it ("looked at again on <date>", "no date set", "hold expired, ready to
+// review") in next_look_text; we render the local wording from the fields
+// so the UI copy is translated.
+function _automatonHoldLookAgainText(h) {
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  return !isNaN(untilTs) && untilTs < Date.now() ? t('automaton_hold_expired') : t('automaton_hold_no_date');
+}
+
+// _automatonHoldRecordHtml renders the hold record lines: reason,
+// condition, who/when, and the look-again wording. Pure; the only outside
+// reads are the hold fields on the PRD (camelCase or, from the detail GET,
+// PascalCase) which are read once here.
+function _automatonHoldRecordHtml(prd) {
+  const h = (prd && (prd.hold || prd.Hold)) || null;
+  if (!h) return '';
+  const dt = v => { const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); };
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  const expired = h.expired === true || (!isNaN(untilTs) && untilTs < Date.now());
+  const lines = [];
+  if (h.reason) lines.push(`<div class="automaton-hold-line"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(h.reason)}</div>`);
+  if (h.condition) lines.push(`<div class="automaton-hold-line" style="color:var(--text2);"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(h.condition)}</div>`);
+  const by = [h.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(h.held_by) : '', h.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(dt(h.held_at)) : ''].filter(Boolean).join(' · ');
+  lines.push(`<div class="automaton-hold-line" style="color:var(--text2);font-size:11px;">${by || escHtml(t('automaton_hold_no_date'))}</div>`);
+  lines.push(`<div class="automaton-hold-line automaton-hold-lookagain">${escHtml(expired ? t('automaton_hold_expired') : (!isNaN(untilTs) ? t('automaton_hold_until_label') + ': ' + escHtml(dt(h.until)) : t('automaton_hold_no_date')))}</div>`);
+  return `<div class="automaton-hold-record" style="margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(120,120,140,0.06);">${lines.join('')}</div>`;
+}
+window._automatonHoldRecordHtml = _automatonHoldRecordHtml;
+
+// _automatonHoldValidate checks the dialog fields. A new hold must carry a
+// reason; an extension may restate the same one. until and condition stay
+// optional; the server parses until (RFC 3339, a date, or a duration).
+function _automatonHoldValidate(fields, extend) {
+  const reason = (fields && fields.reason) ? String(fields.reason).trim() : '';
+  if (!reason) {
+    const err = new Error(t('automaton_hold_reason_required') || t('automaton_hold_reason_prompt')); // "A reason is required for the hold"
+    err.field = 'reason';
+    return { ok: false, error: err };
+  }
+  const payload = {
+    reason,
+    condition: (fields.condition) ? String(fields.condition).trim() : '',
+    until: (fields.until) ? String(fields.until).trim() : '',
+    actor: 'operator',
+  };
+  return { ok: true, payload };
+}
+window._automatonHoldValidate = _automatonHoldValidate;
+
+// automatonHoldSubmit validates and POSTs to /hold. It never throws:
+// an empty reason rejects with a reason-marked error; a transport failure
+// reports through showError and resolves (the card reloads either way, so
+// the state the server actually has is what the UI shows next).
+window.automatonHoldSubmit = function(id, fields, extend) {
+  const v = _automatonHoldValidate(fields, !!extend);
+  if (!v.ok) return Promise.reject(v.error);
+  const doneKey = extend ? 'automaton_hold_toast_extended' : 'automaton_hold_toast_set';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/hold', { method: 'POST', body: JSON.stringify(v.payload) })
+    .then(() => { showToast(t(doneKey), 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
+};
+
+// automataHold / automataExtend open the dialog in a browser; with fields
+// passed directly they submit immediately (the node tests take this path).
+window.automataHold = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, false);
+  return _automatonHoldDialogOpen(id, false);
+};
+window.automataExtend = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, true);
+  return _automatonHoldDialogOpen(id, true);
+};
+
+// _automatonHoldDialogOpen is the modal dialog: a required reason plus
+// optional until and condition. Submitting with an empty reason leaves the
+// dialog open and shows the reason error; it never POSTs.
+function _automatonHoldDialogOpen(id, extend) {
+  if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function') return Promise.resolve();
+  const existing = document.getElementById('automationHoldDialog');
+  if (existing && typeof existing.remove === 'function') existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'automationHoldDialog';
+  modal.className = 'confirm-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  const title = extend ? (t('automaton_hold_extend') || 'Extend') : (t('automaton_hold_action') || 'Hold');
+  const blurb = t(extend ? 'automaton_hold_tooltip_extend' : 'automaton_hold_tooltip_hold');
+  modal.innerHTML = `<div class="confirm-modal automation-hold-dialog" aria-label="${escHtml(title)}">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_reason_prompt'))}</span>
+        <textarea id="automationHoldReason" rows="2" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;"></textarea>
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_until_prompt'))}</span>
+        <input id="automationHoldUntil" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_condition_prompt'))}</span>
+        <input id="automationHoldCondition" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+    </div>
+    <div id="automationHoldError" style="display:none;font-size:12px;color:var(--error);margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" style="font-size:12px;padding:4px 16px;" id="automationHoldCancel">${escHtml(t('action_cancel'))}</button>
+      <button type="button" class="btn-primary" style="font-size:12px;padding:4px 16px;" id="automationHoldSubmitBtn">${escHtml(title)}</button>
+    </div>
+  </div>`;
+  if (typeof modal.addEventListener === 'function') {
+    modal.addEventListener('click', e => { if (e && e.target === modal) modal.remove(); });
+  }
+  document.body.appendChild(modal);
+  const cancel = () => { if (modal.parentNode) modal.remove(); };
+  const submit = () => {
+    const v = _automatonHoldValidate({
+      reason: (document.getElementById('automationHoldReason') || {}).value || '',
+      until: (document.getElementById('automationHoldUntil') || {}).value || '',
+      condition: (document.getElementById('automationHoldCondition') || {}).value || '',
+    }, extend);
+    if (!v.ok) {
+      const errEl = document.getElementById('automationHoldError');
+      if (errEl) { errEl.textContent = v.error.message; errEl.style.display = ''; }
+      const rEl = document.getElementById('automationHoldReason');
+      if (rEl && typeof rEl.focus === 'function') rEl.focus();
+      return;
+    }
+    cancel();
+    window.automatonHoldSubmit(id, { reason: v.payload.reason, until: v.payload.until, condition: v.payload.condition }, extend);
+  };
+  const cBtn = document.getElementById('automationHoldCancel');
+  const sBtn = document.getElementById('automationHoldSubmitBtn');
+  if (cBtn) cBtn.onclick = cancel;
+  if (sBtn) sBtn.onclick = submit;
+  const rEl = document.getElementById('automationHoldReason');
+  if (rEl && typeof rEl.focus === 'function') rEl.focus();
+  return Promise.resolve();
+}
+
+// automataRelease asks once, then POSTs /release_hold. The server restores
+// the status held in the record; the UI just reloads the list.
+window.automataRelease = function(id) {
+  showConfirmModal(t('automaton_hold_release_ask') || 'Release this held Automaton now?', () => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/release_hold', { method: 'POST' })
+      .then(() => { showToast(t('automaton_hold_toast_released') || 'Hold released', 'info', 2000); loadAutomataPanel(); })
+      .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
   });
 };
 
@@ -34802,6 +34962,13 @@ function _renderDetailContent(prd) {
   const triageSlot = (status === 'failed' || status === 'blocked')
     ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
     : '';
+  // The hold slot: a held Automaton carries its hold record (reason,
+  // condition, who/when, look-again or the expired line) above every
+  // sub-tab, so a held state is never lost behind a tab switch — the same
+  // self-contained slot pattern as the triage card.
+  const holdSlot = status === 'held'
+    ? `<div id="prdHoldRecord" class="prd-capacity-slot hold-slot" style="margin-top:10px;">${_automatonHoldRecordHtml(prd)}</div>`
+    : '';
   // The merge-pending badge slot sits beside it for a finished Automaton: it
   // paints from the last merge read at once and again when a fresh read lands.
   const mergeSlot = status === 'completed'
@@ -34814,6 +34981,7 @@ function _renderDetailContent(prd) {
     ${window.protectedPathsBannerHtml(prd)}
     ${window.protectedPathsAuthorisedHtml(prd)}
     ${triageSlot}
+    ${holdSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -40515,7 +40683,7 @@ const PROGRESS_METHOD_FIELDS = {
 const PC_KEYS = {
   col: {
     records: 'progress_card_col_records', done: 'progress_card_col_done', running: 'progress_card_col_running',
-    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', tasks: 'progress_card_col_tasks',
+    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', held: 'progress_card_col_held', tasks: 'progress_card_col_tasks',
     tasks_done: 'progress_card_col_tasks_done', left: 'progress_card_col_left', work_time: 'progress_card_col_work_time',
     median: 'progress_card_col_median', mean_task: 'progress_card_col_mean_task',
   },
@@ -40611,13 +40779,19 @@ function _pcHelp() {
 
 function _pcTable(data, axis) {
   const groups = (data && data.groups) || {};
-  const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
+  // The held column is shown only when at least one Automaton is on hold, the
+  // same rule the CLI text and the read view keep (a whole of zeros would add
+  // a column nobody can act on).
+  const anyHeld = [data && data.totals, groups.feature, groups.bug, groups.other].some(g => _pcIsNum(g && g.held) && g.held > 0)
+    || Object.values((data && data.grouped) || {}).some(map => Object.values(map || {}).some(g => _pcIsNum(g && g.held) && g.held > 0));
+  const cols = ['records', 'done', 'running', 'waiting', 'blocked'].concat(anyHeld ? ['held'] : []).concat(['tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task']);
   const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
   const cell = h => `<td style="text-align:right;padding:2px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;">${h}</td>`;
   const rowHtml = (label, g) => {
     g = g || {};
     return `<tr><th scope="row" style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(label)}</th>` +
       cell(_pcNum(g.prds)) + cell(_pcNum(g.done)) + cell(_pcNum(g.running)) + cell(_pcNum(g.waiting)) + cell(_pcNum(g.blocked)) +
+      (anyHeld ? cell(_pcNum(g.held)) : '') +
       cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
       cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
   };
@@ -44264,7 +44438,11 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
-const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
+const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'automation_held_automata', 'supervisor'];
+// Held Automata are their own group: they appear on their own card with
+// their own count, never inside the triage (failed/blocked) count or the
+// Inbox needs-review badge.
+const _AUTOMATION_INBOX_BADGE_EXCLUDED = ['automation_held_automata'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
 // (everything) or one selected project. A project scope applies only while
@@ -44331,6 +44509,16 @@ function _inboxScopeData(key, data) {
   const keep = x => _inboxItemInProject(x, scope.project);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_held_automata') {
+    // A held row names its project by name or directory; _inboxItemInProject
+    // reads the same fields off the row (project_dir) and the Automaton its
+    // prd_id names, so the cut behaves like the other Inbox groups.
+    if (typeof data === 'object' && Array.isArray(data.held)) {
+      const held = data.held.filter(v => v && typeof v === 'object' && _inboxItemInProject({ prd_id: v.id, project_dir: v.project, system_tags: [] }, scope.project));
+      return Object.assign({}, data, { held, total: held.length, expired: held.filter(v => v && v.expired).length });
+    }
+    return data;
+  }
   if (key === 'automation_questions') {
     if (data.__automationQuestionsDisabled) return data;
     if (Array.isArray(data)) return data.filter(keep);
@@ -44350,6 +44538,7 @@ function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_held_automata') return (data && Array.isArray(data.held)) ? data.held.length : 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
     const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
@@ -44391,6 +44580,7 @@ function _automationInboxRescope() {
 function _automationInboxBadgeCount() {
   let n = 0;
   _AUTOMATION_INBOX_KEYS.forEach(k => {
+    if (_AUTOMATION_INBOX_BADGE_EXCLUDED.indexOf(k) >= 0) return; // held has its own card count
     if (Object.prototype.hasOwnProperty.call(_automationInboxCounts, k)) { n += _automationInboxCounts[k]; return; }
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl && ctl.state && ctl.state.hasData && !(k === 'automation_questions' && _automationQuestionsState.history)) n += _automationInboxCountOf(k, ctl.state.data);
@@ -44422,7 +44612,7 @@ function _automationInboxLoaderActive() {
   return _automataNormalizeTab() === 'automation';
 }
 function _automationInboxLoaders() {
-  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()];
+  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader(), _automationHeldAutomataLoader()];
 }
 // Start the Inbox polling behind another sub-tab: only the loaders that are
 // not already running are loaded.
@@ -44463,6 +44653,17 @@ const _AUTOMATION_SUBTABS = [
       </div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <!-- Held Automata: their own group card. The count on the head is the
+           group count; held never feeds the Inbox needs-review badge or the
+           triage (failed/blocked) count. -->
+      <div id="automationHeldAutomataCard" class="prd-capacity-card held-automata-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <div class="cap-title">${escHtml(t('held_automata_inbox_title'))}</div>
+          <span id="automationHeldAutomataCount" class="held-automata-count" style="display:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--text2);"></span>
+          <button type="button" id="automationHeldAutomataHelpLink" title="${escHtml(t('automation_help_held_automaton'))}" aria-label="${escHtml(t('automation_help_held_automaton'))}" onclick="window.open('/diagrams.html#docs/howto/automaton-hold.md#held-automata', '_blank', 'noopener')" style="margin-left:auto;color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:18px;height:18px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;">?</button>
+        </div>
+        <div id="automationHeldAutomataBody"></div>
+      </div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
@@ -46269,6 +46470,67 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+
+// _automationHeldQuestionsLoader is the held section on GET
+// /api/autonomous/held-questions, polled at the same cadence as the
+// cards beside it. The report always carries the server's effective
+// mode (shadow when unset); when the operator-question subsystem is
+// disabled the route answers 503 and the failed line paints — the card
+// needs no disabled sentinel of its own.
+// _automationHeldAutomataLoader is the Held Automata group card on GET
+// /api/autonomous/held (the held group: expired first, every row keeping
+// reason, condition and look-again wording from the one read view). The
+// group has its own card count and is kept out of the Inbox needs-review
+// badge and of the triage failed/blocked count.
+function _automationHeldAutomataLoader() {
+  return window._listLoaders.automation_held_automata || listLoader({
+    key: 'automation_held_automata', el: 'automationHeldAutomataBody', url: '/api/autonomous/held', pollMs: 5000,
+    failedText: msg => t('held_automata_inbox_failed', [msg]),
+    active: _automationInboxLoaderActive,
+    onData: data => { _automationInboxCountSet('automation_held_automata', data); window._heldAutomataUpdateCount(); },
+    render: body => window.heldAutomataListHtml(_inboxScopeData('automation_held_automata', body)),
+  });
+}
+
+// _heldAutomataUpdateCount paints the group count on the card head when the
+// card exists; it is safe to call from onData before the tab has mounted.
+function _heldAutomataUpdateCount() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('automationHeldAutomataCount');
+  if (!el) return;
+  const ctl = window._listLoaders && window._listLoaders.automation_held_automata;
+  const n = (ctl && ctl.state && ctl.state.hasData && ctl.state.data) ? _automationInboxCountOf('automation_held_automata', ctl.state.data) : 0;
+  el.textContent = String(n);
+  el.style.display = n > 0 ? '' : 'none';
+}
+window._heldAutomataUpdateCount = _heldAutomataUpdateCount;
+
+// heldAutomataListHtml renders the Held Automata group: one row per held
+// Automaton with reason, condition, held by/at, the look-again line (or
+// the expired line) and a Release button. Empty state from the locale.
+window.heldAutomataListHtml = function(body) {
+  const held = (body && Array.isArray(body.held)) ? body.held : [];
+  if (!held.length) return `<div class="held-automata-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_automata_inbox_empty'))}</div>`;
+  const rows = held.map(function(v) {
+    if (!v || typeof v !== 'object') return '';
+    const id = String(v.id || '');
+    const title = v.title || id;
+    const cond = v.condition ? `<div style="color:var(--text2);font-size:11px;"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(v.condition)}</div>` : '';
+    const exp = v.expired ? `<div class="held-automata-expired" style="font-size:11px;color:var(--warning,#d9a);"><b>${escHtml(t('automaton_hold_expired'))}</b></div>` : '';
+    const look = v.until && !v.expired ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automaton_hold_until_label'))}: ${escHtml(v.next_look_text || new Date(v.until).toLocaleString())}</div>` : '';
+    const by = [v.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(v.held_by) : '', v.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(new Date(v.held_at).toLocaleString()) : ''].filter(Boolean).join(' · ');
+    const btn = id ? `<button type="button" class="btn-primary" style="font-size:11px;padding:2px 10px;" title="${escHtml(t('automaton_hold_tooltip_release'))}" onclick="event.stopPropagation(); if (typeof automataRelease === 'function') automataRelease('${escHtml(id)}')">${escHtml(t('automaton_hold_release'))}</button>` : '';
+    return `<div class="held-automata-row" data-held-prd="${escHtml(id)}" style="padding:8px 0;border-top:1px solid rgba(128,128,128,.2);display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;min-width:0;">
+      <div style="flex:1 1 220px;min-width:0;">
+        <div style="font-weight:600;font-size:12px;overflow-wrap:anywhere;">${escHtml(title)} <span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(id)}</span></div>
+        ${v.reason ? `<div style="font-size:12px;"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(v.reason)}</div>` : ''}
+        ${cond}${exp}${look}${by ? `<div style="font-size:11px;color:var(--text2);">${by}</div>` : ''}
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
+  return `<div class="held-automata-body" style="display:flex;flex-direction:column;min-width:0;">${rows}</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -60135,7 +60397,7 @@ const _TAG_DRILL_BELOW = 720;      // drill-down under this width; sections from
 const _TAG_COLLAPSE_ABOVE = 8;     // more top-level tags than this: sections start closed
 const _TAG_CRUMB_LEVELS = 3;       // deeper paths collapse their middle crumbs
 const _TAG_AUTOMATA_STATUS_BADGES = {
-  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'blocked', 'completed'],
+  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'held', 'blocked', 'completed'],
   history: ['cancelled', 'rejected', 'archived'],
 };
 
