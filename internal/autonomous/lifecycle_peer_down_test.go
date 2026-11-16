@@ -555,7 +555,13 @@ func TestPeerDownRecovers(t *testing.T) {
 		var once sync.Once
 		r.setOnSleep(func() {
 			// The first retry delay passes on the fake clock and the peer comes back.
-			once.Do(func() { peerDownStartAt(t, addr, recv) })
+			// The listener is bound before peerDownStartAt returns, so the
+			// peer is accepting connections before the retry's next POST.
+			once.Do(func() {
+				if srv := peerDownStartAt(t, addr, recv); srv == nil {
+					t.Errorf("the peer did not come back on %s before the retry", addr)
+				}
+			})
 		})
 
 		r.m.emit(peerDownEvent(1))
@@ -564,6 +570,12 @@ func TestPeerDownRecovers(t *testing.T) {
 		if got := fmt.Sprint(recv.eventIDs()); got != "[ev-1]" {
 			t.Errorf("peer received %s, want [ev-1]", got)
 		}
+		// The peer counts its hit when the request arrives, but the forwarder
+		// records the outcome only after the response returns, so a hit does
+		// not mean the outcome record exists yet. Wait for the record itself.
+		peerDownWaitUntil(t, peerDownDeadline, "the delivered outcome to be recorded", func() bool {
+			return fmt.Sprint(r.outcomes()) == "[retry delivered]"
+		})
 		if got := fmt.Sprint(r.outcomes()); got != "[retry delivered]" {
 			t.Errorf("forward outcomes = %s, want [retry delivered]", got)
 		}

@@ -29,6 +29,10 @@ failing, the uncommitted-work check never lists it, and it stays local — it
 never ships with the branch. A tracked file is always staged. See
 [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).
 
+## Open high/critical alerts gate
+
+The blocking job of the CodeQL workflow (named `Open high/critical alerts`): it fails the run when the repository has **open** high or critical alerts for that ref. Alerts already dismissed in code scanning do not count; the reason for each dismissal is recorded in `security/accepted-risks.yml`, which the gate itself never reads. It runs on pushes to `main` and pull requests that touch code, dependency, workflow or script paths, plus the weekly schedule and manual runs — a docs-only push starts no run. A fix lands as "fixed on main, closure pending the gate run": the gate's next analysis after the fix confirms it, and a red gate whose log says `Rate limited` is a wait-and-retry, not a finding. See [CodeQL local scan](howto/codeql-local-scan.md#what-it-is-and-why) for the local pre-push run, and [operations.md](operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run) for the fixed batch and the operator review items still owed.
+
 ## Quick reply
 
 A one-tap reply offered on the web app — the dropdown on a prompt alert,
