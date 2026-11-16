@@ -250,6 +250,25 @@ OK
 hundredths of a second between runs; `Ran 13 tests` and `OK` are the stable
 parts, and the exit code is 0 either way.)
 
+## Automaton task verification: the lint step
+
+When an Automaton task's diff touches Go files, task verification also runs the
+repository lint — `golangci-lint` over the touched packages — after the task's
+verification script passes. A clean lint is required: any lint finding fails
+verification, and the failure reason carries the finding text so the next attempt
+(and the operator) can see what to fix. A task whose diff touches no Go files skips
+the lint step.
+
+To reproduce the check locally before the verifier runs it, lint the packages the
+branch touches:
+
+```bash
+pkgs=$(git diff --name-only "$(git merge-base HEAD main)" -- '*.go' | xargs -r -n1 dirname | sort -u | sed 's|^|./|')
+golangci-lint run $pkgs
+```
+
+A finding printed here is the same finding that fails verification.
+
 ## Test daemon cleanup rules
 
 Every job that starts a datawatch daemon must end that daemon, and every session the
