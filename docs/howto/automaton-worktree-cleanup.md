@@ -484,9 +484,10 @@ A change applies on the next check without a restart.
 | **MCP** | `get_alerts` |
 
 The branch audit script (`scripts/branch-audit.py`) reports the same finding from
-the command line: an `UNLANDED` row is an archived Automaton branch (cancelled,
-blocked, failed or no record) with work not on main, and the script exits with
-status 1 while any exist. Decide each one with Keep, Archive branch or Delete
+the command line: it reads the daemon's unlanded-work list through
+`datawatch autonomous unlanded-work --json`, an `UNLANDED` row is an archived
+Automaton branch (cancelled, blocked, failed or no record) with work not on
+main, and the script exits with status 1 while any exist. Decide each one with Keep, Archive branch or Delete
 worktree, or merge it.
 
 **Review before relying on this.** Whether a kept branch also suppresses the
