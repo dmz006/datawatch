@@ -409,3 +409,7 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 ## 2026-11-15: Merge scripts Automaton stays in Release 10.0 (operator answer)
 
 Question: the Automaton "Merge scripts in the repository with shadow pipeline comparison" is running and was unattached; should it stay in Release 10.0 or move to 11.0? Operator, 2026-11-15: "that is key to our 10.0 release with datawatch managing releses of course it i sin 10.0!!" Result: attached to plan release-10-0.
+
+## 2026-11-15: shipped automation modes are turned on by the supervisor (operator answer)
+
+Operator, 2026-11-15: "lets get these features active that is why i asked for and had you build them!!" and "they shuld be shipped same for new features as they come out don't want on me that is the purpose of this beign buit!" Shadow mode means the feature decides and records what it would do but changes nothing and raises no alert; it exists so the supervisor can compare it with the manual check and then promote it. Done 2026-11-15 19:1x: `autonomous.task_override_statuses` now includes `running`; `repo_ci_watch.mode` on for the datawatch and pidp11-hacs repos; `merge_pending_mode`, `create_search_mode`, `security_failure.mode` and `decompose_lint.mode` on. Rule from now on: each new mode setting is switched on when it ships, after one look at its shadow records, and the change is recorded here.
