@@ -94,22 +94,22 @@ the limits the guard's rungs move:
 
 ## Per-model cost rates and their fallback
 
-A model can carry its own USD rates per 1K tokens: `in_per_k`, `out_per_k`,
-`cache_read_per_k` and `cache_write_per_k`. When the cost report or a spend
-calculation prices a row for a model, the rate resolves in this order:
+An LLM entry's `models` list can carry its own USD rates per 1K tokens —
+`in_per_k`, `out_per_k`, `cache_read_per_k` and `cache_write_per_k`. Each of
+the four fields resolves on its own against the backend's `cost_rates`
+entry: a field set on the model wins, a field left unset takes the
+backend's value, and the cache read and write fields have no per-backend
+value so they resolve to zero when unset. The resolved rate carries a source
+of `model`, `backend` or none, so a surprising figure is traceable to where
+it came from.
 
-1. **The model's own rate** on the LLM entry — the four rate fields on the
-   matching element of the entry's `models` list.
-2. **The backend's `cost_rates` entry** — the per-backend map of `{in_per_k,
-   out_per_k}`; it has no cache fields, so those resolve only from the model
-   or to nothing.
-3. **The built-in default** for the model, when the daemon knows one.
-
-The report says which one priced each row with its rate source (`model`,
-`backend` or the default), so a surprising figure is always traceable. The
-report prices cache reads and writes from the input rate — a tenth of it for
-a cache read, 1.25 times it for a cache write — and every dollar figure it
-produces is API-equivalent, never a bill.
+The **by-model cost report** prices each model from that model's own rate
+when one is configured, else the backend's rate. It prices cache reads
+and writes from the input rate (a tenth of it for a read, 1.25 times it for
+a write), and labels every dollar figure it emits as an **API-equivalent
+estimate, never a bill** (`api_equivalent_usd` alongside a `usd_label` to
+that effect). A rate that is absent is read as the backend's, never as zero
+as a price.
 
 Set a model's rates from any of these surfaces:
 
@@ -124,6 +124,15 @@ Set a model's rates from any of these surfaces:
 
 Leaving a rate unset is what falls back; an absent rate is read as the
 backend's, never as zero.
+
+> **Operator review.** The `models`-list rates above and the `cost_rates`
+> table are distinct configuration surfaces. Confirm which one the by-model
+> cost report is expected to read a model's rate from — the entry's
+> `models[]` fields, or a `cost_rates` entry named for the model — so the
+> docs and the report agree on where a model's rate comes from. The report
+> labels its dollars as an API-equivalent estimate rather than a per-row
+> "rate source", so the source of a figure is a configuration concern, not a
+> reported field.
 
 ## The by-model reports
 

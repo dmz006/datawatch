@@ -89,6 +89,12 @@ lower-cased, so `Opus` and `opus` are the same model.
 - **A models clear never touches a whole-backend flag.** Only flags that already
   carry a model list are narrowed.
 
+A backend carries a **single** back-off flag, so a set of any kind replaces the
+backend's existing flag: a model-scoped set on a whole-backend holding narrows it
+to the named models (and takes the new deadline, reason and source), and a
+whole-backend set on a model-scoped holding widens it back to the whole backend.
+A clear with models only narrows a flag that already carries a model list.
+
 A `models` list with no usable names is an operator error on every surface, not
 a fall-back to the whole backend.
 
