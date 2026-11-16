@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
 ## v9.178.0 — Unlanded-work counts and daily alert
 
 ### Changed
