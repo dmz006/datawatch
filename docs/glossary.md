@@ -42,6 +42,8 @@ failed first run unrelated to the task: a shell syntax error
 (`verify_script_syntax`), a helper called with a different shell than its
 shebang (`verify_script_shell_mismatch`), a piped `grep -q` under `pipefail`
 (`verify_script_pipefail_grep_q`), and an allowed-file list that is not
-cumulative over the whole plan (`verify_script_allowed_files`). Present as code
-and tests; not yet called by any surface. See
+cumulative over the whole plan (`verify_script_allowed_files`). Runs on every
+decompose-lint pass (recorded even in mode `off`; drives the retry in
+`enforce`) and when a task edit sets a verification script; every finding is
+`block`. The dry run does not run it. See
 [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).

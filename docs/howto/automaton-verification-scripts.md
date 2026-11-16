@@ -165,13 +165,27 @@ by running the script. Each finding names the script (repo-relative), the line
 | `verify_script_pipefail_grep_q` | The script enables `pipefail` (`set -o pipefail`, `set -euo pipefail`) and pipes into a quiet grep (`-q`, `-qE`, `-Eq`, `--quiet`, also after `\|&`). grep exits at the first match, the upstream command gets a broken pipe, and the check reads as a false no-match. | Write the pipeline's output to a file, then test the file with `grep -q`. |
 | `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path that some story or task in the **whole plan** changes. Files named by the built-in standard task templates count as covered (a templated path is cut to its static folder). A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
 
-**Current state.** The checks and their unit tests are in
-`internal/autonomous/verify_script_preflight*.go`. In this tree nothing outside
-those files calls them yet, so no planner, dry run or decompose-lint surface
-reports these rule ids. They are not listed in the decompose-lint rule pack,
-have no severity and no configuration setting. When they are wired in, this
-section and the rule pack table must be updated with where they run and with
-their severity.
+**Where they run.** The preflight runs in two places, and every finding it
+raises has severity `block`:
+
+- **Every decompose.** Each decompose-lint pass also runs the preflight over
+  the planned stories and adds its findings to the pass. In `enforce` mode they
+  drive the retry like any other `block` finding; in `shadow` mode they are
+  recorded only. With decompose lint `off`, the preflight still runs once and,
+  when it finds anything, records those findings on the Automaton (with mode
+  `off`); nothing is retried.
+- **A task edit that sets a script.** When you set a task's
+  `verification_script` with the edit tools ([section 6](#6-set-a-tasks-script-or-reason-with-the-edit-tools)),
+  the preflight runs for that one script. Its findings replace any earlier
+  finding for the same script and rule id in the Automaton's decompose-lint
+  findings; they are reported, never enforced, and never refuse the edit.
+
+The findings are read on the same surfaces as other decompose-lint findings
+(`autonomous_decompose_lint_findings`, the findings REST/CLI paths and the PWA
+findings list). The preflight has no configuration setting of its own and is
+not a rule in the rule pack, so an operator rule cannot disable or re-grade it.
+The read-only dry run (`autonomous_decompose_lint_dry_run`) does **not** run
+the preflight; it only runs the rule pack.
 
 ## 6. Set a task's script or reason with the edit tools
 
@@ -214,11 +228,18 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
-- **Preflight checks are not wired in.** The four `verify_script_*` preflight
-  rules in [section 5a](#5a-preflight-checks-for-planner-written-scripts) exist
-  as code and unit tests only. Decide where they should run (decompose lint,
-  dry run, or before the first script run) and at what severity; until then a
-  planner-written script can still fail its first run for these reasons.
+- **Preflight severity is fixed at `block`.** The four `verify_script_*`
+  preflight checks in [section 5a](#5a-preflight-checks-for-planner-written-scripts)
+  now run on every decompose and on a script edit, with no setting to turn
+  them off or lower them. In `enforce` mode they can send a plan back to the
+  planner. Review whether that is wanted, and note the dry run does not show
+  them — only a real decompose or an edit does.
+- **Fixed calendar dates in tests are a warning only.** The new
+  `fixed_calendar_date_in_test` rule (see the
+  [rule pack](automaton-decompose-lint.md#3-the-rule-pack-that-ships)) flags a
+  test-writing task whose spec holds a `YYYY-MM-DD` date, but never blocks. It
+  matches any such date, including ones that are not test fixtures; decide
+  whether to raise or disable it with an operator rule of the same id.
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 
