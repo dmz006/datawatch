@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
 ## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
 
 ### Changed
