@@ -190,7 +190,7 @@ not by the guard's ladder.
 ### Guarding several paid LLM entries (`entries`)
 
 The guard evaluates **once per paid LLM entry**. With `usage.burn_guard.entries`
-unset it guards one entry, `claude-code`, routing to `pi-prompt` — the behaviour
+unset it guards one entry, `claude-code`, with the default ladder — the behaviour
 above. Set `entries` to guard more than one; each entry has its own readings,
 projection, pace line, ladder and held models:
 
@@ -201,9 +201,10 @@ projection, pace line, ladder and held models:
 | `plan` | `flat` (a weekly percentage) or `metered` (a spend figure in dollars). |
 | `period_target` | The ceiling: a percentage for `flat` (0 means 100), dollars for `metered` (required). |
 | `model` | The model whose own cost rate (the per-model `in/out/cache_read/cache_write_per_k` on the LLM entry) prices the entry's tokens; empty is the entry's first model. |
-| `ladder` | This entry's rungs; empty uses the guard-wide `ladder`. The route rung sends new work to `route_to`; the hold rung holds the entry. |
+| `ladder` | This entry's rungs; empty uses the guard-wide `ladder`. The route rung sends new work to `route_to`, the cheaper rung switches the entry's model, and the hold rung holds the entry. |
 | `held_models` | Limit the hold rung to these models of the entry; empty holds the whole entry. |
 | `route_to` | Where the route rung sends new work; empty makes the route rung change nothing. |
+| `route_cheaper_model` | The model the `route_cheaper_model` rung sends this entry's new work to, on the same backend: for a Claude entry, Haiku. Empty auto-resolves the entry's own cheapest other priced model from its per-model cost rates (Haiku on a price tie for a Claude entry); when the entry has no other priced model the rung changes nothing. |
 | `points_per_usd` | For a `flat` entry, converts its dollar-priced tokens to points; 0 keeps the fitted cache coefficients. |
 
 A metered entry projects from its newest spend reading of the period, adds its
@@ -218,8 +219,9 @@ web reading form's LLM entry field). A reading that names no entry is the
 with `datawatch config set usage.burn_guard.entries '[{"llm":"...","usage_source":"readings","plan":"metered","period_target":200}]'`
 (or the same key through `PUT /api/usage/burn-guard/config`, MCP
 `burn_guard_config_set`, or the comm `configure` verb). The status
-(`GET /api/usage/burn-guard`) carries one `entries[]` block per entry; the
-top-level fields repeat the first entry's.
+(`GET /api/usage/burn-guard`) carries one `entries[]` block per entry with its
+plan, usage source, rungs in force, `held_models`, `route_to` and the
+resolved `cheaper_model`; the top-level fields repeat the first entry's.
 
 ## What it does each interval
 
@@ -322,15 +324,18 @@ with several entries applies the same ladder under each entry's own admission.
 |---|---|
 | `lower_inflight` | Lowers how many sessions the entry may have running at once. The original cap is remembered and restored when the rung is released |
 | `route_entry` | Sends the entry's new work to the entry's `route_to` backend instead, when one is set (the legacy first-version name for this rung is `route_pi_prompt`) |
+| `route_cheaper_model` | Keeps the backend and sends the entry's new work to its own **cheaper model** (the entry's `route_cheaper_model` field, or its cheapest other priced model by its per-model cost rates when the field is empty). While the entry resolves to no cheaper model the rung changes nothing. Work already running continues; releasing the rung restores the entry's original model routing |
 | `hold_entry` | Holds the entry's new work, optionally limited to its `held_models`. Work already running continues; held work starts again when the rung is released (the legacy first-version name is `hold_claude`) |
 
 The default ladder is `lower_inflight`, `route_entry`, `hold_entry`, in that
-order. You can reorder it or leave a rung out (for example
-`lower_inflight`, `hold_entry`). An unknown or repeated rung is dropped, and an
-empty list means the default. The legacy first-version names `route_pi_prompt`
-and `hold_claude` are still accepted in saved configs and normalize to
-`route_entry` and `hold_entry`.
-
+order. `route_cheaper_model` is the fourth rung and is **not in the default**: it
+is a no-op until the entry resolves a cheaper model, so you opt in by naming it
+where it sits, before the hold rung (for example
+`lower_inflight, route_entry, route_cheaper_model, hold_entry`). You can reorder
+the rungs or leave a rung out (for example `lower_inflight`, `hold_entry`). An
+unknown or repeated rung is dropped, and an empty list means the default. The
+legacy first-version names `route_pi_prompt` and `hold_claude` are still
+accepted in saved configs and normalize to `route_entry` and `hold_entry`.
 **Climbing.** When the projection is more than `margin_points` above the target,
 the guard applies the next rung. **Holding.** Inside the margin it changes
 nothing. **Stepping back.** When the projection is more than `margin_points`
@@ -358,7 +363,7 @@ is unchanged, so a script or config file that used the old keys keeps working.
 | `interval_minutes` | Minutes between evaluations, 1 to 1440 | `60` |
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `max_projection_gap_points` | Largest allowed gap between the guard projection and the advice projection. Above it the tick decides on the lower of the two. `0` never compares, so the guard projection alone decides. 0 to 100; a value outside that range is refused | `25` |
-| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_entry, hold_entry` |
+| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_entry, hold_entry` (allowed rungs: `lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`, plus the legacy `route_pi_prompt` and `hold_claude`) |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
 | `ask_on_change` | When false (default) one alert per change and no question; when true the per-change alert still goes out and at most one open question per change is kept | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
