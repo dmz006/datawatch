@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, branch reaper, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -38,6 +38,12 @@ exec_steps:
     args:
       key: autonomous.automation.disk_alert_percent
       value: "{{params.percent}}"
+    read_only: false
+  - tool: config_set
+    description: Set the whole days a reaped branch's backup ref is kept before it is pruned (0 or unset = 30)
+    args:
+      key: autonomous.reaped_branch_backup_days
+      value: "{{params.days}}"
     read_only: false
 ---
 
@@ -414,6 +420,84 @@ worktree, or merge it.
 safe-to-delete report is still undecided; the operator must confirm that. The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
+
+## The task sub-branch reaper (backup first, then remove)
+
+The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
+Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
+in the repository. The **branch reaper** removes those leftovers once the parent
+Automaton has settled (merged — its work branch's commits are all on the base —
+or dropped — its work branch is gone).
+
+**When it is safe.** The reaper works out each Automaton's **landing state** from git alone — **landed**: the work branch exists and every commit of it is already on the base branch by commit *content* (`git cherry`; a cherry-picked copy counts); **dropped**: the work branch is gone, so only the base branch can contain its work; **pending**: the work branch still carries commits not on the base (a comparison git cannot answer reads as pending, so an unknown state never loses a branch) — and skips pending Automata whole. For each settled one it looks at each task branch and removes it only when **every commit on it is contained in the Automaton's work branch or in the base branch**; even one uncontained commit keeps it (with a plain reason), a branch that is already absent is a no-op, and if git cannot compare, the branch is kept — never a guess. And if a merge is in progress (`MERGE_HEAD` in any of the Automata's working directories), the pass ends early and removes nothing, so work mid-merge is never judged against a moving base.
+
+**Backup first.** Before any removal, the reaper writes a backup ref,
+`refs/datawatch/reap-backup/<branch>/<Unix seconds>` (branch-name characters
+that would not be ref-safe become dashes, so `automaton/task-1` lands as
+`refs/datawatch/reap-backup/automaton-task-1/<timestamp>`), and only **then** removes the branch.
+That removal is `git branch -D` — the one forced delete in this area — but it is
+permitted only because the backup ref exists: if the backup ref cannot be
+written, the branch is not removed and the entry is counted. If the backup
+succeeds and the removal fails, the backup ref stands and the branch is still
+restorable. You can inspect a backup any time with
+`git for-each-ref refs/datawatch/reap-backup/`.
+
+**Restore.** A restore takes the branch name and recreates it from the
+*latest* backup ref under that name. If there is no backup ref for that name it
+returns an error — it never guesses a target.
+
+**Expiry.** Backup refs are not permanent. `autonomous.reaped_branch_backup_days`
+is the whole days a reaped branch's backup ref is kept before it is pruned:
+unset or 0 reads the default of **30** days, and a negative value is refused as
+a config error. The expiry prunes only refs inside `refs/datawatch/reap-backup/`
+whose numeric timestamp suffix is already older than the retention; a ref whose
+name has no numeric timestamp is never touched, and pruning closes the restore
+window for that branch.
+
+### Setting the retention
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.reaped_branch_backup_days` |
+| **CLI** | `datawatch config set autonomous.reaped_branch_backup_days 45` |
+| **REST** | `PUT /api/config` or `PUT /api/autonomous/config` with `{"autonomous.reaped_branch_backup_days": 45}` |
+| **Comm channel** | `configure autonomous.reaped_branch_backup_days=45` |
+| **MCP** | the `config_set` call above |
+| **Web app / PWA** | Settings → General, field labelled "Reaped Automaton branch backup kept (days; 0 or unset = 30)" |
+
+It is read live, so a change applies with no restart, and `GET /api/config`
+reports the effective days under `autonomous`.
+
+### How it relates to the rest of this guide
+
+- It removes **task sub-branches**, not `automaton/<id>` work branches or
+  worktrees — that is the worktrees pass's job, with its own mode, retention
+  window and per-pass limit.
+- It does **not** read the unlanded **Keep** records (`unlanded-keep.json`),
+  the project's **Branch retention** (`projects_defaults.branch_retention_days`)
+  or any of the cleanup pass's state; its safety tests are settlement, the
+  containment check and no merge in progress. A **Keep** record protects the
+  Automaton's work branch from the worktrees pass — it does not speak for the
+task sub-branches. (That a Keep record leaves task sub-branches unprotected is one of the things still to review below.)
+- It is a different feature from *Processes the worker left running* (no branch
+  removal at all) and from the **session-end** reaper, which reaps a session's
+  leftover processes.
+
+### Still needs your review
+
+- **No operator surface yet.** At this commit there is no REST route, MCP tool,
+  CLI verb, chat verb or PWA control that triggers a reap pass, a restore or
+  the backup expiry: they are engine-level operations with no caller or
+  schedule wired yet. If your workflow expects a `datawatch autonomous reap`
+  style command or a restore button, that surface does not exist — do not plan
+  on it, and nothing reaps these branches on a timer today.
+- **Keep-record gap.** A task sub-branch whose parent Automaton you **Keep** for
+  the record is reaped as soon as it is contained (it is still protected only
+  while the landing state is `pending`). If you rely on Keep records as your
+  "do not touch this", review whether the reaper should also honor them.
+- **Retention fit.** 30 days is the default restore window per project. Decide
+  whether it is right for your review cycles before a backup you might need is
+  pruned.
 
 ## Processes the worker left running
 
