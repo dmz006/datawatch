@@ -36,9 +36,13 @@ type endOutcome struct {
 }
 
 // prdEnd maps a PRD status onto a member's end. ok is false for the wait
-// statuses (needs_review, revisions_asked, planning, draft, paused).
+// statuses (needs_review, revisions_asked, planning, draft, paused, held). A
+// held member waits by operator decision: it is neither finished, failed nor
+// blocked, so no edge is taken for it and the chain does not move past it.
 func prdEnd(s PRDStatus) (endOutcome, bool) {
 	switch s {
+	case PRDHeld:
+		return endOutcome{}, false
 	case PRDCompleted:
 		return endOutcome{edge: edgeOnComplete, memStatus: MemberCompleted, outcome: string(s), success: true}, true
 	case PRDBlocked:
@@ -356,6 +360,15 @@ func (st *stepper) enter(next *AutomationMember) {
 	switch next.kind() {
 	case MemberKindPRD:
 		info := st.snap[next.ID]
+		if info.prdStatus == PRDHeld {
+			// A member on hold waits by operator decision: the cursor rests on
+			// it, nothing starts and the Automation keeps its own status. A
+			// release puts it back to the status it had, and the reconcile
+			// pass starts it then.
+			addCursor(st.a, next.ID)
+			st.decision("held", fmt.Sprintf("next member %s is held by the operator; waiting for its release", info.name))
+			return
+		}
 		mode := gateMode(info.prdStatus)
 		if mode == "" {
 			addCursor(st.a, next.ID)
@@ -433,6 +446,14 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 			continue
 		}
 		info := st.snap[b.ID]
+		if info.prdStatus == PRDHeld {
+			// A held branch is neither failed nor started: it stays pending
+			// and the join waits for it.
+			addCursor(st.a, b.ID)
+			st.decision("held", fmt.Sprintf("branch %s not started: %s is held by the operator", b.ID, info.name))
+			results[bid] = "held"
+			continue
+		}
 		mode := gateMode(info.prdStatus)
 		if mode == "" {
 			b.Status = MemberFailed
@@ -758,7 +779,7 @@ func edgeTarget(m *AutomationMember, edge string) string {
 }
 
 // gateMode decides how a PRD may be started: "run" when cleanly approved,
-// "resume" when paused, "" otherwise.
+// "resume" when paused, "" otherwise (a held PRD is never started).
 func gateMode(s PRDStatus) string {
 	switch s {
 	case PRDApproved:

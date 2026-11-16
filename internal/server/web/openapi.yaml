@@ -1726,7 +1726,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: legacy_number, in: query, schema: {type: integer, minimum: 1}}
         - {name: automaton, in: query, schema: {type: string}}
@@ -1837,7 +1837,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
@@ -1944,7 +1944,7 @@ paths:
         - {name: q, in: query, required: true, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states from either vocabulary; a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
@@ -2151,7 +2151,7 @@ paths:
       parameters:
         - {name: q, in: query, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; without kind a state is valid in either vocabulary, and a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
         - {name: project, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
@@ -3243,12 +3243,18 @@ paths:
         The merge-pending state of the finished Automata. `mode` is the
         `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
         or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
-        whole minutes (0 = alerts off). `automata` has one entry per completed
-        Automaton that has a work branch: its id, name, branch, the merge state, the
+        whole minutes (0 = alerts off). `automata` has one entry per Automaton that has
+        a work branch and is either completed or, while
+        `autonomous.automation.merge_pending_include_terminal` is on (the default when
+        unset; off covers only completed), in a terminal state (archived, needs_review,
+        blocked or failed): its id, name, branch, the merge state, the
         commits it is ahead of main, when it was first seen merge pending
         (`pending_since`) and when the alert fired (`alerted_at`); both are null when
-        they do not apply. In shadow mode each entry also carries `would_alert`, and
-        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        they do not apply. In shadow mode each entry also carries `would_alert`,
+        `shadow_decisions` lists what the pass recorded without acting (newest first),
+        and `shadow_decisions_total` and `shadow_decisions_false` count every recorded
+        decision and the ones later found to have been false (both absent while the
+        mode is `off`).
         The state is read from the coordinator's in-memory cache, so a read never runs
         git and no field is added to the Automaton; an Automaton the pass has not
         compared yet reads `unknown`. While the mode is `off` both lists are empty.
@@ -3736,6 +3742,107 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
         "500": {description: The branches could not be listed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap:
+    get:
+      summary: Branch reaper report
+      description: |
+        The read-side pass of the task sub-branch reaper. `reaped` lists the
+        task sub-branches a pass would reap (their Automaton's landing state
+        has settled and their commits are all on the base), with `commits`
+        the commits they carried, `contained_in` the branch whose content
+        covers them and `reason` the plain sentence; `backup_ref` is present
+        for any of them an earlier pass already backed up. `waiting` lists the
+        branches that would be held (still landing, a commit not contained in
+        the base, or a merge in progress). `backups` lists every backup ref
+        under refs/datawatch/reap-backup/, `branch` the task sub-branch it
+        came from when it matches a stored one, and `sha` the tip it holds.
+        `backup_days` is the retention of those refs in whole days (0 or unset
+        reads 30; autonomous.reaped_branch_backup_days). The report only
+        reads; nothing is backed up, deleted or restored. Only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousBranchReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Branch reaper report (read-side pass)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/run:
+    post:
+      summary: Run one branch reap pass
+      description: |
+        Performs one reap pass. For every Automaton whose landing state has
+        settled, each task sub-branch whose commits are all on the base is
+        backed up to refs/datawatch/reap-backup/ first and then deleted with
+        git branch -D; `waiting` lists the branches held (still landing, a
+        commit not contained in the base, or a merge in progress). Takes no
+        body (a non-empty body is refused); the report (GET
+        /api/autonomous/branch-reap) already computed what would happen.
+        Running the reaper is an operator-approved write and a federated peer
+        needs the autonomous write capability.
+      operationId: autonomousBranchReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/restore:
+    post:
+      summary: Restore one reaped branch
+      description: |
+        Recreates one branch an earlier pass reaped, from its newest backup
+        ref under refs/datawatch/reap-backup/. The body is {"branch": "..."}
+        where branch is the task sub-branch from the report; a missing or
+        empty branch is refused. A branch that was never reaped answers 404.
+        A restore is an operator-approved write and a federated peer needs the
+        autonomous write capability.
+      operationId: autonomousBranchReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The task sub-branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
   /api/autonomous/protected-paths:
@@ -6590,6 +6697,7 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+        - {name: status, in: query, required: false, description: "A single status, or a comma-separated list of statuses (case-insensitive); an unknown status answers 400 naming the valid statuses", schema: {type: string}}
         - name: shipped
           in: query
           required: false
@@ -6895,6 +7003,156 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "405": {description: "Method not allowed"}
         "503": {description: "autonomous disabled"}
+  /api/autonomous/prds/{id}/hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Put an Automaton on hold, or change its hold
+      description: |
+        Puts the Automaton in the `held` status: it waits by the operator's
+        decision, is not blocked, failed or waiting for review, and nothing
+        starts it. Its tasks keep their state. A hold is allowed from draft,
+        needs_review, approved, revisions_asked, paused, blocked and failed; it
+        is refused from planning, running, completed, rejected, cancelled and
+        archived. When the Automaton is already held, the same call extends the
+        hold: each field sent replaces the stored one and a field left out is
+        kept. `until` is the look-again time and may be an RFC 3339 time, a date
+        (YYYY-MM-DD, taken as the end of that day in UTC) or a duration such as
+        `72h`; any other value is a 400 that names these forms. When the time
+        passes the Automaton stays held and is shown as "hold expired, ready to
+        review"; only a release or a new `until` changes it. Audited as `hold`.
+      operationId: autonomousPRDHold
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 500, description: "Why the Automaton is waiting. Required to place a hold; optional when extending."}
+                condition: {type: string, description: "Free text shown to the operator, such as 'until after the release'. Never evaluated."}
+                until: {type: string, description: "Look-again time: an RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string, description: "Who is holding; defaults to operator."}
+      responses:
+        "200":
+          description: "The updated Automaton, status `held`, with its `hold` record (reason, condition, until, held_at, held_by, from, prior_blocked_reason, expired_at)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Missing or too long reason, a bad `until` (the message names the accepted forms), a time that is not in the future, or a status that cannot be held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/prds/{id}/release_hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Release a held Automaton back to the status it had
+      description: |
+        Ends the hold and restores the status the Automaton had when it was
+        held (a blocked Automaton gets its blocked reason back). It does not
+        start the Automaton; run it afterwards if it should run. Audited as
+        `release_hold`.
+      operationId: autonomousPRDReleaseHold
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Who is releasing; defaults to operator."}
+                note: {type: string, description: "Why the hold ended; kept in the Automaton's decision log."}
+      responses:
+        "200":
+          description: "The updated Automaton in its restored status, without a `hold` record"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "The Automaton is not held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/held:
+    get:
+      summary: List the Automata on hold
+      description: |
+        The held group: every Automaton in the `held` status with its reason,
+        condition, look-again time and the status it will return to. Expired
+        holds come first, then the soonest look-again time. An expired hold is
+        still held; its `next_look_text` reads "hold expired, ready to review".
+      operationId: autonomousHeldList
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: "The held group"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  held:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        project: {type: string}
+                        automation_id: {type: string}
+                        reason: {type: string}
+                        condition: {type: string}
+                        until: {type: string, format: date-time}
+                        held_at: {type: string, format: date-time}
+                        held_by: {type: string}
+                        from: {type: string, description: "The status a release restores"}
+                        expired: {type: boolean}
+                        next_look: {type: string, description: "Until in RFC 3339; empty when no date was set"}
+                        next_look_text: {type: string}
+                  total: {type: integer}
+                  expired: {type: integer}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous read capability"}
+        "405": {description: "Only GET is provided"}
+  /api/autonomous/held/migrate:
+    post:
+      summary: List look-alike blocked or failed Automata and hold the chosen ones
+      description: |
+        Lists the blocked or failed Automata whose notes look like they should
+        be on hold (an evaluation, a parked design, an operator hold note) and
+        puts the ones the operator names on hold. `dry_run` defaults to true
+        when `ids` is empty and only lists the candidates. A real run needs
+        `ids` and a non-empty `reason`, which is never generated; it applies the
+        same reason, condition and until to every chosen id and skips an id
+        that is missing, not blocked or failed, or already held. A real run is
+        refused with 409 while a final gate is running; a dry run still
+        reports. Audited as `hold_migrate`.
+      operationId: autonomousHeldMigrate
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, description: "List candidates without writing. True when ids is empty."}
+                ids: {type: array, items: {type: string}, description: "The Automata to hold"}
+                reason: {type: string, maxLength: 500, description: "Required for a real run"}
+                condition: {type: string}
+                until: {type: string, description: "An RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string}
+      responses:
+        "200":
+          description: "The run's report: `dry_run`, `busy`, `considered`, `candidates` (each with `why`), `held` and `skipped` (real run)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "A real run without ids or a reason, a bad `until`, or the run could not start"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "409": {description: "A final gate is running; try again when it has finished"}
   /api/autonomous/completed/migrate:
     post:
       summary: Move cancelled, merged Automata to Completed
@@ -7307,6 +7565,63 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/landing/keep:
+    post:
+      summary: Record that the Automaton's branch is kept unmerged on purpose
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        keep records that the branch stays available on purpose, drop that
+        its work will not be merged. Both require a non-empty `actor` and a
+        non-empty `reason`. A branch that has already landed cannot be kept
+        or dropped, and a record that is already kept or dropped is refused
+        (409).
+      operationId: autonomousPRDLandingKeep
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work is not being merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now kept)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
+  /api/autonomous/prds/{id}/landing/drop:
+    post:
+      summary: Record that the Automaton's work will not be merged
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        drop records that the branch and its work will not be merged. Both
+        require a non-empty `actor` and a non-empty `reason`. A branch that
+        has already landed cannot be kept or dropped, and a record that is
+        already kept or dropped is refused (409).
+      operationId: autonomousPRDLandingDrop
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work will not be merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now dropped)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
   /api/autonomous/prds/{id}/set_llm:
     post:
       summary: Set a PRD's worker-LLM override fields
@@ -13037,25 +13352,28 @@ components:
       description: |-
         The merge status, as GET /api/autonomous/merge returns it. Both lists are
         empty while `mode` is off; `shadow_decisions` is empty outside shadow mode.
-      required: [mode, alert_minutes, automata, shadow_decisions]
+      required: [mode, alert_minutes, automata, shadow_decisions, shadow_decisions_total, shadow_decisions_false]
       properties:
         mode: {type: string, enum: [off, shadow, "on"], description: The merge_pending_mode in effect}
         alert_minutes: {type: integer, description: The merge-pending alert threshold in minutes; 0 = off}
         automata:
           type: array
-          description: One entry per completed Automaton with a work branch
+          description: One entry per covered Automaton with a work branch (completed always; other terminal states while merge_pending_include_terminal is on)
           items: {$ref: "#/components/schemas/MergeAutomaton"}
         shadow_decisions:
           type: array
           description: What the pass recorded in shadow mode, newest first
           items: {$ref: "#/components/schemas/MergeShadowDecision"}
+        shadow_decisions_total: {type: integer, description: "How many shadow decisions have been made over the whole persisted history (no new ones while mode is off)"}
+        shadow_decisions_false: {type: integer, description: "How many would_alert shadow decisions were later found false: the episode ended with the branch empty or needs_look, not merged"}
     MergeAutomaton:
       type: object
-      description: A completed Automaton with a work branch, as the merge-pending pass last compared it
+      description: A covered Automaton with a work branch, as the merge-pending pass last compared it
       required: [automaton_id, name, branch, state, commits_ahead, pending_since, alerted_at]
       properties:
         automaton_id: {type: string}
         name: {type: string, description: The Automaton's title, or its id when it has none}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state; the non-completed states are listed while merge_pending_include_terminal is on"}
         branch: {type: string, description: The Automaton's work branch}
         state:
           type: string
@@ -13084,6 +13402,8 @@ components:
         state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
         commits_ahead: {type: integer}
         would_alert: {type: boolean}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state when the decision was made"}
+        found_false: {type: boolean, description: "True when this would_alert decision's episode later ended with the branch empty or needs_look rather than merged"}
         repeat_count: {type: integer, description: How many polls chose the same decision again}
         last_seen_at: {type: string, format: date-time}
     SafeDeleteReport:
@@ -13116,6 +13436,68 @@ components:
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
         computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
         stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
+    ReapReport:
+      type: object
+      description: |
+        The split of one reap pass: the POST run response on its own, and the
+        reaped and waiting parts of the report. Both lists are empty when no
+        Automaton qualifies.
+      required: [reaped, waiting]
+      properties:
+        reaped:
+          type: array
+          description: The branches a pass would reap (report) or reaped (run)
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches held, and the reason
+          items: {$ref: "#/components/schemas/ReapEntry"}
+    ReapEntry:
+      type: object
+      description: One branch in the reaped or the waiting list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The task sub-branch}
+        backup_ref: {type: string, description: The ref the branch's tip was kept at; present for a branch an earlier pass already backed up}
+        contained_in: {type: string, description: The branch (work or base) whose content covers every commit of the reaped branch}
+        commits: {type: integer, description: The commits the branch carried}
+        reason: {type: string, description: The plain sentence for the entry}
+    ReapSurfaceReport:
+      type: object
+      description: The report, as GET /api/autonomous/branch-reap returns it
+      required: [reaped, waiting, backups, backup_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The task sub-branches that would be reaped
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches that would be held
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        backups:
+          type: array
+          description: Every backup ref under refs/datawatch/reap-backup/, sorted by ref; empty while no pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        backup_days: {type: integer, description: The retention of the backup refs in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    ReapBackup:
+      type: object
+      description: One backup ref under refs/datawatch/reap-backup/
+      required: [ref, sha]
+      properties:
+        branch: {type: string, description: The task sub-branch the ref came from, when its key matches a stored one; empty otherwise}
+        ref: {type: string, description: The full ref name}
+        sha: {type: string, description: The tip the ref holds}
+    ReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/branch-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The branch that came back}
+        backup_ref: {type: string, description: The newest backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     TriageList:
       type: object
       description: |-

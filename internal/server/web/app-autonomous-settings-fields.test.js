@@ -332,7 +332,20 @@ test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_alert_minutes i
   assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
 });
 
-for (const key of ['settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes']) {
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_include_terminal is a toggle beside the alert field', async (t) => {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  const field = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_include_terminal');
+  assert.ok(field, 'autonomous.automation.merge_pending_include_terminal field is declared');
+  assert.equal(field.type, 'toggle', 'a boolean setting is a toggle');
+  assert.equal(field.labelKey, 'settings_automation_merge_pending_include_terminal');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+  const alert = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_alert_minutes');
+  assert.ok(Math.abs(autonomous.fields.indexOf(field) - autonomous.fields.indexOf(alert)) <= 1, 'sits beside the merge_pending_alert_minutes field');
+});
+
+for (const key of ['settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes', 'settings_automation_merge_pending_include_terminal', 'merge_shadow_decisions_counts']) {
   for (const [lang, file] of Object.entries(LOCALES)) {
     test(`locales: ${lang} defines ${key}`, (t) => {
       const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));

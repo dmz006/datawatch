@@ -206,6 +206,30 @@ reply is refused and the open questions are listed, so answer by id with
 `question answer <id> …` instead. With **none** open, a plain message is
 just chat.
 
+## Quick replies answer the session's question
+
+A quick reply — on the web app (the alert **Quick reply** dropdown, the
+session Yes/No/Stop chips, the session and card quick commands) or from a
+messaging channel (`send <session id>: <text>`) — first checks whether
+the session has a pending operator question:
+
+- **One question pending, and the reply means one of its options** (the
+  option id or label, case-insensitive, or an approve/yes or reject/no
+  word) → the reply **answers that question with that option**, through
+  the same answer path as the queue card. The answer log records who
+  answered and the surface (`pwa` on the web app, `comm:<channel>` from a
+  messaging channel). The confirmation names the chosen option and shows
+  the text that was sent; the session resumes.
+- **A question is pending but no option matches** → the reply is refused
+  with a plain message naming the options; nothing is sent to the session.
+- **More than one question pending** → refused; answer from the queue
+  card or with `question answer <id> …`.
+- **No question pending** → the text is typed into the session exactly
+  as before.
+
+No setting or endpoint is added. The Android and iPhone apps do not have
+this routing yet; the parity issue tracks it.
+
 ## REST
 
 The routes (all return `503` naming the switch while the channel is off):

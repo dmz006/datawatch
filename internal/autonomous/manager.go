@@ -404,6 +404,14 @@ type Config struct {
 	// handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	LoopDetectTurns *int `json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled and UnlandedAlertThreshold mirror
+	// autonomous.unlanded_alert_enabled / unlanded_alert_threshold: the daily
+	// pending-branch alert (unlanded_alert.go). nil reads the defaults (on,
+	// threshold 3) through config.UnlandedAlertEnabledEffective /
+	// config.UnlandedAlertThresholdEffective; the check reads this Config on
+	// every tick, so a runtime config set applies without a restart.
+	UnlandedAlertEnabled   *bool `json:"unlanded_alert_enabled,omitempty"`
+	UnlandedAlertThreshold *int  `json:"unlanded_alert_threshold,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -806,6 +814,13 @@ type AutomationConfig struct {
 	// turns the alert off and survives a merge round trip.
 	MergePendingAlertMinutes *int `json:"merge_pending_alert_minutes,omitempty"`
 
+	// MergePendingIncludeTerminal: whether the merge-pending check also
+	// covers archived, needs_review, blocked and failed Automata. Pointer:
+	// unset (nil) reads config.DefaultMergePendingIncludeTerminal (true), an
+	// explicit false keeps the check to completed Automata. Mirrors
+	// autonomous.automation.merge_pending_include_terminal.
+	MergePendingIncludeTerminal *bool `json:"merge_pending_include_terminal,omitempty"`
+
 	// MergedMemberPolicy: completed | manual | block (empty reads as
 	// completed). Mirrors autonomous.automation.merged_member_policy.
 	MergedMemberPolicy string `json:"merged_member_policy,omitempty"`
@@ -965,6 +980,16 @@ func (c AutomationConfig) EffectiveMergePendingMode() string {
 		return config.MergePendingModeOff
 	}
 	return c.MergePendingMode
+}
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending
+// check covers archived, needs_review, blocked and failed Automata as well as
+// completed ones: true when unset, the explicit value otherwise.
+func (c AutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return config.DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergedMemberPolicy returns the merged-member policy in effect: an
@@ -1545,6 +1570,13 @@ type Manager struct {
 	// nil only for hand-rolled test Managers.
 	cleanupStatus *cleanupStatusRecorder
 
+	// Daily pending-branch alert (unlanded_alert.go) — the persisted
+	// last-alerted day. Owns its own lock; created in NewManager; nil only
+	// for hand-rolled test Managers. unlandedAlertList replaces the branch
+	// listing in tests (nil = UnlandedWork).
+	unlandedAlert     *unlandedAlerter
+	unlandedAlertList func(context.Context) ([]UnlandedBranch, error)
+
 	// safeDeleteCache is the short-lived cache in front of
 	// MergeSafeToDelete (merge_safe_delete_cache.go). Guarded by mu;
 	// created lazily on first use, or wired directly in tests.
@@ -1978,6 +2010,10 @@ type Manager struct {
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
+
+	// now — the time source for operator holds (hold.go). Nil reads the
+	// wall clock; tests inject a fake so hold times are exact.
+	now func() time.Time
 
 	// synthesizeFn — test seam for the rules review rollup's corrective
 	// work creation. Nil uses synthesizeCorrectiveWork.
@@ -3202,6 +3238,9 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		// keeps the last run and does not re-alert an already-alerted
 		// disk (cleanup_status.go).
 		cleanupStatus: newCleanupStatusRecorder(st.dir),
+		// daily pending-branch alert — the last-alerted day persists in
+		// the same folder so a restart does not repeat today's alert.
+		unlandedAlert: newUnlandedAlerter(st.dir),
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -3661,6 +3700,9 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	// BL407 Phase 1 extension (found live 2026-10-11 creating BL404's
 	// own PRD): session-based decompose needs a real project_dir, same
 	// as Run() does, so a worktree-mode PRD gets one here too — not
@@ -3871,6 +3913,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	// BL407 Phase 1 extension — see Decompose()'s identical call for
 	// the full explanation. decomposeStreamingCore is a drifted
 	// duplicate of Decompose() by design history (see this function's
@@ -4042,12 +4087,43 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	}
 }
 
+// refuseHeld returns an error when the Automaton is on hold, and nil
+// otherwise. Every path that starts or advances work calls it first: a held
+// Automaton waits by operator decision, so nothing runs, approves, decomposes,
+// resets or requeues it until the operator releases the hold. The error names
+// the hold reason. It reads the record under the store lock, so call it with
+// no store lock held.
+func (m *Manager) refuseHeld(prd *PRD) error {
+	if prd == nil {
+		return nil
+	}
+	var held bool
+	var reason string
+	m.store.WithLock(func() {
+		if NormalizePRDStatus(prd.Status) != PRDHeld {
+			return
+		}
+		held = true
+		reason = "no reason recorded"
+		if prd.Hold != nil && strings.TrimSpace(prd.Hold.Reason) != "" {
+			reason = strings.TrimSpace(prd.Hold.Reason)
+		}
+	})
+	if !held {
+		return nil
+	}
+	return fmt.Errorf("automaton %q is held (%s); release the hold first", prd.ID, reason)
+}
+
 // Approve transitions a PRD from needs_review → approved so the loop /
 // Manager.Run is allowed to start workers. BL191 Q1.
 func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
 		return nil, fmt.Errorf("prd %q status %q is not approvable", prdID, prd.Status)
@@ -4255,6 +4331,11 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	}
 	if prd.Status == PRDArchived {
 		return prd, nil // idempotent
+	}
+	var pendingBranch string
+	m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
+	if pendingBranch != "" {
+		return nil, fmt.Errorf("automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
 	}
 	now := time.Now()
 	var old PRDStatus
@@ -4651,6 +4732,11 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	// A held Automaton is refused before anything else: its tasks keep their
+	// state until the operator releases the hold.
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	// PRDBlocked included: a guardrail block or (default) story-failure halt
 	// both leave the PRD blocked with no other way to retry the offending
@@ -5509,6 +5595,9 @@ func (m *Manager) ApproveStory(prdID, storyID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
 		return nil, fmt.Errorf("prd %q status %q does not accept per-story approval; PRD must be approved or running first", prdID, prd.Status)
 	}
@@ -5560,6 +5649,9 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning && prd.Status != PRDBlocked {
 		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved, running, or blocked first", prdID, prd.Status)
@@ -6482,6 +6574,9 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	if prd.Status != PRDPaused {
 		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
 	}
@@ -6754,10 +6849,10 @@ var taskOverrideStatusesKnown = []string{
 	string(PRDDraft), string(PRDPlanning), string(PRDNeedsReview), string(PRDApproved),
 	string(PRDRevisionsAsked), string(PRDActive), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
 	string(PRDCancelled), string(PRDArchived), string(PRDBlocked), string(PRDFailed),
-	string(PRDPaused),
+	string(PRDPaused), string(PRDHeld),
 }
 
-// TaskOverrideStatusesKnown returns the 14 PRD status names a
+// TaskOverrideStatusesKnown returns the 15 PRD status names a
 // task_override_statuses list may name (the models.go status constants).
 func TaskOverrideStatusesKnown() []string {
 	return append([]string(nil), taskOverrideStatusesKnown...)
@@ -7213,6 +7308,10 @@ func (m *Manager) Status() LoopStatus {
 		if p.Status == PRDBlocked {
 			st.BlockedPRDs++
 		}
+		if p.Status == PRDHeld {
+			// A hold is the operator's decision, not a stuck Automaton.
+			st.HeldPRDs++
+		}
 		// The Automaton overrides the global notify tier when its resolved
 		// set comes from the automaton or profile tier; finished Automata
 		// no longer running and never count as overrides.
@@ -7548,6 +7647,9 @@ func (m *Manager) run(ctx context.Context) {
 	if due, st := m.CleanupDiskPass(); due {
 		m.alertCleanupDisk(st)
 	}
+	// Daily pending-branch alert: checked at start and on every tick; it
+	// raises at most one alert per calendar day (unlanded_alert.go).
+	m.startUnlandedAlertCheck(ctx)
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {
@@ -7568,8 +7670,13 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			// One hold-expiry pass on the same tick: an expired hold-until time
+			// marks the hold, records one decision and raises exactly one
+			// alert; it never changes the status or starts the Automaton.
+			m.ExpireHolds(m.holdNow())
 			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
+			m.startUnlandedAlertCheck(ctx)
 		}
 	}
 }

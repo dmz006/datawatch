@@ -125,6 +125,12 @@ func (m *Manager) RescueLoop(taskID string, s LoopSession, f LoopFinding) (LoopR
 	}
 	key := s.ID() + "\x00" + f.Key()
 
+	// A held Automaton and its tasks are left exactly as they are: no
+	// corrective message, no stop and no warning is recorded for it.
+	if t, ok := m.store.GetTask(taskID); ok && m.prdIsHeld(t.PRDID) {
+		return LoopRescueSkipped, nil
+	}
+
 	// Fires-once dedup: once a (session, finding) pair has been rescued,
 	// further detections of the same finding are reported as skipped.
 	m.mu.Lock()

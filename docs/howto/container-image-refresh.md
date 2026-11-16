@@ -28,6 +28,26 @@ Every day at 05:30 UTC it:
 Staging tags older than three days are removed by the weekly `ghcr-cleanup`
 workflow (see below).
 
+## agent-aider Python and the soupsieve floor
+
+The agent-aider image no longer runs aider on Debian 12's system Python
+(3.11.2). Aider and its dependencies live in their own venv on a uv-managed
+Python 3.12, because soupsieve 4.x (the fix for the selector-ReDoS finding)
+needs Python 3.11.5 or newer and pip refuses it on 3.11.2. The recipe is
+`docker/dockerfiles/Dockerfile.agent-aider`; the CI step that runs
+`scripts/check-dockerfile-soupsieve.sh` fails the build if its `soupsieve>=X`
+pin is missing or below 4.0.1.
+
+The soupsieve accepted-risk entry (CVE-2026-126191) was removed from
+`security/accepted-risks.yml` and `.trivyignore`, so the next scan of
+agent-aider fails if soupsieve is still vulnerable. The daily refresh rebuilds
+agent-aider from `main`, so an already-released version picks up the new recipe.
+
+**Operator review:** confirm the next Release scan or image-refresh scan of
+agent-aider is clean for soupsieve. The remaining agent-aider entries for
+Debian `python3.11` / `libpython3.11-*` CVEs may now be stale for aider's own
+runtime (the system Python is still in the image); re-scope them on that scan.
+
 ## How CI installs Trivy
 
 Found in a 2026-11-09 release run: the inline

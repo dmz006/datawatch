@@ -168,6 +168,9 @@ func (m *Manager) recoverInfraDependents(prd *PRD) []string {
 		now       = time.Now()
 	)
 	m.store.WithLock(func() {
+		if prd.Status == PRDHeld {
+			return // a held Automaton keeps every task as it is
+		}
 		var all []*Task
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {

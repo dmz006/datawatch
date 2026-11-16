@@ -55,6 +55,9 @@ automation_set_verification_llm
 automation_skip_member
 automation_update
 autonomous_attention_list
+autonomous_branch_reap
+autonomous_branch_reap_restore
+autonomous_branch_reap_run
 autonomous_branch_refresh_stats
 autonomous_cleanup_status
 autonomous_completed_migrate
@@ -77,8 +80,12 @@ autonomous_defect_tinyfix_check
 autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
+autonomous_held
+autonomous_held_migrate
 autonomous_held_questions
 autonomous_infra_retries
+autonomous_landing_drop
+autonomous_landing_keep
 autonomous_lane_fill_status
 autonomous_lane_utilization
 autonomous_learnings
@@ -110,6 +117,7 @@ autonomous_prd_edit_story
 autonomous_prd_edit_task
 autonomous_prd_generated_artefact
 autonomous_prd_get
+autonomous_prd_hold
 autonomous_prd_instantiate
 autonomous_prd_list
 autonomous_prd_plan_coverage_acknowledge
@@ -118,6 +126,7 @@ autonomous_prd_plan_review
 autonomous_prd_regenerate_artefact
 autonomous_prd_reject
 autonomous_prd_rejudge
+autonomous_prd_release_hold
 autonomous_prd_remove_story
 autonomous_prd_remove_task
 autonomous_prd_repair_depends_on
