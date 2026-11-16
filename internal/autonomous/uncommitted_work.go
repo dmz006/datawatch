@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -338,7 +339,9 @@ type TaskCommitFn func(ctx context.Context, dir string, files []string, message 
 // error is returned. When nothing ends up staged it makes no commit and
 // returns the current HEAD with a nil error. A listed path that was deleted
 // is recorded as a deletion, whether or not the deletion was already staged,
-// and a path that exists nowhere (worktree, index, HEAD) is skipped.
+// and a path that exists nowhere (worktree, index, HEAD) is skipped; so is
+// a path git ignores that is not in the index, because git add would refuse
+// it.
 func DefaultTaskCommit(ctx context.Context, dir string, files []string, message string) (string, error) {
 	if dir == "" {
 		return "", errors.New("task commit: empty directory")
@@ -376,7 +379,10 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 //     with ".." once cleaned) or contains a NUL byte is never skipped: it goes to add and pathspec so git fails
 //     with its own error.
 //  2. A path that exists in the worktree (Lstat succeeds) goes to add and
-//     pathspec.
+//     pathspec, unless it is git-ignored (git check-ignore) and not in the
+//     index (`git ls-files --cached` returns nothing for it): then it is
+//     skipped and appears in neither list, because git add would refuse it.
+//     A path in the index is never skipped, whatever its ignore status.
 //  3. A path missing from the worktree but present in the index is a tracked
 //     file deleted on disk: add (git add stages the deletion) and pathspec.
 //  4. A path missing from the worktree and index but present in HEAD is a
@@ -388,6 +394,11 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 // found" result) never skips a path; it goes to add and pathspec so the real
 // git error surfaces.
 func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, skipped []string) {
+	// Which listed paths the repository's ignore rules ignore, asked of git
+	// check-ignore in chunks of 500. When git cannot answer (error, context
+	// cancel) the set is empty, so no path is dropped below and the real
+	// git error surfaces at add.
+	ignoreSet := ignoredUntrackedPaths(ctx, dir, files)
 	for _, p := range files {
 		if strings.ContainsRune(p, 0) {
 			add = append(add, p)
@@ -407,6 +418,16 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 			continue
 		}
 		if _, err := os.Lstat(filepath.Join(dir, rel)); err == nil {
+			// Git-ignored and untracked (not in the index) cannot be staged:
+			// git add refuses it. A path in the index is tracked and is kept
+			// even if it matches an ignore rule, and so is a path whose
+			// index check failed.
+			if ignoreSet[p] {
+				if cached, cerr := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p); cerr == nil && strings.TrimSpace(cached) == "" {
+					skipped = append(skipped, p)
+					continue
+				}
+			}
 			add = append(add, p)
 			pathspec = append(pathspec, p)
 			continue
@@ -430,6 +451,36 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		skipped = append(skipped, p)
 	}
 	return add, pathspec, skipped
+}
+
+// ignoredUntrackedPaths reports which of the given repo-relative paths the
+// repository's ignore rules ignore (git check-ignore), asked in chunks of 500
+// paths. git exits 0 when at least one path is ignored and 1 when none is;
+// both are normal outcomes here. Any other failure (git error, context
+// cancel) yields an empty set — a path whose ignore status cannot be
+// confirmed is kept, following the conservative pattern of ignoredSet in
+// internal/session/git.go.
+func ignoredUntrackedPaths(ctx context.Context, dir string, paths []string) map[string]bool {
+	ignored := map[string]bool{}
+	for start := 0; start < len(paths); start += 500 {
+		end := min(start+500, len(paths))
+		args := append([]string{"check-ignore", "--"}, paths[start:end]...)
+		out, err := runGitInCtx(ctx, dir, args...)
+		if err != nil {
+			// exit 0 is success and exit 1 means "none ignored"; anything
+			// else means git could not answer this chunk.
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+				continue
+			}
+		}
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				ignored[l] = true
+			}
+		}
+	}
+	return ignored
 }
 
 // taskHeadSHA returns the current HEAD commit of dir.
