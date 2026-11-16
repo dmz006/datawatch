@@ -3458,12 +3458,18 @@ paths:
         The merge-pending state of the finished Automata. `mode` is the
         `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
         or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
-        whole minutes (0 = alerts off). `automata` has one entry per completed
-        Automaton that has a work branch: its id, name, branch, the merge state, the
+        whole minutes (0 = alerts off). `automata` has one entry per Automaton that has
+        a work branch and is either completed or, while
+        `autonomous.automation.merge_pending_include_terminal` is on (the default when
+        unset; off covers only completed), in a terminal state (archived, needs_review,
+        blocked or failed): its id, name, branch, the merge state, the
         commits it is ahead of main, when it was first seen merge pending
         (`pending_since`) and when the alert fired (`alerted_at`); both are null when
-        they do not apply. In shadow mode each entry also carries `would_alert`, and
-        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        they do not apply. In shadow mode each entry also carries `would_alert`,
+        `shadow_decisions` lists what the pass recorded without acting (newest first),
+        and `shadow_decisions_total` and `shadow_decisions_false` count every recorded
+        decision and the ones later found to have been false (both absent while the
+        mode is `off`).
         The state is read from the coordinator's in-memory cache, so a read never runs
         git and no field is added to the Automaton; an Automaton the pass has not
         compared yet reads `unknown`. While the mode is `off` both lists are empty.
@@ -12237,6 +12243,8 @@ components:
           type: array
           description: What the pass recorded in shadow mode, newest first
           items: {$ref: "#/components/schemas/MergeShadowDecision"}
+        shadow_decisions_total: {type: integer, description: "How many shadow decisions have been made over the whole persisted history (0 while mode is off)"}
+        shadow_decisions_false: {type: integer, description: "How many would_alert shadow decisions were later found false: the episode ended with the branch empty or needs_look, not merged"}
     MergeAutomaton:
       type: object
       description: A completed Automaton with a work branch, as the merge-pending pass last compared it
@@ -12244,6 +12252,7 @@ components:
       properties:
         automaton_id: {type: string}
         name: {type: string, description: The Automaton's title, or its id when it has none}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state; the non-completed states are listed while merge_pending_include_terminal is on"}
         branch: {type: string, description: The Automaton's work branch}
         state:
           type: string
@@ -12272,6 +12281,8 @@ components:
         state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
         commits_ahead: {type: integer}
         would_alert: {type: boolean}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state when the decision was made"}
+        found_false: {type: boolean, description: "True when this would_alert decision's episode later ended with the branch empty or needs_look rather than merged"}
         repeat_count: {type: integer, description: How many polls chose the same decision again}
         last_seen_at: {type: string, format: date-time}
     SafeDeleteReport:

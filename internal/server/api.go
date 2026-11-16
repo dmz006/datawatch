@@ -6969,10 +6969,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
 				// Merge-pending check: the mode reads off when unset, the alert
 				// minutes read the 30-minute default when unset and an explicit
-				// 0 stays 0 (the merge-pending alert off).
-				"child_inherit":               s.cfg.Autonomous.Automation.EffectiveChildInherit(),
-				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
-				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				// 0 stays 0 (the merge-pending alert off). include_terminal reads
+				// true (on) when unset and an explicit false stays false.
+				"child_inherit":                  s.cfg.Autonomous.Automation.EffectiveChildInherit(),
+				"merge_pending_mode":             s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
+				"merge_pending_alert_minutes":    s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				"merge_pending_include_terminal": s.cfg.Autonomous.Automation.EffectiveMergePendingIncludeTerminal(),
 				// Effective, not raw: an empty value reads the "completed"
 				// default via the accessor.
 				"merged_member_policy": s.cfg.Autonomous.Automation.EffectiveMergedMemberPolicy(),
@@ -7509,6 +7511,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
 	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
 	// default and an explicit 0 turns the merge-pending alert off.
+	// include_terminal is a plain boolean: unset reads true (the check covers
+	// terminal Automata beside completed) and an explicit false is preserved.
+	if v, ok := patch["autonomous.automation.merge_pending_include_terminal"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.merge_pending_include_terminal: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	if v, ok := patch["autonomous.automation.merge_pending_mode"]; ok {
 		if verr := validateMergePendingMode(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
@@ -10188,6 +10198,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// safety, and an explicit 0 (merge-pending alert off) is preserved.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
+			}
+		case "autonomous.automation.merge_pending_include_terminal":
+			// Validated above in handlePutConfig as a JSON boolean; a value
+			// that is not one is left unchanged. An explicit false (terminal
+			// states excluded) is preserved by the pointer.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.MergePendingIncludeTerminal = &b
 			}
 		case "autonomous.automation.merged_member_policy":
 			// Validated above in handlePutConfig; a value that fails the

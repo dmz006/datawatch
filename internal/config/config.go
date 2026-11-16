@@ -4477,8 +4477,15 @@ type AutonomousAutomationConfig struct {
 	ChildInherit             *bool  `yaml:"child_inherit,omitempty" json:"child_inherit,omitempty"`
 	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	// MergePendingIncludeTerminal is the
+	// autonomous.automation.merge_pending_include_terminal setting: when true
+	// (the default when unset, read through EffectiveMergePendingIncludeTerminal)
+	// the merge-pending pass also checks the work branches of archived,
+	// needs_review, blocked and failed Automata; an explicit false keeps the
+	// pass to completed Automata only.
+	MergePendingIncludeTerminal *bool  `yaml:"merge_pending_include_terminal,omitempty" json:"merge_pending_include_terminal,omitempty"`
+	MergedMemberPolicy          string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy           string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -6109,6 +6116,20 @@ func (c AutonomousAutomationConfig) EffectiveChildInherit() bool {
 		return DefaultChildInherit
 	}
 	return *c.ChildInherit
+}
+
+// DefaultMergePendingIncludeTerminal is the
+// autonomous.automation.merge_pending_include_terminal default (on).
+const DefaultMergePendingIncludeTerminal = true
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending pass
+// also checks archived, needs_review, blocked and failed Automata: true when
+// unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty

@@ -1407,6 +1407,14 @@ autonomous:
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
   #
+  # merge_pending_include_terminal: bool, default true (an unset key reads
+  # true). When on, the merge-pending check also looks at archived,
+  # needs_review, blocked and failed Automata with a work branch, raising one
+  # alert per episode that names the Automaton, its state and the branch; a
+  # failed or blocked Automaton's triage record is left as it is. false keeps
+  # the check to completed Automata only. Set in this file; the other config
+  # surfaces do not write this key yet.
+  #
   # child_inherit: bool, default true (an unset key reads true). When on, a
   # child Automaton (a task's child, a fix Automaton, a defect with a parent)
   # starts from its parent at creation: project link and repository directory,
@@ -1753,6 +1761,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merge_pending_include_terminal: true
     child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow

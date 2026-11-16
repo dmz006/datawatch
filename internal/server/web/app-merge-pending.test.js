@@ -226,6 +226,7 @@ const KEYS = [
   'safe_delete_held_empty', 'safe_delete_worktree', 'safe_delete_commits', 'safe_delete_state',
   'safe_delete_dirty', 'safe_delete_failed',
   'settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes',
+  'settings_automation_merge_pending_include_terminal',
 ];
 
 test('every merge-pending and safe-to-delete key exists in every locale bundle, says Automaton or Automata and has no tracker id', () => {

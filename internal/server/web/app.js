@@ -25997,6 +25997,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.merge_pending_include_terminal', label: 'Automaton merge-pending check covers terminal Automata (archived, needs_review, blocked and failed, beside completed; default on)', labelKey: 'settings_automation_merge_pending_include_terminal', type: 'toggle' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
@@ -38702,6 +38703,14 @@ function _mergeStatusBlockHtml(status) {
   const lines = [];
   if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
   if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  // The shadow pass counts: how many decisions it recorded and how many of
+  // those were later found to have been false (0 while the mode is off or
+  // no pass has run yet, so the line only appears once a decision exists).
+  if (typeof s.shadow_decisions_total === 'number' && s.shadow_decisions_total > 0) {
+    const falseCount = (typeof s.shadow_decisions_false === 'number') ? s.shadow_decisions_false : 0;
+    const text = t('merge_shadow_decisions_counts', [String(s.shadow_decisions_total), String(falseCount)]);
+    lines.push(`<div class="merge-status-shadow" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_shadow_decisions_counts', 'merge_shadow_decisions_help')}</div>`);
+  }
   return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {

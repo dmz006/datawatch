@@ -228,14 +228,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			// alert off and is preserved by the pointer below).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes      *float64 `json:"idle_alert_minutes"`
-					TriageAlertMinutes    *float64 `json:"triage_alert_minutes"`
-					MergePendingMode      *string  `json:"merge_pending_mode"`
-					MergePendingAlert     *float64 `json:"merge_pending_alert_minutes"`
-					MergedMemberPolicy    *string  `json:"merged_member_policy"`
-					AgentInsertPolicy     *string  `json:"agent_insert_policy"`
-					CreateSearchMode      *string  `json:"create_search_mode"`
-					CreateSearchThreshold *float64 `json:"create_search_threshold"`
+					IdleAlertMinutes   *float64 `json:"idle_alert_minutes"`
+					TriageAlertMinutes *float64 `json:"triage_alert_minutes"`
+					MergePendingMode   *string  `json:"merge_pending_mode"`
+					MergePendingAlert  *float64 `json:"merge_pending_alert_minutes"`
+					// MergePendingIncludeTerminal: presence (even false) is what
+					// matters; the unmarshal is the type check (a string in a bool
+					// key rejects the PUT), unset keeps the current value.
+					MergePendingIncludeTerminal *bool    `json:"merge_pending_include_terminal"`
+					MergedMemberPolicy          *string  `json:"merged_member_policy"`
+					AgentInsertPolicy           *string  `json:"agent_insert_policy"`
+					CreateSearchMode            *string  `json:"create_search_mode"`
+					CreateSearchThreshold       *float64 `json:"create_search_threshold"`
 					// Cleanup keys (cleanup_mode, cleanup_retention_hours,
 					// cleanup_max_removals_per_pass, disk_alert_percent).
 					// Declared so a type mismatch (a string in a numeric
