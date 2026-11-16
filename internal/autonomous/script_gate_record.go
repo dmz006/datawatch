@@ -263,7 +263,9 @@ func consumeGateRun(dir string, rec gateRunRecord, timeout time.Duration) GateRe
 		res.Passed = true
 	default:
 		res.ExitCode = *rec.ExitCode
-		res.Reason = fmt.Sprintf("gate exited with code %d", res.ExitCode)
+		// A no-space failure reads "temporary folder full" (gateNoSpaceReason),
+		// so the infra classifier maps the record to the storage-retry class.
+		res.Reason = gateFailureReason(res.Output, res.ExitCode)
 	}
 	rec.Delivered = true
 	rec.EndedAt = time.Now()
