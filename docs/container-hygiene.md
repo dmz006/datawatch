@@ -103,6 +103,12 @@ and `gcr.io/distroless/static` (stats-cluster). Routine scans:
 # Trivy
 trivy image --severity HIGH,CRITICAL ghcr.io/dmz006/datawatch-parent-full:latest
 
+# Locally built image under docker 29.1.x: trivy cannot read image layers
+# from the daemon ("failed to analyze layer"), so save the image to a tar
+# and scan the archive instead (this is what scripts/trivy-scan-image.sh does)
+docker save -o image.tar datawatch-agent-base:pre-tag
+trivy image --input image.tar --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1
+
 # grype (Anchore)
 grype ghcr.io/dmz006/datawatch-parent-full:latest
 
