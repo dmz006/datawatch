@@ -284,10 +284,19 @@ func newLifecycleDispatcher() *lifecycleDispatcher {
 // delivered (one already being handled may finish). cancel may be
 // called from inside fn.
 func (d *lifecycleDispatcher) Subscribe(filter LifecycleFilter, fn func(LifecycleEvent)) (cancel func()) {
+	_, cancel = d.subscribeCounted(filter, fn)
+	return cancel
+}
+
+// subscribeCounted is the internal form of Subscribe that also returns
+// the subscriber record, so a same-package caller (tests) can read one
+// subscriber's own dropped counter instead of conflating it with the
+// drops of every other live subscriber (droppedTotal sums all of them).
+func (d *lifecycleDispatcher) subscribeCounted(filter LifecycleFilter, fn func(LifecycleEvent)) (s *lifecycleSub, cancel func()) {
 	if fn == nil {
-		return func() {}
+		return nil, func() {}
 	}
-	s := &lifecycleSub{
+	s = &lifecycleSub{
 		filter: filter,
 		fn:     fn,
 		ch:     make(chan LifecycleEvent, lifecycleQueueSize),
@@ -296,7 +305,7 @@ func (d *lifecycleDispatcher) Subscribe(filter LifecycleFilter, fn func(Lifecycl
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
-		return func() {}
+		return nil, func() {}
 	}
 	d.nextID++
 	s.id = d.nextID
@@ -305,7 +314,7 @@ func (d *lifecycleDispatcher) Subscribe(filter LifecycleFilter, fn func(Lifecycl
 	d.mu.Unlock()
 
 	go d.run(s)
-	return func() { d.unsubscribe(s) }
+	return s, func() { d.unsubscribe(s) }
 }
 
 func (d *lifecycleDispatcher) unsubscribe(s *lifecycleSub) {
