@@ -198,6 +198,40 @@ func TestPRDListPagingNoDuplicatesOrGaps(t *testing.T) {
 	}
 }
 
+func TestPRDListStatusListFilter(t *testing.T) {
+	s := prdListServer(5) // fixture cycles: completed, running, blocked, failed, draft
+	cases := []struct {
+		query string
+		code  int
+		want  int
+	}{
+		{"?status=completed", 200, 1},
+		{"?status=completed,failed", 200, 2},
+		{"?status=completed%20%2C%20failed%20%2C%20completed", 200, 2}, // trim + dedupe
+		{"?status=%20completed", 200, 1},                               // single form was always trimmed
+		{"?status=COMPLETED,RUNNING", 200, 2},                          // case-insensitive
+		{"?status=bogus", 400, 0},
+		{"?status=running,nope", 400, 0},
+	}
+	for _, tc := range cases {
+		rr := prdListGet(t, s, tc.query)
+		if rr.Code != tc.code {
+			t.Fatalf("%s: status=%d body=%s want %d", tc.query, rr.Code, rr.Body.String(), tc.code)
+		}
+		if tc.code == 200 {
+			var resp map[string]any
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if got := resp["total"].(float64); int(got) != tc.want {
+				t.Fatalf("%s: total=%v want %d", tc.query, got, tc.want)
+			}
+		} else if !strings.Contains(rr.Body.String(), "completed") {
+			t.Fatalf("%s: refusal must name valid statuses: %s", tc.query, rr.Body.String())
+		}
+	}
+}
+
 func TestPRDListPagingOrderNewestFirst(t *testing.T) {
 	ids := prdListWalk(t, prdListServer(20), "?status=completed,running,blocked,failed,draft&", 6)
 	if ids[0] != fmt.Sprintf("%08x", 19) || ids[1] != fmt.Sprintf("%08x", 18) {

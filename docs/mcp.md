@@ -263,7 +263,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `task_routing_get/set`, `task_routing_profile_list/save/activate/delete/export/import`, `task_routing_automaton`, `task_routing_dry_run`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_completed_migrate`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `task_routing_get/set`, `task_routing_profile_list/save/activate/delete/export/import`, `task_routing_automaton`, `task_routing_dry_run`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_completed_migrate`, `autonomous_shipped_counts`, `autonomous_prd_hold`, `autonomous_prd_release_hold`, `autonomous_held`, `autonomous_held_migrate` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
@@ -279,7 +279,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
-| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach` (see [Plan record tools](#plan-record-tools)) |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -317,6 +317,10 @@ Autonomous PRD reads and writes:
   - `full` returns everything, including task specs and logs, and the `foreign_file_drift` field on tasks.
 - **`autonomous_prd_plan_coverage_get`** — read one Automaton's stored plan-requirements coverage report (the plan-coverage gate record): the report for that exact decomposed plan — matched and unmatched numbered requirements, any structural findings, and the overall verdict — plus the operator's acknowledgement, and the counts of findings the plan-coverage filters suppressed from the report (`suppressed.created_files`, `suppressed.requirements`). Read-only: it changes nothing and runs no gate, judge or scan. Takes `id` (required).
 - **Behaviour change for PRD write tools.** `autonomous_prd_reset_task`, `autonomous_prd_run`, `autonomous_prd_approve`, `autonomous_prd_cancel`, and the set, add and edit tools no longer return the whole Automaton. Each write reply is now a small object with the Automaton's `id`, its `status` and `rev`, the id and status of the task or story that changed, and a `message`. To read the full Automaton after a write, call `autonomous_prd_get` with `detail` set to `full`.
+- **`autonomous_prd_hold`** — puts an Automaton on hold on purpose, for example until after a release. A held Automaton waits by operator decision: it is not blocked, not failed, not waiting for review, nothing starts it, and its tasks keep their state. Allowed from `draft`, `needs_review`, `approved`, `revisions_asked`, `paused`, `blocked` and `failed`; refused from `planning`, `running`, `completed`, `rejected`, `cancelled` and `archived`. On an Automaton that is already held the same call **extends** the hold (a field you give replaces the stored one, a field you leave out is kept), so the `reason` is then optional. Parameters: `id` (required), `reason` (required, at most 500 characters), optional `condition` (free text shown to the operator — never evaluated), `until` (an RFC 3339 time, a date such as `2026-12-01` = end of that day UTC, or a duration such as `72h`) and `actor` (defaults to `operator`). Proxies `POST /api/autonomous/prds/{id}/hold`; needs the autonomous write capability.
+- **`autonomous_prd_release_hold`** — releases an Automaton from its operator hold. It returns to the status it had when it was held (a blocked Automaton gets its blocked reason back); releasing does not start anything — the normal paths pick the Automaton up from there. Errors when the Automaton is not held. Parameters: `id` (required), optional `note` and `actor` (defaults to `operator`). Proxies `POST /api/autonomous/prds/{id}/release_hold`; needs the autonomous write capability.
+- **`autonomous_held`** — reads the **Held group**: every Automaton on hold, each with its title, reason, optional condition and look-again line ("looked at again on a date", "no date set", or "hold expired, ready to review"). Expired holds come first, then the soonest look-again time, then the oldest hold. No parameters; read-only, needs the autonomous read capability. Proxies `GET /api/autonomous/held`. Do not confuse it with `autonomous_held_questions`, the held-*question* report of the operator question channel.
+- **`autonomous_held_migrate`** — lists blocked or failed Automata that look like they are waiting on purpose (a failed evaluation run, parked design work, a blocked reason that says hold or "until after the release") and puts the chosen ones on hold. A dry run, or a call with no ids, only lists the candidates and changes nothing — call it dry-run first, then again with the ids you choose. A real run needs `ids` and a `reason` you supply (never generated or defaulted); `condition` and `until` (same three forms as above) apply to every chosen id; `actor` defaults to `operator`. A real run is refused while a final gate is running and skips, with a reason, any id that is missing, already held, or not blocked or failed. Proxies `POST /api/autonomous/held/migrate`; needs the autonomous write capability. How to hold, extend, release and migrate, on every surface: [howto/automaton-hold.md](howto/automaton-hold.md).
 
 Autonomous events (the Events tab of the Automata view) — no MCP tools:
 
@@ -807,7 +811,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_config_set(host_load_alert_mode="reap", host_load_alert_multiple=2, host_load_alert_minutes=15)
   ```
 - **`housekeeping_repairs`** — read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) the mode in effect (`off`, `report` or `on`), what a report-mode pass would do (`would`), what an on-mode pass did (`did`), and the cases that `failed` or were `skipped_unsafe`; each entry says what was found, what was done and how to undo it. Takes no arguments (one is refused). Read-only: reading never repairs anything, raises an alert or changes a mode. Change a mode with `config_set` and the key `autonomous.housekeeping_repairs.<group>` (`off`, `report` or `on`; default `report`); `autonomous.housekeeping_repairs.grace_seconds` sets the grace (default 300). Returns the same object as `GET /api/autonomous/housekeeping-repairs`.
-- **`autonomous_unlanded_work`** — read the list of archived Automaton branches whose commits are not on the project's default branch: `branches[]`, one entry per branch with the Automaton, title, branch, commits not on the default branch, last activity and a recommendation (`landed`, `superseded` or `needs_decision`). Read-only: keeping, archiving a branch and deleting a worktree (which writes a backup bundle first) are REST, CLI, comm channel and PWA actions, not MCP tools. Returns the same object as `GET /api/autonomous/unlanded-work`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
+- **`autonomous_unlanded_work`** — read the list of archived Automaton branches whose commits are not on the project's default branch: `branches[]`, one entry per branch with the Automaton, title, branch, commits not on the default branch, last activity and a recommendation (`landed`, `superseded` or `needs_decision`), plus `counts` (`total`, `by_state`, `by_age`, `oldest_pending`). Read-only: keeping, archiving a branch and deleting a worktree (which writes a backup bundle first) are REST, CLI, comm channel and PWA actions, not MCP tools. Returns the same object as `GET /api/autonomous/unlanded-work`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
 - **`autonomous_pending_items`**, **`autonomous_pending_item_add`**, **`autonomous_pending_item_attach`**, **`autonomous_pending_items_refresh`** — pending items: named pieces of work that have no Automaton yet. An Automation carries one as a member (`automation_insert_member` with `pending_item_id`) and holds at it until an Automaton is attached. `autonomous_pending_items` is read-only and returns `policy` and `auto_resume` in effect, `source` (the file registry settings), `last_refresh`, `items` and `held`; it takes optional `state` (`waiting`, `attached` or `done`) and `automation_id`. `autonomous_pending_item_add` takes `title` (**required**) and `ref` and returns the new item. `autonomous_pending_item_attach` takes `item_id` and `automaton_id` (both **required**) and converts the waiting members in place; it is refused with `409` when the item is not waiting and `404` for an unknown item or Automaton. `autonomous_pending_items_refresh` reads the file registry now and returns the counts of rows added, updated, done, dropped, kept and skipped, or the error. They return the same objects as `GET` and `POST /api/autonomous/pending-items`, `.../{id}/attach` and `.../refresh`. The nine `autonomous.automation.pending_item_*` settings are set through `config_set` or `autonomous_config_set` (`automation_pending_item_policy`, `automation_pending_item_auto_resume` and `automation_pending_item_source_path`, `_id_pattern`, `_id_column`, `_title_column`, `_state_column`, `_done_values`, `_on_missing_row`). See [howto/automaton-pending-items.md](howto/automaton-pending-items.md).
 
   | Parameter | Tool | Required | Description |
@@ -1792,10 +1796,11 @@ supersession rule — is walked through in
 
 A plan record is a registry row (one item of the plans registry) or a finding
 (a problem raised by an Automaton or an operator), kept by the daemon. The first
-six tools proxy the `/api/plan-records` REST surface and the other six work on
-plans (`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
-`plan_attach`, `plan_detach`, `/api/plans`); all answer with the title first and
-the id second. They need `autonomous:read` (`plan_record_list`,
+six tools proxy the `/api/plan-records` REST surface, six work on plans
+(`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach`, `/api/plans`) and eight work on release plans (a
+plan is a release, with themes inside; see below); all answer with the title
+first and the id second. They need `autonomous:read` (`plan_record_list`,
 `plan_record_get`, `plan_record_search`) or `autonomous:write`
 (`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
 by a federated peer. While `autonomous.plan_records.enabled` is `false` every
@@ -1809,16 +1814,68 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
-| `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows; previews unless `apply` is `true` | `POST /api/plans/migrate` |
-| `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`) | `POST /api/plans` |
+| `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows (mode `arcs`, the default), or file a project's Automata under release plans and themes (mode `release`: `project`, optional `current_release`, `next_release`, `marks`); previews unless `apply` is `true`, and a release write needs the `preview_id` of the preview | `POST /api/plans/migrate` |
+| `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`; `plan_kind` `release` with a `release` label makes a release plan) | `POST /api/plans` |
 | `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
 | `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
 | `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
 | `plan_detach` | Detach one of them from the plan it is in | `POST /api/plans/{ref}/detach` |
+| `plan_theme_list` | A release plan's themes in order with their items, then the unplaced items (read-only) | `GET /api/plans/{ref}/themes` |
+| `plan_theme_set` | One theme change per call (`action`: `create`, `rename`, `delete`, `place`, `unplace`, `reorder`, `reorder_items`) | `POST /api/plans/{ref}/themes` |
+| `plan_archive` | Archive a plan (a mark only; nothing is deleted); optional `reason` and `protected_plan` | `POST /api/plans/{ref}/archive` |
+| `plan_restore` | Clear a plan's archive mark | `POST /api/plans/{ref}/restore` |
+| `plan_unattributed_list` | The Automata no release plan holds, with the suggested release and theme (read-only) | `GET /api/plans/unattributed` |
+| `plan_attach_bulk` | Attach a list of Automata or Automations (`ids`), optionally into a `theme`; one result per id, a refused id names the holder | `POST /api/plans/{ref}/attach` with `ids` |
+| `plan_row_plan_list` | The plans the plans migration made from registry rows (read-only) | `GET /api/plans/migrate/row-plans` |
+| `plan_row_plan_convert` | Convert them into release plan items; previews unless `apply` is `true`, and a write needs the `preview_id` of the preview | `POST /api/plans/migrate/row-plans` |
 
 `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
-`plan_detach` need `autonomous:write` when called by a federated peer.
+`plan_detach` need `autonomous:write` when called by a federated peer. Of the
+release plan tools, `plan_theme_list`, `plan_unattributed_list` and
+`plan_row_plan_list` need `autonomous:read` and the others `autonomous:write`.
+The release migration (`plan_migrate` with `mode` `release`) and
+`plan_row_plan_convert` preview by default and refuse to write without the
+`preview_id` the preview returned; a stale id is refused by the daemon. Each
+tool's description links the how-to
+[plan-records.md](howto/plan-records.md#release-plans-and-themes).
 `project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
+
+**Release plan tools: every surface side by side.** Each release plan tool
+proxies one REST route, so the answers cannot drift from the CLI, chat and the
+web app.
+
+| Tool | REST route | CLI command | Chat verb | Web app |
+|---|---|---|---|---|
+| `plan_theme_list` | `GET /api/plans/{ref}/themes` | `datawatch plan theme list <plan>` | `autonomous plan themes <plan>` | Themes section of an open release plan |
+| `plan_theme_set` | `POST /api/plans/{ref}/themes` | `datawatch plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | `autonomous plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | Add theme, rename, Delete, Place in theme, Unplace, theme arrows |
+| `plan_archive` | `POST /api/plans/{ref}/archive` | `datawatch plan archive <plan> [--reason TEXT] [--protect PLAN]` | `autonomous plan archive <plan> [protect=<plan>] [reason...]` | Archive |
+| `plan_restore` | `POST /api/plans/{ref}/restore` | `datawatch plan restore <plan>` | `autonomous plan restore <plan>` | Restore |
+| `plan_unattributed_list` | `GET /api/plans/unattributed` | `datawatch plan unattributed [--project P]` | `autonomous plan unattributed [project=P] [current=R] [next=R]` | Unattributed chip, Show unattributed |
+| `plan_attach_bulk` | `POST /api/plans/{ref}/attach` with `ids` | `datawatch plan attach <plan> --automaton a1,a2 [--theme T]` | `autonomous plan attach <plan> automaton <id> <id>... [theme=T]` | Attach, Bulk attach |
+| `plan_row_plan_list` | `GET /api/plans/migrate/row-plans` | `datawatch plan row-plans list` | not in chat | the preview of the Row-plans migration panel |
+| `plan_row_plan_convert` | `POST /api/plans/migrate/row-plans` | `datawatch plan row-plans convert [--apply --preview-id ID]` | not in chat | Preview row-plans migration, Approve |
+| `plan_migrate` (`mode` `release`) | `POST /api/plans/migrate` | `datawatch plan migrate --release --project P [--apply --preview-id ID]` | `autonomous plan migrate release project=P` and `... release approve <preview-id> project=P` | Preview migration, Approve migration |
+| `plan_create` (`plan_kind` `release`) | `POST /api/plans` | not in the CLI | not in chat | not in the web app |
+
+Parameters of the release tools (`plan` is a plan id or title; a theme is named
+by id or name):
+
+| Tool | Parameters |
+|---|---|
+| `plan_theme_list` | `plan` (required) |
+| `plan_theme_set` | `plan` and `action` (required): `create` needs `name`; `rename` needs `theme` and `name`; `delete` needs `theme`; `place` needs `theme`, `kind` and `id`; `unplace` needs `kind` and `id`; `reorder` needs `themes` (every theme once); `reorder_items` needs `theme`, `kind` and `items` (every item of that kind once). `kind` is `automaton` or `automation`. Answers the plan's themes after the change |
+| `plan_archive` | `plan` (required), `reason` (at most 1000 characters), `protected_plan` (refused with 409 while it holds Automata) |
+| `plan_restore` | `plan` (required) |
+| `plan_unattributed_list` | `project`, `current_release`, `next_release`, `limit`, `offset` (all optional) |
+| `plan_attach_bulk` | `plan` and `ids` (required, up to 500), `kind` (`automaton` by default), `theme` (must already exist) |
+| `plan_row_plan_list` | `project` (optional) |
+| `plan_row_plan_convert` | `project`, `current_release`, `apply` (default false: preview), `preview_id` (required with `apply`) |
+| `plan_migrate` | `mode` (`arcs` by default, or `release`), `apply`; with `release`: `project` (required), `current_release` (default `10.0`), `next_release` (default `11.0`), `marks` (a JSON object of Automaton id to `{release, theme}`), `preview_id` (required with `apply`) |
+| `plan_create` | `project`, `title` (required), `goal`, `plan_kind` (`ordinary` or `release`), `release` (the label; required with `plan_kind` `release`) |
+
+A release tool that writes many things (`plan_migrate` with `mode` `release`,
+`plan_row_plan_convert`) refuses `apply` without a `preview_id` before the call
+reaches the daemon.
 
 **Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
 get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
@@ -1829,7 +1886,8 @@ matches. Create takes `project` (a registered project alias, required) and
 array of `{"kind","ref"}`), `aliases`, `needs_review` and `review_reason`.
 Update takes the same fields except `project`, `kind` and `legacy_number`, which
 cannot change, and `add_aliases` in place of `aliases`. List and search take
-`project`, `state`, `limit` and `offset`; list also takes `automaton`, `q` and
+`project`, `state` (one state, or a comma-separated list), `limit` and `offset`;
+list also takes `automaton`, `q` and
 `legacy_number`. The daemon returns 50 records by default and at most 500 per
 call. Import takes `project` (default `datawatch`), `source` (`registry`,
 `findings` or `all`), `conflict_policy` (`suffix`, `rename` or `skip`) and
@@ -2330,7 +2388,7 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 | Tool | Reads or writes | Parameters |
 |---|---|---|
 | `project_list` | read | none |
-| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
+| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted field — `description` and `default_backend` included — keeps its stored value, an explicit empty value clears it. `policy` written as sent, absent clears) |
 | `project_set_arcs` | write (deprecated old name and plan list; the registry plan records replace it, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the plan order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |

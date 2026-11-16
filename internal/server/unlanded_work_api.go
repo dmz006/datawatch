@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -102,10 +103,7 @@ func (s *Server) handleUnlandedWork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if list == nil {
-		list = []autonomous.UnlandedBranch{}
-	}
-	writeJSONOK(w, map[string]any{"branches": list})
+	writeJSONOK(w, autonomous.NewUnlandedWorkList(list, time.Now()))
 }
 
 // handleUnlandedAction serves the three POST actions on a listed branch.

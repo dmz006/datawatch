@@ -5,6 +5,120 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
+## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
+
+### Changed
+
+- Merge-pending sweep covers every terminal state and leaves shadow mode.
+
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
+## v9.176.2 — Quick replies answer the pending operator question
+
+### Changed
+
+- Quick replies answer the pending operator question.
+
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
+
+## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
+
+### Changed
+
+- Multi-select state filters on Automata, Projects and Plans.
+
+## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
+
+### Changed
+
+- Give the agent-aider image Python 3.11.5 or newer for soupsieve 4.
+
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
+### Fixed
+
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
+## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
+
+### Fixed
+
+- A test helper assigned a map lookup to the blank identifier, which the CI lint version flags; it now reads the value directly.
+
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
+## v9.175.2 — Stop writing the instance-level server token into project files
+
+### Changed
+
+- Stop writing the instance-level server token into project files.
+
+## v9.175.1 — Fix: a saved project description is stored, returned and shown on every surface
+
+### Changed
+
+- Fix: a saved project description is stored, returned and shown on every surface.
+
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
 ## v9.174.0 — Usage back-off must not block verification, judging and planning
 
 ### Changed

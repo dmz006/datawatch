@@ -15,6 +15,15 @@
 // linked or attached elsewhere answers 409 and names the holder, and the
 // caller detaches first.
 //
+// A plan is ordinary unless plan_kind is "release"; a release plan names its
+// release with release, and a project has at most one release plan per release
+// (a second answers 409 naming the first).
+//
+// The attach route also takes a list: {"kind": "automaton", "ids": [...],
+// "theme": "..."} attaches each id and answers one result per id, so one that
+// is attached elsewhere is reported while the others succeed. The themes, the
+// archive and the migrations are in plans_release_api.go.
+//
 // The Automata reorder answers with the plan's run view. The next marker in
 // it skips blocked and held Automata, so the caller sees the effect of the new
 // order on what runs next.
@@ -66,6 +75,15 @@ func (s *Server) planWriteGate(w http.ResponseWriter, r *http.Request, method st
 // writePlanWriteError answers a failure of a link or order store call. A link
 // conflict is 409 and names where the item is linked now.
 func writePlanWriteError(w http.ResponseWriter, err error, what string) {
+	var rc *planrecords.ErrReleaseConflict
+	if errors.As(err, &rc) {
+		writeJSONError(w, http.StatusConflict, map[string]any{
+			"error": fmt.Sprintf("release %q already has a release plan in project %s: %q (%s)",
+				rc.Release, rc.Existing.Project, rc.Existing.Title, rc.Existing.ID),
+			"existing": newPlanRecordView(rc.Existing),
+		})
+		return
+	}
 	var lc *planrecords.ErrLinkConflict
 	if errors.As(err, &lc) {
 		writeJSONError(w, http.StatusConflict, map[string]any{
@@ -109,6 +127,10 @@ type planCreateBody struct {
 	Title   string            `json:"title"`
 	Goal    string            `json:"goal"`
 	State   planrecords.State `json:"state"`
+	// PlanKind is empty (or "ordinary") for an ordinary plan and "release" for
+	// a release plan, which also needs Release, the release label.
+	PlanKind string `json:"plan_kind"`
+	Release  string `json:"release"`
 }
 
 // handlePlanCreate serves POST /api/plans.
@@ -132,9 +154,25 @@ func (s *Server) handlePlanCreate(w http.ResponseWriter, r *http.Request) {
 			body.State, planStateList(planrecords.KindPlan)))
 		return
 	}
+	kind, release := planrecords.PlanKind(strings.ToLower(strings.TrimSpace(body.PlanKind))), strings.TrimSpace(body.Release)
+	if kind == "ordinary" {
+		kind = planrecords.PlanKindOrdinary
+	}
+	switch {
+	case !planrecords.ValidPlanKind(kind):
+		planRecordsError(w, http.StatusBadRequest, `plan_kind must be empty, "ordinary" or "release"`)
+		return
+	case kind == planrecords.PlanKindRelease && release == "":
+		planRecordsError(w, http.StatusBadRequest, "release is required for a release plan: name the release, for example 10.0")
+		return
+	case kind != planrecords.PlanKindRelease && release != "":
+		planRecordsError(w, http.StatusBadRequest, `release belongs to a release plan: set plan_kind to "release"`)
+		return
+	}
 	rec, err := s.planRecords.Create(planrecords.Record{
 		Kind: planrecords.KindPlan, Project: strings.TrimSpace(body.Project), Title: body.Title,
 		Goal: strings.TrimSpace(body.Goal), State: body.State, Actor: s.auditActor(r.Context()),
+		PlanKind: kind, Release: release,
 	})
 	if err != nil {
 		writePlanWriteError(w, err, "create the plan")
@@ -212,7 +250,7 @@ func (s *Server) planRunView(ref string) (map[string]any, error) {
 		next = &planNextMarker{AutomatonID: d.Next.ID, Title: d.Next.Title}
 	}
 	return map[string]any{
-		"plan":     map[string]any{"title": d.Summary.Title, "id": d.Summary.ID, "state": string(d.Summary.State)},
+		"plan":     planBlock(d.Summary),
 		"progress": newPlanProgress(d.Done, len(d.Automata)),
 		"next":     next,
 		"automata": rows,
@@ -255,6 +293,11 @@ func (s *Server) handlePlanAutomataOrder(w http.ResponseWriter, r *http.Request)
 type planLinkBody struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
+	// IDs attaches a list of Automata or Automations in one call (attach only;
+	// send id or ids, not both). Theme names a theme of a release plan, by id
+	// or name, to place every attached item in (attach only).
+	IDs   []string `json:"ids"`
+	Theme string   `json:"theme"`
 }
 
 func (b planLinkBody) kindOK() bool {
@@ -279,6 +322,10 @@ func (s *Server) handlePlanAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Kind, body.ID = strings.ToLower(strings.TrimSpace(body.Kind)), strings.TrimSpace(body.ID)
+	if len(body.IDs) > 0 {
+		s.handlePlanAttachBulk(w, ref, body)
+		return
+	}
 	if !body.kindOK() {
 		planRecordsError(w, http.StatusBadRequest, "kind must be automaton, automation or finding")
 		return
@@ -295,6 +342,16 @@ func (s *Server) handlePlanAttach(w http.ResponseWriter, r *http.Request) {
 		writePlanWriteError(w, err, "read the plan")
 		return
 	}
+	themeID := ""
+	if t := strings.TrimSpace(body.Theme); t != "" {
+		if body.Kind == "finding" {
+			planRecordsError(w, http.StatusBadRequest, "a theme holds Automata and Automations, not findings")
+			return
+		}
+		if themeID, ok = checkThemeRef(w, plan, t); !ok {
+			return
+		}
+	}
 	var rec planrecords.Record
 	switch body.Kind {
 	case "automaton", "automation":
@@ -306,6 +363,9 @@ func (s *Server) handlePlanAttach(w http.ResponseWriter, r *http.Request) {
 			rec, err = s.planRecords.AttachAutomaton(plan.ID, body.ID, info)
 		} else {
 			rec, err = s.planRecords.AttachAutomation(plan.ID, body.ID, info)
+		}
+		if err == nil && themeID != "" {
+			rec, err = s.planRecords.PlaceInTheme(plan.ID, themeID, body.Kind, body.ID)
 		}
 	default:
 		rec, err = s.planRecords.AttachFinding(normalizePlanRef(body.ID), planrecords.Target{Kind: planrecords.AttachPlan, Ref: plan.ID})

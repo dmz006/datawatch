@@ -212,7 +212,9 @@ func (s *Server) buildQuestionsWaiting(context.Context) (int, string, error) {
 
 // buildHeldBlocked counts the automata stuck in a failed or blocked triage
 // state (the merge-pending ones excluded — they are on their way) plus the
-// uncommitted-work holds.
+// uncommitted-work holds. An Automaton the operator put on hold is waiting by
+// decision, so it is never counted as stuck; the summary names how many are
+// held so the operator can see they were not forgotten.
 func (s *Server) buildHeldBlocked(context.Context) (int, string, error) {
 	if s.autonomousMgr == nil {
 		return 0, "", fmt.Errorf("the autonomous manager is not wired in on this daemon (autonomous mode off)")
@@ -231,13 +233,33 @@ func (s *Server) buildHeldBlocked(context.Context) (int, string, error) {
 			blocked++
 		}
 	}
-	parts := []string{fmt.Sprintf("%d automaton(s) stuck: %d failed, %d blocked", len(records), failed, blocked)}
+	stuck := failed + blocked
+	summary := fmt.Sprintf("%d automaton(s) stuck: %d failed, %d blocked", stuck, failed, blocked)
+	if held := s.heldAutomataCount(); held > 0 {
+		summary += fmt.Sprintf(", %d held (not counted as stuck)", held)
+	}
+	parts := []string{summary}
 	if uw, okay := s.autonomousMgr.(uncommittedWorkReader); okay {
 		if st := uw.UncommittedWorkStatus(""); len(st.Held) > 0 {
 			parts = append(parts, fmt.Sprintf("%d uncommitted-work hold(s)", len(st.Held)))
 		}
 	}
-	return len(records), strings.Join(parts, "; "), nil
+	return stuck, strings.Join(parts, "; "), nil
+}
+
+// heldAutomataCount is the number of Automata on hold, read from the same
+// loop status the status route and tool serve. A manager that reports no loop
+// status reads as none held.
+func (s *Server) heldAutomataCount() int {
+	switch st := s.autonomousMgr.Status().(type) {
+	case autonomous.LoopStatus:
+		return st.HeldPRDs
+	case *autonomous.LoopStatus:
+		if st != nil {
+			return st.HeldPRDs
+		}
+	}
+	return 0
 }
 
 // buildLanes rolls up the lane fill lane states and the capacity admission

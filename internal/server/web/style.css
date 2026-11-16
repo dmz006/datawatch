@@ -706,6 +706,9 @@ body {
 .prd-card-status-approved      { border-left-color: var(--accent); }
 .prd-card-status-running       { border-left-color: var(--success); }
 .prd-card-status-paused        { border-left-color: var(--warning); }
+/* Held is a deliberate pause by decision, not a block: neutral colour,
+   distinct from running (green), paused (amber) and blocked (red). */
+.prd-card-status-held          { border-left-color: var(--text2); }
 .prd-card-status-completed     { border-left-color: var(--text2); }
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
@@ -1040,7 +1043,7 @@ body {
 .work-tile.prd-card-status-paused .work-tile-dot,
 .work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
 .work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
-
+.work-tile.prd-card-status-held .work-tile-dot { background: var(--text2); }
 /* compact: one column of two-line rows (420px to 719px). Line one is the title,
    the status chip and the count; line two is the backend, the tag count and the
    last activity. Actions move into the overflow menu. */
@@ -3342,6 +3345,11 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .state-badge-running { animation: none; opacity: 1; }
 }
 
+/* The hold record slot (detail view + card): a left neutral border marks
+   the deliberate pause; the look-again/expired line is the action cue. */
+.automaton-hold-record { border-left: 3px solid var(--text2); }
+.automaton-hold-record .automaton-hold-lookagain { font-weight: 600; color: var(--text); }
+
 /* GH#186 — animated-eye content-loading state, parity with the apps'
    DatawatchLoadingContent / CardSkeleton (operator 2026-10-06). The
    canvas's own animation already self-disables under
@@ -3466,6 +3474,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+/* Held: a neutral status pill — no pulse animation (deliberate pause,
+   not a running state). */
+.state-badge-held { background: rgba(140,140,160,0.15); color: var(--text2); }
 .state-badge-stalled { background: rgba(239,68,68,0.1); color: var(--error); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
@@ -5951,6 +5962,23 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   background: var(--accent2);
   color: #fff;
 }
+/* ── Shared multi-select state chip set (createStateChipSet, app.js) ──
+   Same row geometry as the Sessions status-filter chips (gap 4px, chip
+   family .backend-filter-badge): flex-wrap is the phone guarantee — the row
+   wraps onto more lines at narrow widths instead of overflowing, and a
+   single overlong label is bounded to the container instead of stretching the
+   page. The chips themselves stay single-line (white-space: nowrap above). */
+.state-chip-set { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 4px; width: 100%; box-sizing: border-box; }
+.state-chip-set .backend-filter-badge { max-width: 100%; }
+.state-chip-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 4px 4px; font-size: 11px; color: var(--text2); width: 100%; box-sizing: border-box; }
+.state-chip-summary .state-chip-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.state-chip-clear-all { background: transparent; border: 0; color: var(--accent2, var(--text2)); font-size: 11px; cursor: pointer; padding: 2px 4px; white-space: nowrap; }
+.state-chip-clear-all:hover { color: var(--accent2); }
+@media (max-width: 599px) {
+  .state-chip-set { padding: 2px 0; gap: 3px; }
+  .state-chip-set .backend-filter-badge { max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+  .state-chip-summary { padding: 0 0 4px; }
+}
 .session-filter-wrap {
   flex: 1;
   position: relative;
@@ -7625,6 +7653,14 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 
 
 
+/* Unlanded work counts block (Housekeeping card) */
+.unlanded-counts { padding: 4px 0 6px; font-size: 12px; min-width: 0; }
+.unlanded-counts-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 2px 0; }
+.unlanded-counts-label { color: var(--text2, #888); }
+.unlanded-counts-chip { padding: 1px 6px; border-radius: 8px; background: rgba(128,128,128,.15); white-space: nowrap; }
+.unlanded-counts-oldest { margin-top: 2px; overflow-wrap: anywhere; }
+.unlanded-counts-over { margin-top: 2px; color: var(--error, #e5534b); font-weight: 600; }
+
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 /* ── Projects cards: shared Cards / Tiles / Compact renderer (app.js) ─────
    The three-mode switch reuses the Sessions .sessions-mode-toggle /
@@ -8153,4 +8189,3 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
 }
-

@@ -21,6 +21,17 @@ func (c *Coordinator) dependencyUpdateAlerter() *DependencyUpdateAlerter {
 	return c.dependencyUpdateAlert
 }
 
+// dependencyUpdateWaitingForOperator is the waiting rule for a run: blocked or
+// waiting for review. A run on hold is waiting by the operator's own decision,
+// so it is not counted here; the status read reports it as held.
+func dependencyUpdateWaitingForOperator(status PRDStatus) bool {
+	switch status {
+	case PRDBlocked, PRDNeedsReview:
+		return true
+	}
+	return false
+}
+
 func (c *Coordinator) dependencyUpdateReportPass(now time.Time) {
 	c.mu.Lock()
 	c.dependencyUpdateLoad()
@@ -37,7 +48,7 @@ func (c *Coordinator) dependencyUpdateReportPass(now time.Time) {
 	var dir string
 	c.m.readLocked(func() { status, dir = prd.Status, prd.ProjectDir })
 	finished, _ := c.dependencyUpdateFinished(st.AutomatonID)
-	waiting := status == PRDBlocked || status == PRDNeedsReview
+	waiting := dependencyUpdateWaitingForOperator(status)
 
 	var data []byte
 	if dir != "" {

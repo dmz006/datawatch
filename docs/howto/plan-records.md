@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, plan-records, registry-rows, findings, projects, import]
+  topics: [autonomous, plan-records, registry-rows, findings, projects, import, release-plans, themes, archive, migration, unattributed]
 exec_params: []
 exec_steps:
   - tool: get_config
@@ -12,8 +12,16 @@ exec_steps:
     description: List the plan records, newest first
     args: {}
     read_only: true
+  - tool: plan_unattributed_list
+    description: List the Automata no release plan holds, with the release and theme the migration rules suggest
+    args: {}
+    read_only: true
+  - tool: plan_row_plan_list
+    description: List the plans the plans migration made from registry rows, before converting them
+    args: {}
+    read_only: true
 ---
-# How-to: plan records, registry rows and findings kept by datawatch
+# How-to: plan records, release plans, registry rows and findings kept by datawatch
 
 A **plan record** is a *plan* (the thing you are working on, which links down
 to Automations and Automata), one item of the plans registry (a *registry row*)
@@ -23,9 +31,17 @@ findings file. Operators and Automata read and change the same records through
 the same surfaces. Terms are in
 [datawatch-definitions.md](../datawatch-definitions.md#plan-records).
 
-This guide covers what a record holds, how to name one, the five surfaces,
-importing the old files, what happens when an Automaton ships, the settings,
-and how to turn it off.
+A plan can be a **release plan**: a plan *is* a release, its Automata are
+grouped inside it by **themes**, and registry rows and findings are items that
+link into a plan, never plans of their own. Release plans, the release
+migration, the row-plan conversion, archive and restore, and the unattributed
+list each have their own section below, with the web, REST, MCP, CLI and chat
+forms side by side.
+
+This guide covers what a record holds, how to name one, the surfaces,
+importing the old files, what happens when an Automaton ships, release plans
+and themes, the release migration, the row-plan conversion, archive and
+restore, the unattributed list, the settings, and how to turn it off.
 
 ## What a record holds
 
@@ -45,9 +61,12 @@ and how to turn it off.
 | `automations`, `automata`, `findings` | Plans only. The ids the plan links down to, in display order. They change through the link calls, never by editing the record body. |
 | `links`, `aliases` | Links, and older titles that still find the record. |
 | `needs_review`, `review_reason` | Set by an import when a conflict was resolved for you. |
+| `plan_kind`, `release`, `themes` | Plans only. `plan_kind` is empty (an ordinary plan) or `release`; `release` is the release label a release plan stands for; `themes` groups the plan's items. See *Release plans and themes*. |
+| `archived`, `archived_at`, `archive_reason` | Plans only. Set while a plan is archived. See *Archiving a plan*. |
 
 Records are never deleted. Closing one is a state change, and a closed record
-still resolves.
+still resolves. A plan you no longer want in the lists is *archived*, which is
+also reversible and deletes nothing.
 
 ## Naming a record
 
@@ -61,14 +80,15 @@ candidates so you can repeat the call with an id.
 
 | Surface | How |
 |---|---|
-| REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state`, `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
-| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
-| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
-| Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
+| REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state` (one state, or a comma-separated list), `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
+| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. `list` and `search` take `state`, one state or a comma-separated list of them. |
+| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. The `list` and `search` `--state` filter takes one state, or a comma-separated list of them. |
+| Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S[,S...]]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Release plans | `GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `GET /api/projects/{name}/plans?archived=`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme list\|add\|rename\|remove\|place\|unplace\|reorder\|reorder-items`, `archive`, `restore`, `unattributed`, `attach` (several ids), `migrate --release`, `row-plans list\|convert`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|attach\|migrate release`. Web: the release controls of the Plans sub-tab. See *Release plans and themes* and the sections after it. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
-| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a state filter, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
+| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
 `plan_record_updated` audit event; a real import writes one
@@ -112,7 +132,10 @@ prefix) and `get "Old title"` (an older title) all reach the same record when
 the match is unique. When two projects use the same title, add `--project`
 (`project` on the other surfaces) to choose. `datawatch plan-record search
 <words>` looks through titles, older titles and notes, with title hits first,
-and `list` filters by `project`, `state` or `legacy_number`.
+and `list` filters by `project`, `state` (one state, or a comma-separated
+list of them) or `legacy_number`; `search` takes the same filters along with
+the words. A state the kind does not accept is refused with a message naming
+the states it does.
 
 ## Importing the old files
 
@@ -187,6 +210,361 @@ attaches to a plan or to an Automaton. Rules that are easy to trip over:
 - A plan can exist with no Automaton yet. It then shows in the *backlog*.
 - Older records have none of these fields and load unchanged.
 
+## Release plans and themes
+
+A **release plan** is a plan with `plan_kind` `release` and a `release` label
+(for example the version it stands for). It is still a plan: it links down to
+Automations and Automata in the same way, so a release is the plan its
+Automata are attached to. Everything in this section and the five after it
+(the migration, the row-plan conversion, archive and restore, and the
+unattributed list) builds on that one idea.
+
+**What is a plan and what is an item.** A plan is a release. Inside it, work is
+grouped in themes. Registry rows and findings are *items* that link into a
+plan: a registry row link, a backlog item or an attached finding. An item is
+never a plan. That is why a registry row no longer gets a plan of its own (see
+*Converting the row-plans*).
+
+- **One release plan per release.** A project can have only one release plan for a
+  label (compared like titles: case-insensitive, trimmed). A second one is
+  refused with a message naming the plan that already holds the label. The
+  release migration names the plans it makes `Release <label>`.
+- **Themes group items inside the plan.** A theme is a named group in a release
+  plan. It only groups Automata and Automations the plan already holds; it never
+  adds one. An item is in at most one theme, and placing it in another theme
+  moves it. Theme names are unique in the plan (case-insensitive).
+- **Themes are not links.** Detaching an Automaton or Automation from the plan
+  also takes it out of its theme. Removing a theme keeps its items in the plan,
+  *unplaced*. The themes view lists each theme in order with its Automata first,
+  then its Automations, and then the unplaced items.
+- **Themes are created empty.** They are added with the theme calls (or by the
+  release migration), not when the plan is created. Limits: 50 themes per plan
+  and 100 characters per theme name.
+- **Only a release plan has themes.** A theme call on an ordinary plan is refused
+  with a message saying the plan is not a release plan.
+- Each theme change (create, rename, remove, place, unplace, reorder) writes one
+  audit event. The store calls it `plan_record_theme_changed`; the daemon's audit
+  log shows it as `plan_record_updated`, and `theme_op` in the details says
+  which change it was.
+
+### How the migration chooses a theme
+
+The release migration, and the suggestions on the unattributed list, place an
+Automaton in a theme with one table. The rows are tried in this order and the
+**first row that matches decides**: tags first, then the title of the
+Automaton's Automation, then the Automaton's own title. A tag rule matches a tag
+exactly (any case). A title rule matches when the words of any phrase appear
+together, in order, in the title. Nothing matched means the item is attached
+*unplaced*, and your own mark always wins over the table.
+
+| Order | Looks at | Words or tags | Theme |
+|---|---|---|---|
+| 1 | tag | `security`, `encryption`, `secrets`, `crypto`, `tls` | Security and encryption |
+| 2 | tag | `mobile`, `android`, `ios`, `iphone`, `app` | Mobile and the app |
+| 3 | tag | `release`, `tests`, `testing`, `e2e`, `ci` | Release tooling and tests |
+| 4 | tag | `automata`, `automation`, `autonomous`, `projects`, `plans`, `core` | Core automation and projects |
+| 5 | Automation title | `security`, `encryption`, `secrets`, `vault`, `tls`, `certificate` | Security and encryption |
+| 6 | Automation title | `mobile`, `android`, `ios`, `iphone`, `companion app` | Mobile and the app |
+| 7 | Automation title | `release`, `tests`, `testing`, `e2e`, `smoke`, `changelog` | Release tooling and tests |
+| 8 | Automation title | `automata`, `automaton`, `automation`, `projects`, `project`, `plans`, `plan` | Core automation and projects |
+| 9 | Automaton title | `security`, `encryption`, `encrypt`, `secret`, `secrets`, `vault`, `tls`, `cve`, `certificate` | Security and encryption |
+| 10 | Automaton title | `mobile`, `android`, `ios`, `iphone`, `companion app` | Mobile and the app |
+| 11 | Automaton title | `release`, `tests`, `test`, `e2e`, `smoke`, `changelog`, `goreleaser` | Release tooling and tests |
+| 12 | Automaton title | `automata`, `automaton`, `automation`, `projects`, `project`, `plans`, `plan`, `decompose`, `executor` | Core automation and projects |
+
+The four themes are created in that display order, then any theme of your own
+that a mark names, alphabetically. An Automation (a chain) is filed by its own
+title, treated as the Automation title in rows 5 to 8.
+
+### Working with release plans from any surface
+
+Every surface calls the same server code, so a release plan behaves the same
+from the web app, REST, MCP, the CLI and chat. A plan is named by its id or
+title and a theme by its id or name. The calls need `autonomous:read` (the
+reads) or `autonomous:write` (the changes) for a federated peer, and answer 404
+while plan records are off.
+
+| To | Web app | REST | MCP | CLI | Chat |
+|---|---|---|---|---|---|
+| See the themes | **Themes** section of an open release plan | `GET /api/plans/{ref}/themes` | `plan_theme_list` | `datawatch plan theme list <plan>` | `autonomous plan themes <plan>` |
+| Create a release plan by hand | not in the web app (the release migration makes them) | `POST /api/plans` `{project, title, plan_kind: "release", release}` | `plan_create` with `plan_kind` and `release` | not in the CLI (use `plan migrate --release`) | not in chat (use `plan migrate release`) |
+| Add a theme | **Add theme** | `POST /api/plans/{ref}/themes` `{action: "create", name}` | `plan_theme_set` `action` `create` | `plan theme add <plan> <name>` | `plan theme add <plan> <name...>` |
+| Rename a theme | the theme name field | same, `{action: "rename", theme, name}` | `action` `rename` | `plan theme rename <plan> <theme> <new-name>` | `plan theme rename <plan> <theme> <new name...>` |
+| Remove a theme | **Delete** on the theme | same, `{action: "delete", theme}` | `action` `delete` | `plan theme remove <plan> <theme>` | `plan theme remove <plan> <theme>` |
+| Place an item in a theme | **Place in theme** on the item | same, `{action: "place", theme, kind, id}` | `action` `place` | `plan theme place <plan> <theme> --automaton ID` (or `--automation ID`) | `plan theme place <plan> <theme> automaton <id>` |
+| Take an item out of its theme | **Unplace** | same, `{action: "unplace", kind, id}` | `action` `unplace` | `plan theme unplace <plan> --automaton ID` | `plan theme unplace <plan> automaton <id>` |
+| Reorder the themes | up and down arrows on a theme | same, `{action: "reorder", themes: [...]}` | `action` `reorder` | `plan theme reorder <plan> <theme>...` | `plan theme reorder <plan> <theme>...` |
+| Reorder the items in a theme | not in the web app | same, `{action: "reorder_items", theme, kind, items: [...]}` | `action` `reorder_items` | `plan theme reorder-items <plan> <theme> --kind automaton <id>...` | `plan theme reorder-items <plan> <theme> automaton <id>...` |
+| Set the whole layout in one call | every theme edit in the web app is saved this way | `PUT /api/plans/{ref}/themes` `{themes: [{name, automata, automations}]}` | not in MCP (one change per call) | not in the CLI | not in chat |
+
+```
+datawatch plan theme add "Release 11.0" Plans          # add an empty theme
+datawatch plan attach "Release 11.0" --automaton a1 --automaton a2 --theme Plans
+datawatch plan theme list "Release 11.0"               # themes, items, unplaced
+datawatch plan theme place "Release 11.0" Plans --automaton a3
+datawatch plan theme reorder "Release 11.0" Plans Security
+```
+
+- `reorder` and `reorder_items` must list every theme (or every item of that
+  kind in the theme) exactly once, first to run first. A missing or repeated
+  entry fails the whole call and changes nothing.
+- The `PUT` layout lists every theme of the plan in order. A theme left out is
+  removed (its items stay in the plan, unplaced), an item no theme lists is
+  unplaced, and an item the plan does not hold fails the whole request before
+  anything is written.
+- **In chat**, a theme is named by its id, or by its name when it is one word.
+- **A bulk attach reports each id.** See *The unattributed list*.
+- The answer to every theme change is the plan's themes after it, so you can see
+  the result without a second call.
+
+## Migrating Automata to release plans
+
+The release migration files a project's Automata (and Automations) under two
+release plans: the current release and the next one. It is how an existing
+project gets its release plans, themes and attachments in one reviewed step. It
+never deletes anything and never moves an Automaton that another plan already
+holds.
+
+**Before you start.** Plan records must be on (`autonomous.plan_records.enabled`),
+the project must be a registered alias, and you need `autonomous:write` if you
+call it as a federated peer. The two release labels default to `10.0` (current)
+and `11.0` (next); give your own labels to change them. The next label must
+come after the current one and both must start with a major number.
+
+**How it files work.** For every Automaton and Automation of the project:
+
+- Held for after the current release, planned for the next release (its
+  release label has the next release's major number or more), or marked by you
+  for it: goes to the **next** release plan.
+- Shipped in a release at or above the major number before the current one, or
+  planned and not held (draft, planning, approved, running, blocked, paused,
+  queued and the like): goes to the **current** release plan.
+- Shipped before that, shipped with no release recorded, or in a state that is
+  neither shipped nor planned (cancelled, failed): **skipped**, with the reason.
+  Mark it to file it anyway.
+- Then the theme table above picks its theme, or your mark does.
+
+### Step by step
+
+1. **Preview.** Nothing is written.
+
+   ```
+   datawatch plan migrate --release --project datawatch
+   ```
+
+   The reply prints the two release labels, the counts, every line, and a
+   **preview id**. The same preview is REST `POST /api/plans/migrate` with
+   `{"mode": "release", "project": "datawatch"}`, MCP `plan_migrate` with
+   `mode` `release` and `project`, chat `autonomous plan migrate release
+   project=datawatch`, and in the web app **Preview migration** in the Release
+   migration panel of the project's Plans sub-tab (the panel asks for the next
+   release label).
+
+2. **Read the lists.** Each line names the item, its release and its theme.
+
+   | List | Meaning |
+   |---|---|
+   | `created` | The release plans and themes the run would make. A plan that already exists is not here. |
+   | `attached` | The Automata and Automations it would attach, with the release, the theme and `theme_source` (`rule` or `mark`). |
+   | `unplaced` | Attached items no rule matched and no mark placed. They join the plan with no theme; place them by hand afterwards. |
+   | `conflicts` | Items it will not move: already held by another plan (the holder is named), a mark naming a release that is not one of the two labels, a bad theme in a mark, or a release plan title that is taken by a record that is not the release plan. |
+   | `unchanged` | Release plans that already exist, and items already on the right plan. |
+   | `skipped` | Items outside both releases, with the reason. |
+
+   A conflict is yours to settle, never forced: detach the Automaton from the
+   other plan (`datawatch plans detach`) and preview again, or leave it.
+
+3. **Mark items.** A mark overrides where one Automaton goes and which theme it
+   joins. It is a JSON object of Automaton id to `{release, theme}`; either
+   field can be left out. The release must be one of the two labels.
+
+   ```
+   datawatch plan migrate --release --project datawatch \
+     --marks '{"a1b2c3d4":{"release":"11.0","theme":"Plans"}}'
+   ```
+
+   REST and MCP take the same object as `marks`. Chat has no marks. A mark
+   changes the preview, so run the preview again with the marks and read it
+   before you approve. The CLI prints the exact command to approve, marks
+   included.
+
+4. **Approve with the preview id.** The written run needs `apply` and the
+   preview id of the preview you read:
+
+   ```
+   datawatch plan migrate --release --project datawatch --apply --preview-id <id>
+   ```
+
+   REST `{"mode": "release", "project": "datawatch", "apply": true,
+   "preview_id": "<id>"}`; MCP `plan_migrate` with `apply` true and
+   `preview_id`; chat `autonomous plan migrate release approve <preview-id>
+   project=datawatch`; web **Approve migration**. Give the same labels and
+   marks you previewed with.
+
+   - **No id, no write.** Without the id the CLI prints the preview and refuses,
+     chat and MCP refuse before anything is sent, and REST answers 400.
+   - **A stale id is refused.** If the plans, the Automata or your marks changed
+     since the preview, the id no longer matches and the daemon answers 409
+     before writing anything. Preview again and read it again.
+
+5. **Run it again and see nothing change.** A second preview lists the plans
+   and the items under `unchanged`, and its `created` and `attached` lists are
+   empty. A second approval of that preview changes nothing, so the migration
+   is safe to repeat as work is added. Items it skipped or left in conflict
+   stay where they were until you mark or detach them.
+
+### The migration at a glance
+
+| To | Web app | REST | MCP | CLI | Chat |
+|---|---|---|---|---|---|
+| Preview | **Preview migration** | `POST /api/plans/migrate` `{mode: "release", project, current_release?, next_release?, marks?}` | `plan_migrate` `mode` `release` | `plan migrate --release --project P [--current-release R] [--next-release R] [--marks JSON]` | `plan migrate release project=P [current=R] [next=R]` |
+| Approve | **Approve migration** | same, plus `apply: true` and `preview_id` | `plan_migrate` with `apply` and `preview_id` | `plan migrate --release --project P --apply --preview-id ID` | `plan migrate release approve <preview-id> project=P [current=R] [next=R]` |
+
+The written run audits every change (a plan, a theme, an attach and a theme
+placement) as the store action `plan_record_release_migrated`; the daemon's audit
+log shows it as `plan_record_updated`, and the details carry `actor`, `op`
+(`create_plan`, `create_theme`, `attach` or `place`) and `project`.
+
+## Converting the row-plans
+
+The earlier plans migration (*Building plans from arcs and rows*) made one plan
+for each registry row that named an Automaton or Automation, titled `Plan: <row
+text>` and carrying a `migrated-from` link naming the row. Those **row-plans**
+were a stop-gap: a registry row is an item, not a plan. The conversion replaces
+each one with an item of a release plan and archives it.
+
+- A row-plan is recognised by its source marker *and* the title form, never by
+  title alone, so an ordinary plan whose title starts with `Plan: ` is left
+  alone.
+- **A row-plan holding Automata** becomes a **registry row link** on the release
+  plan that holds those Automata (the first by plan order when they sit on
+  several; the others are reported as `other_release_plans`).
+- **A row-plan holding none** becomes a **backlog item** of the current release
+  plan (default label `10.0`, or the `current_release` you give).
+- The converted row-plan is **archived** with a reason naming the conversion, so
+  it leaves the default plan lists; restore brings it back.
+- A row-plan **waits** and is left alone when its Automata are not all on a
+  release plan yet, or when it also holds Automations, findings or other rows
+  nothing else holds. Run the release migration first. The conversion never
+  moves an Automaton.
+
+### Walkthrough
+
+1. **Run the release migration first**, so the Automata are on release plans.
+2. **List the row-plans** (read-only) to see what exists.
+3. **Preview the conversion.** It writes nothing and returns a preview id.
+4. **Read the preview**: `link_rows` (rows that become links), `backlog_items`
+   (rows that become backlog items), `waiting` (left alone, with the reason),
+   `conflicts`, and `unchanged` (already archived). Check the *waiting* list,
+   any `other_release_plans` notes, and the release chosen for backlog items.
+5. **Approve with the preview id.** A missing id is refused (400) and a stale
+   one is refused (409), both before anything is written.
+6. **Run it again.** The converted row-plans are archived, so a second preview
+   lists them under `unchanged` and a second approval changes nothing.
+
+Nothing is deleted: rows, findings, Automata and the row-plan files all stay.
+
+| To | Web app | REST | MCP | CLI | Chat |
+|---|---|---|---|---|---|
+| List the row-plans | not a separate list (the preview shows them) | `GET /api/plans/migrate/row-plans?project=` | `plan_row_plan_list` | `datawatch plan row-plans list [--project P]` | not in chat |
+| Preview | **Preview row-plans migration** | `POST /api/plans/migrate/row-plans` `{project?, current_release?}` | `plan_row_plan_convert` (`apply` false) | `plan row-plans convert [--project P] [--current-release R]` | not in chat |
+| Approve | **Approve** | same, plus `apply: true` and `preview_id` | `plan_row_plan_convert` with `apply` and `preview_id` | `plan row-plans convert ... --apply --preview-id ID` | not in chat |
+
+The conversion has no chat verb; use the CLI, MCP, REST or the web app. Each
+change is audited as the store action `plan_record_row_plans_converted`; the
+daemon's audit log shows it as `plan_record_updated`, with `op` (`link_row`,
+`add_backlog_item` or `archive`), the row-plan, the row and the release plan in
+the details.
+
+## Registry rows and backlog items in a plan
+
+Besides Automata and Automations a plan can hold two more kinds of item, each by
+the uid of the record it names:
+
+- A **registry row link** ties a registry row to the plan. The same row may be
+  linked from more than one plan.
+- A **backlog item** is a registry row or a finding that has no Automaton yet,
+  held by the plan. A finding already attached to another plan is refused.
+
+They are items inside a plan, never plans. A record is held in one plan either as
+a row link or as a backlog item, not both. From a row you can ask which plans
+link or hold it, and from a plan you can list its rows and backlog items in the
+order they were added. The row-plan conversion is the operator way to create
+them today (see the previous section); a plan's findings are attached with the
+attach calls under *Ordering and linking plans*.
+
+## Archiving a plan
+
+Archiving takes a plan out of the default plan lists, the backlog, search
+results and the project overview counts. It is only a mark (`archived`, with the
+time and an optional reason of at most 1000 characters): the plan's file stays on
+disk, and every link it holds (Automata, Automations, findings, registry rows,
+themes) and its `order` stay as they were. Nothing else changes: no Automaton,
+Automation, registry row, finding or setting is touched, and an Automaton or
+Automation is never hidden from a title search because its plan is archived.
+**Archive and restore never delete anything.**
+
+- **Restore** clears the mark. The plan returns to the place its `order` gave it.
+- **Both are idempotent.** Archiving an archived plan, or restoring one that is
+  not archived, changes nothing and writes no audit event. The answer says
+  `changed: false`.
+- **Only plans can be archived.** Registry rows and findings cannot.
+- **A protected plan is refused.** A caller can name one plan (usually the
+  current release plan); while that plan holds Automata, archiving it is
+  refused (409, naming the plan and how many Automata it holds).
+- **Asking for archived plans.** Lists, search, the backlog, release plan lists
+  and the project overview leave archived plans out unless the call includes
+  them or asks for archived ones only. The overview reports how many archived
+  plans the project has (`counts.plans.archived`).
+- Each real change writes one `plan_record_archived` or `plan_record_restored`
+  audit event with the actor, the Automata count and the plan's order (an
+  archive also carries the reason).
+
+| To | Web app | REST | MCP | CLI | Chat |
+|---|---|---|---|---|---|
+| Archive | **Archive** on the plan, with an optional reason | `POST /api/plans/{ref}/archive` `{reason?, protected_plan?}` | `plan_archive` (`plan`, `reason`, `protected_plan`) | `datawatch plan archive <plan> [--reason TEXT] [--protect PLAN]` | `autonomous plan archive <plan> [protect=<plan>] [reason...]` |
+| Restore | **Restore** on an archived plan | `POST /api/plans/{ref}/restore` | `plan_restore` | `datawatch plan restore <plan>` | `autonomous plan restore <plan>` |
+| List live, with or only archived plans | the archived filter: live plans, with archived plans, archived only | `GET /api/projects/{name}/plans?archived=exclude\|include\|only` | not in MCP | not in the CLI (name an archived plan by id or title to restore it) | not in chat |
+
+## The unattributed list
+
+An **unattributed Automaton** is an Automaton that no release plan holds. The
+list shows each one with the release and theme the migration's own rules would
+file it under, so you can see what a migration would do and attach the work
+yourself, one Automaton or many at a time. It only reads: it files nothing.
+
+Each row carries the title, id, state, project and tags, plus
+`suggested_release`, `suggested_theme` and `suggested_theme_source` when a rule
+files it. An Automaton that an ordinary (not release) plan already holds shows
+that plan as `holding_plan`: it cannot join a release plan until you detach it
+from the plan that holds it, because a link is never overwritten. An Automaton
+on an archived release plan counts as unattributed again. Pass the current and
+next release labels to get suggestions against your own labels; the answer pages
+with `limit` and `offset`.
+
+**Attaching one Automaton** is the ordinary attach call. **Attaching many**
+(up to 500 ids per call) is the same call with a list: it answers with one
+result line per id, `attached`, `already_attached`, `refused` (linked to a
+different plan: the holder is named and nothing changes), `not_found`,
+`placement_failed` or `failed`, and one refused id never stops the others. With
+a theme, every attached item is placed in it; the theme must already exist in
+the release plan. The CLI exits non-zero when any id was not attached.
+
+| To | Web app | REST | MCP | CLI | Chat |
+|---|---|---|---|---|---|
+| List the unattributed Automata | the **Unattributed** chip and **Show unattributed** on the Plans sub-tab | `GET /api/plans/unattributed?project=&current_release=&next_release=&limit=&offset=` | `plan_unattributed_list` | `datawatch plan unattributed [--project P] [--current-release R] [--next-release R] [--limit N] [--offset N]` | `autonomous plan unattributed [project=P] [current=R] [next=R]` |
+| Attach one Automaton | **Attach** on the row, choosing a release plan | `POST /api/plans/{ref}/attach` `{kind: "automaton", id}` | `plan_attach` | `datawatch plan attach <plan> --automaton ID` | `autonomous plan attach <plan> automaton <id>` |
+| Attach many, optionally into a theme | tick rows or **Select all**, choose a release plan and optional theme, **Bulk attach** | `POST /api/plans/{ref}/attach` `{kind, ids: [...], theme?}` | `plan_attach_bulk` (`plan`, `ids`, `kind`, `theme`) | `plan attach <plan> --automaton a1 --automaton a2,a3 [--theme T]` | `plan attach <plan> automaton <id> <id>... [theme=T]` |
+
+```
+datawatch plan unattributed --project datawatch
+datawatch plan attach "Release 11.0" --automaton a1 --automaton a2,a3 --theme Plans
+```
+
+The web app's bulk attach lists each refused row below the table with the
+server's reason. Attaching and detaching write `plan_record_linked` and
+`plan_record_unlinked` audit events as before.
+
 ## The model
 
 Work is linked down in one chain: **plan**, then **Automation**, then
@@ -254,8 +632,40 @@ Nothing here turns on by itself. These are yours to settle:
   run the migration again.
 - **Backlog order.** Open rows with no Automaton become backlog plans ordered by
   their old row number. Check that this is the order you want.
-- **Mobile apps.** Android and iPhone do not show plan records yet; that is
-  tracked in the datawatch-app repository.
+- **The state chip sets.** The Plans browser, the Records sub-tab and the
+  Registry and findings card now filter state with multi-select chip sets, and
+  each remembers its picks in the browser that made them. Check that the chip
+  labels — each state's name plus **All**, **Selected filters** and
+  **Clear all** — read well in the languages you use.
+- **The release migration, before you approve it.** Read the preview's
+  `conflicts` (an Automaton another plan holds is never moved; detach it or
+  leave it), `unplaced` (attached with no theme; place them by hand) and
+  `skipped` (outside both releases; mark any you want filed) lists, and check
+  the two release labels. The defaults are `10.0` and `11.0`; give your own
+  labels if your releases are named differently. See *Migrating Automata to
+  release plans*.
+- **The row-plan conversion, before you approve it.** Read the `waiting` list,
+  the `other_release_plans` notes and the release the backlog items go to
+  (the current release label). See *Converting the row-plans*.
+- **Building a release plan by hand.** Only REST and MCP (`plan_create` with
+  `plan_kind` `release` and a `release` label) create one directly. The CLI, chat
+  and the web app get release plans through the release migration. Decide whether
+  you need a direct form on those surfaces.
+- **Row links and backlog items.** The row-plan conversion is the only
+  operator surface that creates them; there is no separate add, remove or list
+  call for a plan's row links and backlog items yet.
+- **Finding archived plans.** Only REST (`archived=` on the project plans list)
+  and the web app's archived filter list archived plans. MCP, the CLI and chat
+  list live plans, and an archived plan is restored by naming its id or title.
+- **Audit names.** A theme change, a release migration change and a row-plan
+  conversion change are written by the store under their own action names
+  (`plan_record_theme_changed`, `plan_record_release_migrated`,
+  `plan_record_row_plans_converted`), but the daemon's audit log records each as
+  the generic `plan_record_updated`. Read `theme_op` or `op` in the details to
+  tell them apart. Decide whether they should get their own audit actions.
+- **Mobile apps.** Android and iPhone do not show plan records, release plans,
+  themes, the migrations or the archive yet; that is tracked in the
+  datawatch-app repository.
 
 ## If something looks wrong
 
@@ -267,6 +677,28 @@ Nothing here turns on by itself. These are yours to settle:
   project root.
 - **A shipped row did not appear.** Check `write_through` is on and the hook
   result in the merge run; with it off the hook edits the README as before.
+- **A theme call says the plan is not a release plan.** Themes belong to release
+  plans. Create one with `plan_create` (`plan_kind` `release`) or run the
+  release migration, which makes `Release <label>` plans for you.
+- **A migration or conversion answers 400 about the preview id.** A written run
+  needs the preview id of a preview you read. Run the preview, read it, then
+  approve with that id.
+- **A migration or conversion answers 409 about a stale preview.** The plans, the
+  Automata or your marks changed since the preview. Run the preview again.
+- **An Automaton is refused in an attach or listed under `conflicts`.** Another
+  plan holds it and the reply names that plan. Detach it there first
+  (`datawatch plans detach`), then attach it.
+- **A plan vanished from the lists.** It may be archived. Ask for archived plans
+  (`archived=include` on REST, the archived filter in the web app) and restore
+  it; nothing was deleted.
+- **Archive is refused for a protected plan.** The plan you named as protected
+  still holds Automata. Choose another plan to archive, or detach its Automata
+  first.
+- **A state filter seems stuck or surprising.** Its picks are remembered in
+  the browser that made them, separately for the Plans browser, the Records
+  sub-tab and the registry card — on the browser, never the daemon, and in no
+  other browser. Pick the group's **All** chip to clear the whole set; a
+  picked chip clears itself when picked again.
 
 ## Building plans from arcs and rows
 
@@ -352,7 +784,10 @@ with `limit` (default 50, most 500) and `offset`.
   the plan you asked about.
 - `GET /api/plan-records/browse` lists every registry row and finding with the
   plan and Automata each links to. Filter with `q` (words in the title), `kind`,
-  `state` and `project`.
+  `state` and `project`. The `state` filter takes one state, or a
+  comma-separated list of them; without a `kind` a state of either kind is
+  admitted, with a `kind` only the states of that kind, and a state neither
+  vocabulary knows is refused naming the valid states.
 
 Points are usage points, never dollars; an Automaton with no figure counts as 0.
 The lists read the plan-record summary index, so they stay fast with thousands of
@@ -371,11 +806,26 @@ blocked and held Automata), its tasks (read only when the plan is opened, with
 row numbers. The up and down buttons reorder plans and a plan's Automata;
 **Create plan** adds one, and the attach controls link an Automaton, an
 Automation or a finding by id. The search box covers plan, Automaton, registry
-row and finding titles and the state filter narrows by plan state; reordering is
-off while either is in use. Which plans are expanded is remembered in this
+row and finding titles and the state filter narrows by plan state — the state filter
+is a multi-select chip set: no chip picked means all states, several picked mean a plan
+matches *any* of the picked states, a second tap on a picked chip removes exactly that
+one, and the group's **All** chip, active while nothing is picked, clears the whole set;
+reordering is off while either is in use. The state picks are remembered in this
+browser, separately from the other state filters. Which plans are expanded is remembered in this
 browser only. The **Overview** page sub-tab starts with a summary (active
 plans, what is next, counts), and the **Records** page sub-tab lists every
 registry row and finding. The controls call the routes in the next section.
+
+For release plans the Plans browser adds, in order: a **Release** badge and the
+release label on each release plan (release plans are listed first); a
+**Themes** section inside an open release plan (add, rename, delete, place,
+unplace and move themes, with the **Unplaced** group below); **Archive** (with a
+reason) and **Restore**, and a filter that shows live plans, live plus archived
+plans, or archived plans only; the **Unattributed** chip with **Show
+unattributed**, per-row **Attach** and **Bulk attach**; the **Release migration**
+panel (preview, read, approve); and the **Row-plans migration** panel. Each
+control calls the same route as the other surfaces; the sections are described
+in *Release plans and themes* and after it.
 
 ## Ordering and linking plans
 

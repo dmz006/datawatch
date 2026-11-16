@@ -61,8 +61,8 @@ func (m *Manager) ReleaseFalseProtectedPathHolds(ctx context.Context) []string {
 			return released
 		}
 		prd, ok := m.store.SnapshotPRD(listed.ID)
-		if !ok {
-			continue
+		if !ok || prd.Status == PRDHeld {
+			continue // a held Automaton's tasks are never released
 		}
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {

@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -11,6 +11,19 @@ exec_steps:
     description: List the Automaton work branches and worktrees that are safe to remove right now, and the ones that are held back (read-only)
     args: {}
     read_only: true
+  - tool: autonomous_branch_reap
+    description: Read the branch reaper's report — the task sub-branches a pass would reap, the ones held, and every backup ref (a report; it deletes nothing)
+    args: {}
+    read_only: true
+  - tool: autonomous_branch_reap_run
+    description: Perform one branch reap pass — each listed branch is backed up first, then deleted
+    args: {}
+    read_only: false
+  - tool: autonomous_branch_reap_restore
+    description: Recreate one reaped task sub-branch from its newest backup ref
+    args:
+      branch: "{{params.branch}}"
+    read_only: false
   - tool: get_config
     description: Read the daemon settings, including the autonomous.automation cleanup keys
     args: {}
@@ -38,6 +51,12 @@ exec_steps:
     args:
       key: autonomous.automation.disk_alert_percent
       value: "{{params.percent}}"
+    read_only: false
+  - tool: config_set
+    description: Set the whole days a reaped branch's backup ref is kept before it is pruned (0 or unset = 30)
+    args:
+      key: autonomous.reaped_branch_backup_days
+      value: "{{params.days}}"
     read_only: false
 ---
 
@@ -379,6 +398,45 @@ ordered least settled first (needs a decision, superseded, landed), then newest
 activity first. Branches with nothing ahead, branches that no longer exist and
 Automata that are not archived are not listed.
 
+### Counts per state and per age
+
+Every read of the list also carries a `counts` block, so you can see the size of
+the backlog without reading each row. Each listed branch is counted once per
+landing state and once per age band; every key is present and reads 0 when empty.
+
+| Landing state | Recommendation it counts |
+|---|---|
+| `landed` | `landed` |
+| `pending` | `superseded` (later work replaced it; it waits for cleanup) |
+| `unlanded` | `needs_decision` |
+| `live` | any branch without a settled recommendation yet |
+
+| Age band | Last commit |
+|---|---|
+| `under_one_day` | less than 24 hours ago (a future time from clock skew counts here) |
+| `under_one_week` | from exactly one day up to, not including, seven days ago |
+| `older` | seven days or more ago, or no last-commit time known |
+
+`total` is the number of listed branches, and `oldest_pending` names the oldest
+pending branch (`branch`, `title`, `age` in plain words such as `3d 4h`, and
+`age_ns`); it is absent when nothing is pending. The CLI, the chat verb and the
+text output print the same numbers before the rows, and the PWA card shows the
+same block: chips per landing state and per age band, the oldest pending branch
+and its age, and an “Above alert threshold” line when the pending count is over
+the configured threshold (the card reads the two settings from
+`GET /api/autonomous/config` for that marker):
+
+```
+Counts: 1 landed, 2 pending, 0 live, 1 unlanded
+Age: 1 under one day, 1 under one week, 2 older
+Oldest pending: Fix the widget (automaton/ab12cd34), 9d 3h
+```
+
+The counts come from the same read (`GET /api/autonomous/unlanded-work`, the
+`autonomous_unlanded_work` MCP tool, `datawatch autonomous unlanded-work [--json]`
+and `autonomous unlanded-work`); there is no separate endpoint and no setting.
+The daily pending-branch alert below uses the `pending` count.
+
 ### The actions on an unlanded branch
 
 | Action | What it does | Destructive |
@@ -391,29 +449,241 @@ Delete is the only destructive action and it is guarded: it refuses unless the
 entry carries a recommendation from the list above, a base repository and a
 worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
-returns the branch, the bundle path and the worktree path it removed.
+returns the branch, the bundle path and the worktree path it removed. Know what the bundle covers: the branch's commits. Uncommitted or untracked work inside the worktree is not in the backup, and delete removes the worktree with the force flag, so that work is gone with the worktree. If the worktree might hold uncommitted work, decide it before deleting (the safe-to-delete report flags it as `held_dirty`).
 
 ### Where to see and act
 
 | Surface | How |
 |---|---|
-| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. Each row shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
+| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Unlanded work** card, refreshed every 30 seconds. It is hidden until the list has a row. A counts block at the top shows the per-state and per-age chips, the oldest pending branch and its age, and an “Above alert threshold” line while the pending count is over the configured threshold. Each row below it shows the title, commits not landed, last activity and recommendation, with **Keep**, **Archive branch** and **Delete worktree** buttons (delete asks you to confirm) |
 | REST | `GET /api/autonomous/unlanded-work`; `POST /api/autonomous/unlanded-work/keep`, `/archive-branch` and `/delete-worktree` (the last needs `confirm: true`) |
 | CLI | `datawatch autonomous unlanded-work [--json]`; subcommands `keep <branch> [--note ...]`, `archive-branch <branch>` and `delete-worktree <branch> --confirm` |
 | Comm channel | `autonomous unlanded-work`; `autonomous unlanded-work keep\|archive-branch\|delete-worktree <branch>` (delete needs the word `confirm`) |
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
+### Daily pending-branch alert
+
+A **pending** branch is one the list marks `superseded`: later work replaced it
+and it only waits for cleanup. Once per calendar day (the daemon host's local
+day) the daemon counts the pending branches. When the count is strictly above
+`autonomous.unlanded_alert_threshold` and `autonomous.unlanded_alert_enabled` is
+on, it raises one `warn` alert, "Pending Automaton branches above threshold",
+that gives the count, the threshold, and the oldest pending branch with the age
+of its last commit. At or below the threshold nothing is raised; with the alert
+off nothing is raised.
+
+- At most one alert per day. The day of the last alert is stored in
+  `unlanded_alert.json` in the Automata data folder, so a daemon restart on the
+  same day does not raise it again. The next day raises it again if the count is
+  still above the threshold.
+- The check runs when the Automata loop starts and on every poll tick. It reads
+  the branch list at most once an hour while that day's alert is not yet raised,
+  and not at all after it is raised. The loop only runs when `autonomous.enabled`
+  is true.
+- Each alert is also written to the audit log as `autonomous_unlanded_alert`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `autonomous.unlanded_alert_enabled` | `true` (unset reads true) | Turns the daily alert on or off |
+| `autonomous.unlanded_alert_threshold` | `3` (unset reads 3) | The alert fires when more pending branches than this exist. A whole number of 0 or more; 0 alerts on any pending branch; a negative value is refused |
+
+A change applies on the next check without a restart.
+
+| Method | How |
+|---|---|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `unlanded_alert_enabled: true`, `unlanded_alert_threshold: 3` |
+| **CLI** | `datawatch config set autonomous.unlanded_alert_enabled false`; `datawatch config set autonomous.unlanded_alert_threshold 5` |
+| **Web UI** | Settings → **Autonomous Automata planning** card → **Daily pending-branch alert** toggle and **Pending-branch alert threshold** |
+| **REST API** | `PUT /api/config` with `{"autonomous.unlanded_alert_threshold": 5}`, or `PUT /api/autonomous/config` with `{"unlanded_alert_threshold": 5}`; read back with `GET /api/config` (section `autonomous`) or `GET /api/autonomous/config` |
+| **Comm channel** | `configure autonomous.unlanded_alert_threshold=5` |
+| **MCP** | `autonomous_config_set` with `unlanded_alert_enabled` / `unlanded_alert_threshold`, or `config_set` with the full key; read with `autonomous_config_get` or `get_config` |
+
+| Where to see | What you see |
+|---|---|
+| **Web UI** | The alerts list (bell), level `warn` |
+| **Messaging channels** | The alert, where alerts are routed to channels |
+| **REST API** | `GET /api/alerts` |
+| **MCP** | `get_alerts` |
+
 The branch audit script (`scripts/branch-audit.py`) reports the same finding from
-the command line: an `UNLANDED` row is an archived Automaton branch (cancelled,
-blocked, failed or no record) with work not on main, and the script exits with
-status 1 while any exist. Decide each one with Keep, Archive branch or Delete
+the command line: it reads the daemon's unlanded-work list through
+`datawatch autonomous unlanded-work --json`, an `UNLANDED` row is an archived
+Automaton branch (cancelled, blocked, failed or no record) with work not on
+main, and the script exits with status 1 while any exist. Decide each one with Keep, Archive branch or Delete
 worktree, or merge it.
 
 **Review before relying on this.** Whether a kept branch also suppresses the
-safe-to-delete report is still undecided; the operator must confirm that. The
+safe-to-delete report is still undecided; the operator must confirm that. If the
+force-delete of a worktree is not wanted when it hides uncommitted work, the
+debate over Delete worktree is not yet settled; review that action before using
+it. The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
+
+### The landing record
+
+The list above reviews *branches*. Separately, each **Automaton record** that
+carries a work branch now carries a **landing record** — the record's own
+account of whether that branch's work reached the project's default branch. It
+is the field `landing` on the record (`state`, `commit`, `actor`, `at`,
+`reason`), and it has four states:
+
+| State | Set by |
+|---|---|
+| `pending` | the daemon, when the Automaton's work branch is created. This is the default: an Automaton with a branch starts `pending`. |
+| `landed` | the pipeline's `mark_completed` post-ship hook (through the daemon's completed mark) when the branch ships, naming the merge commit. See [Post-ship hooks](post-ship-hooks.md). |
+| `kept` | you, with an actor and a non-empty reason, when the branch is kept on purpose and will not be merged. |
+| `dropped` | you, with an actor and a non-empty reason, when the work is abandoned and will not be merged. |
+
+`kept` and `dropped` are operator decisions on the record: they need a branch to act on, an actor and a non-empty reason, and are refused when the branch is already `landed` (a landed landing is never rewritten). Each writes one decision on the record's decision log (`landing_keep` or `landing_drop`). The record shows the state, who set it, when and the reason.
+
+**What the record gates: archive.** Archiving the Automaton — by hand on any
+surface, or by the daemon's own close of a finished record — is **refused
+while its landing is still `pending`**, with the branch named:
+
+> `automaton "…" cannot be archived: its branch automaton/… has not landed on the default branch; merge it, or record keep or drop for its landing`
+
+Once the landing is `landed`, `kept` or `dropped` the archive goes through as
+before. An Automaton with **no** landing record — no branch at all, or a record
+that predates this record and was never migrated — archives as it always did.
+So no unlanded work branch can silently disappear behind an archived record,
+and the work the daemon never removes (above) is exactly the work the record
+keeps in view.
+
+**The one-time migration.** The daemon runs a one-time **landing
+migration** at start: every archived Automaton that has a branch, no landing record, and
+whose branch read-only git cannot prove merged on the default branch gets a
+`pending` record (actor `landing_migration`). It skips records that already carry a landing record, that have no branch, that are not archived, and those whose merge the git evidence proves on the default branch; when the default branch cannot be established it skips rather than guesses. Running it again changes nothing. It changes no status and writes no decision — it only adds the record. The count it marked is written to the daemon log and, when above zero, raised as one operator alert (*Archived Automata with unlanded branches*); a done marker (`landing_migration.done`) stops it from running again after a clean pass.
+
+**Keep and drop, on every surface.** Both the record display and the two `pending` decisions — `kept` (the branch is kept on purpose and will not be merged) and `dropped` (the work is abandoned and will not be merged), each with an actor and a non-empty reason — are available on every operator surface:
+
+| Surface | What it shows |
+|---|---|
+| PWA | Automata tab → an Automaton's detail page → **Overview** sub-tab: the landing record — a colored state badge, the commit, actor, time and reason when set. While the state is `pending`, **Keep (branch not merged)** and **Drop (work not merged)** buttons ask for a reason and record the decision. 14 `automata_detail_landing_*` locale keys, in all five bundled locales |
+| REST | `POST /api/autonomous/prds/{id}/landing/keep` and `POST /api/autonomous/prds/{id}/landing/drop`, body `{"actor": "<who>", "reason": "<why>"}` — both need the autonomous write capability, and both refuse a reason-less or already-decided record. The record itself rides on every Automaton read (its `landing` field) |
+| CLI | `datawatch autonomous prd-landing-keep <id> --reason "<why>"` and `datawatch autonomous prd-landing-drop <id> --reason "<why>"` (both take `--actor`, defaulting to `operator`). `datawatch autonomous prd-get <id>` prints the record as the landing line |
+| MCP | `autonomous_landing_keep` and `autonomous_landing_drop` (both need the autonomous write capability); the record comes back in every Automaton read, like `autonomous_prd_get` |
+| comm | `autonomous landing <id>` shows the record's line. `autonomous landing keep <id> <reason...> [actor=<who>]` and `autonomous landing drop <id> <reason...>` record the decision — both orders work (decision word before or after the id) |
+
+All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
+
+## The task sub-branch reaper (backup first, then remove)
+
+A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
+
+The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
+Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
+in the repository. The **branch reaper** removes those leftovers once the parent
+Automaton has settled (merged — its work branch's commits are all on the base —
+or dropped — its work branch is gone).
+
+**When it is safe.** The reaper works out each Automaton's **landing state** from git alone — **landed**: the work branch exists and every commit of it is already on the base branch by commit *content* (`git cherry`; a cherry-picked copy counts); **dropped**: the work branch is gone, so only the base branch can contain its work; **pending**: the work branch still carries commits not on the base (a comparison git cannot answer reads as pending, so an unknown state never loses a branch) — and skips pending Automata whole. For each settled one it looks at each task branch and removes it only when **every commit on it is contained in the Automaton's work branch or in the base branch**; even one uncontained commit keeps it (with a plain reason), a branch that is already absent is a no-op, and if git cannot compare, the branch is kept — never a guess. And if a merge is in progress (`MERGE_HEAD` in any of the Automata's working directories), the pass ends early and removes nothing, so work mid-merge is never judged against a moving base.
+
+**Backup first.** Before any removal, the reaper writes a backup ref,
+`refs/datawatch/reap-backup/<branch>/<Unix seconds>` (branch-name characters
+that would not be ref-safe become dashes, so `automaton/task-1` lands as
+`refs/datawatch/reap-backup/automaton-task-1/<timestamp>`), and only **then** removes the branch.
+That removal is `git branch -D` — the one forced delete in this area — but it is
+permitted only because the backup ref exists: if the backup ref cannot be
+written, the branch is not removed and the entry is counted. If the backup
+succeeds and the removal fails, the backup ref stands and the branch is still
+restorable. You can inspect a backup any time with
+`git for-each-ref refs/datawatch/reap-backup/`.
+
+**Restore.** A restore takes the branch name and recreates it from the
+*latest* backup ref under that name. If there is no backup ref for that name it
+returns an error — it never guesses a target.
+
+**Expiry.** Backup refs are not permanent. `autonomous.reaped_branch_backup_days`
+is the whole days a reaped branch's backup ref is kept before it is pruned:
+unset or 0 reads the default of **30** days, and a negative value is refused as
+a config error. The expiry prunes only refs inside `refs/datawatch/reap-backup/`
+whose numeric timestamp suffix is already older than the retention; a ref whose
+name has no numeric timestamp is never touched, and pruning closes the restore
+window for that branch.
+
+### Setting the retention
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.reaped_branch_backup_days` |
+| **CLI** | `datawatch config set autonomous.reaped_branch_backup_days 45` |
+| **REST** | `PUT /api/config` or `PUT /api/autonomous/config` with `{"autonomous.reaped_branch_backup_days": 45}` |
+| **Comm channel** | `configure autonomous.reaped_branch_backup_days=45` |
+| **MCP** | the `config_set` call above |
+| **Web app / PWA** | Settings → General, field labelled "Reaped Automaton branch backup kept (days; 0 or unset = 30)" |
+
+It is read live, so a change applies with no restart, and `GET /api/config`
+reports the effective days under `autonomous`.
+
+### Where to see and act
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/branch-reap` for the report: `reaped` (each with `automaton_id`, `backup_ref`, `contained_in`, `commits`, a plain `reason`), `waiting` (same shape, with the reason it was kept), `backups` (every ref under `refs/datawatch/reap-backup/`, the branch named when it matches a stored task sub-branch), `backup_days` and `computed_at`. `POST /api/autonomous/branch-reap/run` performs one pass (takes no body; a pass already in progress answers **409**). `POST /api/autonomous/branch-reap/restore` with `{"branch": "..."}` recreates one branch from its newest backup ref (a branch that was never reaped answers **404**). All three answer **503** while the base repo (`autonomous.worktree_base_repo`) is unset, and the two `POST`s need the autonomous write capability from a federated peer. |
+| CLI | `datawatch autonomous branch-reap [--json]` (report), `datawatch autonomous branch-reap-run [--json]` (pass), `datawatch autonomous branch-reap-restore <branch> [--json]` (restore). All three print the same wording the chat verbs show; `--json` prints the daemon's body untouched. |
+| MCP | `autonomous_branch_reap` (report, read-only), `autonomous_branch_reap_run` (pass) and `autonomous_branch_reap_restore` (restore; `branch` is required). Each defaults to plain wording; `format: json` returns the daemon's body untouched. |
+| Comm channel | `autonomous branch-reap` (report) and `autonomous branch-reap-restore <branch>` (restore). There is **no comm verb for the pass** — that is REST, CLI and MCP only. |
+| Web app / PWA | Automata tab → **Events** sub-tab → the **Branch reaper** card under the cleanup card (it refreshes while the sub-tab is open): "Would be reaped (N)" and "Held — would be kept (N)" with the Automaton, the containment, the commit count and the backup ref per branch, then the backup refs and the retention, and a **Restore** button per listed branch. The card has no run button. |
+| Mobile and wear | The same REST contract, documented in `docs/api/openapi.yaml`. |
+
+A CLI walkthrough of the three steps:
+
+1. `datawatch autonomous branch-reap` — the report:
+   ```
+   Branch reaper preview (the report deletes nothing yet)
+
+   Would be reaped:
+     - automaton/p1--tasks-fix-t1  (Automaton p1)  every commit of automaton/p1--tasks-fix-t1 is on main  [backup refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000]
+
+   Held (branch kept):
+     - automaton/p1--tasks-fix-t2  (Automaton p1)  3 commit(s) of automaton/p1--tasks-fix-t2 are not in main
+
+   Backup refs (retention 30 whole days when unset):
+     - refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000 -> a1b2c3d  (branch automaton/p1--tasks-fix-t1)
+   ```
+   Nothing has been backed up, deleted or restored — a report.
+2. When you are ready: `datawatch autonomous branch-reap-run` — each listed
+   branch gets its backup ref first, then `git branch -D`; the reply says
+   "Reaped (each backup ref was written before the delete)" with the ref per
+   branch. A pass already in progress answers a conflict, not a silent skip.
+3. To bring one back: `datawatch autonomous branch-reap-restore
+   automaton/p1--tasks-fix-t1` — "Branch restored from its newest backup ref"
+   with the branch, the backup ref and the commit it now points at.
+
+### How it relates to the rest of this guide
+
+- It removes **task sub-branches**, not `automaton/<id>` work branches or
+  worktrees — that is the worktrees pass's job, with its own mode, retention
+  window and per-pass limit.
+- It does **not** read the unlanded **Keep** records (`unlanded-keep.json`),
+  the project's **Branch retention** (`projects_defaults.branch_retention_days`)
+  or any of the cleanup pass's state; its safety tests are settlement, the
+  containment check and no merge in progress. A **Keep** record protects the
+  Automaton's work branch from the worktrees pass — it does not speak for the
+task sub-branches. (That a Keep record leaves task sub-branches unprotected is one of the things still to review below.)
+- It is a different feature from *Processes the worker left running* (no branch
+  removal at all) and from the **session-end** reaper, which reaps a session's
+  leftover processes.
+
+### Still needs your review
+
+- **Nothing runs a pass on a timer, and the expiry has no caller.** The
+  report, the pass and the restore are all operator-triggered (above), but no
+  schedule runs a reap pass and nothing calls the backup-ref expiry — the refs
+  accumulate until something prunes them. Review where and when the pass and
+  the expiry should run.
+- **The pass is not on the comm channel or the PWA card.** Those two surfaces
+  have the report and the restore; the pass is REST, CLI and MCP only. Review
+  whether that is the split you want.
+- **Keep-record gap.** A task sub-branch whose parent Automaton you **Keep** for
+  the record is reaped as soon as it is contained (it is still protected only
+  while the landing state is `pending`). If you rely on Keep records as your
+  "do not touch this", review whether the reaper should also honor them.
+- **Retention fit.** 30 days is the default restore window per project. Decide
+  whether it is right for your review cycles before a backup you might need is
+  pruned.
 
 ## Processes the worker left running
 

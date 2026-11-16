@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.174.0 (2026-11-14).** Usage back-off must not block verification, judging and planning. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.180.0 (2026-11-16).** Reap contained task branches and landed Automaton branches safely. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
@@ -66,8 +66,9 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Lines queued work up by kind (bug, maintenance, feature, other) with a visible priority source, and offers new defect filings to the Automation you name
 - Points the planner and workers at your project's rules and context files; set the file names under Settings, *Rules and context*, with `datawatch autonomous rules-context`, or with `GET`/`PUT /api/autonomous/rules-context` ([how-to](docs/howto/automata-rules-and-context.md))
 - Sets how small each worker, verifier and judge session starts with worker session profiles: which MCP servers, tools, skills, starting context, model and effort a session gets, set per role, task kind, task, Automaton, project or globally; the start-up size and profile name are recorded per attempt and shown in the cost report, stats and usage advice ([how-to](docs/howto/worker-session-profiles.md))
+- Holds any Automaton on an operator hold — a required reason, an optional condition and a look-again time (time, date or duration) — and shows every held Automaton in its own **held Automata** group that never enters the blocked, waiting or running counts; releasing returns it to the status it had, and the hold migration moves blocked or failed look-alikes onto a hold (dry run first, on every surface) — no configuration key is involved ([how-to](docs/howto/automaton-hold.md))
 
-More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [plan records](docs/howto/plan-records.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
+More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [plan records](docs/howto/plan-records.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md) · [operator hold](docs/howto/automaton-hold.md)
 
 ### See what agents did
 

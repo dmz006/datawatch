@@ -291,6 +291,10 @@ func (o ManagerAdvanceOps) Automata(_ context.Context) []AdvanceAutomaton {
 		switch prd.Status {
 		case PRDCompleted, PRDRejected, PRDCancelled, PRDArchived:
 			continue
+		case PRDHeld:
+			// A held Automaton waits by operator decision; no repair is
+			// found for it or applied to it.
+			continue
 		}
 		a := AdvanceAutomaton{ID: prd.ID, Title: prd.Title, Running: prd.Status == PRDRunning,
 			LiveExecutor: o.API.executorLive(prd.ID)}

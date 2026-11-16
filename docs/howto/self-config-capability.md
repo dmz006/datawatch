@@ -97,6 +97,49 @@ itself. One field, three effects:
 never gated by the alias — a session that cannot write configuration can still
 read the current values and the audit trail.
 
+## The instance `.mcp.json` credential also rides this grant
+
+The same default grant that a session's own scoped credential carries (item
+2 above) is also what the **instance-level** credential carries. When the
+daemon launches a session it refreshes `<data_dir>/.mcp.json` — the file
+session MCP hosts such as claude-code read — and its `datawatch` bridge entry
+gets a `DATAWATCH_TOKEN` that is an **instance-scoped, short-lived
+credential** with exactly that grant: `session-default` **plus** `self-config`
+while `mcp.allow_self_config` is on, `session-default` alone while it is off,
+and an explicit `session.capabilities` list wins over the default either way.
+So a bridge that wants to self-configure through the instance credential is
+subject to the same switch, the same override and the same refusal texts and
+audit records as a session is.
+
+The credential is disposable by design:
+
+- **Lifetime.** Valid about an hour. Each session launch refreshes it, but
+  the existing token is reused while more than half its lifetime remains;
+  only a token past that (or already expired) is replaced — repeated
+  launches do not stack tokens.
+- **Revocation.** When the last live session ends, or when the daemon shuts
+  down, the credential is revoked and the `datawatch` entry in
+  `<data_dir>/.mcp.json` is removed (with the file itself, if it held
+  nothing else). A credential therefore never sits on disk while the daemon
+  is idle, and it dies with the daemon rather than outliving it.
+- **Startup scrub.** A leftover entry from an earlier daemon that still
+  holds the daemon's long-lived server token is dropped at daemon startup
+  (the token value is never logged, only that a stale credential was
+  removed); the scoped-instance writer deliberately has no such fallback,
+  so that case is never written again.
+- **Operator-added servers are untouched.** Only the `datawatch` entry is
+  managed; servers you added to the file yourself keep their own
+  credentials. The file is written `0600`.
+
+**Operator note.** Any workflow that reads `DATAWATCH_TOKEN` out of the
+daemon-written `.mcp.json` files (per-session or instance-level) to obtain a
+long-lived admin bearer is broken by design: the credential there is granted
+by the `session-default` group (plus `self-config` while the alias is on) and
+dies with the session or when no live session remains. Give such a workflow
+its own credential — the daemon's real server token taken from its own
+secure source, or a federation peer token with exactly the capabilities it
+needs.
+
 ## Access methods (all three keys)
 
 | Method | How |

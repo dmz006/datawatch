@@ -32,7 +32,9 @@ Automaton's *kind* (see [Setting an Automaton kind](#setting-an-automaton-kind))
   Each kind gets a row with the number of Automata, how many are done,
   running, waiting and blocked, the tasks they hold, and how many tasks are
   done and left. A *total* row sums them. The *other* row only shows when it
-  has something in it.
+  has something in it. A **held** column appears only while at least one
+  Automaton is [on hold](automaton-hold.md): a held Automaton is never counted
+  as waiting or blocked, and the work-left line reports it separately.
 - **Rates, per active day.** How many Automata and tasks finish per day of
   **active time** (below), the worker time used per day, and how much of the
   lane capacity that is (utilization).

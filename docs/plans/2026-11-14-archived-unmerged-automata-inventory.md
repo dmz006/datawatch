@@ -3,6 +3,14 @@
 Date: 2026-11-14. Base: `main` at f8ab0020d. Scope: read-only investigation, then this plan.
 No merge, reset, cancel, archive or approve command was run.
 
+> **Update (2026-11-14):** root cause 7 has since been addressed. `scripts/branch-audit.py`
+> is now a thin caller of the daemon: it reads the unlanded-work list through
+> `datawatch autonomous unlanded-work --json`, prints the rows and the counts, and exits 1
+> while any `UNLANDED` branch exists. The classification lives in the daemon, and the
+> counts per landing state and age band, the daily pending-branch alert and the keep,
+> archive-branch and delete-worktree actions are on the Web UI, REST, CLI, comm channel
+> and MCP — see `docs/howto/automaton-worktree-cleanup.md`.
+
 ## 1. The question
 
 How many Automata are archived or otherwise finished but never merged into main, how much finished

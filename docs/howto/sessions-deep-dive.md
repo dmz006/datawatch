@@ -255,7 +255,11 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session
      is `waiting_input`, Yes/No/Stop quick-reply chips appear above the
-     input bar — tap one to send that reply without typing.
+     input bar — tap one to reply without typing. If the session has an
+     open question, the chip answers that question's matching option
+     instead of typing (and is refused when it matches no option or more
+     than one question is open); see
+     [`alerts-and-notifications.md`](alerts-and-notifications.md).
    - **Channel** — structured event bubble feed (MCP / ACP /
      chat_message). Native swipe-back through the 1000-entry buffer.
    - **Status** — two sub-tabs:

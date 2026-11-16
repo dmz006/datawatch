@@ -66,6 +66,10 @@ func PlanRecordsAuditFunc(l *audit.Log) planrecords.AuditFunc {
 			name = audit.ActionPlanRecordCreated
 		case planrecords.AuditMigrated:
 			name = audit.ActionPlanRecordImported
+		case planrecords.AuditArchived:
+			name = audit.ActionPlanRecordArchived
+		case planrecords.AuditRestored:
+			name = audit.ActionPlanRecordRestored
 		}
 		_ = l.Write(audit.Entry{Actor: actor, Action: name, Subject: subject, Details: details})
 	}
@@ -110,6 +114,14 @@ type planRecordView struct {
 	CreatedAt      string             `json:"created_at"`
 	UpdatedAt      string             `json:"updated_at"`
 	ClosedAt       string             `json:"closed_at,omitempty"`
+	// PlanKind and Release mark a release plan and name its release; the
+	// archive fields mark a plan taken out of the default lists. All are
+	// plans only and are left out when empty.
+	PlanKind      planrecords.PlanKind `json:"plan_kind,omitempty"`
+	Release       string               `json:"release,omitempty"`
+	Archived      bool                 `json:"archived,omitempty"`
+	ArchivedAt    string               `json:"archived_at,omitempty"`
+	ArchiveReason string               `json:"archive_reason,omitempty"`
 }
 
 func newPlanRecordView(r planrecords.Record) planRecordView {
@@ -119,6 +131,8 @@ func newPlanRecordView(r planrecords.Record) planRecordView {
 		ShippedBy: r.ShippedBy, RaisedBy: r.RaisedBy, ShippedVersion: r.ShippedVersion,
 		Links: r.Links, Aliases: r.Aliases, NeedsReview: r.NeedsReview, ReviewReason: r.ReviewReason,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, ClosedAt: r.ClosedAt,
+		PlanKind: r.PlanKind, Release: r.Release,
+		Archived: r.Archived, ArchivedAt: r.ArchivedAt, ArchiveReason: r.ArchiveReason,
 	}
 	if v.Links == nil {
 		v.Links = []planrecords.Link{}
@@ -458,6 +472,28 @@ func planStateList(kind planrecords.Kind) string {
 	return strings.Join(parts, ", ")
 }
 
+// stateWords is the state vocabulary a plan-records state query admits.
+// One kind is that kind's vocabulary; a route without a kind (list or
+// search over both kinds, browse without a kind) is the union of the two
+// kinds' states, each state once, in first-occurrence order.
+func stateWords(kinds []planrecords.Kind) []string {
+	var out []string
+	for _, st := range planrecords.StatesForKinds(kinds...) {
+		out = append(out, string(st))
+	}
+	return out
+}
+
+// statesFromWords is the shared parser's trimmed, deduped words back as
+// planrecords.State values.
+func statesFromWords(words []string) []planrecords.State {
+	out := make([]planrecords.State, len(words))
+	for i, w := range words {
+		out[i] = planrecords.State(w)
+	}
+	return out
+}
+
 // planRecordFilter reads the shared list and search filters. fixedKind is the
 // kind a collection route pins; empty for search. It answers 400 itself.
 func planRecordFilter(w http.ResponseWriter, r *http.Request, fixedKind planrecords.Kind) (planrecords.Filter, bool) {
@@ -473,18 +509,20 @@ func planRecordFilter(w http.ResponseWriter, r *http.Request, fixedKind planreco
 		f.Kind = k
 	}
 	if v := q.Get("state"); v != "" {
-		st := planrecords.State(v)
-		valid := false
-		for _, k := range []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding} {
-			if (f.Kind == "" || f.Kind == k) && planrecords.ValidState(k, st) {
-				valid = true
-			}
+		kinds := []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding}
+		if f.Kind != "" {
+			kinds = []planrecords.Kind{f.Kind}
 		}
-		if !valid {
-			planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("state %q is not a valid state for this kind", v))
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds))
+		if err != nil {
+			planRecordsError(w, http.StatusBadRequest, err.Error())
 			return f, false
 		}
-		f.State = st
+		if len(words) == 0 {
+			planRecordsError(w, http.StatusBadRequest, "state must be one of "+strings.Join(stateWords(kinds), ", "))
+			return f, false
+		}
+		f.States = statesFromWords(words)
 	}
 	for name, dst := range map[string]*int{"legacy_number": &f.LegacyNumber, "limit": &f.Limit, "offset": &f.Offset} {
 		v := q.Get(name)

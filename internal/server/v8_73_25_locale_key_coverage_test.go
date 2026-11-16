@@ -32,6 +32,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 	// as a truncated literal -- that's a dynamic key, not a missing one.
 	dynamicPrefixes := map[string]bool{
 		"automata_status_":                 true, // + prd/story/task status string
+		"unlanded_counts_":                 true, // + count bucket (landed, pending, live, unlanded and the age buckets)
 		"automata_std_col_":                true, // + standard-task column name (table header and cell labels)
 		"automation_status_":               true, // + Automation status string
 		"automation_edge_":                 true, // + outcome edge name

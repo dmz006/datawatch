@@ -64,7 +64,17 @@ func isAutomationObjectKey(key string) bool {
 		// Automation object, so the Automation word is correct there.
 		key == "timeline_card_filter_automation" ||
 		key == "timeline_card_kind_automation" ||
-		key == "settings_placement_automation_template"
+		key == "settings_placement_automation_template" ||
+		// Release-plan UI strings that name the Automation object.
+		key == "plans_release_automation" ||
+		key == "plans_release_unattributed_title" ||
+		key == "plans_release_unattributed_none" ||
+		key == "plans_release_unattributed_empty" ||
+		key == "plans_release_theme_delete" ||
+		key == "plans_release_theme_members_empty" ||
+		key == "plans_release_migrate_help" ||
+		key == "plans_release_archive_help" ||
+		key == "plans_release_restore_help"
 }
 
 // pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the
@@ -75,25 +85,27 @@ func isAutomationObjectKey(key string) bool {
 var pendingTranslationKeys = map[string]bool{
 	"settings_stuck_running_seconds": true, // datawatch-app issue 290
 	// Merge-pending badge, safe-to-delete report and their settings: English until the app translation lands.
-	"merge_state_pending":                             true,
-	"merge_state_needs_look":                          true,
-	"merge_state_merged":                              true,
-	"merge_state_empty":                               true,
-	"merge_state_unknown":                             true,
-	"merge_badge_title":                               true,
-	"safe_delete_card_title":                          true,
-	"safe_delete_safe_heading":                        true,
-	"safe_delete_held_heading":                        true,
-	"safe_delete_worktree":                            true,
-	"safe_delete_commits":                             true,
-	"safe_delete_state":                               true,
-	"safe_delete_failed":                              true,
-	"safe_delete_read_only":                           true,
-	"safe_delete_safe_empty":                          true,
-	"safe_delete_held_empty":                          true,
-	"safe_delete_dirty":                               true,
-	"settings_automation_merge_pending_mode":          true,
-	"settings_automation_merge_pending_alert_minutes": true,
+	"merge_state_pending":                                true,
+	"merge_state_needs_look":                             true,
+	"merge_state_merged":                                 true,
+	"merge_state_empty":                                  true,
+	"merge_state_unknown":                                true,
+	"merge_badge_title":                                  true,
+	"safe_delete_card_title":                             true,
+	"safe_delete_safe_heading":                           true,
+	"safe_delete_held_heading":                           true,
+	"safe_delete_worktree":                               true,
+	"safe_delete_commits":                                true,
+	"safe_delete_state":                                  true,
+	"safe_delete_failed":                                 true,
+	"safe_delete_read_only":                              true,
+	"safe_delete_safe_empty":                             true,
+	"safe_delete_held_empty":                             true,
+	"safe_delete_dirty":                                  true,
+	"settings_automation_merge_pending_mode":             true,
+	"settings_automation_merge_pending_alert_minutes":    true,
+	"settings_automation_merge_pending_include_terminal": true,
+	"merge_shadow_decisions_counts":                      true,
 	// Cleanup status card and its settings fields: English until the app translation lands.
 	"settings_automation_cleanup_mode":                  true,
 	"settings_automation_cleanup_retention_hours":       true,

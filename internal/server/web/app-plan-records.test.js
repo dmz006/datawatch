@@ -218,6 +218,17 @@ test('the state filter is sent as ?state=', async () => {
   assert.ok(last.url.includes('state=blocked'));
 });
 
+test('several states are one set, fetched as a comma-separated state query', async () => {
+  const { sb } = load(listHandler);
+  await selectAndLoad(sb, 'acme');
+  await sb.planRecordsSetState('open,blocked');
+  assert.equal(pr(sb, 'JSON.stringify(_planRecords.states)'), '["open","blocked"]', 'the mirror is a set, not a string');
+  const last = calls(sb).filter(x => x.url.startsWith('/api/plan-records/registry-rows')).pop();
+  assert.ok(last.url.includes('state=open%2Cblocked'), 'the set goes over as one comma-separated query');
+  await sb.planRecordsSetState('');
+  assert.equal(pr(sb, '_planRecords.states.length'), 0, 'clearing leaves an empty set === all states');
+});
+
 test('the search box calls the search route with the text, the kind and the project', async () => {
   const { sb } = load(listHandler);
   await selectAndLoad(sb, 'acme');

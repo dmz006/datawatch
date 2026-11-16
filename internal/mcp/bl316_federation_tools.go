@@ -66,7 +66,8 @@ func (s *Server) toolFederationPeerAdd() mcpsdk.Tool {
 		mcpsdk.WithString("url", mcpsdk.Required(), mcpsdk.Description("base URL of the peer instance")),
 		mcpsdk.WithString("token", mcpsdk.Description("bearer token for the peer (optional)")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings (optional; defaults to federation-peer)")),
-		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network; default false)")),
+		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network; default false). Prefer tls_cert_fingerprint: when both are set the request is rejected.")),
+		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("optional — pin this peer's leaf certificate: 64 hex chars (SHA-256, colons/spaces ignored). Wins over tls_skip_verify; the request is rejected when both are set or the pin is malformed.")),
 		mcpsdk.WithBoolean("fingerprint_sync", mcpsdk.Description("opt this peer into the resource-fingerprint exchange (opt-in per peer; default false)")),
 	)
 }
@@ -86,6 +87,7 @@ func (s *Server) toolFederationPeerUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("token", mcpsdk.Description("new bearer token")),
 		mcpsdk.WithString("capabilities", mcpsdk.Description("comma-separated capability strings")),
 		mcpsdk.WithBoolean("tls_skip_verify", mcpsdk.Description("skip TLS certificate verification for this peer only (default false)")),
+		mcpsdk.WithString("tls_cert_fingerprint", mcpsdk.Description("optional — pin this peer's leaf certificate: 64 hex chars (SHA-256). Wins over tls_skip_verify; rejected when both are set or the pin is malformed.")),
 		mcpsdk.WithBoolean("fingerprint_sync", mcpsdk.Description("opt this peer into the resource-fingerprint exchange (default false)")),
 	)
 }
@@ -179,6 +181,9 @@ func (s *Server) handleFederationPeerAddMCP(ctx context.Context, req mcpsdk.Call
 	if req.GetBool("tls_skip_verify", false) {
 		body["tls_skip_verify"] = true
 	}
+	if pin := mustString(req, "tls_cert_fingerprint"); pin != "" {
+		body["tls_cert_fingerprint"] = pin
+	}
 	if req.GetBool("fingerprint_sync", false) {
 		body["fingerprint_sync"] = true
 	}
@@ -221,6 +226,9 @@ func (s *Server) handleFederationPeerUpdateMCP(ctx context.Context, req mcpsdk.C
 	if argsMap, ok := req.Params.Arguments.(map[string]any); ok {
 		if _, has := argsMap["tls_skip_verify"]; has {
 			body["tls_skip_verify"] = req.GetBool("tls_skip_verify", false)
+		}
+		if pin, has := argsMap["tls_cert_fingerprint"]; has && pin != "" {
+			body["tls_cert_fingerprint"] = pin
 		}
 		if _, has := argsMap["fingerprint_sync"]; has {
 			body["fingerprint_sync"] = req.GetBool("fingerprint_sync", false)

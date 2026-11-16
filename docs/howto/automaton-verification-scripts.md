@@ -176,6 +176,40 @@ A typical fix after a lint finding:
 3. If the task needs no script, set `verification_script_reason` instead.
 4. Dry-run again; the finding disappears when the rule no longer matches.
 
+## 7. The verification lint gate
+
+A task's verification once passed a branch that the repository's own `make lint`
+rejected: the script checked the task's behavior, and nothing ran the linter over
+the code it changed. The lint gate closes that gap.
+
+- **What it lints.** It lists the files the branch changed against its merge base
+  with `main` (untracked files included), keeps the Go files, and lints only their
+  package directories (`./<dir>`). Files outside Go packages are ignored.
+- **No Go change, no lint.** When the branch touches no Go package the gate passes
+  without starting the linter.
+- **Findings fail the gate.** The linter runs as `golangci-lint run <packages>` from
+  the project directory. A non-zero exit fails the gate, and the linter output is
+  kept with the result, trimmed and capped at 8 KiB.
+- **A linter that cannot run is never a pass.** If `golangci-lint` is not on `PATH`
+  or cannot start, the gate returns an error instead of a result; treat it as an
+  infrastructure fault, not as a clean branch.
+
+**When it runs.** The gate runs during verification of every task and every story,
+right after the verification script passes and before any guardrail runs. A script
+that fails never reaches the gate. The gate is skipped (counts as a pass) when the
+unit has no project directory or the directory is not a git work tree.
+
+**What a failure looks like.** A failing gate records a `lint-gate` verdict with
+outcome `block` and severity `high`, sets the unit's failure reason to category
+`content`, source `lint-gate`, not retryable, and appends the message (starting
+`lint gate failed`) to the script output you see on the task. No guardrail runs
+after it. Both linter findings and a linter that cannot start produce this block;
+a missing `golangci-lint` is not retried as infrastructure. Fix the findings (or
+install the linter on the worker's node) and reset the task.
+
+The gate has no setting of its own; the linter command is fixed and injectable only
+in tests. See **Verification lint gate** in [the definitions](../datawatch-definitions.md#shadow-merge-checks), listed beside the merge lint checks.
+
 ## Still to review (operator)
 
 These points are decisions or checks the docs cannot settle for you:
@@ -191,6 +225,14 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
+- **Lint gate blocks on a missing linter.** The gate now runs after every passing
+  task and story script. A node without `golangci-lint` on `PATH` blocks every Go
+  task as a non-retryable content failure, not an infrastructure retry. Confirm
+  each worker node has the linter, or decide whether that case should be retried.
+- **No off switch.** The gate cannot be turned off per Automaton or globally; a
+  repository with pre-existing findings in a touched package blocks until fixed.
+- **Lint version.** The gate uses whatever `golangci-lint` is on `PATH`; it does not
+  check the version CI pins (the shadow merge's lint version pin does that).
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 

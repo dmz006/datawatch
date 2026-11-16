@@ -409,9 +409,22 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
-#                            Wrong/missing → 401 on discovery and /api/channel/ready;
-#                            bridge starts but push notifications never work.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the per-session .mcp.json the daemon writes this is the
+#                            session's scoped, short-lived credential (default session-default
+#                            grant) — minted at session start, revoked when the session ends or
+#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            In the instance-level .mcp.json in the data directory the
+#                            credential is the instance-scoped, EXPIRING one: same default
+#                            session-default grant, valid about an hour, refreshed at each
+#                            session launch and revoked when no live session remains (the
+#                            datawatch entry is then removed), so NO daemon-written .mcp.json
+#                            carries the long-lived admin server.token anymore. Operator-
+#                            managed host configs still use server.token or a federation
+#                            peer token. See docs/howto/federation-cbac.md for the
+#                            capability model. Wrong/missing → 401 on discovery and
+#                            /api/channel/ready; bridge starts but push notifications never
+#                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
 #
@@ -1131,6 +1144,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
@@ -1303,6 +1325,13 @@ autonomous:
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5
+  # Daily pending-branch alert (docs/howto/automaton-worktree-cleanup.md).
+  # Once per calendar day, when more pending (superseded) Automaton branches
+  # wait for cleanup than unlanded_alert_threshold, raise one alert naming the
+  # oldest pending branch and its age. Unset enabled reads true; unset
+  # threshold reads 3; 0 alerts on any pending branch; negative is refused.
+  unlanded_alert_enabled: true
+  unlanded_alert_threshold: 3
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.
@@ -1384,6 +1413,14 @@ autonomous:
   # comm `configure autonomous.automation.merge_pending_alert_minutes=45`, the
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
+  #
+  # merge_pending_include_terminal: bool, default true (an unset key reads
+  # true). When on, the merge-pending check also looks at archived,
+  # needs_review, blocked and failed Automata with a work branch, raising one
+  # alert per episode that names the Automaton, its state and the branch; a
+  # failed or blocked Automaton's triage record is left as it is. false keeps
+  # the check to completed Automata only. Set in this file; the other config
+  # surfaces do not write this key yet.
   #
   # child_inherit: bool, default true (an unset key reads true). When on, a
   # child Automaton (a task's child, a fix Automaton, a defect with a parent)
@@ -1731,6 +1768,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merge_pending_include_terminal: true
     child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow
@@ -3804,6 +3842,10 @@ autonomous:
   # for those gates. Unset or 0 reads the default of 24 hours; negative is a
   # config error.
   verifier_headroom_max_age_hours: 24
+  # Whole days the backup ref of a reaped Automaton branch is kept before it
+  # is pruned. Unset or 0 reads the default of 30 days; negative is a config
+  # error.
+  reaped_branch_backup_days: 30
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
@@ -4970,6 +5012,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"
