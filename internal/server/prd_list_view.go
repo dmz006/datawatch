@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/planrecords"
 )
 
 const (
@@ -33,6 +34,32 @@ var prdListActiveStatuses = map[string]bool{
 	"approved":        true,
 	"blocked":         true,
 	"paused":          true,
+}
+
+// prdListStatusWords is the ?status filter vocabulary of the PRD list: the
+// current and legacy PRD statuses, plus the legacy "shipped" alias that
+// selects records carrying a shipped record. It feeds
+// planrecords.ParseStateList, whose error names exactly these words.
+var prdListStatusWords = []string{
+	string(autonomous.PRDDraft),
+	string(autonomous.PRDPlanning),
+	"decomposing", // legacy alias for planning
+	string(autonomous.PRDNeedsReview),
+	string(autonomous.PRDApproved),
+	string(autonomous.PRDRevisionsAsked),
+	string(autonomous.PRDActive), // legacy alias for running
+	string(autonomous.PRDRunning),
+	"queued",
+	"waiting",
+	"waiting_input",
+	string(autonomous.PRDCompleted),
+	string(autonomous.PRDRejected),
+	string(autonomous.PRDCancelled),
+	string(autonomous.PRDArchived),
+	string(autonomous.PRDBlocked),
+	string(autonomous.PRDFailed),
+	string(autonomous.PRDPaused),
+	"shipped", // legacy alias: carries a shipped record
 }
 
 // prdListResponse is the body of the summary form of GET /api/autonomous/prds.
@@ -78,19 +105,24 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if queryBool(r, "full", false) {
 		list := s.autonomousMgr.ListPRDs()
-		if aliases := s.projectAliasMap(); len(aliases) > 0 {
-			res := autonomous.NewProjectAliasResolver(aliases)
-			out := make([]any, len(list))
-			for i, raw := range list {
-				out[i] = raw
-				if p, err := toPRD(raw); err == nil && p != nil {
-					out[i] = withProjectField(raw, res.Resolve(p.ProjectProfile, p.ProjectDir))
-				}
-			}
-			writeJSONOK(w, map[string]any{"prds": out})
-			return
+		aliases := s.projectAliasMap()
+		var res *autonomous.ProjectAliasResolver
+		if len(aliases) > 0 {
+			res = autonomous.NewProjectAliasResolver(aliases)
 		}
-		writeJSONOK(w, map[string]any{"prds": list})
+		out := make([]any, len(list))
+		for i, raw := range list {
+			out[i] = raw
+			p, err := toPRD(raw)
+			if err != nil || p == nil {
+				continue
+			}
+			if len(aliases) > 0 {
+				out[i] = withProjectField(out[i], res.Resolve(p.ProjectProfile, p.ProjectDir))
+			}
+			out[i] = s.withPlanningFailure(out[i], p)
+		}
+		writeJSONOK(w, map[string]any{"prds": out})
 		return
 	}
 
@@ -117,8 +149,19 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statuses := map[string]bool{}
-	for _, st := range strings.Split(q.Get("status"), ",") {
-		if st = strings.ToLower(strings.TrimSpace(st)); st != "" {
+	if v := q.Get("status"); v != "" {
+		sv := strings.ToLower(v)
+		// The PRD list always trimmed a single status, so keep the old single
+		// form: lowercase, then trim when no comma is present at all.
+		if !strings.ContainsRune(sv, ',') {
+			sv = strings.TrimSpace(sv)
+		}
+		words, err := planrecords.ParseStateList(sv, "status", prdListStatusWords)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, st := range words {
 			statuses[st] = true
 		}
 	}
@@ -135,11 +178,12 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	aliasRes := autonomous.NewProjectAliasResolver(s.projectAliasMap())
 	// Shipped-state read selection (shipped.go). shipped=true|false wins; the
 	// autonomous.shipped.filter_default view (all/shipped/unshipped) sets the
-	// default; status=shipped additionally selects shipments on the *status*
-	// axis. All three act on the record's shipped state (a non-empty merge
-	// commit, PRD.MergeCommit — .IsShipped) — never on the stored status,
-	// which shipped state never changes: a cancelled PRD whose work landed
-	// stays "cancelled" in the store and is "shipped" here.
+	// default. Both act on the record's shipped state (a non-empty merge
+	// commit, PRD.MergeCommit — .IsShipped). The status filter matches the
+	// displayed status: a PRD whose work landed shows as "completed" (also
+	// when its stored status is still cancelled) while the shipped surface is
+	// enabled. status=shipped stays accepted as a legacy alias that selects
+	// records carrying a shipped record.
 	ship := s.shippedSettings()
 	shipEnabled := ship.EffectiveEnabled()
 	shipWanted, shipSet, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
@@ -147,8 +191,8 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	statusShipped := statuses[autonomous.ShippedDisplayStatus]
-	delete(statuses, autonomous.ShippedDisplayStatus)
+	statusShipped := statuses["shipped"]
+	delete(statuses, "shipped")
 	filtered := len(statuses) > 0 || active || needle != "" || len(tagSel.Tags) > 0 || projectWanted != "" || shipSet || (statusShipped && shipEnabled)
 
 	var rows []autonomous.SummaryRow
@@ -160,8 +204,9 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		}
 		row := autonomous.BuildSummaryRow(prd)
 		row.Project = aliasRes.Resolve(prd.ProjectProfile, prd.ProjectDir)
+		row.PlanningFailure = s.planningFailureOf(prd)
 		fillTags(&row.SummaryView)
-		st := string(row.Status)
+		st := autonomous.PRDEffectiveDisplayStatus(prd, shipEnabled)
 		if len(statuses) > 0 && !statuses[st] &&
 			(!statusShipped || !shipEnabled || !prd.IsShipped()) {
 			continue
@@ -196,7 +241,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row)
 	}
 	// Fold the live autonomous.shipped.enabled setting into the display
-	// state: shipped records show effective_status "shipped" while the
+	// state: shipped records show effective_status "completed" while the
 	// surface is enabled, otherwise their stored status (the stored status
 	// never moves).
 	for i := range rows {

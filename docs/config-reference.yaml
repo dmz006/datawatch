@@ -143,6 +143,10 @@ session:
   # 0 = legacy single send-keys (triggers missed-Enter bug on React Ink TUIs).
   # 200 (default) fixes claude-code and other Ink-based TUIs.
   # Applies to ALL send sources (schedule, MCP, CLI, API) since v8.12.9.
+  # After this settle the daemon also waits (fixed 1.5 s max) for the pasted
+  # text or its [Pasted text #N] placeholder to show in the pane, sends Enter,
+  # and for pasted/multi-line/long input re-sends Enter at most twice while the
+  # text is still unsent (paste_submit.go). Those timings are not config keys.
   schedule_settle_ms: 200
 
   # UI prompt handling — every value below is read live from this config,
@@ -405,9 +409,22 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
-#                            Wrong/missing → 401 on discovery and /api/channel/ready;
-#                            bridge starts but push notifications never work.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the per-session .mcp.json the daemon writes this is the
+#                            session's scoped, short-lived credential (default session-default
+#                            grant) — minted at session start, revoked when the session ends or
+#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            In the instance-level .mcp.json in the data directory the
+#                            credential is the instance-scoped, EXPIRING one: same default
+#                            session-default grant, valid about an hour, refreshed at each
+#                            session launch and revoked when no live session remains (the
+#                            datawatch entry is then removed), so NO daemon-written .mcp.json
+#                            carries the long-lived admin server.token anymore. Operator-
+#                            managed host configs still use server.token or a federation
+#                            peer token. See docs/howto/federation-cbac.md for the
+#                            capability model. Wrong/missing → 401 on discovery and
+#                            /api/channel/ready; bridge starts but push notifications never
+#                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
 #
@@ -1127,6 +1144,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
@@ -1187,10 +1213,20 @@ profiles:
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
 # LLM registry entries (the `llms:` list; manage with `datawatch llm ...`).
-# Each entry may carry a per-LLM verification_mode key:
+# Each entry may carry a per-LLM verification_mode key and a
+# fallthrough_target key:
 #   llms:
 #     - name: <llm-name>
 #       verification_mode: generate    # default "generate" (empty string too)
+#       fallthrough_target: false      # default false
+# fallthrough_target: when true, this entry is an allowed fall-through target:
+#   with autonomous.capacity_fallthrough on, a worker whose requested pool is
+#   full may be admitted on this entry instead of waiting. Set it with
+#   `datawatch llm update <name> --fallthrough-target`, MCP llm_update, comm
+#   `llm update <name> fallthrough_target=true`, PUT on the LLM entry, or the
+#   Allowed fall-through target switch in the web app LLM settings. The
+#   Claude lane and GPU lane backends from autonomous.lane_fill are tried
+#   first without any mark.
 # verification_mode: how this LLM judges a verification.
 #   "" or "generate" (default) asks the judge to write a verdict and parses it.
 #   "classify" reads the judge's option probabilities instead and fails closed
@@ -1282,9 +1318,20 @@ autonomous:
   # Refresh an Automaton branch that has fallen behind its base. Off by default.
   # Walkthrough: docs/howto/automaton-branch-refresh.md.
   branch_refresh_enabled: false
+  # One-time project link backfill at daemon start. false: only a dry-run
+  # report is produced. true: apply it once (link Automata with no project link
+  # that match the datawatch project), then a done marker stops re-runs.
+  project_link_backfill_apply: false
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5
+  # Daily pending-branch alert (docs/howto/automaton-worktree-cleanup.md).
+  # Once per calendar day, when more pending (superseded) Automaton branches
+  # wait for cleanup than unlanded_alert_threshold, raise one alert naming the
+  # oldest pending branch and its age. Unset enabled reads true; unset
+  # threshold reads 3; 0 alerts on any pending branch; negative is refused.
+  unlanded_alert_enabled: true
+  unlanded_alert_threshold: 3
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.
@@ -1366,6 +1413,14 @@ autonomous:
   # comm `configure autonomous.automation.merge_pending_alert_minutes=45`, the
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
+  #
+  # merge_pending_include_terminal: bool, default true (an unset key reads
+  # true). When on, the merge-pending check also looks at archived,
+  # needs_review, blocked and failed Automata with a work branch, raising one
+  # alert per episode that names the Automaton, its state and the branch; a
+  # failed or blocked Automaton's triage record is left as it is. false keeps
+  # the check to completed Automata only. Set in this file; the other config
+  # surfaces do not write this key yet.
   #
   # child_inherit: bool, default true (an unset key reads true). When on, a
   # child Automaton (a task's child, a fix Automaton, a defect with a parent)
@@ -1713,6 +1768,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merge_pending_include_terminal: true
     child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow
@@ -2670,6 +2726,11 @@ autonomous:
     # Leftover state of finished work (lease, worktree, tmux name): released only
     # when the safe-to-delete check passes. off, report or on. Default: report.
     leftovers: report
+    # Draft Automata with no stories whose planning failed for a reason retrying
+    # will not change: when every spec lint finding is one the daemon can reword,
+    # re-plan it the way the planning question's fix answer does; otherwise it is
+    # reported once with an alert and left alone. off, report or on. Default: report.
+    planning: report
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
@@ -3220,7 +3281,10 @@ autonomous:
   archive_grace_minutes: 60
   # Pool fall-through (default false). When a task's requested LLM pool is full
   # and another allowed backend/model can take it now, admit it there instead
-  # of waiting. Off = a task always waits for its own pool.
+  # of waiting. Off = a task always waits for its own pool. The alternates are
+  # the other lane fill backend (autonomous.lane_fill claude_backend or
+  # gpu_backend) first, then LLM entries marked fallthrough_target; a disabled,
+  # full or non-serving backend is skipped, and only workers fall through.
   capacity_fallthrough: false
   # Node over-admission rules (all default true; false restores the earlier
   # behaviour). capacity_strict_node_limit: a session adopted onto a full node
@@ -3333,6 +3397,8 @@ autonomous:
   # autonomous_usage_backoff_cleared, autonomous_usage_backoff_auto_cleared,
   # autonomous_usage_backoff_restored (a flag read back from
   # <data_dir>/autonomous/backoff.json at daemon start),
+  # autonomous_usage_backoff_reserve_admitted / autonomous_usage_backoff_reserve_refused
+  # (one per review-reserve verdict on a held backend, subject the backend),
   # autonomous_usage_backoff_patterns_rechecked, autonomous_budget_ceiling_wait,
   # autonomous_budget_window_resumed and autonomous_budget_window_rollover.
   # Read them with GET /api/audit (action=autonomous_* lists the family;
@@ -3776,6 +3842,10 @@ autonomous:
   # for those gates. Unset or 0 reads the default of 24 hours; negative is a
   # config error.
   verifier_headroom_max_age_hours: 24
+  # Whole days the backup ref of a reaped Automaton branch is kept before it
+  # is pruned. Unset or 0 reads the default of 30 days; negative is a config
+  # error.
+  reaped_branch_backup_days: 30
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
@@ -3876,10 +3946,13 @@ autonomous:
   # and docs/plans/2026-10-20-plan-coverage-gate.md.
   plan_coverage_check: block
   # Reactive usage back-off mode. pause_backend (default): when a session on
-  # a backend hits a rate/usage limit, autonomous dispatch to that backend is
-  # held until its reset time (or the max wait below). off: no automatic
-  # flags are set; an operator can still set one by hand. Interactive session
-  # starts are never blocked either way. Reachable via REST PUT /api/config
+  # a backend hits a rate/usage limit, autonomous worker dispatch to that
+  # backend is held until its reset time (or the max wait below). off: no
+  # automatic flags are set; an operator can still set one by hand.
+  # Interactive session starts are never blocked either way. While a flag is
+  # up, review roles (guardrail judges, verifiers, planning sessions) may
+  # still be admitted on that backend through the review reserve below.
+  # Reachable via REST PUT /api/config
   # (this dotted key), MCP autonomous_config_set, CLI `datawatch config set
   # autonomous.usage_backoff=off`, comm `configure autonomous.usage_backoff=off`
   # and the PWA Settings field. Manual flags: `datawatch usage-backoff`,
@@ -3889,6 +3962,38 @@ autonomous:
   # rate-limit message carries no parseable reset time. Default 60; a value
   # below 1 is treated as 60. Same surfaces as autonomous.usage_backoff.
   backoff_max_wait_minutes: 60
+  # Live session slots a usage-backed-off backend keeps for the review roles
+  # (guardrail judges, verifiers, decompose/planning sessions). While a
+  # backend is held, new worker sessions are refused for the whole flag, but
+  # a review-role request is admitted if it fits in this many live slots
+  # (a live verifier or planner session on the backend already holds one) and
+  # within the optional one-hour token budget below; otherwise it waits with
+  # the back-off-classified reason "pool llm:<backend> backpressure:
+  # back-off, review reserve in use" until the flag clears. Default 1;
+  # 0 disables the reserve (every new session on the held backend is refused,
+  # review roles included). Read live at decision time; no restart needed.
+  # Reachable via REST PUT /api/config (this dotted key), MCP
+  # autonomous_config_set, CLI `datawatch config set
+  # autonomous.backoff_reserve_for_review=2`, comm `configure
+  # autonomous.backoff_reserve_for_review=2` and the PWA Settings field.
+  # The reserve's rolling token state is in memory and does not survive a
+  # daemon restart. The effective value and the reserve's per-backend window
+  # usage show in every usage-backoff status. The reserve's verdicts are
+  # audited as autonomous_usage_backoff_reserve_admitted /
+  # autonomous_usage_backoff_reserve_refused. See docs/howto/usage-backoff.md
+  # and docs/howto/automata-capacity.md (The review reserve).
+  backoff_reserve_for_review: 1
+  # Rolling one-hour token budget for review-reserve admissions on a held
+  # backend, in whole tokens. 0 (default) means no token budget: only the
+  # live slot count above bounds the reserve. When set above 0, a
+  # review-reserve admission is refused while the tokens recorded for that
+  # backend inside the current rolling hour are at or above this value,
+  # even with a free slot; enforced only when token usage is reported. Read
+  # live at decision time; no restart needed. Same surfaces as
+  # autonomous.backoff_reserve_for_review (YAML, REST, MCP, CLI, comm, PWA).
+  # See docs/howto/usage-backoff.md (What a flag does not hold: the review
+  # reserve).
+  backoff_reserve_tokens_per_hour: 0
   # Minimum covered/extractable-requirement ratio a plan must meet for
   # coverage to pass. Value must be in (0,1]; zero or negative normalizes to
   # 1.0 (require full coverage) and values above 1 clamp to 1.0 (see
@@ -4442,7 +4547,11 @@ autonomous:
     # read_only tri-state (absent = don't check),
     # verification_script_empty, report_path_empty (no usable report path
     # under .datawatch/reports/), verification_script_unexecutable (the
-    # script is a command string or not a runnable file), and any_of (at least one member) / all_of
+    # script is a command string or not a runnable file),
+    # verification_script_reason_empty, verification_script_task_files_only
+    # (script compares only against the task's own files, never the merge
+    # base), verification_script_docs_without_sync (script checks docs
+    # without make sync-docs), kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.
@@ -4903,6 +5012,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"

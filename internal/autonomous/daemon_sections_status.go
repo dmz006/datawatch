@@ -63,6 +63,39 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 	return platformcontext.StripDaemonSections(string(cur)) == platformcontext.StripDaemonSections(head)
 }
 
+// daemonSectionsOnlyUntracked is the untracked sibling of
+// daemonSectionsOnlyChange: for a file git reports as untracked ("??") it
+// answers whether the file holds nothing of the task's own — its content, after
+// platformcontext.StripDaemonSections removes the daemon's marked blocks
+// (platform context, RTK, cross-session, Memory, Session Guardrails), is empty
+// or whitespace-only. A rules file that exists only to carry the daemon's
+// injected sections is not the task's work. It needs no git: the working copy
+// alone is enough, so it needs no runner. It fails closed like its sibling: a
+// missing or unreadable working copy, an unsafe path (empty, absolute,
+// escaping upward, NUL byte) or a cancelled context all return false.
+func daemonSectionsOnlyUntracked(ctx context.Context, dir, rel string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	rel = normalizeDriftPath(rel)
+	if _, ok := localRelPath(rel); !ok {
+		return false
+	}
+	if strings.ContainsRune(rel, 0) {
+		return false
+	}
+	relOS := filepath.FromSlash(rel)
+	if !filepath.IsLocal(relOS) {
+		return false
+	}
+	cur, err := os.ReadFile(filepath.Join(dir, relOS)) // #nosec G304 -- relOS is a lexically local path and dir is the Automaton's own project directory
+	if err != nil {
+		return false
+	}
+	stripped := platformcontext.StripDaemonSections(string(cur))
+	return strings.TrimSpace(stripped) == ""
+}
+
 // filterDaemonOnlyPorcelain removes from line-based `git status --porcelain`
 // output every record that reports a tracked file whose only difference from
 // HEAD is the daemon's own marked blocks (daemonSectionsOnlyChange), and

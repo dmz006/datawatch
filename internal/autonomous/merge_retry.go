@@ -9,11 +9,11 @@ import (
 )
 
 // mergeRetryEligible reports whether prd is worth a retry: it is neither
-// cancelled nor archived and has a completed task with a branch whose merge
+// cancelled, archived nor held and has a completed task with a branch whose merge
 // state is empty or pending.
 func mergeRetryEligible(prd *PRD) bool {
 	if prd == nil || prd.ProjectDir == "" ||
-		prd.Status == PRDCancelled || prd.Status == PRDArchived {
+		prd.Status == PRDCancelled || prd.Status == PRDArchived || prd.Status == PRDHeld {
 		return false
 	}
 	for si := range prd.Story {
@@ -30,7 +30,7 @@ func mergeRetryEligible(prd *PRD) bool {
 
 // MergeRetryPass walks every Automaton in the store that has a completed task
 // waiting to merge (running, blocked for merge, or any other state except
-// cancelled and archived) and runs MergeCompletedTasks for it, which takes the
+// cancelled, archived and held) and runs MergeCompletedTasks for it, which takes the
 // per-Automaton merge lock. A block that persists has its LastRetryAt recorded
 // through setMergeBlock. A failure on one Automaton is logged and never stops
 // the pass. Returns the number of tasks merged. It starts no timer.

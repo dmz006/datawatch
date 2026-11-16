@@ -163,7 +163,7 @@ test('the cleanup card left the Housekeeping sub-tab for the Events sub-tab; its
   assert.ok(events.includes('id="automationCleanupCard"'), 'cleanup card must be an Events card slot');
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/cleanup'"), 'loader must read GET /api/autonomous/cleanup');
-  assert.ok(/'automation_safe_delete', 'automation_cleanup'[,\]]/.test(src), 'stop-all list must include the cleanup loader');
+  assert.ok(/'automation_safe_delete', 'automation_branch_reap', 'automation_cleanup'[,\]]/.test(src), 'stop-all list must include the safe-to-delete, branch-reap and cleanup loaders');
 });
 
 // ── the settings fields ──────────────────────────────────────────────────────

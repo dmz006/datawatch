@@ -207,6 +207,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if prd.IsTemplate {
 		return fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return err
+	}
 	if len(prd.Story) == 0 {
 		return fmt.Errorf("prd %q has no stories — call Decompose first", prdID)
 	}
@@ -285,7 +288,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// so a resumed run never regenerates a second name.
 	if prd.ClusterProfile != "" && prd.Git.Branch == "" {
 		clusterBranch := branchNameFor(prd)
-		m.store.WithLock(func() { prd.Git.Branch = clusterBranch })
+		m.store.WithLock(func() {
+			prd.Git.Branch = clusterBranch
+			markLandingPendingLocked(prd, "autonomous", "branch created")
+		})
 		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, clusterBranch)
 	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
@@ -403,6 +409,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		for i := 0; ; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
+			}
+			// A hold that landed while a task ran stops the walk: nothing new
+			// starts, the status stays held and the completion rollup is not
+			// reached. The concurrent path drains the same way.
+			if st, ok := m.prdStatusOf(prdID); ok && st == PRDHeld {
+				return nil
 			}
 			// An operator review decision (a retry or a cancel) landed while
 			// a task ran. Re-read the Automaton and rebuild the order, then
@@ -730,8 +742,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// starts.
 		reviewDecisions := func() {
 			latest, _ := m.store.GetPRD(prdID)
-			if latest == nil || latest.Status == PRDPaused {
-				// A paused Automaton launches nothing. The result path drains
+			if latest == nil || latest.Status == PRDPaused || latest.Status == PRDHeld {
+				// A paused or held Automaton launches nothing. The result path drains
 				// the tasks in flight and returns.
 				return
 			}
@@ -928,7 +940,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					// skip autoFailDeps()/launch() so nothing new starts,
 					// and don't touch latest.Status — Pause() already set
 					// it and this loop must not race back to PRDRunning.
-					if latest.Status == PRDPaused {
+					if latest.Status == PRDPaused || latest.Status == PRDHeld {
+						// A hold that lands while tasks run drains them the
+						// same way: nothing new starts and the status stays.
 						for len(inFlight) > 0 {
 							dr := <-results
 							finalizeDrained(dr)
@@ -1707,7 +1721,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// per-task → per-story → per-PRD → Automation → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
 			auto := m.AutomationForPRD(prd)
-			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
+			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, executionFallbackBackend(m.cfg, prd))
 			// autonomous.first_attempt: a first attempt of a kind with a
 			// configured pair runs on that pair, unless the task or its
 			// Automaton pinned a worker. Retries never use it.
@@ -3045,6 +3059,22 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		m.recordVerifyCeiling(t, inv.scriptLaunch)
 		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
 	}
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+				return false, "", err
+			}
+			m.store.WithLock(func() {
+				t.Verdicts = append(t.Verdicts, v)
+				t.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, "", nil
+		}
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
@@ -3158,6 +3188,22 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+				return false, nil, err
+			}
+			m.store.WithLock(func() {
+				s.Verdicts = append(s.Verdicts, v)
+				s.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, nil, nil
+		}
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict

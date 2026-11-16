@@ -123,7 +123,7 @@ datawatch start --config /path/to/config.yaml
 - PID is written to `~/.datawatch/daemon.pid`
 - **PID lock:** On startup, datawatch checks `daemon.pid` — if the PID is still running, it refuses to start a second instance. This prevents multiple daemons from competing for the same sessions and Signal connection.
 - Use `datawatch stop` to send SIGTERM gracefully
-- Daemon mode is incompatible with `--secure` (encrypted config); use `--foreground` instead
+- Background daemon mode cannot prompt for the `--secure` password. Use `--foreground`, or set `DATAWATCH_SECURE_PASSWORD` in the service environment (see [encryption.md](encryption.md) for what that exposes)
 
 ---
 
@@ -282,6 +282,10 @@ It runs `--strict` for the states that must survive (`worker-running`, `waiting-
 
 The matrix sandbox uses the fake shell backend with a script path. A long decompose prompt therefore reaches the sandbox without a launch error, even when it is longer than the tmux send-keys limit. The script receives the task text as a file; see [Shell tasks longer than the send-keys limit](llm-backends.md#shell-tasks-longer-than-the-send-keys-limit).
 
+### Capacity fall-through
+
+`autonomous.capacity_fallthrough` is off by default. It is read live, so changing it needs no restart: tasks already waiting for capacity pick up a change on their next wait pass (about a second). Turning it off does not move a task already admitted on an alternate. To see what happened, query `audit_query` for `autonomous_capacity_admitted` entries with `fall_through` set. Review before turning it on: fall-through can move an explicitly chosen backend's task to another backend, which changes cost and model. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-through).
+
 ### Daemon restart and in-flight Automata
 
 Automata (PRDs) do **not** silently resume across a daemon restart. The daemon only auto-resumes a PRD that was in `running` state when it stopped, and only if that work still looks fresh: the PRD's newest recorded activity must be within `autonomous.resume_max_age_seconds` (default 3600 — one hour; set `0` to never auto-resume, `-1` for no age limit), and the PRD's project directory must still exist on disk (a removed temp workspace means the work cannot continue in place). A PRD that fails either check is **parked**: it is set to `blocked` with a plain-English reason, an operator alert is raised, and it does **not** run. A PRD still in `planning` state (decompose in flight when the daemon stopped) is no longer reset to `draft`: at boot the daemon re-attaches a reader to the live planner session and its output file, ingests the complete plan if the planner session ended, and restarts planning once if nothing usable survives — the operator decision (2026-11-08) is recorded in [plans/restart-matrix-findings.md](plans/restart-matrix-findings.md) and the plan then proceeds to review as usual. A `failed` PRD is recovered only when all of its failed tasks were killed by the daemon with no recorded result.
@@ -320,11 +324,11 @@ The supervisor loop's `close_finished_records` step (on by default) closes the r
 - **Cancelled** Automata are archived only after the grace `autonomous.supervisor_loop.archive_cancelled_after_minutes` has passed since their most recent cancel. The default is 60; set `0` to archive at once. The grace exists so a cancelled branch can still be inspected, or re-cancelled to push the archive back, before the record disappears — re-cancelling moves the start of the grace to the latest cancel.
 - **A cancelled Automaton whose branch holds commits that are not on the base branch** (main when no base branch is set) is **never archived by the loop**, no matter how long the grace has passed. It stays until you archive it, its work is merged, or its branch is deleted. The check is read-only and conservative: when it cannot determine the branch's state (no base repository, a git error, or an unknown comparison) it keeps the record — only a branch that is gone, or a branch with nothing ahead of base, lets the record go.
 
-Your own archive is unaffected and works at any time, from any surface. The two paths are told apart on the record: a loop archive is recorded with the actor `supervisor-loop`, an operator archive with the actor `operator`. The step's run record says what a pass did: how many finished records it closed, how many cancelled Automata it held within the grace, and how many it kept for unmerged branch work. See [the supervisor loop how-to](howto/supervisor-loop.md) for every step and setting.
+Your own archive is unaffected by the grace rules above and works at any time, from any surface — but it is refused, like the loop's, while the Automaton's **landing record** is still `pending` (the branch must have shipped, or keep or drop recorded for its landing; see *Automaton worktree cleanup* below). The two paths are told apart on the record: a loop archive is recorded with the actor `supervisor-loop`, an operator archive with the actor `operator`. The step's run record says what a pass did: how many finished records it closed, how many cancelled Automata it held within the grace, and how many it kept for unmerged branch work. See [the supervisor loop how-to](howto/supervisor-loop.md) for every step and setting.
 
 ### Data compatibility
 
-datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
+datawatch data files (the session records under `sessions.d/` — the legacy single `sessions.json` is read only for migration — and `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
 
 **Encrypted stores (`--secure` mode):** The encryption formats (`DWDAT2\n` XChaCha20-Poly1305 and legacy `DWDAT1\n` AES-256-GCM) are stable. The derived key (Argon2id with salt embedded in config header) is deterministic — the same password always yields the same key across versions. Upgrading does not require re-encrypting data files. Legacy v1 files are read transparently.
 
@@ -653,12 +657,23 @@ datawatch config set session.liveness_idle_timeout_overrides '{"pi": 30, "goose"
 ```
 
 
-**Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
-are encrypted with XChaCha20-Poly1305: `sessions.json`, `schedule.json`, `commands.json`,
-`filters.json`, and `alerts.json` — not just `config.yaml`. The encryption key is derived
-from your passphrase using Argon2id with a salt embedded in the encrypted config header.
-Set `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive restarts.
-See [docs/encryption.md](encryption.md) for full details.
+**Note on `--secure` mode:** When started with `datawatch --secure start`, the
+config file (`DWATCH3`) and a defined set of data stores are encrypted with
+XChaCha20-Poly1305: the session records in `sessions.d/` and the session archive,
+`schedule.json`, `commands.json`, `filters.json`, `alerts.json`, the federation,
+compute, LLM, skills and channel-routing registries, plan records, session output
+(`output.log.enc`), the application log and the memory `content` and `summary`
+fields. **It is not every file.** Token and credential files, the Automaton store,
+spend files, the tracker files in each session folder, audit and trace logs and
+the TLS private keys are still plain, and a running secure daemon appears to write
+`config.yaml` back unencrypted after a runtime settings change (found by reading
+the code, not yet reproduced). The encryption key is derived from your passphrase
+using Argon2id with a salt embedded in the encrypted config header. Set the
+`DATAWATCH_SECURE_PASSWORD` environment variable for non-interactive restarts; it
+is then readable by the same user through the process environment. Use disk-level
+encryption for anything `--secure` does not cover. See
+[docs/encryption.md](encryption.md) for the full list and the
+[encryption audit](plans/2026-11-13-encryption-audit.md) for the evidence.
 
 **Minimum viable config** (everything else uses defaults):
 
@@ -911,6 +926,19 @@ The status describes a run with no project or task kind override, so an opt-out 
 | **MCP** | `config_set`; `autonomous_status` for the effective ceiling |
 | **Comm channel** | `configure resource_limits.memory_share_percent=<n>` |
 
+### Verification lint gate
+
+After a task's or story's verification script passes, datawatch lints the Go
+packages the branch changed against its merge base with `main` by running
+`golangci-lint run <packages>` from the project directory. Findings, or a linter
+that is missing from `PATH` or cannot start, block the unit with a `lint-gate`
+verdict and a non-retryable `content` failure reason; the message (starting
+`lint gate failed`) is appended to the script output. Units with no Go change,
+no project directory, or a project directory that is not a git work tree skip
+the gate. There is no setting for it: make sure every worker node has
+`golangci-lint` installed. Details are in
+[the verification-scripts how-to](howto/automaton-verification-scripts.md#7-the-verification-lint-gate).
+
 ### Verifier node limit
 
 Verifier runs take a lease on the node's own **verifier pool**, not the pool of the workers they check. Each compute node that hosts a local engine gets one verifier slot by default — one verifier at a time in its own pool, running alongside the executor's sessions — so a verification no longer queues behind the worker count on the node. A node that hosts no local engine, or one whose `verifier_slots` is set to `0`, has no verifier pool: a verifier for that node leases its executor pool (the node's `session_slots` / `max_concurrent_sessions` limit) exactly as before. The verifier pool never raises the executor's limit; the two coexist under their own caps, and a node with one GPU runs one verifier at a time by default.
@@ -1029,6 +1057,10 @@ A bad value is never applied: a negative whole number (for example -2) or non-nu
 
 In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not running: the review's findings are attached so the operator sees what was found, and lane fill does not self-approve and auto-run a held Automaton — an approval is what moves it along.
 
+### Cancelled Automata whose work already merged
+
+An Automaton cancelled after its branch merged shows as **Completed** in every count, list and chip once it carries a shipped record (there is no separate Shipped label or bucket), but its stored status stays `cancelled` until migrated; a record with no shipped record still reads Cancelled. Run `datawatch autonomous completed-migrate --dry-run`, read each reason, then run it for real (`--limit N` to go in steps, `--id <id>` for one record). Records without a shipped record or a merge proof stay cancelled. A real run is refused (409) while a final gate runs; no session is touched and the completion time is the merge time, not now. There is no setting and no automatic run, and no surface to undo it. See [howto/automata-completed-migration.md](howto/automata-completed-migration.md).
+
 ### Blocked or needs-review Automaton: fix, commit, rejudge
 
 When the completion review has blocked an Automaton, or holds it in `needs_review` after the retries were spent (or with auto-fix turned off), and the fix is already in the work, you do not need to cancel the Automaton, add a task and reset it. Re-run the review on the new work instead:
@@ -1058,7 +1090,9 @@ to read there is nothing for a re-attempt to fix. The failure ladder just
 reproduces the same failure until the task is held for review and the
 Automaton is blocked. So datawatch refuses that shape of task at planning
 time and accepts a declared report as the task's output at verification
-time.
+time. A report written under the `.datawatch/` folder is git-ignored and
+stays on the local machine — it is never committed and does not count as
+uncommitted work.
 
 **The planning refusals.** Two deterministic checks, no LLM, both refuse a
 read-only task that declares neither a verification script nor a report
@@ -1085,10 +1119,13 @@ one repo-relative script file — a command string is not one, and the
 verifier's pre-start check rejects it as exactly the thing it is not: a
 file. The built-in final-gate standard task already ships in the report shape:
 its spec says to write its verdict to `.datawatch/reports/<feature>-final-
-gate.txt`, `report_path` names the same file, and it carries **no**
+gate.txt`, `report_path` names the same file, and the template carries **no**
 verification script — a read-only task verified by exactly one output, the
-report itself. (The companion version-note task is a note the verifier
-reads rather than runs, and it carries no verification script either.)
+report itself. (A planner-written `final_gate` is different: the decompose
+lint blocks it unless it carries a verification script, a
+`verification_script_reason` or a report path. The companion version-note task
+is a note the verifier reads rather than runs, and it carries no verification
+script either.)
 
 **The verifier's acceptance rule.** When a read-only task that declares a
 report path finishes with no tree changes, the verifier looks for the
@@ -1105,8 +1142,9 @@ path handles its diff.
 
 **Recovering a blocked Automaton — make the task verifiable.** While the
 Automaton is blocked the held task can be patched in place. Edit-task
-patches the held task while it is held — its `spec`, its read-only mark and
-its `report_path`, in one or more calls — and retry (action `retry`) then
+patches the held task while it is held — its `spec`, its read-only mark, its
+`report_path`, its `verification_script` and its `verification_script_reason`,
+in one or more calls — and retry (action `retry`) then
 requeues it, carrying the same optional mark and report path along with any
 spec, worker or file-scope change. Both check everything before anything is
 written, so a refused change leaves the task held: a `report_path` is only
@@ -1143,6 +1181,31 @@ recorded on the decision log and given to the next attempt.
 Comm channel: `autonomous edit-task <automaton> <task> read_only=true
 report_path=.datawatch/reports/ci-audit.txt [new-spec…]`, then
 `autonomous review-task <automaton> <task> retry note=...`.
+
+**Fixing a task whose verification script is wrong or missing.** A script that
+is a command string, breaks after earlier tasks land, or was never written no
+longer needs a re-decompose: edit the held task's script in place, then retry
+it. `verification_script` must be one repo-relative script file (a command
+string, absolute path, `..` path, the project root or an unclean path such as
+`./scripts/verify.sh` is refused and nothing is stored); the file is also added
+to the task's generated files. `verification_script_reason` states why a task
+needs no script and may be sent alone or with a script.
+
+```sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script scripts/verify-docs.sh
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --verification-script-reason "documentation-only change; no behavior to run"
+```
+
+MCP: `autonomous_prd_edit_task(..., verification_script="scripts/verify-docs.sh")`.
+Comm channel: `autonomous edit-task <automaton> <task>
+verification_script=scripts/verify-docs.sh` or
+`verification_script_reason="documentation-only change"` (a reason with spaces
+goes in double quotes; an unclosed quote is an error). In the web app, use the
+**Verification script** and **Script exemption reason** fields of the task
+editor. The script file itself must already exist in the project; this edit
+records the path, it does not create the file.
 
 **Cancelling the held task is terminal.** `cancel` records the operator's
 decision with the reason "cancelled after operator review" (your note, when
@@ -1209,6 +1272,12 @@ The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_repo
 
 An Automaton branch can fall far behind its base while it runs. With `autonomous.branch_refresh_enabled: true` the daemon merges the base branch into the Automaton's branch in the gap between tasks, when the branch is at least `autonomous.branch_refresh_behind_limit` commits behind (default 5; 0 reads as 5) and no task is running in that worktree. Both keys are in `docs/config-reference.yaml`; the feature is off by default. A clean merge adds a `branch_refresh` entry to the Automaton's Decisions. A conflict leaves the branch as it was, stops refreshing for that Automaton and raises one question asked by `branch-refresh`. The per-Automaton override (`branch_refresh_override`) is set with the Branch refresh card on the Automaton page, `datawatch autonomous branch-refresh <id> enabled|disabled|inherit`, chat `autonomous branch-refresh`, MCP `autonomous_prd_set_branch_refresh`, or `POST /api/autonomous/prds/{id}/branch-refresh` (`enabled` true, false or null), and the Automaton `GET` reply carries `branch_refresh`, `branch_refresh_override` and `branch_refresh_enabled`. Answering the conflict question applies your choice at once: *retry later* allows refreshing again, *resolve by hand* and *leave the branch alone* keep it stopped; setting the per-Automaton override again (any value) also resets the stop, and each is written to the Decisions list. `datawatch autonomous branch-refresh-stats` (chat `autonomous branch-refresh-stats`, MCP `autonomous_branch_refresh_stats`, `GET /api/autonomous/branch-refresh/stats`, the `datawatch_branch_refresh_automata{result}` and `datawatch_branch_refresh_stopped` gauges) shows how many Automata ended each way and how many are stopped. Walkthrough: [howto/automaton-branch-refresh.md](howto/automaton-branch-refresh.md).
 
+### Automaton project link
+
+Which project an Automaton counts toward in every project roll-up is decided by its explicit project link first, then its Automation's link, its parent's project and its directory (see *Project membership* in [datawatch-definitions.md](datawatch-definitions.md)). Set or clear one Automaton's link from Automaton settings (**Project**), `POST /api/autonomous/prds/{id}/set_project`, `datawatch autonomous prd-set-project <id> <project|clear>`, MCP `autonomous_prd_set_project`, or chat `automaton project <id> <name|clear>`; an unknown project name is refused with the configured names. The Automaton `GET` reply carries `project` and `project_source`.
+
+To link the Automata that existed before the link, run the backfill: `datawatch autonomous project-link-backfill` is a dry run that prints what it would link; add `--apply` to write (REST `POST /api/autonomous/project-link-backfill` with `{"apply":true}`, MCP `autonomous_project_link_backfill`, chat `automaton project-backfill [apply]`; `GET` on the REST path returns the last report). It matches only the `datawatch` project, never changes an Automaton that already has a link, and lists the rest as skipped. At daemon start it runs once as a dry run; with `autonomous.project_link_backfill_apply: true` (default `false`, in `docs/config-reference.yaml`) the start-up run is applied and a `project_link_backfill.done` marker in the autonomous data directory stops later starts from applying it again (it is written only when every write succeeded; delete it to allow another start-up apply). Each link written is a decision-log entry on the Automaton. Only Automaton records are read and written; no session is touched. Walkthrough: [howto/projects-tab.md](howto/projects-tab.md#link-existing-automata-in-one-pass).
+
 ### Merge pipeline
 
 Each project has a merge pipeline: the ordered steps that take finished branches to shipped. The daemon picks it from the project's repository file (`.datawatch/merge-pipeline.yaml` by default), else a record it keeps for the project, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` (`record` by default) says what is used when the file is unusable. Read what is in effect, and why, with `datawatch autonomous merge-pipeline show`, the `autonomous_merge_pipeline_get` tool, the chat verb `autonomous merge-pipeline` or Settings > Automation > Merge pipeline. Check a pipeline without saving it with `validate`; a pipeline that does not validate is refused with every problem named. Before a release leaves the machine, the built-in `validate-release-bump` step runs five read-only checks on the bump (version variables equal, changelog heading, one step above the last tag, tag not taken, README `Current release:` line); any failure stops the run before the push and names each check that failed, and the result is kept on the run as `validator`. Check a bump by hand with `bash scripts/verify-release-bump.sh`. On a conflict, `conflict_policy` (default `mechanical_and_model`) resolves additive hunks mechanically, then asks the `conflict_model` (a registry entry; empty means none) for the rest. The proposal is worked out in a scratch worktree and kept only if the pipeline's test step passes on it; otherwise the project is unchanged and the operator is asked. A pipeline that bumps the version needs `version_files`. The operator guide is [howto/merge-pipeline.md](howto/merge-pipeline.md).
@@ -1233,7 +1302,7 @@ Tests are deterministic; a test that fails and then passes is a defect, not load
 
 ### Post-ship hooks
 
-Post-ship hooks are the small steps a project runs after a merge pipeline's push step succeeds: the built-ins `registry_row` (mark the project's registry row shipped), `parity_issue` (file a parity issue in a companion repository), `tag` (tag the release, skipping when the tag exists) and `notify` (send a message through the daemon's notifier), or any shell command, in a list of at most 20 in run order. Off by default at two levels — the block's `enabled` switch and each hook's — and a failed hook never blocks or fails the ship: its failure is recorded on its own step with the detail redacted, the run keeps the result the pipeline's steps set, and the later hooks still run. Every enabled hook is one step of kind `post_ship_hook` in the merge run record (`pipeline_runs` of `GET /api/autonomous/merge`, the PWA's merge status view); when the run belongs to an Automaton each failed hook also appends one triage note (source `post_ship`) to that Automaton's triage record. The block is global, under `autonomous.merge_pipeline.post_ship`, and the daemon never guesses an empty target.
+Post-ship hooks are the small steps a project runs after a merge pipeline's push step succeeds: the built-ins `registry_row` (mark the project's registry row shipped), `parity_issue` (file a parity issue in a companion repository), `tag` (tag the release, skipping when the tag exists), `notify` (send a message through the daemon's notifier) and `mark_completed` (mark the Automaton whose branch just shipped Completed, with the release, merge commit and merge time, and record its landing as `landed` with the merge commit; it needs no target and is safe to repeat), or any shell command, in a list of at most 20 in run order. Off by default at two levels — the block's `enabled` switch and each hook's — and a failed hook never blocks or fails the ship: its failure is recorded on its own step with the detail redacted, the run keeps the result the pipeline's steps set, and the later hooks still run. Every enabled hook is one step of kind `post_ship_hook` in the merge run record (`pipeline_runs` of `GET /api/autonomous/merge`, the PWA's merge status view); when the run belongs to an Automaton each failed hook also appends one triage note (source `post_ship`) to that Automaton's triage record. The block is global, under `autonomous.merge_pipeline.post_ship`, and the daemon never guesses an empty target.
 
 | Method | How |
 |---|---|
@@ -1377,7 +1446,7 @@ Each key is reachable through all five configuration methods (MCP agents use `co
 | `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
 | `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
 
-**Project timeline.** The per-project read of when each arc, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one arc's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled) and `release`; task rows carry `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automata's own records, so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
+**Project timeline.** The per-project read of when each plan, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one plan's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled — a shipped Automaton reads completed whatever its record says) and `release`; an Automaton row spans its first task start to its last task end (the `end` is empty while it runs), and an Automaton with no started task is read from its created time to its completion time. A task row carries `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automata's own records, so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. The Focus view's "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — not the exact first and last task dates, so each can read up to a day off. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
 
 **Timeline chart.** The interval chart of the Automata (the Gantt-style view across all projects — every task as a bar with its start and end, blocked and waiting intervals, the today marker and the projected finish) is a pure read: no configuration key, no state, nothing stored when it is read, and therefore nothing to change live and nothing that needs a restart. It needs autonomous enabled (the route answers 503 when autonomous is off) and, for a federated peer, the autonomous read capability. Every surface — `GET /api/autonomous/timeline`, MCP `autonomous_timeline`, `datawatch autonomous timeline` (with `--json` for the raw body), and the `timeline` comm channel command — decodes the exact same object, so the surfaces can never disagree. See [howto/automata-timeline.md](howto/automata-timeline.md).
 
@@ -2484,9 +2553,13 @@ switch once devices report their own environment.
 
 ### Encryption at Rest
 
-When `--secure` mode is enabled, all data stores are encrypted with XChaCha20-Poly1305.
+When `--secure` mode is enabled, the config file and the stores listed in
+[encryption.md](encryption.md) are encrypted with XChaCha20-Poly1305; the rest of
+the data directory is not (that page has the plain-today list, the items that
+cannot be encrypted, and the open items for the operator).
 Set `DATAWATCH_SECURE_PASSWORD` as an environment variable for automatic restarts.
-See [encryption.md](encryption.md) for details.
+Back up `config.yaml`: it holds the salt, and there is no password-change or
+key-rotation command.
 
 ### Interface Configuration Summary
 
@@ -2793,6 +2866,65 @@ suppressed after the channel connects (`channel_ready: true`). This eliminates t
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
 
+### Alerts quick reply answers the operator question
+
+On the web app, every quick reply — the **Quick reply** dropdown on a
+prompt alert, the session-detail Yes/No/Stop chips, the session quick
+commands, and the card quick commands — first goes through an
+open-question gate before its text would be typed into a session:
+
+- The session has an open question and the reply matches one of its
+  options (option id or label, case-insensitive, plus the approve/yes and
+  reject/no synonyms) → the reply **answers that question** through the
+  same path as the question card (`POST /api/questions/{id}/answer`,
+  surface `pwa`); the question is recorded as answered (visible in the
+  question list and its history, with who answered and the surface), the
+  confirmation names the chosen option and shows what was sent, and the
+  session resumes. Before the fix
+  the reply was typed as text into the session (`send <id>: <text>`), so
+  the question stayed open.
+- The session has an open question but the reply matches none of its
+  options → the reply is refused with a plain toast naming the pressed
+  label and the question's options; nothing is sent anywhere.
+- The session has more than one open question → the reply is refused and
+  points to the Questions card in the Automation view.
+- The session has no open question → the reply is typed into the session
+  exactly as before (session input; for the alert dropdown, the
+  `send <id>: <text>` command).
+
+No setting or endpoint is added; the three toast strings ship in the five
+web-app locales (`en`, `es`, `fr`, `de`, `ja`). See
+[`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md),
+[`howto/operator-questions-answering.md`](howto/operator-questions-answering.md#quick-replies-answer-the-sessions-question)
+and the [Quick reply](glossary.md#quick-reply) glossary entry.
+
+**Messaging channels.** `send <id>: <text>` from a messaging channel
+uses the same gate when the text is a saved command (`!name`/`/name`),
+an approve/reject word, or an option id/label of the session's open
+question: one open question with one matching option → answered
+(surface `comm:<channel>`, reply `question answered`); no single match
+or several open questions → `quick reply refused` with the options or
+question ids, nothing sent; no open question or ordinary text → typed
+into the session as before. Waiting-input alerts now hint
+`Reply: send <id>: <answer>  answers: …` when the session has exactly
+one open question, and fall back to the saved command list otherwise.
+See [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
+**Still needs operator review:**
+
+- Messaging channels: if the daemon's questions API is unreachable the
+  router silently falls back to typing the text into the session;
+  confirm that fallback is acceptable.
+- A plain `yes`/`no` sent to a session with an open question now answers
+  the question instead of typing the word; confirm on a live channel.
+- Mobile parity: the Android and iPhone apps do not have this
+  quick-reply→question routing yet; file or link the datawatch-app
+  parity issue.
+- Confirm the answered/refused toasts read well on a real device (the
+  behavior itself is covered by the web-app test suite).
+- The parity-status row for this change marks Android and iPhone as not
+  built; update it once the companion-app parity issue lands.
+
 ### Alerts tab (help link, state row, refresh)
 
 The PWA's Alerts tab was tidied for a narrow phone viewport (operator
@@ -2866,6 +2998,10 @@ curl -X POST 'https://localhost:8443/api/reload?subsystem=filters' \
 # Comm channel (Signal / Telegram / etc.)
 reload filters
 ```
+
+### Email notifications: recipient and test notes
+
+The `email` backend sends to the recipient named in the send; with none, it uses the configured `email.to`. A recipient or sender containing a newline is refused before any SMTP connection, so that failure is immediate rather than a timeout. If an email test appears to hang, check that it uses the local fake SMTP server (`startFakeSMTPServer` in `internal/messaging/backends/email/backend_test.go`) and not a real host. Details: [`messaging-backends.md`](messaging-backends.md) § Email.
 
 ### Claude Auto-Accept Disclaimer (v5.27.2)
 
@@ -3167,6 +3303,60 @@ fallback ends in exactly one space on purpose — it closes the session's
 `@` completion so one Enter sends; confirm nothing downstream compares the
 typed session input byte for byte before deciding to send.
 
+### Message submission to a session (paste wait and Enter retry)
+
+Every text sent into a tmux-backed session (the PWA input bar and image
+send, `POST /api/sessions/send`, the MCP `send_input` tool, `datawatch
+session send`, and comm channel `send`) ends with the same delivery
+sequence, so a message that Claude Code folds into a `[Pasted text #N +M
+lines]` placeholder is submitted instead of being left unsent in the input
+box:
+
+1. The text is typed literally (chunked above the tmux argument limit),
+   then the daemon waits `session.schedule_settle_ms` (default 200 ms,
+   scaled up for many chunks).
+2. The daemon polls the visible pane every 50 ms, for at most 1.5 s, until
+   the paste placeholder or the last 24 characters of the last line show up
+   near the input prompt. On timeout, or if the pane cannot be read, it
+   goes on to Enter anyway.
+3. One Enter is sent.
+4. For input that showed a placeholder, contains a newline, or is longer
+   than 200 bytes, the daemon re-reads the pane 400 ms later. If the
+   placeholder or the text is still in the last six non-empty lines on a
+   prompt line and no assistant output follows it, it sends another Enter,
+   at most two more. It never sends an Enter once the placeholder is gone
+   or the assistant is active.
+
+Short single-line input without a placeholder gets one Enter and no
+re-check. An empty payload is a bare Enter with no polling.
+
+What to know when operating it:
+
+- **No new configuration.** The 1.5 s wait, the 50 ms poll, the 400 ms
+  re-check, the two-retry cap and the 24-character tail are fixed
+  constants in `internal/session/paste_submit.go`, not config keys. The
+  only tunable is `session.schedule_settle_ms`, unchanged.
+- **A send that exhausts its retries still reports success.** The text did
+  reach the terminal, so `SendInput` returns no error and the input count
+  still increments; the message simply remains in the input box. The
+  daemon does not alert on this. This is different from a task-prompt
+  delivery, which has its own bounded wait for assistant activity and
+  fails with "prompt not submitted" (see `task_delivery_window_seconds` and
+  `task_delivery_attempts`).
+- **Detection is text-based.** Retrying relies on the placeholder text
+  (`[Pasted text #`), the ❯ prompt or the input-box frame in the captured
+  pane. A TUI that renders its input differently gets the single Enter
+  after the 1.5 s wait and no retry.
+- **Chat-mode ollama sessions are untouched.** Their input goes through the
+  daemon's own conversation manager, not tmux, so none of this applies.
+- **Cost.** A long or pasted send holds the sending goroutine for up to
+  about 1.5 s plus 0.8 s of re-checks (two pane re-reads at most after the
+  first Enter), on top of the settle delay.
+
+See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#5h-how-a-sent-message-is-submitted)
+for the operator-facing description and what to do when a message is still
+unsent.
+
 ### Browser Auto-Refresh
 
 When the daemon is updated and restarted, connected browsers automatically reload to
@@ -3216,7 +3406,7 @@ See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup
 1. **The build in use carries the fix.** It lives in the PWA, not the daemon. A browser still serving a pre-fix `app.js` can keep the previous server's data on the tab you're on until you navigate away and back — the tabs most worth watching, given the operator's report, are **Automata**, **Observer** and **Dashboard**; refresh the PWA after deploying the new daemon and confirm the in-place switch.
 2. **In-place switch on all six views.** Standing on each of Sessions, Alerts, Automata, Observer, Settings and Dashboard, pick a federated host and confirm the tab follows the dropdown in place — the **Showing: <name>** line names the host you picked and the list is that host's data (the previous server's list is cleared before the redraw, so it cannot linger) — then confirm the **This server** entry (labelled with the daemon's hostname) and **All servers** return the page the same way (the Observer and Settings views have no **All servers** form and are deliberately not re-rendered by it), and that re-picking the active entry changes nothing (no refetch, no scroll/filter reset). On the **Dashboard** the re-render is per panel, not one list: the **Automata** and **Cost** panels are the ones that aggregate under **All servers** (`GET /api/autonomous/prds/aggregated`, `GET /api/cost/aggregated`) and the rest have no aggregated variant, so verify each panel shows the host you picked and its **Showing: <name>** line updates.
 3. **The Automata tab's Automation sub-tab.** The re-render path covers it in this tree, but confirm it live if you rely on it — it was the point least confirmed in the operator's 2026-11-08 report.
-4. **Unreachable remote.** If a tab shows an error or no data after a dropdown change, the remote itself is the first thing to suspect — the dropdown marks a down peer with a " **(unreachable)**" suffix (still selectable) and the federated error panel offers a "Back to <local hostname>" button rather than leaving the previous server's data behind. While a remote is the active server, one-tap returns to local are available: the clickable 🌐 <name> indicator on the Sessions toolbar (it appears while the remote is active and clicking it returns to local; it is the `.server-indicator` chip in `renderSessionsView`, pinned in `internal/server/web/app-select-server-controls.test.js`) and the **Back to <local hostname>** button on that server's row in Settings → Comms → Remote Servers.
+4. **Unreachable remote.** If a tab shows an error or no data after a dropdown change, the remote itself is the first thing to suspect — the dropdown marks a down peer with a "(unreachable)" suffix (still selectable) and the federated error panel offers a "Back to <local hostname>" button rather than leaving the previous server's data behind. While a remote is the active server, one-tap returns to local are available: the clickable 🌐 <name> indicator on the Sessions toolbar (it appears while the remote is active and clicking it returns to local; it sits on the Tree/History line below the one-line toolbar, which is behind the header's 🔍 search-&-filters toggle — turn it on if the line is not visible; it is the `.server-indicator` chip in `renderSessionsView`, pinned in `internal/server/web/app-select-server-controls.test.js`) and the **Back to <local hostname>** button on that server's row in Settings → Comms → Remote Servers.
 5. **The remembered dropdown choice.** This is also client-side PWA behaviour, not a daemon contract (save on every real selection and the boot restore in `internal/server/web/app.js` — `_serverChoiceSave` / `_serverChoiceSettleBoot`, pinned in `internal/server/web/app-header-server-dropdown.test.js` and `internal/server/web/app-server-choice-persist.test.js`), and no live verification had been run for it as of this writing. On the build in use, on a two-host setup: pick a federated host, reload the page, and confirm the tab opens on that host (not **All servers**, not **This server**) with one fetch round of boot traffic against it — no second refresh round; pick **All servers** and repeat; then remove or disable the peer while its choice is saved and confirm the PWA starts on **All servers** and does not keep re-offering the stale peer on the next reload. In a browser profile with local storage blocked, confirm the choice still follows you page-to-page within the visit but does not survive a reload.
 6. **Mobile parity for the remembered choice.** The PWA now persists the header choice per browser (the local-storage key `dw_server_choice`), where the Android and iOS clients do not yet; per this project's Mobile-Parity Rule an operator-visible PWA change needs a `datawatch-app` issue or comment — none is referenced in the tree as of this writing, so the operator should file or comment it before the mobile clients ship the dropdown themselves.
 
@@ -3264,6 +3454,50 @@ Supported commands: `help`, `list`, `status <id>`, `tail <id>`, `send <id>: <msg
 On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
+
+### MCP config files the daemon writes
+
+The daemon maintains the `.mcp.json` files a session's MCP host reads, so every
+session sees the `datawatch` bridge (and any `session.extra_mcp_servers` entries):
+
+- **Per-session** — `<project_dir>/.mcp.json`, written (and idempotently rewritten)
+at session start, `0600`; operator-added entries are preserved, only the
+`datawatch` entry and the extras-list entries are managed. Sessions sharing a
+project dir share the file; each start rewrites the `datawatch` entry with the
+starting session's own credential.
+- **Instance-level** — `<data_dir>/.mcp.json`, refreshed at each session
+launch so it tracks the current bridge and carries a current scoped
+credential; not tied to a specific session. Its `datawatch` entry is
+removed when no live session remains, or when the daemon shuts down.
+
+All files are `0600`. The **per-session** project file carries the starting session's **scoped, short-lived credential** as `DATAWATCH_TOKEN` — default grant: the `session-default` capability group ([howto/federation-cbac](howto/federation-cbac.md)) — and **never** the daemon's own `server.token`. The credential is minted at session start, persisted `0600` under the data directory (a running session's bridge keeps working across a daemon restart), and revoked when the session ends or is killed, so a leftover project file holds a dead bearer. (Edge fallbacks: if minting the credential fails the entry gets no `DATAWATCH_TOKEN` at all; if the session-token store itself cannot be wired, the per-session write falls back to the admin token — the latter should only happen in tests.)
+
+The **instance-level** file no longer carries the daemon's long-lived
+admin `server.token` either. Its `DATAWATCH_TOKEN` is the **instance-
+scoped, expiring credential**: the same `session-default` capability group
+by default (override: `session.capabilities`; [howto/federation-cbac](howto/federation-cbac.md)),
+valid about an hour. Each session launch refreshes it — the existing
+token is reused while more than half its lifetime remains, and re-minted
+on the next launch once it is down to the last half (even before it
+would expire) — so repeated launches do not stack credentials and the
+file tracks the current bridge (JS→Go) without admin exposure. When no
+live session remains — the last one ends, or the daemon shuts down — the
+credential is revoked and the `datawatch` entry (with the file, if it was
+the only server) is removed, so no credential sits on disk while the
+daemon is idle. A failed mint removes the entry rather than leaving a
+stale credential; there is deliberately **no fallback** to the long-lived
+token. A stale entry still holding the daemon's admin token from an
+earlier daemon is dropped at daemon startup (the startup line says the
+stale server credential was removed from the instance `.mcp.json`; the
+token value is never logged), and it is never written again. (The old
+user-scope (`~/.mcp.json`) sweep is deprecated in favour of the
+data-directory instance-level write.)
+
+**Operator review — flag for you:**
+1. neither daemon-written `.mcp.json` (per-session nor instance-level) carries the daemon's `server.token` any more: both hold scoped, short-lived `0600` credentials that die with the session (per-session) or when no live session remains (instance-level), and the instance entry is removed at daemon shutdown.
+2. anything built on reading `DATAWATCH_TOKEN` out of a daemon-written `.mcp.json` to obtain a long-lived admin bearer (helper scripts in a project, tooling that treated a session's bridge as a standing admin principal) — including the instance-level file on hosts upgraded from an earlier daemon — is **broken by design now**: the credential there is granted by the `session-default` group and is dead once the last session ends or its lifetime runs out. Give those workflows their own operator-managed credential: the daemon's bearer in your own MCP host config, or a federation peer token, with the capabilities they actually need.
+
+Operator-managed configs — `~/.cursor/mcp.json`, `claude mcp add` entries, an IDE-side `mcp.json` — are unaffected and still authenticate with the daemon's bearer or a peer token.
 
 ### MCP transport diagnostics (connection drops, stream health)
 
@@ -4408,7 +4642,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip): no daemon setting. With no grouping, a saved tree flag applies to **List** only and any mode click clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
@@ -6383,7 +6617,15 @@ boot-resume pass, so a restart does not release work into a limit that is still
 in force. Expired flags are dropped; a corrupt file is logged and ignored. Each
 restored flag writes a boot-resume entry (`backoff_restored`), a warning alert
 (**Back-off restored after restart**) and an `autonomous_usage_backoff_restored`
-audit event. Restoring never ends or signals a session. Deleting the file while
+audit event. Restoring never ends or signals a session. The review reserve is
+separate: while a restored flag is up, the review roles (guardrail judges,
+verifiers, planning) still get their bounded admission path on that backend,
+built from `autonomous.backoff_reserve_for_review` (default
+`1`; `0` disables it) and `autonomous.backoff_reserve_tokens_per_hour`
+(default `0` = no one-hour token budget), settable from any config surface
+(YAML, REST, MCP, CLI, comm, PWA — see docs/howto/usage-backoff.md). The reserve's own state — the rolling
+token stamps and its in-flight verdicts — is in memory only and does not
+survive a restart. Deleting the file while
 the daemon is stopped forgets all flags; clear a single flag with
 `datawatch usage-backoff clear <backend>` instead.
 
@@ -6398,10 +6640,12 @@ flush) still restores the last flag written by a set or clear, and decide
 whether a flag restored with an unknown reset time should keep its original
 window or restart the maximum wait.
 
-**Reading the history.** Nine actions record the capacity and budget
+**Reading the history.** Eleven actions record the capacity and budget
 machinery: `autonomous_capacity_wait`, `autonomous_capacity_admitted`,
 `autonomous_usage_backoff_set`, `autonomous_usage_backoff_cleared`,
 `autonomous_usage_backoff_auto_cleared`, `autonomous_usage_backoff_restored`,
+`autonomous_usage_backoff_reserve_admitted`,
+`autonomous_usage_backoff_reserve_refused`,
 `autonomous_budget_ceiling_wait`,
 `autonomous_budget_window_resumed` and `autonomous_budget_window_rollover`.
 Each is written once per change, not once per poll. All four surfaces take
@@ -6483,7 +6727,7 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 | Comm channel | `autonomous lane-fill [limit]` | `configure autonomous.lane_fill.mode=on` | `autonomous set-lane-preference <prd-id> gpu\|claude\|any` |
 | PWA | Automata tab, Automation sub-tab, the **Lane fill** card (reloads every 5 seconds) | Settings → General → Autonomous, the Lane fill fields | Automaton settings form, **Lane preference** select |
 
-**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks seven rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks eight rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `operator_hold` (an operator put the Automaton on hold; release it to clear), `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane counts.** With `lane_counts_from_caps` on, the number of lanes of a type follows the LLM concurrency caps, the same ones the capacity pools use: a Claude backend capped at one session gets one Claude lane however high `claude_lanes` is. The configured count is kept when an enabled entry on that backend is unlimited, when no enabled entry runs that backend, or when the configured count is `0`. The status `lane_counts` object shows `configured`, `effective` and `source` (`llm_caps` or `config`); the CLI prints `Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`. Raise the cap on the LLM entry to get more lanes.
 
@@ -6670,15 +6914,19 @@ The `autonomous.housekeeping_repairs.advance_judge` group (default `report`) has
 
 ### Housekeeping repairs: lane fill
 
-The `autonomous.housekeeping_repairs.lane_fill` group (default `report`) has a lane fill repair: a lane that is idle while eligible work waits gets the next eligible Automaton started through the normal run path once the grace has passed. It never changes a model or backend. It refuses, records a skipped entry and raises one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` it records what it would start and starts nothing. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. To undo a start, pause or cancel the started Automaton from the Automata page. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+The `autonomous.housekeeping_repairs.lane_fill` group (default `report`) has a lane fill repair: a lane that is idle while eligible work waits gets the next eligible Automaton started through the normal run path once the grace has passed. It never changes a model or backend, and never starts a held Automaton (an operator hold, see [howto/automaton-hold.md](howto/automaton-hold.md)). It refuses, records a skipped entry and raises one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` it records what it would start and starts nothing. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. To undo a start, pause or cancel the started Automaton from the Automata page. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 ### Housekeeping repairs: leftovers
 
 The `autonomous.housekeeping_repairs.leftovers` group (default `report`) also has three release repairs for what a finished Automaton leaves behind: its capacity lease, its worktree and its tmux name. Each acts on one leftover and only when the safe-to-delete check passes: the Automaton is finished, holds no uncommitted work, has no unlanded commits and has no live session; the facts are read again just before the release. When any fails or the check cannot be answered, the repair refuses, records a skipped entry and raises one alert. It can only release one lease, remove one worktree or release one tmux name, and never kills, ends or signals a session, merges, ships, changes a model or backend, or touches a security workflow. The repairs are written and tested, but nothing in the daemon builds or starts them yet, so nothing acts today. Before turning the group to `on`, confirm you accept the worktree removal; the group also holds the disk cleanup sweep. To undo, start the Automaton again from the Automata page (a lease is taken again and a worktree recreated); a released tmux name is free to reuse. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
+### Housekeeping repairs: planning
+
+The `autonomous.housekeeping_repairs.planning` group (default `report`) has a planning repair for a draft Automaton with no stories whose recorded planning failure is not retryable. When every spec lint finding on it is one the daemon can reword, then once the grace has passed it rewrites the spec with the suggestions, applies it as a revision and plans again, exactly as the planning question's *Fix the wording and plan again* answer does; the draft is re-checked just before acting. A finding the daemon cannot reword (a private address, a worktree path) is refused as an unsafe finding with one alert and the spec is left alone; a retryable failure is never touched. In `report` it records what it would do and changes nothing. Before turning the group to `on`, confirm you accept the daemon rewriting a spec without you. To undo, edit the spec back from the Automaton's detail view and plan again. Never touches a session, merges, ships, or changes a model or backend. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and the *Planning failures* section below.
+
 ### Housekeeping repairs: reading the view
 
-Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. The daemon does not run the repair pass yet, so expect empty lists today. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. The daemon does not run the repair pass yet, so expect empty lists today. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ## Triage records (failed and blocked Automata)
 
@@ -6723,9 +6971,35 @@ A read that matches nothing is an empty list, not an error. The full field docum
 
 ---
 
+## Held Automata (`held` status — operator hold)
+
+An operator hold is a deliberate pause: the operator puts an Automaton on hold for a reason they choose, for example *until after the release*. A held Automaton waits **by operator decision** — it is not blocked, not failed and not waiting for review; nothing starts it, and its tasks keep their state. Held is its own count: it never enters the blocked, waiting or running totals, and the Held group is never a queue the daemon drains.
+
+**Config: not applicable.** There is no configuration key for the held state — nothing to enable, no threshold, no budget, no key that changes which statuses a hold may start from. A hold stands, gets extended or is released only by an operator action; the daemon's periodic expiry tick only marks an `until` that has passed and raises the one `Hold expired` alert for it.
+
+**What a hold records.** `reason` (required when placing, at most 500 characters), optional `condition` (free text shown to the operator — never evaluated), optional `until` (an RFC 3339 time, a date such as `2026-12-01` = end of that day UTC, or a duration such as `72h`), who set it, and when. A hold is allowed from `draft`, `needs_review`, `approved`, `revisions_asked`, `paused`, `blocked` and `failed`; the daemon refuses it from `planning`, `running`, `completed`, `rejected`, `cancelled` and `archived`. Running hold on an Automaton that is already held **extends** it: a field you give replaces the stored one, a field you leave out is kept. A release returns the Automaton to the status it had when it was held (a blocked one gets its blocked reason back) — and still starts nothing; the normal paths pick it up from there.
+
+**The five actions on every operator surface.**
+
+| Action | REST | CLI | Comm channel | MCP | Web app |
+|---|---|---|---|---|---|
+| Hold / extend | `POST /api/autonomous/prds/{id}/hold` — body `{reason, condition, until, actor}`; one route for both | `datawatch autonomous prd-hold <id> --reason <text> [--condition <text>] [--until <time>] [--actor <name>]` | `autonomous hold <id> <reason words> [until=<value>] [condition=<words>]` | `autonomous_prd_hold` | **Hold** on an Automaton card, or **Extend** on a held card (the same dialog) |
+| Release | `POST /api/autonomous/prds/{id}/release_hold` — body `{note, actor}` | `datawatch autonomous prd-release-hold <id> [--note <text>] [--actor <name>]` | `autonomous release-hold <id> [note]` | `autonomous_prd_release_hold` | **Release** on a held card, or per-row in the **Held Automata** Inbox group |
+| Read the held group | `GET /api/autonomous/held` — expired first, then soonest `until`, then oldest hold | `datawatch autonomous held` | `autonomous held` | `autonomous_held` | the **Held Automata** Inbox group, the `held` status in the list, the `held` progress column |
+| Hold migration — dry run | `POST /api/autonomous/held/migrate` with `{dry_run: true}` (or no `ids`) — lists the look-alikes, changes nothing | `datawatch autonomous held-migrate --dry-run` | `autonomous held-migrate dry_run=true` | `autonomous_held_migrate` with no `ids` | — |
+| Hold migration — real run | the same route with `{ids: […], reason: "…", condition?, until?}` — `reason` is yours, never generated | `datawatch autonomous held-migrate --id <id> [--id <id>…] --reason <text> [--condition <text>] [--until <time>]` | `autonomous held-migrate id=… [id=…] reason=… [condition=…] [until=…]` | `autonomous_held_migrate` with `ids` and your `reason` | the **Hold** dialog above, per Automaton |
+
+A real migration run is refused while a final gate is running and skips, with a reason, any id that is missing, already held, or not blocked or failed. The three look-alike rules: a failed Eval run / eval-measurement, parked design work, and a blocked reason that says hold or *until after*. Read the dry run first; the ids you choose are the only ones held.
+
+**Where a held Automaton is shown.** The **Held Automata** group (Inbox and the Automaton view's held tiles), Triage rows marked *Held by the operator* (triage still reads — holding is not a triage action), the `held` column of Progress, the dashboard's Held & blocked line, and the `held` count in status reads. Attention lists report a held Automaton rather than acting on it.
+
+**What never touches a held Automaton.** Nothing auto-starts it. Lane fill skips it, the executor does not run it (a hold that lands mid-task stops the next step), the supervisor loop does not push it, housekeeping repairs never change it, no retry budget applies, and answering a question does not resume it. The only write paths are the five routes above — no loop, housekeeping step, lane fill or boot pass places, extends or releases a hold.
+
+The full how-to — what a hold records, operations, expiry, the held group, what stays away, and the hold migration's three rules — is [howto/automaton-hold.md](howto/automaton-hold.md).
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
-When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each completed Automaton's branch with `main` so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
+When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each finished Automaton's branch with `main` — completed Automata always, and archived, `needs_review`, `blocked` and `failed` Automata too while `merge_pending_include_terminal` is on (the default) — so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
 
 **The five states.** The check asks git, read-only, how many commits the branch has that `main` does not (`git rev-list --count main..branch`), whether each of those commits' patches is already on `main` (`git cherry`), and whether each commit's subject line appears in `main`'s log. It then reports one state:
 
@@ -6747,14 +7021,19 @@ When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) 
 | `shadow` | The check runs on every coordinator tick and only records what it would have done. No merge-pending record is written, no alert is raised, and a leftover merge-pending record is cleared. |
 | `on` | The check runs, a `pending` Automaton gets a merge-pending record (shown as a `merge_pending` status in its triage record, with the branch and `commits_ahead`), and one alert is raised per episode after the threshold. |
 
-**Shadow mode and what it records.** Shadow mode is the way to find out how the check judges your own branches before it can alert anyone. On each tick, for every completed Automaton with a work branch, the check writes one shadow decision: the Automaton id and name, the branch, the state, `commits_ahead`, and `would_alert`, which says whether an alert would have fired by now given `merge_pending_alert_minutes` (always false when that is `0`). A decision identical to the newest one for the same Automaton is not written again; it only raises that entry's `repeat_count` and moves `last_seen_at`, so a quiet poll adds no new rows. The history is bounded at 1000 entries, newest first, and is kept in `merge_shadow_decisions.json` beside the other autonomous stores, so it survives a daemon restart. Read it with the merge read (`shadow_decisions`). Outside shadow mode the list is returned empty. Leave shadow on for as long as you need to trust the states, then switch to `on`; the switch applies on the next tick.
+**Shadow mode and what it records.** Shadow mode is the way to find out how the check judges your own branches before it can alert anyone. On each tick, for every covered Automaton with a work branch, the check writes one shadow decision: the Automaton id and name, the Automaton's own state (`automaton_state`: completed, archived, needs_review, blocked or failed), the branch, the state, `commits_ahead`, and `would_alert`, which says whether an alert would have fired by now given `merge_pending_alert_minutes` (always false when that is `0`). A decision identical to the newest one for the same Automaton is not written again; it only raises that entry's `repeat_count` and moves `last_seen_at`, so a quiet poll adds no new rows. The history is bounded at 1000 entries, newest first, and is kept in `merge_shadow_decisions.json` beside the other autonomous stores, so it survives a daemon restart. Read it with the merge read (`shadow_decisions`). Outside shadow mode the list is returned empty.
 
-**The alert and when it fires.** In `on` mode, when a finished Automaton is `pending`, the check writes a merge-pending record stamped with the time it was first seen. Once that record has stood for `autonomous.automation.merge_pending_alert_minutes` (default 30), one `warn` alert is raised through the existing alert sink, the same path the triage alert uses. The alert is titled "Automaton `<name>` merge pending" and its body names the Automaton and its id, the work branch, how many commits are not on `main`, the Automation it is a member of (when it is), how long it has been waiting, and states that nothing has been merged, deleted or pushed. The time of the alert is stamped on the record (`alerted_at`). It fires **once per episode**: it does not repeat while the Automaton stays pending. An episode ends when the branch leaves `pending`, whether it was merged (`merged`) or ended up `empty` or `needs_look`; the record is then cleared and a later pending episode alerts again. `0` turns the alert off: the record is still written and shown, but no alert is ever raised. A branch that is `unknown` changes nothing, neither starting nor ending an episode.
+**The shadow counters and leaving shadow mode.** The merge read also returns two counters over the whole persisted history (not only the kept 1000 rows): `shadow_decisions_total`, how many shadow decisions have been made, and `shadow_decisions_false`, how many `would_alert` decisions were later found false — their episode ended with the branch `empty` or `needs_look` instead of `merged`, so the alert they stood for would have been a false one (that decision is marked `found_false`). No new decisions accumulate while the mode is `off` (the counters keep the value the shadow run left them at), and both are still reported in `on` mode, so after the switch you can still see how the shadow run went. A **clean shadow window** is a period with a real number of decisions in which `shadow_decisions_false` stayed at 0 (or only rose for cases you checked and accept). After a clean window, switch to `on`; the switch applies on the next tick. The daemon does not switch for you: the default stays `off`, and moving to `on` is an operator decision.
+
+**Terminal states (`merge_pending_include_terminal`).** Archived, `needs_review`, `blocked` and `failed` Automata can also leave work on a branch that never reaches `main`. While `autonomous.automation.merge_pending_include_terminal` is on (default; an unset key reads true) the check covers them the same way as completed Automata, in shadow and in `on` mode. Their alert names the Automaton, its state and the branch, and is raised once per episode (a repeated tick never raises a second one). Their episode is kept in daemon memory rather than in a triage record, and a `failed` or `blocked` Automaton's existing triage record is left untouched. Set the key to `false` to keep the check to completed Automata only. It is a regular config key: the YAML config file, `PUT /api/config`, the MCP tool `autonomous_config_set` (`automation_merge_pending_include_terminal`), `datawatch config set`, the comm `configure` verb and the PWA Settings toggle all read and write it, and it is read live like the other two keys.
+
+**The alert and when it fires.** In `on` mode, when a finished Automaton is `pending`, the check writes a merge-pending record stamped with the time it was first seen. Once that record has stood for `autonomous.automation.merge_pending_alert_minutes` (default 30), one `warn` alert is raised through the existing alert sink, the same path the triage alert uses. The alert is titled "Automaton `<name>` merge pending (`<state>`, branch `<branch>`)" and its body names the Automaton and its id, its state, the work branch, how many commits are not on `main`, the Automation it is a member of (when it is), how long it has been waiting, and states that nothing has been merged, deleted or pushed. The time of the alert is stamped on the record (`alerted_at`). It fires **once per episode**: it does not repeat while the Automaton stays pending. An episode ends when the branch leaves `pending`, whether it was merged (`merged`) or ended up `empty` or `needs_look`; the record is then cleared and a later pending episode alerts again. `0` turns the alert off: the record is still written and shown, but no alert is ever raised. A branch that is `unknown` changes nothing, neither starting nor ending an episode.
 
 | Key | Meaning | Default | Allowed |
 |---|---|---|---|
 | `autonomous.automation.merge_pending_mode` | Whether the check is off, records only (shadow) or on | `off` | `off`, `shadow`, `on` (an empty string or any other word is refused on every write surface) |
 | `autonomous.automation.merge_pending_alert_minutes` | How long a pending branch may wait before the one alert | 30 | whole number ≥ 0 (`0` = alert off; negative or non-whole values refused) |
+| `autonomous.automation.merge_pending_include_terminal` | Also cover archived, needs_review, blocked and failed Automata | `true` (an unset key reads true) | `true`, `false` |
 
 Set them with `datawatch config set autonomous.automation.merge_pending_mode shadow`, `PUT /api/config` with the key, comm `configure autonomous.automation.merge_pending_mode=shadow`, the MCP tool `autonomous_config_set`, or the PWA Settings fields. They are read live; a change applies to the next tick, with no restart. The check needs `worktree_base_repo` to be set: without it every branch is `unknown`.
 
@@ -6782,7 +7061,7 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 
 Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
 
-**What the merge-pending check never does.** It never merges a branch, deletes a branch, removes a worktree, pushes, resets or checks anything out: every git command it issues is a read. It never alerts in `off` or `shadow` mode, never alerts twice for one episode, and never alerts for `merged`, `empty`, `needs_look` or `unknown`. It never changes an Automaton's own status or fields; the only thing it writes is the merge-pending record in `on` mode and the shadow history in `shadow` mode.
+**What the merge-pending check never does.** It never merges a branch, deletes a branch, removes a worktree, pushes, resets or checks anything out: every git command it issues is a read. It never alerts in `off` or `shadow` mode, never alerts twice for one episode, and never alerts for `merged`, `empty`, `needs_look` or `unknown`. It never changes an Automaton's own status or fields; the only thing it writes is the merge-pending record in `on` mode (an in-memory episode for the non-completed states) and the shadow history in `shadow` mode.
 
 ---
 
@@ -6832,17 +7111,23 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 
 **What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never uses `--force` or `-D`, never follows a symbolic link, and never touches anything in `off` mode.
 
+**The landing record gates archive.** Every Automaton record that carries a work branch carries a **landing record** (`landing` on the record) with the state `pending` (set by the daemon when the branch is created), `landed` (set by the `mark_completed` post-ship hook when the branch ships, naming the merge commit), `kept` or `dropped` (an operator decision with an actor and a reason; refused when the branch is already `landed`). While the landing is still `pending`, **Archiving the Automaton is refused on every surface**, the branch named in the error: merge it, or record keep or drop for its landing. Records without a landing (no branch, or a record that predates the landing record and was never migrated) archive as before, and a one-time **landing migration** (`MigrateLanding`) backfills a `pending` record for every archived Automaton whose branch git cannot prove merged on the default branch — idempotent, no status or decision changed, and it skips rather than guesses when the default branch is unknown. The record rides on every Automaton read, and keep/drop are on every operator surface: `POST /api/autonomous/prds/{id}/landing/keep|drop` (REST), `datawatch autonomous prd-landing-keep|drop <id> --reason <text>` (CLI), `autonomous_landing_keep`/`autonomous_landing_drop` (MCP), `autonomous landing keep|drop <id> <reason…>` (chat), and the Keep/Drop buttons in the landing block of the Automaton's Overview sub-tab (PWA). The migration has no operator command: the daemon runs it once at start, in the background (`StartLandingMigration`): it logs the count it marked, raises one operator alert (*Archived Automata with unlanded branches*) when that count is above zero, and writes a done marker (`landing_migration.done` in the autonomous data directory) after a pass with no errors so it never runs again; a pass that hit an error, such as an unknown default branch, is retried at the next start. The full walkthrough is in [howto/landing-record.md](howto/landing-record.md) and [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) ("The landing record").
+
 ---
 
-**Skipped by reason, permission errors and unlanded branches.** The worktrees pass of the cleanup status adds `skipped_by_reason` (a count per reason, with `permission_denied` for removals the file system refused) and one `permission_issue` record for those refusals: `count`, `paths`, a plain `why` (a build or test left read-only files), `fixable` (an affected folder still exists) and `hidden` (every affected folder is already gone, so there is nothing to do). The safe fix restores owner write permission only, inside the worktree base, never following links; it removes nothing, and it checks containment on each requested path before any file-system call (an outside path is refused with the same text whether or not it exists). Separately, a read-only **unlanded work** review lists archived Automata whose `automaton/<id>` branch has commits not on the default branch (`landed`, `superseded` or `needs_decision`, compared by commit content), with the actions **Keep** (recorded in `unlanded-keep.json` in the state directory), **Archive branch** (moves it to `refs/archive/<branch>`) and **Delete worktree** (explicit confirm, git bundle backup under `<worktree base>/backups` written and verified before anything is removed). The uncommitted-work **diff** and **commit** work on one worktree inside the worktree base and stage exactly the listed files. Their surfaces: the **Unlanded work** card, the **Commit** button on the Housekeeping sub-tab and the **Fix permissions** button inside the Cleanup card on the Events sub-tab (REST `/api/autonomous/unlanded-work[/keep|/archive-branch|/delete-worktree]`, `/api/autonomous/uncommitted-work/diff` and `/commit`, `/api/autonomous/cleanup/fix-permissions`); the unlanded list also has the CLI `datawatch autonomous unlanded-work`, the comm verb `autonomous unlanded-work` and the read-only MCP tool `autonomous_unlanded_work`; `scripts/branch-audit.py` flags an archived branch with work not on main as `UNLANDED`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) and [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
+**Skipped by reason, permission errors and unlanded branches.** The worktrees pass of the cleanup status adds `skipped_by_reason` (a count per reason, with `permission_denied` for removals the file system refused) and one `permission_issue` record for those refusals: `count`, `paths`, a plain `why` (a build or test left read-only files), `fixable` (an affected folder still exists) and `hidden` (every affected folder is already gone, so there is nothing to do). The safe fix restores owner write permission only, inside the worktree base, never following links; it removes nothing, and it checks containment on each requested path before any file-system call (an outside path is refused with the same text whether or not it exists). Separately, a read-only **unlanded work** review lists archived Automata whose `automaton/<id>` branch has commits not on the default branch (`landed`, `superseded` or `needs_decision`, compared by commit content), with the actions **Keep** (recorded in `unlanded-keep.json` in the state directory), **Archive branch** (moves it to `refs/archive/<branch>`) and **Delete worktree** (explicit confirm, git bundle backup under `<worktree base>/backups` written and verified before anything is removed; the bundle covers the branch's commits, so uncommitted work in the worktree is not in the backup and is gone on a forced delete — a branch to review before deleting it). The uncommitted-work **diff** and **commit** work on one worktree inside the worktree base and stage exactly the listed files. Their surfaces: the **Unlanded work** card, the **Commit** button on the Housekeeping sub-tab and the **Fix permissions** button inside the Cleanup card on the Events sub-tab (REST `/api/autonomous/unlanded-work[/keep|/archive-branch|/delete-worktree]`, `/api/autonomous/uncommitted-work/diff` and `/commit`, `/api/autonomous/cleanup/fix-permissions`); the unlanded list also has the CLI `datawatch autonomous unlanded-work`, the comm verb `autonomous unlanded-work` and the read-only MCP tool `autonomous_unlanded_work`; `scripts/branch-audit.py` flags an archived branch with work not on main as `UNLANDED`. Each read of the unlanded list also returns a `counts` block: `total`, `by_state` (`landed`, `pending` = superseded, `live`, `unlanded` = needs decision), `by_age` (`under_one_day`, `under_one_week`, `older`, by last commit) and `oldest_pending`; the CLI and chat reply print it as `Counts:`, `Age:` and `Oldest pending:` lines before the rows. A daily alert watches the pending (`superseded`) branches: once per calendar day, when their count is strictly above `autonomous.unlanded_alert_threshold` (default 3; 0 alerts on any) and `autonomous.unlanded_alert_enabled` is on (default true), it raises one `warn` alert naming the oldest pending branch and its age; the last-alerted day is kept in `unlanded_alert.json`, so a restart the same day does not repeat it. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) and [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
+
+**Task sub-branch reaper (backup first, then remove).** A separate reaper removes the *task* sub-branches (`worktree_branch`, one per task in parallel mode) of Automata whose work has settled, once per pass, in a repository. It first works out each Automaton's landing state from git alone — **landed** (work branch exists and every commit of it is on the base branch by content, `git cherry`), **dropped** (work branch gone) or **pending** (work branch still carries commits not on base; a comparison git cannot answer reads as pending) — and skips pending Automata whole. A task sub-branch is removed only when every commit of it is contained in the Automaton's work branch (landed case) or the base branch; even one uncontained commit keeps it with a plain reason, and a git error keeps it too. If a merge is in progress (`MERGE_HEAD` in any of the Automata's working directories) the pass ends early and removes nothing. Before any removal the reaper writes a backup ref `refs/datawatch/reap-backup/<branch>/<Unix seconds>` (ref-unsafe branch-name characters become dashes), and only then deletes the branch with `git branch -D` — the one forced delete in this area, permitted because the backup ref exists; a failed backup means the branch is not deleted, and a failed deletion leaves the backup ref restorable. A restore recreates the branch from the newest backup ref for that name (it errors without creating anything when no backup ref exists). Backup refs older than `autonomous.reaped_branch_backup_days` whole days (unset or 0 reads the default **30**; negative is refused on every write surface as a config error) are pruned; refs whose name does not end in a numeric timestamp are never pruned, and pruning closes the restore window for that branch. Set the retention with `datawatch config set autonomous.reaped_branch_backup_days 45`, `PUT /api/config` or `PUT /api/autonomous/config`, comm `configure autonomous.reaped_branch_backup_days=45`, `config_set` or the PWA Settings field "Reaped Automaton branch backup kept (days; 0 or unset = 30)"; `GET /api/config` reports the effective value under `autonomous`. **Operator surface:** `GET /api/autonomous/branch-reap` (the report: `reaped`, `waiting`, `backups`, `backup_days`, `computed_at`; 503 while the base repo is unset), `POST /api/autonomous/branch-reap/run` (one pass; takes no body; a second concurrent pass answers 409) and `POST /api/autonomous/branch-reap/restore` (one branch from its newest backup ref; a branch that was never reaped answers 404) — the two `POST`s need the autonomous write capability from a federated peer; the CLI `datawatch autonomous branch-reap [--json]`, `branch-reap-run [--json]` and `branch-reap-restore <branch> [--json]` (each prints the shared wording, `--json` the raw body); the MCP tools `autonomous_branch_reap`, `autonomous_branch_reap_run` and `autonomous_branch_reap_restore`; the comm verbs `autonomous branch-reap` and `autonomous branch-reap-restore <branch>` (no pass verb); and the PWA **Branch reaper** card on the Automata Events sub-tab (under the cleanup card), which lists the would-be-reaped and held branches with a **Restore** button per branch and no run button. **Still needs review:** nothing runs a reap pass on a timer and the backup-ref expiry has no caller yet, so the refs accumulate until something prunes them, and a **Keep** record on an unlanded branch (`unlanded-keep.json`) does not suppress the reaper. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) (*The task sub-branch reaper*).
 
 ## Automaton uncommitted-work check (a task is complete only when its work is committed)
 
 An Automaton that commits its own work (it has git settings and either a worktree branch or declared write directories) used to be able to mark a task complete while the task's files sat uncommitted in the worktree. A merge of the branch then shipped without them. The uncommitted-work check looks at the worktree at two moments and, when it finds uncommitted work, commits what belongs to the task, or holds and asks. It is not tied to one repository: it runs `git status` in the Automaton's own worktree and works for any project. An Automaton that does not commit is not checked. The operator guide is [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
 
-**The two checks.** The **per-task** check runs after a task has passed verification and the quality gate and before it is marked complete. It reads `git status` (untracked files included), drops the daemon's own scratch files and anything the staging guard refuses to commit, narrows the list by the scope, and stages and commits the files the task declared (its planned and generated files, and anything under its write directories) by name with the message `task(<short id>): <title>`, never with `-A` or `.` and never skipping commit hooks. It then looks again; if the commit failed or files remain, the policy decides. Files outside the task's declared files are listed and never committed by this check. The **before-finished** check runs once in the roll-up, when every task is done: it reads the whole worktree (the scope does not apply), commits nothing, and under `hold` stops the Automaton from reaching `completed`, so it is never listed as merge ready. It no longer counts an unedited generated artefact the daemon itself wrote — an artefact (gate report, changelog draft, parity draft, tracker rows or registry row) that still carries its marker line, has no `<!-- edited -->` line, and whose body still matches the hash the daemon recorded in its sidecar when it last wrote it — together with its sidecar file — so an Automaton whose only dirt is what the daemon generated completes and is merge-ready as usual, while an artefact a person edited counts and holds exactly like any other file; the per-task check is unchanged. It needs a local worktree (a work branch, a project directory and no cluster profile). If git cannot read the status, either check is skipped.
+**The two checks.** The **per-task** check runs after a task has passed verification and the quality gate and before it is marked complete. It reads `git status` (untracked files included), drops the daemon's own scratch files and anything the staging guard refuses to commit, narrows the list by the scope, and stages and commits the files the task declared (its planned and generated files, and anything under its write directories) by name with the message `task(<short id>): <title>`, never with `-A` or `.` and never skipping commit hooks. A declared path that git ignores (`git check-ignore`) and that is not in the index (`git ls-files --cached` is empty for it), such as a file under `.datawatch/`, is left out of the commit instead of failing it and holding the Automaton; a tracked path is always staged whatever its ignore status, and when git cannot answer the ignore query nothing is left out, so the real git error surfaces. The list of uncommitted files the hold, the question and the before-finished check are built from is filtered before any hold is considered: files the repository's own ignore rules ignore and that are not in the index are dropped (kept when git cannot answer, the conservative side), a tracked file whose only difference from HEAD is the daemon's own marked sections — session guardrails header, memory, RTK, cross-session and platform context — is dropped, and a newly created file whose whole content is those sections is dropped too; a file that also carries a real edit is counted. A task whose only dirt is such files completes without a hold and opens no question. It then looks again; if the commit failed or files remain, the policy decides. Files outside the task's declared files are listed and never committed by this check. The **before-finished** check runs once in the roll-up, when every task is done: it reads the whole worktree (the scope does not apply), commits nothing, and under `hold` stops the Automaton from reaching `completed`, so it is never listed as merge ready. It no longer counts an unedited generated artefact the daemon itself wrote — an artefact (gate report, changelog draft, parity draft, tracker rows or registry row) that still carries its marker line, has no `<!-- edited -->` line, and whose body still matches the hash the daemon recorded in its sidecar when it last wrote it — together with its sidecar file — so an Automaton whose only dirt is what the daemon generated completes and is merge-ready as usual, while an artefact a person edited counts and holds exactly like any other file; the per-task check is unchanged. It needs a local worktree (a work branch, a project directory and no cluster profile). If git cannot read the status, either check is skipped.
 
 **The completion marker file.** A worker writes `DATAWATCH_COMPLETE` at the root of its worktree to say it is done. The daemon treats that file, `CHECKPOINT.md` and the advisory tree lock as its own marker files, not work. New worktrees exclude `/DATAWATCH_COMPLETE` through the worktree's `info/exclude` (the repository `.gitignore` lists it too); both checks skip the marker files whatever git reports and add a sentence naming the skipped files to the question text and blocked reason; and just before the finished check the daemon deletes the one regular file `DATAWATCH_COMPLETE` at the root of a finished Automaton's worktree (a directory, a link or a same-named file in a subfolder is left alone). A worktree holding only a marker is not held; a marker plus a real file is held for the real file only. At daemon start the daemon also answers every older open `uncommitted_work` question whose files are all marker files with the `ignore` option, as actor `autonomous`, and records an `uncommitted_work_resolved` decision; `ignore` touches no file and only clears the hold, and a question listing any real file is left for the operator. No new setting, endpoint, CLI command, comm verb or MCP tool is involved, so there is nothing to configure for this behavior.
+
+**Ignored files and injected sections — what to review.** Leaving git-ignored, untracked declared files (such as reports under `.datawatch/reports/`) out of the task commit, and leaving ignored files and daemon-injected-only rules files (such as an `AGENT.md` whose only change is the daemon's marked sections) out of the uncommitted-work list, adds no setting, endpoint, CLI command, comm verb or MCP tool; it applies to the next task that finishes. Operator review: an Automaton held *before* this change for exactly such a file keeps its open `uncommitted_work` question — the start-up sweep answers only marker-file questions — so check the **Automata uncommitted work** card and answer those with `ignore` (or `retry`). A report under `.datawatch/` stays local and is never shipped with the branch; if a report must ship, write it outside the ignored folder.
 
 **The policy and the scope.**
 
@@ -6919,7 +7204,7 @@ MCP agents use `checks_status` and `ship_status` (both read-only, the same objec
 
 ## Rules and context for planning
 
-When the daemon plans an Automaton it points the planner at the project's rules file and context files, adds the same pointer to each worker and verification prompt, and, for a backend that cannot read files, adds a short rules digest. The names, the digest mode and the size limit are settings under `autonomous.rules_context`, with a per-project override; a planning record on each Automaton shows which files were used (names, hashes, sizes, missing files), never their content. The planner also gives each task a rules checklist; a task whose checklist misses an area it touches gets an advisory *rules checklist gap* finding. The walkthrough is [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#rules-and-context).
+When the daemon plans an Automaton it points the planner at the project's rules file and context files, adds the same pointer to each worker and verification prompt, and, for a backend that cannot read files, adds a short rules digest. Every worker prompt that carries that pointer also carries a short, fixed no-checkpoints rule: checkpoint, progress-note and status entries in `AGENT.md`, `CLAUDE.md` or the configured rules file are written only by the operator and the supervisor, and a worker that needs a progress note writes it to `CHECKPOINT.md` at the root of its working directory instead. The planning prompt decompose uses does not carry the rule, and a retried task is never given the pointer or the rule twice. The names, the digest mode and the size limit are settings under `autonomous.rules_context`, with a per-project override; a planning record on each Automaton shows which files were used (names, hashes, sizes, missing files), never their content. The planner also gives each task a rules checklist; a task whose checklist misses an area it touches gets an advisory *rules checklist gap* finding. The walkthrough is [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#rules-and-context).
 
 | Task | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
@@ -6934,7 +7219,9 @@ MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A fil
 
 Every decomposed story gets the built-in pack's closing tasks appended, and `autonomous.task_templates.mode` — a global map of **template id → mode**, not per-project — decides who performs each appended task: **`llm`** — a worker session runs it, verifier included, like any other task (the default for `docs_set`; also the default for `final_gate`, though the daemon's script gate performs it — see below); **`daemon`** — the daemon performs the task itself and completes it, spending no model session and running no verifier (the default for `changelog_entry`, `parity_issue_draft`, `bounded_load_step` and `version_bump_left_to_merge`); **`off`** — the standard task is not appended to the story at all. In daemon mode, `changelog_entry` and `parity_issue_draft` write their generated artefact with the same edit-protection rules as the generated-artefacts feature: a file already edited, or a kind switched off in the generated-artefact settings, is skipped with the reason recorded in the task's decision note, and the task still completes; a write it cannot make (for example no project directory) marks the task failed. `bounded_load_step` and `version_bump_left_to_merge` write nothing — their spec text is recorded as the story's decision note. A daemon-run task shows in the story record as completed with its decision note, and has **no worker session** in the session list; the structural checks (decompose lint, per-task verification script, report, file tokens) skip it, because a handler performs it, not a judge.
 
-**The `final_gate` exception — no session at all, whichever mode is set.** When the executor reaches a task of kind `final_gate`, the daemon itself runs the **script gate**, and `llm` no longer means a session performs it. The gate resolves its checks by strict preference, and a higher step takes the whole run: the task's own `verification_script` (when it is a path under `.datawatch/verify/`; a valid path whose file is missing fails the gate) — it runs alone; else the project gate command (the project's `policy project_gate_command`, else the global `autonomous.project_gate_command` when set) — it runs alone; else **every** verification script the story's other tasks declare, in story order, until the first failure. The first two steps replace the story scripts rather than adding to them; the last runs all the scripts it finds. Every script it runs must live under the project's `.datawatch/verify/`, and a symlink that leads outside it is refused. It runs the checks in order, all inside one shared deadline — `autonomous.script_gate_timeout_seconds`, default **900** seconds, `0` for no cap, a negative value refused on write — and when the deadline hits the running check's whole process group is killed. Each check's output goes into its own report section, and the report — every section plus the final verdict — is written once, when the run ends, to the task's report path: the template-appended gate's `.datawatch/reports/\<feature\>-final-gate.txt`, or `.datawatch/reports/final-gate.txt` for a custom gate task that carries no path. A clean pass completes the task; a failed check, a timeout, or a gate the daemon could not run at all is a **failed task with the reason named** — a gate with nothing runnable is a visible failure, not an unclosed story — and a decision record is added either way. The mode still matters for the gate: valid values are `llm` (the default) or `off` — `daemon` is refused on write — and `off` means the story has no closing gate at all. The walkthrough is the [script-gate section of the decompose-lint how-to](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session).
+**The `final_gate` exception — no session at all, whichever mode is set.** When the executor reaches a task of kind `final_gate`, the daemon itself runs the **script gate**, and `llm` no longer means a session performs it. The gate resolves its checks by strict preference, and a higher step takes the whole run: the task's own `verification_script` (when it is a path under `.datawatch/verify/`; a valid path whose file is missing fails the gate) — it runs alone; else the project gate command (the project's `policy project_gate_command`, else the global `autonomous.project_gate_command` when set) — it runs alone; else **every** verification script the other tasks of **every story of the Automaton** declare (standard-task tasks and other final gates skipped), in story order, until the first failure. There is **one** final gate per Automaton: the pack applies it once, to the last story, depending on every task, and a `final_gate` the planner placed on an earlier story is silently dropped when the pack is applied (no lint rule rejects it).
+
+The first two steps replace the story scripts rather than adding to them; the last runs all the scripts it finds. Every script it runs must live under the project's `.datawatch/verify/`, and a symlink that leads outside it is refused. It runs the checks in order, all inside one shared deadline — `autonomous.script_gate_timeout_seconds`, default **900** seconds, `0` for no cap, a negative value refused on write — and when the deadline hits the running check's whole process group is killed. Each check's output goes into its own report section, and the report — every section plus the final verdict — is written once, when the run ends, to the task's report path: the template-appended gate's `.datawatch/reports/\<feature\>-final-gate.txt`, or `.datawatch/reports/final-gate.txt` for a custom gate task that carries no path. A clean pass completes the task; a failed check, a timeout, or a gate the daemon could not run at all is a **failed task with the reason named** — a gate with nothing runnable is a visible failure, not an unclosed story — and a decision record is added either way. The mode still matters for the gate: valid values are `llm` (the default) or `off` — `daemon` is refused on write — and `off` means the Automaton has no closing gate at all. The walkthrough is the [script-gate section of the decompose-lint how-to](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session).
 
 **Reading each task's real mode.** The Automata → **Templates** → **Standard tasks** sub-tab draws each task's **mode** as it is resolved (`llm`, `daemon` or `off`), so what it shows is what the decomposer applies. It has **no runner column yet**: a `final_gate` on `llm` still shows `llm` there, while its runner is the script gate. Read `runner` on the CLI (`datawatch autonomous standard-tasks`), REST (`GET /api/autonomous/standard-tasks`), MCP (`autonomous_standard_tasks`) or the comm channel (`standard tasks`). The runner values are described in [howto/automata-standard-tasks.md](howto/automata-standard-tasks.md#the-runner-column).
 
@@ -6948,6 +7235,37 @@ Every decomposed story gets the built-in pack's closing tasks appended, and `aut
 The walkthrough is [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#template-mode-who-runs-the-task) and [its script-gate section](howto/automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session); the terms, including the daemon-mode behavior of each template and the script gate, are in [datawatch-definitions.md](datawatch-definitions.md#decompose-lint).
 
 ---
+
+## Planning failures (a draft that could not be planned)
+
+An Automaton whose planning gave up is a draft with no stories; the
+reason is recorded on it, not lost. Read the record before you retry:
+it names the rule, the exact phrases (at most 20), the category,
+whether it can be retried, the retry counts per category and the budget
+of that category.
+
+- **Release numbers are corrected by the daemon.** If a fixed release
+  number is the only content failure of a plan, the daemon rewrites it to
+  "the release" or "the next patch above main" and logs one `auto_correct`
+  decision line (`old -> new`, with story and task) instead of failing.
+  It does so only when every other plan check passes on the corrected
+  plan.
+- **A non-retryable failure raises one warning alert**, "Automaton could
+  not be planned: <title>", once per recorded failure, and survives a
+  restart without repeating. A retryable failure raises nothing until its
+  retry budget is spent.
+- **A reword question is asked when the daemon can fix every finding.**
+  Answer **Fix the wording and plan again** to rewrite the spec with the
+  spec lint's suggestions and plan again, or **Leave it** (the default) to
+  change nothing. A spec with a private address or a worktree path needs
+  your hand: the alert is raised and no question is asked.
+- **The planner's prompt carries a forbidden-pattern list** (fixed release
+  number, tracker id, system path, private address, worktree path) after
+  the decompose guidance; it is not configurable.
+- **The daemon can re-plan a stuck draft by itself.** The `autonomous.housekeeping_repairs.planning` group (default `report`) does what the reword question's fix answer does, for a draft with no stories whose non-retryable failure the daemon can reword; in `report` it only records it. See *Housekeeping repairs: planning* above.
+- Nothing here touches, kills or signals a session. The retry budget is the existing `retry_policy`; the planning repair group is the only setting for the daemon's own re-plan.
+
+Details and the question's wording: [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).
 
 ## Model request progress (a hung request told from a slow one)
 
@@ -7005,7 +7323,7 @@ The read is GET-only (any other method is 405), needs the autonomous read capabi
 
 ## Automaton protected paths (a task may not change the rules without a decision)
 
-A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
+A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. Worker progress notes no longer reach the gate in the ordinary case either: every worker prompt that gets its rules and context block also gets a short, fixed rule that the Checkpoints sections of the rules files are operator- and supervisor-only and that a worker progress note belongs in `CHECKPOINT.md` ([worker progress notes no longer touch the rules file](howto/automaton-protected-paths.md#worker-progress-notes-no-longer-touch-the-rules-file)). The gate also covers the rule's failure mode: a worker that appends a checkpoint entry to the rules file anyway is not held when that entry is the file's entire change since the base commit — the gate strips the entry out of the file and records a `protected_paths_checkpoint_reverted` decision — and a change that goes beyond the entry is still held the same way (see [the checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert)). The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
 
 **The three keys.**
 
@@ -7015,7 +7333,7 @@ A worker can edit any file inside the project, including the file that holds the
 | `autonomous.automation.protected_paths_action` | What happens when a task changes a protected path | `hold` | `hold`, `warn`, `block`, `off` (anything else is refused on every write surface; an unset key reads `hold`) |
 | `autonomous.automation.rules_review_source` | Where the rules review reads the project rules | `base_commit` | `base_commit`, `worktree` (anything else is refused on every write surface; an unset key reads `base_commit`) |
 
-`hold` parks the task as blocked with the changed paths and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` records a decision, an audit event and a warning alert and lets the task go on. `block` parks the task as blocked with the error `protected_path_blocked: <paths>` and raises no question. `off` does no check. The gate never reverts, resets, amends or rewrites anything. `base_commit` gives the judge the rules and context files as they were at the Automaton's base commit; `worktree` tells it to read them from the working directory. The rules review itself runs only when `rules-review` is in the Automaton's guardrail list.
+`hold` parks the task as blocked with the changed paths and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` records a decision, an audit event and a warning alert and lets the task go on. `block` parks the task as blocked with the error `protected_path_blocked: <paths>` and raises no question. `off` does no check. Apart from the [checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert) — a worker's own checkpoint entry, stripped from a rules file when it is the file's entire change since the base commit — the gate never reverts, resets, amends or rewrites anything. `base_commit` gives the judge the rules and context files as they were at the Automaton's base commit; `worktree` tells it to read them from the working directory. The rules review itself runs only when `rules-review` is in the Automaton's guardrail list.
 
 **Changing the settings.**
 
@@ -7067,6 +7385,7 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 | An answer did not match the hold | — | `protected_paths_answer_ignored`, `protected_paths_answer_invalid` |
 | An Automaton's authorised list is set | `autonomous_protected_paths_authorised_set` | `protected_paths_authorised_set` |
 | A task changed a path the authorised list covers | — | `protected_paths_authorised` |
+| The gate stripped a worker's checkpoint entry from the rules file | — | `protected_paths_checkpoint_reverted` |
 | The check could not run | — | `protected_paths_check_skipped` |
 | The rules review fell back to the working tree | — | `rules_review_source_fallback` |
 
@@ -7074,7 +7393,7 @@ The audit details carry the Automaton id, the task id, the paths and the base co
 
 **Known limits.** In direct mode a change made by the operator or by a parallel task in the same tree during the task can be attributed to it. A file that was dirty before the task started is not attributed unless a commit made since the base touched it. When the base commit cannot be resolved the gate skips with a warning and the rules review reads the working tree for that run; both are recorded.
 
-**What the gate never does.** It never reverts, resets, amends or rewrites a change by itself, never pushes or merges, and never changes the list, the action or an authorised list on its own. Only the **reject** answer puts files back, only the exact paths of the hold, in a new commit. The status read never runs git and never changes anything. In `off` it does not look at the tree at all.
+**What the gate never does.** Apart from the [checkpoint-entry revert](howto/automaton-protected-paths.md#the-checkpoint-entry-revert) — a worker's own checkpoint entry, stripped from a rules file when it is the file's entire change since the base commit — it never reverts, resets, amends or rewrites a change by itself, never pushes or merges, and never changes the list, the action or an authorised list on its own. Only the **reject** answer puts files back, only the exact paths of the hold, in a new commit. The status read never runs git and never changes anything. In `off` it does not look at the tree at all.
 
 ---
 
@@ -7591,6 +7910,7 @@ Bridge first, then typed text: if the target session has a channel bridge with a
 - **One-shot** — removed only after *successful* delivery; failure → one retry → log + drop (the daemon never blocks on a dead target).
 - **Expiry** — `expires_at` is enforced by the janitor; the record stops matching once the timestamp elapses.
 - **Coalesce** — human-facing sink deliveries (comm/alert) are batched in quiet windows rather than one message per event.
+- **Delivery** — each subscription has its own bounded in-memory queue (depth 256) and goroutine; emitting an event never blocks on a subscriber. A subscriber whose queue is full misses events of its own (per-subscriber dropped counter, at most one rate-limited log warning per subscriber per 10 seconds: `lifecycle subscriber <id> queue full: dropped <kind> …`); every other subscriber keeps receiving, and the emitting Automaton is unaffected.
 - **Update** — `PUT` replaces filter, sink, action, `coalesce`, `one_shot` and `expires_at` wholesale: a field left out is cleared, so send the full desired configuration. The id and creation time are kept, and the engine re-attaches immediately.
 - **Test-fire** — delivers one synthetic `prd.updated` event whose text starts with `[test] ` to just that subscription's sink, through the same sink wiring a real event uses. It never types the `send_input` action text, never consumes a one-shot and bypasses coalescing, so it is safe to run against a live rule. The reply is `{"ok":true,"sink":"<type>"}` or `{"ok":false,"sink":"<type>","error":"…"}` (for example `sink not available` when that delivery path is not wired in this daemon). Test-fire is audit-logged.
 
@@ -7613,6 +7933,7 @@ Queue contents are **in memory only**: they are bounded per queue, cursors resta
 - A `webhook` or `peer` subscription is refused while its switch is off. Both switches ship off; see [Outbound webhook sink and peer forwarding](#outbound-webhook-sink-and-peer-forwarding-ships-disabled).
 - A test-fire that reports `ok:false` names the cause in `error`; check the sink's own prerequisites (a comm router configured, the target session exists, topic publishing wired).
 - A poll that always returns no events: confirm a subscription with sink type `mcp_queue` and the *same queue name* exists (`datawatch autonomous subscriptions`), and that you are not passing a `since` cursor from before a daemon restart (cursors restart at 1).
+- A `lifecycle subscriber <id> queue full: dropped <kind>` line in the daemon log: one subscriber's queue was full while it was busy — only *that* subscription missed events (and its own dropped counter carries the total) while everything else kept receiving. One such line is a transient slow sink; a steady stream against the same id means that sink is permanently slower than the event rate (the 256-deep queue and the 10-second warning cadence are fixed, not settings — speed up or re-target that sink).
 
 **Checklist record:** `docs/config-reference.yaml` — `autonomous.notify.pending_events_max` documented; localization — the Subscriptions tab strings are in all five locale bundles; version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
  full checklist outcome recorded in the design doc's Phase 3 and Phase 4 bullets.
@@ -7857,11 +8178,13 @@ Task routing picks the worker and verification LLM for each task by its type (do
 | Comm | `autonomous task-routing show\|profile list\|profile use <name>\|automaton <id>\|dry-run <id> [profile]` |
 | Web | Settings, Automata tab, Task routing card; per-task routing column in the Automaton detail view |
 
-Reads use the autonomous read permission and writes the autonomous write permission (federated callers: the autonomous-read and config-write capabilities on the MCP tools). Switching, saving or deleting a profile changes only tasks created afterwards and never touches a session.
+Routing never overwrites a hand-set task, story or Automaton LLM (on a normal run, add-task or re-decompose), and switching the active profile spares running and already-routed tasks. Reads use the autonomous read permission and writes the autonomous write permission (federated callers: the autonomous-read and config-write capabilities on the MCP tools). Switching, saving or deleting a profile changes only tasks created afterwards and never touches a session.
 
-A bad block is rejected whole; a row naming an Opus or Fable model needs `allow_premium_model` on that row. Each task records its routing result and the Automaton's decision log gets a `task_routing` entry. The full guide is [howto/automata-task-routing.md](howto/automata-task-routing.md).
+A bad block is rejected whole (an unknown backend or model is refused against the live LLM registry); a row naming an Opus or Fable model needs `allow_premium_model` on that row. Through `PUT /api/config` a refused routing key is skipped, not stored: the reply is HTTP 200 with `skipped`, `skipped_reason` and `skipped_problems` (each problem names its profile and row), and MCP `config_set`, `datawatch config set` and the chat `configure` verb report `not stored:` instead of a confirmation. The dedicated routing routes return 400 on a bad table. Each task records its routing result and the Automaton's decision log gets a `task_routing` entry. The full guide is [howto/automata-task-routing.md](howto/automata-task-routing.md).
 
-**Operator review.** Turn routing on only after checking the shipped `default` profile's backends and models suit your nodes (it names `pi-prompt` with `ollama/qwen3.8:27b` and `claude-code` with `sonnet`). Run a dry run on a draft Automaton first. Still open: the chat channel cannot save, delete, import, export or edit profiles (only `profile use`), by design to keep chat replies short, so confirm that is acceptable; the dry run is meant for drafts and its result on an already-decomposed Automaton is worth a manual check; the German, Spanish, French and Japanese strings for the Settings card and detail column were added with the English ones and have not had a native-speaker review; and `docs/mcp.md`, the REST API reference and the CLI reference do not yet list the new tools, routes and command group.
+Five guarantees hold on every surface: a hand-set LLM is never overwritten, switching the active profile affects only tasks created afterwards, an unknown backend or model is refused naming the profile and row, an Opus or Fable row needs `allow_premium_model`, and the three `autonomous.task_routing` config keys are settable on REST, MCP, the chat `configure` verb, the CLI and the Settings page with the same validation (see [the guarantees](howto/automata-task-routing.md#the-routing-guarantees)).
+
+**Operator review.** Turn routing on only after checking the shipped `default` profile's backends and models suit your nodes (it names `pi-prompt` with `ollama/qwen3.8:27b` and `claude-code` with `sonnet`). Run a dry run on a draft Automaton first. Still open: the chat channel cannot save, delete, import, export or edit profiles (only `profile use`), by design to keep chat replies short, so confirm that is acceptable; the dry run is meant for drafts and its result on an already-decomposed Automaton is worth a manual check; the German, Spanish, French and Japanese strings for the Settings card and detail column were added with the English ones and have not had a native-speaker review; a re-decompose after a profile switch re-routes router-routed tasks that have not started, which is intended but worth confirming for in-flight Automata; `PUT /api/config` answers 200 for a skipped routing key, so a script that checks only the status code will miss a refused block and must read `skipped`; and the REST API reference and the CLI reference do not yet list the new routes and command group (`docs/mcp.md` and `docs/api-mcp-mapping.md` now do).
 
 ## Plugin services: lifecycle semantics
 
@@ -7896,6 +8219,7 @@ The manifest's `lifecycle.supported_modes` is the **ceiling**: the operator's ch
 - **Service tokens** — the credential a service *presents to the daemon* (e.g. imap-mcp resolving a scoped secret) — are minted by the operator in a real terminal (`datawatch secrets mint-service-token <name> --desc "…"`), never via an agent or a transcript-capturing shell: the printed line is the only plaintext. `list-service-tokens` shows names only; `revoke-service-token <name>` drops the credential.
 - **Widget push tokens** are separate again: minted against the plugin (`/api/plugins/<name>/widgets/token`), returned once, and verified only on that plugin's push route.
 - Read surfaces (PWA, REST, MCP) show the *names* of every family — values are never echoed.
+- **No token source wired:** a service-kind plugin installed while no plugin token source is wired used to crash the daemon at start (a typed-nil model-use source). It now starts normally; model-node events are skipped and `GET /api/plugins/<name>/models` returns `503 plugins not available` until the source is wired. Check `daemon_logs` after a start with a service plugin installed, and expect no model-use card data until then.
 
 The how-to in [docs/howto/imap-mcp-service.md](howto/imap-mcp-service.md) walks the store → attach → rotate loop.
 
@@ -7945,6 +8269,42 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 ### Android / iPhone
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
+
+## Peer TLS (verify by default)
+
+Every outbound connection the daemon makes to a registered peer — remote servers (`servers:` / proxy mode) and federation peers — **verifies the peer's TLS certificate against the system trust store by default**. An `https://` peer with a trusted-CA certificate works with no extra setting; a peer with a self-signed or private-CA certificate fails the TLS handshake until one of the per-peer options below is set.
+
+Per-peer options (all independent — every other peer keeps full verification):
+
+- `tls_cert_fingerprint` — pin the peer's leaf certificate: the SHA-256 of that one certificate, 64 hex characters (colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. A malformed value is rejected when saved (REST `400`, CLI error), and the pin **wins over** `tls_skip_verify` — the two cannot both be set (CLI refuses locally, REST returns `400`). The pin stops matching when the peer's leaf changes (renewal, re-issue): the peer then goes unreachable until the pin is updated. Derive it with `openssl s_client -connect <host:port>` to save the leaf, then `openssl x509 -noout -fingerprint -sha256 -in <leaf.pem>`.
+- `tls_skip_verify: true` — turn verification off for that peer only (self-signed/local-dev peer on a trusted network). Saving or seeding such a peer is announced three ways: the create/update response carries a `warnings` array (`POST /api/servers/{name}/test` and the federation `test` endpoint do too), the daemon logs the one line `<name>: this peer's certificate is not verified (tls_skip_verify is set); set tls_cert_fingerprint to pin its leaf certificate instead`, and it emits a warn-level system alert titled **Peer certificate not verified** — at most once per peer per daemon run (a startup sweep also covers peers that were already seeded or stored, so they warn exactly once per run).
+
+Surfaces that set it:
+
+| Surface | How |
+|---------|-----|
+| PWA | Settings → Comms → Servers Add/Edit form: **Skip TLS certificate verification** checkbox (warning line: "TLS certificate verification is disabled for this server — use only on a trusted network.") + **Certificate fingerprint (pin)** field, mutually exclusive in the form; the Observer → Federation Peers card's add/edit peer form carries the same pair |
+| CLI | `datawatch server add/update --tls-skip-verify \| --tls-cert-fingerprint <64-hex>`; `datawatch federation peer add/update` take the same flags (`--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`; on update, omitting `--tls-cert-fingerprint` leaves the pin unchanged) |
+| REST | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` and `/api/federation/peers`; pin + skip together or a malformed pin → `400` |
+| MCP | `server_add`, `server_update`, `federation_peer_add`, `federation_peer_update` accept `tls_cert_fingerprint` (the skip flag is `tls_skip_verify`) |
+| YAML | `tls_cert_fingerprint` or `tls_skip_verify` on the `servers:` entry (restart required; builtins are read-only in the UI) |
+
+**Operator review before rolling out:** peers you reached before by trusting their CA only in the browser are not covered — the daemon's own proxy and health calls need the CA in the daemon's system trust store, a pin, or the explicit skip. Prefer the pin (or a trusted CA) over `tls_skip_verify`; every skipped, unpinned peer shows up in the Alerts tab as **Peer certificate not verified**, which is the review queue. A pinned peer needs its pin refreshed when the peer's leaf certificate changes. See [howto/multi-servers.md](howto/multi-servers.md#peer-tls-verified-by-default) for the walkthrough, and [howto/peer-tls-verification](howto/peer-tls-verification.md) for the cross-link reference covering all three peer links.
+
+## Observer push TLS (verify by default)
+
+Observer pushes — a worker's Shape A push into its parent, and the primary → root federation push (`observer.federation`) — now verify the counterpart's TLS certificate. Before this change the worker push ran with certificate checking off unconditionally.
+
+| Channel | Knob | Effect |
+|---------|------|--------|
+| Worker push (`https://` parent) | *(none)* | Parent's leaf verified against the system trust store; one startup notice says so. |
+| | `DATAWATCH_PARENT_CERT_FINGERPRINT` (hex SHA-256 of the parent's leaf) | The chain is not checked and the leaf must match; a malformed pin fails closed. **The pin wins over the opt-out.** The parent already injects this variable into container workers for the bootstrap channel. |
+| | `DATAWATCH_OBSERVER_PUSH_INSECURE=1\|true\|yes\|on` | Explicit opt-out, honored only when no pin is set; startup warning names the parent host (never tokens). |
+| Federation push | `observer.federation.insecure: true` | Still skips verification, but the daemon prints `[observer/federation] WARNING: TLS certificate verification is SKIPPED for the federation root <url>…` at startup (no pin knob; trust the root's certificate instead). |
+
+What does not change: the bootstrap channel's existing unverified fallback for a TLS-less parent, and `datawatch-stats` (a separate binary with its own `--insecure-tls`).
+
+**Operator review before upgrading a fleet:** a peer that pushed to a self-signed or private-CA `https://` parent was working only because verification was off; after the upgrade the push fails the TLS handshake unless the parent's leaf fingerprint is pinned or the opt-out is set. A primary pushing into a self-signed root needs the root's certificate in the system trust store, or the (warned) `observer.federation.insecure: true`. The walkthrough with the openssl derivation is in [howto/federated-observer → Push-channel TLS (verified by default)](howto/federated-observer.md#push-channel-tls-verified-by-default), with the cross-link reference in [howto/peer-tls-verification](howto/peer-tls-verification.md).
 
 ## LLM billing mode
 
@@ -7999,6 +8359,8 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 
 **Current reach.** Records are available on REST (`/api/plan-records/...`), MCP (`plan_record_list`, `_get`, `_create`, `_update`, `_search`, `_import`), the CLI (`datawatch plan-record`), the chat verbs (`autonomous plan-records`, `autonomous plan-record ...`) and the Plan records section of the Projects page in the web app. Configuration is `autonomous.plan_records.enabled` (default on), `write_through` (default off) and `import_conflict_policy` (default `suffix`). `docs/plans/README.md` and the findings files stay the archive; the import never writes to them. Android and iPhone do not have the view yet; track it in datawatch-app.
 
+**List filter.** The state filter of the list routes — `state` on `registry-rows`, `findings`, `search` and `browse`, and `status` (case-insensitive) on the PRD list — takes one state, or a comma-separated list of them. Without a `kind`, `browse` and `search` admit a state of either vocabulary; with a `kind`, only the states of that kind. A state no vocabulary knows is refused with a 400 naming the valid states. A state query without a comma is one exact state, admitted as-is without trim or case fold: padded tokens are trimmed only in a comma-separated list.
+
 **Storage.** One JSON file per record under `<data dir>/plan-records/<kind>/<uid>.json`, written through a temporary file and an atomic rename. The files are the source of truth; the index is rebuilt from them when the store opens. With secure mode on, every record is sealed with the same file sealing the other per-record data files use. Only `kind`, `project`, `state`, `id`, `uid`, `legacy_number`, `created_at`, `updated_at` and `closed_at` stay readable without the key; the title, body and every other field exist only in the sealed payload.
 
 **Import rules.** The project must be a registered project alias (an unknown alias is refused with a message to register it first), and its directory must sit under an allowed project root (`server.allowed_project_roots` plus the built-in roots). The default project is `datawatch`. Rows and findings are imported read-only and idempotently; the conflict policy (`suffix`, `rename`, `skip`) applies to every conflict in one pass, and the setting `import_conflict_policy` is used when the call names none. A dry run (CLI default; REST `?dry_run=true`) writes nothing. A real run writes one summary audit event, `plan_record_imported`.
@@ -8009,4 +8371,35 @@ The plans-and-backlog records that used to live as numbered rows in `docs/plans/
 
 **Derived project field.** Automaton and Automation reads carry a read-only `project` field derived from the registered project aliases. It is computed per read and never stored; with no matching alias the field is omitted. Progress counting by project is unchanged: a record with no project still counts under the none key.
 
+**Plans (links, migration, read API).** Plans are records of kind `plan`, stored like the others, with `goal`, `order` and the link lists `automations`, `automata` and `findings`. No new setting: the plans routes follow `autonomous.plan_records.enabled` and answer 404 while it is off. A link is never overwritten (`ErrLinkConflict`, a refusal naming the holder); link and order changes write `plan_record_linked`, `plan_record_unlinked` and `plan_record_reordered`. `datawatch plans migrate` (REST `POST /api/plans/migrate`, MCP `plan_migrate`, chat `autonomous plan-migrate`) previews by default; `--apply` writes plans from the plans and registry rows, each tagged `migrated-from` so a rerun is a no-op, and writes one `plan_record_imported` event with subject `plans migrate`. It deletes no plan, row or config key. The read routes (`/api/projects/{name}/plans`, `overview-summary`, `/api/plans/{ref}/automata`, `.../tasks`, `/api/plan-records/browse`) read the summary index, which is kept in step on every write, so they stay fast at thousands of records; only `.../tasks` opens Automaton records. Writes go through `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order` and `POST /api/plans/{ref}/attach|detach` (MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`; CLI `datawatch plans`; chat `autonomous plan`); they need `autonomous:write` for a federated peer. Not in MCP: the read routes. Android and iPhone do not have the Plans view yet; track it in datawatch-app. The plans route and the roll-up `arcs` field are deprecated and still answer, now with a `plans` list added.
+
+**Release plans, themes, archive and the approval-gated migrations.** A plan can be a release plan (`plan_kind` `release` with a `release` label): a plan is a release, themes group its Automata and Automations inside it, and registry rows and findings are items that link into a plan (registry row links, backlog items, attached findings), never plans of their own. There is no new setting: every route below follows `autonomous.plan_records.enabled` and answers 404 while it is off, a read needs `autonomous:read` and a change needs `autonomous:write` for a federated peer. The operator surfaces are REST (`GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `archived=` on `GET /api/projects/{name}/plans`), MCP (`plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and the release forms of `plan_create` and `plan_migrate`), the CLI (`datawatch plan theme|archive|restore|unattributed|attach|migrate --release|row-plans`), chat (`autonomous plan themes|theme|archive|restore|unattributed|attach|migrate release`; the row-plan conversion has no chat verb) and the release controls of the Plans sub-tab in the web app. The mapping is in [api-mcp-mapping.md](api-mcp-mapping.md#release-plans-themes-archive-and-migration-every-surface), the commands in [commands.md](commands.md#datawatch-plan-release-plan-commands) and the walkthroughs in [plan records](howto/plan-records.md#release-plans-and-themes).
+
+*Archive.* Archive and restore mark a plan `archived` (with `archived_at` and an optional reason of up to 1000 characters). Archiving keeps the plan's file, links, themes and order and never touches an Automaton, Automation, registry row, finding or setting; nothing is deleted, restore clears the mark and the plan returns to the place its order gave it. The default plan lists, the backlog, search and the overview counts leave archived plans out; `archived=include` or `archived=only` on the project plans list (and the web app's archived filter) shows them, and the overview reports `counts.plans.archived`. Both calls are idempotent (a repeat answers `changed: false` and writes no audit event), only plans can be archived, and a caller can name one protected plan (usually the current release plan) that is refused with a 409 while it holds Automata. Audit: `plan_record_archived` and `plan_record_restored` (actor, automata_held, order, and the reason on an archive).
+
+*Approval-gated migrations.* Two calls move many things at once and are gated by an approval: the release migration (`POST /api/plans/migrate` with `mode` `release`) files a project's Automata under the current and next release plans (default labels `10.0` and `11.0`, or the labels the caller gives) and the row-plan conversion (`POST /api/plans/migrate/row-plans`) turns the registry-row plans the earlier plans migration made into registry row links and backlog items and archives them. Both preview by default and return a `preview_id`, a stable hash of what the preview shows. A written run needs `apply` plus that id: a missing id is refused with 400, an id that no longer matches (the plans, the Automata or the operator marks changed since the preview) is refused with 409, and in both cases nothing is written. The CLI prints the preview and refuses `--apply` without `--preview-id`, and chat and MCP refuse before anything is sent. A run holds a lock, so two approvals cannot interleave. An Automaton or Automation another plan already holds is reported as a conflict and never moved; items outside both releases are skipped with a reason; nothing is deleted; a second approved run changes nothing. Operator marks (`marks`, REST, MCP and CLI only) override the target release and theme of one Automaton and are part of what the preview id covers. Audit: each written change is recorded under the store actions `plan_record_release_migrated` and `plan_record_row_plans_converted` (details: actor, `op`, project) and each theme change under `plan_record_theme_changed` (details: `theme_op`); the daemon's audit log shows these three as `plan_record_updated`, so read `op` or `theme_op` in the details to tell them apart.
+
+*Limits and rules.* Themes: at most 50 per plan, names up to 100 characters and unique case-insensitively; an item is in at most one theme; detaching an item removes it from its theme; removing a theme leaves its items unplaced; only a release plan has themes. A project has one release plan per label, and a second is refused naming the holder. A bulk attach takes up to 500 ids and answers one result line per id, so a refused id never stops the others. A record is held by a plan as a registry row link or as a backlog item, not both, and a finding attached to another plan is refused. A row-plan is recognised by its source marker plus the title form, never by title alone; one whose Automata are not all on a release plan yet waits. The release plan, theme, row link, backlog item and archive fields are optional, so older records load unchanged.
+
+*Operator review.* Before approving the release migration read its `conflicts`, `unplaced` and `skipped` lists and the two release labels; before approving the row-plan conversion read `waiting`, `other_release_plans` and the release the backlog items go to. Release plans are created by hand only over REST and MCP; the CLI, chat and web app get them through the release migration. Android and iPhone do not have release plans, themes, the migrations or the archive yet; track it in datawatch-app. Rollback: restore an archived plan to bring it back; detach an Automaton (`datawatch plans detach`) to undo an attach; the migrations delete nothing, so there is nothing to recover.
+
 **Rollback.** Set `autonomous.plan_records.enabled` to `false` to answer every route with 404 and hide the section; records stay on disk. Turn `write_through` off to send the registry hook back to the README. Removing the `plan-records` directory under the data dir discards every record; the original files are untouched and a new import rebuilds them. Rows shipped by write-through while it was on exist only as records, so import or copy them back by hand before discarding the directory.
+
+## Projects Overview sub-tabs (web app)
+
+Under **Automata → Projects**, choosing **Overview** in the picker shows the cross-project in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) in a strip styled like the project page sub-tabs. Each sub-tab responds to a click or tap, shows its own body, and is remembered in the browser value `cs_projects_subtab` (shared with the project page sub-tabs; restored after a refresh when it names an Overview sub-tab). Nothing is stored or served by the daemon: no setting, no REST, MCP, CLI or chat form, and no address for an Overview sub-tab. If an operator reports dead Overview sub-tabs, check the browser has loaded the current web app (hard refresh) and that browser storage is not blocked (a blocked store only loses the memory, not the clicks). Android and iPhone are not covered by this change; track parity in datawatch-app. See [howto/projects-tab.md](howto/projects-tab.md#the-overview-sub-tabs).
+
+## Projects page at phone width (web app)
+
+On a phone (600 px or less) the **Automata → Projects** page must not scroll sideways. Only the page sub-tab strip scrolls horizontally; the picker row wraps, long event, card and directory text wraps, and wide `pre` and table content scrolls inside its own box. If an operator reports a sideways-scrolling Projects page (first seen on the Events page sub-tab), hard refresh so the browser loads the current `style.css` and `app.js`, then check for content that is not in a Projects container class. The check is covered by `internal/server/web/app-projects-phone-overflow.test.js`. Nothing is stored or served by the daemon: no setting, REST, MCP, CLI or chat form. Android and iPhone are not covered; track parity in datawatch-app. See [howto/projects-tab.md](howto/projects-tab.md#for-the-operator-to-review).
+
+## Pre-tag run (`make pre-tag`)
+
+`make pre-tag` runs `scripts/pre-tag.sh`: the release gates that CI would otherwise find after the tag, run locally in CI order, stopping at the first failure. The Go test suite (`go test ./... -count=1`) no longer runs in CI: the step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build` (formerly `go test + lint`). This run is the only gate that runs it, so run it before every tag; CI still runs lint, the build and the security and release jobs. The step list and knobs are in [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
+
+- **Record.** Every run, pass or fail, appends `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>` to `.datawatch/pre-tag-record` (override with `PRE_TAG_RECORD_FILE`). The file is git-ignored. A dry run (`PRE_TAG_DRY_RUN=1`) writes nothing.
+- **Missing tools.** A step whose tool is absent prints `SKIP [step]: <tool> not found` and does not fail the run. Install `golangci-lint`, `govulncheck`, `gosec`, `gitleaks`, `goreleaser`, `docker` and `python3` on the build host or those gates are not checked.
+- **Slow steps.** `slow-opt-in` runs `make test-tmp-guard`, `make test-cross-build` (all five release targets build), the perf rollup check and the busy-loop checks. Each is niced, limited to a quarter of the CPUs (at least one), killed after `PRE_TAG_SLOW_TIMEOUT` seconds (default 21600) and killed if the script is interrupted.
+- **Test daemons.** `go test` runs with `TMUX` and `TMUX_TMPDIR` removed; the runner starts no daemon of its own.
+- **Tests.** `tests/test-pre-tag.sh` runs in `make test`.
+

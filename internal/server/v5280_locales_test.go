@@ -75,16 +75,58 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// Automaton hold: card actions, the hold dialog fields, the held
+		// Automata line, the Inbox Held group (counted separately from blocked
+		// and needs-review) and the Progress card Held column.
+		"automaton_hold_reason_prompt",
+		"automaton_hold_until_prompt",
+		"automaton_hold_release_ask",
+		"automaton_hold_toast_set",
+		"automaton_hold_toast_released",
+		"automaton_hold_toast_extended",
+		"held_automata_inbox_title",
+		"automaton_hold_action",
+		"held_automata_inbox_empty",
+		"automation_help_held_automaton",
+		"progress_card_col_held",
+		"projects_subtab_plans",
+		// Plans browser: backlog group, create action, the Automation heading and the move buttons.
+		"plans_browser_backlog",
+		"plans_browser_create_btn",
+		"plans_browser_move_up",
+		"plans_browser_move_down",
+		"automation_plans_browser_heading",
 		"observer_peer_stale",
 		"settings_observer_peers",
 		"settings_observer_peer_silent_alert_minutes",
 		"settings_observer_peer_silent_alert_minutes_hint",
 		"observer_peer_never_pushed",
+		// Automaton detail — landing state block (state, commit, actor, time,
+		// reason) and its keep/drop decision buttons.
+		"automata_detail_landing",
+		"automata_detail_landing_at",
+		"automata_detail_landing_actor",
+		"automata_detail_landing_commit",
+		"automata_detail_landing_drop_btn",
+		"automata_detail_landing_drop_prompt",
+		"automata_detail_landing_keep_btn",
+		"automata_detail_landing_keep_prompt",
+		"automata_detail_landing_none",
+		"automata_detail_landing_reason",
+		"automata_detail_landing_state_dropped",
+		"automata_detail_landing_state_kept",
+		"automata_detail_landing_state_landed",
+		"automata_detail_landing_state_pending",
 		// Projects manage form action keys.
 		"projects_manage_add_action",
 		"projects_manage_save_action",
 		"projects_manage_cancel_action",
 		"projects_manage_remove_action",
+		// Project link control and the Automata-without-a-project section.
+		"automaton_project_label",
+		"automaton_project_save",
+		"projects_page_without_project",
+		"projects_page_without_project_hint",
 		// b4220001 — PWA splash dwell settings and the previous-version line.
 		"splash_version_previous",
 		"settings_splash_min_seconds",
@@ -159,10 +201,17 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_housekeeping_task_chain_help",
 		"settings_housekeeping_advance_judge",
 		"settings_housekeeping_advance_judge_help",
+		// Settings groups / card titles / nav labels
+		"state_chips_all",
+		"state_chips_selected",
+		"state_chips_clear_all",
+		"state_chips_remove",
 		"settings_housekeeping_lane_fill",
 		"settings_housekeeping_lane_fill_help",
 		"settings_housekeeping_leftovers",
 		"settings_housekeeping_leftovers_help",
+		"settings_housekeeping_planning",
+		"settings_housekeeping_planning_help",
 		"housekeeping_repairs_card_title",
 		"housekeeping_repairs_help_link",
 		"housekeeping_repairs_purpose",
@@ -171,6 +220,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"housekeeping_repairs_group_advance_judge",
 		"housekeeping_repairs_group_lane_fill",
 		"housekeeping_repairs_group_leftovers",
+		"housekeeping_repairs_group_planning",
 		"housekeeping_repairs_mode_off",
 		"housekeeping_repairs_mode_report",
 		"housekeeping_repairs_mode_on",
@@ -508,6 +558,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"capacity_node_model",
 		"capacity_node_unreachable",
 		"capacity_node_gpu_util",
+		// Server / federation-peer form: TLS skip-verify warning line and the
+		// certificate-pin field (label + tip) every bundle must carry.
+		"server_tls_cert_fingerprint_label",
+		"server_tls_cert_fingerprint_tip",
+		"server_tls_skip_verify_warning",
 		// Acknowledge-unauthenticated-listeners setting: label + help keys.
 		"settings_acknowledge_unauthenticated",
 		"settings_acknowledge_unauthenticated_help",
@@ -540,6 +595,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_child_inherit",
 		"settings_automation_merge_pending_mode",
 		"settings_automation_merge_pending_alert_minutes",
+		"settings_automation_merge_pending_include_terminal",
+		"merge_shadow_decisions_counts",
 		"merge_state_pending",
 		"merge_state_needs_look",
 		"safe_delete_card_title",
@@ -778,6 +835,36 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 			if _, ok := bundle[k]; !ok {
 				t.Errorf("locale %s missing required key %q", lang, k)
 			}
+		}
+	}
+}
+
+// TestLocalesStateChipSetParity asserts the shared multi-select state chip
+// helper (createStateChipSet in app.js) is fully labeled in every locale:
+// the same four chrome keys exist in all five bundles with a non-empty value,
+// so no language can fall back to the raw key name on the chip row, the
+// "All" chip, the summary line or the Remove tooltip.
+func TestLocalesStateChipSetParity(t *testing.T) {
+	keys := []string{
+		"state_chips_all",
+		"state_chips_selected",
+		"state_chips_clear_all",
+		"state_chips_remove",
+	}
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		for _, k := range keys {
+			if v, ok := bundle[k]; !ok || strings.TrimSpace(v) == "" {
+				t.Errorf("locale %s is missing (or empty) state-chip key %q", lang, k)
+			}
+		}
+	}
+	// The %1$s placeholder in state_chips_remove must survive translation —
+	// the helper substitutes the picked label into it.
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		if !strings.Contains(bundle["state_chips_remove"], "%1$s") {
+			t.Errorf("locale %s state_chips_remove must keep the %%1$s placeholder, got %q", lang, bundle["state_chips_remove"])
 		}
 	}
 }

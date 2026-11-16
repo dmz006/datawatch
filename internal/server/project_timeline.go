@@ -13,9 +13,11 @@
 // matching arc and a ProjectDir equal to the project's directory goes to the
 // "unassigned" group. Templates are left out.
 //
-// Timestamps: an Automaton starts at ApprovedAt, else CreatedAt, and finishes at
-// UpdatedAt (see historyAutomatonTimes). A task starts at StartedAt and ends at
-// CompletedAt. An arc spans the earliest start to the latest finish of everything
+// Timestamps: an Automaton spans its earliest task StartedAt to its latest
+// task CompletedAt across its Story tasks; while it runs the end stays null so
+// the client draws it to now. An Automaton with no started task falls back to
+// its created time to its completion time. A task starts at StartedAt and ends
+// at CompletedAt. An arc spans the earliest start to the latest finish of everything
 // under it. Work that is still running (an Automaton in a running status, or a
 // task with a start and no completion that is still in flight) has last=null and
 // running=true so the client draws it to now. An arc or Automaton with nothing
@@ -126,6 +128,9 @@ type timelineInput struct {
 	Parent      string // level=automata: an arc's Automation id, or "none"; empty means all
 	Automaton   string // level=tasks: the Automaton id
 	Focus       string // an arc's Automation id (or "none"); overrides Level
+	// ReleaseHeld says whether a release plan holds an Automaton. One that no
+	// arc holds but a release plan does is attributed, so it is not unassigned.
+	ReleaseHeld func(automatonID string) bool
 	Limit       int
 	Cursor      *historyCursor
 	Now         time.Time
@@ -146,6 +151,8 @@ type projectMembership struct {
 	memberOf map[string]string // PRD id -> Automation id holding it as a member
 	arcs     map[string]bool   // Automation ids that are arcs of the project
 	cleanDir string
+	// held says whether a release plan holds an Automaton; nil means none.
+	held func(automatonID string) bool
 }
 
 func newProjectMembership(arcs []config.ProjectArc, automations []*autonomous.Automation, dir string) projectMembership {
@@ -183,6 +190,9 @@ func (m projectMembership) place(p *autonomous.PRD) (arc string, unassigned, ok 
 		return auto, false, true
 	}
 	if p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == m.cleanDir {
+		if m.held != nil && m.held(p.ID) {
+			return "", false, false
+		}
 		return "", true, true
 	}
 	return "", false, false
@@ -246,9 +256,12 @@ func timelineTaskStatus(st autonomous.TaskStatus) string {
 }
 
 // timelineAutomatonStatus maps an Automaton to a timeline status. A shipped
-// Automaton that was not cancelled or failed reads as completed.
+// Automaton reads as completed no matter its recorded status, including a
+// cancelled or rejected one; an unshipped Automaton maps its status as-is.
 func timelineAutomatonStatus(p *autonomous.PRD) string {
-	shipped := p.IsShipped() || p.MergedInRelease != ""
+	if p.IsShipped() || p.MergedInRelease != "" {
+		return tlStatusCompleted
+	}
 	switch p.Status {
 	case autonomous.PRDRunning, autonomous.PRDActive:
 		return tlStatusRunning
@@ -260,9 +273,6 @@ func timelineAutomatonStatus(p *autonomous.PRD) string {
 		return tlStatusBlocked
 	case autonomous.PRDCancelled, autonomous.PRDRejected:
 		return tlStatusCancelled
-	}
-	if shipped {
-		return tlStatusCompleted
 	}
 	return tlStatusWaiting
 }
@@ -280,11 +290,34 @@ func timelineTaskRow(t *autonomous.Task) timelineRow {
 		DependsOn: append([]string(nil), t.DependsOn...)}
 }
 
-// timelineAutomatonSpan is the span of an Automaton: its created time to its
-// completion time, or now (end null) while it runs.
+// timelineAutomatonSpan is the span of an Automaton: its earliest task start
+// to its latest task completion across all of its Story tasks, or now (end
+// null) while it runs. An Automaton with no started task falls back to its
+// created time to its completion time so the row still draws. The span is
+// never shorter in a way that hides real work: it never ends before it starts.
 func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
-	var s timelineSpan
 	running := timelineAutomatonRunning(p)
+	var s timelineSpan
+	anyStarted := false
+	for _, st := range p.Story {
+		for i := range st.Tasks {
+			t := &st.Tasks[i]
+			s.add(t.StartedAt, t.CompletedAt, timelineTaskRunning(t))
+			if t.StartedAt != nil {
+				anyStarted = true
+			}
+		}
+	}
+	if anyStarted {
+		if running {
+			s.running = true
+		}
+		if s.first != nil && s.last != nil && s.last.Before(*s.first) {
+			l := *s.first
+			s.last = &l
+		}
+		return s
+	}
 	var end *time.Time
 	switch timelineAutomatonStatus(p) {
 	case tlStatusCompleted, tlStatusFailed, tlStatusCancelled:
@@ -592,6 +625,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 	out := projectTimeline{Project: in.Project, GeneratedAt: in.Now, Level: level, Limit: limit, Rows: []timelineRow{}}
 
 	mem := newProjectMembership(in.Arcs, in.Automations, in.Dir)
+	mem.held = in.ReleaseHeld
 	byArc := map[string][]*autonomous.PRD{}
 	var unassigned, all []*autonomous.PRD
 	for _, p := range in.PRDs {
@@ -624,7 +658,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		} else if mem.arcs[in.Focus] {
 			list = byArc[in.Focus]
 		} else {
-			return out, &timelineError{http.StatusNotFound, "arc not found"}
+			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
 		byID := map[string]*autonomous.PRD{}
 		for _, p := range list {
@@ -691,7 +725,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		case mem.arcs[in.Parent]:
 			list = byArc[in.Parent]
 		default:
-			return out, &timelineError{http.StatusNotFound, "arc not found"}
+			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
 		rows, out.Edges = timelineOrderedAutomata(list, timelineAutomationsFor(in.Parent, mem.arcs, in.Automations))
 	case level == timelineLevelTasks:
@@ -711,7 +745,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		}
 		rows = timelineOrderedTasks(found)
 	default:
-		return out, &timelineError{http.StatusBadRequest, "level must be arcs, automata or tasks"}
+		return out, &timelineError{http.StatusBadRequest, "level must be arcs (the plans), automata or tasks"}
 	}
 
 	out.Total = len(rows)
@@ -769,7 +803,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 	switch level {
 	case "", timelineLevelArcs, timelineLevelAutomata, timelineLevelTasks:
 	default:
-		http.Error(w, "level must be arcs, automata or tasks", http.StatusBadRequest)
+		http.Error(w, "level must be arcs (the plans), automata or tasks", http.StatusBadRequest)
 		return
 	}
 	limit, err := parseHistoryLimit(q.Get("limit"))
@@ -797,6 +831,7 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 		Parent:      q.Get("parent"),
 		Automaton:   q.Get("automaton"),
 		Focus:       q.Get("focus"),
+		ReleaseHeld: s.releaseHeldFunc(),
 		Limit:       limit,
 		Cursor:      cursor,
 		Now:         time.Now(),

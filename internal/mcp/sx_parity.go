@@ -261,8 +261,8 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 			"Register or update a project alias (BL27), and optionally its per-project policy tier — the layer between the daemon-wide defaults and the Automaton's own overrides. Unset policy keys keep the daemon tier; the daemon re-validates the block and refuses it, naming the offending field, if a key holds a value that key does not know."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Project alias")),
 		mcpsdk.WithString("dir", mcpsdk.Required(), mcpsdk.Description("Absolute directory")),
-		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend")),
-		mcpsdk.WithString("description", mcpsdk.Description("Description")),
+		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend. Omit to keep the stored value; an empty string clears it.")),
+		mcpsdk.WithString("description", mcpsdk.Description("Description. Omit to keep the stored value; an empty string clears it.")),
 		mcpsdk.WithObject("policy",
 			mcpsdk.Description(
 				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")),
@@ -270,7 +270,7 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 		mcpsdk.WithString("repository", mcpsdk.Description("Optional project record: repository (e.g. owner/name or URL). Omit to keep; empty clears.")),
 		mcpsdk.WithString("default_branch", mcpsdk.Description("Optional project record: default git branch. Omit to keep; empty clears.")),
 		mcpsdk.WithArray("arcs",
-			mcpsdk.Description("Optional ordered arc list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the arc order. Omit to keep; [] clears."),
+			mcpsdk.Description("Optional ordered plan list, replacing the stored one: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned|active|done\"}]. Array position is the plan order. Omit to keep; [] clears."),
 			mcpsdk.Items(map[string]any{"type": "object"})),
 		mcpsdk.WithObject("target",
 			mcpsdk.Description("Optional outcome the project works toward: {\"name\":\"...\",\"definition_of_done\":\"...\"}. Omit to keep the stored value.")),
@@ -281,11 +281,30 @@ func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 		mcpsdk.WithString("major_trigger", mcpsdk.Description("Optional major-release trigger. Omit to keep; empty clears.")))
 }
 func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	args := req.GetArguments()
+	name := req.GetString("name", "")
 	body := map[string]any{
-		"name":            req.GetString("name", ""),
-		"dir":             req.GetString("dir", ""),
-		"default_backend": req.GetString("default_backend", ""),
-		"description":     req.GetString("description", ""),
+		"name": name,
+		"dir":  req.GetString("dir", ""),
+	}
+	// Fix (project-upsert wiping stored values): description and
+	// default_backend were forwarded on every upsert — an empty string when
+	// the caller omitted them — and the daemon's upsert overwrites both
+	// whenever they are absent or empty, so a partial update silently wiped
+	// the description the operator had saved. Now each field is forwarded
+	// only when the caller sent it (an explicit empty string still clears it,
+	// as with owner, repository, ...), and when it is omitted the handler
+	// carries the stored value instead (see below).
+	for _, k := range []string{"default_backend", "description"} {
+		v, ok := args[k]
+		if !ok || v == nil {
+			continue
+		}
+		str, isStr := v.(string)
+		if !isStr {
+			return toolErrorf("project_upsert", "%s must be a string", k), nil
+		}
+		body[k] = str
 	}
 	if raw, ok := req.GetArguments()["policy"]; ok && raw != nil {
 		var obj map[string]any
@@ -307,14 +326,68 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 		// []byte would marshal as a base64 string.
 		body["policy"] = json.RawMessage(b)
 	}
-	if err := applyProjectRecordArgs(req.GetArguments(), body); err != nil {
+	if err := applyProjectRecordArgs(args, body); err != nil {
 		return toolErrorf("project_upsert", "%v", err), nil
+	}
+	// An omitted field must not be forwarded as an empty string (or dropped
+	// from the body): the daemon's upsert overwrites description and
+	// default_backend whenever they are absent or empty, so a partial update
+	// that leaves either field out silently wipes the stored value. The
+	// readback fires for either field being omitted — not only the description
+	// — and carries the stored value back for every omitted field, the same
+	// read-back that `datawatch projects set` and the comm channel's
+	// `project set` do. A provided empty string still forwards as a clear
+	// (that is the documented way to blank a field), and a read failure (for a
+	// new registration the GET 404s) simply leaves the field out of the body —
+	// there is no stored value to lose in that case.
+	anyOmitted := false
+	for _, k := range []string{"description", "default_backend"} {
+		if v, present := args[k]; !present || v == nil {
+			anyOmitted = true
+			break
+		}
+	}
+	if anyOmitted {
+		if stored, err := storedProjectRecordFields(s, name, "description", "default_backend"); err == nil {
+			for _, k := range []string{"description", "default_backend"} {
+				if v, present := args[k]; present && v != nil {
+					continue // provided (even "" to clear) → keep it in the body
+				}
+				if w, ok := stored[k]; ok {
+					body[k] = w
+				}
+			}
+		}
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
 		return toolError("project_upsert", err), nil
 	}
 	return textOK(string(out)), nil
+}
+
+// storedProjectRecordFields reads the named project's stored record once and
+// returns the stored values of the requested string fields (description,
+// default_backend). A read error — including a not yet registered project,
+// where the GET 404s — yields no values: the caller then omits those keys
+// from the upsert body. The daemon omits unset values (omitempty), so a key
+// present in the response always carries its stored content.
+func storedProjectRecordFields(s *Server, name string, fields ...string) (map[string]string, error) {
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name), nil)
+	if err != nil {
+		return nil, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(out, &rec); err != nil {
+		return nil, err
+	}
+	got := make(map[string]string, len(fields))
+	for _, k := range fields {
+		if v, ok := rec[k].(string); ok && v != "" {
+			got[k] = v
+		}
+	}
+	return got, nil
 }
 
 func (s *Server) toolProjectAliasDelete() mcpsdk.Tool {
@@ -459,7 +532,7 @@ func arcsArg(decoded any) ([]any, error) {
 func (s *Server) toolProjectRollup() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_rollup",
 		mcpsdk.WithDescription(
-			"Project roll-up: arcs in order with their Automata, task progress, cost in points and throughput over a window of days. Read-only."),
+			"Project roll-up: plans in order with their Automata, task progress, cost in points and throughput over a window of days. Automata that no plan holds are in unassigned when they belong to the project, and Automata without a project are in without_project (not counted in total). An Automaton counts as finished when it is completed, when it is cancelled or archived and its work branch is already on the default branch, or when it carries a shipped record; a task counts from its own completion time in the window, whatever the Automaton status. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithNumber("window", mcpsdk.Description("Throughput window in days (1–365, default 7).")),
 	)
@@ -523,12 +596,12 @@ func (s *Server) handleProjectHistory(_ context.Context, req mcpsdk.CallToolRequ
 func (s *Server) toolProjectTimeline() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_timeline",
 		mcpsdk.WithDescription(
-			"Project timeline: start, end, status (completed, running, waiting, blocked, failed or cancelled) and release of each arc, Automaton and task, one level at a time (arcs by default). Task rows carry depends_on; Automaton levels and focus replies carry edges, the chain between Automata. Rows still running have no end. Fields are returned unchanged from the daemon. Paged with limit and the cursor from the previous page. Read-only."),
+			"Project timeline: start, end, status (completed, running, waiting, blocked, failed or cancelled) and release of each plan, Automaton and task, one level at a time (level arcs, the plans, by default). Task rows carry depends_on; Automaton levels and focus replies carry edges, the chain between Automata. Rows still running have no end. Fields are returned unchanged from the daemon. Paged with limit and the cursor from the previous page. Read-only."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
-		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (default), automata or tasks.")),
-		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the arc id whose Automata to list, or none for Automata no arc holds.")),
+		mcpsdk.WithString("level", mcpsdk.Description("Which rows to return: arcs (the plans, default), automata or tasks.")),
+		mcpsdk.WithString("parent", mcpsdk.Description("With level automata: the plan id whose Automata to list, or none for Automata no plan holds.")),
 		mcpsdk.WithString("automaton", mcpsdk.Description("With level tasks: the Automaton id whose tasks to list.")),
-		mcpsdk.WithString("focus", mcpsdk.Description("One arc id (or none): returns that arc's Automata and their tasks in a single unpaged reply.")),
+		mcpsdk.WithString("focus", mcpsdk.Description("One plan id (or none): returns that plan's Automata and their tasks in a single unpaged reply.")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Maximum rows per page (the daemon's default applies when omitted).")),
 		mcpsdk.WithString("cursor", mcpsdk.Description("Opaque cursor from the previous page's next_cursor. Omit for the first page.")),
 	)
@@ -563,11 +636,11 @@ func (s *Server) handleProjectTimeline(_ context.Context, req mcpsdk.CallToolReq
 func (s *Server) toolProjectSetArcs() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_set_arcs",
 		mcpsdk.WithDescription(
-			"Replace a project's ordered arc list. The array order is the arc order. Each arc is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
+			"Deprecated alias: plans replace arcs, so prefer plan_create, plan_attach and plan_reorder. Replace a project's ordered plan list. The array order is the plan order. Each plan entry is {automation_id, priority?, state? (planned|active|done)}. Sending [] clears the list. Returns the project record."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
 		mcpsdk.WithArray("arcs",
 			mcpsdk.Required(),
-			mcpsdk.Description("Ordered arcs: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
+			mcpsdk.Description("Ordered plans: [{\"automation_id\":\"<id>\",\"priority\":1,\"state\":\"planned\"}]."),
 			mcpsdk.Items(map[string]any{"type": "object"})),
 	)
 }

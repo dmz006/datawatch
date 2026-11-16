@@ -156,6 +156,7 @@ type fwdRig struct {
 	alerts        []fwdAlertRec
 	sleeps        []time.Duration
 	skips         []bool
+	pins          []string
 	settingsCalls int
 	peers         map[string]PeerRef
 	local         string
@@ -190,9 +191,10 @@ func newFwdRig(t *testing.T, mutate func(*ForwardSettings)) *fwdRig {
 			r.settingsCalls++
 			return r.settings
 		},
-		NewClient: func(skip bool, timeout time.Duration) *http.Client {
+		NewClient: func(skip bool, pin string, timeout time.Duration) *http.Client {
 			r.mu.Lock()
 			r.skips = append(r.skips, skip)
+			r.pins = append(r.pins, pin)
 			r.mu.Unlock()
 			return &http.Client{Timeout: timeout}
 		},
@@ -645,7 +647,7 @@ func TestForwardRefusesWithoutLocalHostOrFactory(t *testing.T) {
 	peer := newFwdPeer(t)
 	enabled := func() ForwardSettings { return ForwardSettings{Enabled: true} }
 	lookup := func(string) (PeerRef, bool) { return fwdPeerRef(peer.srv.URL), true }
-	factory := func(bool, time.Duration) *http.Client { return &http.Client{} }
+	factory := func(bool, string, time.Duration) *http.Client { return &http.Client{} }
 
 	cases := []struct {
 		name string
@@ -760,6 +762,7 @@ func TestForwardSkipVerifyPassedToClientFactory(t *testing.T) {
 	r := newFwdRig(t, nil)
 	ref := fwdPeerRef(peer.srv.URL)
 	ref.TLSSkipVerify = true
+	ref.TLSCertFingerprint = "aa"
 	r.addPeer(ref)
 
 	if err := r.f.Forward(context.Background(), fwdSub(fwdPeerName), fwdEvent()); err != nil {
@@ -769,6 +772,9 @@ func TestForwardSkipVerifyPassedToClientFactory(t *testing.T) {
 	defer r.mu.Unlock()
 	if len(r.skips) != 1 || !r.skips[0] {
 		t.Errorf("client factory skip flags = %v, want [true]", r.skips)
+	}
+	if len(r.pins) != 1 || r.pins[0] != "aa" {
+		t.Errorf("client factory pins = %v, want [aa]", r.pins)
 	}
 }
 
@@ -1153,7 +1159,7 @@ func TestForwardDefaultTimerWaitsBetweenAttempts(t *testing.T) {
 				s.BackoffMax = time.Millisecond
 				return s
 			},
-			NewClient: func(_ bool, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
+			NewClient: func(_ bool, _ string, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
 		})
 		if err := f.Forward(context.Background(), fwdSub(fwdPeerName), fwdEvent()); err != nil {
 			t.Fatalf("Forward: %v", err)
@@ -1175,7 +1181,7 @@ func TestForwardDefaultTimerWaitsBetweenAttempts(t *testing.T) {
 				s.BackoffMax = time.Hour
 				return s
 			},
-			NewClient: func(_ bool, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
+			NewClient: func(_ bool, _ string, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 		defer cancel()
@@ -1205,7 +1211,7 @@ func TestForwardNilClientFactoryResultFallsBack(t *testing.T) {
 			s.Enabled = true
 			return s
 		},
-		NewClient: func(bool, time.Duration) *http.Client { return nil },
+		NewClient: func(bool, string, time.Duration) *http.Client { return nil },
 	})
 	if err := f.Forward(context.Background(), fwdSub(fwdPeerName), fwdEvent()); err != nil {
 		t.Fatalf("Forward with a nil factory client: %v", err)

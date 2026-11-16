@@ -56,7 +56,7 @@ func heldTaskOfID(t *testing.T, mgr *Manager, prdID, taskID string) Task {
 // and the edit is in the decision log.
 func TestHeldTaskEditAcceptsSpecReadOnlyAndReportPath(t *testing.T) {
 	mgr, id := newHeldTaskManager(t)
-	if _, err := mgr.EditTask(id, "t1", "new spec", boolPtr(true), heldTestReport, "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "new spec", boolPtr(true), heldTestReport, "", "", "operator"); err != nil {
 		t.Fatalf("EditTask on a held task: %v", err)
 	}
 	tk := heldTaskOfID(t, mgr, id, "t1")
@@ -84,7 +84,7 @@ func TestHeldTaskEditStillRefusesCompletedRunningAndPending(t *testing.T) {
 		{"t3", "cannot be edited while prd"},
 	} {
 		before := heldTaskOfID(t, mgr, id, c.task)
-		_, err := mgr.EditTask(id, c.task, "changed", nil, "", "operator")
+		_, err := mgr.EditTask(id, c.task, "changed", nil, "", "", "", "operator")
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("EditTask(%s) error = %v, want one mentioning %q", c.task, err, c.want)
 		}
@@ -113,7 +113,7 @@ func TestHeldTaskEditRefusedReportPathLeavesTaskUnchanged(t *testing.T) {
 		{"read-only cleared in the same call", boolPtr(false), heldTestReport, "read_only"},
 	}
 	for _, c := range cases {
-		_, err := mgr.EditTask(id, "t1", "half applied spec", c.readOnly, c.reportPath, "operator")
+		_, err := mgr.EditTask(id, "t1", "half applied spec", c.readOnly, c.reportPath, "", "", "operator")
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("%s: error = %v, want one mentioning %q", c.name, err, c.want)
 		}
@@ -162,7 +162,7 @@ func TestReviewRetryReadOnlyRequeuesWithBothApplied(t *testing.T) {
 // read-only takes a report path on its own.
 func TestReviewRetryReadOnlyReportPathAloneOnReadOnlyTask(t *testing.T) {
 	mgr, id := newHeldTaskManager(t)
-	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "operator"); err != nil {
+	if _, err := mgr.EditTask(id, "t1", "", boolPtr(true), "", "", "", "operator"); err != nil {
 		t.Fatalf("EditTask: %v", err)
 	}
 	if _, err := mgr.ResolveTaskReview(id, "t1", ReviewResolution{Action: reviewActionRetry, ReportPath: heldTestReport}, "operator-test"); err != nil {

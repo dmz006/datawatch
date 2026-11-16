@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
@@ -125,8 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: ten rules —
-the six `block` rules first, then the four `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: thirteen rules —
+the nine `block` rules first (the six boundary rules, then the three
+verification-script stability rules), then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -139,10 +140,36 @@ and never name a particular project, repository or home directory.
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
+| `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
+| `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
+
+### The three verification-script stability rules
+
+The last three `block` rules read the task's verification script from the
+project directory (and any helper it sources, one level deep) and name the
+**script path and the rule id** in the finding:
+
+- `verify_script_task_files_only` — fires when the script compares only
+  against the task's own files and never against `git merge-base`. Fix: compare
+  against the merge base and a cumulative allowed-file list.
+- `verify_script_docs_without_sync` — fires when the script checks docs, the
+  embedded docs copy or how-to coverage without running `make sync-docs`. Fix:
+  run `make sync-docs` first.
+- `final_gate_without_script` — fires on a `final_gate` task that has no
+  script, no `verification_script_reason` and no usable report path. Fix: give
+  it a script, a report path, or a reason.
+
+They use three match predicates (below): `verification_script_task_files_only`,
+`verification_script_docs_without_sync` and `verification_script_reason_empty`
+(the last with `kind: final_gate`). A script that does not exist yet is
+skipped by the first two. The full authoring guide, with the fix for each rule
+and how to set a task's script or reason on every surface, is
+[Write verification scripts that stay stable](automaton-verification-scripts.md).
 
 ## 4. Writing your own rules — a worked example
 
@@ -204,6 +231,10 @@ hold for the same task. The leaves:
 | `verification_script_empty` | assert the task declares no verification script |
 | `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
 | `verification_script_unexecutable` | assert the task's verification script is not a runnable file (command string, or missing/not executable/no shebang when the project directory is known) |
+| `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
+| `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
+| `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 
@@ -266,7 +297,7 @@ reach the verifier and pass it, instead of being rejected at pre-start.
 | `changelog_entry` | `daemon` | a changelog entry for the feature (`CHANGELOG.md`) |
 | `parity_issue_draft` | `daemon` | a parity-gap draft file under `docs/plans/parity-issues/` — a file write only, never a tracker call |
 | `docs_set` | `llm` | the feature's docs into shape, over the story's own files |
-| `final_gate` | `llm` | a **read-only** closing task that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. It carries **no** verification script of its own; the report is its output |
+| `final_gate` | `llm` | a **read-only** closing task, applied **once per Automaton** (on the last story, depending on every task), that the **daemon itself** now performs — [the script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) runs it and closes it, no model session: the declared checks run, and the verdict and evidence go to the report its `report_path` names under `.datawatch/reports/`. The template carries no verification script of its own; the report is its output. A planner-written `final_gate` must declare a verification script, a `verification_script_reason` or a report path (lint rule `final_gate_without_script`) |
 | `version_bump_left_to_merge` | `daemon` | a plain *note* that the release version is the next patch above main, resolved at merge — never an edit of the tree; in daemon mode the daemon records the note as the decision and completes the task, no session |
 | `bounded_load_step` | `daemon` | a posture *note* — the task's spec is the bounded-load-step rule text so it can be found in search and the audit; writes no files |
 
@@ -279,7 +310,7 @@ decides *who* runs the task when it is appended to a story:
 |---|---|
 | `llm` | a worker session runs the task as a normal LLM task — except `final_gate`: the [script gate](#the-script-gate-the-final-gate-no-longer-spends-a-session) performs it and closes it, so `llm` no longer spends a session there either |
 | `daemon` | the daemon performs the task itself — no model session, no worker — and records it as done |
-| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the story has no closing gate at all |
+| `off` | the template is **not appended** to the story at all (the task does not appear) — for `final_gate`, off means the Automaton has no closing gate at all |
 
 The mode is set per-template with `autonomous.task_templates.mode` (a
 map of template id → mode string):
@@ -466,7 +497,57 @@ There is no per-project mode — the `mode` map is global, per standard-task id.
       enabled: true     # on, even if the global were off
 ```
 
+### Stable verification scripts: what the planner is told to write
+
+The planner prompt carries one shared helper contract so the scripts it
+writes keep passing after earlier tasks land. A generated script must:
+
+1. run `make sync-docs` itself as its first step when it checks docs, the
+   embedded docs copy (`internal/server/web/docs`) or how-to coverage;
+2. use an allowed-file list that is **cumulative from the start** — every
+   file any story of the Automaton may touch, the standard tasks' generated
+   files (changelog draft, parity-issue draft and its hash file, docs, the
+   registry plan files), gofmt targets and docs files — never one task's own
+   file list;
+3. compare against the **merge base** (`git diff --name-only $(git merge-base
+   HEAD main)` plus untracked files), never the working tree, the current
+   main or one task's own files;
+4. run gofmt only on the listed changed Go files, never a whole package or
+   directory.
+
+The planner is also told to plan exactly one final gate, as the last task,
+and to give every `final_gate` a `verification_script` (also listed in
+`files_generated`) or an explicit `verification_script_reason`. The decompose
+lint enforces the same three rules on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync` and
+`final_gate_without_script` in the rule table above. All three block; the
+two script-content rules read the script file from the project directory and
+are skipped when it does not exist yet.
+
+**Correcting a script after decompose.** When a finding names a task's
+verification script (`no_verification_script`, `unexecutable_verification_script`,
+`final_gate_without_script`, or a script-content rule), you can fix that one
+task without a re-decompose: set its script with `prd-edit-task
+--verification-script <path>` (MCP `autonomous_prd_edit_task`, REST `edit_task`
+body key `verification_script`, comm `edit-task … verification_script=<path>`,
+or the **Verification script** field of the task editor), or state why it needs
+none with `--verification-script-reason <text>`. The path must be one
+repo-relative script file — a command string, absolute path, `..` path or the
+project root is refused — and is added to the task's generated files. Edit the
+script file itself first if it fails a script-content rule; the edit records the
+path only. See [Recovering a blocked Automaton](../operations.md) for the
+held-task flow.
+
 ### The script gate: the final gate no longer spends a session
+
+There is **one** final gate per Automaton, on the **last** story, depending on
+every task of every story. The standard-task pack applies it once there; a
+planner-written `final_gate` on any earlier story is rejected by the plan check
+at decompose time (the planner is asked to retry), and one that still remains is
+dropped when the pack is applied (the other tasks' `depends_on` entries on it
+are removed too). The
+planner is told not to write a per-story gate: a story-level check is plain
+task verification, and the one real gate closes the Automaton.
 
 A `final_gate` used to be model labor: a worker session, a verifier, and
 the report they wrote. The daemon needed no model for any of that, so it
@@ -490,12 +571,17 @@ performs the verification*.
    `autonomous.project_gate_command` (the first set one wins); it runs as a
    single command through `sh`, alone; or
 3. (only if neither of the above is available) the `verification_script`
-   of **every** other task in the story, in story order, until the first
-   failure.
+   of **every** other task of **every story of the Automaton**, in story
+   order, until the first failure. Standard-task (template) tasks and other
+   final gates are skipped, so the gate never runs itself or a sibling.
+
+The collection in step 3 spans the **whole Automaton**, not just the gate's
+own story: with one final gate at the end, it runs every other task's script
+from every story, so a story-level script is never skipped.
 
 Steps 1 and 2 are exclusive — a command or the task's own script replaces the
 story's scripts, it does not add to them — while step 3 runs all the scripts
-it finds, each with the time still left on the shared deadline.
+it finds across the whole Automaton, each with the time still left on the shared deadline.
 
 Every script the gate runs must resolve inside the project's
 `.datawatch/verify/` — anything outside (or the project root itself) is
@@ -533,8 +619,8 @@ decision record is added either way saying what the gate did.
 
 The rule of thumb: declare what the gate should check — the gate command
 per project or globally for the canonical entry point, or precise scripts
-under `.datawatch/verify/` on the story's tasks — and the story's closing
-gate stops spending a session.
+under `.datawatch/verify/` on the Automaton's tasks — and the Automaton's
+closing gate stops spending a session.
 
 ## 6. Decompose guidance — text or file
 
@@ -555,6 +641,128 @@ So a freshly configured operator with no guidance string sees their rules
 in the prompt automatically; once you set `decompose_guidance`, yours wins
 until you clear it (clear it by writing an empty string through the same
 surface).
+
+**The forbidden-pattern list is always added.** Whatever the block above
+resolves to — your text, your file, the generated block or nothing at all —
+the planner's prompt also carries one fixed list, "Never put these in a
+story or task title, description or spec", with one short correct
+alternative per line. It is not configurable and `decompose_guidance` does
+not replace it. The five lines use the same rule names the spec lint and
+the decompose checks report:
+
+| Rule | Never put | Say instead |
+|---|---|---|
+| `release-version-fixed` | a fixed release number | "the next patch above main" |
+| `names_tracker_id` | a tracker id | describe the work itself |
+| `system-binary-path` | a real system path | the command name, resolved at runtime with `command -v` |
+| `private-address` | a private address | "the target host" or a configured host name |
+| `worktree-path` | a worktree path | a repo-relative path |
+
+## 6a. Planning failures: what you see, what the daemon fixes, what it asks
+
+The full walk-through, with the spec check on every surface and troubleshooting, is in [automata-planning-failures.md](automata-planning-failures.md).
+
+A decompose can still fail for a content reason (a tracker id in a task
+title, a fixed release number, a path to a system binary). The change
+described here makes that failure explicit and, where it is only a
+wording problem, self-correcting, so an Automaton does not sit as a draft
+with zero stories and no explanation.
+
+**1. The daemon corrects fixed release numbers itself.** When the
+`release-version-fixed` check is the **only** content failure of a plan,
+the daemon rewrites each fixed three-part number in a release story or
+release task (title, description or spec) instead of sending the plan back
+to the planner: a number introduced by the word "version" or "release" is
+replaced together with that word by "the release", and a bare number
+becomes "the next patch above main". It only does this when every other
+plan check passes on the corrected plan; otherwise the plan takes the
+ordinary path (retry or failure) untouched. Each correction is written to
+the Automaton's decision log as one `auto_correct` line that lists every
+change as `old phrase -> new phrase` with its story and task, and the
+decompose failure record is cleared as a success clears it. The version
+itself is still chosen at merge time as the next patch above main (see
+[howto/merge-pipeline.md](merge-pipeline.md#how-the-release-version-is-chosen)).
+
+**2. A failed planning attempt names its rule and its phrases.** When
+planning gives up, the record on the Automaton (the last decompose
+failure) holds the reason, the category, the source rule and the **exact
+phrases** that tripped it (at most 20), whether it is retryable, the
+retry counts per category and the retry budget of that category, and when
+it happened. Retrying a content failure with the same spec reproduces it,
+so do not simply re-run: reword the phrase named in the record.
+
+**3. A non-retryable failure raises one alert.** The alert is a warning
+titled "Automaton could not be planned: <title>"; its body gives the
+category, the rule, the reason and the phrases. It is raised once per
+recorded failure (the daemon records that it raised it on the Automaton's
+decision log, so a restart does not raise it again). A retryable failure
+raises nothing; it is retried within its budget first.
+
+**4. When wording is the whole problem, the daemon asks.** If the spec lint
+(below) finds problems in the spec and the daemon can reword **every** one
+of them, it raises one question on the ordinary question store, asked by
+`planning` for that Automaton, with two options: **Fix the wording and plan
+again** and **Leave it** (the default). The question lists each suggested
+rewording. It is raised once per failure and is not raised a second time
+while an open question already carries the same Automaton, rule and
+phrases.
+
+- **Fix the wording and plan again** rewrites the spec with the suggestions
+  (a fixed release number becomes "the next patch above main", or "the
+  release" when "version"/"release" introduced it; a tracker id is removed;
+  a real system path becomes the command name), applies it as a revision
+  and plans again in the background. If the spec has nothing the lint can
+  reword, nothing changes and the refusal is logged.
+- **Leave it** changes nothing; the failure stays on the Automaton.
+
+The answer is recorded on the decision log (`planning_failure_answer`),
+quoting which option the operator chose.
+
+**5. The daemon can take the fix answer by itself.** The housekeeping repair
+group `autonomous.housekeeping_repairs.planning` (default `report`) looks for
+a draft with no stories whose recorded failure is not retryable. When every
+spec lint finding on it can be reworded, then after the grace it does what
+**Fix the wording and plan again** does (reword, revise, plan again); when a
+finding cannot be reworded it is skipped with one alert and the spec is left
+alone. In `report` it only records what it would do. Turn it to `on` only if
+you accept the daemon rewording a spec without you; undo by editing the spec
+back from the detail view. See
+[howto/automaton-housekeeping-repairs.md](automaton-housekeeping-repairs.md#planning-repair).
+
+**The spec lint.** The suggestions come from a lint that runs the same
+content checks as the decompose, but over the spec text itself, so a
+phrase is caught before it is copied into a task title. It is
+deterministic and cheap: no model, no session. Each finding carries the
+rule, the exact phrase, a severity, whether the daemon can correct it and a
+suggested rewording:
+
+| Rule | Severity | Daemon can reword |
+|---|---|---|
+| `release-version-fixed` | warning | yes |
+| `names_tracker_id` | warning | yes |
+| `system-binary-path` | warning | yes |
+| `private-address` | error | no — name a configured host or a placeholder |
+| `worktree-path` | error | no — use a repo-relative path |
+
+A spec with even one finding the daemon cannot reword gets the alert but
+**no question**: only you can choose the host name or the path.
+
+**What this never does.** It never touches, kills or signals a session; it
+never changes a spec without your answer (the release-number correction
+works on the stored plan, not on your spec); and it never raises the
+alert or question for a failure that is still within its retry budget.
+
+> **Operator review:** the planning failure record is shown on the web
+> detail view (a **Planning failed** block), the web list (a badge), REST,
+> MCP, the CLI and chat, and the spec check is shown on create and revise on
+> the same surfaces; see
+> [automata-planning-failures.md](automata-planning-failures.md). Still for
+> you to confirm: (1) the planning housekeeping group ships in `report`
+> mode, so nothing is reworded for you until you set it to `on`; (2) the
+> Android and iPhone apps do not show the planning failure block or the
+> spec check yet (tracked in datawatch-app); (3) the spec check is a
+> warning only, so a create with findings still succeeds and the Automaton
+> can still fail to plan later.
 
 ## 7. Reading the findings and the standard-task list — every surface
 
@@ -639,8 +847,10 @@ standard tasks are defined."
 
 ## 8. What it will never do
 
-- **Never fails a decompose.** A failing pass attaches findings to the
-  stored plan; a failed retry keeps the last good plan.
+- **Never fails a decompose on its own.** A failing lint pass attaches
+  findings to the stored plan; a failed retry keeps the last good plan.
+  (A decompose that fails a content check is a planning failure — see
+  [section 6a](#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks).)
 - **Never calls the planner in shadow or in a dry run.** Retries are
   enforce-only; the dry run lints the stored plan and mutates nothing.
 - **Never applies standard tasks in off mode.** Off is a complete no-op —
@@ -669,5 +879,5 @@ standard tasks are defined."
 6. Once the decompose looks right, **set the gate up**: declare the
    closing check the final gate should run — the project gate command (per
    project or globally) or a script under `.datawatch/verify/` — so the
-   story's final gate runs it with the daemon doing it and closes without
-   a session.
+   Automaton's one final gate runs it with the daemon doing it and closes
+   without a session.

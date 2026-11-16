@@ -11,7 +11,8 @@
 //
 // Membership: an Automaton belongs to the project when an arc of the project
 // holds it (PRD.AutomationID, else the Automation whose members include it), or
-// when its ProjectDir matches the project's directory. Templates are left out.
+// when the shared membership resolver (link, Automation project, parent project,
+// then directory) places it in this project. Templates are left out.
 //
 // Timestamps: an Automaton has no start or finish timestamp of its own. Its start
 // is ApprovedAt when set, else CreatedAt; its finish is UpdatedAt, the closest
@@ -35,7 +36,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
@@ -115,6 +115,9 @@ type historyInput struct {
 	Limit     int
 	Cursor    *historyCursor
 	Now       time.Time
+	// Projects maps every configured project name to its directory for the
+	// membership resolver; nil means only this project.
+	Projects map[string]string
 }
 
 // historyCursor is the position after the last entry of a page.
@@ -202,7 +205,11 @@ func buildProjectHistory(in historyInput) projectHistory {
 	for _, arc := range in.Arcs {
 		arcHeld[arc.AutomationID] = true
 	}
-	cleanDir := filepath.Clean(in.Dir)
+	projects := in.Projects
+	if projects == nil {
+		projects = map[string]string{in.Project: in.Dir}
+	}
+	idx := autonomous.NewAutomatonProjectIndex(in.PRDs, in.Automations, projects)
 
 	var entries []historyEntry
 	for _, p := range in.PRDs {
@@ -216,7 +223,7 @@ func buildProjectHistory(in historyInput) projectHistory {
 		if auto == "" {
 			auto = memberOf[p.ID]
 		}
-		inProject := (auto != "" && arcHeld[auto]) || (p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == cleanDir)
+		inProject := (auto != "" && arcHeld[auto]) || idx.Of(p.ID).Project == in.Project
 		if !inProject {
 			continue
 		}
@@ -383,6 +390,7 @@ func (s *Server) handleProjectHistory(w http.ResponseWriter, r *http.Request) {
 		Limit:       limit,
 		Cursor:      cursor,
 		Now:         time.Now(),
+		Projects:    rollupProjectDirs(s.cfg.Projects),
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

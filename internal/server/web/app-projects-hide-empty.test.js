@@ -71,6 +71,6 @@ test('empty event stream, merge pipeline and arc sections are hidden unless show
   assert.ok(on._projectEventStreamHTML({ events: [] }, '').includes('project-event-stream'));
   assert.ok(on._projectMergePipelineHTML({ definition: { steps: [] } }, '').includes('project-merge-pipeline'));
   const page = (sb) => pageAllSubtabs(sb, { name: 'acme', arcs: [] }, { arcs: [] }, '', null);
-  assert.ok(!page(off).includes('font-size:13px;">Arcs<'));
-  assert.ok(page(on).includes('font-size:13px;">Arcs<'));
+  assert.ok(!page(off).includes('font-size:13px;">Plans<'));
+  assert.ok(page(on).includes('font-size:13px;">Plans<'));
 });

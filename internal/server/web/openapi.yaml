@@ -1132,7 +1132,7 @@ paths:
         mode that is left out inherits the global mode;
         null clears a key back to its default, and null on
         `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
-        The post-ship hook keys are global for every project and take no projects.<project> prefix: `autonomous.merge_pipeline.post_ship.enabled` (true|false; default false, and no hook runs while it is false), `autonomous.merge_pipeline.post_ship.registry_file` (the registry_row built-in's registry file, relative to the project) and `autonomous.merge_pipeline.post_ship.registry_row_pattern` (its row line template), `autonomous.merge_pipeline.post_ship.companion_repository` (the owner/name the parity_issue built-in files its issue in) and `autonomous.merge_pipeline.post_ship.issue_title_template` (its issue title), `autonomous.merge_pipeline.post_ship.notify_template` (the notify built-in's message body, and the parity_issue body; may name {project} and {version}) and `autonomous.merge_pipeline.post_ship.hooks` (a JSON array of objects; each has a non-empty unique name, exactly one of a built-in name — registry_row, parity_issue, tag or notify — or a command line, and an optional enabled flag that is false by default; at most 20). An enabled built-in is refused by name when its target is unset in the applied block, so one PUT may set the target and the hook together. 
+        The post-ship hook keys are global for every project and take no projects.<project> prefix: `autonomous.merge_pipeline.post_ship.enabled` (true|false; default false, and no hook runs while it is false), `autonomous.merge_pipeline.post_ship.registry_file` (the registry_row built-in's registry file, relative to the project) and `autonomous.merge_pipeline.post_ship.registry_row_pattern` (its row line template), `autonomous.merge_pipeline.post_ship.companion_repository` (the owner/name the parity_issue built-in files its issue in) and `autonomous.merge_pipeline.post_ship.issue_title_template` (its issue title), `autonomous.merge_pipeline.post_ship.notify_template` (the notify built-in's message body, and the parity_issue body; may name {project} and {version}) and `autonomous.merge_pipeline.post_ship.hooks` (a JSON array of objects; each has a non-empty unique name, exactly one of a built-in name — registry_row, parity_issue, tag, notify or mark_completed (marks the Automaton the run merged Completed) — or a command line, and an optional enabled flag that is false by default; at most 20). An enabled built-in is refused by name when its target is unset in the applied block, so one PUT may set the target and the hook together. 
         A bad merge pipeline value or an unknown key rejects the whole PUT with 400 and
         nothing is written. GET returns the values in effect under
         `autonomous.merge_pipeline`, with the per-project overrides under `projects`.
@@ -1726,7 +1726,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, planned, in_progress, blocked, shipped, done, deferred, cancelled]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: legacy_number, in: query, schema: {type: integer, minimum: 1}}
         - {name: automaton, in: query, schema: {type: string}}
@@ -1837,7 +1837,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; a state outside this vocabulary answers 400 naming the valid states", schema: {type: string, enum: [open, triaged, fixed, wontfix, duplicate]}}
         - {name: q, in: query, schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
@@ -1944,7 +1944,7 @@ paths:
         - {name: q, in: query, required: true, schema: {type: string}}
         - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
         - {name: project, in: query, schema: {type: string}}
-        - {name: state, in: query, schema: {type: string}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states from either vocabulary; a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
         - {name: automaton, in: query, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
         - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
@@ -1992,6 +1992,826 @@ paths:
         "404": {description: Plan records are turned off}
         "503": {description: Plan records are not available}
 
+  /api/projects/{name}/plans:
+    get:
+      summary: A project's plans in order, with a Backlog group
+      description: |
+        Lists the project's plans in priority order, each with its goal, state,
+        progress (Automata done out of total, with a whole-number percent for a bar),
+        points, the ids of its Automations and Automata, and a next marker naming the
+        Automaton that runs next. Plans with no Automaton yet are in the `backlog`
+        group, in priority order. Paged with `limit` and `offset` (default 50, at most
+        500); the Backlog group has its own `backlog_limit` and `backlog_offset`.
+        Answers from the plan-record summary index, never from full records. Points
+        are usage points, never API dollars. Needs the autonomous read capability when
+        called by a federated peer.
+      operationId: projectPlans
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: backlog_limit, in: query, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {name: backlog_offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: archived, in: query, schema: {type: string, enum: [exclude, include, only], default: exclude}, description: "exclude (the default) leaves archived plans out, include adds them, only lists archived plans alone; each plan row carries plan_kind, release and archived"}
+      responses:
+        "200":
+          description: One page of plans and one page of the Backlog group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  plans: {type: array, items: {type: object}}
+                  page: {type: object}
+                  backlog: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project, or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/projects/{name}/overview-summary:
+    get:
+      summary: Project overview header, progress, active plans and record counts
+      description: |
+        One small answer for the top of the project overview: the header, overall
+        progress and points, one line per active plan with its state and progress
+        (percent, for a bar), what is next (the first waiting Automaton of the first
+        active plan; blocked and held ones are skipped), and record counts for plans,
+        registry rows and findings by state. `counts.plans.archived` is how many plans
+        the project has archived (they are not in the other plan counts), and
+        `counts.unattributed.automata` is how many of the project's Automata no
+        release plan holds (left out while the Automata manager is not available).
+        Answers from the plan-record summary index. Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: projectOverviewSummary
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200":
+          description: The overview summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  header: {type: object}
+                  progress: {type: object}
+                  active_plans: {type: array, items: {type: object}}
+                  next: {type: object, nullable: true}
+                  counts: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project, or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/automata:
+    get:
+      summary: A plan's Automata in run order
+      description: |
+        Lists the plan's Automata in run order: completed ones first by completion
+        time, then running, then next, then blocked, then held. Blocked and held ones
+        are shown, marked `skipped`, and never carry the next marker. The `next`
+        marker covers the whole list, not only the page. Paged with `limit` and
+        `offset`. `{ref}` is a plan id, uid or exact title. Answers from the summary
+        index. Needs the autonomous read capability when called by a federated peer.
+      operationId: planAutomata
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of the plan's Automata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  progress: {type: object}
+                  next: {type: object, nullable: true}
+                  automata: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/tasks:
+    get:
+      summary: A plan's tasks, read when the plan is expanded
+      description: |
+        Lists the tasks of the plan's Automata, in the plan's run order, paged with
+        `limit` and `offset`. Tasks are not part of the summary index, so this is the
+        one plans read that opens the Automaton records, and only those of the plan
+        asked about. Call it when a plan is expanded, not for a list. Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: planTasks
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  tasks: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A paging value is not a whole number}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plan-records/browse:
+    get:
+      summary: Browse all registry rows and findings
+      description: |
+        Lists every registry row and finding, newest change first (best title match
+        first when `q` is given), with the plan and the Automata each links to. Filter
+        by words in the title (`q`), `kind`, `state` and `project`; paged with `limit`
+        and `offset`. Answers from the summary index, never from full records. Needs
+        the autonomous read capability when called by a federated peer.
+      operationId: planRecordBrowse
+      tags: [Autonomous]
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: kind, in: query, schema: {type: string, enum: [registry_row, finding]}}
+        - {name: state, in: query, description: "A single state, or a comma-separated list of states; without kind a state is valid in either vocabulary, and a state neither vocabulary knows answers 400 naming the valid states", schema: {type: string}}
+        - {name: project, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records: {type: array, items: {type: object}}
+                  page: {type: object}
+        "400": {description: A filter or paging value is not allowed}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/migrate:
+    post:
+      summary: Build plans from the older project plan lists and registry rows
+      description: |
+        Turns every entry of a project's older plan list (arcs) into a plan linked to its Automation, every registry
+        row that names an Automaton or Automation into a plan linked to it, and every
+        open row that names none into a backlog plan ordered by its old row number.
+        The default is a dry run: the answer lists what would be created and linked
+        and nothing is written. `{"apply": true}` writes. A plan or link that already
+        exists is never changed, so a second apply changes nothing. No older plan-list entry, row or
+        config key is deleted. Needs the autonomous write capability when called by a
+        federated peer. An apply is recorded in the audit log. A plan made from a row is
+        titled from the row's own title text, without leading status words, on one line and
+        at most 100 characters; a row with no real title takes the title of the Automaton or Automation it names, and
+        only a row with neither becomes "Plan: (untitled row N)". The counts include `titles_derived`,
+        `titles_from_linked` and `titles_fell_back` for the plans this run makes.
+
+        `mode` `release` is a different migration: it files a project's Automata and
+        Automations under two release plans, the current release and the next one
+        (made when absent, found by their release label). Shipped or planned work
+        goes to the current release plan; work held for after it, planned for the
+        next release, or marked for it goes to the next release plan. Each item is
+        placed in a theme by the migration's rules, or by your `marks`; an item no
+        rule matches is `unplaced` and attached with no theme. An item already
+        attached to another plan is a conflict: it is named and never moved. The
+        default is a preview that writes nothing and returns a `preview_id`. A
+        written run needs `apply` true and the `preview_id` of the preview you
+        approved: a missing id is refused with 400, a stale one with 409, and nothing
+        is written. A second written run changes nothing, and nothing is deleted.
+        The write is audit-logged with the actor. The answer lists `created`,
+        `attached`, `unplaced`, `conflicts`, `unchanged` and `skipped`. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansMigrate
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apply: {type: boolean, default: false, description: "True writes; false (the default) previews"}
+                mode: {type: string, enum: [arcs, release], default: arcs, description: "arcs (the default) builds plans from the older plan list and the registry rows; release files the work under release plans"}
+                project: {type: string, description: "A registered project alias; required for mode release"}
+                current_release: {type: string, description: "Release label of the current release plan (mode release); default 10.0"}
+                next_release: {type: string, description: "Release label of the next release plan (mode release); default 11.0; its major number must come after the current one"}
+                marks:
+                  type: object
+                  description: "Your own choice per Automaton or Automation id (mode release); a mark wins over the rules"
+                  additionalProperties:
+                    type: object
+                    properties:
+                      release: {type: string, description: "The current or next release label to file it under"}
+                      theme: {type: string, description: "The theme name to place it in (made when absent)"}
+                preview_id: {type: string, description: "The preview_id of the approved preview; required when mode is release and apply is true"}
+      responses:
+        "200":
+          description: The counts and the would-create, would-link, skipped-existing and conflict lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: {type: string}
+                  counts: {type: object, additionalProperties: {type: integer}}
+                  result: {type: object, description: "The arcs migration's lists (mode arcs)"}
+                  mode: {type: string, description: "release for the release migration"}
+                  applied: {type: boolean, description: "True after a written run (mode release)"}
+                  preview_id: {type: string, description: "A stable hash of this preview; quote it to write exactly this (mode release)"}
+                  current_release: {type: string}
+                  next_release: {type: string}
+                  created: {type: array, items: {type: object}, description: "Release plans and themes made or to be made (mode release)"}
+                  attached: {type: array, items: {type: object}, description: "Items attached, with the release and theme (mode release)"}
+                  unplaced: {type: array, items: {type: object}, description: "Attached items no rule or mark placed in a theme (mode release)"}
+                  conflicts: {type: array, items: {type: object}, description: "Items refused, such as one attached to another plan, with the plan that holds it (mode release)"}
+                  unchanged: {type: array, items: {type: object}, description: "Release plans and items already as they should be (mode release)"}
+                  skipped: {type: array, items: {type: object}, description: "Items outside the two releases, with the reason (mode release)"}
+        "400": {description: Bad body, unknown mode, an unregistered or missing project, a bad release label, or a written release run with no preview_id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The preview_id is stale, because the data changed or the id is wrong; run the preview again}
+        "503": {description: Plan records are not available, or the Automata manager is not available to read the Automata (mode release)}
+  /api/plans:
+    post:
+      summary: Create a plan
+      description: |
+        Creates a plan in a registered project. The plan goes last in the plan order.
+        The title must be unique within the project; a taken title answers 409 with
+        the plan that holds it. A release plan has `plan_kind` `release` and a
+        `release` label, and a project has one per release; a second answers 409
+        naming the first. The stored plan carries `plan_kind` and `release`. Needs the
+        autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, title]
+              properties:
+                project: {type: string, description: A registered project alias}
+                title: {type: string}
+                goal: {type: string}
+                state: {type: string}
+                plan_kind: {type: string, enum: [ordinary, release], description: "Empty or ordinary for an ordinary plan; release for a release plan, which also needs release"}
+                release: {type: string, maxLength: 64, description: "The release label a release plan stands for, such as 10.0; a project has one release plan per release (compared trimmed, ignoring case)"}
+      responses:
+        "201":
+          description: The stored plan, title first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+        "400": {description: Missing title, unknown project, invalid state or plan kind, a release plan with no release, or a release on an ordinary plan}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The title is already used in the project, or the project already has a release plan for that release (the answer names it)}
+        "503": {description: Plan records are not available}
+  /api/plans/order:
+    put:
+      summary: Set the plan priority order
+      description: |
+        The plans listed take positions 1 to n in the order given; every other plan
+        keeps its relative order after them. A plan that does not exist or is listed
+        twice fails the whole call and nothing changes. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: plansOrder
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plans]
+              properties:
+                plans: {type: array, items: {type: string}, description: Plan ids or titles, first plan first}
+      responses:
+        "200":
+          description: The plans in their new order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans: {type: array, items: {type: object}}
+        "400": {description: Empty list, or a plan listed twice}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: A listed plan does not exist, or plan records are turned off}
+        "409": {description: A reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/automata/order:
+    put:
+      summary: Set the order of a plan's Automata
+      description: |
+        The body lists every Automaton linked to the plan exactly once, first to run
+        first. The answer is the plan's run view: the Automata in run order and the
+        `next` marker, which skips blocked and held Automata. Needs the autonomous
+        write capability when called by a federated peer.
+      operationId: planAutomataOrder
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automata]
+              properties:
+                automata: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: The plan's run view after the change
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object}
+                  progress: {type: object}
+                  next: {type: object, nullable: true}
+                  automata: {type: array, items: {type: object}}
+        "400": {description: The list is not every Automaton of the plan once}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference matches more than one plan}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/attach:
+    post:
+      summary: Attach an Automaton, an Automation or a finding to a plan
+      description: |
+        `kind` is `automaton`, `automation` or `finding`. An Automaton or Automation
+        id must exist; an unknown one answers 404. It joins the end of the plan's
+        order. An item already linked to a different plan, or a finding already
+        attached elsewhere, answers 409 naming the holder and nothing changes: detach
+        it first. Attaching the same item to the same plan again changes nothing.
+        Needs the autonomous write capability when called by a federated peer.
+
+        To attach several at once send `ids` (a list of Automaton ids, or of
+        Automation ids with `kind` `automation`) instead of `id`. The answer then has
+        one entry in `results` per id, so an id that is attached elsewhere is
+        reported (`refused`, naming the holder) while the others succeed; an unknown
+        id is `not_found`, and an id already on the plan is `already_attached`. The
+        request is 200 whenever it was valid. `theme` (an id or name of a theme of a
+        release plan; it must exist) places every attached item in that theme, and a
+        theme that does not exist refuses the whole request before anything is
+        attached. At most 500 ids. How-to: docs/howto/plan-records.md, "Release plans
+        and themes".
+      operationId: planAttach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding], description: "What is attached; required with id, and automaton when left out with ids"}
+                id: {type: string, description: "The Automaton or Automation id, or the finding reference; send id or ids, not both"}
+                ids: {type: array, maxItems: 500, items: {type: string}, description: "Automaton ids (or Automation ids with kind automation) to attach in one call"}
+                theme: {type: string, description: "A theme of the release plan, by id or name, to place each attached Automaton or Automation in"}
+      responses:
+        "200":
+          description: What was attached and the plan (or finding) after the change; with ids, one result per id with a status (attached, already_attached, refused, not_found, placement_failed or failed) and counts
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, Automaton, Automation or finding}
+        "409": {description: The item is linked or attached elsewhere (the answer names the holder), or the reference is ambiguous}
+        "503": {description: Plan records are not available, or the Automata manager is not available to check the id}
+  /api/plans/{ref}/detach:
+    post:
+      summary: Detach an Automaton, an Automation or a finding from a plan
+      description: |
+        The item must be linked to the plan named in the path. One linked to another
+        plan answers 409 naming that plan, so a detach never reaches into a different
+        plan. An item that is not linked answers 404. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: planDetach
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, id]
+              properties:
+                kind: {type: string, enum: [automaton, automation, finding]}
+                id: {type: string}
+      responses:
+        "200":
+          description: What was detached and the plan (or finding) after the change
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad kind or missing id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or the item is not linked}
+        "409": {description: The item belongs to a different plan, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/themes:
+    get:
+      summary: A release plan's themes and the items no theme holds
+      description: |
+        Lists the plan's themes in order. Each theme lists its Automata first and
+        then its Automations, each with the title and state last reported for it.
+        `unplaced` lists the plan's Automata and Automations that are in no theme.
+        An ordinary plan has no themes, so every item is unplaced. The `plan` block
+        carries `plan_kind` and `release` for a release plan and `archived` for an
+        archived one. Needs the autonomous read capability when called by a
+        federated peer. How-to: docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemes
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      responses:
+        "200":
+          description: The plan, its themes in order and its unplaced items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "Title, id and state of the plan; plan_kind and release for a release plan; archived when archived"}
+                  themes:
+                    type: array
+                    description: The themes in the plan's theme order
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, description: "The theme id, stable across renames"}
+                        name: {type: string, description: "The theme name, unique in the plan ignoring case"}
+                        order: {type: integer, description: "Position of the theme, 1 first"}
+                        items:
+                          type: array
+                          description: "The theme's Automata first, then its Automations, each in the theme's order"
+                          items:
+                            type: object
+                            properties:
+                              kind: {type: string, enum: [automaton, automation]}
+                              id: {type: string}
+                              title: {type: string, description: "Title last reported for the item"}
+                              state: {type: string, description: "State last reported for the item"}
+                  unplaced:
+                    type: array
+                    description: "Automata and Automations the plan holds that are in no theme"
+                    items: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "503": {description: Plan records are not available}
+    put:
+      summary: Set the whole theme layout of a release plan
+      description: |
+        Sets the plan's themes to the list in the body, in that order. A theme named
+        by `id` is kept (and renamed when `name` differs); a theme with no `id` is
+        found by `name` or made new. A theme the list leaves out is removed, and its
+        items stay in the plan, unplaced. An item the plan holds that no theme lists
+        becomes unplaced, and a listed item moves into its theme, in the listed
+        order. An item is in one theme only. An item the plan does not hold, a
+        theme listed twice and a name used twice are refused for the whole request
+        and nothing is written. Only a release plan has themes. Needs the autonomous
+        write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemesSet
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [themes]
+              properties:
+                themes:
+                  type: array
+                  description: "Every theme of the plan, in the order it should have. An empty list removes every theme."
+                  items:
+                    type: object
+                    properties:
+                      id: {type: string, description: "An existing theme id, to keep (and rename) that theme"}
+                      name: {type: string, description: "The theme name, at most 100 characters; required for a new theme"}
+                      automata: {type: array, items: {type: string}, description: "Automaton ids the plan holds, in the order they should have in this theme"}
+                      automations: {type: array, items: {type: string}, description: "Automation ids the plan holds, in the order they should have in this theme"}
+      responses:
+        "200":
+          description: The themes view after the change (same shape as GET)
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Not a release plan, an unnamed or duplicate theme, or an item the plan does not hold}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan or theme, or plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Change one theme of a release plan
+      description: |
+        One theme change, chosen by `action`. `create` adds an empty theme last;
+        `rename` renames one; `delete` removes one, and its items stay in the plan,
+        unplaced; `place` puts an Automaton or Automation the plan holds last in a
+        theme (an item already in another theme moves); `unplace` takes an item out
+        of its theme; `reorder` sets the order of the themes; `reorder_items` sets
+        the order of one kind of item inside a theme. A theme is named by its id or
+        its name. Only a release plan has themes. Each change is audit-logged. Needs
+        the autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: planThemeAction
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [create, rename, delete, place, unplace, reorder, reorder_items], description: "Which change to make"}
+                theme: {type: string, description: "Theme id or name (rename, delete, place, reorder_items)"}
+                name: {type: string, description: "The theme name (create, rename); at most 100 characters, unique in the plan ignoring case"}
+                kind: {type: string, enum: [automaton, automation], description: "What kind of item (place, unplace, reorder_items)"}
+                id: {type: string, description: "The Automaton or Automation id (place, unplace)"}
+                themes: {type: array, items: {type: string}, description: "Every theme of the plan, by id or name, in the new order (reorder)"}
+                items: {type: array, items: {type: string}, description: "Every item of that kind the theme holds, in the new order (reorder_items)"}
+      responses:
+        "200":
+          description: The themes view after the change (same shape as GET), the action, and for create the new theme
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Unknown action, a missing field, not a release plan, a duplicate name, or an item the plan does not hold}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan or theme, an item in no theme (unplace), or plan records are turned off}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/archive:
+    post:
+      summary: Archive a plan
+      description: |
+        Marks the plan archived and takes it out of the default plan lists, the
+        backlog and the project overview counts. Nothing is deleted: the plan's file,
+        its Automata, Automations, findings, registry rows, themes and its order all
+        stay, and no Automaton or Automation is touched. Archiving an archived plan
+        changes nothing (`changed` is false). `protected_plan` names one plan
+        (usually the current release plan) that is refused while it holds Automata.
+        Only plans can be archived. The change is audit-logged with the actor. Needs
+        the autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Archiving a plan".
+      operationId: planArchive
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 1000, description: "Why the plan is archived, at most 1000 characters; longer is refused, not cut"}
+                protected_plan: {type: string, description: "A plan (id, uid or title) that must not be archived while it holds Automata"}
+      responses:
+        "200":
+          description: The plan after the call, how many Automata it holds (they stay linked), and whether anything changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "The plan, with archived, archived_at and archive_reason"}
+                  automata_held: {type: integer, description: "Automata the plan holds; they stay linked"}
+                  changed: {type: boolean, description: "False when the plan was already archived and nothing was written"}
+        "400": {description: The reference is not a plan, or the reason is too long}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or the protected plan does not exist, or plan records are turned off}
+        "409": {description: The plan is the protected plan and holds Automata, or the reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/{ref}/restore:
+    post:
+      summary: Restore an archived plan
+      description: |
+        Clears the archive mark. The plan returns to the place its order gave it, with
+        every link it held. Restoring a plan that is not archived changes nothing
+        (`changed` is false). The change is audit-logged with the actor. Needs the
+        autonomous write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Archiving a plan".
+      operationId: planRestore
+      tags: [Autonomous]
+      parameters:
+        - {name: ref, in: path, required: true, schema: {type: string}, description: "Plan id, uid or title"}
+      responses:
+        "200":
+          description: The plan after the call and whether anything changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: {type: object, description: "The plan, without the archive mark"}
+                  changed: {type: boolean, description: "False when the plan was not archived"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such plan, or plan records are turned off}
+        "409": {description: The reference is ambiguous}
+        "503": {description: Plan records are not available}
+  /api/plans/unattributed:
+    get:
+      summary: The Automata no release plan holds, with a suggested release and theme
+      description: |
+        Lists the Automata that no release plan holds (an archived release plan does
+        not count), sorted by project and title, each with its title, state, project
+        and tags. `suggested_release` and `suggested_theme` come from the release
+        migration's own rules, so the list shows where the migration would file the
+        Automaton; they are left out when no rule files it. `holding_plan` names an
+        ordinary plan that already holds the Automaton: it cannot join a release plan
+        until it is detached from that plan. Paged with `limit` and `offset` (default
+        50, at most 500). The count of these Automata is also in the project overview
+        summary. Needs the autonomous read capability when called by a federated
+        peer. How-to: docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansUnattributed
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Only this project's Automata (a registered project alias); all projects when left out"}
+        - {name: current_release, in: query, schema: {type: string}, description: "Label of the current release the suggestions use; default 10.0"}
+        - {name: next_release, in: query, schema: {type: string}, description: "Label of the next release the suggestions use; default 11.0"}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: One page of the Automata no release plan holds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automata:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title: {type: string}
+                        id: {type: string, description: "The Automaton id"}
+                        state: {type: string}
+                        project: {type: string, description: "The project the Automaton resolves to"}
+                        tags: {type: array, items: {type: string}, description: "The Automaton's tag names"}
+                        suggested_release: {type: string, description: "The release the migration rules file it under"}
+                        suggested_theme: {type: string, description: "The theme the migration rules place it in; empty when no rule matches"}
+                        suggested_theme_source: {type: string, enum: [rule], description: "Where the suggested theme came from"}
+                        holding_plan: {type: string, description: "Title of an ordinary plan that already holds it"}
+                        holding_plan_id: {type: string, description: "Id of that plan"}
+                  page: {type: object, description: "total, limit and offset"}
+                  current_release: {type: string, description: "The current release label the suggestions used"}
+                  next_release: {type: string, description: "The next release label the suggestions used"}
+        "400": {description: A paging value is not a whole number, the project is not registered, or a release label is not valid}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available, or the Automata manager is not available to list the Automata}
+  /api/plans/migrate/row-plans:
+    get:
+      summary: List the plans the plans migration made from registry rows
+      description: |
+        The plans migration made one plan for every registry row. This lists them
+        (archived ones included) in plan order, each with its row, the Automata and
+        Automations it holds, and the release plan that holds those Automata. A plan
+        is a row-plan only when it carries the migration's source marker and its
+        title has the migration's form, never by title alone. Needs the autonomous
+        read capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansRowPlans
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: "Only this project's row-plans (a registered project alias)"}
+      responses:
+        "200":
+          description: The row-plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  row_plans: {type: array, items: {type: object}, description: "Each row-plan with plan_id, title, project, state, archived, source, the row, its Automata and Automations, and the release plan that holds them"}
+                  total: {type: integer, description: "How many row-plans"}
+        "400": {description: The project is not registered}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Plan records are turned off}
+        "503": {description: Plan records are not available}
+    post:
+      summary: Convert row-plans into release plan items (preview by default)
+      description: |
+        A release plan now holds the work, so a row-plan is turned into an item of a
+        release plan and archived. A row-plan that holds Automata becomes a
+        registry-row link of the release plan that holds those Automata (the first
+        by plan order when they sit on several). A row-plan that holds no Automaton
+        becomes a backlog item of the current release plan. A row-plan whose
+        Automata no release plan holds yet is left alone as `waiting`. Nothing is
+        deleted: the row, findings and Automata stay, and the only change to a
+        row-plan is its archive mark. The default is a preview that writes nothing
+        and returns a `preview_id`. A written run needs `apply` true and the
+        `preview_id` of the preview you approved: a missing id is refused with 400, a
+        stale one with 409, and nothing is written. A second written run changes
+        nothing. The write is audit-logged with the actor. Needs the autonomous
+        write capability when called by a federated peer. How-to:
+        docs/howto/plan-records.md, "Release plans and themes".
+      operationId: plansRowPlansConvert
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project: {type: string, description: "Only this project's row-plans (a registered project alias); all projects when left out"}
+                current_release: {type: string, description: "Label of the current release plan that takes the backlog items; default 10.0"}
+                apply: {type: boolean, default: false, description: "True writes; false (the default) previews"}
+                preview_id: {type: string, description: "The preview_id of the approved preview; required when apply is true"}
+      responses:
+        "200":
+          description: The preview or the written run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: {type: string}
+                  applied: {type: boolean, description: "True after a written run"}
+                  preview_id: {type: string, description: "A stable hash of this preview; quote it to write exactly this"}
+                  current_release: {type: string}
+                  counts: {type: object, additionalProperties: {type: integer}}
+                  link_rows: {type: array, items: {type: object}, description: "Row-plans turned into a registry-row link of a release plan"}
+                  backlog_items: {type: array, items: {type: object}, description: "Row-plans turned into a backlog item of the current release plan"}
+                  waiting: {type: array, items: {type: object}, description: "Row-plans left alone until the release migration files what they hold"}
+                  conflicts: {type: array, items: {type: object}, description: "Row-plans left alone because the row is gone or a link was refused"}
+                  unchanged: {type: array, items: {type: object}, description: "Row-plans archived already"}
+        "400": {description: Bad body or project, or a written run with no preview_id}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Plan records are turned off}
+        "409": {description: The preview_id is stale, because the data changed or the id is wrong; run the preview again}
+        "503": {description: Plan records are not available}
   /api/autonomous/decision-records:
     post:
       summary: Create a decision record
@@ -2423,12 +3243,18 @@ paths:
         The merge-pending state of the finished Automata. `mode` is the
         `autonomous.automation.merge_pending_mode` setting in effect (`off`, `shadow`
         or `on`) and `alert_minutes` the `merge_pending_alert_minutes` threshold in
-        whole minutes (0 = alerts off). `automata` has one entry per completed
-        Automaton that has a work branch: its id, name, branch, the merge state, the
+        whole minutes (0 = alerts off). `automata` has one entry per Automaton that has
+        a work branch and is either completed or, while
+        `autonomous.automation.merge_pending_include_terminal` is on (the default when
+        unset; off covers only completed), in a terminal state (archived, needs_review,
+        blocked or failed): its id, name, branch, the merge state, the
         commits it is ahead of main, when it was first seen merge pending
         (`pending_since`) and when the alert fired (`alerted_at`); both are null when
-        they do not apply. In shadow mode each entry also carries `would_alert`, and
-        `shadow_decisions` lists what the pass recorded without acting, newest first.
+        they do not apply. In shadow mode each entry also carries `would_alert`,
+        `shadow_decisions` lists what the pass recorded without acting (newest first),
+        and `shadow_decisions_total` and `shadow_decisions_false` count every recorded
+        decision and the ones later found to have been false (both absent while the
+        mode is `off`).
         The state is read from the coordinator's in-memory cache, so a read never runs
         git and no field is added to the Automaton; an Automaton the pass has not
         compared yet reads `unknown`. While the mode is `off` both lists are empty.
@@ -2918,6 +3744,107 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/branch-reap:
+    get:
+      summary: Branch reaper report
+      description: |
+        The read-side pass of the task sub-branch reaper. `reaped` lists the
+        task sub-branches a pass would reap (their Automaton's landing state
+        has settled and their commits are all on the base), with `commits`
+        the commits they carried, `contained_in` the branch whose content
+        covers them and `reason` the plain sentence; `backup_ref` is present
+        for any of them an earlier pass already backed up. `waiting` lists the
+        branches that would be held (still landing, a commit not contained in
+        the base, or a merge in progress). `backups` lists every backup ref
+        under refs/datawatch/reap-backup/, `branch` the task sub-branch it
+        came from when it matches a stored one, and `sha` the tip it holds.
+        `backup_days` is the retention of those refs in whole days (0 or unset
+        reads 30; autonomous.reaped_branch_backup_days). The report only
+        reads; nothing is backed up, deleted or restored. Only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousBranchReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Branch reaper report (read-side pass)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/run:
+    post:
+      summary: Run one branch reap pass
+      description: |
+        Performs one reap pass. For every Automaton whose landing state has
+        settled, each task sub-branch whose commits are all on the base is
+        backed up to refs/datawatch/reap-backup/ first and then deleted with
+        git branch -D; `waiting` lists the branches held (still landing, a
+        commit not contained in the base, or a merge in progress). Takes no
+        body (a non-empty body is refused); the report (GET
+        /api/autonomous/branch-reap) already computed what would happen.
+        Running the reaper is an operator-approved write and a federated peer
+        needs the autonomous write capability.
+      operationId: autonomousBranchReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/restore:
+    post:
+      summary: Restore one reaped branch
+      description: |
+        Recreates one branch an earlier pass reaped, from its newest backup
+        ref under refs/datawatch/reap-backup/. The body is {"branch": "..."}
+        where branch is the task sub-branch from the report; a missing or
+        empty branch is refused. A branch that was never reaped answers 404.
+        A restore is an operator-approved write and a federated peer needs the
+        autonomous write capability.
+      operationId: autonomousBranchReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The task sub-branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/protected-paths:
     get:
       summary: Automaton protected-paths status
@@ -3132,7 +4059,7 @@ paths:
       summary: Housekeeping repairs
       description: |
         The housekeeping repairs per group (`task_chain`, `advance_judge`,
-        `lane_fill`, `leftovers`): the mode in effect (`off`, `report` or `on`;
+        `lane_fill`, `leftovers`, `planning`): the mode in effect (`off`, `report` or `on`;
         report records what it would do and acts on nothing), what a report-mode
         pass would do (`would`), what an on-mode pass did (`did`), and the cases
         that failed (`failed`) or were skipped as unsafe (`skipped_unsafe`). Each
@@ -4322,6 +5249,94 @@ paths:
                 priority: {type: integer}
       responses:
         "200": {description: Updated PRD}
+
+  /api/autonomous/prds/{id}/set_project:
+    post:
+      summary: Link an Automaton to a project
+      description: |
+        Sets the explicit project link of an Automaton to a configured project.
+        An empty `project` clears the link, after which the Automaton is
+        matched through its Automation, its parent or its directory. A project
+        name that is not configured is refused with 400 and a message that
+        lists the configured project names. The change is saved and recorded
+        in the Automaton's decision log. Only the Automaton record changes; no
+        session is touched. Needs the autonomous write capability when called
+        by a federated peer. Audited as `set_project`. The Automaton read view
+        reports the effective project as `project` and how it was found as
+        `project_source`.
+      operationId: autonomousPRDSetProject
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project]
+              properties:
+                project: {type: string, description: "Configured project name; empty clears the link"}
+      responses:
+        "200": {description: "Updated Automaton, with project and project_source"}
+        "400": {description: "Unknown project (the message lists the configured project names) or a bad body"}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+
+  /api/autonomous/project-link-backfill:
+    get:
+      summary: Read the latest project link backfill report
+      description: |
+        Returns the report of the most recent project link backfill pass, dry
+        run or apply: one entry per Automaton that had no project link, with
+        the target project, how it was found (`automation`, `parent` or
+        `directory`), whether the link was written, and the reason for a skip,
+        plus the counts. 404 when no pass has run since the daemon started.
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousProjectLinkBackfillGet
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The latest report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectLinkBackfillReport"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: No report yet}
+    post:
+      summary: Run one project link backfill pass
+      description: |
+        Matches every Automaton that has no project link to the datawatch
+        project through its Automation, its parent or its repository
+        directory. With `apply` false or absent the pass is a dry run: it only
+        computes and stores the report. With `apply` true each match gets its
+        link written and one decision-log entry; Automata that already carry a
+        link are never changed, Automata that match nothing are reported as
+        skipped, and one failed write does not stop the rest. A second apply
+        finds nothing to do. Only Automaton records are read and written; no
+        session is touched. Needs the autonomous write capability when called
+        by a federated peer. Audited as `project_link_backfill`.
+      operationId: autonomousProjectLinkBackfillRun
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apply: {type: boolean, default: false, description: "true writes the links; false is a dry run"}
+      responses:
+        "200":
+          description: The pass's report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectLinkBackfillReport"
+        "400": {description: Bad body}
+        "403": {description: Federated peer lacks the autonomous write capability}
 
   /api/autonomous/prds/{id}/set_kind:
     post:
@@ -5685,6 +6700,7 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+        - {name: status, in: query, required: false, description: "A single status, or a comma-separated list of statuses (case-insensitive); an unknown status answers 400 naming the valid statuses", schema: {type: string}}
         - name: shipped
           in: query
           required: false
@@ -5989,6 +7005,198 @@ paths:
                 $ref: "#/components/schemas/ShippedCountsResponse"
         "401": {$ref: "#/components/responses/Unauthorized"}
         "405": {description: "Method not allowed"}
+        "503": {description: "autonomous disabled"}
+  /api/autonomous/prds/{id}/hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Put an Automaton on hold, or change its hold
+      description: |
+        Puts the Automaton in the `held` status: it waits by the operator's
+        decision, is not blocked, failed or waiting for review, and nothing
+        starts it. Its tasks keep their state. A hold is allowed from draft,
+        needs_review, approved, revisions_asked, paused, blocked and failed; it
+        is refused from planning, running, completed, rejected, cancelled and
+        archived. When the Automaton is already held, the same call extends the
+        hold: each field sent replaces the stored one and a field left out is
+        kept. `until` is the look-again time and may be an RFC 3339 time, a date
+        (YYYY-MM-DD, taken as the end of that day in UTC) or a duration such as
+        `72h`; any other value is a 400 that names these forms. When the time
+        passes the Automaton stays held and is shown as "hold expired, ready to
+        review"; only a release or a new `until` changes it. Audited as `hold`.
+      operationId: autonomousPRDHold
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 500, description: "Why the Automaton is waiting. Required to place a hold; optional when extending."}
+                condition: {type: string, description: "Free text shown to the operator, such as 'until after the release'. Never evaluated."}
+                until: {type: string, description: "Look-again time: an RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string, description: "Who is holding; defaults to operator."}
+      responses:
+        "200":
+          description: "The updated Automaton, status `held`, with its `hold` record (reason, condition, until, held_at, held_by, from, prior_blocked_reason, expired_at)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Missing or too long reason, a bad `until` (the message names the accepted forms), a time that is not in the future, or a status that cannot be held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/prds/{id}/release_hold:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Release a held Automaton back to the status it had
+      description: |
+        Ends the hold and restores the status the Automaton had when it was
+        held (a blocked Automaton gets its blocked reason back). It does not
+        start the Automaton; run it afterwards if it should run. Audited as
+        `release_hold`.
+      operationId: autonomousPRDReleaseHold
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Who is releasing; defaults to operator."}
+                note: {type: string, description: "Why the hold ended; kept in the Automaton's decision log."}
+      responses:
+        "200":
+          description: "The updated Automaton in its restored status, without a `hold` record"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "The Automaton is not held"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+  /api/autonomous/held:
+    get:
+      summary: List the Automata on hold
+      description: |
+        The held group: every Automaton in the `held` status with its reason,
+        condition, look-again time and the status it will return to. Expired
+        holds come first, then the soonest look-again time. An expired hold is
+        still held; its `next_look_text` reads "hold expired, ready to review".
+      operationId: autonomousHeldList
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: "The held group"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  held:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        project: {type: string}
+                        automation_id: {type: string}
+                        reason: {type: string}
+                        condition: {type: string}
+                        until: {type: string, format: date-time}
+                        held_at: {type: string, format: date-time}
+                        held_by: {type: string}
+                        from: {type: string, description: "The status a release restores"}
+                        expired: {type: boolean}
+                        next_look: {type: string, description: "Until in RFC 3339; empty when no date was set"}
+                        next_look_text: {type: string}
+                  total: {type: integer}
+                  expired: {type: integer}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous read capability"}
+        "405": {description: "Only GET is provided"}
+  /api/autonomous/held/migrate:
+    post:
+      summary: List look-alike blocked or failed Automata and hold the chosen ones
+      description: |
+        Lists the blocked or failed Automata whose notes look like they should
+        be on hold (an evaluation, a parked design, an operator hold note) and
+        puts the ones the operator names on hold. `dry_run` defaults to true
+        when `ids` is empty and only lists the candidates. A real run needs
+        `ids` and a non-empty `reason`, which is never generated; it applies the
+        same reason, condition and until to every chosen id and skips an id
+        that is missing, not blocked or failed, or already held. A real run is
+        refused with 409 while a final gate is running; a dry run still
+        reports. Audited as `hold_migrate`.
+      operationId: autonomousHeldMigrate
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, description: "List candidates without writing. True when ids is empty."}
+                ids: {type: array, items: {type: string}, description: "The Automata to hold"}
+                reason: {type: string, maxLength: 500, description: "Required for a real run"}
+                condition: {type: string}
+                until: {type: string, description: "An RFC 3339 time, a date (YYYY-MM-DD, end of that day in UTC) or a duration such as 72h."}
+                actor: {type: string}
+      responses:
+        "200":
+          description: "The run's report: `dry_run`, `busy`, `considered`, `candidates` (each with `why`), `held` and `skipped` (real run)"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "A real run without ids or a reason, a bad `until`, or the run could not start"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "409": {description: "A final gate is running; try again when it has finished"}
+  /api/autonomous/completed/migrate:
+    post:
+      summary: Move cancelled, merged Automata to Completed
+      description: |
+        One pass that moves every cancelled Automaton (and Automation) whose
+        work is already merged to the base branch to status `completed`, so it
+        stops showing as cancelled. It never kills a session, and an Automaton
+        whose work is not merged is left unchanged. Records are taken oldest
+        first. Parameters may be sent in the query string or a JSON body
+        (the query wins). `dry_run=true` lists what would change without
+        writing; `limit` caps how many records one run changes (0 or absent: no
+        limit); `id` restricts the run to one Automaton or Automation. A real
+        run is refused with 409 while a final gate is running; a dry run
+        still reports. Audited as `completed_migrate`.
+      operationId: autonomousCompletedMigrate
+      tags: [Autonomous]
+      parameters:
+        - {name: dry_run, in: query, required: false, schema: {type: boolean, default: false}, description: "List what would change without writing. A value that cannot be parsed is a 400."}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}, description: "Most records one run changes; 0 means no limit. A negative or non-numeric value is a 400."}
+        - {name: id, in: query, required: false, schema: {type: string}, description: "Restrict the run to this one Automaton or Automation."}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean}
+                limit: {type: integer, minimum: 0}
+                id: {type: string}
+      responses:
+        "200":
+          description: "The pass's report: `dry_run`, `busy`, `considered`, `changed`, `would_complete` (dry run), `completed` (real run), `already_completed`"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Unparseable `dry_run`, bad `limit`, or the pass could not run"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "409": {description: "A final gate is running; try again when it has finished"}
         "503": {description: "autonomous disabled"}
   /api/autonomous/shipped/backfill:
     post:
@@ -6360,6 +7568,63 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/landing/keep:
+    post:
+      summary: Record that the Automaton's branch is kept unmerged on purpose
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        keep records that the branch stays available on purpose, drop that
+        its work will not be merged. Both require a non-empty `actor` and a
+        non-empty `reason`. A branch that has already landed cannot be kept
+        or dropped, and a record that is already kept or dropped is refused
+        (409).
+      operationId: autonomousPRDLandingKeep
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work is not being merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now kept)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
+  /api/autonomous/prds/{id}/landing/drop:
+    post:
+      summary: Record that the Automaton's work will not be merged
+      description: |
+        The landing record of an Automaton (state, commit, actor, at,
+        reason) is part of its read (`landing` field). While the record is
+        `pending` the operator decides what happens to the unmerged work:
+        drop records that the branch and its work will not be merged. Both
+        require a non-empty `actor` and a non-empty `reason`. A branch that
+        has already landed cannot be kept or dropped, and a record that is
+        already kept or dropped is refused (409).
+      operationId: autonomousPRDLandingDrop
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor, reason]
+              properties:
+                actor: {type: string, description: "Who is deciding (non-empty)", examples: [operator]}
+                reason: {type: string, description: "Why the work will not be merged (non-empty)"}
+      responses:
+        "200": {description: "Updated PRD (landing.state is now dropped)"}
+        "400": {description: "Missing actor or reason"}
+        "409": {description: "Already landed, kept, or dropped"}
   /api/autonomous/prds/{id}/set_llm:
     post:
       summary: Set a PRD's worker-LLM override fields
@@ -9395,7 +10660,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/usage-backoff:
     get:
-      summary: Active per-backend usage back-off flags, effective config, pattern staleness (patterns_version, patterns_stale) and claude_cli_version
+      summary: Active per-backend usage back-off flags, effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), the reserve array (current-window per-hour reserve usage per backed-off backend; omitted when the review-reserve gate is not wired or no flag is live), pattern staleness (patterns_version, patterns_stale) and claude_cli_version
       operationId: usageBackoffGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -9911,7 +11176,7 @@ paths:
                 default_branch: {type: string, description: "Project record: default git branch"}
                 arcs:
                   type: array
-                  description: "Project record: the ordered arc list. Absent keeps it; [] clears it"
+                  description: "Project record: the ordered plan list (key arcs, deprecated name). Absent keeps it; [] clears it"
                   items: {type: object}
                 target:
                   type: object
@@ -9934,15 +11199,26 @@ paths:
           content: {"text/plain": {schema: {type: string}}}
   /api/projects/{name}/rollup:
     get:
-      summary: Project roll-up of arcs, Automata, task progress, points and throughput
+      summary: Project roll-up of plans, Automata, task progress, points and throughput
       description: |
-        Groups the project's Automata by the arc whose Automation holds them.
-        Each arc reports its Automata with their session ids, task progress
+        Groups the project's Automata by the plan whose Automation holds them.
+        Each plan reports its Automata with their session ids, task progress
         (done/total), cost in usage points and throughput. Automata of this
-        project that no arc holds are in `unassigned`; `total` sums everything.
+        project that no plan holds and no release plan holds are in `unassigned`. An Automaton is placed in a
+        project by its own project link, then the project of the Automation holding
+        it, then its parent Automaton's project, then its directory; one resolved to
+        another project is never in this project. Automata without a project (no
+        link and no directory match, in no plan) are in `without_project`, which is
+        the same whichever project is asked for and is not part of `total`;
+        `total` sums the plans and `unassigned`.
         Costs are points from the billing profile's point calibration, never
-        API dollars. Throughput counts Automata (completed, last updated in the
-        window) and tasks (completed, completed in the window) per day.
+        API dollars. Throughput counts Automata finished in the window and tasks
+        finished in the window, per day. An Automaton is finished when it is
+        completed, when it is cancelled or archived and its work branch is already
+        on the project's default branch, or when it carries a shipped record; its
+        finish time is the merge or ship time when known, else its last update. A
+        task counts from its own completion time, whatever the Automaton's final
+        status, and never twice.
       operationId: projectsRollup
       tags: [Singletons]
       parameters:
@@ -9962,6 +11238,9 @@ paths:
                   points_priced: {type: boolean, description: "True when at least one Automaton has a point figure"}
                   arcs: {type: array, items: {$ref: "#/components/schemas/ProjectRollupGroup"}}
                   unassigned: {$ref: "#/components/schemas/ProjectRollupGroup"}
+                  without_project:
+                    allOf: [{$ref: "#/components/schemas/ProjectRollupGroup"}]
+                    description: "Automata without a project. Each is listed once, with its own tasks, points and throughput, and is not counted in total."
                   total: {$ref: "#/components/schemas/ProjectRollupGroup"}
         "400":
           description: window is not a whole number of days from 1 to 365
@@ -10049,7 +11328,7 @@ paths:
       summary: Read one project alias and its record
       description: |
         Returns the project's directory, default backend, description, policy and
-        the optional record fields (owner, repository, default branch, arcs, target,
+        the optional record fields (owner, repository, default branch, plan list (arcs), target,
         lane defaults, weekly share, branch retention and major trigger).
       operationId: projectsGet
       tags: [Singletons]
@@ -10070,13 +11349,41 @@ paths:
         "200": {description: Deleted}
         "404": {description: Unknown project}
   /api/projects/{name}/arcs:
-    put:
-      summary: Replace a project's ordered arc list
+    get:
+      summary: Deprecated - the project's arcs plus its plans
       description: |
-        Body is a JSON array of arcs, or an object `{"arcs": [...]}`. Array position
-        is the arc order. Each arc has `automation_id` (required, unique within the
+        Deprecated alias kept for older clients. Returns the same arcs data as the
+        roll-up `arcs` field, plus the project's `plans`. Use
+        `GET /api/projects/{name}/plans` instead. Sends a `Deprecation` header.
+      operationId: projectsGetArcs
+      deprecated: true
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+      responses:
+        "200":
+          description: The arcs and plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deprecated: {type: string}
+                  project: {type: string}
+                  arcs: {type: array, items: {type: object}}
+                  plans: {type: array, items: {type: object}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: Unknown project}
+        "503": {description: Automata not available}
+    put:
+      summary: Replace a project's ordered plan list (deprecated route name)
+      description: |
+        Body is a JSON array of plan entries, or an object `{"arcs": [...]}` (the key keeps its old name). Array position
+        is the plan order. Each entry has `automation_id` (required, unique within the
         project), `priority` (integer) and `state` (`planned`, `active` or `done`;
-        empty means planned). An empty list clears the arcs. Returns the project
+        empty means planned). An empty list clears the plan list. Returns the project
         record.
       operationId: projectsSetArcs
       tags: [Singletons]
@@ -10102,7 +11409,7 @@ paths:
                       type: array
                       items: {type: object}
       responses:
-        "200": {description: The project record with the new arcs}
+        "200": {description: The project record with the new plan list}
         "400": {description: Empty body, malformed JSON, duplicate or missing automation_id, or an unknown state; the message names the problem}
         "404": {description: Unknown project}
         "413": {description: Body larger than 1 MiB}
@@ -12048,25 +13355,28 @@ components:
       description: |-
         The merge status, as GET /api/autonomous/merge returns it. Both lists are
         empty while `mode` is off; `shadow_decisions` is empty outside shadow mode.
-      required: [mode, alert_minutes, automata, shadow_decisions]
+      required: [mode, alert_minutes, automata, shadow_decisions, shadow_decisions_total, shadow_decisions_false]
       properties:
         mode: {type: string, enum: [off, shadow, "on"], description: The merge_pending_mode in effect}
         alert_minutes: {type: integer, description: The merge-pending alert threshold in minutes; 0 = off}
         automata:
           type: array
-          description: One entry per completed Automaton with a work branch
+          description: One entry per covered Automaton with a work branch (completed always; other terminal states while merge_pending_include_terminal is on)
           items: {$ref: "#/components/schemas/MergeAutomaton"}
         shadow_decisions:
           type: array
           description: What the pass recorded in shadow mode, newest first
           items: {$ref: "#/components/schemas/MergeShadowDecision"}
+        shadow_decisions_total: {type: integer, description: "How many shadow decisions have been made over the whole persisted history (no new ones while mode is off)"}
+        shadow_decisions_false: {type: integer, description: "How many would_alert shadow decisions were later found false: the episode ended with the branch empty or needs_look, not merged"}
     MergeAutomaton:
       type: object
-      description: A completed Automaton with a work branch, as the merge-pending pass last compared it
+      description: A covered Automaton with a work branch, as the merge-pending pass last compared it
       required: [automaton_id, name, branch, state, commits_ahead, pending_since, alerted_at]
       properties:
         automaton_id: {type: string}
         name: {type: string, description: The Automaton's title, or its id when it has none}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state; the non-completed states are listed while merge_pending_include_terminal is on"}
         branch: {type: string, description: The Automaton's work branch}
         state:
           type: string
@@ -12095,6 +13405,8 @@ components:
         state: {type: string, enum: [merged, pending, needs_look, empty, unknown]}
         commits_ahead: {type: integer}
         would_alert: {type: boolean}
+        automaton_state: {type: string, enum: [completed, archived, needs_review, blocked, failed], description: "The Automaton's own state when the decision was made"}
+        found_false: {type: boolean, description: "True when this would_alert decision's episode later ended with the branch empty or needs_look rather than merged"}
         repeat_count: {type: integer, description: How many polls chose the same decision again}
         last_seen_at: {type: string, format: date-time}
     SafeDeleteReport:
@@ -12127,6 +13439,68 @@ components:
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
         computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
         stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
+    ReapReport:
+      type: object
+      description: |
+        The split of one reap pass: the POST run response on its own, and the
+        reaped and waiting parts of the report. Both lists are empty when no
+        Automaton qualifies.
+      required: [reaped, waiting]
+      properties:
+        reaped:
+          type: array
+          description: The branches a pass would reap (report) or reaped (run)
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches held, and the reason
+          items: {$ref: "#/components/schemas/ReapEntry"}
+    ReapEntry:
+      type: object
+      description: One branch in the reaped or the waiting list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The task sub-branch}
+        backup_ref: {type: string, description: The ref the branch's tip was kept at; present for a branch an earlier pass already backed up}
+        contained_in: {type: string, description: The branch (work or base) whose content covers every commit of the reaped branch}
+        commits: {type: integer, description: The commits the branch carried}
+        reason: {type: string, description: The plain sentence for the entry}
+    ReapSurfaceReport:
+      type: object
+      description: The report, as GET /api/autonomous/branch-reap returns it
+      required: [reaped, waiting, backups, backup_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The task sub-branches that would be reaped
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches that would be held
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        backups:
+          type: array
+          description: Every backup ref under refs/datawatch/reap-backup/, sorted by ref; empty while no pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        backup_days: {type: integer, description: The retention of the backup refs in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    ReapBackup:
+      type: object
+      description: One backup ref under refs/datawatch/reap-backup/
+      required: [ref, sha]
+      properties:
+        branch: {type: string, description: The task sub-branch the ref came from, when its key matches a stored one; empty otherwise}
+        ref: {type: string, description: The full ref name}
+        sha: {type: string, description: The tip the ref holds}
+    ReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/branch-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The branch that came back}
+        backup_ref: {type: string, description: The newest backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     TriageList:
       type: object
       description: |-
@@ -12525,7 +13899,7 @@ components:
           items:
             type: object
             properties:
-              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers]}
+              group: {type: string, enum: [task_chain, advance_judge, lane_fill, leftovers, planning]}
               mode: {type: string, enum: [off, report, "on"]}
               would: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               did: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
@@ -12951,6 +14325,34 @@ components:
         task_title: {type: string}
         category: {type: string, enum: [missing, weakened, too_large, wrong_dependency, fragile_verification, out_of_scope]}
         detail: {type: string, description: "One specific, actionable sentence"}
+    ProjectLinkBackfillReport:
+      type: object
+      description: The outcome of one project link backfill pass over the Automata.
+      properties:
+        apply: {type: boolean, description: "true when the pass was allowed to write"}
+        generated_at: {type: string, format: date-time}
+        project: {type: string, description: "The project the Automata were matched to; empty when none is configured"}
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, description: Automaton id}
+              title: {type: string}
+              source: {type: string, enum: [automation, parent, directory], description: "How the project was found; empty on a skipped Automaton"}
+              project: {type: string}
+              applied: {type: boolean, description: "true once the link was written and saved"}
+              skipped: {type: boolean}
+              reason: {type: string, description: "Why the Automaton was left alone"}
+              error: {type: string, description: "Set when writing this Automaton failed"}
+        counts:
+          type: object
+          properties:
+            scanned: {type: integer}
+            matched: {type: integer}
+            applied: {type: integer}
+            skipped: {type: integer}
+            failed: {type: integer}
     AutonomousPRD:
       type: object
       description: |
@@ -12961,6 +14363,8 @@ components:
         id: {type: string}
         spec: {type: string}
         status: {type: string}
+        project: {type: string, description: "Read-only: the project this Automaton belongs to (empty when none), resolved from its own link, its Automation, its parent or its directory"}
+        project_source: {type: string, enum: [link, automation, parent, directory, none], description: "Read-only: how the project was found"}
         notify_events: {type: array, items: {type: string}, description: "Lifecycle event kinds that notify for this Automaton; absent or empty means inherit from the guardrail profile, then the global default"}
         notify_events_effective:
           type: object
@@ -13311,6 +14715,9 @@ components:
         enabled: {type: boolean}
         plan_tier: {type: string}
         max_inflight: {type: integer, nullable: true}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target. When autonomous.capacity_fallthrough is on and a worker's requested pool is full, the daemon may admit the worker on this entry. Default false; omitted from the entry while false.
         roles:
           type: array
           items: {type: string}
@@ -13326,6 +14733,9 @@ components:
       properties:
         name: {type: string}
         kind: {type: string}
+        fallthrough_target:
+          type: boolean
+          description: Allowed fall-through target (default false). On update, omit to keep the stored value; false clears it.
         roles:
           type: array
           items: {type: string}
@@ -13898,7 +15308,7 @@ components:
         id: {type: string, description: "Automation ID (8-hex)"}
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "true marks the Automation as a milestone arc: when it completes, its release step is raised to major under the project's major_trigger setting"}
+        milestone: {type: boolean, description: "true marks the Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting"}
         status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
         entry_member_id: {type: string, description: "Member the Automation starts at"}
         current_member_id: {type: string, description: "Member the cursor is on for a linear Automation; see active_cursors for fork/join"}
@@ -14086,7 +15496,7 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone arc. On create omitted means false; on update omitted keeps the stored value."}
+        milestone: {type: boolean, description: "Optional. true marks the Automation as a milestone plan. On create omitted means false; on update omitted keeps the stored value."}
         entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
         members:
           type: array

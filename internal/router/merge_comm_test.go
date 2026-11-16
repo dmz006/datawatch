@@ -17,7 +17,7 @@ const mergeCommSample = `{"mode":"on","alert_minutes":30,"automata":[{
   "automaton_id": "prd-9", "name": "Add paging", "branch": "automaton/prd-9",
   "state": "pending", "commits_ahead": 3, "base": "main",
   "pending_since": "2026-01-02T00:00:00Z", "alerted_at": "2026-01-02T00:31:00Z"
-}],"shadow_decisions":[]}`
+}],"shadow_decisions":[],"shadow_decisions_total":5,"shadow_decisions_false":2}`
 
 const safeToDeleteCommSample = `{"safe":[{"branch":"automaton/prd-1","worktree":"/w/prd-1","commits":2,"reason":"merged into main"}],
 "held":[{"branch":"automaton/prd-2","worktree":"/w/prd-2","state":"pending","dirty":true,"note":"has local edits"}],
@@ -43,6 +43,7 @@ func TestMergeComm_VerbMergeRenders(t *testing.T) {
 	for _, want := range []string{
 		"Automaton merge pending: mode on (alert threshold: 30 min)",
 		`Automaton "Add paging" (id prd-9): branch automaton/prd-9 is pending, 3 commit(s) ahead of main`,
+		"Shadow decisions made: 5, later found false: 2.",
 		"Nothing has been merged, deleted or pushed.",
 	} {
 		if !strings.Contains(got, want) {

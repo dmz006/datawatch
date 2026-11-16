@@ -101,7 +101,12 @@ judge list the same way.
 
 A backend that is held (a usage back-off on a Claude backend holds every Claude
 backend, since they share one limit) or that has reached the Claude session cap
-is not eligible, whatever the mode.
+is not eligible, whatever the mode. That is the *selector's* rule — it skips
+held backends when picking. A judge is still a review role, so if it ends up
+on a held backend anyway (the unit-backend fallback, or a back-off flag that
+lands after the pick), its admission goes through that backend's
+[review reserve](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve)
+(a bounded slot), not the worker's refusal.
 
 Every pick is written to the Automaton's decision log with the judge role, the
 backend, the model and the reason, and to the audit log. Look for a
@@ -144,7 +149,10 @@ Points to keep in mind:
   window, separate from the verifier's count. A judge that takes a Claude lane
   uses one count toward the cap, and only once its lease is granted.
 - A Claude backend is recognised by its name, which starts with `claude`.
-- The cap and the usage back-off apply to judges as they do to verifiers. The
+- The cap and the usage back-off apply to judges as they do to verifiers: the
+  selector skips a held backend when picking, and a judge that is nonetheless
+  placed on one is admitted through its review reserve (a review role), not
+  refused the way a worker is. The
   stronger-verifier fields (`force_stronger_on_retry`, `final_gate_stronger`)
   do not apply to judges, because a judge is never a retry or the final gate.
 

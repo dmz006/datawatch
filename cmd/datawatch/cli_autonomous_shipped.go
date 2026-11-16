@@ -159,12 +159,13 @@ history names that the store does not hold.`,
 	cmd.AddCommand(backfillCmd)
 	countsCmd := &cobra.Command{
 		Use:   "counts",
-		Short: "Per-status shipped counts (PRD + Automation buckets) under the in-force autonomous.shipped settings",
+		Short: "Per-status counts (PRD + Automation buckets) under the in-force autonomous.shipped settings",
 		Long: `Read the per-status count pair — the PRD and Automation buckets —
 computed under the in-force autonomous.shipped settings: one count per
-displayed status, with the shipped bucket separated from cancelled while
-enabled + count_separately hold (a record cancelled without its work
-landing counts as "cancelled"; one whose work landed counts as "shipped").
+displayed status: an Automaton whose work landed (it carries a shipped
+record) counts as "completed" together with the stored-completed ones,
+even when its stored status is still cancelled; one cancelled without its
+work landing counts as "cancelled".
 The response also echoes the effective settings it was computed under.
 Read-only; the daemon does all the counting.
 

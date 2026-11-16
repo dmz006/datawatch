@@ -126,8 +126,19 @@ The table never touches:
 - a task that has started, finished or has a live session. Applying never
   kills, restarts or signals a session.
 
-A planner re-run re-applies the table only to tasks the router itself routed
-and nobody edited.
+A planner re-run (re-decompose) re-applies the table only to tasks the router
+itself routed and nobody edited, and only if they have not started. This holds
+on every path that routes a task:
+
+- **Normal run and add-task.** A task LLM, story LLM or Automaton LLM you set by
+  hand is kept; a task added later by hand is not routed over a story or
+  Automaton LLM you set. Setting a task to the very same values the router
+  wrote still counts as hand set, because the decision log records who made
+  the change.
+- **Re-decompose.** Tasks that survive keep their hand-set LLM, a hand-set story
+  or Automaton LLM set after the first routing is still honored, and a new task
+  is routed like any other. A further pass with nothing changed writes nothing
+  and logs nothing.
 
 ## Rows, profiles and the second choice
 
@@ -145,9 +156,36 @@ stronger one for release work.
   current table; with rows it stores those. A profile of the same name is
   replaced.
 - **Activate** a saved profile. It takes effect **only on tasks created
-  afterwards**. Tasks already created keep what they have and running tasks
-  are untouched.
+  afterwards**. Tasks already created keep what they have, running tasks
+  are untouched, and the switch itself rewrites no task. A dry run after the
+  switch reports the new profile and still writes nothing. A later
+  re-decompose can re-route a task the router routed that has not started
+  (see above); a running, finished or hand-edited task never changes.
 - **Delete** a profile. The active profile cannot be deleted.
+
+## The routing guarantees
+
+Five promises hold on every surface, so you can turn routing on without fear
+of losing a choice you made:
+
+1. **A hand-set LLM is never overwritten.** An LLM you set by hand on a task,
+   a story or an Automaton is never replaced by the table, and a re-decompose
+   never replaces it either.
+2. **Switching the active profile only affects tasks created afterwards.**
+   Existing tasks keep the LLM they were given, and the switch itself rewrites
+   no task.
+3. **An unknown backend or model is refused, and the message names the row.**
+   The reply gives the profile and the row at fault (for example
+   `profile "p" row "final_gate"`) and nothing from that block is stored.
+4. **A row naming an Opus or Fable model needs `allow_premium_model`.** Without
+   `allow_premium_model: true` on that row, the row is refused.
+5. **The routing config keys are settable on every surface.**
+   `autonomous.task_routing.enabled`, `autonomous.task_routing.active_profile`
+   and `autonomous.task_routing` (the whole block) can be set on REST
+   (`PUT /api/config`), MCP (`config_set`), the comm channel (the `configure`
+   verb), the CLI (`datawatch config set`) and the Settings page (Automata tab,
+   Task routing card). Each one goes through the same validation, so rules 3
+   and 4 apply to all of them.
 
 ## Export, import and matrix results
 
@@ -180,8 +218,29 @@ every problem listed and nothing applied:
   `allow_premium_model: true`. Opus and Fable are never used unless a row
   names one.
 
-On a REST config write through `PUT /api/config`, a name that fails is skipped
-and reported and the rest of the change still applies.
+### When a config write is refused
+
+A routing change made as a config key (`autonomous.task_routing` for the whole
+block, or `autonomous.task_routing.active_profile` and `.enabled` on their own)
+goes through `PUT /api/config`. The whole block is checked against the live LLM
+registry first, so an unknown backend or model is refused there too, and the
+reply names the profile and row at fault. A key that fails is **skipped, not
+stored**, and the rest of the change still applies. The reply is still HTTP 200,
+so read it:
+
+- `skipped` lists the keys that were not stored (for example
+  `autonomous.task_routing`, or `autonomous.task_routing.active_profile` when
+  the named profile does not exist);
+- `skipped_reason` says why;
+- `skipped_problems` lists every problem found, each naming its row, such as
+  `profile "p" row "final_gate"` and what is wrong with it.
+
+Every surface that writes config shows that report in place of a confirmation:
+`config_set` on MCP returns an error, `datawatch config set` exits with an
+error and the chat `configure` verb replies with it. Each line begins
+`not stored:`. A refused block leaves the live table exactly as it was. The
+dedicated routing routes (`PUT /api/autonomous/task-routing`, profile save and
+import) refuse a bad table with an HTTP 400 instead.
 
 ## Seeing what was decided
 
@@ -213,8 +272,8 @@ Two reads are available per Automaton:
 | Surface | How |
 |---------|-----|
 | YAML | Edit the `autonomous.task_routing` block in `datawatch.yaml` (see `docs/config-reference.yaml`), then reload. |
-| REST API | `GET` and `PUT /api/autonomous/task-routing` read and replace the table (the read includes its validation result). `GET` and `POST /api/autonomous/task-routing/profiles` list and save profiles; `PUT .../active-profile` switches; `DELETE .../profiles/{name}` deletes; `GET .../profiles/{name}/export` and `POST .../profiles/import` move a profile as JSON (`?name=` and `?overwrite=true` on import). `GET /api/autonomous/prds/{id}/task-routing` is the per-Automaton read and `POST .../prds/{id}/task-routing/dry-run` is the no-write dry run. `PUT /api/config` with `autonomous.task_routing.*` still works. |
-| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `task_routing_profile_save`, `task_routing_profile_activate`, `task_routing_profile_delete`, `task_routing_profile_export`, `task_routing_profile_import`, `task_routing_automaton` and `task_routing_dry_run`. `get_config` (section `autonomous`) and `config_set` also reach the block. |
+| REST API | `GET` and `PUT /api/autonomous/task-routing` read and replace the table (the read includes its validation result). `GET` and `POST /api/autonomous/task-routing/profiles` list and save profiles; `PUT .../active-profile` switches; `DELETE .../profiles/{name}` deletes; `GET .../profiles/{name}/export` and `POST .../profiles/import` move a profile as JSON (`?name=` and `?overwrite=true` on import). `GET /api/autonomous/prds/{id}/task-routing` is the per-Automaton read and `POST .../prds/{id}/task-routing/dry-run` is the no-write dry run. `PUT /api/config` with `autonomous.task_routing.*` still works, with the validation and `skipped` report described under Refusal rules. |
+| MCP | `task_routing_get`, `task_routing_set`, `task_routing_profile_list`, `task_routing_profile_save`, `task_routing_profile_activate`, `task_routing_profile_delete`, `task_routing_profile_export`, `task_routing_profile_import`, `task_routing_automaton` and `task_routing_dry_run`. `get_config` (section `autonomous`) and `config_set` also reach the block; `config_set` returns an error when the daemon did not store the key. |
 | CLI | `datawatch autonomous task-routing` with `show`, `set` (a whole table from `--file`, or one row with `--type` and the `--worker-backend`, `--worker-model`, `--verify-backend`, `--verify-model`, `--effort` and `--second-choice` flags), `profile list\|save\|activate\|delete\|export\|import`, `automaton <id>` and `dry-run <id> [--profile NAME]`. Add `--json` for the raw response. |
 | Comm channel | `autonomous task-routing show`, `profile list`, `profile use <name>`, `automaton <id>` and `dry-run <id> [profile]`. Only `profile use` writes. Saving, deleting, importing and exporting profiles and editing rows are not chat verbs; use the CLI, REST, MCP or the web app. |
 | Web app | Settings, Automata tab, **Task routing** card: turn routing on, pick the active profile, edit every row, save the table, save, delete, export and import a profile, and preview what a draft Automaton would get. In an Automaton's detail view each task shows its task type and the row that decided its LLM (or the reason none did): a column in the task header on wide screens and a line under the title on phones. |
@@ -240,6 +299,9 @@ permission, like the planning routing routes.
 - **Premium models need your approval per row.** A row naming an Opus or Fable model is refused unless that row sets `allow_premium_model`. Review every such row before saving.
 - **Switching the active profile only affects tasks created afterwards.** Tasks already created keep what they were given; re-run decompose or edit the task to change them.
 - **The mobile apps do not show routing yet.** The Settings card and the per-task column are in the web app only; mobile parity is tracked separately.
+- **A config write that is skipped is not an error code.** `PUT /api/config` answers 200 and lists what it did not store in `skipped`, `skipped_reason` and `skipped_problems`. A script that checks only the status code will miss a refused routing block; read `skipped`, or use the dedicated routing routes, which return 400.
+- **The routing strings are translated in all five locales.** The Settings card and the per-task column read from the English, German, Spanish, French and Japanese files; a missing key would show the key name, so check each language after an upgrade.
+- **The browser story and the release smoke section have not been run against a live daemon.** `scripts/test-stories/TS-854.sh` (the Settings routing editor) and the task-routing section of `scripts/release-smoke.sh` need the sandbox daemon; run both before a release that touches routing.
 - **Docs and the live daemon can differ.** If a tool or command named here is missing on your daemon, it is older than this change; update it before relying on this guide.
 
 See also: [Automata planning routing](automata-planning-routing.md),

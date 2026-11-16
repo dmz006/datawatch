@@ -45,6 +45,14 @@ type ProgressOptions struct {
 	TagIDs       []string        `json:"tag_ids,omitempty"`
 	TagMatch     string          `json:"tag_match,omitempty"` // TagMatchAny (default) or TagMatchAll
 	MemberIDs    map[string]bool `json:"member_ids"`          // explicit member filter for an Automation
+
+	// Projects maps configured project names to directories. When set, the
+	// by-project grouping uses ResolveAutomatonProject (link, Automation
+	// project, parent project, directory); a record the resolver cannot place
+	// keeps its ProjectKey.
+	Projects map[string]string `json:"-"`
+	// Automations are the Automation records the resolver reads.
+	Automations []*Automation `json:"-"`
 }
 
 // ProgressInput is everything ComputeProgress reads.
@@ -63,6 +71,7 @@ type ProgressGroup struct {
 	Running            int      `json:"running"`
 	Waiting            int      `json:"waiting"`
 	Blocked            int      `json:"blocked"`
+	Held               int      `json:"held"` // on hold by the operator; never counted as waiting or blocked
 	Tasks              int      `json:"tasks"`
 	TasksDone          int      `json:"tasks_done"`
 	TasksLeft          int      `json:"tasks_left"`
@@ -206,6 +215,11 @@ func CollectProgress(src ProgressSource, backlog []BacklogRow, windows []Inactiv
 	if src != nil {
 		prds = src.ListPRDs()
 	}
+	if len(opts.Projects) > 0 && opts.Automations == nil {
+		if al, ok := src.(interface{ ListAutomations() []*Automation }); ok {
+			opts.Automations = al.ListAutomations()
+		}
+	}
 	return ComputeProgress(ProgressInput{PRDs: prds, Backlog: backlog, Windows: windows, Options: opts})
 }
 
@@ -215,6 +229,8 @@ type progressRec struct {
 	prd    *PRD
 	status PRDStatus
 	kind   string
+	// project is the resolved project name; empty means use ProjectKey.
+	project string
 }
 
 // progressAcc accumulates one group's numbers.
@@ -230,6 +246,7 @@ func (a *progressAcc) add(o *progressAcc) {
 	a.g.Running += o.g.Running
 	a.g.Waiting += o.g.Waiting
 	a.g.Blocked += o.g.Blocked
+	a.g.Held += o.g.Held
 	a.g.Tasks += o.g.Tasks
 	a.g.TasksDone += o.g.TasksDone
 	a.g.WorkHours += o.g.WorkHours
@@ -363,6 +380,10 @@ func progressTasks(p *PRD) []*Task {
 // replaced or abandoned records, the creation window and the scope.
 func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]string) []progressRec {
 	var recs []progressRec
+	var idx *AutomatonProjectIndex
+	if len(o.Projects) > 0 {
+		idx = NewAutomatonProjectIndex(prds, o.Automations, o.Projects)
+	}
 	for _, p := range prds {
 		if p == nil || p.IsTemplate {
 			continue
@@ -393,7 +414,11 @@ func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]s
 		if !inProgressScope(p, o) {
 			continue
 		}
-		recs = append(recs, progressRec{prd: p, status: status, kind: EffectiveKind(p, rowKinds)})
+		rec := progressRec{prd: p, status: status, kind: EffectiveKind(p, rowKinds)}
+		if idx != nil {
+			rec.project = idx.Of(p.ID).Project
+		}
+		recs = append(recs, rec)
 	}
 	return recs
 }
@@ -488,6 +513,9 @@ func accumulateRecord(acc *progressAcc, r progressRec) {
 		acc.g.Running++
 	case PRDBlocked, PRDFailed:
 		acc.g.Blocked++
+	case PRDHeld:
+		// A hold is waiting by the operator's decision: its own group.
+		acc.g.Held++
 	default:
 		acc.g.Waiting++
 	}

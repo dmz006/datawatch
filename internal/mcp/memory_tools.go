@@ -969,7 +969,7 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"autonomous.tags.registry_sync_seconds (whole seconds >= 5), "+
 			"autonomous.tags.placement.enabled (true|false) and, per axis (compute, peer, backend, lane, role, project, automaton, automation, stage, kind), autonomous.tags.placement.<axis>.enabled (true|false) and autonomous.tags.placement.<axis>.template (a string carrying the axis' placeholder). "+
 			"Automata auto-tagging keys: autonomous.auto_tags.enabled (true|false; the block is on unless set to false), autonomous.auto_tags.automation_template (default 'automation:{automation}'), autonomous.auto_tags.stage_template (default 'stage:{stage}'), autonomous.auto_tags.kind_template (default 'kind:{kind}') — each template may use the {automation}, {stage} and {kind} placeholders and must render a non-empty, newline-free tag name — and autonomous.auto_tags.kind_labels (maps feature|bug|other to the values {kind} renders; defaults feature:feature, bug:bug, other:maintenance). "+
-			"Housekeeping repair keys: autonomous.housekeeping_repairs.task_chain, autonomous.housekeeping_repairs.advance_judge, autonomous.housekeeping_repairs.lane_fill and autonomous.housekeeping_repairs.leftovers (each off|report|on; default report: record what would be done and change nothing) and autonomous.housekeeping_repairs.grace_seconds (whole seconds >= 0; default 300); read the repairs with housekeeping_repairs. "+
+			"Housekeeping repair keys: autonomous.housekeeping_repairs.task_chain, autonomous.housekeeping_repairs.advance_judge, autonomous.housekeeping_repairs.lane_fill, autonomous.housekeeping_repairs.leftovers and autonomous.housekeeping_repairs.planning (each off|report|on; default report: record what would be done and change nothing) and autonomous.housekeeping_repairs.grace_seconds (whole seconds >= 0; default 300); read the repairs with housekeeping_repairs. "+
 			"Automata held-question keys: autonomous.questions.held_mode (off|shadow|on; default shadow), "+
 			"autonomous.questions.held_states (a JSON array of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; "+
 			"unset = all five, [] = none). "+
@@ -1075,6 +1075,11 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 			return toolErrorf("config_set", "config error: %s", strings.TrimSpace(string(raw))), nil
 		}
 		return toolErrorf("config_set", "config error: HTTP %d", resp.StatusCode), nil
+	}
+	// A key the daemon skipped (an active profile that does not exist, a
+	// task routing block that fails validation) is reported, not confirmed.
+	if raw, _ := io.ReadAll(resp.Body); config.PutConfigSkippedNote(raw) != "" {
+		return toolErrorf("config_set", "%s %s", key, config.PutConfigSkippedNote(raw)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
 }

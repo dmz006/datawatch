@@ -253,6 +253,10 @@ func TestArchive_CleansUpOrphanedWorktree(t *testing.T) {
 		t.Fatalf("sanity: worktree must survive Cancel per Decision 5 (kept for inspection): %v", serr)
 	}
 
+	// The branch never landed: record the drop so Archive accepts it.
+	if _, err := m.DropLanding(prd.ID, "operator", "test: work abandoned"); err != nil {
+		t.Fatalf("DropLanding: %v", err)
+	}
 	if _, err := m.Archive(prd.ID, "operator"); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}

@@ -221,15 +221,15 @@ test('the summary counts group by state in a fixed order and keep unknown states
 
 // ── mode toggle ─────────────────────────────────────────────────────────────
 
-test('the toggle offers all three modes with the current one active', () => {
+test('the view select offers all three modes with the current one selected', () => {
   const sb = loadApp();
-  const html = sb.renderSessionsModeToggle('tiles');
-  assert.match(html, /sessions-mode-toggle/);
+  const html = sb._sessionsViewSelectHTML('tiles');
+  assert.match(html, /<select id="sessionsViewSelect"/);
   for (const m of ['list', 'tiles', 'compact']) {
-    assert.match(html, new RegExp(`onclick="_sessionsSetViewMode\\('${m}'\\)"`), `renders a switcher for ${m}`);
+    assert.match(html, new RegExp('<option value="' + m + '"'), `offers ${m}`);
   }
-  assert.match(html, /sessions-mode-btn active[^>]*>[^<]*Tiles/);
-  assert.ok(!/sessions-mode-btn[^"]*active[^>]*>[^<]*List/.test(html));
+  assert.match(html, /<option value="tiles" selected>/);
+  assert.match(html, /onchange="_sessionsSetViewMode\(this\.value\)"/);
   for (const k of ['sessions_view_toggle', 'sessions_view_list', 'sessions_view_tiles', 'sessions_view_compact']) {
     assert.equal(html.includes(k), false, `the rendered labels never expose the raw i18n key ${k}`);
   }
@@ -242,7 +242,7 @@ test('the toggle offers all three modes with the current one active', () => {
 test('missing locale keys fall back to the English label, never the raw key', () => {
   const sb = loadApp();
   assert.equal(sb._stx('sessions_no_such_key_x', 'Fallback'), 'Fallback');
-  assert.match(sb.renderSessionsModeToggle('list'), /Compact/);
+  assert.match(sb._sessionsViewSelectHTML('list'), /Compact/);
 });
 
 test('session tile progress is lifecycle based', () => {
@@ -459,7 +459,7 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
   assert.ok(!html.includes('session-tile-grid-compact'), 'default tiles grid is not the compact variant');
   assert.equal(countTiles(html), 60, 'page one renders 60 tiles');
   assert.match(html, />Show more \(60\/300\)/);
-  assert.match(html, /sessions-mode-toggle/);
+  assert.match(html, /sessionsViewSelect/, 'the one-line toolbar view select is painted');
   assert.ok(!html.includes('sessions-summary'), 'no state count line above the tiles');
 
   // Show-more grows the page until the whole pool fits; paging is per-filter-state.

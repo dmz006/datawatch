@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.166.0"
+var Version = "9.180.1"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -393,6 +393,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
 		newPlanRecordCmd(), // plan records: registry rows and findings
+		newPlansCmd(),      // plans: migrate arcs and registry rows into plan records
 		newSupervisorLoopCmd(),
 		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
@@ -986,6 +987,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// after a later clean start cannot be misreported as that previous stop.
 	fmt.Println(shutdowncause.PreviousShutdownLine(expandHome(cfg.DataDir)))
 
+	// Design A3 — early startup scrub: earlier daemons wrote the daemon's
+	// own long-lived server token into the instance-level .mcp.json. If a
+	// stale credential matching it is still on disk, drop the entry now
+	// (before the channel is wired below and re-mints a scoped token).
+	// The token value is never logged, only that a stale credential went.
+	{
+		if removed, err := channel.ScrubInstanceMCPToken(expandHome(cfg.DataDir), cfg.Server.Token); err != nil {
+			debugf("instance .mcp.json token scrub: %v", err)
+		} else if removed {
+			fmt.Println("[auth] removed stale server credential from instance .mcp.json")
+		}
+	}
+
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
 		cfg.Session.LLMBackend = v
@@ -1530,18 +1544,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetSubprocessBaseURL(loopbackBaseURL(cfg))
 
 	// Per-session MCP channel registration for claude-code multi-session support.
+	// instanceMCP holds the scoped-instance-token lifecycle for the shared
+	// <dataDir>/.mcp.json (see instance_mcp_wiring.go): nil when the channel
+	// is off (also for the shutdown path below).
+	var instanceMCP *channel.InstanceMCPConfig
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
+		// The shared instance env carries NO token: the instance .mcp.json
+		// gets its own short-lived scoped token via instanceMCP.Refresh() at
+		// session pre-launch, and each get-sessions bridge gets its own
+		// scoped session token via the per-session sessionChannelEnv.
 		channelEnv := map[string]string{
 			"DATAWATCH_API_URL": loopbackBaseURL(cfg),
-		}
-		if cfg.Server.Token != "" {
-			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
 		}
 		// Let the bridge verify the daemon's TLS cert instead of skipping
 		// verification: hand it the path of the cert the daemon serves.
 		if cfg.Server.TLSEnabled {
 			channelEnv["DATAWATCH_CA_CERT"] = daemonCertPath(cfg)
+		}
+		// Design A3 — scoped-instance-token lifecycle for the instance-level
+		// .mcp.json: short-lived token for the instance owner (default grant
+		// capabilities), refreshed when stale on session launch, revoked +
+		// entry removed when no live sessions remain or the daemon shuts down.
+		instanceMCP = &channel.InstanceMCPConfig{
+			DataDir:       expandHome(cfg.DataDir),
+			ChannelJSPath: channelJSPath,
+			BaseEnv:       channelEnv,
+			Minter:        sessionTokenStore,
+			Caps:          instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled()),
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
@@ -1565,12 +1595,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// allow_self_config alias is enabled (the default); an
 				// explicit operator grant (session.capabilities) is always
 				// used as-written, which is how the group is removed or
-				// narrowed on purpose.
-				grantCaps := cfg.Session.Capabilities
-				if len(grantCaps) == 0 {
-					grantCaps = federation.SessionDefaultGrantCaps(cfg.MCP.SelfConfigEnabled())
-				}
-				resolved := federation.Resolve(grantCaps, nil)
+				// narrowed on purpose. instanceSessionGrantCaps (shared with
+				// the instance .mcp.json grant) applies the same rule.
+				resolved := instanceSessionGrantCaps(cfg.Session.Capabilities, cfg.MCP.SelfConfigEnabled())
 				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
 					fmt.Printf("[warn] mint session token for %s: %v (falling back to no token — see DATAWATCH_TOKEN)\n", sess.FullID, err)
 				} else {
@@ -1595,11 +1622,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = bridgePath // logged above; available for future debug use
 			}
 
-			// BL318 — write instance-scoped .mcp.json so it tracks any bridge
-			// upgrade (JS→Go). Targets $DataDir/.mcp.json, never $HOME/.mcp.json,
+			// BL318 — refresh the instance-scoped .mcp.json so it tracks any
+			// bridge upgrade (JS→Go). Targets $DataDir/.mcp.json, never $HOME/.mcp.json,
 			// so test daemons cannot corrupt the production instance's config.
-			if updated, err := channel.WriteInstanceMCPConfig(expandHome(cfg.DataDir), channelJSPath, channelEnv); err != nil {
-				debugf("BL318 write instance .mcp.json: %v", err)
+			// Design A3 — the entry carries the scoped instance token minted by
+			// Refresh (reused while valid), never the daemon's long-lived server
+			// token; a refresh failure is logged and there is deliberately no
+			// server-token fallback (the token store is fatal-if-missing above).
+			if updated, err := instanceMCP.Refresh(); err != nil {
+				debugf("BL318 refresh instance .mcp.json: %v", err)
 			} else if updated {
 				fmt.Printf("[channel] updated instance .mcp.json to current %s bridge\n", channel.BridgeKind())
 			}
@@ -1826,6 +1857,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if err := sessionTokenStore.Revoke(sess.FullID); err != nil {
 					debugf("Design A3 revoke session token for %s: %v", sess.FullID, err)
 				}
+			}
+			// Design A3 — and when this was the last live session, release the
+			// instance .mcp.json scoped token too: revoke it and remove the
+			// entry so no credential is left behind on disk while the daemon
+			// is idle. Any other live session still has a bridge that may use
+			// it, so the token stays until the last one goes.
+			if released := releaseInstanceMCPIfIdle(instanceMCP, mgr.ListSessions(), sess.FullID); released {
+				debugf("instance .mcp.json token released for %s (no live sessions remain)", sess.FullID)
 			}
 			// alpha.34a #202 — clean up the per-session .dw-env file
 			// (chmod 600, contains daemon URL + bearer token + session
@@ -2062,6 +2101,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.EndAllSessions(session.EndReason{Caller: endCallerShutdown, Reason: shutdownEndReason(sig)}); err != nil {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
+			}
+		}
+		// Design A3 — release the instance .mcp.json scoped token whether the
+		// sessions above were killed or left in place: the daemon is going
+		// away, so no scoped credential should survive it on disk (revoked
+		// now, and the .mcp.json entry removed; the startup scrub picks up
+		// anything an earlier build left behind).
+		if instanceMCP != nil {
+			if err := instanceMCP.Release(); err != nil {
+				debugf("instance .mcp.json release on shutdown: %v", err)
 			}
 		}
 		// The store is not closed here: the serve path drains in-flight
@@ -2424,7 +2473,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			parentFingerprint = fp
 		} else {
 			fmt.Fprintf(os.Stderr,
-				"[warn] could not fingerprint TLS cert at %s: %v (workers will fall back to InsecureSkipVerify)\n",
+				"[warn] could not fingerprint TLS cert at %s: %v (the bootstrap channel keeps its existing unverified fallback, while observer pushes verify against the system trust store unless a pin is set or explicitly opted out)\n",
 				cfg.Server.TLSCert, err)
 		}
 	}
@@ -3218,37 +3267,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetChannelDiagnosticsFn(channelDiagnosticsSummary) // BL362
 		r.SetWorkerProfileInForceFunc(workerProfileInForceReader(cfg))
-		r.SetConfigureFunc(func(key, value string) error {
-			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
-			apiURL := loopbackBaseURL(cfg) + "/api/config"
-			body := configureRequestBody(key, value)
-			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			// Token-protected daemon: present the loopback as admin, the
-			// same way Router.commGet does — an unauthenticated PUT would
-			// return 401 and comm `configure` would break whenever
-			// server.token is set.
-			if cfg.Server.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-			}
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return fmt.Errorf("API call failed: %w", err)
-			}
-			defer resp.Body.Close() //nolint:errcheck
-			if resp.StatusCode != 200 {
-				// Show the daemon's refusal text as-is, so comm carries the same
-				// message as REST (e.g. a bad autonomous.tags value).
-				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
-					return errors.New(strings.TrimSpace(string(msg)))
-				}
-				return fmt.Errorf("API returned %d", resp.StatusCode)
-			}
-			return nil
-		})
+		r.SetConfigureFunc(commConfigureFunc(cfg))
 		r.SetCapacityFunc(func() string {
 			if capacityTextFn == nil {
 				return "not available"
@@ -3750,6 +3769,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					remoteDispatcher.SetStore(msStore)
 					// BL343 — background peer health monitor.
 					server.StartPeerHealthMonitor(context.Background(), msStore, alertStore)
+					// Peer certificate non-verification: warn-level system
+					// alert, at most once per peer per daemon run (the
+					// one-line warning itself is also logged and surfaced in
+					// create/update responses).
+					tlsWarnTracker := server.NewTLSPeerWarnTracker(func(peerName, warning string) {
+						alertStore.AddSystem(
+							alertspkg.LevelWarn,
+							"Peer certificate not verified",
+							warning,
+						)
+					})
+					httpServer.SetTLSPeerWarnTracker(tlsWarnTracker)
+					// Startup sweep: a seeded/stored peer whose certificate
+					// is not verified warns once for this daemon run.
+					for _, e := range msStore.List() {
+						tlsWarnTracker.Notify(e)
+					}
 				} else {
 					fmt.Printf("[servers] store init failed: %v\n", msErr)
 				}
@@ -4634,6 +4670,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
 			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
 			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
+			UnlandedAlertEnabled:             acfgIn.UnlandedAlertEnabled,
+			UnlandedAlertThreshold:           acfgIn.UnlandedAlertThreshold,
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
@@ -4734,12 +4772,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
 			UsageBackoff:            acfgIn.UsageBackoff,
 			BackoffMaxWaitMinutes:   acfgIn.BackoffMaxWaitMinutes,
-			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
-			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
-			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
-			ScopeLint:               acfgIn.ScopeLintMode(),
-			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
-			Parallel:                acfgIn.Parallel,
+			// Review reserve: the pointer keeps an explicit 0 (no slot reserve)
+			// distinct from unset (the 1-slot default).
+			BackoffReserveForReview:     acfgIn.BackoffReserveForReview,
+			BackoffReserveTokensPerHour: acfgIn.BackoffReserveTokensPerHour,
+			ContentAutoFixEnabled:       acfgIn.ContentAutoFixEnabled,
+			AutoFixSkipApproval:         acfgIn.AutoFixSkipApproval,
+			BlockOnFileDrift:            acfgIn.BlockOnFileDrift,
+			ScopeLint:                   acfgIn.ScopeLintMode(),
+			RefuseDirtyTreeStart:        acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
+			Parallel:                    acfgIn.Parallel,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
@@ -4783,6 +4825,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingMode:         acfgIn.Automation.MergePendingMode,
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				MergedMemberPolicy:       acfgIn.Automation.MergedMemberPolicy,
+				// MergePendingIncludeTerminal is a pointer: nil (unset) reads
+				// the on default in the manager.
+				MergePendingIncludeTerminal: acfgIn.Automation.MergePendingIncludeTerminal,
 				// ChildInherit is a pointer: nil (unset) reads the on default.
 				ChildInherit:          acfgIn.Automation.ChildInherit,
 				CreateSearchMode:      acfgIn.Automation.CreateSearchMode,
@@ -6927,6 +6972,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.project_link_backfill_apply (default off) — one-time
+			// project link backfill: dry-run report only unless set, then a
+			// durable done marker stops re-runs. Reads and writes Automaton
+			// records only; no session is touched.
+			amgr.SetProjectLinkProjectsFn(func() map[string]autonomouspkg.ProjectLinkProject {
+				out := make(map[string]autonomouspkg.ProjectLinkProject, len(cfg.Projects))
+				for n, e := range cfg.Projects {
+					out[n] = autonomouspkg.ProjectLinkProject{Dir: e.Dir, Repository: e.Repository}
+				}
+				return out
+			})
+			amgr.StartProjectLinkBackfill(cfg.Autonomous.ProjectLinkBackfillApply)
 			// autonomous.ship — install the configured push/tag/ci_watch modes so
 			// the ship step honours off and shadow instead of the built-in default.
 			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)
@@ -7220,6 +7277,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						URL:                e.URL,
 						Token:              e.Token,
 						TLSSkipVerify:      e.TLSSkipVerify,
+						TLSCertFingerprint: e.TLSCertFingerprint,
 						Federated:          e.Federated,
 						HasAutonomousWrite: federation.Check(caps, federation.CapAutonomousWrite),
 						HasAutonomousRead:  federation.Check(caps, federation.CapAutonomousRead),
@@ -7263,9 +7321,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					LookupPeer: lifecycleLookupPeer,
 					LocalHost:  lifecycleLocalHost,
 					Settings:   lifecycleForwardSettings,
-					// The daemon's peer client: a peer's TLS skip-verify setting
-					// behaves as on every other peer call.
-					NewClient: multiserver.HTTPClient,
+					// The daemon's peer client: the peer's TLS pin and
+					// skip-verify behave as on every other peer call.
+					NewClient: multiserver.PeerHTTPClient,
 					Audit:     lifecycleAuditFn,
 					RaiseAlert: func(level, title, body string) {
 						lv := alertspkg.LevelInfo
@@ -7289,7 +7347,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						LookupPeer: lifecycleLookupPeer,
 						LocalHost:  lifecycleLocalHost,
 						Settings:   lifecycleForwardSettings,
-						NewClient:  multiserver.HTTPClient,
+						NewClient:  multiserver.PeerHTTPClient,
 						Audit:      lifecycleAuditFn,
 						RaiseAlert: func(level, title, body string) {
 							lv := alertspkg.LevelInfo
@@ -7960,6 +8018,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetAlertFn(func(title, body string) {
 				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// One-time landing migration: archived Automata whose branch is not
+			// on the default branch are marked pending; the count is logged and
+			// raised as one operator alert through the hook above. Runs in a
+			// goroutine (read-only git) and a done marker stops re-runs.
+			amgr.StartLandingMigration()
 			// Back-off flags restored at start: decision log, alert, audit.
 			recordRestoredBackoff(amgr)
 			// Undeclared-edit detection: raise the operator alert at the
@@ -11310,7 +11373,23 @@ func federationSelfName(peerName string) string {
 	return "datawatch-primary"
 }
 
+// federationInsecureWarning returns the operator-facing warning for a
+// federation push link with TLS verification skipped, or "" when
+// verification is on. It never contains a token.
+func federationInsecureWarning(fed observerpkg.FederationCfg) string {
+	if !fed.Insecure {
+		return ""
+	}
+	return "TLS certificate verification is SKIPPED for the federation root " +
+		fed.ParentURL + ". Anything on the network path can read and alter the " +
+		"pushed stats. Remove observer.federation.insecure to verify the " +
+		"root's certificate normally."
+}
+
 func startFederationPusher(coll *observerpkg.Collector, fed observerpkg.FederationCfg, selfName, version string) {
+	if w := federationInsecureWarning(fed); w != "" {
+		fmt.Printf("[observer/federation] WARNING: %s\n", w)
+	}
 	tokenPath := fed.TokenPath
 	if tokenPath == "" {
 		// Best-effort: nest under <data_dir>/observer/. We don't
@@ -12493,6 +12572,11 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 		if (isLivenessConfigKey(key) || isMergePipelineReleaseKey(key) || isAttemptCostScalarKey(key) || isDependencyUpdateConfigKey(key)) && json.Valid([]byte(value)) {
 			return fmt.Errorf("config set: %w", err)
 		}
+		// A key the daemon skipped was understood; quoting it again only
+		// replaces that report with a bad-JSON error.
+		if strings.HasPrefix(err.Error(), "not stored") {
+			return fmt.Errorf("config set: %s: %w", key, err)
+		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
 			// The quoted attempt is the one that carries a value refusal, so its
@@ -12578,6 +12662,12 @@ func putConfig(url, token, body string) error {
 	if resp.StatusCode >= 400 {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
+	}
+	// A key the daemon skipped (an active profile that does not exist, a task
+	// routing block that fails validation) is reported, not confirmed.
+	raw, _ := io.ReadAll(resp.Body)
+	if note := config.PutConfigSkippedNote(raw); note != "" {
+		return errors.New(note)
 	}
 	return nil
 }
@@ -16935,7 +17025,7 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 
 	// Test connectivity
 	fmt.Printf("Testing connection to %s ...\n", url)
-	client := multiserver.HTTPClient(tlsSkipVerify, 5*time.Second)
+	client := multiserver.PeerHTTPClient(tlsSkipVerify, "", 5*time.Second)
 	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(url, "/")+"/api/health", nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -17910,13 +18000,39 @@ switching to the Go bridge.`,
 	return cmd
 }
 
+// workerObserverPushConfig derives the observer push client config for an
+// F10 worker pushing to the given parent. TLS trust posture comes from the
+// worker's environment via WorkerTLSSettings: a parent certificate
+// fingerprint pin wins and the leaf is verified against it; otherwise the
+// link verifies against the system trust store. DATAWATCH_OBSERVER_PUSH_INSECURE
+// is an explicit, warned opt-out for existing self-signed setups — it is only
+// honoured when no pin is set. The returned warnings are operator-facing and
+// must all be printed.
+func workerObserverPushConfig(peerName, parentURL string, getenv func(string) string) (observerpeerpkg.Config, []string) {
+	pin, insecure, warnings := observerpeerpkg.WorkerTLSSettings(getenv, parentURL)
+	return observerpeerpkg.Config{
+		ParentURL:    parentURL,
+		Name:         peerName,
+		Shape:        "A",
+		PinnedSHA256: pin,
+		Insecure:     insecure,
+	}, warnings
+}
+
 // startWorkerObserverPush — S13. Boots an in-process Shape A
 // observer collector inside an F10 worker and pushes
 // StatsResponse v2 to the parent every 5s. The peer token was
 // minted by the parent's Manager.Spawn and delivered through the
-// bootstrap-env injection. Insecure-TLS is on by default — workers
-// already trust the parent through the bootstrap-channel pinning;
-// the observer push reuses the same trust boundary.
+// bootstrap-env injection.
+//
+// TLS trust posture: when the parent injects its certificate
+// fingerprint pin (the bootstrap-env variable), the push verifies
+// the parent's leaf against that pin; otherwise certificate
+// verification runs against the system trust store normally.
+// DATAWATCH_OBSERVER_PUSH_INSECURE is an explicit, warned opt-out
+// that skips verification for existing self-signed setups — it is
+// only honoured when no pin is set. Each derived warning is printed
+// to stderr.
 //
 // One immediate push at boot so short-lived workers (some F10 agents
 // finish in seconds) still show non-zero envelopes in the parent's
@@ -17931,12 +18047,11 @@ func startWorkerObserverPush(peerName, peerToken, parentURL string) {
 	col := observerpkg.NewCollector(cfg)
 	col.Start(context.Background())
 
-	pc, err := observerpeerpkg.New(observerpeerpkg.Config{
-		ParentURL: parentURL,
-		Name:      peerName,
-		Shape:     "A",
-		Insecure:  true,
-	})
+	pcCfg, warnings := workerObserverPushConfig(peerName, parentURL, os.Getenv)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "[worker] WARNING: %s\n", w)
+	}
+	pc, err := observerpeerpkg.New(pcCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[worker] observer peer client: %v\n", err)
 		return
@@ -20251,4 +20366,45 @@ func daemonCertPath(cfg *config.Config) string {
 		return expandHome(cfg.Server.TLSCert)
 	}
 	return filepath.Join(expandHome(cfg.DataDir), "tls", "server", "cert.pem")
+}
+
+// commConfigureFunc is what the comm channels' `configure <key>=<value>` verb
+// calls: it applies one key through the daemon's PUT /api/config, so comm
+// carries the same validation, refusal text and skipped-key report as REST.
+func commConfigureFunc(cfg *config.Config) func(key, value string) error {
+	return func(key, value string) error {
+		// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
+		apiURL := loopbackBaseURL(cfg) + "/api/config"
+		body := configureRequestBody(key, value)
+		req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Token-protected daemon: present the loopback as admin, the
+		// same way Router.commGet does — an unauthenticated PUT would
+		// return 401 and comm `configure` would break whenever
+		// server.token is set.
+		if cfg.Server.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("API call failed: %w", err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		if resp.StatusCode != 200 {
+			// Show the daemon's refusal text as-is, so comm carries the same
+			// message as REST (e.g. a bad autonomous.tags value).
+			if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+				return errors.New(strings.TrimSpace(string(msg)))
+			}
+			return fmt.Errorf("API returned %d", resp.StatusCode)
+		}
+		// A key the daemon skipped is reported as a failure, not confirmed.
+		if raw, _ := io.ReadAll(resp.Body); config.PutConfigSkippedNote(raw) != "" {
+			return errors.New(key + " " + config.PutConfigSkippedNote(raw))
+		}
+		return nil
+	}
 }

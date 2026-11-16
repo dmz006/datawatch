@@ -86,7 +86,7 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.held', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
@@ -3168,7 +3168,7 @@ function _projectsHashParse(hash) {
 // or '' when the hash names none or an unknown one.
 function _projectsHashSubtab(hash) {
   const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
-  return m && _projectsSubtabValid(m[1]) ? m[1] : '';
+  return m && _projectsSubtabValid(m[1]) ? _projectsSubtabCanon(m[1]) : '';
 }
 function _projectsHashBuild(name, subtab) {
   if (!name) return '#projects';
@@ -3204,10 +3204,13 @@ function _projectsPaint() {
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
-    // #view, so the picker goes back on top of it afterwards.
-    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    // #view, so the picker goes back on top of it afterwards. The card
+    // renderer (shared Cards / Tiles / Compact sub-tab) sits between the
+    // picker and the automation board.
+    _projectsOverviewRestoreSubtab();
+    view.innerHTML = '<div id="projectsOverviewBody">' + _projectsCardSectionHTML(list || []) + _automationBodyHTML({ projectsStyle: true }) + '</div>';
     _automationMount();
-    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
+    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err));
   } else {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
@@ -3217,15 +3220,361 @@ function _projectsPaint() {
   _tabStripsRevealAll();
 }
 
+// ── Projects cards: shared Cards / Tiles / Compact renderer ───────────────────
+// One shared card renderer for the Projects view, modelled on the Sessions
+// view modes: the three modes (cards, tiles, compact) draw the same items,
+// the choice is remembered on this device in one localStorage key (every
+// read/write in try/catch), and phone widths default to the compact mode.
+// The toggle reuses the Sessions .sessions-mode-toggle / .sessions-mode-btn
+// CSS; only the card bodies below get new rules in style.css.
+//
+// An item is a plain object: {id, title, badge, badgeKind, status, age,
+// details[], actions[], link}. badge/badgeKind win over status; shipped and
+// merged work never get a cancelled badge. actions[].onclick is
+// caller-escaped (the renderWorkTile convention); every other free value is
+// escHtml-escaped by the renderer.
+const PROJECTS_CARD_MODES = ['cards', 'tiles', 'compact'];
+const PROJECTS_CARD_MODE_KEY = 'cs_projects_view_mode';
+const PROJECTS_CARD_PHONE_WIDTH = 600;   // matches the window.innerWidth < 600 convention elsewhere
+const PROJECTS_CARD_TEXT_MAX = 100;      // long titles/details are cut here, full value kept in title="..."
+const PROJECTS_BADGE_KINDS = ['ok', 'info', 'neutral', 'warn', 'error', 'cancelled'];
+
+// status → badge for records that report a status instead of an explicit badge.
+const PROJECTS_STATUS_BADGES = {
+  shipped: { key: 'projects_badge_shipped', kind: 'ok' },
+  merged: { key: 'projects_badge_merged', kind: 'ok' },
+  active: { key: 'projects_badge_active', kind: 'info' },
+  planned: { key: 'projects_badge_planned', kind: 'neutral' },
+  failed: { key: 'projects_badge_failed', kind: 'error' },
+  cancelled: { key: 'projects_badge_cancelled', kind: 'cancelled' },
+};
+
+function _projectsCardModeNormalize(mode) {
+  return PROJECTS_CARD_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+// _projectsCardModeDefault picks the first-visit mode from the viewport:
+// phones open compact, wider screens open the full cards. An unknown width
+// (no window metrics) keeps the full cards rather than the phone layout.
+function _projectsCardModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'cards';
+  return w < PROJECTS_CARD_PHONE_WIDTH ? 'compact' : 'cards';
+}
+
+function _projectsCardModeRead(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(PROJECTS_CARD_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _projectsCardModeStore(mode, lse) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(PROJECTS_CARD_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _projectsCardMode() {
+  if (PROJECTS_CARD_MODES.indexOf(state.projectsCardMode) >= 0) return state.projectsCardMode;
+  const stored = _projectsCardModeNormalize(_projectsCardModeRead());
+  if (stored) { state.projectsCardMode = stored; return stored; }
+  state.projectsCardMode = _projectsCardModeDefault(_tileViewportWidth());
+  return state.projectsCardMode;
+}
+
+// _projectsCardSetMode remembers the choice (try/catch) and repaints the
+// Projects page only while it is the active tab, like the Sessions switch.
+function _projectsCardSetMode(mode) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return false;
+  state.projectsCardMode = m;
+  _projectsCardModeStore(m);
+  if (_projectsActive()) _projectsPaint();
+  return true;
+}
+
+// _projectsCardShipped: shipped or merged, by status or by an explicit flag.
+function _projectsCardShipped(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const st = String(it.status === undefined || it.status === null ? '' : it.status).trim().toLowerCase();
+  return st === 'shipped' || st === 'merged' || it.shipped === true || it.merged === true;
+}
+
+// _projectsCardBadgeInfo resolves the one badge for an item. An explicit
+// badge (badge/badgeKind) wins; status fills the gap. Shipped or merged
+// work never gets the cancelled badge: the rule drops it entirely rather
+// than restyling it.
+function _projectsCardBadgeInfo(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  let key = null, kind = '';
+  if (it.badge !== undefined && it.badge !== null && String(it.badge) !== '') {
+    key = String(it.badge);
+    if (it.badgeKind !== undefined && it.badgeKind !== null && String(it.badgeKind) !== '') kind = String(it.badgeKind);
+  } else if (it.status !== undefined && it.status !== null && String(it.status) !== '') {
+    const def = PROJECTS_STATUS_BADGES[String(it.status).trim().toLowerCase()];
+    if (def) { key = def.key; kind = def.kind; }
+  }
+  if (!key) return null;
+  if (PROJECTS_BADGE_KINDS.indexOf(kind) < 0) kind = 'neutral';
+  if (_projectsCardShipped(it) && kind === 'cancelled') return null;
+  return { key, kind };
+}
+
+function _projectsCardBadgeHTML(info) {
+  if (!info) return '';
+  return `<span class="project-card-badge project-card-badge-${info.kind}">${escHtml(_stx(info.key, info.key))}</span>`;
+}
+
+// _projectsCardText cuts long values with an ellipsis; the full value stays
+// available for the title attribute.
+function _projectsCardText(value) {
+  const s = String(value === undefined || value === null ? '' : value).trim();
+  if (!s || s.length <= PROJECTS_CARD_TEXT_MAX) return { text: s, full: s, truncated: false };
+  return { text: s.slice(0, PROJECTS_CARD_TEXT_MAX - 1).replace(/[\s,.;:]+$/, '') + '…', full: s, truncated: true };
+}
+
+// _projectsCardAgeInfo splits a moment (number ms or seconds, or a
+// parseable date string) into its relative parts. Falsy or unparseable ages
+// read as none, and a future one reads as "just now".
+function _projectsCardAgeInfo(age, nowMs) {
+  const n = Number(nowMs) || Date.now();
+  let at = NaN;
+  if (age !== undefined && age !== null && age !== '') {
+    if (typeof age === 'number' || /^-?\d+(\.\d+)?$/.test(String(age).trim())) {
+      const v = Number(age);
+      at = v >= 1e12 ? v : v * 1000;
+    } else {
+      at = Date.parse(age);
+    }
+  }
+  if (!Number.isFinite(at)) return null;
+  const secs = Math.round((n - at) / 1000);
+  if (secs < 60) return { unit: 'now' };
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return { unit: 'minutes', count: mins };
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return { unit: 'hours', count: hours };
+  return { unit: 'days', count: Math.round(hours / 24) };
+}
+
+function _projectsCardAgeText(age, nowMs) {
+  const a = _projectsCardAgeInfo(age, nowMs);
+  if (!a) return '';
+  if (a.unit === 'now') return _stx('projects_age_now', 'just now');
+  const def = {
+    minutes: ['projects_age_minutes', 'm ago'],
+    hours: ['projects_age_hours', 'h ago'],
+    days: ['projects_age_days', 'd ago'],
+  }[a.unit] || ['projects_age_minutes', 'm ago'];
+  const s = t(def[0], [a.count]);
+  if (s === def[0]) return a.count + def[1]; // no bundle loaded: fall back to the English label
+  return s;
+}
+
+// _projectsCardDetailInfo normalizes one detail: a string, or {label, value}
+// (a {text} alias is accepted). Blank details are dropped.
+function _projectsCardDetailInfo(d) {
+  if (d === undefined || d === null) return null;
+  if (typeof d === 'string') {
+    const text = d.trim();
+    return text ? { label: '', value: text } : null;
+  }
+  if (typeof d === 'object') {
+    const label = String(d.label === undefined || d.label === null ? '' : d.label).trim();
+    const raw = (d.value === undefined || d.value === null) ? d.text : d.value;
+    const value = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (!label && !value) return null;
+    return { label, value };
+  }
+  const s = String(d);
+  return s ? { label: '', value: s } : null;
+}
+
+// _projectsCardActionInfo: {label, onclick, kind?}. onclick stays
+// caller-escaped (inline handlers are compiled after the HTML-decode, so the
+// caller owns that string — the same convention as renderWorkTile's onOpen).
+function _projectsCardActionInfo(a) {
+  if (!a || typeof a !== 'object') return null;
+  const label = String(a.label === undefined || a.label === null ? '' : a.label).trim();
+  if (!label) return null;
+  const onclick = String(a.onclick === undefined || a.onclick === null ? '' : a.onclick);
+  const kind = String(a.kind === undefined || a.kind === null ? '' : a.kind).trim();
+  return { label, onclick, kind };
+}
+
+// _projectsCardLink: a safe link for the title. Scheme URLs (http/https),
+// site-relative paths and in-page anchors qualify; anything else (incl.
+// javascript: and bare words) is not rendered as a link.
+function _projectsCardLink(link) {
+  const s = String(link === undefined || link === null ? '' : link).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.charAt(0) === '/' || s.charAt(0) === '#') return s;
+  return '';
+}
+
+// renderProjectCard draws one item in one mode:
+//   cards    — title row with badge and age, the detail list, an actions row;
+//   tiles    — a dense grid tile: title + badge, the first two details inline
+//              (the rest behind a +N chip), age, actions;
+//   compact  — one line: badge, truncated title, age.
+// All three modes draw the same item; only the layout weight changes.
+function renderProjectCard(item, mode) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const idAttr = id ? ` data-project-id="${escHtml(id)}"` : '';
+  const title = _projectsCardText(it.title);
+  const badge = _projectsCardBadgeHTML(_projectsCardBadgeInfo(it));
+  const age = _projectsCardAgeText(it.age, it.nowMs);
+  const ageHTML = age ? `<span class="project-card-age">${escHtml(age)}</span>` : '';
+  const url = _projectsCardLink(it.link);
+  const titleHTML = title.text
+    ? (url
+      ? `<a class="project-card-title" href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escHtml(title.full)}">${escHtml(title.text)}</a>`
+      : `<span class="project-card-title" title="${escHtml(title.full)}">${escHtml(title.text)}</span>`)
+    : '';
+  // Detail rows, shared by all three modes (full kept for the title attr).
+  const src = Array.isArray(it.details) ? it.details : [];
+  const rows = [];
+  for (const d of src) {
+    const info = _projectsCardDetailInfo(d);
+    if (!info) continue;
+    const shown = _projectsCardText(info.value);
+    const prefix = info.label ? escHtml(info.label) + ': ' : '';
+    rows.push({ full: (info.label ? info.label + ': ' : '') + info.value, text: prefix + escHtml(shown.text) });
+  }
+  // Actions, shared by all three modes (rendering differs slightly).
+  const actions = Array.isArray(it.actions) ? it.actions : [];
+  const buttons = [];
+  for (const a of actions) {
+    const info = _projectsCardActionInfo(a);
+    if (!info) continue;
+    buttons.push(`<button type="button" class="project-card-action${info.kind ? ' project-card-action-' + info.kind : ''}" onclick="${info.onclick}">${escHtml(info.label)}</button>`);
+  }
+  const actionsHTML = buttons.join('');
+  if (m === 'tiles') {
+    const shown = rows.slice(0, 2).map(r => `<span class="project-card-detail-inline" title="${escHtml(r.full)}">${r.text}</span>`).join('');
+    const more = rows.length > 2 ? `<span class="project-card-detail-more">+${rows.length - 2}</span>` : '';
+    return `<div class="project-card project-card-tile"${idAttr}>` +
+      `<div class="project-card-tile-line">${titleHTML}${badge}</div>` +
+      (ageHTML ? `<div class="project-card-tile-age">${ageHTML}</div>` : '') +
+      (shown || more ? `<div class="project-card-tile-details">${shown}${more}</div>` : '') +
+      (actionsHTML ? `<div class="project-card-tile-actions">${actionsHTML}</div>` : '') +
+    `</div>`;
+  }
+  if (m === 'compact') {
+    return `<div class="project-card project-card-compact"${idAttr}>` + badge + titleHTML + ageHTML + `</div>`;
+  }
+  // Cards (the full layout).
+  const detailsHTML = rows.length ? `<ul class="project-card-details">` + rows.map(r => `<li class="project-card-detail" title="${escHtml(r.full)}">${r.text}</li>`).join('') + `</ul>` : '';
+  return `<article class="project-card project-card-card"${idAttr}>` +
+    `<header class="project-card-head">${titleHTML}${badge}${ageHTML}</header>` +
+    detailsHTML +
+    (actionsHTML ? `<footer class="project-card-card-actions">${actionsHTML}</footer>` : '') +
+  `</article>`;
+}
+
+// renderProjectCards lays out a list in one mode; the container carries the
+// mode so the CSS (and a live switch) can style each grid differently.
+function renderProjectCards(items, mode) {
+  const list = Array.isArray(items) ? items : [];
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const body = list.map(it => renderProjectCard(it, m)).join('');
+  return `<div class="project-cards project-cards-${m}" data-project-mode="${m}">${body}</div>`;
+}
+
+// renderProjectsCardToggle: the three-mode switch. It reuses the Sessions
+// toggle CSS classes (.sessions-mode-toggle / .sessions-mode-btn); only the
+// project-scoped aria/label text is new.
+function renderProjectsCardToggle(mode) {
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const defs = [
+    { key: 'cards', label: _stx('projects_view_cards', 'Cards'), icon: '▭' },
+    { key: 'tiles', label: _stx('projects_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('projects_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${m === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="projectsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('projects_view_toggle', 'Projects view mode'))}">${btns}</div>`;
+}
+
+// _projectCardItemsFromList maps the picker's project records to card items:
+// the name is the title, dir / backend / description are read-only details.
+function _projectCardItemsFromList(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const out = [];
+  for (const p of rows) {
+    if (!p || !p.name) continue;
+    const details = [];
+    const dir = String(p.dir || '').trim();
+    if (dir) details.push({ label: t('projects_manage_field_dir'), value: dir });
+    const backend = String(p.default_backend || '').trim();
+    if (backend) details.push({ label: t('projects_manage_field_backend'), value: backend });
+    const desc = String(p.description || '').trim();
+    if (desc) details.push(desc);
+    out.push({ id: p.name, title: p.name, details });
+  }
+  return out;
+}
+
+// _projectsCardSectionHTML: the cards sub-tab block for the Projects Overview
+// (mode toggle + cards). An empty list draws nothing, so a first visit is
+// unchanged apart from the new switch.
+function _projectsCardSectionHTML(list) {
+  const items = _projectCardItemsFromList(list);
+  if (!items.length) return '';
+  const m = _projectsCardMode();
+  return `<div id="projectsCards" data-projects-cards="block" style="margin:4px 0 14px;">` +
+    renderProjectsCardToggle(m) +
+    renderProjectCards(items, m) +
+  `</div>`;
+}
+
+window.PROJECTS_CARD_MODES = PROJECTS_CARD_MODES;
+window.PROJECTS_CARD_MODE_KEY = PROJECTS_CARD_MODE_KEY;
+window.PROJECTS_CARD_PHONE_WIDTH = PROJECTS_CARD_PHONE_WIDTH;
+window.PROJECTS_CARD_TEXT_MAX = PROJECTS_CARD_TEXT_MAX;
+window.PROJECTS_BADGE_KINDS = PROJECTS_BADGE_KINDS;
+window.PROJECTS_STATUS_BADGES = PROJECTS_STATUS_BADGES;
+window._projectsCardModeNormalize = _projectsCardModeNormalize;
+window._projectsCardModeDefault = _projectsCardModeDefault;
+window._projectsCardModeRead = _projectsCardModeRead;
+window._projectsCardModeStore = _projectsCardModeStore;
+window._projectsCardMode = _projectsCardMode;
+window._projectsCardSetMode = _projectsCardSetMode;
+window.projectsSetViewMode = _projectsCardSetMode;
+window._projectsCardShipped = _projectsCardShipped;
+window._projectsCardBadgeInfo = _projectsCardBadgeInfo;
+window._projectsCardBadgeHTML = _projectsCardBadgeHTML;
+window._projectsCardText = _projectsCardText;
+window._projectsCardAgeInfo = _projectsCardAgeInfo;
+window._projectsCardAgeText = _projectsCardAgeText;
+window._projectsCardDetailInfo = _projectsCardDetailInfo;
+window._projectsCardActionInfo = _projectsCardActionInfo;
+window._projectsCardLink = _projectsCardLink;
+window.renderProjectCard = renderProjectCard;
+window.renderProjectCards = renderProjectCards;
+window.renderProjectsCardToggle = renderProjectsCardToggle;
+window._projectCardItemsFromList = _projectCardItemsFromList;
+window._projectsCardSectionHTML = _projectsCardSectionHTML;
+
 function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
     .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
   const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
-  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+  return `<div id="projectsView" class="projects-view" style="padding:12px 16px;">${errLine}
+    <div class="projects-toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
-      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
-      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+      <select id="projectsPicker" class="projects-picker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" class="projects-show-empty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);">
         <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
         ${escHtml(t('projects_show_empty') || 'Show empty')}
       </label>
@@ -3403,7 +3752,16 @@ function toggleProjectsShowEmpty(checked) {
 // it loads); rollErr is the roll-up's load failure, if any.
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
-  const events = [];
+  // Informative Events lines are always shown, one each. emptyEvents holds the
+  // lines whose only content is that something is empty, absent, unset or has
+  // never happened (no sessions yet, empty plan, no plans, no unassigned
+  // Automata, a field that is not set). Those are listed one per line only
+  // while Show empty lines and sections is on; otherwise one summary line
+  // carries their count. Every line keeps its push order in eventOrder.
+  const emptyEvents = [];
+  const eventOrder = [];
+  const addEvent = text => { eventOrder.push({ text, empty: false }); };
+  const addEmptyEvent = text => { emptyEvents.push(text); eventOrder.push({ text, empty: true }); };
   // Only a missing weekly share matters, and only when the project has an arc
   // or an unassigned Automaton that needs a share. Other empty fields are hidden
   // and produce no Events entry.
@@ -3411,7 +3769,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
     (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
   const unset = key => {
-    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    if (key === 'projects_page_weekly_share' && needsShare) addEmptyEvent(t('projects_event_unset', [t(key)]));
     return '';
   };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
@@ -3441,7 +3799,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const automatonHTML = a => {
     const title = a.title || a.id;
     const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
-    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    if (!sessions.length) addEmptyEvent(t('projects_event_automaton_no_sessions', [title]));
     const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
     return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
       <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
@@ -3463,7 +3821,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
     if (!automata.length) {
-      events.push(t('projects_event_arc_empty', [arc.automation_id]));
+      addEmptyEvent(t('projects_event_plan_empty', [arc.automation_id]));
       return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
     }
     return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
@@ -3472,46 +3830,73 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading'))}</div>`;
+  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
-    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
   } else if (!roll) {
     overviewBody = loadingLine;
     arcsBody = loadingLine;
     unassignedBody = loadingLine;
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    overviewBody = _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs) + _projectUnattributedChipHTML();
     if (!arcs.length) {
-      events.push(t('projects_event_no_arcs'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_arcs'))}</div></div>`;
-    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_arcs'))}</div>${arcs.map(arcHTML).join('')}</div>`;
+      addEmptyEvent(t('projects_event_no_plans'));
+      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
+    } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else {
-      events.push(t('projects_event_no_unassigned'));
+    const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
+      lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
+        renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
+    const hidden = _projectsUnassignedHiddenLoad();
+    const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
+    const hiddenCount = un.length - shownUn.length;
+    if (un.length) {
+      const undo = hiddenCount
+        ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
+        : '';
+      const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
+      unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
+    } else {
+      addEmptyEvent(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
     }
+    const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
+    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`;
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
-  const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+  const eventLine = (e, cls) => `<div class="${cls}" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(e)}</div>`;
+  // Informative lines always show; empty-state lines show one per line with
+  // Show empty on, or fold into one counted summary line with it off. The
+  // summary comes after the real events and never replaces them.
+  const eventLines = eventOrder.filter(e => showEmpty || !e.empty).map(e => eventLine(e.text, 'project-event-line'));
+  if (!showEmpty && emptyEvents.length > 0) {
+    eventLines.push(eventLine(t('projects_event_empty_summary', [emptyEvents.length]), 'project-event-line project-event-summary'));
+  }
+  const evs = eventLines.length
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${eventLines.join('')}</div>`)
     : '';
-  const hasEvents = events.length > 0;
+  const hasEvents = eventLines.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
   const bodies = {
-    overview: head + overviewBody + _planRecordsSlotHtml(p),
-    arcs: arcsBody,
+    overview: head + _projectOverviewSummaryHTML(p),
+    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + plansBrowserHTML(p) + arcsBody,
+    records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
-    policy: _projectLinksHTML(p),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
   const strip = _projectsSubtabStripHTML(active, hasEvents);
+  // A stored or hashed sub-tab that no longer exists (the old Policy page)
+  // falls back to Overview, the one body that is always renderable.
+  const bodyHTML = (bodies[active] !== undefined && bodies[active] !== '') ? bodies[active] : (bodies.overview || '');
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <span style="font-weight:600;font-size:16px;">${escHtml(p.name)}</span>
+      ${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}
+    </div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodyHTML}</div></div></div>`;
 }
 
 // ── Projects sub-tab strip ──────────────────────────────────────────────────
@@ -3519,21 +3904,27 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+// The former Policy sub-tab is gone: its only setting link now sits next to
+// the project name in the header row, and a stored or hashed 'policy' value
+// falls back to Overview.
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
-  overview: 'projects_subtab_overview', arcs: 'projects_subtab_arcs', gantt: 'projects_subtab_gantt',
+  overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', records: 'projects_subtab_records', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
-  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+  events: 'projects_subtab_events',
 };
-function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(v) >= 0; }
+// 'arcs' is the old name of the Plans sub-tab; the #arcs deep link and a value
+// remembered by an older version still land on Plans.
+function _projectsSubtabCanon(v) { return v === 'arcs' ? 'plans' : v; }
+function _projectsSubtabValid(v) { return _PROJECTS_SUBTABS.indexOf(_projectsSubtabCanon(v)) >= 0; }
 function _projectsRememberSubtab(v) {
   try { localStorage.setItem(_PROJECTS_SUBTAB_KEY, v || ''); } catch (_) { /* not remembered */ }
 }
 function _projectsRecallSubtab() {
-  try { const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''; return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
+  try { const v = _projectsSubtabCanon(localStorage.getItem(_PROJECTS_SUBTAB_KEY) || ''); return _projectsSubtabValid(v) ? v : 'overview'; } catch (_) { return 'overview'; }
 }
 function _projectsActiveSubtab(hasEvents) {
-  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsState.subtab : _projectsRecallSubtab();
+  const v = _projectsSubtabValid(_projectsState.subtab) ? _projectsSubtabCanon(_projectsState.subtab) : _projectsRecallSubtab();
   return (v === 'events' && !hasEvents) ? 'overview' : v;
 }
 function _projectsSubtabStripHTML(active, hasEvents) {
@@ -3542,6 +3933,8 @@ function _projectsSubtabStripHTML(active, hasEvents) {
     tabs.map(k => `<button type="button" role="tab" id="projectsSubtab_${k}" data-projects-subtab="${k}" aria-selected="${k === active ? 'true' : 'false'}" aria-controls="projectsSubtabBody" class="projects-subtab${k === active ? ' active' : ''}" onclick="selectProjectsSubtab('${k}')">${escHtml(t(_PROJECTS_SUBTAB_LABELS[k]))}</button>`).join('') + `</div>`;
 }
 function selectProjectsSubtab(k) {
+  k = _projectsSubtabCanon(k);
+  k = _projectsSubtabCanon(k);
   if (!_projectsSubtabValid(k)) k = 'overview';
   _projectsState.subtab = k;
   _projectsRememberSubtab(k);
@@ -3552,6 +3945,31 @@ function selectProjectsSubtab(k) {
   } catch (_) { /* history blocked */ }
   _projectsPaint();
 }
+
+// ── Overview sub-tabs ───────────────────────────────────────────────────────
+// Projects Overview shows the cross-project in-flight sub-tabs (Inbox,
+// Automations, ...) in the Projects sub-tab style. The choice is kept in the
+// same remembered value as the project sub-tabs (cs_projects_subtab), so a
+// refresh opens the same sub-tab again.
+function _projectsOverviewSubtabValid(v) { return _AUTOMATION_SUBTABS.some(s => s.id === v); }
+function _projectsOverviewRestoreSubtab() {
+  if (_projectsState.overviewSubtabRestored) return;
+  _projectsState.overviewSubtabRestored = true;
+  try {
+    const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || '';
+    if (_projectsOverviewSubtabValid(v)) _automationState.subtab = v;
+  } catch (_) { /* not remembered */ }
+}
+function selectProjectsOverviewSubtab(id) {
+  if (!_projectsOverviewSubtabValid(id)) return;
+  _automationNormalizeSubtab();
+  const prev = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab);
+  if (prev && prev.id !== id) prev.stop();
+  _automationState.subtab = id;
+  _projectsRememberSubtab(id);
+  _projectsPaint();
+}
+window.selectProjectsOverviewSubtab = selectProjectsOverviewSubtab;
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
 // ── Project links: read-only policy, merge pipeline, arc documents, events ──
@@ -3704,9 +4122,23 @@ function _projectEventStreamHTML(ev, err) {
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
-          const when = e.at ? new Date(e.at).toLocaleString() : '';
-          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
-          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+          const ev = (e && typeof e === 'object') ? e : {};
+          const kind = String(ev.kind || '');
+          const human = kind ? kind.replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase()) : t('projects_links_events_heading');
+          const lv = String(ev.level || '').trim().toLowerCase();
+          const lvKind = { info: 'info', warn: 'warn', warning: 'warn', error: 'error', success: 'ok' }[lv] || 'neutral';
+          const details = [];
+          if (ev.automation_id) details.push({ label: t('projects_links_event_automation'), value: String(ev.automation_id) });
+          if (ev.task_id) details.push({ label: t('projects_links_event_task'), value: String(ev.task_id) });
+          const innerCard = renderProjectCard({
+            id: ev.id || '',
+            title: human,
+            badge: kind || null,
+            badgeKind: lvKind,
+            age: ev.at || ev.time || '',
+            details,
+          }, _projectsCardMode());
+          return `<div class="project-event-row" style="margin:2px 0;" data-kind="${escHtml(kind)}" data-automation="${escHtml(ev.automation_id || '')}" data-task="${escHtml(ev.task_id || '')}">${innerCard}</div>`;
         }).join('')
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
   }
@@ -3796,6 +4228,7 @@ function _projectRollupHTML(roll, arcs) {
     ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
     ${line(t('projects_rollup_points_label'), pointsVal)}
     ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
   </div>`);
 }
 
@@ -3804,22 +4237,135 @@ function _projectDate(v) {
   return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
 }
 
-// _projectHistoryRowHTML is one entry of the history list: a finished or
-// archived Automaton (linked to its view) or a daily progress snapshot.
-// Other kinds are left out.
+// ── Unassigned Automaton cards: assign, open, dismiss (per browser) ────────
+// Dismiss only hides the card in this browser: the list is saved to
+// localStorage and Undo clears it. It does not touch the daemon state.
+const _PROJECTS_UNASSIGNED_HIDDEN_KEY = 'cs_projects_unassigned_hidden';
+
+function _projectsUnassignedHiddenLoad() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+  } catch (_) { return []; }
+}
+function _projectsUnassignedHiddenSave(ids) {
+  try {
+    const list = Array.isArray(ids) ? ids.filter(x => typeof x === 'string' && x) : [];
+    localStorage.setItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY, JSON.stringify(list));
+  } catch (_) { /* not remembered */ }
+}
+function projectsUnassignedDismiss(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  const ids = _projectsUnassignedHiddenLoad();
+  if (ids.indexOf(id) < 0) ids.push(id);
+  _projectsUnassignedHiddenSave(ids);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+function projectsUnassignedUndo() {
+  _projectsUnassignedHiddenSave([]);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+// projectsUnassignedAssign asks for a project name (offering the configured
+// ones) and saves it with the same call the Automaton settings use:
+// POST /api/autonomous/prds/{id}/set_project.
+async function projectsUnassignedAssign(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  let names = [];
+  if (typeof _automatonProjectNames === 'function') {
+    try { names = (await _automatonProjectNames()).filter(Boolean); } catch (_) { names = []; }
+  }
+  let name = '';
+  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+    name = String(window.prompt(t('projects_unassigned_assign_prompt'), names[0] || '') || '').trim();
+  } else if (names.length === 1) {
+    name = String(names[0]);
+  }
+  if (!name) { showToast(t('projects_unassigned_assign_cancelled'), 'info', 2500); return; }
+  try {
+    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/set_project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: name }),
+    });
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _projectsLoadSelected === 'function') {
+      const r = _projectsLoadSelected();
+      if (r && typeof r.then === 'function') await r.catch(() => {});
+    } else if (typeof _projectsPaint === 'function') _projectsPaint();
+  } catch (err) {
+    showToast(t('automaton_project_error') + ': ' + (((err && err.message) || String(err))), 'error', 6000);
+  }
+}
+window.projectsUnassignedDismiss = projectsUnassignedDismiss;
+window.projectsUnassignedUndo = projectsUnassignedUndo;
+window.projectsUnassignedAssign = projectsUnassignedAssign;
+
+// _projectUnassignedCard is one unassigned (or without-project) Automaton as
+// a shared card item: plain title, badge, age from the created time, the
+// project directory as a detail (the full path stays in the title attribute)
+// and the actions. Unassigned Automata get Assign, Open and Dismiss;
+// without-project ones are read-only and get Open.
+function _projectUnassignedCard(a, group) {
+  const it = (a && typeof a === 'object') ? a : {};
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const st = String(it.status || '').trim().toLowerCase();
+  const badge = st ? (PROJECTS_STATUS_BADGES[st] ? {} : { badge: String(it.status), badgeKind: 'neutral' }) : {};
+  const actions = [];
+  if (group === 'unassigned') {
+    actions.push({ label: t('projects_unassigned_assign'), onclick: escHtml(`projectsUnassignedAssign(${JSON.stringify(id)});return false;`) });
+  }
+  actions.push({ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) });
+  if (group === 'unassigned') {
+    actions.push({ label: t('action_dismiss'), onclick: escHtml(`projectsUnassignedDismiss(${JSON.stringify(id)});return false;`) });
+  }
+  const details = [];
+  const dir = String(it.project_dir === undefined || it.project_dir === null ? '' : it.project_dir).trim();
+  if (dir) details.push({ label: t('projects_unassigned_dir'), value: dir });
+  if (group === 'unassigned') {
+    details.push({ label: t('action_dismiss'), value: t('projects_unassigned_hidden_note') });
+  }
+  return Object.assign({
+    id,
+    title: String(it.title || it.name || id),
+    status: it.status || '',
+    age: it.created_at || it.started_at || it.last || it.first || '',
+    details,
+    actions,
+  }, badge);
+}
+
+// _projectHistoryRowHTML is one entry of the history list as a shared card:
+// a finished or archived Automaton (status badge, plain title, the finished
+// moment as the age, its task counts and an Open action) or a daily
+// snapshot's progress line. The wrapper keeps the data-kind/data-automaton
+// attributes the page and tests rely on. Other kinds are left out.
 function _projectHistoryRowHTML(e) {
   if (!e || typeof e !== 'object') return '';
   if (e.kind === 'automaton') {
-    const tk = e.tasks || {};
-    const when = _projectDate(e.finished_at || e.time);
-    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
-      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
-      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+    const id = String(e.id || '');
+    const tk = (e.tasks && typeof e.tasks === 'object') ? e.tasks : {};
+    const st = String(e.status || '').trim().toLowerCase();
+    const badge = st ? (PROJECTS_STATUS_BADGES[st] ? { status: e.status } : { badge: String(e.status), badgeKind: 'neutral' }) : {};
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(id)}" style="margin:6px 0;">` +
+      renderProjectCard(Object.assign({
+        id,
+        title: String(e.title || id),
+        age: e.finished_at || e.time || '',
+        details: [String(tk.done || 0) + '/' + String(tk.total || 0) + ' ' + t('projects_page_tasks')],
+        actions: [{ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) }],
+      }, badge), _projectsCardMode()) + `</div>`;
   }
   if (e.kind === 'snapshot' && e.progress) {
     const p = e.progress;
     const when = _projectDate(e.taken_at || e.time);
-    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;">` +
+      renderProjectCard({
+        title: String(e.taken_at || e.time || ''),
+        badge: 'snapshot', badgeKind: 'neutral',
+        age: e.taken_at || e.time || '',
+        details: [t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0])],
+      }, _projectsCardMode()) + `</div>`;
   }
   return '';
 }
@@ -3890,7 +4436,9 @@ function _projectsGanttKey(row) {
 }
 
 // _projectsGanttSpan returns { a, b, running } in ms for a timeline row, or null
-// when the row has nothing to draw (planned). Running work draws to now.
+// when the row has nothing to draw (planned). Running work with no end draws to
+// now; a bar never outgrows the row's own start..end, and a non-running row
+// never reaches now.
 function _projectsGanttSpan(r, now) {
   if (!r) return null;
   // span = start..end; first and last stand in on a reply without the new fields.
@@ -3901,7 +4449,8 @@ function _projectsGanttSpan(r, now) {
   const running = !!r.running || r.status === 'running';
   if (isNaN(f) && isNaN(l) && !running) return null;
   const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
-  const b = running ? now : (isNaN(l) ? a : l);
+  let b = running ? Math.max(a, now) : (isNaN(l) ? a : l);
+  if (!isNaN(l) && b > l) b = l;
   return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
@@ -3909,9 +4458,14 @@ function _projectsGanttSpan(r, now) {
 // range, as a fraction of the visible range (2 percent).
 const _PROJECTS_GANTT_MARGIN = 0.02;
 
-// _projectsGanttStatusKey maps a row status to the literal i18n key of its word:
-// Completed, Running, Waiting, Blocked, Failed, Cancelled. Empty when unknown.
-function _projectsGanttStatusKey(status) {
+// _projectsGanttStatusKey maps a row to the literal i18n key of its status
+// word: Completed, Running, Waiting, Blocked, Failed, Cancelled. A row whose
+// release field is set and whose status is cancelled is shipped work and reads
+// as completed. A bare status string still maps. Empty when unknown.
+function _projectsGanttStatusKey(row) {
+  const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : { status: row };
+  let status = r.status || '';
+  if (status === 'cancelled' && r.release) status = 'completed';
   return ({ completed: 'projects_gantt_status_completed', running: 'projects_gantt_status_running', waiting: 'projects_gantt_status_waiting', blocked: 'projects_gantt_status_blocked', failed: 'projects_gantt_status_failed', cancelled: 'projects_gantt_status_cancelled' })[status] || '';
 }
 
@@ -4264,7 +4818,7 @@ function _projectGanttInnerHTML(g, ui) {
       return;
     }
     const r = it.row;
-    const label = r.kind === 'unassigned' ? t('projects_gantt_no_arc') : (r.title || r.id || '');
+    const label = r.kind === 'unassigned' ? t('projects_gantt_no_plan') : (r.title || r.id || '');
     const sp = _projectsGanttSpan(r, now);
     const toggle = it.expandable
       ? `<button type="button" class="project-gantt-toggle" aria-expanded="${it.expanded ? 'true' : 'false'}" aria-label="${escHtml(t(it.expanded ? 'projects_gantt_collapse' : 'projects_gantt_expand', [label]))}" onclick="${escHtml(`${ui.toggle}(${JSON.stringify(it.key)})`)}">${it.expanded ? '▾' : '▸'}</button>`
@@ -4277,7 +4831,7 @@ function _projectGanttInnerHTML(g, ui) {
     } else {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
-      const stKey = _projectsGanttStatusKey(r.status);
+      const stKey = _projectsGanttStatusKey(r);
       const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + t('projects_gantt_release_detail', [r.release]) : ''}`;
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" tabindex="0" data-id="${escHtml(r.id || '')}" onmouseenter="${ui.edge}(this,1)" onmouseleave="${ui.edge}(this,0)" onfocus="${ui.edge}(this,1)" onblur="${ui.edge}(this,0)" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
@@ -4715,7 +5269,7 @@ function _planRecordsFresh(project) {
     project: project || '',
     status: 'idle',      // idle | loading | ready | error | disabled
     kind: 'registry_row',
-    stateFilter: '',
+    states: [],         // selected state keys (a set; [] === all states)
     q: '',
     recs: [],
     total: 0,
@@ -4964,6 +5518,27 @@ function planRecordsBodyHtml(v) {
 
 // planRecordsSectionHtml is the whole Records section for one state object
 // (see _planRecordsFresh). It is empty until the first answer has come, and
+// planRecordsStateChipsHtml builds the card's state chip set for the current
+// view kind: one chip per state of that kind, so a view is filterable by any
+// combination of them — the server accepts the states together as
+// state=one,two,three. The selection has its own cs_state_chips_* key via the
+// shared helper; the chip's own change handler is the mutation path (it seeds
+// the card's mirror and refetches).
+function planRecordsStateChipsHtml(kind, st) {
+  const chips = createStateChipSet({
+    name: 'planRecordsState',
+    items: (Array.isArray(_PLAN_RECORD_STATES[kind]) ? _PLAN_RECORD_STATES[kind] : []).map(function (s) { return { key: s, label: _planRecordsStateLabel(s) }; }),
+    total: (st && st.kind === kind) ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _planRecords.states = sel.slice();
+      _planRecordsLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 // stays empty while the feature is off or not wired.
 function planRecordsSectionHtml(v) {
   if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
@@ -4971,7 +5546,7 @@ function planRecordsSectionHtml(v) {
   const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
   const controls = v.view === 'list'
     ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <div id="planRecordsStateFilter" class="state-chip-row" style="display:inline-block;vertical-align:middle;">${planRecordsStateChipsHtml(kind, v)}</div>
         <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
         <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
         <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
@@ -5017,10 +5592,11 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.states = window._stateChipSets.planRecordsState.get();
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   let url;
   if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
   else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
@@ -5048,13 +5624,16 @@ window.planRecordsSetKind = function(kind) {
   const st = _planRecords;
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
-  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
+  st.kind = kind; st.states = []; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
-  _planRecords.stateFilter = String(state || '');
+  const csv = String(state || '');
+  _planRecords.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
 // planRecordsSearchInput waits for a pause in typing, then calls the search
@@ -5201,13 +5780,1417 @@ window.planRecordsImportApply = function() {
   });
 };
 
+// ── Overview summary ────────────────────────────────────────────────────────
+// The Overview sub-tab reads GET /api/projects/{name}/overview-summary and
+// nothing else: header, progress, one line per active plan, what is next, and
+// the record counts with links into Plans and Records.
+let _projectsSummary = { name: '', data: null, error: '' };
+
+function _projectsLoadSummary() {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  const mine = () => _projectsState.selected === name;
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/overview-summary').then(r => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: r && typeof r === 'object' && !Array.isArray(r) ? r : {}, error: '' };
+  }).catch(err => {
+    if (!mine()) return;
+    _projectsSummary = { name, data: null, error: (err && err.message) || String(err) };
+  });
+}
+
+function _projectOverviewSummaryHTML(p) {
+  const S = _projectsSummary.name === p.name ? _projectsSummary : { data: null, error: '' };
+  if (S.error) return `<div class="project-overview-error" style="color:var(--error,#ef4444);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_failed') + ' ' + S.error)}</div>`;
+  if (!S.data) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
+  const d = S.data;
+  const pr = d.progress || {};
+  const au = pr.automata || {};
+  const done = Number(au.done) || 0;
+  const total = Number(au.total) || 0;
+  const pct = Number.isFinite(Number(au.percent)) ? Number(au.percent) : (total ? Math.round(done * 100 / total) : 0);
+  const pts = Math.round((Number(pr.points) || 0) * 10) / 10;
+  const bar = (pc, label) => `<div class="project-overview-bar" style="display:flex;align-items:center;gap:8px;">
+    <div class="project-overview-track"><div class="project-overview-fill" style="width:${Math.max(0, Math.min(100, pc))}%;"></div></div>
+    <span class="project-overview-barlabel">${escHtml(label)}</span></div>`;
+  const go = (k, label) => `<a href="#" class="project-overview-link" data-goto="${k}" onclick="${escHtml(`selectProjectsSubtab(${JSON.stringify(k)});return false;`)}">${escHtml(label)}</a>`;
+  const hd = d.header || {};
+  const header = `<div class="project-overview-header">${hd.dir ? `<span class="project-overview-dir">${escHtml(hd.dir)}</span>` : ''}</div>`;
+  const progress = _projectsSectionCard('overview', escHtml(t('projects_overview_progress_heading')), `<div class="project-overview-progress">
+    ${bar(pct, t('projects_overview_progress_value', [done, total, pct]))}
+    <div class="project-overview-points">${escHtml(pts + ' ' + t('projects_page_points'))}</div></div>`);
+  const lines = Array.isArray(d.active_plans) ? d.active_plans : [];
+  const stateLabel = st => { const k = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[st]; return k ? t(k) : String(st || ''); };
+  const plans = `<div class="project-overview-plans"><div class="project-overview-heading">${escHtml(t('projects_overview_active_plans'))}</div>` + (lines.length
+    ? lines.map(l => { const pg = l.progress || {}; return `<div class="project-overview-plan" data-plan="${escHtml(l.id || '')}">
+        <span class="project-overview-plan-title">${escHtml(l.title || l.id || '')}</span>
+        <span class="project-overview-plan-state">${escHtml(stateLabel(l.state))}</span>
+        <span class="project-overview-plan-bar">${bar(Number(pg.percent) || 0, `${Number(pg.done) || 0}/${Number(pg.total) || 0} · ${Number(pg.percent) || 0}%`)}</span></div>`; }).join('')
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_no_active'))}</div>`) + '</div>';
+  const nx = d.next && typeof d.next === 'object' ? d.next : null;
+  const next = `<div class="project-overview-next"><div class="project-overview-heading">${escHtml(t('projects_overview_next'))}</div>` + (nx
+    ? `<div>${escHtml(nx.automaton_title || nx.automaton_id || '')} <span class="project-overview-next-plan">(${escHtml(nx.plan_title || nx.plan_id || '')})</span></div>`
+    : `<div class="project-overview-empty">${escHtml(t('projects_overview_next_none'))}</div>`) + '</div>';
+  const c = d.counts || {};
+  const n = o => Number((o || {}).total) || 0;
+  const counts = `<div class="project-overview-counts"><div class="project-overview-heading">${escHtml(t('projects_overview_counts'))}</div>
+    <div>${go('plans', t('projects_overview_count_plans', [n(c.plans)]))} · ${Number((c.plans || {}).backlog) || 0} ${escHtml(t('projects_overview_backlog'))}</div>
+    <div>${go('records', t('projects_overview_count_records', [n(c.records)]))} · ${escHtml(t('projects_overview_count_rows', [n(c.rows)]))} · ${escHtml(t('projects_overview_count_findings', [n(c.findings)]))}</div></div>`;
+  return `<div class="project-overview-summary">${header}${progress}${plans}${next}${counts}</div>`;
+}
+
+// ── Plans browser ───────────────────────────────────────────────────────────
+// The Plans sub-tab of a project page. Plans come from the plans read API
+// (GET /api/projects/{name}/plans, paged) in priority order, with the Backlog
+// group (plans with no Automaton yet) after them. Expanding a plan reads its
+// Automata in run order (GET /api/plans/{ref}/automata) and, when the Tasks
+// section is opened, its tasks one page at a time (GET /api/plans/{ref}/tasks).
+// The findings and registry rows linked to a plan come from the summary list
+// GET /api/plan-records/browse; no full record is ever read. Controls write
+// through the plans write API (reorder plans and Automata, create a plan,
+// attach an Automaton, an Automation or a finding). Which plans are expanded
+// is remembered per browser under the one localStorage key _PLANS_BROWSER_KEY.
+// The search box waits for a pause in typing on the one window-level timer
+// window._plansBrowserSearchTimer; nothing else polls.
+const _PLANS_BROWSER_KEY = 'cs_plans_browser';
+const _PLANS_PAGE = 50;
+const _PLANS_TASK_PAGE = 25;
+const _PLANS_BACKLOG_ID = '__backlog';
+const _PLANS_TASKS_PREFIX = 'tasks:';
+
+function _plansBrowserFresh(project) {
+  return {
+    project: project || '',
+    status: 'idle',     // idle | loading | ready | error | disabled
+    plans: [], total: 0,
+    backlog: [], backlogTotal: 0,
+    error: '', notice: '',
+    seq: 0,
+    q: '', states: [],  // selected state keys (a set; [] === all states)
+    // archived is the archive scope (GET ?archived=): 'exclude' is the default
+    // and sends no parameter, 'include' shows archived plans after the live
+    // ones, 'only' shows only them.
+    archived: 'exclude',
+    // archiveAsk names the plan whose Archive button switched to the reason
+    // form, archiveReason is that form's current text.
+    archiveAsk: '',
+    archiveReason: '',
+    matchPlans: null,   // plan ids with a registry row or finding that matches q
+    detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
+    links: { status: 'idle', rows: [] },
+    busy: false,
+  };
+}
+let _plansBrowser = _plansBrowserFresh('');
+
+function _plansOpenAll() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_PLANS_BROWSER_KEY) || '{}');
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch (_) { return {}; }
+}
+function _plansIsOpen(project, id) {
+  const l = _plansOpenAll()[project];
+  return Array.isArray(l) && l.indexOf(id) >= 0;
+}
+function _plansSetOpen(project, id, open) {
+  try {
+    const all = _plansOpenAll();
+    const l = (Array.isArray(all[project]) ? all[project] : []).filter(x => x !== id);
+    if (open) l.push(id);
+    all[project] = l;
+    localStorage.setItem(_PLANS_BROWSER_KEY, JSON.stringify(all));
+  } catch (_) { /* not remembered */ }
+}
+
+function _plansPath(plan, tail) { return '/api/plans/' + encodeURIComponent(plan) + tail; }
+function _plansErrText(err) { return _planRecordsParseError(err).message; }
+
+// _plansBrowserLoad reads the plans page(s). more is false (first page of both
+// groups), 'plans' or 'backlog' (the next page of that group, appended).
+function _plansBrowserLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_plansBrowser.project !== name) _plansBrowser = _plansBrowserFresh(name);
+  const st = _plansBrowser;
+  const seq = ++st.seq;
+  if (st.status === 'idle') st.status = 'loading';
+  const params = ['limit=' + _PLANS_PAGE, 'offset=' + (more === 'plans' ? st.plans.length : 0), 'backlog_offset=' + (more === 'backlog' ? st.backlog.length : 0)];
+  if (st.archived === 'include' || st.archived === 'only') params.push('archived=' + st.archived);
+  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/plans?' + params.join('&')).then(r => {
+    if (_plansBrowser !== st || seq !== st.seq) return;
+    const plans = r && Array.isArray(r.plans) ? r.plans : [];
+    const back = r && r.backlog && Array.isArray(r.backlog.plans) ? r.backlog.plans : [];
+    if (more !== 'backlog') st.plans = more === 'plans' ? st.plans.concat(plans) : plans;
+    if (more !== 'plans') st.backlog = more === 'backlog' ? st.backlog.concat(back) : back;
+    // Release plans lead their group: they collect every state, so the order
+    // is a display priority, not a re-ordering write.
+    st.plans = st.plans.filter(pl => pl && pl.plan_kind === 'release').concat(st.plans.filter(pl => !(pl && pl.plan_kind === 'release')));
+    st.backlog = st.backlog.filter(pl => pl && pl.plan_kind === 'release').concat(st.backlog.filter(pl => !(pl && pl.plan_kind === 'release')));
+    st.total = Number(((r || {}).page || {}).total) || st.plans.length;
+    st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
+    st.status = 'ready'; st.error = '';
+    _plansBrowserPaint();
+  }).catch(err => {
+    if (_plansBrowser !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _plansBrowserPaint(); return; }
+    st.status = 'error'; st.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+// _plansLoadLinks reads the project's registry rows and findings as summaries
+// (one request, newest page) so a plan can list the ones linked to it.
+function _plansLoadLinks() {
+  const st = _plansBrowser;
+  if (!st.project || st.links.status === 'loading') return Promise.resolve();
+  st.links.status = 'loading';
+  return apiFetch('/api/plan-records/browse?project=' + encodeURIComponent(st.project) + '&limit=500').then(r => {
+    if (_plansBrowser !== st) return;
+    st.links = { status: 'ready', rows: r && Array.isArray(r.records) ? r.records : [] };
+    _plansBrowserPaint();
+  }).catch(() => {
+    if (_plansBrowser !== st) return;
+    st.links = { status: 'ready', rows: [] };
+  });
+}
+
+function _plansLoadDetail(plan) {
+  const st = _plansBrowser;
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
+  d.status = 'loading';
+  return apiFetch(_plansPath(plan, '/automata?limit=500')).then(r => {
+    if (_plansBrowser !== st) return;
+    d.automata = r && Array.isArray(r.automata) ? r.automata : [];
+    d.status = 'ready'; d.error = '';
+    _plansBrowserPaint();
+    // A release plan also carries its theme layout, read alongside its
+    // Automata; a plan without themes still shows its Automations and rows.
+    const pl = (st.plans || []).concat(st.backlog || []).find(x => x && String(x.id) === String(plan)) || null;
+    if (!pl || pl.plan_kind !== 'release' || d.themesStatus === 'loading' || d.themesStatus === 'ready') return null;
+    d.themesStatus = 'loading'; d.themesError = '';
+    _plansBrowserPaint();
+    return apiFetch(_plansPath(plan, '/themes')).then(th => {
+      if (_plansBrowser !== st) return null;
+      d.themes = th && typeof th === 'object' ? th : { themes: [], unplaced: [] };
+      d.themesStatus = 'ready';
+      _plansBrowserPaint();
+    }).catch(err2 => {
+      if (_plansBrowser !== st) return;
+      d.themesStatus = 'error'; d.themesError = _plansErrText(err2);
+      _plansBrowserPaint();
+    });
+  }).catch(err => {
+    if (_plansBrowser !== st) return;
+    d.status = 'error'; d.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+function _plansLoadTasks(plan, more) {
+  const st = _plansBrowser;
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
+  d.tasksStatus = 'loading';
+  return apiFetch(_plansPath(plan, '/tasks?limit=' + _PLANS_TASK_PAGE + '&offset=' + (more ? d.tasks.length : 0))).then(r => {
+    if (_plansBrowser !== st) return;
+    const list = r && Array.isArray(r.tasks) ? r.tasks : [];
+    d.tasks = more ? d.tasks.concat(list) : list;
+    d.tasksTotal = Number(((r || {}).page || {}).total) || d.tasks.length;
+    d.tasksStatus = 'ready';
+    _plansBrowserPaint();
+  }).catch(err => {
+    if (_plansBrowser !== st) return;
+    d.tasksStatus = 'error'; d.error = _plansErrText(err);
+    _plansBrowserPaint();
+  });
+}
+
+// ── search and state filter ─────────────────────────────────────────────────
+function _plansLower(s) { return String(s || '').toLowerCase(); }
+// A plan matches the search when its title, its next Automaton, one of its
+// loaded Automata, or a registry row or finding linked to it matches. The row
+// and finding part is answered by the browse search route (matchPlans).
+function _plansMatch(st, p) {
+  const sel = Array.isArray(st.states) ? st.states : [];
+  if (sel.length && sel.indexOf(p.state) < 0) return false;
+  const q = _plansLower(st.q).trim();
+  if (!q) return true;
+  if (_plansLower(p.title).indexOf(q) >= 0) return true;
+  if (p.next && _plansLower(p.next.title).indexOf(q) >= 0) return true;
+  const d = st.detail[p.id];
+  if (d && d.automata.some(a => _plansLower(a.title).indexOf(q) >= 0)) return true;
+  return !!(st.matchPlans && st.matchPlans.indexOf(p.id) >= 0);
+}
+
+window.plansBrowserSearchInput = function(val) {
+  const st = _plansBrowser;
+  st.q = String(val || '');
+  clearTimeout(window._plansBrowserSearchTimer);
+  window._plansBrowserSearchTimer = setTimeout(() => {
+    const q = st.q.trim();
+    if (!q) { st.matchPlans = null; _plansBrowserPaint(); return; }
+    apiFetch('/api/plan-records/browse?project=' + encodeURIComponent(st.project) + '&limit=500&q=' + encodeURIComponent(q)).then(r => {
+      if (_plansBrowser !== st || st.q.trim() !== q) return;
+      st.matchPlans = (r && Array.isArray(r.records) ? r.records : []).map(x => x.plan_id).filter(Boolean);
+      _plansBrowserPaint();
+    }).catch(() => { if (_plansBrowser === st) { st.matchPlans = []; _plansBrowserPaint(); } });
+    _plansBrowserPaint();
+  }, 250);
+};
+window.plansBrowserSetState = function(v) {
+  const csv = String(v || '');
+  if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
+  _plansBrowser.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  _plansBrowserPaint();
+};
+
+// ── HTML ────────────────────────────────────────────────────────────────────
+function _plansStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+function _plansPointsText(n) {
+  const v = Math.round((Number(n) || 0) * 10) / 10;
+  return `${v} ${t('projects_page_points')}`;
+}
+function _plansCall(fn, ...args) { return escHtml(`${fn}(${args.map(a => JSON.stringify(a)).join(',')});return false;`); }
+function _plansMoveButtons(fnUp, fnDown, canUp, canDown) {
+  const b = (cls, glyph, key, fn, on) => `<button type="button" class="btn-secondary ${cls}" aria-label="${escHtml(t(key))}" title="${escHtml(t(key))}"${on ? ` onclick="${fn}"` : ' disabled'} style="font-size:12px;padding:1px 7px;">${glyph}</button>`;
+  return `<span class="plans-browser-move" style="display:inline-flex;gap:2px;">${b('plans-move-up', '↑', 'plans_browser_move_up', fnUp, canUp)}${b('plans-move-down', '↓', 'plans_browser_move_down', fnDown, canDown)}</span>`;
+}
+
+function _plansAutomatonRowHTML(st, plan, a, idx, count) {
+  const runKey = { completed: 'plans_browser_run_completed', running: 'plans_browser_run_running', next: 'plans_browser_run_next', blocked: 'plans_browser_run_blocked', held: 'plans_browser_run_held' }[a.run];
+  const runLabel = runKey ? t(runKey) : String(a.run || '');
+  const when = a.completed_at ? ` <span style="color:var(--text2);font-size:12px;">${escHtml(t('plans_browser_completed_at', [a.completed_at.replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, ' UTC')]))}</span>` : '';
+  const nextMark = a.is_next ? ` <span class="plans-browser-next-marker" style="font-size:12px;font-weight:600;">${escHtml(t('plans_browser_next_marker'))}</span>` : '';
+  const moves = _plansMoveButtons(_plansCall('plansBrowserMoveAutomaton', plan.id, a.id, -1), _plansCall('plansBrowserMoveAutomaton', plan.id, a.id, 1), idx > 0, idx < count - 1);
+  return `<div class="plans-browser-automaton" data-automaton="${escHtml(a.id)}" data-run="${escHtml(a.run || '')}" style="display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:4px 0 4px 12px;">
+    <span class="plans-browser-run" style="font-size:12px;color:var(--text2);min-width:64px;">${escHtml(runLabel)}</span>
+    <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(a.title || a.id)}</a>${nextMark}${when}
+    <span style="color:var(--text2);font-size:12px;">${escHtml(_plansPointsText(a.points))}</span>${moves}</div>`;
+}
+
+function _plansLinkedRowHTML(r) {
+  const old = r.legacy_number ? `<span style="color:var(--text2);font-size:12px;"> ${escHtml(t('plans_browser_old_row', [r.legacy_number]))}</span>` : '';
+  return `<div class="plans-browser-linked" data-record="${escHtml(r.id)}" style="margin:2px 0 2px 12px;font-size:13px;">${escHtml(r.title || r.id)}${old} <span style="color:var(--text2);font-size:12px;">${escHtml(_plansStateLabel(r.state))}</span></div>`;
+}
+
+function _plansAttachFormHTML(st, plan) {
+  const one = (kind, ph, btn) => `<span class="plans-browser-attach plans-browser-attach-${kind}" style="display:inline-flex;gap:4px;">
+    <input type="text" class="form-input" aria-label="${escHtml(t(ph))}" placeholder="${escHtml(t(ph))}" style="font-size:12px;width:150px;">
+    <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${escHtml(`plansBrowserAttach(${JSON.stringify(plan.id)},${JSON.stringify(kind)},this.previousElementSibling.value);return false;`)}">${escHtml(t(btn))}</button></span>`;
+  const free = st.links.rows.filter(r => r.kind === 'finding' && !r.plan_id);
+  const findingSel = `<span class="plans-browser-attach plans-browser-attach-finding" style="display:inline-flex;gap:4px;">
+    <select class="form-select" aria-label="${escHtml(t('plans_browser_attach_finding_choose'))}" style="font-size:12px;max-width:200px;"><option value="">${escHtml(t('plans_browser_attach_finding_choose'))}</option>${free.map(r => `<option value="${escHtml(r.id)}">${escHtml(r.title || r.id)}</option>`).join('')}</select>
+    <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${escHtml(`plansBrowserAttach(${JSON.stringify(plan.id)},'finding',this.previousElementSibling.value);return false;`)}">${escHtml(t('plans_browser_attach_finding'))}</button></span>`;
+  return `<div class="plans-browser-attach-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px 12px;">${one('automaton', 'plans_browser_attach_automaton_ph', 'plans_browser_attach_automaton')}${one('automation', 'automation_plans_browser_attach_ph', 'automation_plans_browser_attach')}${findingSel}</div>`;
+}
+
+function _plansTasksHTML(st, plan) {
+  const d = st.detail[plan.id] || {};
+  const open = _plansIsOpen(st.project, _PLANS_TASKS_PREFIX + plan.id);
+  const head = `<a href="#" class="plans-browser-tasks-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggleTasks', plan.id)}" style="font-size:13px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(t('plans_browser_tasks'))}</a>`;
+  if (!open) return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}</div>`;
+  const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+  let body;
+  if (d.tasksStatus === 'error') body = `<div role="alert" style="color:var(--error);font-size:13px;">${escHtml(t('plans_browser_failed', [d.error]))}</div>`;
+  else if (d.tasksStatus === 'loading' && !tasks.length) body = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('plans_browser_loading'))}</div>`;
+  else if (!tasks.length) body = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('plans_browser_no_tasks'))}</div>`;
+  else {
+    body = tasks.map(k => `<div class="plans-browser-task" data-task="${escHtml(k.id)}" style="font-size:13px;margin:2px 0;">${escHtml(k.title || k.id)} <span style="color:var(--text2);font-size:12px;">${escHtml(k.status || '')}${k.automaton_title ? ' · ' + escHtml(k.automaton_title) : ''}</span></div>`).join('');
+    if (tasks.length < d.tasksTotal) body += `<button type="button" class="btn-secondary plans-browser-tasks-more" style="font-size:12px;padding:3px 10px;margin-top:4px;" onclick="${_plansCall('plansBrowserTasksMore', plan.id)}">${escHtml(t('plans_browser_load_more'))}</button>`;
+  }
+  return `<div class="plans-browser-tasks" style="margin:8px 0 0 12px;">${head}<div style="margin-left:12px;">${body}</div></div>`;
+}
+
+function _plansExpandedHTML(st, plan) {
+  const d = st.detail[plan.id];
+  const autos = d && Array.isArray(d.automata) ? d.automata : [];
+  const automations = Array.isArray(plan.automation_ids) ? plan.automation_ids : [];
+  const section = (key, inner) => `<div style="font-weight:600;font-size:13px;margin:8px 0 2px 12px;">${escHtml(t(key))}</div>${inner}`;
+  const none = key => `<div style="color:var(--text2);font-size:13px;margin-left:12px;">${escHtml(t(key))}</div>`;
+  const automationsHtml = section('automation_plans_browser_heading', automations.length
+    ? automations.map(id => `<div class="plans-browser-automation" data-automation="${escHtml(id)}" style="margin:2px 0 2px 12px;font-size:13px;">${escHtml(id)}</div>`).join('')
+    : none('automation_plans_browser_none'));
+  let automataBody;
+  if (d && d.status === 'error') automataBody = `<div role="alert" style="color:var(--error);font-size:13px;margin-left:12px;">${escHtml(t('plans_browser_failed', [d.error]))}</div>`;
+  else if (!d || d.status !== 'ready') automataBody = none('plans_browser_loading');
+  else if (!autos.length) automataBody = none('plans_browser_no_automata');
+  else automataBody = autos.map((a, i) => _plansAutomatonRowHTML(st, plan, a, i, autos.length)).join('');
+  const linked = st.links.rows.filter(r => r.plan_id === plan.id);
+  const fin = linked.filter(r => r.kind === 'finding');
+  const rows = linked.filter(r => r.kind !== 'finding');
+  return `<div class="plans-browser-expanded">${plan.plan_kind === 'release' ? plansReleaseThemesHTML(st, plan) : ''}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+    ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
+    ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
+    ${_plansAttachFormHTML(st, plan)}</div>`;
+}
+
+function _plansPlanHTML(st, plan, idx, list, canMove) {
+  const open = _plansIsOpen(st.project, plan.id);
+  const pg = plan.progress || {};
+  const pct = Math.max(0, Math.min(100, Number(pg.percent) || 0));
+  const label = t('plans_browser_progress', [Number(pg.done) || 0, Number(pg.total) || 0, pct]);
+  const next = plan.next && plan.next.title ? `<span class="plans-browser-next" style="font-size:12px;color:var(--text2);">${escHtml(t('plans_browser_next_marker'))}: ${escHtml(plan.next.title)}</span>` : '';
+  const moves = canMove ? _plansMoveButtons(_plansCall('plansBrowserMovePlan', plan.id, -1), _plansCall('plansBrowserMovePlan', plan.id, 1), idx > 0, idx < list.length - 1) : '';
+  const isRelease = plan.plan_kind === 'release';
+  const badge = isRelease ? `<span class="plans-release-badge" data-plan-kind="release" style="display:inline-block;margin-left:2px;padding:0 8px;border:1px solid var(--accent,#3b82f6);border-radius:10px;font-size:11px;color:var(--accent,#3b82f6);background:transparent;" title="${escHtml(t('plans_release_badge'))}">${escHtml(t('plans_release_badge'))}${plan.release ? `<span style="opacity:.85;"> · ${escHtml(t('plans_release_label', [String(plan.release || '')]))}</span>` : ''}</span>` : '';
+  const arch = _plansArchiveCtlHTML(_plansBrowser, plan);
+  return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
+    <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
+      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>${badge}
+      <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
+      <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
+        <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
+      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${arch}${moves}
+    </div>${plan.goal ? `<div class="plans-browser-goal" style="margin:2px 0 0 14px;font-size:13px;color:var(--text2);">${escHtml(plan.goal)}</div>` : ''}${open ? _plansExpandedHTML(st, plan) : ''}</div>`;
+}
+
+function _plansGroupHTML(st, list, total, group, loadMoreFn) {
+  const shown = list.filter(p => _plansMatch(st, p));
+  const filtering = !!(st.states.length || st.q.trim());
+  const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
+  const more = list.length < total
+    ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
+  return { rows, more, count: shown.length };
+}
+
+function plansBrowserListHTML(st) {
+  if (!st || st.status === 'idle' || st.status === 'loading') return `<div class="plans-browser-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('plans_browser_loading'))}</div>`;
+  if (st.status === 'disabled') return `<div class="plans-browser-off" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('plans_browser_off'))}</div>`;
+  if (st.status === 'error') return `<div class="plans-browser-error" role="alert" style="color:var(--error);font-size:13px;margin-top:10px;overflow-wrap:anywhere;">${escHtml(t('plans_browser_failed', [st.error]))}</div>`;
+  const notice = st.notice ? `<div class="plans-browser-notice" role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(st.notice)}</div>` : '';
+  const main = _plansGroupHTML(st, st.plans, st.total, 'plans', 'plansBrowserMore');
+  const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
+  const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
+  let html = notice + main.rows + main.more;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  }
+  if (st.backlogTotal > 0 || back.count) {
+    html += `<div class="plans-browser-backlog" style="margin-top:12px;">
+      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${st.backlogTotal})</a>
+      ${backOpen ? `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('plans_browser_backlog_hint'))}</div>${back.rows}${back.more}` : ''}</div>`;
+  }
+  return html;
+}
+
+// plansBrowserStateChipsHtml is the browser's state filter as a multi-select
+// chip set: one chip per registry state, any combination selectable. The
+// selection has its own cs_state_chips_* key via the shared helper, and the
+// chip's own change handler is the mutation path (seeds the mirror, repaints).
+function plansBrowserStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'plansBrowserState',
+    items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _plansBrowser.states = sel.slice();
+      _plansBrowserPaint();
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
+function plansBrowserHTML(p) {
+  const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
+  _plansBrowserEnsureUnattributed();
+  const stateSel = plansBrowserStateChipsHtml(st);
+  const archOpts = ['exclude', 'include', 'only'].map(v => `<option value="${v}"${st && st.archived === v ? ' selected' : ''}>${escHtml(t(v === 'exclude' ? 'plans_release_archived_live' : v === 'include' ? 'plans_release_archived_with' : 'plans_release_archived_only'))}</option>`).join('');
+  const docsUrl = '/diagrams.html#docs/howto/plan-records.md';
+  const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+    <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
+    <div id="plansBrowserState" class="state-chip-row" style="vertical-align:middle;">${stateSel}</div>
+    <select id="plansBrowserArchived" class="form-select" aria-label="${escHtml(t('plans_release_archived_label'))}" style="font-size:12px;" onchange="plansReleaseSetArchived(this.value)">${archOpts}</select>
+    <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_docs_help'))} <a href="${escHtml(docsUrl)}" style="font-size:11px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>
+    <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
+      <input id="plansBrowserNewTitle" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_title_ph'))}" placeholder="${escHtml(t('plans_browser_create_title_ph'))}" style="flex:1;min-width:140px;font-size:12px;">
+      <input id="plansBrowserNewGoal" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_goal_ph'))}" placeholder="${escHtml(t('plans_browser_create_goal_ph'))}" style="flex:2;min-width:160px;font-size:12px;">
+      <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="plansBrowserCreate(document.getElementById('plansBrowserNewTitle').value,document.getElementById('plansBrowserNewGoal').value);return false;">＋ ${escHtml(t('plans_browser_create_btn'))}</button></div>`;
+  return `<div class="plans-browser" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
+    ${controls}
+    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div>
+    <div id="plansReleaseUnattributed" style="margin-top:14px;">${plansReleaseUnattributedSectionHTML()}</div>
+    <div id="plansReleaseMigrate" style="margin-top:14px;">${plansReleaseMigrateHTML()}</div>
+    <div id="plansReleaseRowPlans" style="margin-top:14px;">${plansReleaseRowPlansHTML()}</div></div>`;
+}
+
+// ── Release plans: archive, unattributed, themes, migrations ─────────────────────────────
+// All of this lives beside the Plans browser and reuses its state, helpers
+// (_plansWrite, _plansPath, _plansMatch) and render helpers (escHtml, _plansCall).
+// User-facing wording is Automaton/Automata; "release plan" is the only plan
+// wording that reaches the UI, and it is the operator-facing name already used
+// by the plan records docs.
+
+let _plansReleaseBusy = false;
+
+// Unattributed Automata: read from the dedicated endpoint (GET /api/plans/unattributed),
+// which counts only Automata no release plan holds.
+let _plansUnattributed = { status: 'idle', total: 0, rows: [], error: '' };
+// Per-row attach panel: openIdx is the row index whose inline panel is open.
+let _plansUnattribAttachOpen = -1;
+// Bulk selection: all flag + explicit per-row checked map keyed by row id.
+let _plansUnattribSel = { all: false, ids: Object.create(null) };
+// Latest attach results (single or bulk), newest first; the bulk refusals show here.
+let _plansUnattribResults = null;   // null | { busy, error, results: [] }
+// Release migration panel state.
+let _plansReleaseMigrate = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', nextRelease: '', currentRelease: '', marks: {} };
+// Row-plans conversion panel state.
+let _plansReleaseRowPlans = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', currentRelease: '' };
+
+function _releasePaint() {
+  if (typeof _projectsActive === 'function' && _projectsActive() && typeof _projectsPaint === 'function') _projectsPaint();
+}
+
+function _plansBrowserEnsureUnattributed() {
+  if (_plansReleaseBusy) return;
+  if (_plansUnattributed.status === 'loading' || _plansUnattributed.status === 'ready') return;
+  const name = _projectsState.selected;
+  if (!name || !(Array.isArray(_projectsState.list) && _projectsState.list.some(p2 => p2 && p2.name === name))) return;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); });
+}
+
+function plansReleaseViewUnattributed() {
+  if (typeof selectProjectsSubtab === 'function') selectProjectsSubtab('plans');
+  const el = document.getElementById('plansReleaseUnattributed');
+  if (el && el.scrollIntoView) el.scrollIntoView();
+}
+
+function _projectUnattributedChipHTML() {
+  const u = _plansUnattributed;
+  if (!u || u.status !== 'ready') return '';
+  const box = inner => `<div class="project-unattributed-chip plans-release-unattributed-chip" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">${inner}</div>`;
+  if (u.total > 0) return box(`<span style="font-weight:600;">${u.total}</span> ${escHtml(t('plans_release_unattributed_chip'))}<a href="#" style="font-size:12px;margin-left:8px;" onclick="plansReleaseViewUnattributed();return false;">${escHtml(t('plans_release_unattributed_view'))}</a>`);
+  return `<div class="project-unattributed-chip plans-release-unattributed-empty" style="margin-top:8px;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unattributed_none'))}</div>`;
+}
+
+function _plansReleasePlansList() {
+  const st = _plansBrowser;
+  if (!st || st.status !== 'ready') return [];
+  const seen = Object.create(null);
+  const out = [];
+  (st.plans || []).concat(st.backlog || []).forEach(p => {
+    if (p && p.plan_kind === 'release' && p.id && !seen[p.id]) { seen[p.id] = true; out.push(p); }
+  });
+  return out;
+}
+
+function _plansReleasePlanOptions() {
+  return _plansReleasePlansList().filter(r => !r.archived).length
+    ? _plansReleasePlansList().filter(r => !r.archived)
+    : _plansReleasePlansList();
+}
+
+function _plansUnattribRowKey(r) { return String((r && r.id) || ''); }
+
+function _plansUnattribRowSelected(r) {
+  return !!(r && (_plansUnattribSel.all || _plansUnattribSel.ids[_plansUnattribRowKey(r)]));
+}
+
+function plansReleaseUnattribRowSelect(id, checked) {
+  if (String(id) === '__bulkPlan') {
+    if (String(checked || '')) _plansUnattribSel.ids['__bulkPlan'] = String(checked);
+    else delete _plansUnattribSel.ids['__bulkPlan'];
+    _releasePaint();
+    return;
+  }
+  if (checked) _plansUnattribSel.ids[String(id)] = true;
+  else { delete _plansUnattribSel.ids[String(id)]; _plansUnattribSel.all = false; }
+  _releasePaint();
+}
+
+function plansReleaseUnattribSelectAll(checked) {
+  const ids = Object.create(null);
+  if (_plansUnattribSel && typeof _plansUnattribSel.ids === 'object') {
+    for (const k of Object.keys(_plansUnattribSel.ids)) if (String(k).indexOf('__') === 0) ids[k] = _plansUnattribSel.ids[k];
+  }
+  _plansUnattribSel = { all: !!checked, ids };
+  _releasePaint();
+}
+
+function plansReleaseUnattribAttachToggle(idx) {
+  _plansUnattribAttachOpen = _plansUnattribAttachOpen === idx ? -1 : idx;
+  _releasePaint();
+}
+
+function _plansUnattribThemeOfInput(id) {
+  const el = id ? document.getElementById(id) : null;
+  return el ? String(el.value || '').trim() : '';
+}
+
+function _plansUnattribRowFromIdx(idx) {
+  return (_plansUnattributed.rows || [])[Number(idx)] || null;
+}
+
+function _plansAttachRowResultHTML(res, extra) {
+  const keyMap = { attached: 'plans_release_attach_attached', already_attached: 'plans_release_attach_already', refused: 'plans_release_attach_refused', not_found: 'plans_release_attach_not_found', placement_failed: 'plans_release_attach_placement_failed', failed: 'plans_release_attach_failed' };
+  const key = keyMap[res && res.status] || 'plans_release_attach_failed';
+  const err = res && res.error ? ' <span style="color:var(--error);overflow-wrap:anywhere;">' + escHtml(String(res.error)) + '</span>' : '';
+  const thm = res && res.theme ? ' <span style="color:var(--text2);">· ' + escHtml(String(res.theme)) + '</span>' : '';
+  return `<div style="font-size:12px;margin:2px 0;" data-attach-result="${escHtml(res ? String(res.id || '') : '')}" data-status="${escHtml(res ? String(res.status || '') : '')}">${escHtml(t(key))}${thm}${extra || ''}${err}</div>`;
+}
+
+function _releaseNotice(msg) { if (_plansBrowser) _plansBrowser.notice = String(msg || ''); }
+
+// Attach one Automaton to the operator's release plan (bulk form with one id,
+// one result line for it).
+function plansReleaseUnattribAttachGo(idx) {
+  const row = _plansUnattribRowFromIdx(idx);
+  if (!row || _plansReleaseBusy) return Promise.resolve();
+  const id = _plansUnattribRowKey(row);
+  const plan = _plansUnattribSel.ids['__rowPlan_' + id] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseRowTheme_' + id);
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _plansReleaseBusy = false;
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: [row.id], theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _plansUnattribAttachOpen = -1; _releasePaint(); });
+}
+
+// Bulk attach: one request for all checked rows; the per-Automaton refusals
+// from the server are shown item by item below the list.
+function plansReleaseUnattribBulkGo() {
+  const rows = (_plansUnattributed.rows || []).filter(_plansUnattribRowSelected);
+  if (!rows.length || _plansReleaseBusy) return Promise.resolve();
+  const ids = rows.map(r => r.id).filter(Boolean);
+  const plan = _plansUnattribSel.ids['__bulkPlan'] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseBulkTheme');
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansUnattribResults = { busy: true, error: '', results: [] };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: ids, theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => {
+      if (_plansUnattribResults && !_plansUnattribResults.busy) _plansUnattribSel = { all: false, ids: Object.create(null) };
+      _plansReleaseBusy = false;
+      _releasePaint();
+    });
+}
+
+function _plansUnattributedRefresh() {
+  if (_plansUnattributed.status !== 'ready' && _plansUnattributed.status !== 'loading') return Promise.resolve(null);
+  const name = _projectsState.selected;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  _releasePaint();
+  return apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); })
+    .catch(() => { _releasePaint(); });
+}
+_plansUnattributedRefresh;
+function _plansUnattributedFresh() { return _plansUnattributedRefresh(); }
+_plansUnattributedFresh;
+
+function _plansUnattributedResultsHTML() {
+  if (!_plansUnattribResults) return '';
+  const bu = _plansUnattribResults;
+  const rowsHtml = (bu.results || []).filter(r => r && r.id).map(r => _plansAttachRowResultHTML(r, ' <span style="color:var(--text2);">' + escHtml(String(r.title || '')) + '</span>')).join('');
+  const body = bu.busy
+    ? `<div style="color:var(--text2);font-size:12px;">${escHtml(t('plans_browser_loading'))}</div>`
+    : (rowsHtml || (bu.error ? `<div role="alert" style="color:var(--error);font-size:12px;overflow-wrap:anywhere;">${escHtml(bu.error)}</div>` : ''));
+  return `<div class="plans-release-unattributed-results" style="margin:6px 0 4px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">${body}</div>`;
+}
+
+function _plansUnattribRowHTML(r, idx) {
+  const sug = (r && (r.suggested_release || r.suggested_theme))
+    ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('plans_release_unattributed_suggest'))} ${escHtml([r.suggested_release, r.suggested_theme].filter(Boolean).map(String).join(' · '))}</span>`
+    : '';
+  const sel = _plansUnattribRowSelected(r);
+  const id = _plansUnattribRowKey(r);
+  const planOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const open = _plansUnattribAttachOpen === idx;
+  const attachPanel = open
+    ? `<div class="plans-release-unattributed-attach" style="margin:4px 0 4px 8px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <select class="form-select" id="plansReleaseRowPlan_${escHtml(id)}" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowPlan(${_plansCallArg(id)},this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${planOpts}</select>
+        <input type="text" class="form-input" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" id="plansReleaseRowTheme_${escHtml(id)}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseUnattribAttachGo', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach_confirm'))}</button>
+        <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}">${escHtml(t('plans_release_archive_cancel'))}</button></div>`
+    : '';
+  return `<div class="plans-release-unattributed-row" data-automaton="${escHtml(String(r && r.id || ''))}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);">
+    <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseRowSel_${escHtml(id)}" ${sel ? 'checked' : ''} aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribRowSelect(${_plansCallArg(id)},this.checked)" style="margin:0;"></span>
+    <span style="font-size:13px;font-weight:500;" title="${escHtml(String(r && r.title || ''))}">${escHtml(String((r && r.title) || (r && r.id) || ''))}</span>
+    ${r && r.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(r.state))}</span>` : ''}
+    ${r && r.holding_plan ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_unattributed_holding', [String(r.holding_plan)]))}</span>` : ''}
+    ${sug}
+    <button type="button" class="btn-secondary plans-release-unattributed-attach-btn" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach'))}</button>
+  </div>${attachPanel}`;
+}
+
+function plansReleaseUnattribRowPlan(id, val) {
+  const key = '__rowPlan_' + String(id);
+  if (String(val || '')) _plansUnattribSel.ids[key] = String(val);
+  else delete _plansUnattribSel.ids[key];
+  _releasePaint();
+}
+function _plansCallArg(v) { return JSON.stringify(String(v)).replace(/"/g, '&quot;'); }
+
+function plansReleaseUnattributedSectionHTML() {
+  const u = _plansUnattributed;
+  const plansOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const head = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+    <span style="font-weight:600;font-size:14px;" class="plans-release-unattributed-title">${escHtml(t('plans_release_unattributed_title'))}${u.status === 'ready' ? ` <span style="font-weight:400;color:var(--text2);">(${u.total})</span>` : ''}</span>
+    <span style="font-size:12px;color:var(--text2);"><a href="${escHtml('/diagrams.html#docs/datawatch-definitions.md')}" style="font-size:12px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>`;
+  if (u.status === 'error') return `<div class="plans-release-unattributed" role="alert">${head}<div style="color:var(--error);font-size:13px;margin-top:6px;overflow-wrap:anywhere;">${escHtml(t('plans_browser_failed', [u.error || '']))}</div></div>`;
+  if (u.status !== 'ready') return `<div class="plans-release-unattributed">${head}<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_browser_loading'))}</div></div>`;
+  const rows = u.rows || [];
+  const list = rows.length
+    ? `<div class="plans-release-unattributed-rows">${rows.map((r2, i) => _plansUnattribRowHTML(r2, i)).join('')}</div>
+      <div class="plans-release-unattributed-bulkbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+        <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseUnattribAll" checked="${_plansUnattribSel.all ? 'true' : ''}" aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribSelectAll(this.checked)" style="margin:0;"><label for="plansReleaseUnattribAll" style="font-size:12px;color:var(--text2);cursor:pointer;">${escHtml(t('plans_release_unattributed_select_all'))}</label></span>
+        <select class="form-select" id="plansReleaseBulkPlan" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowSelect('__bulkPlan',this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${plansOpts}</select>
+        <input type="text" class="form-input" id="plansReleaseBulkTheme" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary plans-release-unattributed-bulk" style="font-size:12px;padding:2px 10px;" onclick="plansReleaseUnattribBulkGo()" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_bulk'))}</button></div>`
+    : `<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_release_unattributed_empty'))}</div>`;
+  return `<div class="plans-release-unattributed">${head}${list}${_plansUnattributedResultsHTML()}</div>`;
+}
+
+// Archive / restore: confirm + reason on archive, one click on restore.
+function _plansArchiveCtlHTML(st, plan) {
+  if (!st || st.status !== 'ready') return '';
+  const style = { fontSize: '12px', padding: '2px 8px' };
+  if (st.archiveAsk === plan.id) {
+    const reasonVal = escHtml(st.archiveReason || '');
+    return `<span class="plans-release-archive-ask" role="group" style="display:inline-flex;gap:4px;align-items:center;margin-left:6px;">
+      <input type="text" value="${reasonVal}" placeholder="${escHtml(t('plans_release_archive_reason_ph'))}" aria-label="${escHtml(t('plans_release_archive_reason_ph'))}" oninput="plansReleaseArchiveReason(this.value)" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-archive-confirm" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveSubmit', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive_confirm'))}</button>
+      <button type="button" class="btn-secondary plans-release-archive-cancel" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveCancel')}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_archive_cancel'))}</button></span>`;
+  }
+  if (plan.archived) {
+    return `<button type="button" class="btn-secondary plans-release-restore" style="${style.css}" onclick="${_plansCall('plansReleaseRestore', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_restore_help'))}">${escHtml(t('plans_release_restore'))}</button>`;
+  }
+  return `<button type="button" class="btn-secondary plans-release-archive" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveAsk', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive'))}</button>`;
+}
+
+function plansReleaseArchiveAsk(id) {
+  const st = _plansBrowser;
+  st.archiveAsk = String(id);
+  st.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveReason(v) {
+  _plansBrowser.archiveReason = String(v || '');
+}
+function plansReleaseArchiveCancel() {
+  _plansBrowser.archiveAsk = '';
+  _plansBrowser.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveSubmit(id) {
+  const st = _plansBrowser;
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/archive'), 'POST', { reason: (st.archiveReason || '').trim() })
+    .then(r => {
+      st.archiveAsk = '';
+      st.archiveReason = '';
+      if (r) return _plansReloadAfterWrite('');
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseRestore(id) {
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/restore'), 'POST', {})
+    .then(r => { if (r) return _plansReloadAfterWrite(''); return null; })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseSetArchived(scope) {
+  if (_plansBrowser.archived === scope) return;
+  _plansBrowser.archived = scope === 'include' || scope === 'only' ? scope : 'exclude';
+  _plansBrowserLoad(false);
+}
+
+// Theme layout for a release plan: ordered themes with their members, the
+// unplaced group, place-in-theme and reorder. The editor keeps a local copy
+// (d._themeEdits); the PUT sends the whole desired layout and the server
+// writes it atomically (with its audit entries).
+function plansReleaseThemesHTML(st, plan) {
+  if (typeof plan === 'string' && st && Array.isArray(st.plans)) { const found = st.plans.find(x => x && x.id === plan); if (found) plan = found; }
+  const d = st.detail[plan.id] || {};
+  const box = inner => `<div class="plans-release-themes" data-plan="${escHtml(plan.id)}" style="margin:8px 0 4px 12px;border-left:2px solid var(--border);padding-left:10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+      <span style="font-weight:600;font-size:13px;" class="plans-release-themes-title">${escHtml(t('plans_release_themes'))}</span>
+      <button type="button" class="btn-secondary plans-release-theme-add" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseThemeAdd', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))}">${escHtml(t('plans_release_theme_add'))}</button></div>
+    ${inner}</div>`;
+  if (d.themesStatus === 'error') return box(`<div role="alert" style="color:var(--error);font-size:13px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('plans_release_theme_error', [(d.themesError || '').toString()]))}</div>`);
+  if (!d.themes || d.themesStatus !== 'ready') return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_loading'))}</div>`);
+  const local = _plansThemesLocal(plan.id);
+  if (!local) return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_theme_error', ['']))}</div>`);
+  const themeNames = local.themes.map(x => x.name).filter(Boolean);
+  const member = (m, where, mIdx) => {
+    const listLen = where === 'unplaced' ? local.unplaced.length : (local.themes[Number(where)] ? local.themes[Number(where)].items.length : 0);
+    const up = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, -1)}" ${mIdx <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button>`;
+    const down = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, 1)}" ${mIdx >= listLen - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button>`;
+    const unplaceBtn = where === 'unplaced' ? '' : `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_unplace'))}" onclick="${_plansCall('plansReleaseUnplace', plan.id, where, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unplace_short'))}</button>`;
+    const placeCtl = where === 'unplaced'
+      ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+          <select class="form-select" id="plansReleasePlaceSel_${escHtml(plan.id)}_${mIdx}" aria-label="${escHtml(t('plans_release_place'))}" style="font-size:11px;padding:1px 2px;max-width:150px;">
+            <option value="">${escHtml(t('plans_release_place_none'))}</option>
+            ${themeNames.map(nm => `<option value="${escHtml(nm)}">${escHtml(nm)}</option>`).join('')}
+            <option value="__new__">${escHtml(t('plans_release_theme_new', ['']))}</option>
+          </select>
+          <input type="text" class="form-input" id="plansReleasePlaceName_${escHtml(plan.id)}_${mIdx}" value="" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" style="font-size:11px;width:120px;">
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:0 6px;" onclick="${_plansCall('plansReleasePlaceGo', plan.id, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_place'))}">${escHtml(t('plans_release_place_short'))}</button>
+        </span>`
+      : '';
+    const kindLabel = m && m.kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+    return `<div class="plans-release-theme-item" data-item="${escHtml(m ? String(m.id || '') : '')}" data-kind="${escHtml(m ? String(m.kind || 'automaton') : '')}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:baseline;margin:2px 0;font-size:13px;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(kindLabel)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(m ? String(m.title || m.id || '') : '')}</span>
+      ${m && m.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(m.state))}</span>` : ''}
+      ${up}${down}${unplaceBtn}${placeCtl}</div>`;
+  };
+  const themeBlocks = local.themes.map((th, ti) => {
+    const del = `<button type="button" class="btn-secondary plans-release-theme-delete" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_delete'))}" onclick="${_plansCall('plansReleaseThemeDelete', plan.id, ti)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_theme_delete_short'))}</button>`;
+    const rename = `<input type="text" class="form-input" value="${escHtml(th.name)}" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" onchange="plansReleaseThemeRename(${_plansCallArg(plan.id)},${ti},this.value)" style="font-size:12px;min-width:140px;max-width:240px;">`;
+    return `<div class="plans-release-theme-block" data-theme="${escHtml(th.name)}" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${rename}${del}
+        <span style="font-size:11px;color:var(--text2);margin-left:auto;display:inline-flex;gap:2px;align-items:center;"><span>${escHtml(t('plans_release_theme_items'))}</span><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, -1)}" ${ti <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, 1)}" ${ti >= local.themes.length - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button></span></div>
+      ${th.items.length ? th.items.map((m2, i2) => member(m2, String(ti), i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_members_empty'))}</div>`}</div>`;
+  }).join('');
+  const unplacedBlock = `<div class="plans-release-unplaced-block" style="margin:6px 0;padding:6px 8px;border:1px dashed var(--border);border-radius:5px;">
+    <div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unplaced'))}</div>
+    ${local.unplaced.length ? local.unplaced.map((m2, i2) => member(m2, 'unplaced', i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_unplaced_empty'))}</div>`}</div>`;
+  return box(themeBlocks + unplacedBlock + ((!local.themes.length && !local.unplaced.length) ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_empty'))}</div>` : ''));
+}
+
+function _plansThemesLocal(planId) {
+  const d = _plansBrowser && _plansBrowser.detail[planId];
+  if (!d || !d.themes) return null;
+  if (!d._themeEdits) {
+    const th = d.themes;
+    d._themeEdits = {
+      themes: (Array.isArray(th.themes) ? th.themes : []).map(x => ({
+        id: (x && x.id) || '',
+        name: String((x && x.name) || ''),
+        items: (x && Array.isArray(x.items) ? x.items : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+      })),
+      unplaced: (Array.isArray(th.unplaced) ? th.unplaced : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+    };
+  }
+  return d._themeEdits;
+}
+
+function _plansThemesSave(planId) {
+  const st = _plansBrowser;
+  const d = st && st.detail[planId];
+  const ed = _plansThemesLocal(planId);
+  if (!d || !ed) return Promise.resolve(null);
+  const body = { themes: ed.themes.map(x => ({ id: x.id || '', name: x.name, automata: x.items.filter(m2 => (m2.kind || 'automaton') === 'automaton').map(m2 => m2.id), automations: x.items.filter(m2 => m2.kind === 'automation').map(m2 => m2.id) })) };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(planId, '/themes'), 'PUT', body)
+    .then(r => {
+      if (r && r.themes != null) { delete d._themeEdits; d.themes = r; d.themesStatus = 'ready'; }
+      else if (!r) { d.themesStatus = 'error'; d.themesError = (st.notice || '').toString(); }
+      return r ? _plansReloadAfterWrite(planId) : null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+
+function plansReleaseThemeAdd(planId) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  let nm = String(t('plans_release_theme_new', [ed.themes.length + 1]));
+  while (ed.themes.some(x => x.name === nm)) nm += '\u00b7';
+  ed.themes.push({ id: '', name: nm, items: [] });
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeRename(planId, ti, name) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const th = ed.themes[Number(ti)];
+  if (!th) return;
+  th.name = String(name || '').trim();
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeDelete(planId, ti) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return false;
+  const removed = ed.themes.splice(Number(ti), 1)[0];
+  if (removed && removed.items.length) ed.unplaced = ed.unplaced.concat(removed.items);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleaseThemeMove(planId, ti, delta) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const j = Number(ti) + Number(delta);
+  if (j < 0 || j >= ed.themes.length) return;
+  const tmp = ed.themes[Number(ti)]; ed.themes[Number(ti)] = ed.themes[j]; ed.themes[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function _plansThemeEditAt(planId, where, mIdx) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return null;
+  const j = Number(mIdx);
+  if (String(where) === 'unplaced') return { ed, list: ed.unplaced, j };
+  const th = ed.themes[Number(where)];
+  if (!th) return null;
+  return { ed, list: th.items, j };
+}
+
+function plansReleaseItemMove(planId, where, mIdx, delta) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return;
+  const j = e.j + Number(delta);
+  if (j < 0 || j >= e.list.length) return;
+  const tmp = e.list[e.j]; e.list[e.j] = e.list[j]; e.list[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+// Remove a theme without a confirm dialog: the server still enforces the
+// rules; a refused delete lands as an error state and the layout is reloaded.
+function plansReleaseUnplace(planId, where, mIdx) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return false;
+  if (String(where) === 'unplaced') return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (item) e.ed.unplaced.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleasePlaceGo(planId, mIdx) {
+  const selEl = document.getElementById('plansReleasePlaceSel_' + planId + '_' + mIdx);
+  const nmEl = document.getElementById('plansReleasePlaceName_' + planId + '_' + mIdx);
+  let name = selEl ? String(selEl.value || '') : '';
+  if (name === '__new__') name = nmEl ? String(nmEl.value || '').trim() : '';
+  if (_plansReleaseBusy) return false;
+  const e = _plansThemeEditAt(planId, 'unplaced', mIdx);
+  if (!e || !e.list.length) return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (!item) { _releasePaint(); return false; }
+  if (!name) { e.ed.unplaced.push(item); _releasePaint(); return _plansThemesSave(planId); }
+  let th = e.ed.themes.find(x => x.name === name);
+  if (!th) { th = { id: '', name, items: [] }; e.ed.themes.push(th); }
+  th.items.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+// Release migration: preview first (apply=false), then approve with the
+// preview id. Attached items may be marked for the next release with an
+// optional theme; marks apply at approve. Nothing is written on preview.
+function _plansMigrateItemHTML(it, ms, markable, i) {
+  const kind = it && it.kind ? String(it.kind) : 'automaton';
+  const label = kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+  const extra = [];
+  if (it && it.release) extra.push(String(it.release));
+  if (it && it.theme) extra.push(String(it.theme) + (it.theme_source ? ' (' + String(it.theme_source) + ')' : ''));
+  if (it && it.plan_id) extra.push(String(it.plan_id));
+  if (it && it.holding_plan) extra.push(String(it.holding_plan));
+  if (it && it.reason) extra.push(String(it.reason));
+  const mk = ms && ms.marks ? ms.marks[String(i)] : null;
+  const mark = markable ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+      <input type="checkbox" id="plansReleaseMarkOn_${i}" ${mk && mk.on ? 'checked' : ''} aria-label="${escHtml(t('plans_release_migrate_mark'))}" onchange="plansReleaseMigrateMark(${i},this.checked)" style="margin:0;">
+      <label style="font-size:11px;color:var(--text2);" for="plansReleaseMarkOn_${i}">${escHtml(t('plans_release_migrate_mark'))}</label>
+      <input type="text" class="form-input" id="plansReleaseMarkTheme_${i}" value="${escHtml(mk ? mk.theme : '')}" placeholder="${escHtml(t('plans_release_migrate_theme_ph'))}" aria-label="${escHtml(t('plans_release_migrate_theme_ph'))}" oninput="plansReleaseMigrateTheme(${i},this.value)" style="font-size:11px;width:110px;"></span>` : '';
+  return `<div style="font-size:12.5px;margin:2px 0;overflow-wrap:anywhere;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(label)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(it ? String(it.title || it.id || '') : '')}</span>
+      ${extra.length ? `<span style="font-size:11px;color:var(--text2);"> &middot; ${escHtml(extra.join(' &middot; '))}</span>` : ''}
+      ${mark}</div>`;
+}
+
+function _plansMigrateSection(ms, head, list, emptyKey, markable) {
+  if (!list || !list.length) return `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t(emptyKey))}</div>`;
+  return `<div style="margin:6px 0;"><div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t(head))}</div>${list.map((it, i) => _plansMigrateItemHTML(it, ms, markable, i)).join('')}</div>`;
+}
+
+function plansReleaseMigrateMark(i, on) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: !!on, theme: cur.theme || '' };
+}
+function plansReleaseMigrateTheme(i, val) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: cur.on, theme: String(val || '') };
+}
+
+function plansReleaseMigrateHTML() {
+  const ms = _plansReleaseMigrate;
+  const busy = ms.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_current_ph'))}" value="${escHtml(ms.currentRelease)}" aria-label="${escHtml(t('plans_release_migrate_current_ph'))}" onchange="_plansReleaseMigrate.currentRelease=this.value" style="font-size:12px;width:170px;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_next_ph'))}" value="${escHtml(ms.nextRelease)}" aria-label="${escHtml(t('plans_release_migrate_next_ph'))}" onchange="_plansReleaseMigrate.nextRelease=this.value" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-migrate-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseMigratePreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_preview'))}</button>
+    </div>`;
+  if (ms.preview) {
+    const pr = ms.preview;
+    inner += `
+    ${ms.applied ? '' : `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(ms.note || '')}</div>`}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_counts', [(Array.isArray(pr.created) ? pr.created.length : 0), (Array.isArray(pr.attached) ? pr.attached.length : 0), (Array.isArray(pr.unplaced) ? pr.unplaced.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(ms, 'plans_release_migrate_created_head', pr.created, 'plans_release_migrate_created_none', false)}
+    ${ms.applied ? '' : _plansMigrateSection(ms, 'plans_release_migrate_attached_head', pr.attached, 'plans_release_migrate_attached_none', true)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_unplaced_head', pr.unplaced, 'plans_release_migrate_unplaced_none', false)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_conflicts_head', pr.conflicts, 'plans_release_migrate_conflicts_none', false)}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_unchanged_note', [Array.isArray(pr.unchanged) ? pr.unchanged.length : 0]))}</div>
+    ${!ms.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-migrate-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseMigrateApprove')}" ${busy || !ms.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (ms.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(ms.error)}</div>`;
+  }
+  if (ms.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(ms.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-migrate panel" style="margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-migrate-title">${escHtml(t('plans_release_migrate_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_migrate_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseMigratePreview() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy) return Promise.resolve();
+  if (!String(ms.nextRelease || '').trim()) {
+    ms.error = String(t('plans_release_migrate_next_required'));
+    _releasePaint();
+    return Promise.resolve();
+  }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: false, preview_id: '', marks: [] })
+    .then(r => {
+      if (r && r.preview_id) {
+        ms.preview = r; ms.previewId = String(r.preview_id); ms.note = r.note || ''; ms.applied = false; ms.appliedNote = '';
+        ms.marks = {};
+        (r.attached || []).forEach((it, i) => { ms.marks[String(i)] = { on: false, theme: (it && it.theme) ? String(it.theme) : '' }; });
+      } else {
+        ms.preview = null; ms.previewId = '';
+        ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      }
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+function plansReleaseMigrateApprove() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy || !ms.previewId) return Promise.resolve();
+  const marks = [];
+  const keys = Object.keys(ms.marks).sort((a, b) => (Number(a) < Number(b) ? -1 : 1));
+  for (const k of keys) { const mk = ms.marks[k]; if (mk && mk.on) marks.push({ release: String(ms.nextRelease).trim(), theme: String(mk.theme || '') }); }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: true, preview_id: ms.previewId, marks: marks })
+    .then(r => {
+      if (r) {
+        ms.applied = true; ms.appliedNote = r.note || t('plans_release_migrate_done'); ms.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+// Row-plans migration: converts row plans into themes + an unplaced group.
+// Preview first, then approve with this panel's own preview id.
+function plansReleaseRowPlansHTML() {
+  const rp = _plansReleaseRowPlans;
+  const busy = rp.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <button type="button" class="btn-secondary plans-release-rowplans-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseRowPlansPreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_preview'))}</button>
+    </div>`;
+  if (rp.preview) {
+    const pr = rp.preview;
+    inner += `
+    ${!rp.applied ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(rp.note || '')}</div>` : ''}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_rowplans_counts', [(Array.isArray(pr.link_rows) ? pr.link_rows.length : 0), (Array.isArray(pr.backlog_items) ? pr.backlog_items.length : 0), (Array.isArray(pr.waiting) ? pr.waiting.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(null, 'plans_release_rowplans_link_head', pr.link_rows, 'plans_release_rowplans_link_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_backlog_head', pr.backlog_items, 'plans_release_rowplans_backlog_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_waiting_head', pr.waiting, 'plans_release_rowplans_waiting_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_conflicts_head', pr.conflicts, 'plans_release_rowplans_conflicts_none', false)}
+    ${!rp.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-rowplans-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseRowPlansApprove')}" ${busy || !rp.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (rp.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(rp.error)}</div>`;
+  }
+  if (rp.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(rp.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-rowplans panel" style="margin:10px 0;padding:10px;border:1px dashed var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-rowplans-title">${escHtml(t('plans_release_rowplans_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_rowplans_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseRowPlansPreview() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: false })
+    .then(r => {
+      if (r && r.preview_id) {
+        rp.preview = r; rp.previewId = String(r.preview_id); rp.note = r.note || ''; rp.applied = false; rp.appliedNote = '';
+      } else {
+        rp.preview = null; rp.previewId = '';
+        rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      }
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+
+function plansReleaseRowPlansApprove() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy || !rp.previewId) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: true, preview_id: rp.previewId })
+    .then(r => {
+      if (r) {
+        rp.applied = true; rp.appliedNote = r.note || t('plans_release_migrate_done'); rp.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+window.plansReleaseArchiveAsk = plansReleaseArchiveAsk;
+window.plansReleaseArchiveReason = plansReleaseArchiveReason;
+window.plansReleaseArchiveCancel = plansReleaseArchiveCancel;
+window.plansReleaseArchiveSubmit = plansReleaseArchiveSubmit;
+window.plansReleaseRestore = plansReleaseRestore;
+window.plansReleaseSetArchived = plansReleaseSetArchived;
+window.plansReleaseViewUnattributed = plansReleaseViewUnattributed;
+window.plansReleaseUnattribRowSelect = plansReleaseUnattribRowSelect;
+window.plansReleaseUnattribSelectAll = plansReleaseUnattribSelectAll;
+window.plansReleaseUnattribAttachToggle = plansReleaseUnattribAttachToggle;
+window.plansReleaseUnattribAttachGo = plansReleaseUnattribAttachGo;
+window.plansReleaseUnattribBulkGo = plansReleaseUnattribBulkGo;
+window.plansReleaseUnattribRowPlan = plansReleaseUnattribRowPlan;
+window.plansReleaseThemeAdd = plansReleaseThemeAdd;
+window.plansReleaseThemeRename = plansReleaseThemeRename;
+window.plansReleaseThemeDelete = plansReleaseThemeDelete;
+window.plansReleaseThemeMove = plansReleaseThemeMove;
+window.plansReleaseItemMove = plansReleaseItemMove;
+window.plansReleaseUnplace = plansReleaseUnplace;
+window.plansReleasePlaceGo = plansReleasePlaceGo;
+window.plansReleaseMigratePreview = plansReleaseMigratePreview;
+window.plansReleaseMigrateApprove = plansReleaseMigrateApprove;
+window.plansReleaseMigrateMark = plansReleaseMigrateMark;
+window.plansReleaseMigrateTheme = plansReleaseMigrateTheme;
+window.plansReleaseRowPlansPreview = plansReleaseRowPlansPreview;
+window.plansReleaseRowPlansApprove = plansReleaseRowPlansApprove;
+window.plansBrowserHTML = plansBrowserHTML;
+window.plansBrowserListHTML = plansBrowserListHTML;
+
+function _plansBrowserPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('plansBrowserList');
+  if (el) el.innerHTML = plansBrowserListHTML(_plansBrowser);
+}
+
+// ── actions ─────────────────────────────────────────────────────────────────
+// A write that fails shows its message above the list and changes nothing; a
+// write that succeeds reloads what it touched.
+function _plansWrite(path, method, body) {
+  const st = _plansBrowser;
+  st.notice = '';
+  return apiFetch(path, { method, body: JSON.stringify(body) }).then(r => r || {}).catch(err => {
+    if (_plansBrowser === st) { st.notice = t('plans_browser_action_failed', [_plansErrText(err)]); _plansBrowserPaint(); }
+    return null;
+  });
+}
+function _plansReloadAfterWrite(planId) {
+  const jobs = [_plansBrowserLoad(false)];
+  if (planId && _plansIsOpen(_plansBrowser.project, planId)) jobs.push(_plansLoadDetail(planId));
+  _plansBrowser.links.status = 'idle';
+  jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+}
+
+window.plansBrowserToggle = function(id) {
+  const st = _plansBrowser;
+  const open = !_plansIsOpen(st.project, id);
+  _plansSetOpen(st.project, id, open);
+  _plansBrowserPaint();
+  if (!open || id === _PLANS_BACKLOG_ID) return Promise.resolve();
+  const jobs = [];
+  if (!st.detail[id] || st.detail[id].status !== 'ready') jobs.push(_plansLoadDetail(id));
+  if (st.links.status === 'idle') jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+};
+window.plansBrowserToggleTasks = function(id) {
+  const st = _plansBrowser;
+  const key = _PLANS_TASKS_PREFIX + id;
+  const open = !_plansIsOpen(st.project, key);
+  _plansSetOpen(st.project, key, open);
+  _plansBrowserPaint();
+  const d = st.detail[id];
+  if (open && (!d || d.tasksStatus === 'idle' || d.tasksStatus === 'error')) return _plansLoadTasks(id, false);
+  return Promise.resolve();
+};
+window.plansBrowserTasksMore = function(id) { return _plansLoadTasks(id, true); };
+window.plansBrowserMore = function() { return _plansBrowserLoad('plans'); };
+window.plansBrowserBacklogMore = function() { return _plansBrowserLoad('backlog'); };
+
+function _plansMoved(list, id, dir) {
+  const i = list.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return null;
+  const out = list.slice();
+  out[i] = list[j]; out[j] = id;
+  return out;
+}
+window.plansBrowserMovePlan = function(id, dir) {
+  const st = _plansBrowser;
+  const order = _plansMoved(st.plans.map(p => p.id), id, Number(dir) < 0 ? -1 : 1);
+  if (!order) return Promise.resolve();
+  return _plansWrite('/api/plans/order', 'PUT', { plans: order }).then(r => (r ? _plansBrowserLoad(false) : null));
+};
+window.plansBrowserMoveAutomaton = function(planId, autoId, dir) {
+  const st = _plansBrowser;
+  const d = st.detail[planId];
+  if (!d) return Promise.resolve();
+  const order = _plansMoved(d.automata.map(a => a.id), autoId, Number(dir) < 0 ? -1 : 1);
+  if (!order) return Promise.resolve();
+  return _plansWrite(_plansPath(planId, '/automata/order'), 'PUT', { automata: order }).then(r => (r ? Promise.all([_plansLoadDetail(planId), _plansBrowserLoad(false)]) : null));
+};
+window.plansBrowserCreate = function(title, goal) {
+  const st = _plansBrowser;
+  title = String(title || '').trim();
+  if (!title) { st.notice = t('plans_browser_title_required'); _plansBrowserPaint(); return Promise.resolve(); }
+  return _plansWrite('/api/plans', 'POST', { project: st.project, title, goal: String(goal || '').trim() }).then(r => {
+    if (!r) return null;
+    ['plansBrowserNewTitle', 'plansBrowserNewGoal'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; });
+    return _plansReloadAfterWrite('');
+  });
+};
+window.plansBrowserAttach = function(planId, kind, value) {
+  value = String(value || '').trim();
+  if (!value) { _plansBrowser.notice = t('plans_browser_attach_needs_value'); _plansBrowserPaint(); return Promise.resolve(); }
+  return _plansWrite(_plansPath(planId, '/attach'), 'POST', { kind, id: value }).then(r => (r ? _plansReloadAfterWrite(planId) : null));
+};
+
+// _plansBrowserLoadSelected is called with the rest of the selected project's
+// loads; it reads the plans page and the records that link to them.
+function _plansBrowserLoadSelected() {
+  return _plansBrowserLoad(false).then(() => {
+    if (!_projectsActive()) return null;
+    const st = _plansBrowser;
+    const jobs = [];
+    st.plans.concat(st.backlog).forEach(p => {
+      if (!_plansIsOpen(st.project, p.id)) return;
+      jobs.push(_plansLoadDetail(p.id));
+      if (_plansIsOpen(st.project, _PLANS_TASKS_PREFIX + p.id)) jobs.push(_plansLoadTasks(p.id, false));
+    });
+    if (jobs.length) jobs.push(_plansLoadLinks());
+    return Promise.all(jobs);
+  });
+}
+
+// The Records sub-tab: the Registry and findings card, plus a mount point for
+// the records browser.
+// ── Records browser ─────────────────────────────────────────────────────────
+// The Records sub-tab browses every registry row and finding of the selected
+// project from GET /api/plan-records/browse (summaries only, paged with Load
+// more) with a search box, a kind filter and a state filter. Each row links to
+// its plan and its Automata; a link jumps to the Plans sub-tab with that plan
+// expanded. The search box waits for a pause in typing on the one window-level
+// timer window._recordsTabSearchTimer; nothing else polls.
+const _RECORDS_TAB_PAGE = 50;
+const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
+
+function _recordsTabFresh(project) {
+  return { project: project || '', status: 'idle', q: '', kind: '', states: [], rows: [], total: 0, error: '', seq: 0 };
+}
+let _recordsTab = _recordsTabFresh('');
+
+function _recordsTabLoad(more) {
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return Promise.resolve();
+  if (_recordsTab.project !== name) _recordsTab = _recordsTabFresh(name);
+  const st = _recordsTab;
+  const seq = ++st.seq;
+  if (!more) st.status = 'loading';
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.states = window._stateChipSets.recordsTabState.get();
+  const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
+  if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
+  if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
+  return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    const rows = r && Array.isArray(r.records) ? r.records : [];
+    st.rows = more ? st.rows.concat(rows) : rows;
+    st.total = Number(((r || {}).page || {}).total) || st.rows.length;
+    st.status = 'ready'; st.error = '';
+    _recordsTabPaint();
+  }).catch(err => {
+    if (_recordsTab !== st || seq !== st.seq) return;
+    if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _recordsTabPaint(); return; }
+    st.status = 'error'; st.error = _planRecordsParseError(err).message;
+    _recordsTabPaint();
+  });
+}
+
+function _recordsTabStateLabel(state) {
+  const key = 'plan_records_state_' + String(state || '');
+  const v = t(key);
+  return v === key ? String(state || '') : v;
+}
+
+function _recordsTabRowHTML(r) {
+  const old = r.legacy_number ? `<span class="records-tab-old" style="color:var(--text2);font-size:12px;"> ${escHtml(t('plans_browser_old_row', [r.legacy_number]))}</span>` : '';
+  const kind = r.kind === 'finding' ? t('plan_records_view_findings') : t('plan_records_view_registry');
+  const jump = (cls, id, label) => `<a href="#" class="${cls}" data-plan="${escHtml(id)}" onclick="${_plansCall('recordsTabGoPlan', id)}">${escHtml(label)}</a>`;
+  const plan = r.plan_id ? `<span class="records-tab-plan" style="font-size:12px;">${escHtml(t('records_tab_plan'))}: ${jump('records-tab-plan-link', r.plan_id, r.plan_title || r.plan_id)}</span>` : '';
+  const ids = Array.isArray(r.automaton_ids) ? r.automaton_ids : [];
+  const autos = ids.length ? `<span class="records-tab-automata" style="font-size:12px;">${escHtml(t('records_tab_automata'))}: ${ids.map(id => (r.plan_id ? jump('records-tab-automaton-link', r.plan_id, id) : escHtml(id))).join(', ')}</span>` : '';
+  return `<div class="records-tab-row" data-record="${escHtml(r.id)}" data-kind="${escHtml(r.kind || '')}" style="border-top:1px solid var(--border);padding:6px 0;display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;">
+    <span class="records-tab-title" style="font-size:14px;font-weight:600;">${escHtml(r.title || r.id)}${old}</span>
+    <span class="records-tab-kind" style="font-size:12px;color:var(--text2);">${escHtml(kind)}</span>
+    <span class="records-tab-state" style="font-size:12px;">${escHtml(_recordsTabStateLabel(r.state))}</span>${plan}${autos}</div>`;
+}
+
+function recordsTabListHTML(st) {
+  if (st.status === 'disabled') return `<div class="records-tab-off" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_off'))}</div>`;
+  if (st.status === 'idle' || (st.status === 'loading' && !st.rows.length)) return `<div class="records-tab-loading" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_loading'))}</div>`;
+  if (st.status === 'error') return `<div class="records-tab-error" role="alert" style="font-size:13px;color:var(--danger,#c0392b);">${escHtml(t('records_tab_failed', [st.error]))}</div>`;
+  if (!st.rows.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>`;
+  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [st.total, st.rows.length]))}</div>`;
+  const more = st.rows.length < st.total ? `<button type="button" class="btn-secondary records-tab-more" onclick="recordsTabMore();return false;" style="margin-top:8px;">${escHtml(t('plans_browser_load_more'))}</button>` : '';
+  return status + st.rows.map(_recordsTabRowHTML).join('') + more;
+}
+
+// recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
+// chip set: one chip per state of the selected plan/finding type, any
+// combination selectable (the server accepts the states as
+// state=one,two,three). Its selection has its own cs_state_chips_* key via
+// the shared helper; the chip's own change handler is the mutation path
+// (seeds the tab's mirror and reloads).
+function recordsTabStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'recordsTabState',
+    items: _RECORDS_TAB_STATES.map(function (s) { return { key: s, label: _recordsTabStateLabel(s) }; }),
+    total: (st && st.status === 'ready') ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _recordsTab.states = sel.slice();
+      _recordsTabLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
+function recordsTabHTML(p) {
+  const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
+  const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
+  const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
+  const stateSel = `<div id="recordsTabStateFilter" class="records-tab-state-filter state-chip-row" style="vertical-align:middle;">${recordsTabStateChipsHtml(st)}</div>`;
+  const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
+  return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
+    <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
+    <div id="recordsTabList">${recordsTabListHTML(st)}</div></div>`;
+}
+window.recordsTabHTML = recordsTabHTML;
+window.recordsTabListHTML = recordsTabListHTML;
+
+function _recordsTabPaint() {
+  if (!_projectsActive()) return;
+  const el = document.getElementById('recordsTabList');
+  if (el) el.innerHTML = recordsTabListHTML(_recordsTab);
+}
+
+window.recordsTabSearchInput = function(v) {
+  const st = _recordsTab;
+  st.q = String(v || '');
+  if (window._recordsTabSearchTimer) clearTimeout(window._recordsTabSearchTimer);
+  window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
+};
+window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) {
+  const csv = String(v || '');
+  _recordsTab.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
+  return _recordsTabLoad(false);
+};
+window.recordsTabMore = function() { return _recordsTabLoad(true); };
+
+// recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
+window.recordsTabGoPlan = function(planId) {
+  const project = _recordsTab.project || _plansBrowser.project;
+  if (!planId || !project) return Promise.resolve();
+  _plansSetOpen(project, planId, true);
+  selectProjectsSubtab('plans');
+  if (_plansBrowser.project !== project) return _plansBrowserLoadSelected();
+  const jobs = [];
+  const d = _plansBrowser.detail[planId];
+  if (!d || d.status !== 'ready') jobs.push(_plansLoadDetail(planId));
+  if (_plansBrowser.links.status === 'idle') jobs.push(_plansLoadLinks());
+  return Promise.all(jobs);
+};
+
+// The Records sub-tab: the browser, then the Registry and findings card.
+function _projectRecordsTabHTML(p) {
+  return `<div id="projectRecordsMount" data-mount="records">${recordsTabHTML(p)}</div>${_planRecordsSlotHtml(p)}`;
+}
+
 function _projectsLoadSelected() {
   return _projectsLoadRollup().then(() => {
     if (!_projectsActive()) return null;
     _projectsPaint();
     const gantt = _projectsLoadGantt();
+    const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
     const records = _planRecordsLoad(false);
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records]));
+    const recordsBrowse = _recordsTabLoad(false);
+    const plans = _plansBrowserLoadSelected();
+    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans, recordsBrowse]));
   });
 }
 
@@ -6543,10 +8526,10 @@ function renderSessionsView() {
   paint(`<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    <div class="sessions-topbar">${renderSessionsSearchRow(filterVal, filtersActive, visible.length, state.sessions.length)}${renderSessionsModeToggle(viewMode)}</div>
+    ${renderSessionsToolbar(filterVal, filtersActive, visible, groupBy, viewMode, state.sessions.length)}
     ${toggleBtn}
     ${_sessionTagSelectedSummaryHTML()}
-    ${groupBy ? _sessionsFoldControlHTML(visible, groupBy) : ''}<div class="session-list">${cards}</div>
+    <div class="session-list">${cards}</div>
     ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}${sheetHtml}</div>`);
 
   // Restore filter input focus and cursor position
@@ -6730,12 +8713,9 @@ function sessionsSearchClear() {
   if (state.activeView === 'sessions') renderSessionsView();
 }
 
-function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
+function renderSessionsSearchRow(filterVal) {
   const ph = escHtml(_stx('sessions_search_placeholder', 'Search sessions…'));
   const clrTip = escHtml(_stx('sessions_search_clear', 'Clear search'));
-  const count = filtersActive
-    ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(shown, total))}</div>`
-    : '';
   return `<div class="sessions-search-row">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput" autocomplete="off" spellcheck="false"
@@ -6744,8 +8724,27 @@ function renderSessionsSearchRow(filterVal, filtersActive, shown, total) {
       <button type="button" class="session-filter-clear" id="sessionsSearchClear" onclick="sessionsSearchClear()" title="${clrTip}" aria-label="${clrTip}"${filterVal ? '' : ' hidden'}>&#10005;</button>
     </div>
     <span class="sessions-filters-slot" id="sessionsFiltersSlot">${_sessionsFiltersButtonHTML()}</span>
-  </div>${count}`;
+  </div>`;
 }
+
+// The one-line toolbar directly under the page header, at every width:
+// [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode] —
+// one flex row that never wraps (flex-wrap: nowrap, the search row is the
+// only flexible member). The search-count line (role=status) stays its own
+// row below the toolbar and is painted fresh on every render, so the
+// sheet-kit's in-place re-paints while the Filters sheet is open never take
+// it away. The server <select> here is the toolbar's own instance
+// (#sessionsServerDropdown, a distinct id — the header's #serverDropdown is
+// never duplicated): same options body, same single onchange →
+// onServerDropdownChange() → selectServer() mutation path, and
+// renderServerDropdown() keeps both instances in lockstep.
+function renderSessionsToolbar(filterVal, filtersActive, pool, groupBy, viewMode, total) {
+  const count = filtersActive
+    ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(pool ? pool.length : 0, total))}</div>`
+    : '';
+  return `<div class="sessions-topbar">${_sessionsServerSelectHTML()}${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
+}
+window.renderSessionsToolbar = renderSessionsToolbar;
 
 function _sessionsPageSize() {
   const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
@@ -7266,9 +9265,16 @@ function _sessionsFoldControlHTML(pool, by) {
   const keys = _sessionsFoldKeys(pool, by);
   if (!keys.length) return '';
   const folded = _sessionsAllFolded(keys);
-  const label = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
   const tip = folded ? _stx('sessions_unfold_all_tip', 'Unfold every group') : _stx('sessions_fold_all_tip', 'Fold every group');
-  return `<div class="sessions-fold-row"><button type="button" class="btn-secondary sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button></div>`;
+  // One-line toolbar control: a compact icon button. The tooltip carries the
+  // actionable short verb; aria-label uses the shorter verb (never an
+  // icon-only button) and aria-pressed carries the fold state — folded =
+  // every group is currently collapsed. Only painted while grouping is
+  // active and the visible pool has foldable groups (the caller gates on
+  // groupBy; an ungrouped pool yields no fold keys anyway).
+  const name = folded ? _stx('sessions_unfold_all', 'Unfold all') : _stx('sessions_fold_all', 'Fold all');
+  const glyph = folded ? '&#8862;' : '&#8857;'; // ⊞ (unfold) / ⊟ (fold)
+  return `<button type="button" class="sessions-fold-all" onclick="_sessionsFoldAllToggle()" title="${escHtml(tip)}" aria-label="${escHtml(name)}" aria-pressed="${folded}">${glyph}</button>`;
 }
 
 function _sessionsFoldAllToggle() {
@@ -7743,17 +9749,23 @@ window.SESSIONS_SAVED_VIEWS_KEY = SESSIONS_SAVED_VIEWS_KEY;
 window.SESSIONS_GROUP_AXES = SESSIONS_GROUP_AXES;
 window.SESSIONS_GROUP_UNGROUPED = SESSIONS_GROUP_UNGROUPED;
 
-function renderSessionsModeToggle(mode) {
+// One-line toolbar view-mode control: a native <select> (accessible, keyboard-
+// operable, and it can never wrap the row). _sessionsSetViewMode remains the
+// sole mutator — the select is just its trigger, exactly like the three
+// buttons it replaces. No new storage key: the stored mode (or computed
+// default) is simply the selected option.
+function _sessionsViewSelectHTML(mode) {
+  const m = (SESSIONS_VIEW_MODES.indexOf(mode) >= 0) ? mode : _sessionsViewMode();
+  const label = _stx('sessions_view_dropdown', _stx('sessions_view_toggle', 'Sessions view mode'));
   const defs = [
-    { key: 'list', label: _stx('sessions_view_list', 'List'), icon: '☰' },
-    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles'), icon: '▦' },
-    { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
+    { key: 'list', label: _stx('sessions_view_list', 'List') },
+    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles') },
+    { key: 'compact', label: _stx('sessions_view_compact', 'Compact') },
   ];
-  const btns = defs.map(d =>
-    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
-  ).join('');
-  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
+  const opts = defs.map(d => `<option value="${d.key}"${d.key === m ? ' selected' : ''}>${escHtml(d.label)}</option>`).join('');
+  return `<select id="sessionsViewSelect" class="sessions-view-select" aria-label="${escHtml(label)}" title="${escHtml(label)}" onchange="_sessionsSetViewMode(this.value)">${opts}</select>`;
 }
+window._sessionsViewSelectHTML = _sessionsViewSelectHTML;
 
 window.renderSessionsViewsBar = renderSessionsViewsBar;
 window._savedViewsRead = _savedViewsRead;
@@ -7934,6 +9946,161 @@ function _sheetRestore(view, snap, patchFn) {
   }
   if (typeof patchFn === 'function') _sheetPatch(root, patchFn);
   return root;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED multi-select state chip set — ONE reusable helper.
+//
+// Renders + manages the Sessions-page status-filter chip row for any other
+// page. Reuses the Sessions implementation's pieces and rules verbatim:
+// same container marker (`.state-filter-chips`), same chip class family
+// (`.backend-filter-badge`, `.active`, `.badge-count`), same colored state
+// dot, same native <button> with aria-pressed, same "Label (count)" tooltip,
+// same multi-select semantics (an empty selection === all states; a second
+// click clears that one chip; the "All" chip clears the whole group; 0-count
+// chips hide until picked, then stay visible so the pick can be backed out)
+// and the same per-viewer localStorage pattern — Sessions persists under
+// `cs_session_state_chips`; every other page gets its OWN `cs_state_chips_<name>`
+// key and never shares one with another page.
+//
+//   const chips = createStateChipSet({
+//     name: 'alerts-kind',            // → storage key cs_state_chips_alerts_kind
+//     total: 12,                      // optional — the "All" chip's count
+//     items: [                        // display order
+//       { key: 'failed', label: t('session_chip_failed'),
+//         count: 3, color: 'var(--error,#ef4444)' },
+//     ],
+//     onChange: (selected) => {},     // optional — after every change
+//   });
+//   chips.html();        // '<div class="state-filter-chips state-chip-set">…</div>' — re-call after data changes
+//   chips.summaryHTML(); // compact line: removable chips + "Clear all" ('' when nothing selected)
+//   chips.get();         // selected keys; [] === all states
+//   chips.toggle(key); chips.clear(); chips.isSelected(key); chips.match(key);
+//
+// Every page passes its OWN `name` so its filter is stored under its own
+// per-viewer key — two pages must not reuse one, or their filters would
+// track each other.
+// ─────────────────────────────────────────────────────────────────────────────
+window._stateChipSets = window._stateChipSets || {};
+
+function createStateChipSet(opts) {
+  const o = opts || {};
+  const name = String(o.name || 'chips').replace(/[^a-zA-Z0-9]+/g, '_');
+  const storageKey = 'cs_state_chips_' + name;
+  const items = (Array.isArray(o.items) ? o.items : [])
+    .filter(it => it && (it.key != null))
+    .map(it => ({
+      key: String(it.key),
+      label: String((it.label != null && it.label !== '') ? it.label : it.key),
+      color: it.color ? String(it.color) : '',
+      count: (it.count != null) ? it.count : null,
+    }));
+  const known = new Set(items.map(it => it.key));
+  let sel = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(raw)) sel = raw.map(String).filter(k => known.has(k));
+  } catch (_) { sel = []; } // corrupt/absent entry: start from "all"
+
+  function persist(next) {
+    try {
+      if (next.length) localStorage.setItem(storageKey, JSON.stringify(next));
+      else localStorage.removeItem(storageKey); // empty set === all: don't keep an empty array around
+    } catch (_) { /* storage blocked: the selection still lives in memory for this page */ }
+  }
+  function emit(next) {
+    if (typeof o.onChange === 'function') {
+      try { o.onChange(next.slice()); } catch (_) { /* a page callback must never kill the control */ }
+    }
+  }
+  function chipInner(it) {
+    // Same dot + label + count composition as _sessionsSheetStateChips().
+    return (it.color ? `<span style="color:${it.color};">●</span> ` : '')
+      + escHtml(it.label)
+      + (it.count != null ? `<span class="badge-count">${it.count}</span>` : '');
+  }
+
+  const api = {
+    name: name,
+    storageKey: storageKey,
+    // Empty array === all states selected.
+    get: () => sel.slice(),
+    isSelected: key => sel.indexOf(String(key)) >= 0,
+    // Row predicate for the page's list: passes everything when nothing is picked.
+    match: stateKey => sel.length === 0 || sel.indexOf(String(stateKey)) >= 0,
+    toggle: function (key) {
+      key = String(key);
+      if (!known.has(key)) return;
+      const next = sel.slice();
+      const i = next.indexOf(key);
+      if (i >= 0) next.splice(i, 1); else next.push(key); // second click clears that one chip
+      sel = next;
+      persist(next); emit(next);
+    },
+    clear: function () { // the "All" chip / summary "Clear all": whole group → all states
+      if (!sel.length) return;
+      sel = [];
+      persist(sel); emit(sel);
+    },
+    html: function () {
+      const allLabel = _stx('state_chips_all', 'All');
+      const hasTotal = (o.total != null) && o.total >= 0;
+      const allActive = sel.length === 0;
+      const allTitle = hasTotal ? `${allLabel} (${o.total})` : allLabel;
+      const allBtn = `<button class="backend-filter-badge ${allActive ? 'active' : ''}" type="button" onclick="stateChipsClear('${escJsAttr(name)}')" title="${escAttr(allTitle)}" aria-pressed="${allActive ? 'true' : 'false'}">${escHtml(allLabel)}${hasTotal ? `<span class="badge-count">${o.total}</span>` : ''}</button>`;
+      // GATE (operator 2026-05-10), same rule as Sessions: hide 0-count chips
+      // unless already picked; chips without a count are always shown.
+      const visible = items.filter(it => it.count == null || it.count > 0 || sel.indexOf(it.key) >= 0);
+      const chipsHtml = visible.map(it => {
+        const active = sel.indexOf(it.key) >= 0;
+        const title = (it.count != null) ? `${it.label} (${it.count})` : it.label;
+        return `<button class="backend-filter-badge ${active ? 'active' : ''}" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(it.key)}')" title="${escAttr(title)}" aria-pressed="${active ? 'true' : 'false'}"${it.color ? ` style="border-left:3px solid ${it.color};"` : ''}>${chipInner(it)}</button>`;
+      }).join('');
+      return `<div class="state-filter-chips state-chip-set">${allBtn}${chipsHtml}</div>`;
+    },
+    summaryHTML: function () {
+      // Compact summary line with a removable chip per selected value + a
+      // "Clear all" (same shape as the Sessions selected-filter line).
+      if (!sel.length) return '';
+      const byKey = {};
+      items.forEach(it => { byKey[it.key] = it; });
+      const selChips = sel.map(k => {
+        const it = byKey[k] || { label: k, color: '', count: null };
+        const removeTitle = _stx('state_chips_remove', 'Remove %1$s').replace('%1$s', it.label);
+        return `<button class="backend-filter-badge active" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(k)}')" title="${escAttr(removeTitle)}">${chipInner(it)}<span aria-hidden="true">✕</span></button>`;
+      }).join('');
+      const label = _stx('state_chips_selected', 'Selected filters');
+      const clearBtn = `<button type="button" class="state-chip-clear-all" onclick="stateChipsClear('${escJsAttr(name)}')">${escHtml(_stx('state_chips_clear_all', 'Clear all'))}</button>`;
+      return `<div class="state-chip-summary"><span class="state-chip-label">${escHtml(label)}:</span>${selChips}${clearBtn}</div>`;
+    },
+  };
+  // Registry the inline onclick handlers dispatch through (re-created on
+  // every page render with the same name — the fresh instance wins).
+  window._stateChipSets[name] = api;
+  return api;
+}
+window.createStateChipSet = createStateChipSet;
+window.stateChipsToggle = function (name, key) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.toggle(key);
+};
+window.stateChipsClear = function (name) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.clear();
+};
+
+// _stateChipsReconcile brings a built chip set's selection in line with a
+// comma-separated state list (a programmatic setter's new value) without
+// letting the chip's own change handler load the page for every toggle.
+function _stateChipsReconcile(chips, csv) {
+  const want = String(csv || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  window._stateChipsSeeding = true;
+  try {
+    chips.get().forEach(function (k) { if (want.indexOf(k) < 0) chips.toggle(k); });
+    want.forEach(function (k) { if (!chips.isSelected(k)) chips.toggle(k); });
+  } finally {
+    window._stateChipsSeeding = false;
+  }
 }
 
 // Shared chip markup so the full paint and the in-place patch always agree
@@ -8834,6 +11001,9 @@ function showCardCmds(fullId) {
 
 function cardHandleQuickCmd(sel, fullId) {
   const val = sel.value;
+  // The option's display text ("approve") is the label the operator
+  // pressed; the value ("yes") is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -8843,7 +11013,7 @@ function cardHandleQuickCmd(sel, fullId) {
     return;
   }
   event.stopPropagation();
-  cardSendCmd(fullId, val);
+  cardSendCmd(fullId, val, label);
 }
 
 function cardSendCustom(fullId, shortId) {
@@ -8860,7 +11030,7 @@ function cardSendKey(fullId, keyName) {
   showToast('Sent: ' + keyName, 'success', 1500);
 }
 
-function cardSendCmd(fullId, cmd) {
+function cardSendCmd(fullId, cmd, label) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
   } else if (cmd === '__esc__') {
@@ -8880,7 +11050,12 @@ function cardSendCmd(fullId, cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: fullId, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(fullId, label || cmd, cmd, () => {
+      send('send_input', { session_id: fullId, text: cmd });
+    });
+    return;
   }
   showToast('Sent', 'success', 1500);
 }
@@ -11111,6 +13286,9 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     const v = String(s || '').toLowerCase();
     if (['completed', 'approved', 'done', 'passed'].includes(v)) return 'var(--success,#10b981)';
     if (['failed', 'rejected', 'cancelled', 'blocked', 'error'].includes(v)) return 'var(--error)';
+    // held = a deliberate operator pause: a neutral color of its own,
+    // never the error color.
+    if (v === 'held') return 'var(--text2,#94a3b8)';
     if (['waiting', 'needs_review', 'paused', 'pending', 'queued'].includes(v)) return 'var(--warning,#f59e0b)';
     return 'var(--accent2,#60a5fa)';
   };
@@ -11566,14 +13744,18 @@ window.stopArrowRepeat = function() {
 };
 
 // GH#172 D68 — chat quick-reply chips (Yes/No/Stop), shown only while a
-// session is waiting_input. Fills the composer and sends through the
-// same path as a typed reply (tmux or channel routing already handled
-// inside sendSessionInput).
+// session is waiting_input. Routed through the open-question gate: with an
+// open question for this session the chip answers it (nothing typed); with
+// none it fills the composer and sends through the same path as a typed
+// reply (tmux or channel routing already handled inside sendSessionInput).
 function chatQuickReply(text) {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  inputEl.value = text;
-  sendSessionInput();
+  if (!state.activeSession) { inputEl.value = text; sendSessionInput(); return; }
+  quickReplyRoute(state.activeSession, text, text, () => {
+    inputEl.value = text;
+    sendSessionInput();
+  });
 }
 
 // Image-send pending indicator — while a session input carrying
@@ -12648,6 +14830,9 @@ function loadSavedCmdsQuick(sessionId) {
 
 function handleQuickCmd(sel) {
   const val = sel.value;
+  // The option's display text is the label the operator pressed; the value
+  // is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -12672,7 +14857,7 @@ function handleQuickCmd(sel) {
     }).catch(err => showToast('Guardrail error: ' + String(err), 'error', 3000));
     return;
   }
-  sendSavedCmd(val);
+  sendSavedCmd(val, label);
 }
 
 function sendCustomCmd() {
@@ -12690,7 +14875,7 @@ function hideCustomCmd() {
   if (input) input.value = '';
 }
 
-function sendSavedCmd(cmd) {
+function sendSavedCmd(cmd, label) {
   if (!state.activeSession) return;
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: state.activeSession, text: '' });
@@ -12713,7 +14898,12 @@ function sendSavedCmd(cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: state.activeSession, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(state.activeSession, label || cmd, cmd, () => {
+      send('send_input', { session_id: state.activeSession, text: cmd });
+    });
+    return;
   }
 }
 
@@ -14097,6 +16287,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  // The held-Automata group (Inbox) and the hold dialog's help line both
+  // open the "Held Automata" section of the hold how-to (anchor
+  // held-automata), through the group's own key.
+  held_automata_inbox_title: 'howto/automaton-hold.md#held-automata',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -15586,8 +17780,13 @@ function renderSettingsView() {
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
                 <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev server on a trusted network'}">
-                  <input type="checkbox" id="serverFormTLSSkipVerify" />
+                  <input type="checkbox" id="serverFormTLSSkipVerify" onchange="tlsPinPairSync('serverForm')" />
                   ${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}
+                </label>
+                <div id="serverFormTLSWarn" style="display:none;font-size:11px;color:var(--warning,#e0a030);margin-top:2px;">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this server — use only on a trusted network.')}</div>
+                <label style="font-size:12px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this server: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'} (optional)<br>
+                  <input type="text" id="serverFormTLSCertFingerprint" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('serverForm')" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
                 </label>
                 <div id="serverFormCapsWrap" style="display:none;">
                   <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
@@ -15625,7 +17824,12 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" onchange="tlsPinPairSync('fedPeerForm')" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div id="fedPeerFormTLSWarn" style="grid-column:1/-1;display:none;font-size:11px;color:var(--warning,#e0a030);">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this peer — use only on a trusted network.')}</div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this peer: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'}<br>
+                  <input id="fedPeerFormTLSCertFingerprint" class="form-input" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('fedPeerForm')" style="width:100%;font-size:11px;margin-top:2px;" />
+                </label></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
                 <!-- Observer pull protocol: per-peer opt-in plus the two
                      numeric overrides. A blank number field stays 0 on the
@@ -17065,6 +19269,8 @@ function buildLLMForm(l) {
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;"><input type="checkbox" id="fe_llm_fallthrough_target" ${l.fallthrough_target ? 'checked' : ''} /> ${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</label>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
     ${buildLLMBudgetGroup(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_roles')||'Workload roles (comma-separated; empty = none)')}</label>
     <input id="fe_llm_roles" class="form-input" placeholder="planning, review" value="${escHtml((l.roles||[]).join(', '))}" />
@@ -17090,6 +19296,7 @@ function collectLLMForm(originalRecord) {
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
+  out.fallthrough_target = !!(document.getElementById('fe_llm_fallthrough_target')||{}).checked;
   out.budget = collectLLMBudget();
   // Roles: always sent, so clearing the box clears the stored list (an
   // omitted field would keep it).
@@ -17296,6 +19503,13 @@ window._renderLLMEditPanel = function(existing) {
           <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_auto_add_models')||'Auto-enable new models discovered on these Compute Nodes')}</span>
           <label class="toggle-switch"><input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} /><span class="toggle-slider"></span></label>
         </div>
+      </div>
+      <div class="wizard-field" id="llmFallthroughTargetSect">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</span>
+          <label class="toggle-switch"><input type="checkbox" id="llmEditFallthroughTarget" ${existing.fallthrough_target ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
@@ -17597,6 +19811,7 @@ window._llmSaveDraft = function() {
   if (!isEdit && !name) { showError('LLM name required'); return; }
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
+  const fallthroughTarget = !!(document.getElementById('llmEditFallthroughTarget')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
@@ -17621,7 +19836,7 @@ window._llmSaveDraft = function() {
   const method = isEdit ? 'PUT' : 'POST';
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
-    auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+    auto_add_models: autoAddModels, fallthrough_target: fallthroughTarget, compute_nodes: computeNodes, api_key_ref: apiKey,
     timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
@@ -19576,10 +21791,10 @@ function renderPrdPushState(prd) {
 // moment the work landed (a cancelled one stays cancelled AND shows the
 // Shipped chip), and the card's border/action buttons still follow the
 // stored status. The chip therefore takes precedence over the status pill
-// (a cancelled-but-merged record shows "Shipped" instead of "Cancelled"),
-// and the "shipped" filter badge is a selection over the shipped-state,
-// distinct from the status badges, both honoring the autonomous.shipped
-// settings.
+// (a cancelled-but-merged record shows "Completed" instead of "Cancelled"),
+// and the shipped/unshipped selection (the REST shipped=true|false query)
+// is no longer a labelled status: shipped records fold into the Completed
+// badge and its count. Both honor the autonomous.shipped settings.
 //
 // Settings (enabled, show_chip, filter_default "all"|"shipped"|
 // "unshipped", count_separately) arrive from GET
@@ -19606,13 +21821,28 @@ function shippedCarriesState(rec) {
 }
 window.shippedCarriesState = shippedCarriesState;
 
-// shippedChipLabel — "Shipped in <merged_in_release>", plain "Shipped" when
-// no release name is recorded.
-function shippedChipLabel(rec) {
-  const release = String((rec && rec.merged_in_release) || '').trim();
-  return release ? t('shipped_in_release', [release]) : t('shipped_chip');
+// shippedChipLabel — the chip text is the existing Completed status label
+// (reused, never duplicated). completedKey picks the surface's own key;
+// Automation records pass 'automation_status_completed'.
+function shippedChipLabel(rec, completedKey) {
+  return t(completedKey || 'prd_status_completed');
 }
 window.shippedChipLabel = shippedChipLabel;
+
+// shippedChipTip — the hover detail. The release and merge commit show only
+// when the record has a merge commit; a shipped-flag-only record hovers as
+// plain Completed.
+function shippedChipTip(rec, completedKey) {
+  const tip = [shippedChipLabel(rec, completedKey)];
+  const commit = String((rec && rec.merge_commit) || '').trim();
+  if (!commit) return tip.join(' — ');
+  const release = String(rec.merged_in_release || '').trim();
+  if (release) tip.push(t('shipped_in_release', [release]));
+  if (rec.merged_at) tip.push(t('shipped_merged_at') + ': ' + rec.merged_at);
+  tip.push(t('shipped_merge_commit') + ': ' + commit);
+  return tip.join(' — ');
+}
+window.shippedChipTip = shippedChipTip;
 
 // shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
 // the release + merge metadata in the tooltip and the shipped_chip docs
@@ -19775,30 +22005,14 @@ function automationToggleMilestone(id) {
 }
 window.automationToggleMilestone = automationToggleMilestone;
 
-function shippedChipHtml(rec) {
+function shippedChipHtml(rec, completedKey) {
   if (!_shippedState.enabled || !_shippedState.show_chip) return '';
   if (!shippedCarriesState(rec)) return '';
-  const tip = [shippedChipLabel(rec)];
-  if (rec.merged_at) tip.push(t('shipped_merged_at') + ': ' + rec.merged_at);
-  const commit = String(rec.merge_commit || '').trim();
-  if (commit) tip.push(t('shipped_merge_commit') + ': ' + commit);
-  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
-  return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(tip.join(' — '))}">${escHtml(shippedChipLabel(rec))}${docs}</span>`;
+  const label = shippedChipLabel(rec, completedKey);
+  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', label) : '';
+  return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(shippedChipTip(rec, completedKey))}">${escHtml(label)}${docs}</span>`;
 }
 window.shippedChipHtml = shippedChipHtml;
-
-// shippedDetailLineHtml — the detail-view line: the shipped label plus
-// merged_at and the merge commit hash (shortened).
-function shippedDetailLineHtml(rec) {
-  if (!shippedCarriesState(rec)) return '';
-  const bits = [escHtml(shippedChipLabel(rec))];
-  if (rec.merged_at) bits.push(escHtml(t('shipped_merged_at') + ': ' + rec.merged_at));
-  const commit = String(rec.merge_commit || '').trim();
-  if (commit) bits.push(escHtml(t('shipped_merge_commit') + ': ' + commit.slice(0, 12)));
-  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
-  return `<div class="shipped-detail-line p" style="color:var(--text2)">${bits.join(' · ')}${docs}</div>`;
-}
-window.shippedDetailLineHtml = shippedDetailLineHtml;
 
 // shippedFilterSelection — reads a statusFilter Set/array for the shipped
 // selection: "shipped", "unshipped" or "all".
@@ -19826,10 +22040,10 @@ function shippedRecordMatches(rec, selection, enabled) {
 }
 window.shippedRecordMatches = shippedRecordMatches;
 
-// shippedCountStates — mirrors the Go shipped state-counts rule: when the
-// surface is enabled and count_separately is set, shipped records group
-// under "shipped" and the rest under their own statuses, so shipped and
-// cancelled stay separate in the badge counts.
+// shippedCountStates — when the surface is enabled and count_separately is
+// set, records that carry a shipped record group under "completed" (the
+// Completed badge), and the rest under their own statuses, so finished
+// work is no longer counted as Cancelled.
 function shippedCountStates(records, enabled, countSeparately) {
   const out = {};
   const list = Array.isArray(records) ? records : [];
@@ -19837,7 +22051,7 @@ function shippedCountStates(records, enabled, countSeparately) {
   for (const rec of list) {
     if (!rec) continue;
     let s = rec.status || 'draft';
-    if (sep && shippedCarriesState(rec)) s = 'shipped';
+    if (sep && shippedCarriesState(rec)) s = 'completed';
     out[s] = (out[s] || 0) + 1;
   }
   return out;
@@ -19913,9 +22127,73 @@ window._shippedKick = _shippedKick;
 // last_decompose_failure on a successful retry, so the line disappears with it.
 // The detail is free text from the LLM/validator, so it goes through escHtml.
 function renderPRDDecomposeFailure(prd) {
+  const pf = prd && prd.planning_failure;
+  if (pf && pf.reason) return renderPlanningFailure(prd, pf);
   const f = prd && prd.last_decompose_failure;
   if (!f || !f.detail) return '';
   return `<div class="prd-decompose-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">${escHtml(t('decompose_last_failure') || 'Decompose failed: ')}${escHtml(f.detail)}</div>`;
+}
+
+// Planning failure block on the Automaton detail: the reason, the category,
+// the rule that tripped, the exact phrases and the retry counts against the
+// budget. Every string is escaped. The pending "Fix the wording and plan
+// again" question, when it exists, renders below through the open-question row.
+function renderPlanningFailure(prd, pf) {
+  const id = prd && prd.id ? prd.id : '';
+  const row = (labelKey, labelFallback, value) =>
+    `<div><span style="color:var(--text2);">${escHtml(t(labelKey) || labelFallback)}</span> ${value}</div>`;
+  const phrases = Array.isArray(pf.phrases) ? pf.phrases.filter(Boolean) : [];
+  const phraseHtml = phrases.map(p => `<code class="prd-planning-failure-phrase">${escHtml(p)}</code>`).join(' ');
+  const counts = pf.retry_counts && typeof pf.retry_counts === 'object' ? pf.retry_counts : {};
+  const countText = Object.keys(counts).sort().map(k => `${k}=${counts[k]}`).join(', ');
+  const used = counts[pf.category] || 0;
+  const retryText = `${used} / ${pf.retry_budget || 0}` + (countText ? ` (${countText})` : '')
+    + ' · ' + (pf.retryable ? (t('planning_failure_retryable') || 'Retryable') : (t('planning_failure_not_retryable') || 'Not retryable'));
+  const q = _planningFailureQuestionFor(id);
+  const qHtml = q && typeof _automationQuestionsRowHtml === 'function'
+    ? `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"><div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}</div>`
+    : `<div class="prd-planning-failure-question" data-prd-id="${escHtml(id)}"></div>`;
+  if (!q) _planningFailureQuestionLoad(id);
+  return `<div class="prd-decompose-failure prd-planning-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">
+    <div style="font-weight:700;">${escHtml(t('planning_failure_title') || 'Planning failed')}</div>
+    ${row('planning_failure_reason', 'Reason:', escHtml(pf.reason))}
+    ${row('planning_failure_category', 'Category:', escHtml(pf.category || ''))}
+    ${row('planning_failure_source', 'Rule:', escHtml(pf.source || ''))}
+    ${phrases.length ? row('planning_failure_phrases', 'Phrases:', phraseHtml) : ''}
+    ${row('planning_failure_retry_counts', 'Retries:', escHtml(retryText))}
+    ${qHtml}
+  </div>`;
+}
+
+// Badge on an Automata list card for a draft whose planning failed.
+function renderPlanningFailureBadge(prd) {
+  const pf = prd && prd.planning_failure;
+  if (!pf || !pf.reason || (prd.status || 'draft') !== 'draft') return '';
+  return `<span class="planning-failure-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;" title="${escHtml(pf.reason)}">${escHtml(t('planning_failure_badge') || 'Planning failed')}</span>`;
+}
+
+// The open planning question per Automaton id, fetched from the ordinary
+// question list (asked_by planning, prd_id = the Automaton).
+window._planningQuestionByPrd = window._planningQuestionByPrd || {};
+window._planningQuestionLoading = window._planningQuestionLoading || {};
+function _planningFailureQuestionFor(prdId) {
+  return (window._planningQuestionByPrd || {})[prdId] || null;
+}
+function _planningFailureQuestionLoad(prdId) {
+  if (!prdId || typeof apiFetch !== 'function' || window._planningQuestionLoading[prdId]) return;
+  window._planningQuestionLoading[prdId] = true;
+  Promise.resolve().then(() => apiFetch('/api/questions?state=open&limit=50')).then(r => r && r.ok ? r.json() : null).then(body => {
+    const list = Array.isArray(body) ? body : (body && Array.isArray(body.questions) ? body.questions : []);
+    const q = list.find(x => x && x.asked_by === 'planning' && x.prd_id === prdId && (x.options || []).some(o => o && o.id === 'fix_wording'));
+    if (!q) return;
+    window._planningQuestionByPrd[prdId] = q;
+    if (typeof document === 'undefined' || !document.querySelectorAll || typeof _automationQuestionsRowHtml !== 'function') return;
+    document.querySelectorAll('.prd-planning-failure-question').forEach(el => {
+      if (el.getAttribute('data-prd-id') === prdId) {
+        el.innerHTML = `<div style="color:var(--text2);margin-top:4px;">${escHtml(t('planning_failure_question_pending') || 'Question waiting: Fix the wording and plan again')}</div>${_automationQuestionsRowHtml(q)}`;
+      }
+    });
+  }).catch(() => {}).then(() => { delete window._planningQuestionLoading[prdId]; });
 }
 
 // 2026-10-17 — plan review gate: PRD-card verdict panel + re-run button.
@@ -20166,7 +22444,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${priorityBadgeHtml(prd.priority, prd.priority_source)}${automatonReleaseBadgesHtml(prd)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -20702,7 +22980,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)},${JSON.stringify(task.pinned_node || '')})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||''),verification_script:task.verification_script||'',verification_script_reason:task.verification_script_reason||''})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)},${JSON.stringify(task.pinned_node || '')})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -21359,7 +23637,10 @@ function prdAction(id, action, method, body) {
     }).catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
     return;
   }
-  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
+  apiFetch(url, opts).then(resp => {
+    if (action === 'request_revision') mountSpecCheck(renderSpecCheck(resp && resp.spec_check));
+    showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD();
+  })
     .catch(err => {
       const msg = String(err);
       // 2026-10-17 — plan review gate (mode=block): the Approve endpoint
@@ -21687,6 +23968,49 @@ function mountOverlapWarnings(html) {
   block.innerHTML = html;
   document.body.appendChild(block);
 }
+// Spec check: the findings the daemon returns on the create and revise
+// replies (spec_check). The block is a warning only; it never blocks the
+// create. Every label goes through t(); the phrase and the suggested
+// rewording are the daemon's own text.
+function renderSpecCheck(findings) {
+  if (!Array.isArray(findings) || !findings.length) return '';
+  const lines = findings.filter(f => f && f.phrase).map(f => {
+    const sevKey = f.severity === 'error' ? 'spec_check_severity_error' : 'spec_check_severity_warning';
+    return '<li style="margin-top:6px;">'
+      + '<strong>' + escHtml(t(sevKey)) + '</strong> '
+      + '<code>' + escHtml(f.phrase) + '</code> '
+      + '<span style="color:var(--text2);">[' + escHtml(f.rule || '') + ']</span>'
+      + '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_suggestion')) + ': ' + escHtml(f.suggestion || '') + '</div>'
+      + (f.correctable ? '<div style="color:var(--text2);font-size:11px;">' + escHtml(t('spec_check_fixable')) + '</div>' : '')
+      + '</li>';
+  });
+  if (!lines.length) return '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    + '<strong>' + escHtml(t('spec_check_title')) + '</strong>'
+    + '<button type="button" class="btn-secondary" aria-label="' + escHtml(t('action_close')) + '" onclick="closeSpecCheck()">&times;</button>'
+    + '</div><ul style="margin:4px 0 0 16px;padding:0;">' + lines.join('') + '</ul>';
+}
+// mountSpecCheck shows the rendered block, replacing any block already
+// shown. An empty html string only clears the old block.
+function mountSpecCheck(html) {
+  const old = document.getElementById('specCheckWarnings');
+  if (old) old.remove();
+  if (!html) return;
+  const block = document.createElement('div');
+  block.id = 'specCheckWarnings';
+  block.setAttribute('role', 'status');
+  block.style.cssText = 'position:fixed;left:16px;right:16px;top:16px;max-width:560px;margin:0 auto;'
+    + 'max-height:50vh;overflow:auto;padding:10px 12px;border:1px solid var(--warning,#d90);border-radius:6px;'
+    + 'background:var(--bg2,#fff);color:var(--text,#111);font-size:12px;z-index:10000;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  block.innerHTML = html;
+  document.body.appendChild(block);
+}
+function closeSpecCheck() {
+  const block = document.getElementById('specCheckWarnings');
+  if (block) block.remove();
+}
+window.closeSpecCheck = closeSpecCheck;
+
 function closeOverlapWarnings() {
   const block = document.getElementById('overlapWarnings');
   if (block) block.remove();
@@ -21848,6 +24172,7 @@ function openPRDCreateModal(presetParentId) {
       }).then(prd => {
         createdPrdId = prd.id;
         mountOverlapWarnings(renderOverlapWarnings(prd.overlap_warnings));
+        mountSpecCheck(renderSpecCheck(prd.spec_check));
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
@@ -22095,7 +24420,25 @@ function _prdTaskReadOnlyFieldHTML(inputID, checked) {
       <div style="font-size:10px;color:var(--text2);">${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}</div>`;
 }
 
+// Verification script path and exemption reason for the edit-task dialog.
+// The script is a repo-relative file the verifier runs, never a shell command.
+function _prdTaskVerifScriptFieldsHTML(cur) {
+  cur = cur || {};
+  const hint = t('prd_task_verif_script_hint')||'A repo-relative script file the Automaton runs to check this task, not a command.';
+  return `<div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_task_verif_script_label')||'Verification script')}</label>
+        <input type="text" id="prdEditVerifScript" class="form-input" value="${escHtml(cur.script || '')}" />
+        <div style="font-size:10px;color:var(--text2);">${escHtml(hint)}</div>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_task_verif_script_reason_label')||'Script exemption reason')}</label>
+        <input type="text" id="prdEditVerifScriptReason" class="form-input" value="${escHtml(cur.reason || '')}" />
+      </div>`;
+}
+
 function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly, currentPinnedNode) {
+  // The script path and exemption reason ride in currentVerif beside the LLM override.
+  const currentVerifScript = { script: (currentVerif || {}).verification_script || '', reason: (currentVerif || {}).verification_script_reason || '' };
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   Promise.all([ensureLLMModelLists(), window.modelRoutingNodesLoad()]).then(() => {
@@ -22115,6 +24458,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       </div>
       ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
       ${_prdTaskReadOnlyFieldHTML('prdEditReadOnly', !!currentReadOnly)}
+      ${_prdTaskVerifScriptFieldsHTML(currentVerifScript)}
       ${window.modelRoutingPinFieldHtml('prdEditPinNode', currentPinnedNode)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -22131,10 +24475,16 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     const calls = [];
     const roEl = document.getElementById('prdEditReadOnly');
     const readOnlyChanged = !!roEl && roEl.checked !== !!currentReadOnly;
-    if (newSpec !== currentSpec || readOnlyChanged) {
+    const vsEl = document.getElementById('prdEditVerifScript');
+    const vrEl = document.getElementById('prdEditVerifScriptReason');
+    const verifScriptChanged = !!vsEl && vsEl.value.trim() !== (currentVerifScript.script || '');
+    const verifReasonChanged = !!vrEl && vrEl.value.trim() !== (currentVerifScript.reason || '');
+    if (newSpec !== currentSpec || readOnlyChanged || verifScriptChanged || verifReasonChanged) {
       const editBody = { task_id: taskID, actor: 'operator' };
       if (newSpec !== currentSpec) editBody.new_spec = newSpec;
       if (readOnlyChanged) editBody.read_only = roEl.checked;
+      if (verifScriptChanged) editBody.verification_script = vsEl.value.trim();
+      if (verifReasonChanged) editBody.verification_script_reason = vrEl.value.trim();
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editBody),
@@ -22521,6 +24871,41 @@ function openPRDSetPermissionModeModal(prdID, current) {
 }
 window.openPRDSetPermissionModeModal = openPRDSetPermissionModeModal;
 
+// Project link on the Automaton settings: where the Automaton's project came
+// from, the configured project names, and the save/clear call to
+// POST /api/autonomous/prds/{id}/set_project.
+function _automatonProjectSourceHTML(prd) {
+  const proj = prd && prd.project ? String(prd.project) : '';
+  const src = prd && prd.project_source ? String(prd.project_source) : 'none';
+  const keys = { link: 'automaton_project_source_link', automation: 'automaton_project_source_automation', parent: 'automaton_project_source_parent', directory: 'automaton_project_source_directory' };
+  if (!proj || !keys[src]) return escHtml(t('automaton_project_none'));
+  return escHtml(proj) + ' — ' + escHtml(t(keys[src]));
+}
+function _automatonProjectNames() {
+  return apiFetch('/api/projects').then(list => (Array.isArray(list) ? list : []).map(p => p && p.name).filter(Boolean)).catch(() => []);
+}
+function _automatonProjectSave(prdID, clear) {
+  const sel = document.getElementById('prdSettingsProject');
+  const msg = document.getElementById('prdSettingsProjectMsg');
+  const project = clear ? '' : ((sel && sel.value) || '');
+  if (msg) msg.textContent = '';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_project', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ project: project }),
+  }).then(prd => {
+    if (clear && sel) sel.value = '';
+    const src = document.getElementById('prdSettingsProjectSource');
+    if (src && prd) src.innerHTML = _automatonProjectSourceHTML(prd);
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(err => {
+    const text = (err && err.message) || String(err);
+    if (msg) msg.textContent = t('automaton_project_error') + ': ' + text;
+    showToast(t('automaton_project_error') + ': ' + text, 'error', 6000);
+  });
+}
+window._automatonProjectSave = _automatonProjectSave;
+
 // BL246 v6.6.0 — unified PRD Settings modal: type, backend, effort, model,
 // skills, guided_mode in one place. Splits "edit spec" (handled by
 // openPRDEditModal) from non-spec settings so each form stays small and
@@ -22561,10 +24946,12 @@ function openPRDSettingsModal(prdID) {
         git_pushed_sha:       (prd.git && prd.git.pushed_sha) || '',
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
         priority:             prd.priority || 0,
+        project:              prd.project_source === 'link' ? (prd.project || '') : '',
         read_dirs:            (prd.read_dirs || []).join(', '),
         write_dirs:           (prd.write_dirs || []).join(', '),
       };
-      ensureLLMModelLists().then(() => {
+      Promise.all([ensureLLMModelLists(), _automatonProjectNames()]).then(res => {
+        const projectNames = res[1];
         const notifyInherit = !(prd.notify_events || []).length;
         const neffEvents = (prd.notify_events_effective && Array.isArray(prd.notify_events_effective.events))
           ? prd.notify_events_effective.events : [];
@@ -22645,6 +25032,19 @@ function openPRDSettingsModal(prdID) {
               <label class="wizard-label">${escHtml(t('prd_settings_concurrency_label')||'Max concurrent tasks (0 = global default)')}</label>
               <input type="number" id="prdSettingsConcurrency" class="form-input" min="0" max="32" value="${cur.max_concurrent_tasks}" placeholder="0" style="width:80px;" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">0 or 1 = sequential · 2+ = fan out independent tasks in parallel</div>
+            </div>
+            <div class="wizard-field" style="margin-top:2px;" id="prdSettingsProjectField">
+              <label class="wizard-label" for="prdSettingsProject">${escHtml(t('automaton_project_label'))}</label>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:2px;" id="prdSettingsProjectSource">${_automatonProjectSourceHTML(prd)}</div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <select id="prdSettingsProject" class="form-select" style="flex:1;min-width:140px;">
+                  <option value="">${escHtml(t('automaton_project_none'))}</option>
+                  ${projectNames.map(n => `<option value="${escHtml(n)}" ${n===cur.project?'selected':''}>${escHtml(n)}</option>`).join('')}
+                </select>
+                <button type="button" class="btn-secondary" onclick="_automatonProjectSave(${escHtml(JSON.stringify(prdID))}, false)">${escHtml(t('automaton_project_save'))}</button>
+                <button type="button" class="btn-secondary" onclick="_automatonProjectSave(${escHtml(JSON.stringify(prdID))}, true)">${escHtml(t('automaton_project_clear'))}</button>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px;" id="prdSettingsProjectMsg"></div>
             </div>
             <div class="wizard-field" style="margin-top:2px;">
               <label class="wizard-label">${escHtml(t('prd_settings_priority_label')||'Capacity queue priority (higher runs first)')}</label>
@@ -23338,6 +25738,7 @@ const GENERAL_CONFIG_FIELDS = [
     // need a fresh measurement with this much free memory left. 0 or unset is the default.
     { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier min free memory (MB; unset = 1024, 0 = check off)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', placeholder: '1024' },
     { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom max age (hours; 0 or unset = 24)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', placeholder: '24' },
+    { key: 'autonomous.reaped_branch_backup_days', label: 'Reaped Automaton branch backup kept (days; 0 or unset = 30)', labelKey: 'settings_reaped_branch_backup_days', type: 'number', placeholder: '30' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
@@ -23425,6 +25826,11 @@ const GENERAL_CONFIG_FIELDS = [
     // turns the live loop detector compares ("Pi worker observability" in
     // docs/operations.md). 0 turns loop detection off (default 3).
     { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
+    // Daily pending-branch alert: once per calendar day, one alert naming the
+    // oldest pending Automaton branch when more than the threshold wait for
+    // cleanup (default on, threshold 3; 0 alerts on any pending branch).
+    { key: 'autonomous.unlanded_alert_enabled', label: 'Daily pending-branch alert', labelKey: 'settings_unlanded_alert_enabled', helpKey: 'settings_unlanded_alert_enabled_help', type: 'toggle', default: true },
+    { key: 'autonomous.unlanded_alert_threshold', label: 'Pending-branch alert threshold (default 3)', labelKey: 'settings_unlanded_alert_threshold', helpKey: 'settings_unlanded_alert_threshold_help', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', labelKey: 'settings_auto_fix_retries', helpKey: 'settings_auto_fix_retries_help', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
@@ -23580,6 +25986,12 @@ const GENERAL_CONFIG_FIELDS = [
     // and interactive session starts are never blocked.
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
+    // Review reserve: while a backed-off backend holds nothing else, keep a
+    // few of its live slots for review work (guardrail judging, verifying,
+    // planning) — workers never take a reserve slot. Slot count 0 = off
+    // (default 1); the reserve's rolling one-hour token budget 0 = no cap.
+    { key: 'autonomous.backoff_reserve_for_review', label: 'Usage back-off review reserve (review session slots kept per backed-off backend, 0 = off, default 1)', labelKey: 'settings_backoff_reserve_for_review', type: 'number', placeholder: '1', min: 0, step: 1, default: '1' },
+    { key: 'autonomous.backoff_reserve_tokens_per_hour', label: 'Usage back-off review reserve token cap (rolling one-hour tokens the reserve may use per backend, 0 = no cap)', labelKey: 'settings_backoff_reserve_tokens_per_hour', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Host load check — off does nothing, alert (default) raises one alert per sustained breach, reap also ends proven-orphan processes of ended sessions.
@@ -23591,6 +26003,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.merge_pending_include_terminal', label: 'Automaton merge-pending check covers terminal Automata (archived, needs_review, blocked and failed, beside completed; default on)', labelKey: 'settings_automation_merge_pending_include_terminal', type: 'toggle' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
@@ -23615,6 +26028,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.housekeeping_repairs.task_chain', label: 'Task chain repairs', labelKey: 'settings_housekeeping_task_chain', helpKey: 'settings_housekeeping_task_chain_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.advance_judge', label: 'Judged Automaton advance repairs', labelKey: 'settings_housekeeping_advance_judge', helpKey: 'settings_housekeeping_advance_judge_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.lane_fill', label: 'Lane fill repairs', labelKey: 'settings_housekeeping_lane_fill', helpKey: 'settings_housekeeping_lane_fill_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
+    { key: 'autonomous.housekeeping_repairs.planning', label: 'Planning repairs', labelKey: 'settings_housekeeping_planning', helpKey: 'settings_housekeeping_planning_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.housekeeping_repairs.leftovers', label: 'Leftover repairs', labelKey: 'settings_housekeeping_leftovers', helpKey: 'settings_housekeeping_leftovers_help', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     // Platform context — the toggle and the project note. Reads GET /api/config and writes
     // through PUT /api/config (platform_context.enabled, platform_context.note).
@@ -23800,7 +26214,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.version_scheme', label: 'Version scheme (semver; default semver)', labelKey: 'settings_merge_pipeline_version_scheme', helpKey: 'settings_merge_pipeline_version_scheme_help', helpDocs: 'datawatch-definitions.md#release-size', type: 'select', options: ['semver'], optionLabelKeys: { semver: 'merge_pipeline_scheme_semver' }, default: 'semver', onchange: "saveMergePipelineReleaseField('autonomous.merge_pipeline.version_scheme', this)" },
     // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
     // every hook is disabled until you switch it on. The four builtins are
-    // registry_row, parity_issue, tag and notify; the registry, companion
+    // registry_row, parity_issue, tag, notify and mark_completed; the registry, companion
     // repository and templates are the targets of the first three. A hook can
     // instead carry any shell command, which the daemon runs with `bash -c`.
     { label: 'Post-ship hooks', labelKey: 'post_ship_card_title', docsKey: 'post_ship_card_title', type: 'group' },
@@ -26640,7 +29054,8 @@ function saveJSONMapSetting(key, el) {
 // enabled builtin (except tag), the max — and an error toast carries its
 // message back.
 const POST_SHIP_HOOKS_MAX = 20;
-const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify'];
+const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify', 'mark_completed'];
+const POST_SHIP_BUILTIN_LABEL_KEYS = { mark_completed: 'post_ship_builtin_mark_completed' };
 
 function _postShipHooksStatus(msg, ok) {
   const el = document.getElementById('post_ship_hooks_status');
@@ -26659,7 +29074,7 @@ function _postShipRowHTML(h, i) {
     + `</select>`;
   const action = isBuiltin
     ? `<select class="form-select" style="font-size:11px;width:auto;" onchange="_postShipSetBuiltin(${i}, this.value)">`
-      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(b)}</option>`).join('')
+      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(POST_SHIP_BUILTIN_LABEL_KEYS[b] ? t(POST_SHIP_BUILTIN_LABEL_KEYS[b]) : b)}</option>`).join('')
       + `</select>`
     : `<input type="text" class="form-input" style="font-size:11px;flex:1;min-width:120px;" value="${escHtml(h.command)}" placeholder="${escHtml(t('post_ship_hook_command_placeholder'))}" onchange="_postShipSetCommand(${i}, this.value)" />`;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -28285,6 +30700,32 @@ function loadServersList() {
   });
 }
 
+// ── TLS pin / skip-verify pair (server + federation peer forms) ──────────────
+// The daemon refuses a peer that carries both a tls_cert_fingerprint pin and
+// tls_skip_verify, so the two controls stay mutually exclusive on the client
+// too: typing a pin while the checkbox is on reverts the checkbox, and
+// checking the box while a pin is typed reverts the checkbox. The inline
+// warning line follows the checkbox on every change and on form load.
+function tlsPinPairSync(prefix) {
+  const skipEl = document.getElementById(prefix + 'TLSSkipVerify');
+  const pinEl = document.getElementById(prefix + 'TLSCertFingerprint');
+  const warnEl = document.getElementById(prefix + 'TLSWarn');
+  if (skipEl && pinEl && (pinEl.value || '').trim() && skipEl.checked) skipEl.checked = false;
+  if (warnEl) warnEl.style.display = (skipEl && skipEl.checked) ? '' : 'none';
+}
+window.tlsPinPairSync = tlsPinPairSync;
+
+// The REST layer appends a `warnings` array to server/peer create, update and
+// test responses when the stored TLS posture is insecure. Surface every entry
+// through the existing toast helper instead of dropping it silently.
+function _surfaceResponseWarnings(d) {
+  if (!d || !Array.isArray(d.warnings)) return;
+  for (const w of d.warnings) {
+    if (typeof w === 'string' && w.trim()) showToast(w.trim(), 'warning');
+  }
+}
+window._surfaceResponseWarnings = _surfaceResponseWarnings;
+
 function showServerForm(entry) {
   const wrap = document.getElementById('serverFormWrap');
   const nameEl = document.getElementById('serverFormName');
@@ -28303,6 +30744,11 @@ function showServerForm(entry) {
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
   if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!(entry && entry.tls_skip_verify);
+  // Certificate pin: editing pre-fills the saved pin; adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
+  if (fpEl) fpEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('serverForm');
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
   if (fedEl) {
     fedEl.checked = !!(entry && entry.federated);
@@ -28337,6 +30783,7 @@ function saveServer() {
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
   const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -28346,6 +30793,10 @@ function saveServer() {
   }
   const editName = editNameEl ? editNameEl.value : '';
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true, tls_skip_verify: tlsSkipVerifyEl ? tlsSkipVerifyEl.checked : false };
+  if (fpEl) {
+    const fp = (fpEl.value || '').trim();
+    if (fp) body.tls_cert_fingerprint = fp;
+  }
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
   if (fedEl && fedEl.checked) {
@@ -28356,7 +30807,7 @@ function saveServer() {
   const method = isEdit ? 'PUT' : 'POST';
   const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';
   apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    .then(() => { closeServerForm(); loadServersList(); })
+    .then(d => { _surfaceResponseWarnings(d); closeServerForm(); loadServersList(); })
     .catch(e => { if (errEl) errEl.textContent = e.message || 'Save failed.'; });
 }
 
@@ -28371,6 +30822,7 @@ function testServerEntry(name, btnEl) {
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
   apiFetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' })
     .then(d => {
+      _surfaceResponseWarnings(d);
       const msg = d.ok ? `${d.latency_ms}ms v${d.version||'?'}` : `fail: ${d.error||'err'}`;
       showToast(`${name}: ${msg}`, d.ok ? 'success' : 'error');
     })
@@ -28562,24 +31014,45 @@ function _probePickerReachability(servers) {
       });
   });
 }
+// The two live picker instances: the header #serverDropdown and, when the
+// Sessions toolbar is painted, its own #sessionsServerDropdown. A missing
+// id drops out (an unpainted shell); a test stub stays a no-op.
+function _pickerDropdownEls() {
+  if (typeof document === 'undefined' || !document.getElementById) return [];
+  return ['serverDropdown', 'sessionsServerDropdown']
+    .map(id => { try { return document.getElementById(id); } catch (_) { return null; } })
+    .filter(el => el && typeof el.querySelectorAll === 'function');
+}
+window._pickerDropdownEls = _pickerDropdownEls;
+
+// The Sessions toolbar's own instance of the same server picker — a
+// distinct id (#sessionsServerDropdown; the header's #serverDropdown is
+// never duplicated), the same options body and the same single onchange →
+// onServerDropdownChange() → selectServer() mutation path.
+function _sessionsServerSelectHTML() {
+  return '<select id="sessionsServerDropdown" class="server-dropdown sessions-server-select" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml() + '</select>';
+}
+window._sessionsServerSelectHTML = _sessionsServerSelectHTML;
+
 // Patches ONLY the one option whose probe just resolved -- never a full
 // dropdown re-render, so an in-progress operator interaction is never
 // disturbed by a probe landing late. Matches on the option's own value /
 // dataset values -- never by building a CSS selector from the name.
 function _updatePickerOptionReachability(name) {
-  if (typeof document === 'undefined' || !document.getElementById) return;
-  const sel = document.getElementById('serverDropdown');
-  if (!sel || typeof sel.querySelectorAll !== 'function') return;
+  const sels = _pickerDropdownEls();
+  if (!sels.length) return;
   const unreachable = _serverReachability[name] === false;
   const suffix = unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '';
-  Array.from(sel.querySelectorAll('option'))
-    .filter(o => o && o.value === name)
-    .forEach(o => {
-      const base = (o.dataset && o.dataset.baseLabel)
-        || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
-      o.textContent = base + suffix;
-      if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
-    });
+  sels.forEach(sel => {
+    Array.from(sel.querySelectorAll('option'))
+      .filter(o => o && o.value === name)
+      .forEach(o => {
+        const base = (o.dataset && o.dataset.baseLabel)
+          || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
+        o.textContent = base + suffix;
+        if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
+      });
+  });
 }
 
 // GH#194 — the PWA must never label the connected server "local" to the
@@ -28685,15 +31158,18 @@ function _onServerListReady(fn) {
 // test harness without the header markup).
 function renderServerDropdown() {
   if (typeof document === 'undefined' || !document.getElementById) return;
-  const sel = document.getElementById('serverDropdown');
-  if (!sel) return;
-  try {
-    // Fill the existing <select id="serverDropdown"> with its options only
-    // (never a nested <select>).
-    sel.innerHTML = _serverOptionsHtml();
-    if (sel.style) sel.style.display = '';
-    if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
-  } catch (_) { /* a partial shell must never break navigation */ }
+  // Keep the two live picker instances (header #serverDropdown and the
+  // Sessions toolbar's #sessionsServerDropdown) in lockstep — every
+  // navigation, server-list refresh and reachability probe updates both.
+  _pickerDropdownEls().forEach(sel => {
+    try {
+      // Fill the existing <select> with its options only (never a nested
+      // <select> — one instance per slot, options rebuilt in place).
+      sel.innerHTML = _serverOptionsHtml();
+      if (sel.style) sel.style.display = '';
+      if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
+    } catch (_) { /* a partial shell must never break navigation */ }
+  });
 }
 
 // The single generic change handler: the selected name arrives in `value`
@@ -30747,6 +33223,7 @@ const _AUTOMATA_STATE_RANK = {
   revisions_asked:  0,
   blocked:          1,
   paused:           1,
+  held:             3,
   running:          2,
   decomposing:      2,
   approved:         3,
@@ -30792,7 +33269,7 @@ window.toggleAutomataWatchFilter = function() {
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','held','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 // _automataBaseList is the Automata list before the tag and facet filters: the
@@ -31128,6 +33605,21 @@ function renderAutomataCard(prd, alsoInHtml) {
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
     : '';
+  // Hold / Release / Extend — the held Automaton's card actions. Hold is a
+  // pause, not a block: the card button stays visible on every state that
+  // is still holdable (server side is authoritative; running/planning/
+  // completed/cancelled/archived refuse a hold), and Release + Extend only
+  // on a held card. Expiry never auto-releases — the card keeps both
+  // buttons and the "ready to review" line.
+  const holdBtn = status !== 'held' && ['draft','needs_review','approved','revisions_asked','paused','blocked','failed'].includes(status)
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_hold')||'Put this Automaton on hold')}" onclick="event.stopPropagation();automataHold(${escId})">⏸ ${escHtml(t('automaton_hold_action')||'Hold')}</button>`
+    : '';
+  const releaseBtn = status === 'held'
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automaton_hold_tooltip_release')||'Release this held Automaton')}" onclick="event.stopPropagation();automataRelease(${escId})">▶ ${escHtml(t('automaton_hold_release')||'Release')}</button>`
+    : '';
+  const extendBtn = status === 'held'
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_extend')||'Extend this hold')}" onclick="event.stopPropagation();automataExtend(${escId})">↻ ${escHtml(t('automaton_hold_extend')||'Extend')}</button>`
+    : '';
   // Pin and watch sit in the tile's overflow menu; the marks show their state
   // in the header while the menu is closed.
   const isWatched = _automataState.watched.has(id);
@@ -31144,6 +33636,10 @@ function renderAutomataCard(prd, alsoInHtml) {
   const full = _automataFullPrd(prd);
   const counts = _tileAutomataCounts(prd);
   const held = _prdHeldBadgeHTML(prd);
+  // The held Automaton's hold record: reason, condition, who/when and the
+  // look-again line (or the "ready to review" line once expired). Shown on
+  // the card body and in the detail view; a release drops it.
+  const holdRec = (status === 'held' || (prd.hold || prd.Hold)) ? _automatonHoldRecordHtml(prd) : '';
   const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
     </details>`;
@@ -31161,7 +33657,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${renderPlanningFailureBadge(prd)}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${planProjectChipHtml(prd)}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),
@@ -31170,9 +33666,9 @@ function renderAutomataCard(prd, alsoInHtml) {
     alsoInHtml,
     updatedAt: prd.updated_at,
     nowMs: Date.now(),
-    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${holdBtn}${releaseBtn}${extendBtn}${approveBtn}`,
     menuHtml: `${watchItem}${pinItem}`,
-    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    bodyHtml: `${position}${holdRec ? `<div class="automaton-hold-record">${holdRec}</div>` : ''}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
     afterHtml: storiesDetail + graphDetail,
   });
 }
@@ -31274,6 +33770,163 @@ window.automataCancel = function(id, status) {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
       .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
       .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  });
+};
+
+// ── Automaton hold: dialog, actions, record line ────────────────────────
+// Holding is a deliberate pause (the Automaton stops advancing, it is not
+// failed or blocked). The same POST /hold endpoint places and extends a
+// hold; the dialog differs only in whether a previous reason carries over.
+// Release is POST /release_hold and restores the status the Automaton had
+// before the hold. Expiry never releases: an expired hold keeps its
+// buttons and gains the "ready to review" line (server wording in
+// next_look_text, mirrored here from the hold record for the card views).
+
+// The read view's look-again line, localized. The server already computes
+// it ("looked at again on <date>", "no date set", "hold expired, ready to
+// review") in next_look_text; we render the local wording from the fields
+// so the UI copy is translated.
+function _automatonHoldLookAgainText(h) {
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  return !isNaN(untilTs) && untilTs < Date.now() ? t('automaton_hold_expired') : t('automaton_hold_no_date');
+}
+
+// _automatonHoldRecordHtml renders the hold record lines: reason,
+// condition, who/when, and the look-again wording. Pure; the only outside
+// reads are the hold fields on the PRD (camelCase or, from the detail GET,
+// PascalCase) which are read once here.
+function _automatonHoldRecordHtml(prd) {
+  const h = (prd && (prd.hold || prd.Hold)) || null;
+  if (!h) return '';
+  const dt = v => { const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); };
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  const expired = h.expired === true || (!isNaN(untilTs) && untilTs < Date.now());
+  const lines = [];
+  if (h.reason) lines.push(`<div class="automaton-hold-line"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(h.reason)}</div>`);
+  if (h.condition) lines.push(`<div class="automaton-hold-line" style="color:var(--text2);"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(h.condition)}</div>`);
+  const by = [h.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(h.held_by) : '', h.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(dt(h.held_at)) : ''].filter(Boolean).join(' · ');
+  lines.push(`<div class="automaton-hold-line" style="color:var(--text2);font-size:11px;">${by || escHtml(t('automaton_hold_no_date'))}</div>`);
+  lines.push(`<div class="automaton-hold-line automaton-hold-lookagain">${escHtml(expired ? t('automaton_hold_expired') : (!isNaN(untilTs) ? t('automaton_hold_until_label') + ': ' + escHtml(dt(h.until)) : t('automaton_hold_no_date')))}</div>`);
+  return `<div class="automaton-hold-record" style="margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(120,120,140,0.06);">${lines.join('')}</div>`;
+}
+window._automatonHoldRecordHtml = _automatonHoldRecordHtml;
+
+// _automatonHoldValidate checks the dialog fields. A new hold must carry a
+// reason; an extension may restate the same one. until and condition stay
+// optional; the server parses until (RFC 3339, a date, or a duration).
+function _automatonHoldValidate(fields, extend) {
+  const reason = (fields && fields.reason) ? String(fields.reason).trim() : '';
+  if (!reason) {
+    const err = new Error(t('automaton_hold_reason_required') || t('automaton_hold_reason_prompt')); // "A reason is required for the hold"
+    err.field = 'reason';
+    return { ok: false, error: err };
+  }
+  const payload = {
+    reason,
+    condition: (fields.condition) ? String(fields.condition).trim() : '',
+    until: (fields.until) ? String(fields.until).trim() : '',
+    actor: 'operator',
+  };
+  return { ok: true, payload };
+}
+window._automatonHoldValidate = _automatonHoldValidate;
+
+// automatonHoldSubmit validates and POSTs to /hold. It never throws:
+// an empty reason rejects with a reason-marked error; a transport failure
+// reports through showError and resolves (the card reloads either way, so
+// the state the server actually has is what the UI shows next).
+window.automatonHoldSubmit = function(id, fields, extend) {
+  const v = _automatonHoldValidate(fields, !!extend);
+  if (!v.ok) return Promise.reject(v.error);
+  const doneKey = extend ? 'automaton_hold_toast_extended' : 'automaton_hold_toast_set';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/hold', { method: 'POST', body: JSON.stringify(v.payload) })
+    .then(() => { showToast(t(doneKey), 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
+};
+
+// automataHold / automataExtend open the dialog in a browser; with fields
+// passed directly they submit immediately (the node tests take this path).
+window.automataHold = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, false);
+  return _automatonHoldDialogOpen(id, false);
+};
+window.automataExtend = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, true);
+  return _automatonHoldDialogOpen(id, true);
+};
+
+// _automatonHoldDialogOpen is the modal dialog: a required reason plus
+// optional until and condition. Submitting with an empty reason leaves the
+// dialog open and shows the reason error; it never POSTs.
+function _automatonHoldDialogOpen(id, extend) {
+  if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function') return Promise.resolve();
+  const existing = document.getElementById('automationHoldDialog');
+  if (existing && typeof existing.remove === 'function') existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'automationHoldDialog';
+  modal.className = 'confirm-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  const title = extend ? (t('automaton_hold_extend') || 'Extend') : (t('automaton_hold_action') || 'Hold');
+  const blurb = t(extend ? 'automaton_hold_tooltip_extend' : 'automaton_hold_tooltip_hold');
+  const helpLine = (typeof heldHoldDialogHelpLine === 'function') ? heldHoldDialogHelpLine() : '';
+  modal.innerHTML = `<div class="confirm-modal automation-hold-dialog" aria-label="${escHtml(title)}">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}${helpLine}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_reason_prompt'))}</span>
+        <textarea id="automationHoldReason" rows="2" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;"></textarea>
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_until_prompt'))}</span>
+        <input id="automationHoldUntil" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_condition_prompt'))}</span>
+        <input id="automationHoldCondition" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+    </div>
+    <div id="automationHoldError" style="display:none;font-size:12px;color:var(--error);margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" style="font-size:12px;padding:4px 16px;" id="automationHoldCancel">${escHtml(t('action_cancel'))}</button>
+      <button type="button" class="btn-primary" style="font-size:12px;padding:4px 16px;" id="automationHoldSubmitBtn">${escHtml(title)}</button>
+    </div>
+  </div>`;
+  if (typeof modal.addEventListener === 'function') {
+    modal.addEventListener('click', e => { if (e && e.target === modal) modal.remove(); });
+  }
+  document.body.appendChild(modal);
+  const cancel = () => { if (modal.parentNode) modal.remove(); };
+  const submit = () => {
+    const v = _automatonHoldValidate({
+      reason: (document.getElementById('automationHoldReason') || {}).value || '',
+      until: (document.getElementById('automationHoldUntil') || {}).value || '',
+      condition: (document.getElementById('automationHoldCondition') || {}).value || '',
+    }, extend);
+    if (!v.ok) {
+      const errEl = document.getElementById('automationHoldError');
+      if (errEl) { errEl.textContent = v.error.message; errEl.style.display = ''; }
+      const rEl = document.getElementById('automationHoldReason');
+      if (rEl && typeof rEl.focus === 'function') rEl.focus();
+      return;
+    }
+    cancel();
+    window.automatonHoldSubmit(id, { reason: v.payload.reason, until: v.payload.until, condition: v.payload.condition }, extend);
+  };
+  const cBtn = document.getElementById('automationHoldCancel');
+  const sBtn = document.getElementById('automationHoldSubmitBtn');
+  if (cBtn) cBtn.onclick = cancel;
+  if (sBtn) sBtn.onclick = submit;
+  const rEl = document.getElementById('automationHoldReason');
+  if (rEl && typeof rEl.focus === 'function') rEl.focus();
+  return Promise.resolve();
+}
+
+// automataRelease asks once, then POSTs /release_hold. The server restores
+// the status held in the record; the UI just reloads the list.
+window.automataRelease = function(id) {
+  showConfirmModal(t('automaton_hold_release_ask') || 'Release this held Automaton now?', () => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/release_hold', { method: 'POST' })
+      .then(() => { showToast(t('automaton_hold_toast_released') || 'Hold released', 'info', 2000); loadAutomataPanel(); })
+      .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
   });
 };
 
@@ -32919,6 +35572,7 @@ function _wizardSubmit() {
     body: JSON.stringify(body),
   }).then(prd => {
     mountOverlapWarnings(renderOverlapWarnings(prd && prd.overlap_warnings));
+    mountSpecCheck(renderSpecCheck(prd && prd.spec_check));
     if (!prd || !prd.id) return prd;
     if (backend || effort || decompositionProfile) {
       const modelEl = document.getElementById('wizardModelField')?.querySelector('input,select');
@@ -33401,6 +36055,13 @@ function _renderDetailContent(prd) {
   const triageSlot = (status === 'failed' || status === 'blocked')
     ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
     : '';
+  // The hold slot: a held Automaton carries its hold record (reason,
+  // condition, who/when, look-again or the expired line) above every
+  // sub-tab, so a held state is never lost behind a tab switch — the same
+  // self-contained slot pattern as the triage card.
+  const holdSlot = status === 'held'
+    ? `<div id="prdHoldRecord" class="prd-capacity-slot hold-slot" style="margin-top:10px;">${_automatonHoldRecordHtml(prd)}</div>`
+    : '';
   // The merge-pending badge slot sits beside it for a finished Automaton: it
   // paints from the last merge read at once and again when a fresh read lands.
   const mergeSlot = status === 'completed'
@@ -33413,6 +36074,7 @@ function _renderDetailContent(prd) {
     ${window.protectedPathsBannerHtml(prd)}
     ${window.protectedPathsAuthorisedHtml(prd)}
     ${triageSlot}
+    ${holdSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -33776,7 +36438,11 @@ function capacityBackoffHtml(backoff) {
     const rung = b.rung
       ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
       : '';
-    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
+    // The daemon sends the reserve reason in its built-in English wording
+    // ("back-off, review reserve in use"); show it translated here, keeping
+    // any pool prefix the ledger added. Every other reason shows as sent.
+    const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
+    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
     return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
@@ -33787,11 +36453,17 @@ function capacityBackoffHtml(backoff) {
 // and the holdings line. Field names cover both payload shapes: the task
 // views (cause, resets_at, pools, node) and the session status automaton
 // block (wait_cause, wait_resets_at, holds).
-function _taskWaitCauseLabel(cause) {
+// A back-off wait narrows to the review-reserve chip when its reason names
+// the reserve (a review slot or the reserve's hourly token budget is in
+// use), so the chip says why instead of a bare back-off; every other
+// back-off keeps the original label.
+function _taskWaitCauseLabel(cause, reason) {
   switch (cause) {
     case 'pool_full': return t('task_wait_cause_pool_full') || 'Pool full';
     case 'node_busy': return t('task_wait_cause_node_busy') || 'Node busy';
-    case 'backoff': return t('task_wait_cause_backoff') || 'Back-off';
+    case 'backoff':
+      if (/review reserve in use/.test(String(reason || ''))) return t('task_wait_cause_backoff_reserve') || 'Back-off, review reserve in use';
+      return t('task_wait_cause_backoff') || 'Back-off';
     case 'budget': return t('task_wait_cause_budget') || 'Budget';
     case 'global_cooldown': return t('task_wait_cause_global_cooldown') || 'Cool-down';
     case 'await_external': return t('task_wait_cause_await_external') || 'Awaiting external';
@@ -33814,7 +36486,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = _taskWaitCauseLabel(cause);
+  const label = _taskWaitCauseLabel(cause, reason);
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
@@ -36037,6 +38709,14 @@ function _mergeStatusBlockHtml(status) {
   const lines = [];
   if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
   if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  // The shadow pass counts: how many decisions it recorded and how many of
+  // those were later found to have been false (0 while the mode is off or
+  // no pass has run yet, so the line only appears once a decision exists).
+  if (typeof s.shadow_decisions_total === 'number' && s.shadow_decisions_total > 0) {
+    const falseCount = (typeof s.shadow_decisions_false === 'number') ? s.shadow_decisions_false : 0;
+    const text = t('merge_shadow_decisions_counts', [String(s.shadow_decisions_total), String(falseCount)]);
+    lines.push(`<div class="merge-status-shadow" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_shadow_decisions_counts', 'merge_shadow_decisions_help')}</div>`);
+  }
   return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {
@@ -36446,6 +39126,36 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   const label = t(helpKey);
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
+
+// _heldDocsPath — the "Held Automata" section of the hold how-to, read
+// off the docs link map through the held group's own key, so the group
+// head help icon and the hold dialog's help line always point at the
+// same section. Null when the map has no entry.
+function _heldDocsPath() {
+  if (typeof docsLinkForKey !== 'function') return null;
+  return docsLinkForKey('held_automata_inbox_title') || null;
+}
+
+// heldAutomataHelpLink — the help icon on the held-Automata group head.
+// Respects the General → "Show inline doc links" toggle like every other
+// card help link.
+function heldAutomataHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:auto;">?</a>`;
+}
+window.heldAutomataHelpLink = heldAutomataHelpLink;
+
+// heldHoldDialogHelpLine — the help line inside the hold dialog (the same
+// "Held Automata" section as the group head icon).
+function heldHoldDialogHelpLine() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--accent2,#60a5fa);text-decoration:underline;">${escHtml(label)}</a>`;
+}
+window.heldHoldDialogHelpLine = heldHoldDialogHelpLine;
 window.triageCardHtml = function(record) {
   if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
@@ -37210,6 +39920,92 @@ window.safeDeleteCardHtml = function(report) {
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
+// ── Branch reaper card ─────────────────────────────────────────────────────
+// branchReapCardHtml(report) draws the body of GET
+// /api/autonomous/branch-reap:
+// { reaped: [{automaton_id, branch, backup_ref, contained_in, commits, reason}],
+//   waiting: [...same], backups: [{branch, ref, sha}], backup_days,
+//   computed_at }. A missing or malformed body reads as an empty report.
+// The report itself deletes nothing; the only write surface is the Restore
+// button on a reaped entry, which posts the one branch to
+// /api/autonomous/branch-reap/restore (its click is delegated, because the
+// loader re-paints the card's innerHTML on every tick).
+function _branchReapLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _branchReapSection(title, rows, emptyText) {
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    (rows.length ? rows.join('') : _branchReapLine(emptyText));
+}
+function _branchReapEntryRow(e) {
+  const branch = String(e.branch || '');
+  const restore = branch
+    ? `<button type="button" class="branch-reap-restore-btn" data-branch-reap-restore="${escHtml(branch)}" style="margin-top:4px;max-width:100%;">${escHtml(t('branch_reap_restore_btn'))}</button>`
+    : '';
+  return `<div class="branch-reap-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    _branchReapLine(branch, 'font-weight:600;') +
+    (e.automaton_id ? _branchReapLine(t('branch_reap_automaton', [String(e.automaton_id)])) : '') +
+    (e.reason ? _branchReapLine(String(e.reason)) : '') +
+    (e.contained_in ? _branchReapLine(t('branch_reap_contained', [String(e.contained_in)])) : '') +
+    (Number(e.commits) ? _branchReapLine(t('branch_reap_commits', [Number(e.commits)])) : '') +
+    (e.backup_ref ? _branchReapLine(t('branch_reap_backup', [String(e.backup_ref)])) : '') +
+    restore + `</div>`;
+}
+function _branchReapBackupRow(bk) {
+  const parts = [String(bk.ref || '')];
+  if (bk.sha) parts.push('→ ' + String(bk.sha));
+  if (bk.branch) parts.push('(' + String(bk.branch) + ')');
+  return _branchReapLine(parts.filter(Boolean).join(' '));
+}
+window.branchReapCardHtml = function(report) {
+  const r = (report && typeof report === 'object') ? report : {};
+  const reaped = Array.isArray(r.reaped) ? r.reaped.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const waiting = Array.isArray(r.waiting) ? r.waiting.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const backups = Array.isArray(r.backups) ? r.backups.filter(b => b && typeof b === 'object' && b.ref) : [];
+  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
+  const head = `<div class="cap-title">${escHtml(t('branch_reap_card_title'))}</div>`;
+  const computedLine = computedAt ? _branchReapLine(t('branch_reap_computed_at', [computedAt])) : '';
+  const note = _branchReapLine(t('branch_reap_preview_note'));
+  const retentionLine = _branchReapLine(Number(r.backup_days) > 0
+    ? t('branch_reap_retention_days', [Number(r.backup_days)])
+    : t('branch_reap_retention_default'));
+  const reapedRows = reaped.map(_branchReapEntryRow);
+  const waitingRows = waiting.map(_branchReapEntryRow);
+  const emptyAll = reaped.length === 0 && waiting.length === 0;
+  const body = emptyAll
+    ? _branchReapLine(t('branch_reap_empty'))
+    : _branchReapSection(t('branch_reap_reaped_heading', [reaped.length]), reapedRows, t('branch_reap_reaped_empty')) +
+      _branchReapSection(t('branch_reap_waiting_heading', [waiting.length]), waitingRows, t('branch_reap_waiting_empty'));
+  return `<div class="prd-capacity-card branch-reap-card" style="min-width:0;">${head}${computedLine}${note}${retentionLine}` +
+    body +
+    _branchReapSection(t('branch_reap_backups_heading'), backups.map(_branchReapBackupRow), t('branch_reap_backups_none')) + `</div>`;
+};
+// _branchReapEnsureRestoreHandler binds the delegated Restore click once per
+// page load. The loader replaces the card's innerHTML on every tick, so the
+// handler lives on the document and re-targets the fresh button on each click.
+let _branchReapRestoreBound = false;
+window._branchReapEnsureRestoreHandler = function() {
+  if (_branchReapRestoreBound) return;
+  _branchReapRestoreBound = true;
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-branch-reap-restore]') : null;
+    if (!btn || btn.disabled) return;
+    const branch = btn.getAttribute('data-branch-reap-restore');
+    if (!branch) return;
+    btn.disabled = true;
+    btn.textContent = t('branch_reap_restoring');
+    apiFetch('/api/autonomous/branch-reap/restore', { method: 'POST', body: JSON.stringify({ branch }) })
+      .then(() => {
+        showToast(t('branch_reap_restore_ok', [branch]), 'success', 4000);
+        // The delete already happened; re-read the report so the card
+        // reflects the restored branch and the backup ref it now lives as.
+        const ctl = window._listLoaders && window._listLoaders.automation_branch_reap;
+        if (ctl && ctl.load) ctl.load();
+      })
+      .catch(err => { showToast(t('branch_reap_restore_err', [branch, ((err && err.message) || String(err))]), 'error', 6000); });
+  }, true);
+};
+
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
@@ -37677,6 +40473,31 @@ function _unlandedWorkBranches(data) {
   const b = data && typeof data === 'object' ? data.branches : null;
   return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
 }
+// unlandedCountsHtml(counts, alertCfg) draws the compact counts block from the
+// read's counts section: one count per landing state, one per age band, the
+// oldest pending branch, and a marker when the pending count is above the
+// daily alert threshold (alertCfg from GET /api/autonomous/config).
+const UNLANDED_COUNT_STATES = ['landed', 'pending', 'live', 'unlanded'];
+const UNLANDED_COUNT_AGES = ['under_one_day', 'under_one_week', 'older'];
+window.unlandedCountsHtml = function(counts, alertCfg) {
+  if (!counts || typeof counts !== 'object') return '';
+  const num = (m, k) => Number(m && typeof m === 'object' ? m[k] : 0) || 0;
+  const chip = (key, n) => `<span class="unlanded-counts-chip" data-key="${escHtml(key)}">${escHtml(t('unlanded_counts_' + key, [n]))}</span>`;
+  const states = UNLANDED_COUNT_STATES.map(k => chip(k, num(counts.by_state, k))).join('');
+  const ages = UNLANDED_COUNT_AGES.map(k => chip(k, num(counts.by_age, k))).join('');
+  const pending = num(counts.by_state, 'pending');
+  const cfg = alertCfg && typeof alertCfg === 'object' ? alertCfg : null;
+  const threshold = cfg && Number.isFinite(Number(cfg.threshold)) ? Number(cfg.threshold) : null;
+  const over = !!cfg && cfg.enabled !== false && threshold !== null && pending > threshold;
+  const o = counts.oldest_pending;
+  const oldest = o && typeof o === 'object' && o.branch
+    ? `<div class="unlanded-counts-oldest" data-branch="${escHtml(String(o.branch))}">${escHtml(t('unlanded_counts_oldest', [String(o.title || o.branch), String(o.branch), String(o.age || '')]))}</div>` : '';
+  const marker = over ? `<div class="unlanded-counts-over">${escHtml(t('unlanded_counts_over_threshold', [pending, threshold]))}</div>` : '';
+  return `<div class="unlanded-counts">` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_state'))}</span>${states}</div>` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_age'))}</span>${ages}</div>` +
+    oldest + marker + `</div>`;
+};
 window.unlandedWorkCardHtml = function(data) {
   const list = _unlandedWorkBranches(data);
   if (!list.length) return '';
@@ -37693,7 +40514,7 @@ window.unlandedWorkCardHtml = function(data) {
       _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
       `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
   }).join('');
-  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${window.unlandedCountsHtml(data.counts, window._unlandedAlertCfg)}${rows}</div>`;
 };
 
 window.unlandedWorkAct = function(btn, act) {
@@ -37711,6 +40532,12 @@ window.unlandedWorkAct = function(btn, act) {
 };
 
 function _automationUnlandedWorkLoader() {
+  if (!window._unlandedAlertCfgFetched) {
+    window._unlandedAlertCfgFetched = true;
+    apiFetch('/api/autonomous/config').then(ac => {
+      if (ac && typeof ac === 'object') window._unlandedAlertCfg = { enabled: ac.unlanded_alert_enabled !== false, threshold: ac.unlanded_alert_threshold };
+    }).catch(() => { window._unlandedAlertCfgFetched = false; });
+  }
   return window._listLoaders.automation_unlanded_work || listLoader({
     key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
     failedText: msg => t('unlanded_work_failed', [msg]),
@@ -37728,8 +40555,8 @@ function _automationUnlandedWorkLoader() {
 // housekeepingRepairsCardHtml(data) draws GET /api/autonomous/housekeeping-repairs:
 // { grace_seconds, groups: [{group, mode, would, did, failed, skipped_unsafe}] }.
 // Each group shows its mode, what it would do (report mode) and what it did.
-const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers'];
-const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers' };
+const HOUSEKEEPING_GROUPS = ['task_chain', 'advance_judge', 'lane_fill', 'leftovers', 'planning'];
+const HOUSEKEEPING_GROUP_LABELS = { task_chain: 'housekeeping_repairs_group_task_chain', advance_judge: 'housekeeping_repairs_group_advance_judge', lane_fill: 'housekeeping_repairs_group_lane_fill', leftovers: 'housekeeping_repairs_group_leftovers', planning: 'housekeeping_repairs_group_planning' };
 const HOUSEKEEPING_MODE_LABELS = { off: 'housekeeping_repairs_mode_off', report: 'housekeeping_repairs_mode_report', on: 'housekeeping_repairs_mode_on' };
 function _housekeepingRecs(list) {
   return (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
@@ -39126,7 +41953,7 @@ const PROGRESS_METHOD_FIELDS = {
 const PC_KEYS = {
   col: {
     records: 'progress_card_col_records', done: 'progress_card_col_done', running: 'progress_card_col_running',
-    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', tasks: 'progress_card_col_tasks',
+    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', held: 'progress_card_col_held', tasks: 'progress_card_col_tasks',
     tasks_done: 'progress_card_col_tasks_done', left: 'progress_card_col_left', work_time: 'progress_card_col_work_time',
     median: 'progress_card_col_median', mean_task: 'progress_card_col_mean_task',
   },
@@ -39222,13 +42049,19 @@ function _pcHelp() {
 
 function _pcTable(data, axis) {
   const groups = (data && data.groups) || {};
-  const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
+  // The held column is shown only when at least one Automaton is on hold, the
+  // same rule the CLI text and the read view keep (a whole of zeros would add
+  // a column nobody can act on).
+  const anyHeld = [data && data.totals, groups.feature, groups.bug, groups.other].some(g => _pcIsNum(g && g.held) && g.held > 0)
+    || Object.values((data && data.grouped) || {}).some(map => Object.values(map || {}).some(g => _pcIsNum(g && g.held) && g.held > 0));
+  const cols = ['records', 'done', 'running', 'waiting', 'blocked'].concat(anyHeld ? ['held'] : []).concat(['tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task']);
   const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
   const cell = h => `<td style="text-align:right;padding:2px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;">${h}</td>`;
   const rowHtml = (label, g) => {
     g = g || {};
     return `<tr><th scope="row" style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(label)}</th>` +
       cell(_pcNum(g.prds)) + cell(_pcNum(g.done)) + cell(_pcNum(g.running)) + cell(_pcNum(g.waiting)) + cell(_pcNum(g.blocked)) +
+      (anyHeld ? cell(_pcNum(g.held)) : '') +
       cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
       cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
   };
@@ -40885,7 +43718,6 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <code>${escHtml(id)}</code>
         ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
       </div>
-      ${shippedDetailLineHtml(prd)}
       ${window.reviewTimedOutBadgeHtml ? `<div style="margin-bottom:8px;">${window.reviewTimedOutBadgeHtml(prd)}</div>` : ''}
       ${window.judgeOutcomeCardHtml ? `<div style="margin-bottom:8px;">${window.judgeOutcomeCardHtml(prd)}</div>` : ''}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
@@ -41090,7 +43922,7 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_prd', 'PRD status', [
     'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
     'prd.active', 'prd.running', 'prd.completed', 'prd.rejected', 'prd.cancelled',
-    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused']],
+    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused', 'prd.held']],
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
@@ -41635,6 +44467,47 @@ function _renderDetailCost(prd) {
 }
 
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
+// Landing state: the operator's record of what happens to an Automaton's
+// unmerged work branch — state (pending / landed / kept / dropped), commit,
+// actor, at, reason — plus the keep/drop decisions once the record is still
+// pending. The record arrives in the PRD JSON (its landing field, part of
+// every Automaton read); keep/drop POST to
+// /api/autonomous/prds/{id}/landing/keep|drop. Renders in the Overview
+// sub-tab of the Automaton detail page.
+function renderLandingState(prd) {
+  const l = prd.landing || prd.Landing;
+  const label = escHtml(t('automata_detail_landing') || 'Landing');
+  if (!l) {
+    return `<div class="prd-detail-landing" style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${label}</div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_detail_landing_none') || 'No landing record yet — the Automaton has no work branch to keep or drop.')}</div>
+    </div>`;
+  }
+  const st = l.state || '';
+  const stMap = { pending: t('automata_detail_landing_state_pending'), landed: t('automata_detail_landing_state_landed'), kept: t('automata_detail_landing_state_kept'), dropped: t('automata_detail_landing_state_dropped') };
+  const stTxt = stMap[st] || st;
+  const color = st === 'landed' ? '#10b981' : st === 'kept' ? '#3b82f6' : st === 'dropped' ? '#ef4444' : '#f59e0b';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  const rows = [];
+  if (l.commit) rows.push([t('automata_detail_landing_commit') || 'Commit', `<code style="font-size:10px;">${escHtml(l.commit)}</code>`]);
+  if (l.actor) rows.push([t('automata_detail_landing_actor') || 'Actor', escHtml(l.actor)]);
+  if (l.at) rows.push([t('automata_detail_landing_at') || 'Time', escHtml(_fmtDate(l.at))]);
+  if (l.reason) rows.push([t('automata_detail_landing_reason') || 'Reason', escHtml(l.reason)]);
+  const decisions = st === 'pending'
+    ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="prd-landing-btn prd-landing-keep" style="font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/keep','reason',${escHtml(JSON.stringify(t('automata_detail_landing_keep_prompt') || 'Reason for keeping this branch unmerged (required)'))})">${escHtml(t('automata_detail_landing_keep_btn') || 'Keep (branch not merged)')}</button>
+        <button class="prd-landing-btn prd-landing-drop" style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid #ef4444;color:#ef4444;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/drop','reason',${escHtml(JSON.stringify(t('automata_detail_landing_drop_prompt') || 'Reason the work will not be merged (required)'))})">${escHtml(t('automata_detail_landing_drop_btn') || 'Drop (work not merged)')}</button>
+      </div>`
+    : '';
+  return `<div class="prd-detail-landing" style="margin-top:10px;display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:11px;margin-bottom:2px;"><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-weight:700;font-size:10px;background:${color}22;color:${color};border:1px solid ${color}55;">${escHtml(stTxt)}</span></div>
+      ${rows.map(([k, v]) => `<div style="font-size:11px;color:var(--text2);">${escHtml(k)}: ${v}</div>`).join('')}
+    </div>
+    ${decisions}
+  </div>`;
+}
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -41674,6 +44547,7 @@ function _renderDetailOverview(prd) {
     ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${renderLandingState(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
@@ -42080,6 +44954,12 @@ window.scrollToPRD = function(id) {
 };
 
 function renderAutonomousView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Automata: NOT
+  // applied. The page's search and filter controls exist only inside the ⊞
+  // toggled filter bar (a sheet whose logic stays unchanged), so there is
+  // no always-visible page-level search/filter line to put on one
+  // non-wrapping line under the header. The tabs + action-button strip
+  // stays the page header's controls and the filter bar stays toggle-driven.
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
@@ -42336,6 +45216,17 @@ registerAutomationCardSlot('events', {
   html: `<div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
   mount: () => listLoaderAll([_automationCleanupLoader()]),
   stop: () => _automationStopLoaders(['automation_cleanup']),
+});
+// The branch reaper report renders under the cleanup card on the Automata
+// Events sub-tab (reaped + waiting entries with reasons, the backup refs, and
+// the Restore write). Like the two above, its loader polls only while the
+// Events sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationBranchReapCard',
+  order: 120,
+  html: `<div id="automationBranchReapCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => { window._branchReapEnsureRestoreHandler(); listLoaderAll([_automationBranchReapLoader()]); },
+  stop: () => _automationStopLoaders(['automation_branch_reap']),
 });
 // ── Cost report chart cards ──────────────────────────────────────────────────
 // Four bounded cards in the Automata page's cost report area: cost over time,
@@ -42870,7 +45761,11 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
-const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
+const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'automation_held_automata', 'supervisor'];
+// Held Automata are their own group: they appear on their own card with
+// their own count, never inside the triage (failed/blocked) count or the
+// Inbox needs-review badge.
+const _AUTOMATION_INBOX_BADGE_EXCLUDED = ['automation_held_automata'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
 // (everything) or one selected project. A project scope applies only while
@@ -42937,6 +45832,16 @@ function _inboxScopeData(key, data) {
   const keep = x => _inboxItemInProject(x, scope.project);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_held_automata') {
+    // A held row names its project by name or directory; _inboxItemInProject
+    // reads the same fields off the row (project_dir) and the Automaton its
+    // prd_id names, so the cut behaves like the other Inbox groups.
+    if (typeof data === 'object' && Array.isArray(data.held)) {
+      const held = data.held.filter(v => v && typeof v === 'object' && _inboxItemInProject({ prd_id: v.id, project_dir: v.project, system_tags: [] }, scope.project));
+      return Object.assign({}, data, { held, total: held.length, expired: held.filter(v => v && v.expired).length });
+    }
+    return data;
+  }
   if (key === 'automation_questions') {
     if (data.__automationQuestionsDisabled) return data;
     if (Array.isArray(data)) return data.filter(keep);
@@ -42956,6 +45861,7 @@ function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_held_automata') return (data && Array.isArray(data.held)) ? data.held.length : 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
     const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
@@ -42997,6 +45903,7 @@ function _automationInboxRescope() {
 function _automationInboxBadgeCount() {
   let n = 0;
   _AUTOMATION_INBOX_KEYS.forEach(k => {
+    if (_AUTOMATION_INBOX_BADGE_EXCLUDED.indexOf(k) >= 0) return; // held has its own card count
     if (Object.prototype.hasOwnProperty.call(_automationInboxCounts, k)) { n += _automationInboxCounts[k]; return; }
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl && ctl.state && ctl.state.hasData && !(k === 'automation_questions' && _automationQuestionsState.history)) n += _automationInboxCountOf(k, ctl.state.data);
@@ -43011,7 +45918,7 @@ function _automationBadgeLabel(n) {
 // The badge is updated in place: no redraw of the body or the bar.
 function _automationUpdateInboxBadge() {
   if (typeof document === 'undefined') return;
-  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge');
+  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge, .projects-subtabs [data-projects-subtab="inbox"] .automation-subtab-badge');
   if (!el) return;
   const n = _automationInboxBadgeCount();
   el.textContent = String(n);
@@ -43028,7 +45935,7 @@ function _automationInboxLoaderActive() {
   return _automataNormalizeTab() === 'automation';
 }
 function _automationInboxLoaders() {
-  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()];
+  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader(), _automationHeldAutomataLoader()];
 }
 // Start the Inbox polling behind another sub-tab: only the loaders that are
 // not already running are loaded.
@@ -43069,6 +45976,17 @@ const _AUTOMATION_SUBTABS = [
       </div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <!-- Held Automata: their own group card. The count on the head is the
+           group count; held never feeds the Inbox needs-review badge or the
+           triage (failed/blocked) count. -->
+      <div id="automationHeldAutomataCard" class="prd-capacity-card held-automata-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <div class="cap-title">${escHtml(t('held_automata_inbox_title'))}</div>
+          <span id="automationHeldAutomataCount" class="held-automata-count" style="display:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--text2);"></span>
+          ${heldAutomataHelpLink()}
+        </div>
+        <div id="automationHeldAutomataBody"></div>
+      </div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
@@ -43170,8 +46088,13 @@ function _automationBadgeHTML(s) {
   return `<span class="automation-subtab-badge" aria-label="${escHtml(_automationBadgeLabel(n))}" style="${n > 0 ? '' : 'display:none;'}">${n}</span>`;
 }
 
-function _automationSubtabsBarHTML() {
+function _automationSubtabsBarHTML(opts) {
   const st = _automationState;
+  if (opts && opts.projectsStyle) {
+    return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">`
+      + _AUTOMATION_SUBTABS.map(s => `<button type="button" role="tab" class="projects-subtab${st.subtab === s.id ? ' active' : ''}" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-projects-subtab="${s.id}" onclick="selectProjectsOverviewSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
+      + `</div>`;
+  }
   return `<div class="output-tabs automation-subtabs" role="tablist">`
     + _AUTOMATION_SUBTABS.map(s => `
         <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
@@ -43181,13 +46104,13 @@ function _automationSubtabsBarHTML() {
 
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
-function _automationBodyHTML() {
+function _automationBodyHTML(opts) {
   _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
     || _AUTOMATION_SUBTABS[0];
-  return _automationSubtabsBarHTML()
+  return _automationSubtabsBarHTML(opts)
     + `\n      ` + def.bodyHTML();
 }
 
@@ -43210,7 +46133,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_branch_reap', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -43229,7 +46152,7 @@ function _automationStopLoaders(keys) {
 function _tabStripReveal(stripEl) {
   try {
     if (!stripEl || typeof stripEl.querySelector !== 'function') return;
-    const btn = stripEl.querySelector('.output-tab.active');
+    const btn = stripEl.querySelector('.output-tab.active') || stripEl.querySelector('.projects-subtab.active');
     if (!btn) return;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
@@ -43255,7 +46178,7 @@ function _tabStripFade(stripEl) {
 }
 function _tabStripsRevealAll() {
   try {
-    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
   } catch (e) { /* cosmetic only */ }
 }
 window._tabStripReveal = _tabStripReveal;
@@ -43923,6 +46846,22 @@ function _automationCleanupLoader() {
   });
 }
 
+// _automationBranchReapLoader reads the branch reaper report on the Automata
+// Events sub-tab, under the safe-to-delete and cleanup cards. The read lists
+// the worktree base repository and the backup refs, so it polls slowly like
+// the safe-to-delete read; its failed state is the list loader's banner. The
+// report is a preview — the only write is the per-entry Restore button, which
+// posts the branch to POST /api/autonomous/branch-reap/restore.
+function _automationBranchReapLoader() {
+  return window._listLoaders.automation_branch_reap || listLoader({
+    key: 'automation_branch_reap', el: 'automationBranchReapCard', url: '/api/autonomous/branch-reap', pollMs: 60000,
+    timeoutMs: 45000,
+    failedText: msg => t('branch_reap_failed', [msg]),
+    active: () => !!document.getElementById('automationBranchReapCard'),
+    render: report => window.branchReapCardHtml(report),
+  });
+}
+
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
 // Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
@@ -44564,6 +47503,113 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
+// ── quick-reply → open question routing ──────────────────────────────────────
+// quickReplyRoute is the single gate every Sessions-page quick reply goes
+// through before a label's text is typed into a session (the card quick
+// commands, the session quick commands, the chat Yes/No/Stop chips, and the
+// alerts quick-reply select). It checks whether this session has an open
+// question and routes the reply there instead of typing it:
+//   - no open question for the session → the caller's type-into-session
+//     fallback runs, exactly as before;
+//   - one open question and the reply matches one of its options (text
+//     equal to an option id or label, case-insensitive, plus the small
+//     approve/reject synonym set) → the option is posted to
+//     POST /api/questions/{id}/answer with surface pwa and nothing is
+//     typed into the session;
+//   - one open question but no matching option, or more than one open
+//     question → the reply is refused with a plain message (naming the
+//     pressed label and the question's option labels, or pointing to the
+//     Questions page) and nothing is sent anywhere;
+//   - a failed answer (409 no longer open, 400 the server refusing the
+//     text) → the server's message shows as a toast and nothing is typed.
+// On success the toast names the option that was chosen and the question
+// card refreshes through window.refreshAutomationQuestions when it exists.
+// The typeIntoSession callback is the caller's previous send path; it runs
+// only in the no-question case.
+const _QUICK_REPLY_SYNONYM_GROUPS = [
+  ['yes', 'approve', 'approved'],
+  ['no', 'reject', 'rejected'],
+];
+
+// _quickReplyQuestionForSession reports whether a question record belongs
+// to the session a quick reply was pressed for. The record's session_id
+// may carry the short or the full id, so both sides compare on the raw id
+// and on the last dash segment.
+function _quickReplyQuestionForSession(q, sessionId) {
+  const qid = q && q.session_id ? String(q.session_id) : '';
+  const sid = String(sessionId || '');
+  if (!qid || !sid) return false;
+  if (qid === sid) return true;
+  const short = n => String(n).split('-').pop();
+  return qid === short(sid) || short(qid) === short(sid);
+}
+window._quickReplyQuestionForSession = _quickReplyQuestionForSession;
+
+// _quickReplyOptionFor resolves a pressed quick reply (its label and the
+// text it would type) against one question's options and returns the
+// matched option's id, or '' when it must not guess: no match, or more
+// than one option matching. A direct hit is the option's id or label
+// equal to the label or the value, case-insensitive; a synonym hit is the
+// approve/approved/yes and reject/rejected/no groups, so "Approved" and
+// "yes" both resolve to a Yes option.
+function _quickReplyOptionFor(options, label, value) {
+  const cands = [label, value]
+    .map(w => String(w == null ? '' : w).trim().toLowerCase())
+    .filter(Boolean);
+  const opts = (Array.isArray(options) ? options : []).filter(o => o && (o.id || o.label));
+  if (!cands.length || !opts.length) return '';
+  const direct = opts.filter(o => cands.includes(String(o.id).toLowerCase()) || cands.includes(String(o.label || '').toLowerCase()));
+  if (direct.length === 1) return String(direct[0].id);
+  if (direct.length > 1) return '';
+  for (const c of cands) {
+    const group = _QUICK_REPLY_SYNONYM_GROUPS.find(g => g.includes(c));
+    if (!group) continue;
+    const m = opts.filter(o => group.includes(String(o.id).toLowerCase()) || group.includes(String(o.label || '').toLowerCase()));
+    if (m.length === 1) return String(m[0].id);
+    if (m.length > 1) return '';
+  }
+  return '';
+}
+window._quickReplyOptionFor = _quickReplyOptionFor;
+
+function quickReplyRoute(sessionId, label, value, typeIntoSession) {
+  const sid = String(sessionId || '');
+  const fallback = typeof typeIntoSession === 'function' ? typeIntoSession : null;
+  const runFallback = () => { if (fallback) fallback(); };
+  if (!sid) { runFallback(); return Promise.resolve(); }
+  return apiFetch('/api/questions?state=open&limit=50')
+    .catch(() => null)
+    .then(body => {
+      const open = ((body && Array.isArray(body.questions)) ? body.questions : [])
+        .filter(q => _quickReplyQuestionForSession(q, sid));
+      if (!open.length) { runFallback(); return; }
+      if (open.length > 1) {
+        showToast(String(t('quick_reply_multiple_questions') || 'This session has more than one open question. Answer them on the Questions page (Automation view).'), 'error', 6000);
+        return;
+      }
+      const q = open[0];
+      const optionId = _quickReplyOptionFor(q.options, label, value);
+      if (!optionId) {
+        const labels = (Array.isArray(q.options) ? q.options : [])
+          .map(o => (o && (o.label || o.id)) ? String(o.label || o.id) : '')
+          .filter(Boolean).join(', ');
+        showToast(String(t('quick_reply_refused_no_option') || "Quick reply %1$s doesn't match any option of this session's open question. Options: %2$s")
+          .replace('%1$s', String(label || value || '')).replace('%2$s', labels), 'error', 6000);
+        return;
+      }
+      return _questionAnswerSubmit(q.id, '', optionId, '')
+        .then(() => {
+          const optLabel = _questionAnswerOptionLabel(q.options, optionId) || optionId;
+          showToast(String(t('quick_reply_answered') || 'Answered with option %1$s').replace('%1$s', optLabel), 'success');
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        })
+        .catch(err => {
+          showToast(_questionAnswerErrorMessage(err), 'error', 6000);
+        });
+    });
+}
+window.quickReplyRoute = quickReplyRoute;
+
 // _questionContextSafeViewerURL gives the viewer link back only when it is a
 // same-origin relative link: it starts with a single slash and carries no
 // backslash, whitespace or control characters. Anything else is '' and the
@@ -44870,6 +47916,67 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+
+// _automationHeldQuestionsLoader is the held section on GET
+// /api/autonomous/held-questions, polled at the same cadence as the
+// cards beside it. The report always carries the server's effective
+// mode (shadow when unset); when the operator-question subsystem is
+// disabled the route answers 503 and the failed line paints — the card
+// needs no disabled sentinel of its own.
+// _automationHeldAutomataLoader is the Held Automata group card on GET
+// /api/autonomous/held (the held group: expired first, every row keeping
+// reason, condition and look-again wording from the one read view). The
+// group has its own card count and is kept out of the Inbox needs-review
+// badge and of the triage failed/blocked count.
+function _automationHeldAutomataLoader() {
+  return window._listLoaders.automation_held_automata || listLoader({
+    key: 'automation_held_automata', el: 'automationHeldAutomataBody', url: '/api/autonomous/held', pollMs: 5000,
+    failedText: msg => t('held_automata_inbox_failed', [msg]),
+    active: _automationInboxLoaderActive,
+    onData: data => { _automationInboxCountSet('automation_held_automata', data); window._heldAutomataUpdateCount(); },
+    render: body => window.heldAutomataListHtml(_inboxScopeData('automation_held_automata', body)),
+  });
+}
+
+// _heldAutomataUpdateCount paints the group count on the card head when the
+// card exists; it is safe to call from onData before the tab has mounted.
+function _heldAutomataUpdateCount() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('automationHeldAutomataCount');
+  if (!el) return;
+  const ctl = window._listLoaders && window._listLoaders.automation_held_automata;
+  const n = (ctl && ctl.state && ctl.state.hasData && ctl.state.data) ? _automationInboxCountOf('automation_held_automata', ctl.state.data) : 0;
+  el.textContent = String(n);
+  el.style.display = n > 0 ? '' : 'none';
+}
+window._heldAutomataUpdateCount = _heldAutomataUpdateCount;
+
+// heldAutomataListHtml renders the Held Automata group: one row per held
+// Automaton with reason, condition, held by/at, the look-again line (or
+// the expired line) and a Release button. Empty state from the locale.
+window.heldAutomataListHtml = function(body) {
+  const held = (body && Array.isArray(body.held)) ? body.held : [];
+  if (!held.length) return `<div class="held-automata-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_automata_inbox_empty'))}</div>`;
+  const rows = held.map(function(v) {
+    if (!v || typeof v !== 'object') return '';
+    const id = String(v.id || '');
+    const title = v.title || id;
+    const cond = v.condition ? `<div style="color:var(--text2);font-size:11px;"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(v.condition)}</div>` : '';
+    const exp = v.expired ? `<div class="held-automata-expired" style="font-size:11px;color:var(--warning,#d9a);"><b>${escHtml(t('automaton_hold_expired'))}</b></div>` : '';
+    const look = v.until && !v.expired ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automaton_hold_until_label'))}: ${escHtml(v.next_look_text || new Date(v.until).toLocaleString())}</div>` : '';
+    const by = [v.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(v.held_by) : '', v.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(new Date(v.held_at).toLocaleString()) : ''].filter(Boolean).join(' · ');
+    const btn = id ? `<button type="button" class="btn-primary" style="font-size:11px;padding:2px 10px;" title="${escHtml(t('automaton_hold_tooltip_release'))}" onclick="event.stopPropagation(); if (typeof automataRelease === 'function') automataRelease('${escHtml(id)}')">${escHtml(t('automaton_hold_release'))}</button>` : '';
+    return `<div class="held-automata-row" data-held-prd="${escHtml(id)}" style="padding:8px 0;border-top:1px solid rgba(128,128,128,.2);display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;min-width:0;">
+      <div style="flex:1 1 220px;min-width:0;">
+        <div style="font-weight:600;font-size:12px;overflow-wrap:anywhere;">${escHtml(title)} <span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(id)}</span></div>
+        ${v.reason ? `<div style="font-size:12px;"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(v.reason)}</div>` : ''}
+        ${cond}${exp}${look}${by ? `<div style="font-size:11px;color:var(--text2);">${by}</div>` : ''}
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
+  return `<div class="held-automata-body" style="display:flex;flex-direction:column;min-width:0;">${rows}</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -45328,7 +48435,7 @@ function buildAutomationCardHTML(automation, ctx) {
     extraClass: 'automation-card',
     onOpen: open,
     statusClass,
-    statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    statusHtml: shippedChipHtml(a, 'automation_status_completed') || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
     badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)) + automationMilestoneBadgeHtml(a) + planProjectChipHtml(a),
     title: a.name,
     titleClass: 'automation-card-title',
@@ -46049,10 +49156,10 @@ function buildAutomationDetailHTML(automation, ctx) {
   return `<div class="automation-detail-header">
       <button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button>
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
-      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
+      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a, 'automation_status_completed') || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
       ${automationMilestoneBadgeHtml(a)}${a.id ? automationMilestoneToggleHtml(a) : ''}${a.id ? projectsFocusButtonHtml(a.id, a.name, 'automation') : ''}
-    </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
+    </div>${desc}<div class="automation-detail-project" style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t('plan_records_project_label'))}: ${planProjectValueHtml(a)}</div>${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
@@ -48474,6 +51581,15 @@ function _alertsBuildHtml(result) {
     return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
   };
 
+  // One-line toolbar rule (the Sessions toolbar pattern) — Alerts: NOT
+  // applied. The page already has a server select (the shared header
+  // dropdown) plus its always-visible search/filter controls, but those
+  // controls need more room than a phone-width non-wrapping line allows:
+  // the five labelled filter chips, the search input, the labelled sort
+  // toggle, the dismiss/mute/refresh buttons and the server select
+  // together exceed the phone viewport. Per the rule the page stays
+  // unchanged — chips, search, sort and the three icon buttons keep their
+  // layout, filter logic, ids and handlers.
   const topBar = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
       <span style="font-weight:700;font-size:14px;min-width:0;overflow-wrap:anywhere;" title="${escHtml(t('alerts_heading_tip') || 'Alerts in this tab (matches the All chip)')}">🔔 ${escHtml(t(headingKey, headingVars))}</span>
@@ -48697,9 +51813,14 @@ function switchAlertTab(tab) {
 }
 
 function alertSendCmd(sessID, command) {
-  apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
-    .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
-    .catch(e => showToast('Error: ' + e.message, 'error'));
+  // Routed through the open-question gate: with an open question for this
+  // session the reply answers it (nothing typed); with none it sends the
+  // text into the session, exactly as before.
+  quickReplyRoute(sessID, command, command, () => {
+    apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
+      .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
+      .catch(e => showToast('Error: ' + e.message, 'error'));
+  });
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
@@ -53393,7 +56514,7 @@ const DASH_CARD_HELP_ANCHORS = {
   'review-backlog': 'review-backlog-card',
   'defects-per-day': 'defects-per-day-card',
   'cost-report': 'cost-report-card',
-  'arc-view': 'arc-card',
+  'arc-view': 'plan-card',
   'timeline': 'automaton-timeline-card',
   'usage-allowance': 'weekly-allowance-card',
   'usage-pace': 'pace-line-card',
@@ -54947,6 +58068,14 @@ function _dashFetchCost() {
 }
 
 function renderDashboardView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Dashboard: NOT
+  // applied. The stat bar is already one non-wrapping flex line under the
+  // header carrying the placement filter select and the icon-sized
+  // Help/+Card/Edit buttons; there is no text search input, and the stat
+  // counters, the labelled tag filter chips and the placement select
+  // together need more room than a phone-width non-wrapping line allows,
+  // so no toolbar line is added or re-merged and the placement/tag filter
+  // logic stays unchanged.
   if (state.activeView !== 'dashboard') return;
   const viewEl = document.getElementById('view');
   if (!viewEl) return;
@@ -55161,7 +58290,7 @@ function _dashUpdateStatBar() {
       if (brTot > 0) parts.push(`<span style="color:var(--success,#10b981);font-weight:700;">$${brTot.toFixed(2)} today</span>`);
       parts.push(`<span style="color:var(--accent);">${runningCount} running</span>`);
       if (automataCount > 0) parts.push(`<span style="color:var(--text2);">${automataCount} automata</span>`);
-      if (shippedTotal > 0) parts.push(`<span style="color:var(--shipped, #34d399);font-weight:600;">${shippedTotal} ${escHtml(t('shipped_chip'))}</span>`);
+      if (shippedTotal > 0) parts.push(`<span style="color:var(--shipped, #34d399);font-weight:600;">${shippedTotal} ${escHtml(t('prd_status_completed'))}</span>`);
       elBR.innerHTML = parts.join(' · ');
       elBR.style.display = '';
     } else {
@@ -55522,6 +58651,12 @@ window._dashToggleGanttRow = function(prdId) {
 // reverses v6.7.2 — operator clarification: "I liked the observer tab,
 // monitor was supposed to move there and observer get a card at the bottom."
 function renderObserverView() {
+  // One-line toolbar rule (the Sessions toolbar pattern) — Observer: NOT
+  // applied. It is a scrolling settings page with no page-level
+  // search/filter under its header — its only search + filter controls
+  // (the Memory Browser input with its role/since selects and the
+  // Search/List/Export buttons) are section-scoped to that section and
+  // stay where they are.
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content">
@@ -56022,6 +59157,12 @@ function showFedPeerForm(entry) {
     if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
     if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!entry.tls_skip_verify;
   }
+  // Certificate pin (tls_cert_fingerprint) — same round-trip discipline as
+  // fingerprint_sync: editing pre-fills the saved pin, adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const pinEl = document.getElementById('fedPeerFormTLSCertFingerprint');
+  if (pinEl) pinEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('fedPeerForm');
 }
 window.showFedPeerForm = showFedPeerForm;
 
@@ -56046,6 +59187,7 @@ function submitFedPeerForm() {
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const tlsCertFingerprint = ((document.getElementById('fedPeerFormTLSCertFingerprint') || {}).value || '').trim();
   const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
   // Observer pull protocol. observer_pull is always sent explicitly on PUT
   // (the server merge keeps existing values for omitted keys, so an
@@ -56068,15 +59210,17 @@ function submitFedPeerForm() {
       editBody.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
     }
     if (token) editBody.token = token;
+    if (tlsCertFingerprint) editBody.tls_cert_fingerprint = tlsCertFingerprint;
     if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
     apiFetch('/api/federation/peers/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(editBody) })
-      .then(() => { hideFedPeerForm(); loadFederationPeersPanel(); })
+      .then(d => { _surfaceResponseWarnings(d); hideFedPeerForm(); loadFederationPeersPanel(); })
       .catch(err => { if (errEl) { errEl.textContent = err.message || String(err); errEl.style.display = ''; } });
     return;
   }
 
   const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
+  if (tlsCertFingerprint) body.tls_cert_fingerprint = tlsCertFingerprint;
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend
@@ -56101,8 +59245,9 @@ function submitFedPeerForm() {
       return;
     }
     if (!resp.ok) { resp.text().then(t => { if (errEl) { errEl.textContent = t; errEl.style.display = ''; } }); return; }
-    hideFedPeerForm();
-    loadFederationPeersPanel();
+    const finishPost = () => { hideFedPeerForm(); loadFederationPeersPanel(); };
+    if (resp.json) resp.json().then(d => { _surfaceResponseWarnings(d); finishPost(); }).catch(finishPost);
+    else finishPost();
   }).catch(err => {
     if (errEl) { errEl.textContent = String(err); errEl.style.display = ''; }
   });
@@ -56116,6 +59261,7 @@ function testFedPeer(name) {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
+    _surfaceResponseWarnings(d);
     const msg = d.ok ? `OK — ${d.latency_ms}ms (${d.version || 'unknown version'})` : `FAIL: ${d.error || 'no error'}`;
     showToast('federation peer test: ' + name + ' → ' + msg);
   }).catch(err => showToast('test error: ' + String(err)));
@@ -58713,7 +61859,7 @@ const _TAG_DRILL_BELOW = 720;      // drill-down under this width; sections from
 const _TAG_COLLAPSE_ABOVE = 8;     // more top-level tags than this: sections start closed
 const _TAG_CRUMB_LEVELS = 3;       // deeper paths collapse their middle crumbs
 const _TAG_AUTOMATA_STATUS_BADGES = {
-  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'blocked', 'completed'],
+  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'held', 'blocked', 'completed'],
   history: ['cancelled', 'rejected', 'archived'],
 };
 
@@ -59616,27 +62762,23 @@ function _tagFacetsHTML(scope, tagsOpen) {
     }
   }
   let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends], projects: [...sc.projects] }, tree), 'status');
-  // count_separately: shipped records pull out of their stored-status
-  // counts and group under the "shipped" badge, so shipped and cancelled
-  // stay side by side (the Go state-counts rule).
-  if (_shippedState.enabled) {
+  // count_separately: records that carry a shipped record pull out of their
+  // stored-status counts and group under the Completed badge, so finished
+  // work is never counted as Cancelled.
+  if (_shippedState.enabled && _shippedState.count_separately) {
     let shippedN = 0;
     const shippedByStatus = {};
     for (const it of gated) {
       if (!it || !shippedCarriesState(it)) continue;
       shippedN++;
-      if (_shippedState.count_separately) {
-        const s = it.status || 'draft';
-        shippedByStatus[s] = (shippedByStatus[s] || 0) + 1;
-      }
+      const s = it.status || 'draft';
+      shippedByStatus[s] = (shippedByStatus[s] || 0) + 1;
     }
-    if (_shippedState.count_separately) {
-      for (const s in shippedByStatus) {
-        statusCounts[s] = Math.max(0, (statusCounts[s] || 0) - shippedByStatus[s]);
-        if (statusCounts[s] === 0) delete statusCounts[s];
-      }
+    for (const s in shippedByStatus) {
+      statusCounts[s] = Math.max(0, (statusCounts[s] || 0) - shippedByStatus[s]);
+      if (statusCounts[s] === 0) delete statusCounts[s];
     }
-    statusCounts['shipped'] = (statusCounts['shipped'] || 0) + shippedN;
+    statusCounts['completed'] = (statusCounts['completed'] || 0) + shippedN;
   }
   const badge = (s, label, onclick, extra) => {
     const on = statusSel.includes(s);
@@ -59646,11 +62788,9 @@ function _tagFacetsHTML(scope, tagsOpen) {
   if (scope === 'automata') {
     const act = _TAG_AUTOMATA_STATUS_BADGES.active.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter')).join('');
     const hist = _TAG_AUTOMATA_STATUS_BADGES.history.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter', ' style="opacity:0.7;"')).join('');
-    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomataStatusFilter') : '';
-    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + shippedBadge + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
+    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
   } else {
-    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomationStatusFilter') : '';
-    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('') + shippedBadge;
+    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('');
   }
   return tagGroup + backendGroup + projectGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
 }

@@ -115,7 +115,7 @@ test('an arc with no activity is planned with no bar', async () => {
   const row = html.split('data-key="arc:a2"')[1].split('data-key=')[0];
   assert.match(row, /Planned/);
   assert.doesNotMatch(row, /project-gantt-bar/);
-  assert.match(html, /Automata with no arc/, 'the unassigned row is the no-arc group');
+  assert.match(html, /Automata with no plan/, 'the unassigned row is the no-plan group');
 });
 
 test('expand fetches children once; collapse hides without refetching; state is remembered', async () => {
@@ -152,7 +152,7 @@ test('expand fetches children once; collapse hides without refetching; state is 
   assert.equal(urlsWith(again.calls, 'level=tasks&automaton=m1').length, 1);
 });
 
-test('the no-arc group expands to its Automata', async () => {
+test('the no-plan group expands to its Automata', async () => {
   const { sb, calls } = load(standard);
   await sb._projectsLoadGantt();
   await sb.projectsGanttToggle('none');

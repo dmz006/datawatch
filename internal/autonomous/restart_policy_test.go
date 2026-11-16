@@ -236,7 +236,8 @@ func TestWaitLaunchDrainHoldsUntilGateOpens(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- m.waitLaunchDrain(context.Background()) }()
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err
 		t.Fatal("a task must wait while the gate is closed")
 	case <-time.After(2 * launchDrainPoll):
 	}

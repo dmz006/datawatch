@@ -240,7 +240,8 @@ func TestMergeRoute_JSONKeyNames(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	mergeWantKeys(t, "merge body", rec.Body.Bytes(), "mode", "alert_minutes", "automata", "shadow_decisions", "pipeline_runs")
+	mergeWantKeys(t, "merge body", rec.Body.Bytes(), "mode", "alert_minutes", "automata", "shadow_decisions", "pipeline_runs",
+		"shadow_decisions_total", "shadow_decisions_false")
 
 	var automata []json.RawMessage
 	if err := json.Unmarshal(status["automata"], &automata); err != nil || len(automata) != 2 {
@@ -257,7 +258,7 @@ func TestMergeRoute_JSONKeyNames(t *testing.T) {
 		t.Fatalf("shadow_decisions: %v %s", err, status["shadow_decisions"])
 	}
 	mergeWantKeys(t, "shadow decision", decisions[0],
-		"at", "automaton_id", "name", "branch", "state", "commits_ahead", "would_alert", "repeat_count", "last_seen_at")
+		"at", "automaton_id", "name", "branch", "state", "commits_ahead", "would_alert", "found_false", "repeat_count", "last_seen_at")
 
 	rec = mergeRequest(t, s, http.MethodGet, "/api/autonomous/safe-to-delete")
 	var report map[string]json.RawMessage

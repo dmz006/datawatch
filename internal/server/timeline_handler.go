@@ -90,5 +90,14 @@ func (s *Server) handleAutonomousTimeline(w http.ResponseWriter, r *http.Request
 	if p, ok := s.autonomousMgr.(timelineProvider); ok {
 		prds = p.TimelineRecords()
 	}
-	writeJSONOK(w, autonomous.BuildTimeline(s.timelineClock().UTC(), prds, timelineFilterFromQuery(r.URL.Query())))
+	filter := timelineFilterFromQuery(r.URL.Query())
+	if s.cfg != nil && len(s.cfg.Projects) > 0 {
+		filter.Projects = rollupProjectDirs(s.cfg.Projects)
+		for _, raw := range s.autonomousMgr.ListAutomations() {
+			if a, ok := raw.(*autonomous.Automation); ok {
+				filter.Automations = append(filter.Automations, a)
+			}
+		}
+	}
+	writeJSONOK(w, autonomous.BuildTimeline(s.timelineClock().UTC(), prds, filter))
 }

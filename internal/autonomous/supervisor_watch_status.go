@@ -34,13 +34,23 @@ type SupervisorWatchComparisonView struct {
 // SupervisorWatchStatus is the read-only view of the supervisor watch:
 // the mode in effect (off, shadow or on — an unset mode reads shadow),
 // the instant the coordinator last polled (the zero time when it never
-// has), the stored findings (open first, most recently seen first) and
-// the comparison view.
+// has), the stored findings (open first, most recently seen first), the
+// comparison view, the Automata counts and the Held group. A held
+// Automaton is counted and listed only in Held: the blocked and
+// waiting-for-review counts never include it, and it never raises a
+// finding.
 type SupervisorWatchStatus struct {
 	Mode       string                        `json:"mode"`
 	LastPollAt time.Time                     `json:"last_poll_at"`
 	Findings   []*SupervisorWatchFinding     `json:"findings"`
 	Comparison SupervisorWatchComparisonView `json:"comparison"`
+	// BlockedAutomata counts Automata whose status is blocked.
+	BlockedAutomata int `json:"blocked_automata"`
+	// WaitingForReviewAutomata counts Automata whose status is needs_review.
+	WaitingForReviewAutomata int `json:"waiting_for_review_automata"`
+	// Held is the group of Automata on hold by the operator, each with its
+	// reason and look-again line, expired first.
+	Held HeldGroup `json:"held"`
 }
 
 // SupervisorWatchStatus assembles the supervisor watch read view from
@@ -49,6 +59,7 @@ type SupervisorWatchStatus struct {
 // findings and an empty comparison view), as is a missing comparison
 // history.
 func (m *Manager) SupervisorWatchStatus() (s SupervisorWatchStatus) {
+	s.Held = emptyHeldGroup()
 	if m == nil {
 		return s
 	}
@@ -85,7 +96,27 @@ func (m *Manager) SupervisorWatchStatus() (s SupervisorWatchStatus) {
 		}
 		s.Comparison = view
 	}
+	s.fillAutomataCounts(m)
 	return s
+}
+
+// fillAutomataCounts sets the blocked and waiting-for-review counts and the
+// Held group from the store as of the manager's clock. A held Automaton is
+// counted in neither count.
+func (s *SupervisorWatchStatus) fillAutomataCounts(m *Manager) {
+	if m.store == nil {
+		return
+	}
+	prds := m.store.ListPRDs()
+	for _, p := range prds {
+		switch p.Status {
+		case PRDBlocked:
+			s.BlockedAutomata++
+		case PRDNeedsReview:
+			s.WaitingForReviewAutomata++
+		}
+	}
+	s.Held = BuildHeldGroup(prds, m.holdNow())
 }
 
 // SupervisorWatchStats is the numeric view of the supervisor watch for

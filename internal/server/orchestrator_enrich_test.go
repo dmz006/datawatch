@@ -50,7 +50,7 @@ func (f *fakeOrchAutonomous) RequestRevision(string, string, string) (any, error
 func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) EditTask(string, string, string, *bool, string, string) (any, error) {
+func (f *fakeOrchAutonomous) EditTask(string, string, string, *bool, string, string, string, string) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) AddTaskReadOnly(string, string, string, string, string, []string, bool, string) (any, error) {
@@ -233,6 +233,9 @@ func (f *fakeOrchAutonomous) RecordAutomationShipped(string, string, time.Time, 
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) ShippedBackfillOnce(bool) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) MigrateCompleted(bool, int, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }

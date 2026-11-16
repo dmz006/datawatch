@@ -5,8 +5,8 @@
 // with the same membership rule the project roll-up uses (see
 // project_rollup.go): an Automaton belongs to a project when one of the
 // project's arcs holds it (PRD.AutomationID, else the Automation whose members
-// include it), or, when no arc holds it, when its ProjectDir matches the
-// project's directory. Template Automata are never in scope.
+// include it), or, when no arc holds it, when the shared membership resolver (link,
+// Automation project, parent project, then directory) places it in the project. Template Automata are never in scope.
 //
 // An event is kept when any of its identifiers falls in that scope: its PRD id,
 // its parent PRD id, its Automation id, or its session id (the session ids of
@@ -18,14 +18,16 @@
 package server
 
 import (
-	"path/filepath"
-
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
 // projectEventInput is what the scope needs from the project and the daemon.
 type projectEventInput struct {
+	Project string
+	// Projects maps every configured project name to its directory; nil means
+	// only this project.
+	Projects    map[string]string
 	Dir         string
 	Arcs        []config.ProjectArc
 	PRDs        []*autonomous.PRD
@@ -73,10 +75,15 @@ func buildProjectEventScope(in projectEventInput) projectEventScope {
 		}
 	}
 
-	cleanDir := ""
-	if in.Dir != "" {
-		cleanDir = filepath.Clean(in.Dir)
+	name := in.Project
+	if name == "" {
+		name = "(this project)" // no configured name: match by directory only
 	}
+	projects := in.Projects
+	if projects == nil {
+		projects = map[string]string{name: in.Dir}
+	}
+	idx := autonomous.NewAutomatonProjectIndex(in.PRDs, in.Automations, projects)
 	for _, p := range in.PRDs {
 		if p == nil || p.IsTemplate {
 			continue
@@ -86,8 +93,8 @@ func buildProjectEventScope(in projectEventInput) projectEventScope {
 			auto = memberOf[p.ID]
 		}
 		inArc := auto != "" && arcAutomations[auto]
-		inDir := cleanDir != "" && p.ProjectDir != "" && filepath.Clean(p.ProjectDir) == cleanDir
-		if !inArc && !inDir {
+		inProject := idx.Of(p.ID).Project == name
+		if !inArc && !inProject {
 			continue
 		}
 		sc.PRDs[p.ID] = true

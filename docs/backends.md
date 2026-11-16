@@ -50,6 +50,60 @@ session:
 
 ---
 
+## How a message with attachments reaches a terminal session
+
+A message sent to a session, with or without attachments such as images, is
+delivered differently depending on how the backend takes input. For a
+**tmux-backed** session the daemon pastes the text into the terminal and then
+submits it. Claude Code folds a long, multi-line or attachment-bearing paste
+into a placeholder such as `[Pasted text #1 +12 lines]`, and an Enter that
+arrives before the terminal has taken the paste in can be swallowed, which
+used to leave the message sitting unsent in the input box. The daemon avoids
+that with this sequence:
+
+1. **Paste the text** into the terminal, then pause for the settle delay
+   (`session.schedule_settle_ms`).
+2. **Wait for the paste to show.** The daemon reads the visible terminal,
+   for a short bounded time, until the pasted placeholder or the end of the
+   pasted text appears in the input box. If it never appears the daemon stops
+   waiting and carries on, so a slow terminal never stalls a send.
+3. **Send Enter once.**
+4. **Re-check with a bounded retry.** For pasted, multi-line or longer
+   messages the daemon looks at the terminal again a moment later. If the
+   placeholder or the text is still in the input box and the assistant has
+   not started working, the Enter was swallowed and the daemon sends it again,
+   up to a small fixed number of extra times.
+5. **Never double-submit.** Once the placeholder is gone or the assistant is
+   active, the daemon sends no further Enter. An Enter that worked is exactly
+   one submit.
+
+A short single-line message with no placeholder gets one Enter and no
+re-check. If the retries run out, the send still reports success because the
+text did reach the terminal; open the session's terminal view and press Enter
+yourself. The waits and the retry cap are fixed in the daemon and are not
+settings; only `session.schedule_settle_ms` is tunable.
+
+### Which backends use this path
+
+| Backend | Uses the paste-then-Enter path? | Why |
+|---|---|---|
+| `claude-code` | Yes | Runs in a terminal session; input is typed into it. |
+| `opencode` | Yes | Runs its terminal UI in a terminal session. |
+| `pi` | Yes | Runs its interactive UI in a terminal session. |
+| `pi-prompt` | Only for a follow-up message | A one-shot `pi --print` launch takes its prompt at start; a later message sent into the session is typed into the terminal. |
+| `opencode-acp` | No | Input goes to opencode over its HTTP API, so there is no terminal paste to submit. |
+| `openwebui` | No | Input goes through the daemon's own conversation manager over HTTP. |
+| `ollama` (chat mode) | No | Input goes through the daemon's own conversation manager, not a terminal. |
+
+If an ACP, OpenWebUI or Ollama chat conversation is not active when a message
+arrives, the daemon falls back to typing into the terminal, and the message
+then follows the paste-then-Enter path above.
+
+For the full walkthrough and what to do when a message stays unsent, see
+[howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#5h-how-a-sent-message-is-submitted).
+
+---
+
 ## Messaging Backends
 
 | Backend | Name | Config key | Direction | Description |

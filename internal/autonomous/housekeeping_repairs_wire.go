@@ -31,9 +31,10 @@ type HousekeepingWiring struct {
 	Advance   AdvanceOps
 	LaneFill  LaneFillOps
 	Leftovers LeftoverReleaseOps
+	Planning  PlanningRepairOps
 }
 
-// NewHousekeepingRepairer builds the Repairer with the repairs of all four
+// NewHousekeepingRepairer builds the Repairer with the repairs of all five
 // groups from the wiring.
 func NewHousekeepingRepairer(w HousekeepingWiring) *Repairer {
 	var repairs []Repair
@@ -53,6 +54,11 @@ func NewHousekeepingRepairer(w HousekeepingWiring) *Repairer {
 	if w.Leftovers != nil {
 		repairs = append(repairs, NewLeftoverReleaseRepairs(w.Leftovers)...)
 	}
+	planning := w.Planning
+	if planning == nil && w.API != nil {
+		planning = ManagerPlanningOps{API: w.API}
+	}
+	repairs = append(repairs, NewPlanningRepairs(planning)...)
 	for _, r := range NewSupervisorStepRepairs(w.Steps) {
 		switch r.Group() {
 		case RepairGroupLaneFill:

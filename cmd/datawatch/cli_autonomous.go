@@ -78,6 +78,13 @@ Subcommands:
                                   (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  branch-reap [--json]            The branch reap report: the task sub-branches that would be reaped, the
+                                  ones held, and every backup ref under refs/datawatch/reap-backup/
+                                  (report only, nothing is backed up, deleted or restored)
+  branch-reap-run [--json]        Perform one branch reap pass: each listed branch is backed up first,
+                                  then deleted; held branches are listed (a reaper needs the merge base repo)
+  branch-reap-restore <branch> [--json]
+                                  Recreate one reaped branch from its newest backup ref
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
@@ -180,6 +187,8 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug, other or maintenance
+  prd-set-project <id> <project|"">  Link an Automaton to a configured project (empty clears)
+  project-link-backfill [--apply] Report (or with --apply write) project links for unlinked Automata
   shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
@@ -246,6 +255,8 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousLandingKeepCmd(),
+		newAutonomousLandingDropCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
@@ -290,10 +301,17 @@ Subcommands:
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
+		newAutonomousPRDSetProjectCmd(),
+		newAutonomousProjectLinkBackfillCmd(),
 		newAutonomousPRDSetReleaseSizeCmd(),
 		newAutonomousPRDSetBreakingChangeCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
+		newAutonomousCompletedMigrateCmd(),
+		newAutonomousPRDHoldCmd(),
+		newAutonomousPRDReleaseHoldCmd(),
+		newAutonomousHeldCmd(),
+		newAutonomousHeldMigrateCmd(),
 		newAutonomousDefectCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
@@ -350,6 +368,9 @@ Subcommands:
 		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousBranchReapCmd(),
+		newAutonomousBranchReapRunCmd(),
+		newAutonomousBranchReapRestoreCmd(),
 		newAutonomousCleanupCmd(),
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
@@ -786,6 +807,12 @@ Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
 
+Daily unlanded-work alert, by JSON key (also settable with
+datawatch config set autonomous.<key> <value>):
+
+  unlanded_alert_enabled          true|false: raise an alert when Automaton branches waiting to land pass the threshold (default true)
+  unlanded_alert_threshold        whole number >= 0 of waiting branches that triggers the alert (default 3)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:
@@ -876,7 +903,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
 					return err
 				}
-				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				fmt.Fprintf(os.Stderr, "autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
 				if len(body) == 0 {
 					return nil
 				}
@@ -928,20 +955,34 @@ func newAutonomousPRDListCmd() *cobra.Command {
 
 By default this prints the full list. With --status or --shipped it
 switches to the summary list and narrows: --status takes comma-separated
-statuses and may include "shipped" (the shipped-state bucket, selected by
-the record's merge commit — not the stored status); --shipped true keeps
+statuses, matched against the displayed status (an Automaton whose work
+landed shows as "completed"); "shipped" is still accepted and selects
+records that carry a shipped record; --shipped true keeps
 only PRDs that carry shipped state, --shipped false only ones that do
 not; with neither set the server's autonomous.shipped.filter_default
 view applies (all / shipped / unshipped).`,
-		RunE: func(*cobra.Command, []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			q, err := prdListQuery(status, shipped)
 			if err != nil {
 				return err
 			}
-			if len(q) == 0 {
-				return daemonGet("/api/autonomous/prds")
+			path := "/api/autonomous/prds"
+			if len(q) > 0 {
+				path += "?" + q.Encode()
 			}
-			return daemonGet("/api/autonomous/prds?" + q.Encode())
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if len(body) > 0 {
+				prettyPrintTo(c.OutOrStdout(), body)
+			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			note := c.ErrOrStderr()
+			for _, line := range autonomous.PlanningFailureListLines(body) {
+				_, _ = fmt.Fprintln(note, "planning failed: "+line)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
@@ -1030,7 +1071,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 				}
 				body["skills"] = skills
 			}
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds", body)
+			return daemonJSONWithSpecCheck(http.MethodPost, "/api/autonomous/prds", body)
 		},
 	}
 	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory; omit to let the daemon apply its default (worktree mode) instead of assuming the current directory")
@@ -1060,18 +1101,25 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := c.OutOrStdout()
 			if len(body) > 0 {
-				prettyPrint(body)
+				prettyPrintTo(c.OutOrStdout(), body)
 			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			out := c.ErrOrStderr()
 			for _, block := range rulesReviewOutcomeBlocks(body) {
-				fmt.Print(block)
+				_, _ = fmt.Fprint(out, block)
+			}
+			for _, line := range autonomous.PlanningFailureLines(body) {
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
+			if line := autonomous.LandingLineFromPRD(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
 			if line := prdReviewLine(body); line != "" {
-				fmt.Println(line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdParallelLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
@@ -1265,6 +1313,64 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 	return cmd
 }
 
+// newAutonomousLandingKeepCmd — landing state: record that the Automaton's
+// work branch is kept unmerged on purpose (its landing record moves from
+// pending to kept, with who decided and why). The landing record (state,
+// commit, actor, at, reason) already rides on `autonomous prd-get`; these
+// two commands are the operator decisions on a pending record.
+func newAutonomousLandingKeepCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-keep <id>",
+		Short: "Record that an Automaton's branch is kept unmerged on purpose",
+		Long: "Record that the Automaton's work branch is kept unmerged on purpose: its landing record moves from " +
+			"pending to kept, named with who decided and the reason. The landing record (state, commit, actor, at, reason) " +
+			"is part of the Automaton's read (autonomous prd-get prints it as the landing line); this command changes it. " +
+			"A reason is required. A branch that has already landed cannot be kept, and a record that is already " +
+			"kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/keep", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work is not being merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
+	return cmd
+}
+
+// newAutonomousLandingDropCmd — landing state: record that the Automaton's
+// work branch is dropped and its work will not be merged (pending to
+// dropped, with who decided and why).
+func newAutonomousLandingDropCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-drop <id>",
+		Short: "Record that an Automaton's branch is dropped and its work will not be merged",
+		Long: "Record that the Automaton's work branch is dropped and its work will not be merged: its landing record " +
+			"moves from pending to dropped, named with who decided and the reason. The landing record (state, commit, " +
+			"actor, at, reason) is part of the Automaton's read (autonomous prd-get prints it as the landing line); this " +
+			"command changes it. A reason is required. A branch that has already landed cannot be kept or dropped, and a " +
+			"record that is already kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/drop", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work will not be merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
+	return cmd
+}
+
 // newAutonomousPRDCoverageCmd — show the Automaton's stored plan-coverage
 // record (the plan-coverage gate record: the mode/min_ratio it was pinned
 // to when the report was computed, the coverage report, any structural
@@ -1388,7 +1494,7 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
+			return daemonJSONWithSpecCheck(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "what's wrong with the current plan")
@@ -1396,14 +1502,14 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 }
 
 func newAutonomousPRDEditTaskCmd() *cobra.Command {
-	var taskID, newSpec, reportPath string
+	var taskID, newSpec, reportPath, verificationScript, verificationScriptReason string
 	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>]",
-		Short: "Rewrite a task's spec, read-only mark or report path before approving",
+		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>] [--verification-script <path>] [--verification-script-reason <text>]",
+		Short: "Rewrite a task's spec, read-only mark, report path, verification script or script exemption reason before approving",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath)
+			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason)
 			if err != nil {
 				return err
 			}
@@ -1414,6 +1520,8 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
 	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path a read-only task may write (under .datawatch/reports/); requires the task to be read-only")
+	cmd.Flags().StringVar(&verificationScript, "verification-script", "", "the task's verification script: one repo-relative script file (for example scripts/verify.sh), not a command string; also added to the task's generated files")
+	cmd.Flags().StringVar(&verificationScriptReason, "verification-script-reason", "", "why the task carries no verification script (the exemption the plan check accepts in place of a script); may be given with or without --verification-script")
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
@@ -1421,11 +1529,12 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 // prdEditTaskCLIBody builds the edit_task request body. The read_only key is
 // sent only when the --read-only flag was given, so an unset flag leaves the
 // task's mark unchanged; the report_path key is sent only when --report-path
-// was given non-empty (an empty path is the same as none).
-func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath string) ([]byte, error) {
+// was given non-empty (an empty path is the same as none); the
+// verification_script and verification_script_reason keys follow the same rule.
+func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath, verificationScript, verificationScriptReason string) ([]byte, error) {
 	roSet := cmd.Flags().Changed("read-only")
-	if newSpec == "" && !roSet && reportPath == "" {
-		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only and/or --report-path")
+	if newSpec == "" && !roSet && reportPath == "" && verificationScript == "" && verificationScriptReason == "" {
+		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only, --report-path, --verification-script and/or --verification-script-reason")
 	}
 	if newSpec != "" {
 		// Text copied out of a capped view carries the truncation
@@ -1445,6 +1554,12 @@ func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly boo
 	}
 	if reportPath != "" {
 		body["report_path"] = reportPath
+	}
+	if verificationScript != "" {
+		body["verification_script"] = verificationScript
+	}
+	if verificationScriptReason != "" {
+		body["verification_script_reason"] = verificationScriptReason
 	}
 	return json.Marshal(body)
 }
@@ -2048,7 +2163,7 @@ and inherit from its guardrail profile or the global default set.
 
 Valid kinds:
   prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
-  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.draft prd.failed prd.held prd.needs_review prd.paused prd.planning prd.rejected
   prd.revisions_asked prd.running
   task.awaiting_approval task.blocked task.cancelled task.completed task.failed
   task.in_progress task.pending task.queued task.review_needed task.running_tests

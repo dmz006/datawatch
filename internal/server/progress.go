@@ -203,6 +203,9 @@ func (s *Server) computeProgress(opts autonomous.ProgressOptions) autonomous.Pro
 		src = p.ProgressSource()
 	}
 	backlogPath := s.progressBacklogPath()
+	if s.cfg != nil && len(s.cfg.Projects) > 0 && opts.Projects == nil {
+		opts.Projects = rollupProjectDirs(s.cfg.Projects)
+	}
 	return autonomous.CollectProgress(src, loadProgressBacklog(backlogPath), loadProgressWindows(backlogPath), opts)
 }
 

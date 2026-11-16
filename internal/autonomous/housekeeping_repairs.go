@@ -1,8 +1,8 @@
 // Housekeeping repairs: the daemon repairs, or at least cleanly resolves, the
 // basic stuck states that otherwise only the supervisor watch reports.
 //
-// A Repairer owns four groups (task_chain, advance_judge, lane_fill,
-// leftovers). Each group has a mode: off (nothing happens), report (the
+// A Repairer owns five groups (task_chain, advance_judge, lane_fill,
+// leftovers, planning). Each group has a mode: off (nothing happens), report (the
 // default: record what the group would do and act on nothing) or on (repair).
 //
 // Hard limits, enforced by what a Repair may do rather than by a check: a
@@ -17,6 +17,7 @@ package autonomous
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,7 @@ const (
 	RepairGroupAdvanceJudge = "advance_judge"
 	RepairGroupLaneFill     = "lane_fill"
 	RepairGroupLeftovers    = "leftovers"
+	RepairGroupPlanning     = "planning"
 )
 
 // Record kinds.
@@ -101,7 +103,7 @@ type RepairerHooks struct {
 	StorePath string
 }
 
-// Repairer runs the four groups.
+// Repairer runs the five groups.
 type Repairer struct {
 	hooks   RepairerHooks
 	repairs []Repair
@@ -334,6 +336,9 @@ func (r advanceJudgeRepair) Detect(_ context.Context) []RepairFinding {
 	prds := st.ListPRDs()
 	st.WithLock(func() {
 		for _, prd := range prds {
+			if prd.Status == PRDHeld {
+				continue // no repair for a held Automaton or its tasks
+			}
 			for i := range prd.Story {
 				for j := range prd.Story[i].Tasks {
 					t := &prd.Story[i].Tasks[j]
@@ -401,3 +406,4 @@ func (leftoversRepair) UndoHint(RepairFinding) string {
 }
 
 // ErrRepairNotConfigured is returned by a Repair with nothing wired.
+var ErrRepairNotConfigured = errors.New("housekeeping repair: nothing is wired for it")

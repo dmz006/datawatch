@@ -1,7 +1,7 @@
 // Housekeeping repairs read route: GET /api/autonomous/housekeeping-repairs.
 //
 // The body shows, per repair group (task_chain, advance_judge, lane_fill,
-// leftovers), the mode in effect (off, report or on), what a report-mode pass
+// leftovers, planning), the mode in effect (off, report or on), what a report-mode pass
 // would do (`would`), what an on-mode pass did (`did`), and the cases that
 // failed or were skipped as unsafe. Read-only: the route runs no repair,
 // raises no alert and cannot change a mode; a group's mode changes only

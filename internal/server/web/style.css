@@ -706,6 +706,9 @@ body {
 .prd-card-status-approved      { border-left-color: var(--accent); }
 .prd-card-status-running       { border-left-color: var(--success); }
 .prd-card-status-paused        { border-left-color: var(--warning); }
+/* Held is a deliberate pause by decision, not a block: neutral colour,
+   distinct from running (green), paused (amber) and blocked (red). */
+.prd-card-status-held          { border-left-color: var(--text2); }
 .prd-card-status-completed     { border-left-color: var(--text2); }
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
@@ -1040,7 +1043,7 @@ body {
 .work-tile.prd-card-status-paused .work-tile-dot,
 .work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
 .work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
-
+.work-tile.prd-card-status-held .work-tile-dot { background: var(--text2); }
 /* compact: one column of two-line rows (420px to 719px). Line one is the title,
    the status chip and the count; line two is the backend, the tag count and the
    last activity. Actions move into the overflow menu. */
@@ -3342,6 +3345,11 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .state-badge-running { animation: none; opacity: 1; }
 }
 
+/* The hold record slot (detail view + card): a left neutral border marks
+   the deliberate pause; the look-again/expired line is the action cue. */
+.automaton-hold-record { border-left: 3px solid var(--text2); }
+.automaton-hold-record .automaton-hold-lookagain { font-weight: 600; color: var(--text); }
+
 /* GH#186 — animated-eye content-loading state, parity with the apps'
    DatawatchLoadingContent / CardSkeleton (operator 2026-10-06). The
    canvas's own animation already self-disables under
@@ -3466,6 +3474,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+/* Held: a neutral status pill — no pulse animation (deliberate pause,
+   not a running state). */
+.state-badge-held { background: rgba(140,140,160,0.15); color: var(--text2); }
 .state-badge-stalled { background: rgba(239,68,68,0.1); color: var(--error); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
@@ -5951,6 +5962,23 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   background: var(--accent2);
   color: #fff;
 }
+/* ── Shared multi-select state chip set (createStateChipSet, app.js) ──
+   Same row geometry as the Sessions status-filter chips (gap 4px, chip
+   family .backend-filter-badge): flex-wrap is the phone guarantee — the row
+   wraps onto more lines at narrow widths instead of overflowing, and a
+   single overlong label is bounded to the container instead of stretching the
+   page. The chips themselves stay single-line (white-space: nowrap above). */
+.state-chip-set { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 4px; width: 100%; box-sizing: border-box; }
+.state-chip-set .backend-filter-badge { max-width: 100%; }
+.state-chip-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 4px 4px; font-size: 11px; color: var(--text2); width: 100%; box-sizing: border-box; }
+.state-chip-summary .state-chip-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.state-chip-clear-all { background: transparent; border: 0; color: var(--accent2, var(--text2)); font-size: 11px; cursor: pointer; padding: 2px 4px; white-space: nowrap; }
+.state-chip-clear-all:hover { color: var(--accent2); }
+@media (max-width: 599px) {
+  .state-chip-set { padding: 2px 0; gap: 3px; }
+  .state-chip-set .backend-filter-badge { max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+  .state-chip-summary { padding: 0 0 4px; }
+}
 .session-filter-wrap {
   flex: 1;
   position: relative;
@@ -6558,6 +6586,16 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @media (max-width:600px) {
   .dboard-card-grid { grid-template-columns:repeat(2,1fr); grid-auto-rows:160px; gap:6px; padding:6px; }
   .dboard-card[data-cs] { grid-column:span 2; }
+  /* Phone: the Dashboard scrolls as one page inside .view (which keeps its
+     FAB-clearance padding-bottom) instead of a short nested scroll box.
+     The wrapper grows with its content and the grid no longer clips or
+     scrolls on its own, so every built card is reachable. */
+  .dboard-cards { height:auto; min-height:100%; overflow:visible; }
+  .dboard-card-grid { flex:none; overflow:visible; }
+  /* Stat bar wraps on a phone so the + Card and Edit buttons never fall off-screen. */
+  .dboard-stat-bar { flex-wrap:wrap; row-gap:4px; min-width:0; }
+  .dboard-stat-bar #dashAddCardBtn,
+  .dboard-stat-bar #dashEditBtn { flex-shrink:0; }
 }
 @media (max-width:480px) {
   .dboard-card-grid { grid-template-columns:1fr; grid-auto-rows:160px; gap:6px; padding:6px; }
@@ -7583,12 +7621,87 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .metric-trend-flat { color: var(--text2); }
 
 /* Projects page sub-tab strip: scrolls sideways on a phone, never the page. */
-.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; }
+.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+/* Projects page containment: nothing on the page may be wider than the viewport.
+   The page, toolbar, selector and every card shrink (min-width: 0), long text
+   wraps, and pre / table content scrolls inside its own box. */
+.projects-view, .project-detail-card, .project-section-card, .project-section-body, .project-cards, .project-card, .project-card-card, .project-card-tile, .project-automaton, .project-arc, .project-overview-summary { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-view { overflow-wrap: anywhere; }
+.projects-toolbar { flex-wrap: wrap; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-picker { min-width: 0; box-sizing: border-box; }
+.projects-show-empty { white-space: nowrap; min-width: 0; max-width: 100%; }
+.project-detail-card #projectsSubtabBody { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.project-event-line, .project-card-detail, .project-overview-dir { overflow-wrap: anywhere; min-width: 0; }
+.project-detail-card pre, .projects-view pre { max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+.project-detail-card table, .projects-view table { display: block; max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+#projectsManageForm, #projectsManageForm > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .projects-subtabs button { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 12px; font-size: 13px; cursor: pointer; }
 .projects-subtabs button.active, .projects-subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
+/* Projects Overview summary */
+.project-overview-summary { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.project-overview-dir { color: var(--text2); font-size: 12px; overflow-wrap: anywhere; }
+.project-overview-heading { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.project-overview-track { flex: 1; min-width: 60px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.project-overview-fill { height: 100%; background: var(--accent, #3b82f6); }
+.project-overview-barlabel, .project-overview-points, .project-overview-plan-state, .project-overview-next-plan, .project-overview-empty { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.project-overview-empty { white-space: normal; }
+.project-overview-plan { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.project-overview-plan-title { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.project-overview-plan-bar { flex: 1 1 160px; min-width: 140px; }
+.project-overview-counts > div { font-size: 13px; margin: 2px 0; }
+.project-overview-link { color: var(--accent, #3b82f6); }
 
+
+
+/* Unlanded work counts block (Housekeeping card) */
+.unlanded-counts { padding: 4px 0 6px; font-size: 12px; min-width: 0; }
+.unlanded-counts-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 2px 0; }
+.unlanded-counts-label { color: var(--text2, #888); }
+.unlanded-counts-chip { padding: 1px 6px; border-radius: 8px; background: rgba(128,128,128,.15); white-space: nowrap; }
+.unlanded-counts-oldest { margin-top: 2px; overflow-wrap: anywhere; }
+.unlanded-counts-over { margin-top: 2px; color: var(--error, #e5534b); font-weight: 600; }
 
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
+/* ── Projects cards: shared Cards / Tiles / Compact renderer (app.js) ─────
+   The three-mode switch reuses the Sessions .sessions-mode-toggle /
+   .sessions-mode-btn rules; only the card bodies are new. */
+.project-cards { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.project-cards-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.project-cards-compact { gap: 0; }
+.project-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel, #111114); }
+.project-card-title { font-size: 14px; font-weight: 600; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-title:hover { color: var(--accent2); text-decoration: underline; }
+.project-card-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.project-card-badge { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; line-height: 1.5; background: var(--border); color: var(--text2); white-space: nowrap; }
+.project-card-badge-info { background: rgba(59,130,246,.15); color: #2563eb; }
+.project-card-badge-ok { background: rgba(34,197,94,.15); color: #16a34a; }
+.project-card-badge-warn { background: rgba(245,158,11,.18); color: #b45309; }
+.project-card-badge-error { background: rgba(239,68,68,.15); color: #dc2626; }
+.project-card-badge-neutral { background: var(--border); color: var(--text2); }
+.project-card-badge-cancelled { background: rgba(148,163,184,.25); color: var(--text2); text-decoration: line-through; }
+.project-card-age { margin-left: auto; color: var(--text2); font-size: 11px; white-space: nowrap; }
+.project-card-details { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.project-card-detail { font-size: 12px; color: var(--text2); word-break: break-all; min-width: 0; }
+.project-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.project-card-action { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.project-card-action:hover { border-color: var(--accent2); color: var(--accent2); }
+.project-card-card .project-card-card-actions { margin-top: 8px; }
+.project-card-tile .project-card-tile-line { display: flex; align-items: baseline; gap: 6px; }
+.project-card-tile .project-card-tile-age { margin-top: 4px; }
+.project-card-tile .project-card-tile-details { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.project-card-tile .project-card-detail-inline { font-size: 11px; color: var(--text2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-tile .project-card-detail-more { font-size: 11px; color: var(--text2); }
+.project-card-tile .project-card-tile-actions { margin-top: 6px; }
+.project-card-tile .project-card-action { padding: 1px 7px; font-size: 11px; }
+.project-cards-compact .project-card { display: flex; align-items: center; gap: 8px; border-left: none; border-right: none; border-radius: 0; padding: 4px 10px; }
+.project-cards-compact .project-card-title { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+/* Phone width: declared after the base .project-cards-tiles / .project-card-title
+   rules above so these overrides win the cascade (same specificity, later wins). */
+@media (max-width: 600px) {
+  .projects-show-empty { white-space: normal; flex: 1 1 100%; }
+  .project-cards-tiles { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
+  .project-card-title { max-width: 100%; }
+}
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
 .obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }
@@ -7799,12 +7912,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 /* ── Sessions view modes: list / tiles / compact ─────────────────────────
    The tile + compact variants are the shared .work-tile-grid (drawn by the
    same renderWorkTile as the Automata/Automation cards); these rules only
-   wrap the mode toggle, the per-state summary bar and the Show-more page
-   control that the sessions view adds around the grid. */
-.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
-.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
-.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
-.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+   wrap the per-state summary bar and the Show-more page control that the
+   sessions view adds around the grid. (The view-mode control itself is the
+   native select in the one-line toolbar — .sessions-view-select below.) */
 .sessions-show-more { text-align: center; padding: 10px 0 14px; }
 .session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
 .session-tile-grid .work-tile { padding: var(--session-tile-pad); }
@@ -7824,7 +7934,7 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .session-tile-grid-compact .work-tile-tags > * { padding-top: 0; padding-bottom: 0; line-height: 1.3; }
 .session-tile-grid-compact .work-tile-progress { height: 3px; }
 @media (prefers-reduced-motion: reduce) {
-  .sessions-mode-btn { transition: none; }
+  .sessions-fold-all { transition: none; }
 }
 
 /* ── Sessions: group axes, Automaton → story nesting, saved views ──── */
@@ -8024,27 +8134,32 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @keyframes sessionsSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .sessions-sheet { animation: none !important; } }
 
-/* ── Sessions top row: search box, filters slot, mode buttons ── */
-.sessions-topbar { display: block; }
-.sessions-search-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px; }
+/* ── Sessions one-line toolbar: one row, never wraps at any width ──────
+   [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode]
+   — display:flex without flex-wrap at every width; the search row is the
+   only flexible member (flex:1, min-width:0) so it absorbs the slack while
+   the four fixed controls keep a usable size (bounded max-widths +
+   shrinking select text). The search + active-filter count stay on their
+   own row below the toolbar. */
+.sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.sessions-topbar .sessions-server-select { flex: 0 0 auto; min-width: 84px; max-width: 40%; font-size: 12px; }
+.sessions-topbar .sessions-search-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
-.sessions-search-row .session-filter-input { padding: 6px 28px 6px 10px; font-size: 13px; }
+.sessions-topbar .sessions-search-row .session-filter-input { padding: 5px 26px 5px 8px; font-size: 12px; }
+.sessions-topbar .sessions-fold-all { flex: 0 0 auto; font-size: 14px; line-height: 1; padding: 2px 7px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); cursor: pointer; }
+.sessions-topbar .sessions-fold-all:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-topbar .sessions-fold-all[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-topbar .sessions-view-select { flex: 0 0 auto; max-width: 34%; font-size: 12px; }
 .session-filter-clear[hidden] { display: none; }
 .sessions-filters-slot:empty { display: none; }
-.sessions-search-count { padding: 2px 14px 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.sessions-search-count { padding: 4px 12px 6px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
-  .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-  .sessions-search-row { flex: 1 1 auto; min-width: 0; padding: 0; }
-  .sessions-search-row .session-filter-input { padding: 4px 24px 4px 8px; font-size: 12px; }
-  .sessions-topbar .sessions-mode-toggle { flex: 0 0 auto; padding: 0; border-bottom: 0; gap: 2px; }
-  .sessions-topbar .sessions-mode-btn { font-size: 0; padding: 3px 7px; }
-  .sessions-topbar .sessions-mode-btn::before { content: attr(data-icon); font-size: 14px; line-height: 1; }
+  .sessions-topbar { gap: 4px; padding: 4px 8px; }
+  .sessions-topbar .sessions-server-select { min-width: 64px; max-width: 34%; }
+  .sessions-topbar .sessions-view-select { max-width: 30%; }
 }
 
-/* ── Sessions: fold-all control and phone tag collapse ── */
-.sessions-fold-row { display: flex; justify-content: flex-end; padding: 2px 12px; }
-.sessions-fold-all { font-size: 12px; padding: 3px 10px; }
 .sessions-group-header, .automaton-header, .story-header { min-height: 40px; box-sizing: border-box; }
 .session-card-tags { display: contents; }
 .session-tags-more-chip { font-size: 10px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); cursor: pointer; font-weight: 600; }

@@ -37,6 +37,17 @@ func (s *Server) SetFedGroupStore(gs *federation.GroupStore) {
 // a struct embedding is not ideal; we keep it here and add it as a field
 // in api.go directly.
 
+// serverEntryResponse is the create/update response body for server
+// entries: name + ok, plus the `warnings` array when the peer's
+// certificate is not verified (tls_skip_verify set, no pin).
+func serverEntryResponse(e *multiserver.Entry) map[string]any {
+	res := map[string]any{"name": e.Name, "ok": true}
+	if warn := peerTLSWarning(e); warn != "" {
+		res["warnings"] = []string{warn}
+	}
+	return res
+}
+
 // handleBL312Servers handles /api/servers (collection) and
 // /api/servers/{name} and /api/servers/{name}/test.
 func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +88,8 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		writeJSONOK(w, map[string]any{"name": e.Name, "ok": true})
+		s.tlsPeerWarn.Notify(&e)
+		writeJSONOK(w, serverEntryResponse(&e))
 
 	case strings.HasSuffix(rest, "/test") && r.Method == http.MethodPost:
 		name := strings.TrimSuffix(rest, "/test")
@@ -94,11 +106,17 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		writeJSONOK(w, map[string]any{
+		res := map[string]any{
 			"ok":         true,
 			"latency_ms": latency,
 			"version":    version,
-		})
+		}
+		if entry, ok := s.serverStore.Get(name); ok {
+			if warn := peerTLSWarning(entry); warn != "" {
+				res["warnings"] = []string{warn}
+			}
+		}
+		writeJSONOK(w, res)
 
 	case rest != "" && r.Method == http.MethodGet:
 		e, ok := s.serverStore.Get(rest)
@@ -114,6 +132,13 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		// Surface pin errors as 400, not a store-level 500: a malformed
+		// tls_cert_fingerprint or a pin+tls_skip_verify mix is the caller's
+		// input error.
+		if _, verr := multiserver.ValidatePeerTLS(updated.TLSSkipVerify, updated.TLSCertFingerprint); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 		if err := s.serverStore.Update(rest, &updated); err != nil {
 			code := http.StatusInternalServerError
 			switch err {
@@ -125,7 +150,15 @@ func (s *Server) handleBL312Servers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), code)
 			return
 		}
-		writeJSONOK(w, map[string]any{"name": rest, "ok": true})
+		// Respond from the stored entry: it carries the canonical name
+		// (path-derived) the warning/dedupe is keyed on.
+		if cur, ok := s.serverStore.Get(rest); ok {
+			s.tlsPeerWarn.Notify(cur)
+			writeJSONOK(w, serverEntryResponse(cur))
+			return
+		}
+		s.tlsPeerWarn.Notify(&updated)
+		writeJSONOK(w, serverEntryResponse(&updated))
 
 	case rest != "" && r.Method == http.MethodDelete:
 		if err := s.serverStore.Delete(rest); err != nil {

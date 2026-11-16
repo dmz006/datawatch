@@ -122,6 +122,10 @@ type Automation struct {
 	// value, and the JSON clone keeps it.
 	Milestone bool `json:"milestone,omitempty"`
 
+	// Project is the explicit project link: the name of a configured project.
+	// Member Automata without their own link inherit it. Empty on older records.
+	Project string `json:"project,omitempty"`
+
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
 	CreatedAt  time.Time  `json:"created_at"`

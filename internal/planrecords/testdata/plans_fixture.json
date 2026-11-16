@@ -1,0 +1,70 @@
+{
+  "project": "datawatch",
+  "automata": [
+    {"id": "aaaa0001", "title": "Registry import", "state": "completed", "completed_at": "2026-11-01T09:00:00Z"},
+    {"id": "aaaa0002", "title": "Link controls", "state": "completed", "completed_at": "2026-11-03T09:00:00Z"},
+    {"id": "aaaa0003", "title": "Archived piece with no finish time", "state": "archived"},
+    {"id": "aaaa0004", "title": "Plans browser", "state": "running"},
+    {"id": "aaaa0005", "title": "Overview summary", "state": "planning"},
+    {"id": "aaaa0006", "title": "Records tab", "state": "approved"},
+    {"id": "aaaa0007", "title": "Search box", "state": "draft"},
+    {"id": "aaaa0008", "title": "Waiting on a reviewer", "state": "blocked"},
+    {"id": "aaaa0009", "title": "Failed first attempt", "state": "failed"},
+    {"id": "aaaa000a", "title": "Paused for now", "state": "paused"},
+    {"id": "aaaa000b", "title": "Cancelled idea", "state": "cancelled"},
+    {"id": "aaaa000c", "title": "Rejected spec", "state": "rejected"},
+    {"id": "aaaa0101", "title": "Second plan finished work", "state": "completed", "completed_at": "2026-11-05T09:00:00Z"},
+    {"id": "aaaa0102", "title": "Second plan live work", "state": "running"}
+  ],
+  "automations": [
+    {"id": "bbbb0001", "title": "Plans chain", "state": "active"},
+    {"id": "bbbb0002", "title": "Search chain", "state": "draft"}
+  ],
+  "plans": [
+    {
+      "key": "engine", "title": "Plans engine", "goal": "Order and link everything we are working on", "order": 2,
+      "automations": ["bbbb0001"],
+      "automata": ["aaaa000a", "aaaa0007", "aaaa0004", "aaaa0002", "aaaa0008", "aaaa0006",
+                   "aaaa0001", "aaaa0003", "aaaa0009", "aaaa0005", "aaaa000c", "aaaa000b"]
+    },
+    {
+      "key": "browser", "title": "Plans browser", "goal": "Show the ordered plans", "order": 1,
+      "automations": ["bbbb0002"],
+      "automata": ["aaaa0101", "aaaa0102"]
+    },
+    {"key": "later", "title": "Later idea", "goal": "Not started yet", "order": 3, "automata": []},
+    {"key": "later2", "title": "Another later idea", "order": 4, "automata": []}
+  ],
+  "run_order": {
+    "engine": ["aaaa0001", "aaaa0002", "aaaa0003", "aaaa0004", "aaaa0005", "aaaa0007", "aaaa0006",
+               "aaaa0008", "aaaa0009", "aaaa000a", "aaaa000c", "aaaa000b"],
+    "browser": ["aaaa0101", "aaaa0102"]
+  },
+  "next": {"engine": "aaaa0007", "browser": ""},
+  "arcs": [
+    {"project": "datawatch", "automation_id": "cccc3333", "priority": 2, "state": "active", "title": "Arc plans tab", "goal": "Show plans"},
+    {"project": "datawatch", "automation_id": "dddd4444", "priority": 1, "title": "Arc registry import"}
+  ],
+  "rows": [
+    {"key": "dash", "title": "Ship the dashboard", "legacy_number": 12, "body": "Built by eeee0001 as part of the chain."},
+    {"key": "faster", "title": "Faster search", "legacy_number": 9, "links": [{"kind": "automation", "ref": "eeee0002"}]},
+    {"key": "docs", "title": "Tidy the docs", "legacy_number": 5},
+    {"key": "nav", "title": "Rework the navigation", "legacy_number": 7},
+    {"key": "late", "title": "Backlog tail item", "legacy_number": 31},
+    {"key": "old", "title": "Old and shipped", "legacy_number": 2, "state": "shipped"}
+  ],
+  "resolve": {
+    "eeee0001": {"kind": "automaton", "title": "Dashboard build", "state": "running"},
+    "eeee0002": {"kind": "automation", "title": "Search chain", "state": "draft"}
+  },
+  "findings": [
+    {"key": "f1", "title": "Order lost after restart", "state": "open", "attach_kind": "plan", "attach_ref": "engine"},
+    {"key": "f2", "title": "Search misses short titles", "state": "triaged", "attach_kind": "automaton", "attach_ref": "aaaa0007"},
+    {"key": "f3", "title": "Browser flicker on reorder", "state": "fixed", "attach_kind": "plan", "attach_ref": "browser"},
+    {"key": "f4", "title": "Unattached finding about search", "state": "open"}
+  ],
+  "expected": {
+    "backlog_titles_by_row": ["Plan: Tidy the docs", "Plan: Rework the navigation", "Plan: Faster search", "Plan: Backlog tail item"],
+    "backlog_orders": [5, 7, 9, 31]
+  }
+}

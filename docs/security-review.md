@@ -60,7 +60,7 @@ The goroutines already respect `ctx.Done()` for cancellation in addition to a pr
 |-----------|---------|---------|
 | `internal/agents/tls.go:95` | parent↔worker pinned mTLS — paired with VerifyPeerCertificate fingerprint check | False positive |
 | `internal/agents/client.go:124` | parent↔worker mTLS client — same pinning pattern | False positive |
-| `internal/observerpeer/client.go:96` | observer-peer push — pinning planned in S15; currently opt-in via config (default off) | Accept (documented) |
+| `internal/observerpeer/client.go:126` | observer-peer push — pinning + verify-by-default landed (worker/peers pushes pin or verify against the system trust store); `Insecure` remains opt-in (default off, startup-warned) | Accept (documented) |
 | `internal/observer/cluster_k8s.go:139,142` | k8s API server cert verification skipped for cluster-internal traffic via in-cluster ServiceAccount | Accept (k8s convention) |
 | `cmd/datawatch/main.go:6250,6392` | self-update binary fetch + datawatch-app heartbeat probe — both gated behind operator opt-in | Accept (documented) |
 
@@ -121,9 +121,18 @@ CVE-2026-93990, which was never actually in `.trivyignore` — a stale
 entry this regeneration drops). Do not hand-edit the table below; edit
 the registry and run `python3 scripts/gen_trivyignore.py`.
 
+**Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
+was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
+which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
+guards the floor in CI). The removed entry was untraced, so the "independently
+traced" count is unchanged. Confirm the next Release scan of agent-aider is
+clean, and re-scope the remaining agent-aider `python3.11` entries if they no
+longer apply to aider. See
+[container image refresh](howto/container-image-refresh.md#agent-aider-python-and-the-soupsieve-floor).
+
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**103 suppressed container CVEs across 8 images, 40 independently traced.**
+**106 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -133,11 +142,13 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-105437 | `git` | high | agent-base | no | 2026-12-13 | The Trivy scan of agent-base in the Release workflow lists CVE-2026-105437 (HIGH... |
 | CVE-2026-106553 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106555 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-106583 | `openssh-client` | high | agent-base, agent-claude, agent-opencode, agent-gemini, agent-aider, agent-goose, parent-full | no | 2026-11-12 | No fix available in Debian bookworm (Trivy status fix_deferred); re-check each r... |
 | CVE-2026-107364 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-107364... |
 | CVE-2026-111497 | `libbrotli1` | critical | agent-base | yes | 2027-01-22 | No fix available in Debian bookworm (status affected). Found live by the Release... |
+| CVE-2026-111760 | `git, git-man` | high | agent-base | no | 2026-12-13 | The Release scan of agent-base 9.171.1 lists CVE-2026-111760 (HIGH) on git and g... |
 | CVE-2026-112315 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112315... |
 | CVE-2026-112316 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112316... |
 | CVE-2026-112317 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112317... |
@@ -148,6 +159,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-112322 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112322... |
 | CVE-2026-112323 | `libgssapi-krb5-2, libk5crypto3, libkrb5-3, libkrb5support0` | high | agent-base | yes | 2026-12-11 | The Trivy scan of agent-base built from main on 2026-11-11 lists CVE-2026-112323... |
 | CVE-2026-113351 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-04 | The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351 (HI... |
+| CVE-2026-114466 | `git, git-man` | high | agent-base | no | 2026-12-13 | The Release scan of agent-base 9.171.1 lists CVE-2026-114466 (HIGH) on git and g... |
 | CVE-2026-114820 | `openjdk-17-jre-headless` | high | parent-full | yes | 2026-11-29 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
 | CVE-2026-115506 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-06 | The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists ... |
 | CVE-2026-117610 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-12-02 | The Trivy scan of agent-base in the 9.64.1 Release run lists CVE-2026-117610 (HI... |

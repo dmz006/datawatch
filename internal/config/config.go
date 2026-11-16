@@ -41,6 +41,13 @@ type RemoteServerConfig struct {
 	// false. OK for a self-signed/local-dev peer on a trusted network only;
 	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
 	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
+	// TLSCertFingerprint pins the peer's leaf certificate to the hex
+	// SHA-256 of its DER bytes. It is the recommended alternative to
+	// TLSSkipVerify for a self-signed peer: the peer's identity is still
+	// checked, only the CA chain is not. When set it wins over
+	// TLSSkipVerify. Same convention as the compute node
+	// tls_cert_fingerprint.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty"`
 	// FingerprintSync opts THIS peer into the resource-fingerprint exchange.
 	// Opt-in per peer, default false — the operator decision recorded in
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
@@ -3144,6 +3151,14 @@ type AutonomousConfig struct {
 	// BranchRefreshBehindLimit is how many commits behind the base a branch
 	// may be before it is refreshed. Zero reads as 5; see BranchRefreshLimit.
 	BranchRefreshBehindLimit int `yaml:"branch_refresh_behind_limit" json:"branch_refresh_behind_limit"`
+	// ProjectLinkBackfillApply controls the one-time project link backfill at
+	// daemon start. false (default): only a dry-run report is produced, and
+	// nothing is changed. true: the backfill is applied once, linking
+	// Automata that have no project link and match the datawatch project by
+	// Automation, parent or repository directory; the daemon then writes a
+	// durable done marker and does not re-run it. Automata that already carry
+	// a link are never changed.
+	ProjectLinkBackfillApply bool `yaml:"project_link_backfill_apply" json:"project_link_backfill_apply"`
 	// PollIntervalSeconds is the loop tick (default 30).
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
 	// MaxParallelTasks is deprecated and read by nothing: it never
@@ -3525,6 +3540,15 @@ type AutonomousConfig struct {
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
 	// rejected — see loop_detect_turns.go.
 	LoopDetectTurns *int `yaml:"loop_detect_turns,omitempty" json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled turns the daily pending-branch alert on or off.
+	// *bool: nil = unset → on (DefaultUnlandedAlertEnabled); see
+	// unlanded_alert.go.
+	UnlandedAlertEnabled *bool `yaml:"unlanded_alert_enabled,omitempty" json:"unlanded_alert_enabled,omitempty"`
+	// UnlandedAlertThreshold is how many pending Automaton branches are
+	// allowed before the daily alert fires (it fires when the count is
+	// strictly above). *int: nil = unset → 3; 0 = alert on any pending
+	// branch. Negative values are rejected — see unlanded_alert.go.
+	UnlandedAlertThreshold *int `yaml:"unlanded_alert_threshold,omitempty" json:"unlanded_alert_threshold,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -3536,6 +3560,18 @@ type AutonomousConfig struct {
 	// BackoffMaxWaitMinutes caps the back-off applied when a rate limit
 	// carries no parseable reset time. Unset => 60; values < 1 clamp to 60.
 	BackoffMaxWaitMinutes int `yaml:"backoff_max_wait_minutes,omitempty" json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview is the number of live session slots a backed-off
+	// backend keeps for the work that reviews it — guardrail judges and
+	// verifiers (planning roles of rank 0) and decompose/planning sessions
+	// (rank 2) — while worker sessions are held. A pointer, so an explicit 0
+	// (no reserve at all: a backed-off backend then refuses every new
+	// autonomous session) survives omitempty; unset reads as 1 through the
+	// default. Negative values clamp to 0 (reserve off).
+	BackoffReserveForReview *int `yaml:"backoff_reserve_for_review,omitempty" json:"backoff_reserve_for_review,omitempty"`
+	// BackoffReserveTokensPerHour caps the review work a backed-off backend
+	// takes through that gate: a rolling one-hour token budget. 0 (unset) or
+	// negative reads as no cap.
+	BackoffReserveTokensPerHour int64 `yaml:"backoff_reserve_tokens_per_hour,omitempty" json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// RoleScanIntervalSeconds is how often the daemon re-checks LLM role
 	// tags for contention (two entries claiming one role, or two roles
 	// converging on one entry). Unset or < 1 => 300. Warnings only.
@@ -3650,6 +3686,11 @@ type AutonomousConfig struct {
 	// gates. 0 or unset means the default of 24 hours; a negative value is
 	// a config error. Read through EffectiveVerifierHeadroomMaxAge.
 	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
+	// ReapedBranchBackupDays is how many whole days the backup ref kept for
+	// a reaped Automaton branch stays before it is pruned. 0 or unset means
+	// the default of 30 days; a negative value is a config error. Read
+	// through EffectiveReapedBranchBackupDays.
+	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -4066,7 +4107,7 @@ type AutonomousConfig struct {
 	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
 
 	// HousekeepingRepairs — one off|report|on mode per repair group
-	// (task_chain, advance_judge, lane_fill, leftovers; default report) and
+	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
 	// the grace seconds. See housekeeping_repairs.go.
 	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
 
@@ -4304,6 +4345,20 @@ func (a AutonomousConfig) BranchRefreshLimit() int {
 // than this many hours is stale for the verifier cap gates.
 const VerifierHeadroomMaxAgeHoursDefault = 24
 
+// ReapedBranchBackupDaysDefault is the default of
+// autonomous.reaped_branch_backup_days: the backup ref of a reaped Automaton
+// branch is kept this many days.
+const ReapedBranchBackupDaysDefault = 30
+
+// EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
+// with 0, unset or a non-positive value reading the default of 30 days.
+func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
+	if a.ReapedBranchBackupDays <= 0 {
+		return ReapedBranchBackupDaysDefault
+	}
+	return a.ReapedBranchBackupDays
+}
+
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
 // gates use: autonomous.verifier_min_free_mem_mb when set (0 = check off),
 // otherwise the default of 1024. It delegates to
@@ -4450,8 +4505,15 @@ type AutonomousAutomationConfig struct {
 	ChildInherit             *bool  `yaml:"child_inherit,omitempty" json:"child_inherit,omitempty"`
 	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	// MergePendingIncludeTerminal is the
+	// autonomous.automation.merge_pending_include_terminal setting: when true
+	// (the default when unset, read through EffectiveMergePendingIncludeTerminal)
+	// the merge-pending pass also checks the work branches of archived,
+	// needs_review, blocked and failed Automata; an explicit false keeps the
+	// pass to completed Automata only.
+	MergePendingIncludeTerminal *bool  `yaml:"merge_pending_include_terminal,omitempty" json:"merge_pending_include_terminal,omitempty"`
+	MergedMemberPolicy          string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy           string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -6082,6 +6144,20 @@ func (c AutonomousAutomationConfig) EffectiveChildInherit() bool {
 		return DefaultChildInherit
 	}
 	return *c.ChildInherit
+}
+
+// DefaultMergePendingIncludeTerminal is the
+// autonomous.automation.merge_pending_include_terminal default (on).
+const DefaultMergePendingIncludeTerminal = true
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending pass
+// also checks archived, needs_review, blocked and failed Automata: true when
+// unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
@@ -8041,13 +8117,16 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			ReleasePath:                              "direct_push",
-			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
-			GateDrainMinutes:                         DefaultGateDrainMinutes,
-			AutoFixRetries:                           1,
-			MaxConcurrentTasks:                       1,
-			UsageBackoff:                             UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
+			ReleasePath:              "direct_push",
+			ScriptGateTimeoutSeconds: DefaultScriptGateTimeoutSeconds,
+			GateDrainMinutes:         DefaultGateDrainMinutes,
+			AutoFixRetries:           1,
+			MaxConcurrentTasks:       1,
+			UsageBackoff:             UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:    BackoffMaxWaitDefaultMinutes,
+			// BackoffReserveForReview is a pointer so an explicit 0 (reserves
+			// off) survives omitempty; the default keeps one slot per backend.
+			BackoffReserveForReview:                  intPtr(DefaultBackoffReserveForReview),
 			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:                      3600,
 			FirstAttemptEscalateAfterFailures:        DefaultFirstAttemptEscalateAfterFailures,
@@ -8662,8 +8741,14 @@ func validateLoaded(cfg *Config) error {
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
 	}
+	if err := ValidateUnlandedAlertThreshold(cfg.Autonomous.UnlandedAlertThreshold); err != nil {
+		return err
+	}
 	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
 		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
+		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)

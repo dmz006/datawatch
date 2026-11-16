@@ -71,7 +71,7 @@ func TestProjectRecordUnknownVerbStillRejected(t *testing.T) {
 	if !strings.Contains(out, `Unknown project verb "frobnicate"`) {
 		t.Errorf("unknown verb not reported:\n%s", out)
 	}
-	if !strings.Contains(out, "project show|arcs|progress|timeline <project-name>") {
+	if !strings.Contains(out, "project show|plans|progress|timeline <project-name>") {
 		t.Errorf("usage does not list record verbs:\n%s", out)
 	}
 }
@@ -88,7 +88,7 @@ func TestProjectRecordUsageWithoutName(t *testing.T) {
 	})
 	for _, want := range []string{
 		"Usage: project show <project-name>",
-		"Usage: project arcs <project-name>",
+		"Usage: project plans <project-name>",
 		"Usage: project progress <project-name>",
 		"Usage: project set <project-name> <field> <value>",
 		`unknown field "nope"`,
@@ -125,7 +125,7 @@ func TestFormatProjectShow(t *testing.T) {
 		"-",
 		"weekly_share:",
 		"20",
-		"arcs:",
+		"plans:",
 		"2",
 		"target:",
 		"v1.0",
@@ -142,7 +142,7 @@ func TestFormatProjectShow(t *testing.T) {
 func TestFormatProjectArcs(t *testing.T) {
 	out := formatProjectArcs("acme", projectRecordBody)
 	for _, want := range []string{
-		"Arcs for project acme (2):",
+		"Plans for project acme (2):",
 		"1. auto-1 priority=1 state=active",
 		"2. auto-2 priority=2 state=planned",
 	} {
@@ -150,7 +150,7 @@ func TestFormatProjectArcs(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if got := formatProjectArcs("bare", `{"name":"bare"}`); got != "No arcs for project bare." {
+	if got := formatProjectArcs("bare", `{"name":"bare"}`); got != "No plans for project bare." {
 		t.Errorf("empty arcs: %q", got)
 	}
 	if got := formatProjectArcs("acme", "nope"); got != "nope" {
@@ -164,7 +164,8 @@ func TestFormatProjectProgress(t *testing.T) {
 		"Progress for project acme (7-day window)",
 		"total: 3 automata, tasks 4/13, points 3.5",
 		"throughput: 1 automata, 2 tasks finished (0.14 automata/day, 0.29 tasks/day)",
-		"arc auto-1 [active]: 2 automata, tasks 4/10",
+		"finished means completed, or cancelled or archived with its work branch on the default branch, or shipped",
+		"plan auto-1 [active]: 2 automata, tasks 4/10",
 		"unassigned: 1 automata, tasks 0/3",
 	} {
 		if !strings.Contains(out, want) {
@@ -349,5 +350,58 @@ func TestFormatProjectTimelineNewFields(t *testing.T) {
 		if !strings.Contains(projectTimelineUsage, want) {
 			t.Errorf("usage lacks %q", want)
 		}
+	}
+}
+
+func TestFormatProjectProgressWithoutProject(t *testing.T) {
+	body := `{"window_days":7,"points_priced":false,"arcs":[],"unassigned":{"automata":[]},` +
+		`"without_project":{"automata":[{"id":"a"},{"id":"b"}],"tasks":{"done":1,"total":4}},"total":{"automata":[]}}`
+	if got := formatProjectProgress("acme", body); !strings.Contains(got, "without a project: 2 automata, tasks 1/4") {
+		t.Fatalf("missing without a project line: %s", got)
+	}
+	if got := formatProjectProgress("acme", `{"window_days":7,"arcs":[],"total":{"automata":[]}}`); strings.Contains(got, "without a project") {
+		t.Fatalf("empty group must not print: %s", got)
+	}
+}
+
+// Single-field `project set` on the record's own fields: changing the
+// description keeps the stored default_backend (and every other field), and
+// changing the backend keeps the stored description — the comm channel never
+// blanks a field the operator did not touch.
+func TestProjectSetBodyOwnFieldKeepsRecord(t *testing.T) {
+	out, err := projectSetBody(projectRecordBody, "description", "Acme platform, phase 2")
+	if err != nil {
+		t.Fatalf("projectSetBody description: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got["description"] != "Acme platform, phase 2" {
+		t.Errorf("description=%v want the new value", got["description"])
+	}
+	if got["default_backend"] != "claude-code" {
+		t.Errorf("default_backend=%v want the stored claude-code kept", got["default_backend"])
+	}
+	if got["owner"] != "platform" || got["default_branch"] != "main" {
+		t.Errorf("other stored fields not echoed: %v", got)
+	}
+
+	out, err = projectSetBody(projectRecordBody, "default_backend", "pi")
+	if err != nil {
+		t.Fatalf("projectSetBody default_backend: %v", err)
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if got["default_backend"] != "pi" {
+		t.Errorf("default_backend=%v want pi", got["default_backend"])
+	}
+	if got["description"] != "Acme platform" {
+		t.Errorf("description=%v want the stored Acme platform kept", got["description"])
+	}
+	// The policy block must round-trip untouched too — the upsert replaces it.
+	if p, _ := got["policy"].(map[string]any); p == nil || p["max_concurrent_tasks"] != float64(2) {
+		t.Errorf("policy not echoed: %v", got["policy"])
 	}
 }

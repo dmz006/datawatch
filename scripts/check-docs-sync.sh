@@ -42,8 +42,9 @@ if [ ! -d "$DST" ]; then
   fi
 fi
 
-# Dry-run; capture lines that would have changed beyond timestamp/perms.
-DIFF=$(rsync -ai --dry-run --delete \
+# Dry-run with content checksums (-c): a regenerated file with the same content but a new mtime is not drift;
+# capture lines that would have changed beyond timestamp/perms.
+DIFF=$(rsync -aic --dry-run --delete \
   --include='*/' --include='*.md' --include='*.png' --include='*.svg' --include='*.jpg' --include='*.gif' --exclude='*' $SKIP \
   docs/ "$DST/" 2>/dev/null | grep -vE '^\.[df]\.\.t' || true)
 
