@@ -13,6 +13,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -135,6 +136,23 @@ func reapBackupRef(branch string, ts int64) string {
 // backup ref is written, nothing is deleted, and the report lists only the
 // waiting branches. repo empty means nothing is configured and nothing runs.
 func ReapPass(ctx context.Context, git MergeGitRunner, repo string, prds []*PRD, now time.Time) (ReapReport, error) {
+	return reapPass(ctx, git, repo, prds, now, true)
+}
+
+// ReapPreview computes the same report as ReapPass without applying it: it
+// lists the branches that would be reaped and the branches that would be
+// held, writes no backup ref and deletes no branch. A would-be-reaped
+// branch's BackupRef is filled when a backup ref from an earlier pass
+// already exists; the reason says so. It is the read half of the operator
+// surface, so calling it never changes the repo.
+func ReapPreview(ctx context.Context, git MergeGitRunner, repo string, prds []*PRD, now time.Time) (ReapReport, error) {
+	return reapPass(ctx, git, repo, prds, now, false)
+}
+
+// reapPass is the shared body of ReapPass and ReapPreview; apply selects
+// whether contained branches are backed up and deleted (true) or only
+// reported (false).
+func reapPass(ctx context.Context, git MergeGitRunner, repo string, prds []*PRD, now time.Time, apply bool) (ReapReport, error) {
 	rep := ReapReport{Reaped: []ReapEntry{}, Waiting: []ReapEntry{}}
 	repo = strings.TrimSpace(repo)
 	if repo == "" || len(prds) == 0 {
@@ -241,41 +259,67 @@ func ReapPass(ctx context.Context, git MergeGitRunner, repo string, prds []*PRD,
 					continue
 				}
 
-				// Backup first: the branch tip is kept under the backup ref
-				// before the branch is deleted, so a failed delete leaves a
-				// restorable ref and a failed backup deletes nothing.
-				_, commits, _ := cherryUncontained(ctx, git, repo, containedIn, tb)
-				ref := reapBackupRef(tb, now.Unix())
-				if _, err := git.Run(ctx, repo, "update-ref", ref, tb); err != nil {
-					rep.Waiting = append(rep.Waiting, ReapEntry{
-						AutomatonID: p.ID,
-						Branch:      tb,
-						Reason:      "backup ref " + ref + " could not be written: " + err.Error(),
-					})
-					continue
-				}
-				if out, err := git.Run(ctx, repo, "branch", "-D", tb); err != nil {
-					rep.Waiting = append(rep.Waiting, ReapEntry{
+				if apply {
+					// Backup first: the branch tip is kept under the backup ref
+					// before the branch is deleted, so a failed delete leaves a
+					// restorable ref and a failed backup deletes nothing.
+					_, commits, _ := cherryUncontained(ctx, git, repo, containedIn, tb)
+					ref := reapBackupRef(tb, now.Unix())
+					if _, err := git.Run(ctx, repo, "update-ref", ref, tb); err != nil {
+						rep.Waiting = append(rep.Waiting, ReapEntry{
+							AutomatonID: p.ID,
+							Branch:      tb,
+							Reason:      "backup ref " + ref + " could not be written: " + err.Error(),
+						})
+						continue
+					}
+					if out, err := git.Run(ctx, repo, "branch", "-D", tb); err != nil {
+						rep.Waiting = append(rep.Waiting, ReapEntry{
+							AutomatonID: p.ID,
+							Branch:      tb,
+							BackupRef:   ref,
+							Reason:      "the branch could not be deleted but its tip is kept at " + ref + ": " + strings.TrimSpace(out) + " " + err.Error(),
+						})
+						continue
+					}
+					rep.Reaped = append(rep.Reaped, ReapEntry{
 						AutomatonID: p.ID,
 						Branch:      tb,
 						BackupRef:   ref,
-						Reason:      "the branch could not be deleted but its tip is kept at " + ref + ": " + strings.TrimSpace(out) + " " + err.Error(),
+						ContainedIn: containedIn,
+						Commits:     commits,
+						Reason:      "every commit of " + tb + " is on " + containedIn,
 					})
 					continue
+				}
+
+				// Preview: name the branch as would-be-reaped. A backup ref
+				// from an earlier pass is named when one exists.
+				previous := ""
+				if r, _, err := latestReapBackupRef(ctx, git, repo, tb); err == nil {
+					previous = r
+				}
+				reason := "would be reaped: every commit of " + tb + " is on " + containedIn
+				if previous != "" {
+					reason += "; a backup ref from an earlier pass already exists at " + previous
 				}
 				rep.Reaped = append(rep.Reaped, ReapEntry{
 					AutomatonID: p.ID,
 					Branch:      tb,
-					BackupRef:   ref,
+					BackupRef:   previous,
 					ContainedIn: containedIn,
-					Commits:     commits,
-					Reason:      "every commit of " + tb + " is on " + containedIn,
+					Reason:      reason,
 				})
 			}
 		}
 	}
 	return rep, nil
 }
+
+// ErrNoReapBackup is wrapped by latestReapBackupRef when the branch has no
+// backup ref under the reap-backup namespace; the REST surface answers it
+// with a 404.
+var ErrNoReapBackup = errors.New("no reap backup ref")
 
 // latestReapBackupRef returns the newest backup ref for branch (highest unix
 // timestamp suffix) and the object id it points at. The error is the contract
@@ -285,7 +329,7 @@ func latestReapBackupRef(ctx context.Context, git MergeGitRunner, repo, branch s
 	prefix := reapBackupRefPrefix + key + "/"
 	out, err := git.Run(ctx, repo, "for-each-ref", "--format=%(refname)", prefix)
 	if err != nil {
-		return "", "", fmt.Errorf("no backup ref for branch %s: listing %s failed: %v", branch, prefix, err)
+		return "", "", fmt.Errorf("no backup ref for branch %s: listing %s failed: %w", branch, prefix, err)
 	}
 	var newest string
 	newestTS := int64(-1)
@@ -308,7 +352,7 @@ func latestReapBackupRef(ctx context.Context, git MergeGitRunner, repo, branch s
 		}
 	}
 	if newest == "" {
-		return "", "", fmt.Errorf("no backup ref for branch %s: nothing under %s", branch, prefix)
+		return "", "", fmt.Errorf("no backup ref for branch %s: nothing under %s: %w", branch, prefix, ErrNoReapBackup)
 	}
 	sha, err = git.Run(ctx, repo, "rev-parse", newest)
 	if err != nil {
@@ -317,23 +361,71 @@ func latestReapBackupRef(ctx context.Context, git MergeGitRunner, repo, branch s
 	return newest, strings.TrimSpace(sha), nil
 }
 
-// RestoreReaped recreates branch from its newest backup ref
-// (refs/datawatch/reap-backup/<branch>/<unix-ts>) and returns the commit the
-// restored branch points at. It errors — without creating a branch — when no
-// backup ref for the branch exists.
-func RestoreReaped(ctx context.Context, git MergeGitRunner, repo, branch string) (string, error) {
+// RestoreReapedDetail recreates branch from its newest backup ref
+// (refs/datawatch/reap-backup/<branch>/<unix-ts>) and returns the backup ref
+// it was restored from and the commit the restored branch now points at. It
+// errors — without creating a branch — when no backup ref for the branch
+// exists.
+func RestoreReapedDetail(ctx context.Context, git MergeGitRunner, repo, branch string) (ref, sha string, err error) {
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
-		return "", fmt.Errorf("restore: a branch name is required")
+		return "", "", fmt.Errorf("restore: a branch name is required")
 	}
-	ref, sha, err := latestReapBackupRef(ctx, git, repo, branch)
+	ref, sha, err = latestReapBackupRef(ctx, git, repo, branch)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if out, err := git.Run(ctx, repo, "branch", branch, sha); err != nil {
-		return "", fmt.Errorf("restore %s from %s: %v: %s", branch, ref, err, strings.TrimSpace(out))
+		return "", "", fmt.Errorf("restore %s from %s: %v: %s", branch, ref, err, strings.TrimSpace(out))
 	}
-	return sha, nil
+	return ref, sha, nil
+}
+
+// RestoreReaped recreates branch from its newest backup ref and returns the
+// commit the restored branch points at (the ref itself is available from
+// RestoreReapedDetail). It errors — without creating a branch — when no
+// backup ref for the branch exists.
+func RestoreReaped(ctx context.Context, git MergeGitRunner, repo, branch string) (string, error) {
+	_, sha, err := RestoreReapedDetail(ctx, git, repo, branch)
+	return sha, err
+}
+
+// ReapBackup is one backup ref under the reap-backup namespace: the ref name
+// and the object id it points at. Branch is filled by the Manager when the
+// sanitized ref key matches a stored task sub-branch; the engine leaves it
+// empty.
+type ReapBackup struct {
+	Branch string `json:"branch,omitempty"`
+	Ref    string `json:"ref"`
+	SHA    string `json:"sha"`
+}
+
+// ListBackups lists every backup ref under refs/datawatch/reap-backup/ with
+// the object id it points at, sorted by ref name. An empty namespace lists
+// as an empty, non-nil slice.
+func ListBackups(ctx context.Context, git MergeGitRunner, repo string) ([]ReapBackup, error) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return []ReapBackup{}, fmt.Errorf("list reap backups: no base repo is configured")
+	}
+	out, err := git.Run(ctx, repo, "for-each-ref", "--format=%(refname) %(objectname)", reapBackupRefPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("list reap backups: listing %s: %v", reapBackupRefPrefix, err)
+	}
+	backups := []ReapBackup{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 2 || !strings.HasPrefix(parts[0], reapBackupRefPrefix) {
+			continue
+		}
+		backups = append(backups, ReapBackup{Ref: parts[0], SHA: parts[1]})
+	}
+	sort.Slice(backups, func(i, j int) bool { return backups[i].Ref < backups[j].Ref })
+	return backups, nil
 }
 
 // ExpireBackups deletes the reap-backup refs older than days (whole days
