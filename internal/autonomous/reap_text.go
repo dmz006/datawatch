@@ -46,7 +46,7 @@ func RenderReapReport(r ReapSurfaceReport) string {
 	b.WriteString("\n")
 	switch d := r.BackupDays; {
 	case d > 0:
-		b.WriteString(fmt.Sprintf("Backup refs (retention %d whole days):\n", d))
+		fmt.Fprintf(&b, "Backup refs (retention %d whole days):\n", d)
 	default:
 		b.WriteString("Backup refs (retention 30 whole days when unset):\n")
 	}
