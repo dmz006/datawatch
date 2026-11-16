@@ -430,7 +430,7 @@ Delete is the only destructive action and it is guarded: it refuses unless the
 entry carries a recommendation from the list above, a base repository and a
 worktree base are known, and the caller passed an explicit confirm. The bundle
 is written and verified **first**; if it cannot be, nothing is removed. A delete
-returns the branch, the bundle path and the worktree path it removed.
+returns the branch, the bundle path and the worktree path it removed. Know what the bundle covers: the branch's commits. Uncommitted or untracked work inside the worktree is not in the backup, and delete removes the worktree with the force flag, so that work is gone with the worktree. If the worktree might hold uncommitted work, decide it before deleting (the safe-to-delete report flags it as `held_dirty`).
 
 ### Where to see and act
 
@@ -495,7 +495,10 @@ main, and the script exits with status 1 while any exist. Decide each one with K
 worktree, or merge it.
 
 **Review before relying on this.** Whether a kept branch also suppresses the
-safe-to-delete report is still undecided; the operator must confirm that. The
+safe-to-delete report is still undecided; the operator must confirm that. If the
+force-delete of a worktree is not wanted when it hides uncommitted work, the
+debate over Delete worktree is not yet settled; review that action before using
+it. The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 
