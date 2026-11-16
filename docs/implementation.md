@@ -1926,6 +1926,16 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   (via contains “restart”), `api-stop`, `unknown`. The file is written
   atomically (temp file + rename) and read back with
   `shutdowncause.ReadLast`.
+- **/proc fallback candidate order:** when the sender is attributed from
+  the process table, candidates are ranked so the most specific evidence
+  comes first: a process whose cmdline names the daemon's own pid as a
+  whole token (for example `kill <pid>` or `pkill --pid=<pid>`) ranks
+  above processes that only name the `datawatch` unit (for example a
+  `systemctl stop datawatch-other` for an unrelated unit whose name merely
+  contains the word). Within each group lower pids come first, so the
+  order is deterministic. The first candidate is the recorded sender. This
+  is what stops an unrelated same-host process from being attributed as
+  the stop sender in a full `go test` run.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1937,12 +1947,22 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   misreported as an already-shown stop.
 - **Regression test:** `internal/shutdowncause/signal_child_test.go`
   (`TestSignalChildProcScan`) re-executes the test binary as a child
-  (TestMain helper-env pattern); the child sends SIGTERM to the parent by
-  the exact PID it was passed. It asserts `Signal=terminated`; on the siginfo
-  path `SenderPID` must equal the child’s PID, on the /proc fallback the
-  child must appear among `CandidatesFor` results with the test binary in
-  its cmdline. Skips with a message on non-Linux; signals only its own
-  process via the child it started.
+  (TestMain helper-env pattern) with the recognizable stop-sender cmdline
+  `<binary> kill <parent pid>`. The child announces that it is running by
+  printing a `child-started` line to stdout, and only then sends SIGTERM
+  to that exact pid — nothing else, ever. The parent waits for that line
+  (30 second bound) and then polls the child's own `/proc/<pid>/cmdline`
+  until the stop-sender line is visible (10 second bound): explicit
+  readiness signals instead of a scheduling assumption, so the test passes
+  inside a full `go test` run of the module, not only alone. The child
+  stays alive while the parent holds its stdin pipe open (EOF releases it,
+  plus a 120 second safety cap), so it is still present in the process
+  table when the procscan attributes it. It asserts `Signal=terminated`;
+  on the siginfo path `SenderPID` must equal the child's PID, on the
+  /proc fallback the child must appear among `CandidatesFor` results with
+  the test binary in its cmdline, and the captured cause must not point at
+  some other process. Skips with a message on non-Linux; signals only its
+  own process via the child it started.
 
 ---
 
