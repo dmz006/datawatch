@@ -40304,6 +40304,43 @@ window.costReportReconcileHtml = function(rc) {
   return out + '</div>';
 };
 
+// costReportModelRowsHtml renders the report's by-model section
+// (model_rows): one row per model name with its in / out / cached tokens
+// and its API-equivalent dollars, priced at the model's own rate (the
+// per-model cost entry when one is configured, else the backend's rate).
+// The section is an equivalence — the plan is flat — never a bill. It
+// returns '' when the report carries no model_rows (older daemon).
+window.costReportModelRowsHtml = function(report) {
+  const rep = (report && typeof report === 'object' && !Array.isArray(report)) ? report : {};
+  const rows = Array.isArray(rep.model_rows) ? rep.model_rows : [];
+  if (!rows.length) return '';
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const anyUsd = rows.some(r => r && typeof r === 'object' &&
+    r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd)));
+  let out = `<div style="margin-top:8px;font-size:10px;">
+    <div style="font-weight:600;color:var(--text);margin-bottom:2px;">${escHtml(t('cost_report_by_model_title') || 'By model')} <span style="font-weight:400;color:var(--text2);">${escHtml(t('cost_report_by_model_note') || 'API-equivalent at each model’s own rate — an equivalence, not a bill')}</span></div>`;
+  for (const r of rows.slice(0, COST_REPORT_MAX_ROWS)) {
+    if (!r || typeof r !== 'object') continue;
+    const name = (r.model === undefined || r.model === null || String(r.model).trim() === '')
+      ? (t('cost_report_key_unknown') || '—') : r.model;
+    const tok = t('cost_report_by_model_tokens', [num(r.tokens_in), num(r.tokens_out), num(r.cache_read), num(r.cache_creation)])
+      || (num(r.tokens_in) + ' in / ' + num(r.tokens_out) + ' out');
+    let usd = '';
+    if (anyUsd) {
+      const has = r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd));
+      usd = has
+        ? escHtml(t('cost_report_usd_api_value', [num(r.api_equivalent_usd).toFixed(2)]) || ('$' + num(r.api_equivalent_usd).toFixed(2) + ' API-equivalent'))
+        : escHtml(t('cost_report_usd_none') || '—');
+    }
+    out += `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;padding:1px 0;" title="${escHtml(String(name))}">
+      <span style="overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:600;">${escHtml(String(name))}</span> <span style="color:var(--text2);font-family:monospace;">${escHtml(tok)}</span></span>
+      ${usd ? `<span style="color:var(--text2);font-family:monospace;">${usd}</span>` : ''}
+    </div>`;
+  }
+  out += '</div>';
+  return out;
+};
+
 // costReportCardHtml renders the whole card body from a decoded
 // GET /api/cost/report body: title + help link, the retention line
 // (retention_days), the lifetime-fallback note, the group table (tokens
@@ -40358,7 +40395,8 @@ window.costReportCardHtml = function(report, opts) {
   if (hidden > 0) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
-  return head + window.costReportTotalsHtml(rep.totals) + notes + body + window.costReportReconcileHtml(rep.reconciliation);
+  const modelSection = window.costReportModelRowsHtml(rep);
+  return head + window.costReportTotalsHtml(rep.totals) + notes + body + modelSection + window.costReportReconcileHtml(rep.reconciliation);
 };
 
 // ── BL412 — self-config card ────────────────────────────────────────────

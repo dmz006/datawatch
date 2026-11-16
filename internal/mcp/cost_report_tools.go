@@ -44,9 +44,18 @@ func (src managerCostReportSource) Records(_ costreport.SourceOptions) (*costrep
 		if sess == nil || (sess.TokensIn == 0 && sess.TokensOut == 0) {
 			continue
 		}
+		// The session's own model selection is the by-model key (finer
+		// than the backend family); the LLM registry entry name is the
+		// fallback for sessions predating the model field. Both blank
+		// (legacy sessions) and the record groups under its backend.
+		model := sess.Model
+		if model == "" {
+			model = sess.LLMRef
+		}
 		res.Records = append(res.Records, costreport.Record{
 			SessionID: sess.ID,
 			Backend:   sess.BackendFamily,
+			Model:     model,
 			At:        sess.UpdatedAt,
 			TokensIn:  sess.TokensIn,
 			TokensOut: sess.TokensOut,
@@ -55,9 +64,10 @@ func (src managerCostReportSource) Records(_ costreport.SourceOptions) (*costrep
 	return res, nil
 }
 
-// costReportRate — the daemon's effective rate for a backend (exact
-// backend, family fallback, defaults), so USD estimates match what
-// AddUsage prices with.
+// costReportRate — the daemon's effective rate for a backend or a
+// model name (exact key, family fallback, defaults), so USD estimates
+// match what AddUsage prices with and the by-model rows can carry a
+// model-specific entry from the rate table.
 func (s *Server) costReportRate(backend string) (session.CostRate, bool) {
 	if s.manager == nil {
 		return session.CostRate{}, false
@@ -102,7 +112,11 @@ func (s *Server) toolCostReport() mcpsdk.Tool {
 	return mcpsdk.NewTool("cost_report",
 		mcpsdk.WithDescription("Cost report over the daemon's recorded session spend (the internal/costreport engine, "+
 			"same data as GET /api/cost/report). Grouped by automaton, automation or backend (release is REST/CLI-only: it needs shipped-unit state this tool does not expose); "+
-			"or week (ISO 8601 week buckets); token totals always, USD estimates when rates are configured. Rows carry "+
+			"or week (ISO 8601 week buckets); token totals always, USD estimates when rates are configured. Besides the grouped rows the report "+
+			"carries model_rows — the by-model breakdown of the same records: one row per model name (the record's model when the "+
+			"source names one, else its backend) with in / out / cached tokens and its API-equivalent dollars (api_equivalent_usd) "+
+			"priced at that model's own rate (the per-model cost entry when one is configured, else the backend's rate) — an "+
+			"equivalence, the plan is flat, never a bill. Rows carry "+
 			"billing_mode + billing_label from the usage.billing profiles (bundled_plan → api_equivalent_usd, "+
 			"'API-equivalent, not billed', plus estimated_usage_points / share_of_monthly_price where the plan is priced; "+
 			"free_local → not billed; api_metered assumed when no profile is set), and the report carries a "+
