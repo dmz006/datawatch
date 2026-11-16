@@ -341,10 +341,17 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 			// triggers the halt while T2 is still running below.
 			return VerificationResult{}, fmt.Errorf("simulated failure")
 		}
-		// T2 — hold just long enough that T1's failure is processed and
-		// the halt decision (PRDBlocked) is made while T2 is still
-		// in-flight, so its result arrives through the drain path.
-		time.Sleep(150 * time.Millisecond)
+		// T2 — hold until T1's failure is processed and the halt decision
+		// (PRDBlocked) is made while T2 is still in-flight, so its result
+		// arrives through the drain path. Wait on that state, not a fixed
+		// sleep; the bound only stops a hung run from hanging the test.
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if p, ok := m.Store().SnapshotPRD(prd.ID); ok && p.Status == PRDBlocked {
+				break
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
 		return VerificationResult{}, fmt.Errorf("simulated failure on T2 too")
 	}
 
@@ -355,11 +362,11 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 		t.Fatal(err)
 	}
 	// PRDBlocked lands as soon as T1 fails — well before the drain loop
-	// finishes waiting out T2's 150ms sleep — so poll for T2's own task
+	// finishes waiting out T2's hold — so poll for T2's own task
 	// status specifically, not just the PRD-level status, or the
 	// assertion races ahead of the fix's actual finalization work.
 	var got *PRD
-	pollUntil(t, 2*time.Second, "T2 task failed", func() bool {
+	pollUntil(t, 15*time.Second, "T2 task failed", func() bool {
 		got, _ = m.Store().SnapshotPRD(prd.ID)
 		return got.Story[1].Tasks[0].Status == TaskFailed
 	})

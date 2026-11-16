@@ -117,9 +117,7 @@ func TestCapacity_SessionCapErrorIsWaitNotFailure(t *testing.T) {
 	prd := newPRDWithTasks(t, m, 1)
 	var mu sync.Mutex
 	calls := 0
-	old := capRetryPause
-	capRetryPause = 10 * time.Millisecond
-	defer func() { capRetryPause = old }()
+	fastCapRetryPauseUntilIdle(t, api)
 	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -147,9 +145,7 @@ func TestCapacity_WorkspaceLockErrorIsWaitNotFailure(t *testing.T) {
 	prd := newPRDWithTasks(t, m, 1)
 	var mu sync.Mutex
 	calls := 0
-	old := capRetryPause
-	capRetryPause = 10 * time.Millisecond
-	defer func() { capRetryPause = old }()
+	fastCapRetryPauseUntilIdle(t, api)
 	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -713,4 +709,21 @@ func TestCapacity_AdoptWithUnknownSessionNodeKeepsResolvedNode(t *testing.T) {
 	if ls := led.LeaseOf(live.ID); ls == nil || ls.Node != "n1" {
 		t.Fatalf("resolver node should be kept when the session names none, got %+v", ls)
 	}
+}
+
+// fastCapRetryPauseUntilIdle lowers the package-level capRetryPause for a
+// test and restores it in a cleanup that first waits for every executor
+// goroutine to exit. A plain defer restored it while an executor goroutine
+// of the test could still read it (the executor outlives the PRD reaching
+// a terminal status by a few steps), which is a data race under -race.
+func fastCapRetryPauseUntilIdle(t *testing.T, api *API) {
+	t.Helper()
+	old := capRetryPause
+	capRetryPause = 10 * time.Millisecond
+	t.Cleanup(func() {
+		if err := api.WaitIdle(10 * time.Second); err != nil {
+			t.Errorf("waiting for executors before restoring capRetryPause: %v", err)
+		}
+		capRetryPause = old
+	})
 }

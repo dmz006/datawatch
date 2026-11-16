@@ -20,8 +20,15 @@ func (c *capBurnEvents) add(ev LifecycleEvent) {
 	c.mu.Unlock()
 }
 
+// waitOf waits until want events of kind arrived (bounded) plus a settle
+// window, then returns them; the bus delivers on its own goroutine.
+func (c *capBurnEvents) waitOf(t *testing.T, kind string, want int) []LifecycleEvent {
+	t.Helper()
+	settledCount(t, want, func() int { return len(c.of(kind)) })
+	return c.of(kind)
+}
+
 func (c *capBurnEvents) of(kind string) []LifecycleEvent {
-	time.Sleep(50 * time.Millisecond)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []LifecycleEvent
@@ -59,12 +66,12 @@ func TestCapacityWaitEvent(t *testing.T) {
 	m.beginCapacityWait(task)
 	advance(49 * time.Second)
 	m.sweepCapacityWaits()
-	if n := len(col.of(KindCapacityWaitTooLong)); n != 0 {
+	if n := len(col.waitOf(t, KindCapacityWaitTooLong, 0)); n != 0 {
 		t.Fatalf("emitted %d before the threshold, want 0", n)
 	}
 	advance(2 * time.Second)
 	m.sweepCapacityWaits()
-	evs := col.of(KindCapacityWaitTooLong)
+	evs := col.waitOf(t, KindCapacityWaitTooLong, 1)
 	if len(evs) != 1 || evs[0].TaskID != "t1" || evs[0].PRDID != "p1" {
 		t.Fatalf("events after the threshold = %+v, want one for t1/p1", evs)
 	}
@@ -72,7 +79,7 @@ func TestCapacityWaitEvent(t *testing.T) {
 	m.beginCapacityWait(task)
 	advance(500 * time.Second)
 	m.sweepCapacityWaits()
-	if n := len(col.of(KindCapacityWaitTooLong)); n != 1 {
+	if n := len(col.waitOf(t, KindCapacityWaitTooLong, 1)); n != 1 {
 		t.Fatalf("emitted %d within one episode, want 1", n)
 	}
 	// A new episode emits again.
@@ -80,7 +87,7 @@ func TestCapacityWaitEvent(t *testing.T) {
 	m.beginCapacityWait(task)
 	advance(51 * time.Second)
 	m.sweepCapacityWaits()
-	if n := len(col.of(KindCapacityWaitTooLong)); n != 2 {
+	if n := len(col.waitOf(t, KindCapacityWaitTooLong, 2)); n != 2 {
 		t.Fatalf("emitted %d after a second episode, want 2", n)
 	}
 	// A wait that ends before the threshold emits nothing.
@@ -90,7 +97,7 @@ func TestCapacityWaitEvent(t *testing.T) {
 	m.endCapacityWait("t1")
 	advance(100 * time.Second)
 	m.sweepCapacityWaits()
-	if n := len(col.of(KindCapacityWaitTooLong)); n != 2 {
+	if n := len(col.waitOf(t, KindCapacityWaitTooLong, 2)); n != 2 {
 		t.Fatalf("emitted %d for an ended episode, want 2", n)
 	}
 }
@@ -101,7 +108,7 @@ func TestBurnGuardRungEvent(t *testing.T) {
 	m.NoteBurnGuardRung("", "lower_inflight")
 	m.NoteBurnGuardRung("lower_inflight", "lower_inflight") // unchanged: nothing
 	m.NoteBurnGuardRung("lower_inflight", "")
-	evs := col.of(KindBurnGuardRungChanged)
+	evs := col.waitOf(t, KindBurnGuardRungChanged, 2)
 	if len(evs) != 2 {
 		t.Fatalf("events = %d, want 2", len(evs))
 	}

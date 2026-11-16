@@ -57,3 +57,18 @@ func pollPRDTerminal(t *testing.T, m *Manager, id string, timeout time.Duration)
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// settledCount waits until count() reaches want (bounded by a 10s deadline,
+// so a slow dispatcher under -race cannot fail the test early), then waits
+// a short settle window so an extra, unwanted delivery still shows up, and
+// returns the final count. With want == 0 it only waits the settle window:
+// an absence check cannot be proven by a signal, so the window bounds it.
+func settledCount(t *testing.T, want int, count func() int) int {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for count() < want && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	return count()
+}

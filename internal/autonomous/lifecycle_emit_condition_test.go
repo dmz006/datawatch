@@ -12,9 +12,14 @@ import (
 )
 
 // conditionCount counts the events of one kind the env's bus delivered for a
-// PRD, after giving the dispatcher a moment to flush.
-func (e *stuckWatchdogEnv) conditionCount(kind, prdID string) int {
-	time.Sleep(50 * time.Millisecond)
+// PRD. It waits until want events arrived (the bus dispatches on its own
+// goroutine) plus a settle window, instead of a fixed sleep.
+func (e *stuckWatchdogEnv) conditionCount(t *testing.T, kind, prdID string, want int) int {
+	t.Helper()
+	return settledCount(t, want, func() int { return e.countEvents(kind, prdID) })
+}
+
+func (e *stuckWatchdogEnv) countEvents(kind, prdID string) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	n := 0
@@ -31,18 +36,18 @@ func TestStuckRunningEvent(t *testing.T) {
 	prd, _ := bl451RunningPRD(t, e.m, nil, TaskCompleted)
 
 	e.m.sweepStuckRunning() // first sight, bound not passed
-	if n := e.conditionCount(KindAutomatonStuckRunning, prd.ID); n != 0 {
+	if n := e.conditionCount(t, KindAutomatonStuckRunning, prd.ID, 0); n != 0 {
 		t.Fatalf("emitted %d before the bound, want 0", n)
 	}
 	e.advance(61 * time.Second)
 	e.m.sweepStuckRunning()
-	if n := e.conditionCount(KindAutomatonStuckRunning, prd.ID); n != 1 {
+	if n := e.conditionCount(t, KindAutomatonStuckRunning, prd.ID, 1); n != 1 {
 		t.Fatalf("emitted %d at the bound, want 1", n)
 	}
 	// Still stuck after another full bound: no second event.
 	e.advance(30 * time.Second)
 	e.m.sweepStuckRunning()
-	if n := e.conditionCount(KindAutomatonStuckRunning, prd.ID); n != 1 {
+	if n := e.conditionCount(t, KindAutomatonStuckRunning, prd.ID, 1); n != 1 {
 		t.Fatalf("emitted %d while the condition held, want 1", n)
 	}
 	// Live work clears the condition; a later stuck episode emits again.
@@ -56,7 +61,7 @@ func TestStuckRunningEvent(t *testing.T) {
 	e.m.sweepStuckRunning()
 	e.advance(61 * time.Second)
 	e.m.sweepStuckRunning()
-	if n := e.conditionCount(KindAutomatonStuckRunning, prd.ID); n != 2 {
+	if n := e.conditionCount(t, KindAutomatonStuckRunning, prd.ID, 2); n != 2 {
 		t.Fatalf("emitted %d after the condition cleared and returned, want 2", n)
 	}
 }
@@ -67,7 +72,7 @@ func TestAllTasksDoneEvent(t *testing.T) {
 
 	e.m.sweepStuckRunning()
 	e.m.sweepStuckRunning()
-	if n := e.conditionCount(KindAutomatonTasksDone, prd.ID); n != 1 {
+	if n := e.conditionCount(t, KindAutomatonTasksDone, prd.ID, 1); n != 1 {
 		t.Fatalf("emitted %d for a held condition, want 1", n)
 	}
 	// A failed task clears the condition; completing it again re-arms it.
@@ -76,7 +81,7 @@ func TestAllTasksDoneEvent(t *testing.T) {
 	e.m.sweepStuckRunning()
 	e.m.Store().WithLock(func() { p.Story[0].Tasks[0].Status = TaskCancelled })
 	e.m.sweepStuckRunning()
-	if n := e.conditionCount(KindAutomatonTasksDone, prd.ID); n != 2 {
+	if n := e.conditionCount(t, KindAutomatonTasksDone, prd.ID, 2); n != 2 {
 		t.Fatalf("emitted %d after clear and return, want 2", n)
 	}
 }

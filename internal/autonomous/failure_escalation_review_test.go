@@ -220,12 +220,12 @@ func TestFailureEscalation_OperatorCancelRollsUp(t *testing.T) {
 	if _, err := api.ResolveTaskReview(prd.ID, task.ID, ReviewResolution{Action: reviewActionCancel, Note: "not worth another try"}, "operator-test"); err != nil {
 		t.Fatalf("ResolveTaskReview cancel: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
-
-	if got := escalationTask(t, m, prd.ID); got.Status != TaskCancelled {
-		t.Fatalf("task status = %q, want %q", got.Status, TaskCancelled)
-	}
-	got, _ := m.Store().GetPRD(prd.ID)
+	// Wait for the cancel and its roll-up on the observed state, not a
+	// fixed sleep: under -race the roll-up can take longer than any guess.
+	pollUntil(t, 10*time.Second, "the task to be cancelled", func() bool {
+		return escalationTask(t, m, prd.ID).Status == TaskCancelled
+	})
+	got, _ := m.Store().SnapshotPRD(prd.ID)
 	if got.Status == PRDCompleted || got.Status == PRDFailed {
 		t.Fatalf("Automaton status = %q, want it open: no task completed", got.Status)
 	}

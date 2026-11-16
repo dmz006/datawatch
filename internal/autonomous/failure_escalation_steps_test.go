@@ -134,7 +134,7 @@ func escalationPiStep(attempts int) FailureEscalationStep {
 // escalationTask returns the single task of prd as stored.
 func escalationTask(t *testing.T, m *Manager, prdID string) *Task {
 	t.Helper()
-	prd, ok := m.Store().GetPRD(prdID)
+	prd, ok := m.Store().SnapshotPRD(prdID)
 	if !ok {
 		t.Fatalf("PRD %s not found", prdID)
 	}

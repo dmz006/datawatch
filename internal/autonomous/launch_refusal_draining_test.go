@@ -56,6 +56,11 @@ func TestLaunchRefusedDraining_IsWaitNotAttempt(t *testing.T) {
 			return SpawnResult{SessionID: "s"}, nil
 		}
 		got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+		// Restore only once the executor goroutines exited: they read
+		// capRetryPause, and a write while one still runs is a data race.
+		if err := api.WaitIdle(10 * time.Second); err != nil {
+			t.Fatalf("waiting for executors: %v", err)
+		}
 		capRetryPause = old
 		tk := got.Story[0].Tasks[0]
 		if got.Status != PRDCompleted || calls != 3 {
