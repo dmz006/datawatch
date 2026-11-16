@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
 ## v9.180.0 — Reap contained task branches and landed Automaton branches safely
 
 ### Changed
