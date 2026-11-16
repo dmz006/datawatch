@@ -17,6 +17,7 @@ import (
 
 // fakePlacementAdvisory answers the load gate's planner with a fixed verdict.
 type fakePlacementAdvisor struct {
+	mu      sync.Mutex // Plan is called from several goroutines at once
 	plan    PlacementPlan
 	timeout time.Duration
 	gotPin  string // records the pinnedTo argument from the last Plan call
@@ -26,7 +27,9 @@ type fakePlacementAdvisor struct {
 }
 
 func (f *fakePlacementAdvisor) Plan(backend, model, pinnedTo string) PlacementPlan {
+	f.mu.Lock()
 	f.gotPin = pinnedTo
+	f.mu.Unlock()
 	plan := f.plan
 	if f.followPin && pinnedTo != "" {
 		plan.Chosen = pinnedTo
