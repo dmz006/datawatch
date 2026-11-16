@@ -971,6 +971,14 @@ func (c *Coordinator) triagePass() {
 		c.alert("warn", "Disk almost full (Automaton cleanup)", cleanupDiskAlertBody(st))
 	}
 
+	// Cache-folder sweep — right beside the temp-file sweep: stale
+	// go-build / trivy scan-cache folders directly under the temp root
+	// that no live process holds. off does nothing, report lists
+	// would-removes, on removes; both removals and freed space are
+	// counted in the result.
+	c.m.SweepCacheFoldersPass()
+
+
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)
 	}
