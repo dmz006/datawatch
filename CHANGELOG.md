@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Landing record for every Automaton branch** — every Automaton record that carries a work branch now carries a landing record (`landing` on the record) saying whether that branch's work reached the project's default branch. An Automaton with a branch starts **pending** (set by the daemon when the branch is created); **landed** is set by the `mark_completed` post-ship hook when the branch ships, naming the merge commit; **kept** and **dropped** are operator decisions (an actor and a non-empty reason, refused when the branch is already landed, each writing one `landing_keep` / `landing_drop` decision on the record's decision log). While a landing is still **pending**, archiving the Automaton is refused on every surface, the branch named in the error — merge it, or record keep or drop for its landing — so an unlanded work branch can no longer disappear behind an archived record. Records without a landing (no branch, or never migrated) archive as before. A one-time landing migration (`MigrateLanding`) backfills a **pending** record for every archived Automaton whose branch git cannot prove merged on the default branch: it is idempotent, changes no status and writes no decision, and it skips rather than guesses when the default branch is unknown. **Review:** `KeepLanding`, `DropLanding` and `MigrateLanding` are daemon APIs without a REST, CLI, comm, MCP or PWA surface yet — until those land, a **pending** landing can already block archive but has no operator surface to resolve it from; the keep/drop wiring and its reconciliation with the Unlanded work card's **Keep** action are the planned follow-up. See [howto/automaton-worktree-cleanup.md](docs/howto/automaton-worktree-cleanup.md) (*The landing record*), [howto/post-ship-hooks.md](docs/howto/post-ship-hooks.md) and [operations.md](docs/operations.md) (*Automaton worktree cleanup*).
+
 ## v9.175.2 — Stop writing the instance-level server token into project files
 
 ### Changed
