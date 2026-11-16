@@ -436,6 +436,8 @@ in its own repository and is not part of this change.
 
 ## The task sub-branch reaper (backup first, then remove)
 
+A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
+
 The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
 Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
 in the repository. The **branch reaper** removes those leftovers once the parent
