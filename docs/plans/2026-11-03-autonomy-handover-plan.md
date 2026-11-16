@@ -443,3 +443,9 @@ Finding: 252 sessions are recorded as opus (122 verifiers, 82 workers, 48 other;
 Operator, quoted: "Look at all features since staying 9.0 to 10.0, what is not enabled that was part of our automation planning,  use it,  turn it on, this was my request last night" and "How do we set everything queued with the right model".
 
 Done: task routing is on (mechanical task types go to pi, code to Sonnet, no Opus), decompose lint is on in enforce mode (it was shadow), the planner model is Sonnet, and the five Automata that named no model are pinned to Sonnet. The watch now flags any session running on Opus. Not turned on, with the reason: default quality gates (needs a baseline command from the operator), planning routing (needs rules), the task attempt and no-progress limits (reviewing the recommended values), capacity fall-through is already on.
+
+## 2026-11-16 10:55 - Claude after 11:00: question to the operator
+
+Budget at 10:55: week 24% read at 08:45 against a pace line of about 17 (8 points over); window about 49% by the corrected estimate; burn since 08:45 is 0.6 point, all of it the supervisor session on Sonnet. The claude-code back-off was bridged from 11:00 to 16:00 under the guard rule so Claude is never open before the answer.
+
+Question asked: may Claude work resume at 11:00 for these items, in this order, all on Sonnet: (1) judge the held pre-flight fix f79e0001 (the pi judge timed out), (2) plan the two defect drafts, the explicit Claude model and the stale session records, (3) the CodeQL fix PWA tasks, plus merging the parked usage-hold fix through the daemon's Sonnet conflict resolver (about 0.5 point together). The operator's answer is quoted here when given.
