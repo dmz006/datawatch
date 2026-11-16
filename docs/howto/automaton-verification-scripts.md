@@ -149,14 +149,24 @@ skipped by the three rules below; the warn rule
 | `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path another story or task in the plan changes. | Make the allowed list cumulative over the whole plan. |
 | `fixed_calendar_date_in_test` | warn | The task asks for a test that uses a fixed calendar date, which passes now and fails later. | Take times from the current time with an offset, or an injected clock. |
 
-**Operator note.** The four `verify_script_*` rules above are the pre-flight
-(details in [section 5a](#5a-preflight-checks-for-planner-written-scripts)). It
-runs when a plan is decomposed and when an edit sets a gate script, and its
-findings appear on the Automaton before any task starts.
+**Operator note.** The rows fall in three groups:
 
-The first three are `block`-severity: in `enforce` mode they feed the planner a retry
-with the findings as guidance; in `shadow` mode they are recorded on the
-Automaton and nothing is retried. See
+- The first three (`verify_script_task_files_only`,
+  `verify_script_docs_without_sync`, `final_gate_without_script`) are rules in
+  the rule pack, severity `block`: in `enforce` mode they feed the planner a
+  retry with the findings as guidance; in `shadow` mode they are recorded on
+  the Automaton and nothing is retried. An operator rule with the same id can
+  replace or disable them.
+- The next four (`verify_script_syntax`, `verify_script_shell_mismatch`,
+  `verify_script_pipefail_grep_q`, `verify_script_allowed_files`) are the
+  preflight, not rule-pack rules (details in
+  [section 5a](#5a-preflight-checks-for-planner-written-scripts)). They run on
+  every decompose and when an edit sets a task's script, always at `block`,
+  and their findings appear on the Automaton before any task starts.
+- `fixed_calendar_date_in_test` is a rule-pack rule at `warn`: it is recorded
+  and never triggers a retry.
+
+See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
 for the whole rule pack.
 
