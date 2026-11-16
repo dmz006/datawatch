@@ -48,6 +48,15 @@ import (
 // maxBulkAttachIDs bounds one bulk attach.
 const maxBulkAttachIDs = 500
 
+// maxPlanThemes and maxPlanThemeItems bound the sizes a themes layout
+// request may name, before any of them is used to size an allocation. The
+// request body is capped, so a real layout always fits; the bounds exist so
+// a crafted body can never steer a make() size near the int limit.
+const (
+	maxPlanThemes     = 4096
+	maxPlanThemeItems = 4096
+)
+
 // ---------------------------------------------------------------------------
 // Facts: what the release engine and the unattributed list know about work.
 
@@ -65,6 +74,23 @@ var errPlanFactsUnavailable = errors.New("the Automata manager is not available"
 // planItemFacts reads every Automaton and Automation with its project. When
 // detail is false the tags and the hold check (which reads each Automaton's
 // text) are left out; a count does not need them. A test sets planFactsSource.
+// maxFactsPrealloc caps the preallocation hint planItemFacts passes to
+// make: two lengths that each fit in an int can still overflow on their
+// sum, and no preallocation is worth that.
+const maxFactsPrealloc = 1 << 20
+
+// factsPreallocHint returns len(prds)+len(autos) as a preallocation hint,
+// clamped to maxFactsPrealloc so the addition can never overflow.
+func factsPreallocHint(prds, autos int) int {
+	if prds < 0 || autos < 0 {
+		return 0
+	}
+	if prds > maxFactsPrealloc || autos > maxFactsPrealloc-prds {
+		return maxFactsPrealloc
+	}
+	return prds + autos
+}
+
 func (s *Server) planItemFacts(detail bool) ([]planItemFact, error) {
 	if s.planFactsSource != nil {
 		return s.planFactsSource()
@@ -103,7 +129,7 @@ func (s *Server) planItemFacts(detail bool) ([]planItemFact, error) {
 		}
 	}
 
-	out := make([]planItemFact, 0, len(prds)+len(autos))
+	out := make([]planItemFact, 0, factsPreallocHint(len(prds), len(autos)))
 	for _, p := range prds {
 		if p == nil || p.IsTemplate {
 			continue
@@ -449,7 +475,11 @@ func (s *Server) handlePlanThemesPut(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("plan %q is not a release plan; themes belong to release plans", plan.ID))
 		return
 	}
-	if body.Themes == nil {
+	switch {
+	case len(body.Themes) > maxPlanThemes:
+		planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("themes holds at most %d entries", maxPlanThemes))
+		return
+	case body.Themes == nil:
 		planRecordsError(w, http.StatusBadRequest, "themes is required: list every theme of the plan in the order it should have (an empty list removes them all)")
 		return
 	}
@@ -517,6 +547,10 @@ func planThemeSetSteps(plan planrecords.Record, entries []planThemeSetEntry) (th
 		held[planrecords.ItemAutomation][id] = true
 	}
 	for i, e := range entries {
+		if len(e.Automata) > maxPlanThemeItems || len(e.Automations) > maxPlanThemeItems {
+			return st, &planrecords.ErrInvalid{Reason: fmt.Sprintf(
+				"theme %d holds at most %d items per kind (automata, automations)", i+1, maxPlanThemeItems)}
+		}
 		name := strings.TrimSpace(e.Name)
 		norm := planrecords.NormTitle(name)
 		t := themeSetTheme{name: name, automata: cleanIDList(e.Automata), automation: cleanIDList(e.Automations)}
@@ -756,9 +790,17 @@ func (s *Server) handlePlanThemesAction(w http.ResponseWriter, r *http.Request) 
 			planRecordsError(w, http.StatusBadRequest, "themes is required for action reorder: list every theme of the plan in the new order")
 			return
 		}
+		if len(body.Themes) > maxPlanThemes {
+			planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("themes holds at most %d entries", maxPlanThemes))
+			return
+		}
 		rec, err = s.planRecords.ReorderThemes(ref, body.Themes)
 	case "reorder_items":
 		if !need("theme", body.Theme) || !need("kind", body.Kind) {
+			return
+		}
+		if len(body.Items) > maxPlanThemeItems {
+			planRecordsError(w, http.StatusBadRequest, fmt.Sprintf("items holds at most %d entries", maxPlanThemeItems))
 			return
 		}
 		rec, err = s.planRecords.ReorderThemeItems(ref, body.Theme, body.Kind, body.Items)

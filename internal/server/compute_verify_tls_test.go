@@ -5,6 +5,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,23 +32,38 @@ func TestVerifyTLSPullWorkerOutcome(t *testing.T) {
 	}))
 	defer fake.Close()
 
+	leaf := sha256.Sum256(fake.Certificate().Raw)
+	pin := hex.EncodeToString(leaf[:])
+
 	cases := []struct {
-		name      string
-		verifyTLS bool
-		wantDone  bool
+		name     string
+		node     *compute.Node
+		wantDone bool
 	}{
-		{"verify_tls off ends done", false, true},
-		{"verify_tls on ends failed with the certificate error", true, false},
+		{
+			"verify_tls off still ends failed: pulls always verify",
+			&compute.Node{Name: "gpu-tls-off", Kind: "remote", Address: fake.URL, VerifyTLS: false},
+			false,
+		},
+		{
+			"verify_tls on ends failed with the certificate error",
+			&compute.Node{Name: "gpu-tls", Kind: "remote", Address: fake.URL, VerifyTLS: true},
+			false,
+		},
+		{
+			"fingerprint-pinned node ends done",
+			&compute.Node{Name: "gpu-tls-pin", Kind: "remote", Address: fake.URL, TLSCertFingerprint: pin},
+			true,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Server{cfg: config.DefaultConfig()}
 			s.cfg.Autonomous.ModelPullConsent = config.ModelPullConsent{Models: []config.ModelConsentEntry{{Name: "tiny", Publisher: "library", Allowed: true}}}
-			node := &compute.Node{Name: "gpu-tls", Kind: "remote", Address: fake.URL, VerifyTLS: tc.verifyTLS}
 			id := "verifytls-" + strings.ReplaceAll(tc.name, " ", "-")
-			globalPullTasks.add(&PullTask{ID: id, NodeName: node.Name, Model: "tiny:latest", Status: "pending"})
+			globalPullTasks.add(&PullTask{ID: id, NodeName: tc.node.Name, Model: "tiny:latest", Status: "pending"})
 
-			s.runOllamaPull(id, node, "tiny:latest") // synchronous: no goroutine left behind
+			s.runOllamaPull(id, tc.node, "tiny:latest") // synchronous: no goroutine left behind
 
 			tt, ok := globalPullTasks.get(id)
 			if !ok {
@@ -61,7 +78,7 @@ func TestVerifyTLSPullWorkerOutcome(t *testing.T) {
 			if tt.Status != "failed" {
 				t.Fatalf("task = %q, want failed", tt.Status)
 			}
-			if !strings.Contains(tt.Error, "gpu-tls") || !strings.Contains(tt.Error, "certificate verification") {
+			if !strings.Contains(tt.Error, tc.node.Name) || !strings.Contains(tt.Error, "certificate verification") {
 				t.Fatalf("error must name the node and certificate verification: %q", tt.Error)
 			}
 		})
