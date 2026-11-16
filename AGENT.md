@@ -2279,3 +2279,22 @@ memory_recall "recent work this codebase"
 - Build, test, and release procedures
 - Known patterns and gotchas to avoid
 - Directory structure and key files
+## 2026-11-09 — COMPLETED: branch-reap comm verbs + web app
+
+- `branch-reap` / `branch-reap-restore <branch>` verbs in internal/router/merge_comm.go
+  (ReadReapReport / RestoreReapBranch via commGet / commJSON), registered in
+  sx2_parity.go dispatch + MergeCommVerbs() + comm help.
+- Router tests: internal/router/reap_comm_test.go (TestReapComm_*).
+- Web: branch reaper card on the Automata Events sub-tab (slot order 120, after
+  cleanup) — reaped + waiting entries with Automaton/reason/contained-in/commits/
+  backup ref, retention note, Restore button delegated to document
+  (data-branch-reap-restore) posting {"branch":...} then re-reading the report.
+  Loader automation_branch_reap in _automationStopLoaders + stop-all list.
+- Locale: 21 branch_reap_* keys in all 5 bundles (en + real de/es/fr/ja);
+  coverage test internal/server/branch_reap_locale_test.go (TestReapBranchReapLocale
+  KeysInAllBundles); node test internal/server/web/app-branch-reap-card.test.js.
+- Fixed app bug: retention line computed but never emitted in branchReapCardHtml.
+- Updated tests pinned to old Events slot/stop-all order: app-cleanup-card.test.js,
+  app-automata-events-moved-maintenance.test.js.
+- Gates: go build ./... ✓ · router/autonomous/server TestReap* tests ✓ ·
+  node --check app.js ✓ · full web node suite 4019/4019 ✓ · no manual git.

@@ -39386,6 +39386,92 @@ window.safeDeleteCardHtml = function(report) {
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
+// ── Branch reaper card ─────────────────────────────────────────────────────
+// branchReapCardHtml(report) draws the body of GET
+// /api/autonomous/branch-reap:
+// { reaped: [{automaton_id, branch, backup_ref, contained_in, commits, reason}],
+//   waiting: [...same], backups: [{branch, ref, sha}], backup_days,
+//   computed_at }. A missing or malformed body reads as an empty report.
+// The report itself deletes nothing; the only write surface is the Restore
+// button on a reaped entry, which posts the one branch to
+// /api/autonomous/branch-reap/restore (its click is delegated, because the
+// loader re-paints the card's innerHTML on every tick).
+function _branchReapLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _branchReapSection(title, rows, emptyText) {
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    (rows.length ? rows.join('') : _branchReapLine(emptyText));
+}
+function _branchReapEntryRow(e) {
+  const branch = String(e.branch || '');
+  const restore = branch
+    ? `<button type="button" class="branch-reap-restore-btn" data-branch-reap-restore="${escHtml(branch)}" style="margin-top:4px;max-width:100%;">${escHtml(t('branch_reap_restore_btn'))}</button>`
+    : '';
+  return `<div class="branch-reap-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    _branchReapLine(branch, 'font-weight:600;') +
+    (e.automaton_id ? _branchReapLine(t('branch_reap_automaton', [String(e.automaton_id)])) : '') +
+    (e.reason ? _branchReapLine(String(e.reason)) : '') +
+    (e.contained_in ? _branchReapLine(t('branch_reap_contained', [String(e.contained_in)])) : '') +
+    (Number(e.commits) ? _branchReapLine(t('branch_reap_commits', [Number(e.commits)])) : '') +
+    (e.backup_ref ? _branchReapLine(t('branch_reap_backup', [String(e.backup_ref)])) : '') +
+    restore + `</div>`;
+}
+function _branchReapBackupRow(bk) {
+  const parts = [String(bk.ref || '')];
+  if (bk.sha) parts.push('→ ' + String(bk.sha));
+  if (bk.branch) parts.push('(' + String(bk.branch) + ')');
+  return _branchReapLine(parts.filter(Boolean).join(' '));
+}
+window.branchReapCardHtml = function(report) {
+  const r = (report && typeof report === 'object') ? report : {};
+  const reaped = Array.isArray(r.reaped) ? r.reaped.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const waiting = Array.isArray(r.waiting) ? r.waiting.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const backups = Array.isArray(r.backups) ? r.backups.filter(b => b && typeof b === 'object' && b.ref) : [];
+  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
+  const head = `<div class="cap-title">${escHtml(t('branch_reap_card_title'))}</div>`;
+  const computedLine = computedAt ? _branchReapLine(t('branch_reap_computed_at', [computedAt])) : '';
+  const note = _branchReapLine(t('branch_reap_preview_note'));
+  const retentionLine = _branchReapLine(Number(r.backup_days) > 0
+    ? t('branch_reap_retention_days', [Number(r.backup_days)])
+    : t('branch_reap_retention_default'));
+  const reapedRows = reaped.map(_branchReapEntryRow);
+  const waitingRows = waiting.map(_branchReapEntryRow);
+  const emptyAll = reaped.length === 0 && waiting.length === 0;
+  const body = emptyAll
+    ? _branchReapLine(t('branch_reap_empty'))
+    : _branchReapSection(t('branch_reap_reaped_heading', [reaped.length]), reapedRows, t('branch_reap_reaped_empty')) +
+      _branchReapSection(t('branch_reap_waiting_heading', [waiting.length]), waitingRows, t('branch_reap_waiting_empty'));
+  return `<div class="prd-capacity-card branch-reap-card" style="min-width:0;">${head}${computedLine}${note}${retentionLine}` +
+    body +
+    _branchReapSection(t('branch_reap_backups_heading'), backups.map(_branchReapBackupRow), t('branch_reap_backups_none')) + `</div>`;
+};
+// _branchReapEnsureRestoreHandler binds the delegated Restore click once per
+// page load. The loader replaces the card's innerHTML on every tick, so the
+// handler lives on the document and re-targets the fresh button on each click.
+let _branchReapRestoreBound = false;
+window._branchReapEnsureRestoreHandler = function() {
+  if (_branchReapRestoreBound) return;
+  _branchReapRestoreBound = true;
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-branch-reap-restore]') : null;
+    if (!btn || btn.disabled) return;
+    const branch = btn.getAttribute('data-branch-reap-restore');
+    if (!branch) return;
+    btn.disabled = true;
+    btn.textContent = t('branch_reap_restoring');
+    apiFetch('/api/autonomous/branch-reap/restore', { method: 'POST', body: JSON.stringify({ branch }) })
+      .then(() => {
+        showToast(t('branch_reap_restore_ok', [branch]), 'success', 4000);
+        // The delete already happened; re-read the report so the card
+        // reflects the restored branch and the backup ref it now lives as.
+        const ctl = window._listLoaders && window._listLoaders.automation_branch_reap;
+        if (ctl && ctl.load) ctl.load();
+      })
+      .catch(err => { showToast(t('branch_reap_restore_err', [branch, ((err && err.message) || String(err))]), 'error', 6000); });
+  }, true);
+};
+
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
@@ -44506,6 +44592,17 @@ registerAutomationCardSlot('events', {
   mount: () => listLoaderAll([_automationCleanupLoader()]),
   stop: () => _automationStopLoaders(['automation_cleanup']),
 });
+// The branch reaper report renders under the cleanup card on the Automata
+// Events sub-tab (reaped + waiting entries with reasons, the backup refs, and
+// the Restore write). Like the two above, its loader polls only while the
+// Events sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationBranchReapCard',
+  order: 120,
+  html: `<div id="automationBranchReapCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => { window._branchReapEnsureRestoreHandler(); listLoaderAll([_automationBranchReapLoader()]); },
+  stop: () => _automationStopLoaders(['automation_branch_reap']),
+});
 // ── Cost report chart cards ──────────────────────────────────────────────────
 // Four bounded cards in the Automata page's cost report area: cost over time,
 // tool usage, retries and failure categories, and the combined report. Each
@@ -45384,7 +45481,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_branch_reap', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -46094,6 +46191,22 @@ function _automationCleanupLoader() {
     failedText: msg => t('cleanup_failed', [msg]),
     active: () => !!document.getElementById('automationCleanupCard'),
     render: status => window.cleanupCardHtml(status),
+  });
+}
+
+// _automationBranchReapLoader reads the branch reaper report on the Automata
+// Events sub-tab, under the safe-to-delete and cleanup cards. The read lists
+// the worktree base repository and the backup refs, so it polls slowly like
+// the safe-to-delete read; its failed state is the list loader's banner. The
+// report is a preview — the only write is the per-entry Restore button, which
+// posts the branch to POST /api/autonomous/branch-reap/restore.
+function _automationBranchReapLoader() {
+  return window._listLoaders.automation_branch_reap || listLoader({
+    key: 'automation_branch_reap', el: 'automationBranchReapCard', url: '/api/autonomous/branch-reap', pollMs: 60000,
+    timeoutMs: 45000,
+    failedText: msg => t('branch_reap_failed', [msg]),
+    active: () => !!document.getElementById('automationBranchReapCard'),
+    render: report => window.branchReapCardHtml(report),
   });
 }
 
