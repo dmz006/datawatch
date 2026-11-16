@@ -369,6 +369,8 @@ datawatch marketplace catalog
 3. Models that fit within the node's declared capacity are highlighted.
 4. Click **Pull** next to a model to start a background download. A dock notification tracks the task.
 
+**Form values render escaped.** The node name, tags and the numeric fields in this form go into the form's `value` attributes HTML-escaped (`escHtml`), and the node name inside the **Browse marketplace** button's click handler is escaped with `escJsAttr` — a name or value that carries quotes, angle brackets or `on…="` text is displayed as text and round-trips unchanged on re-save, never live markup or a live attribute (fixes the `xss-through-dom` finding in this form, alert 850; closure is confirmed when the next "Open high/critical alerts" gate run on main is green — see [operations.md](../operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run)).
+
 ![Ollama Marketplace modal — curated catalog with Pick variant buttons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-modal.png)
 
 **Disabling / enabling a node:**
