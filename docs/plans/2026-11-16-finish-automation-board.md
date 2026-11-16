@@ -1,6 +1,6 @@
 # Finish-automation board
 
-Generated 2026-11-16 12:43 from the daemon's own data (merge state and the Automata list) by `python3 scripts/automation-board.py`. It is the one place that lists everything still unfinished; the supervisor regenerates it at each full tick.
+Generated 2026-11-16 16:19 from the daemon's own data (merge state and the Automata list) by `python3 scripts/automation-board.py`. It is the one place that lists everything still unfinished; the supervisor regenerates it at each full tick.
 
 ## Rules that keep it organized
 
@@ -9,7 +9,7 @@ Generated 2026-11-16 12:43 from the daemon's own data (merge state and the Autom
 3. Every merge goes through the chain scripts and is recorded shipped only when its branch is on main.
 4. The board is regenerated at each hourly tick and any change is committed with the registry row.
 
-## A. Finished work with commits that never reached main (52)
+## A. Finished work with commits that never reached main (48)
 
 State `pending` = commits ahead of main, not merged. `needs_look` = diverged or odd, a person must look. The recommended action is the default; keep and drop need the operator's reason.
 
@@ -38,7 +38,6 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | pending | 18 | `6e980001` | Automata Resources, Progress and costs, Housekeeping in datawatch styl | yes | merge through the chain |
 | pending | 17 | `87620001` | Make the full release smoke pass on main | no | merge through the chain |
 | pending | 16 | `4e190001` | Deflake round five: await question raise notifications before temp dir | yes | merge through the chain |
-| pending | 16 | `5c0c0001` | Remove the CPU burner and fix intermittent tests at their root | no | merge through the chain |
 | pending | 16 | `70900001` | Configuration parity audit and CI gate | no | merge through the chain |
 | pending | 16 | `71660001` | Plan status roll-up and plan rename/edit | yes | merge through the chain |
 | pending | 15 | `a1a30001` | Trace retention follows the session | yes | merge through the chain |
@@ -46,11 +45,8 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | pending | 13 | `26720001` | Stop the tracker writing RTK instructions into rules files | yes | merge through the chain |
 | pending | 13 | `4f450001` | Archive-based trivy scan for the agent-base build and scan gate | yes | merge through the chain |
 | pending | 12 | `33160001` | Consistent phone page layout across all views | yes | merge through the chain |
-| pending | 10 | `8d130001` | Build-host toolchain freshness check | yes | merge through the chain |
-| pending | 7 | `60b10001` | Fix the peer-down recovery test that fails in the full package run | no | merge through the chain |
-| pending | 5 | `ff540001` | Fix the shutdowncause child process scan flake in the full test run | no | merge through the chain |
+| pending | 9 | `ff540001` | Fix the shutdowncause child process scan flake in the full test run | no | merge through the chain |
 | pending | 4 | `d5060001` | Make the internal/autonomous race-detector run pass | no | merge through the chain |
-| pending | 2 | `57e90001` | Remember the header server dropdown choice per browser | yes | merge through the chain |
 | pending | 1 | `718a0001` | Measured headroom check for a verifier cap above 1 | yes | merge through the chain |
 | pending | 1 | `d2f10001` | Shadow merge and comparison for daemon-run Automaton merges | yes | merge through the chain |
 | needs_look | 16 | `e2120001` | e2120001 | yes | review the diff, then merge or drop |
@@ -68,13 +64,12 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | needs_look | 4 | `f56e0001` | Close the documentation gaps for the shipped lifecycle-event notificat | yes | review the diff, then merge or drop |
 | needs_look | 2 | `dc6c597b` | Ship v9.1.9: autonomous task session-name prefix closeout | yes | review the diff, then merge or drop |
 
-## B. Failed or blocked with work left (12)
+## B. Failed or blocked with work left (10)
 
 | Id | Status | Tasks left | Title | Why |
 |---|---|---:|---|---|
 | `38b69678` | blocked | 35 | [eval] model-tiering 20261015-r1 | last activity was 552764 seconds ago (153h32m44s), older tha |
 | `71f80001` | blocked | 27 | Merge scripts in the repository with shadow pipeline compariso | task 6a880002 needs operator review |
-| `5c0c0001` | blocked | 19 | Remove the CPU burner and fix intermittent tests at their root |  |
 | `9a1a8666` | blocked | 16 | [eval] open-model-matrix 20261015-r7 |  |
 | `3be9c0e5` | blocked | 16 | [eval] open-model-matrix 20261015-r10 |  |
 | `d5060001` | blocked | 7 | Make the internal/autonomous race-detector run pass | task 1ff40003 needs operator review |
@@ -82,19 +77,23 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | `049f4713` | blocked | 3 | BL433 — PWA performance audit under load (design/audit pass) |  |
 | `f6a38c29` | blocked | 2 | BL422 — Claude model/effort tiering eval for dev-Automaton tas | last activity was 575902 seconds ago (159h58m22s), older tha |
 | `fea73c82` | blocked | 1 | BL437 — Recurring, hardware-aware LLM model/effort evaluation  | last activity was 570131 seconds ago (158h22m11s), older tha |
-| `33490001` | blocked | 0 | Projects Overview sub-tabs: clickable, Projects style, remembe | files were still uncommitted when the Automaton finished: do |
-| `9f8f0001` | blocked | 0 | Move Automata configuration into Settings and replace the usag | stuck running: every task terminal and no live session or ex |
+| `9f8f0001` | blocked | 0 | Move Automata configuration into Settings and replace the usag | guardrail rules-review returned block (text-only judge) - ju |
 
-## C. Waiting for review, approval or planning (11)
+## C. Waiting for review, approval or planning (16)
 
 | Id | Status | Tasks | Title |
 |---|---|---:|---|
+| `12480001` | running | 23 |  |
+| `5c0c0001` | running | 18 | Remove the CPU burner and fix intermittent tests at their root |
 | `d1130001` | running | 15 | Free orphaned pi-pool slots held by judges and verifiers |
-| `a7f20001` | running | 14 | Fix open high and critical CodeQL alerts |
+| `3e500001` | running | 11 |  |
 | `316c41e1` | needs_review | 8 | Register the individual-builder harness research and its enhan |
 | `2fbf0001` | needs_review | 7 | Authentication and multi-user design proposal |
 | `36729dd7` | needs_review | 7 | Register the openrig.dev adoption research as a held item |
 | `2c9a27e2` | needs_review | 7 | Personal agents with personality and decision-making (held pla |
+| `a7f20001` | running | 6 | Fix open high and critical CodeQL alerts |
+| `60b10001` | running | 3 | Fix the peer-down recovery test that fails in the full package |
+| `ff540001` | needs_review | 0 | Fix the shutdowncause child process scan flake in the full tes |
 | `f79e0001` | needs_review | 0 | Verification-script pre-flight and fixed-date decompose lint |
 | `31e40001` | needs_review | 0 | Format all Go files with gofmt |
 | `18980001` | needs_review | 0 | Actionable Automata Inbox |
