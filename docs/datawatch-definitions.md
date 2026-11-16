@@ -1392,7 +1392,9 @@ Set it with `verify_tls` in the body of `POST` and `PUT /api/compute/nodes` (RES
 
 **Save-time probe:** the daemon runs a connectivity check on every create/update. Use `?probe=skip` to bypass for emergency saves when the node is temporarily unreachable.
 
-**Ollama marketplace:** click "Browse marketplace" on an Ollama-kind node to open the embedded catalog (llama3.1, qwen3, gemma3, deepseek-r1, etc.) with size/VRAM requirements and one-click background pull.
+**Ollama marketplace:** click "Browse marketplace" on an Ollama-kind node to open the embedded catalog (llama3.1, qwen3, gemma3, deepseek-r1, etc.) with size/VRAM requirements and one-click background pull. The button's click handler carries the node name escaped (`escJsAttr`), so a name with quotes still opens the catalog and injects nothing.
+
+**Edit form values render escaped:** in the Compute node and LLM edit forms, every `value="…"` attribute is HTML-escaped (`escHtml`), so a name, tag, capacity or key value that carries quotes, angle brackets or `on…="` text is displayed as text and round-trips unchanged on re-save instead of becoming live markup or a live attribute (fixes the `xss-through-dom` findings, alert 850; closure confirmed on the next "Open high/critical alerts" gate run on main — see [operations.md](operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run)). The project section card title tag strip is a fixed-point strip (repeats until no live tag-shaped span remains) rather than a single pass (`incomplete-multi-character-sanitization`, alert 849). Regression tests: `internal/server/web/app-codeql-dom.test.js`.
 
 **Migration banner:** shown when any node still uses a deprecated kind (`local`, `remote`, `ssh`, `docker`, `k8s`). Click to re-pick a supported kind per node.
 
