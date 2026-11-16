@@ -1069,11 +1069,17 @@ The head compared here is the same real working-tree head the review uses, so a 
 
 Four text-only checks for planner-written verification and final-gate scripts
 (shell syntax, helper shell mismatch, piped `grep -q` under `pipefail`, and a
-non-cumulative allowed-file list) exist in `internal/autonomous` with unit
-tests. They have no configuration key and no surface calls them yet, so
-nothing changes in a running daemon. Rule ids and fixes:
+non-cumulative allowed-file list) run on every decompose-lint pass and when a
+task edit sets a verification script. Every finding is `block`: in `enforce`
+mode it sends the plan back to the planner; in `shadow` it is recorded; with
+decompose lint `off` the preflight still runs once and records what it finds.
+An edit's findings are reported, never enforced. There is no configuration key
+for the preflight and the dry run does not include it. A separate `warn` rule,
+`fixed_calendar_date_in_test`, flags a test-writing task whose spec holds a
+fixed `YYYY-MM-DD` date. Rule ids and fixes:
 [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
-**Operator review:** decide where they run and at what severity.
+**Operator review:** the preflight severity is fixed at `block` with no
+off switch; confirm that suits your planners.
 
 ### Read-only task without a verification script or report path
 

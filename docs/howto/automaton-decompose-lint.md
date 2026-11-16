@@ -125,9 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: thirteen rules —
+The built-in pack is the **floor** every run starts from: fourteen rules —
 the nine `block` rules first (the six boundary rules, then the three
-verification-script stability rules), then the four `warn` rules. Your operator
+verification-script stability rules), then the five `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -146,6 +146,7 @@ and never name a particular project, repository or home directory.
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `fixed_calendar_date_in_test` | warn | a test-writing task (a test file such as `*_test.go`, `*.test.js`, `*.spec.ts` or `test_*.py` in its files, or a title starting with Add/Write that names a test) whose spec holds a fixed `YYYY-MM-DD` date; the test passes today and the gate fails later. Fix: take times from the current time (for example `time.Now` with a fixed offset) or an injected clock |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
 ### The three verification-script stability rules
@@ -170,6 +171,13 @@ They use three match predicates (below): `verification_script_task_files_only`,
 skipped by the first two. The full authoring guide, with the fix for each rule
 and how to set a task's script or reason on every surface, is
 [Write verification scripts that stay stable](automaton-verification-scripts.md).
+
+Every lint pass also runs the verification-script **preflight** (shell syntax,
+helper shell mismatch, piped `grep -q` under `pipefail`, non-cumulative
+allowed-file list). Its findings are `block`, sit beside the rule-pack
+findings, and are not rules you can override; they still run, and record, when
+the mode is `off`. The dry run does not include them. See
+[Preflight checks for planner-written scripts](automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
 
 ## 4. Writing your own rules — a worked example
 
@@ -234,6 +242,7 @@ hold for the same task. The leaves:
 | `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
 | `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `fixed_calendar_date_in_test` | assert the task writes a test (a test file in its files list, or an Add/Write title naming a test) and its spec contains a fixed `YYYY-MM-DD` date |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
