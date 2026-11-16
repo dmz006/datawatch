@@ -14,7 +14,15 @@ import (
 // maps every decompose backend referenced by a non-finished PRD to the IDs of
 // those PRDs. The planning check calls resolvePlannedModel, the same resolver
 // that picks the model for a decompose session, so a warning is raised exactly
-// when the resolver would pass no model. The verification check calls
+// when the resolver would pass no operator-named model. On a claude-code
+// backend the resolver's last tier fills that gap with the daemon default
+// (the explicit-model policy in model_policy.go), so the warning there states
+// that
+//
+//	the operator's planning model does not reach that decompose session.
+//
+// On any other backend the session genuinely gets no model, and the warning
+// says so. The verification check calls
 // carriesForeignBackendPrefix, the same pairing rule the resolver applies to
 // planning. An empty backend is skipped because its concrete backend is only
 // known at session time.
@@ -32,10 +40,11 @@ func PairingWarnings(cfg Config, decomposeRefs map[string][]string) []string {
 		}
 		sort.Strings(backends)
 		for _, b := range backends {
-			if resolvePlannedModel(b, "", "", "", cfg.PlanningBackend, cfg.PlanningModel, cfg.VerificationModel) != "" {
-				continue
+			planned := resolvePlannedModel(b, "", "", "", cfg.PlanningBackend, cfg.PlanningModel, cfg.VerificationModel)
+			if planned == cfg.PlanningModel {
+				continue // the operator's planning model reaches this session
 			}
-			out = append(out, planningPairingWarning(cfg, b, decomposeRefs[b]))
+			out = append(out, planningPairingWarning(cfg, b, decomposeRefs[b], planned))
 		}
 	}
 	if cfg.VerificationBackend != "" && cfg.VerificationModel != "" && carriesForeignBackendPrefix(cfg.VerificationModel, cfg.VerificationBackend) {
@@ -47,18 +56,30 @@ func PairingWarnings(cfg Config, decomposeRefs map[string][]string) []string {
 }
 
 // planningPairingWarning words the planning warning for one decompose
-// backend. It names the backend the planning model belongs to: the model's
-// own "<prefix>/" when it has one, otherwise the configured planning backend.
-func planningPairingWarning(cfg Config, decomposeBackend string, prdIDs []string) string {
-	if prefix, foreign := foreignModelPrefix(cfg.PlanningModel, decomposeBackend); foreign {
-		return fmt.Sprintf("planning model %q looks like it belongs to backend %q, but %s decomposes with backend %q, so no model will be passed to that session.",
-			cfg.PlanningModel, prefix, prdNoun(prdIDs), decomposeBackend)
+// backend. It names the backend the planned model belongs to: the model's
+// own "<prefix>/" when it has one, otherwise the configured planning
+// backend. plannedModel is the model the resolver would actually pass to
+// that session; the warning states what reaches the session instead of the
+// operator's planning model — for a claude-code session the explicit-model
+// policy (model_policy.go) fills an empty plan with the daemon default, and
+// that is named.
+func planningPairingWarning(cfg Config, decomposeBackend string, prdIDs []string, plannedModel string) string {
+	var effect string
+	switch {
+	case plannedModel == DefaultClaudeModel:
+		effect = fmt.Sprintf("so that model will not be used for that decompose (the daemon default %q is passed instead).", DefaultClaudeModel)
+	case plannedModel == "":
+		effect = "so no model will be passed to that session."
+	default:
+		effect = fmt.Sprintf("so that model will not be used for that decompose (%q is passed instead).", plannedModel)
 	}
-	return fmt.Sprintf("planning model %q is set for planning backend %q, but %s decomposes with backend %q, so no model will be passed to that session.",
-		cfg.PlanningModel, cfg.PlanningBackend, prdNoun(prdIDs), decomposeBackend)
-}
-
-// prdNoun renders the PRD IDs as one noun: "PRD x" for a single PRD,
+	if prefix, foreign := foreignModelPrefix(cfg.PlanningModel, decomposeBackend); foreign {
+		return fmt.Sprintf("planning model %q looks like it belongs to backend %q, but %s decomposes with backend %q, %s",
+			cfg.PlanningModel, prefix, prdNoun(prdIDs), decomposeBackend, effect)
+	}
+	return fmt.Sprintf("planning model %q is set for planning backend %q, but %s decomposes with backend %q, %s",
+		cfg.PlanningModel, cfg.PlanningBackend, prdNoun(prdIDs), decomposeBackend, effect)
+} // prdNoun renders the PRD IDs as one noun: "PRD x" for a single PRD,
 // "PRDs x, y" for two, and for more than three the first three IDs plus a
 // count of the rest ("PRDs p1, p2, p3, and 2 more"). Each ID is listed at
 // most once, so a long group stays one compact warning instead of a long list.
