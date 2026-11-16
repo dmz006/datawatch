@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
+
 ## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
 
 ### Changed
