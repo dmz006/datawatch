@@ -3001,7 +3001,7 @@ argument overrides the stored setting for this one call only.
 
 ### Burn guard tools
 
-The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_entry`, `hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude` are accepted and normalize to the entry-generic names) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
+The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude` are accepted and normalize to the entry-generic names) when the projection runs over the line plus the margin. `route_cheaper_model` keeps the backend and sends the entry's new work to its cheaper model (the entry's `route_cheaper_model` field, or its cheapest other priced model). It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
 
 | Tool | Arguments | Result |
 |---|---|---|

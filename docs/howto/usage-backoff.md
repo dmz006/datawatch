@@ -54,9 +54,12 @@ There are three kinds of flag, told apart by `source` and the reason:
   you know the limit or want a backend paused. With a `models` list it holds
   only those models of the backend; without one it holds the whole backend.
 - **Burn-guard flag.** Set by a rung of the [burn guard](burn-guard.md) (for
-  example `hold_claude`). It carries the rung name, shown as
+  example `hold_entry`; the legacy first-version names `route_pi_prompt` and
+  `hold_claude` normalize to `route_entry` and `hold_entry`, so either can
+  appear in a saved config). It carries the rung name, shown as
   `burn guard rung <rung>: <reason>` in capacity output, and the guard clears it
-  itself when it steps back.
+  itself when it steps back. The `route_cheaper_model` rung carries its model
+  and keeps the backend — the flag holds nothing.
 
 The automatic path is switched by `autonomous.usage_backoff` (`pause_backend`,
 the default, or `off`). A manual set always works, even with the mode `off`.
