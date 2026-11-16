@@ -8139,6 +8139,15 @@ Building a path into the discussion folder goes through one helper, `discussionF
 
 Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.
 
+## Open code scanning alerts: fixed on main, closure pending the gate run
+
+The eleven open high or critical code scanning alerts on main — the path and command injection findings in `internal/autonomous` (the file-drift checker's git calls, the daemon-section and daemon-ignore file reads, and the cleanup status paths), the model-pull certificate finding in `internal/compute` (alert 848), and the allocation-size findings in the plans release API's themes layout — are fixed on main.
+
+**Operator review still owed:**
+
+1. **Confirm the alert gate is green.** Code-scanning engines report a fix on the next analysis, not immediately: check the next "Open high/critical alerts" gate run on main and confirm none of the eleven still appears as an open high or critical finding. Until that run is confirmed green, nothing in this repository should be read as claiming them closed; if the gate still reports one open — or never ran after these commits — record it here and do not promote the changelog entry with the alerts claimed closed.
+2. **Name the trust on every `https://` node before its next pull.** Model pulls now always verify the node's certificate. A node with a self-signed or private-CA certificate fails its pulls until `tls_ca_file` or `tls_cert_fingerprint` is set on it — `verify_tls` and `tls_insecure_skip_verify` no longer apply to a pull. List your nodes (`datawatch compute nodes` or the PWA Compute tab) and set the trust; the pull error names the fix: `node <name>: certificate verification failed: ...; trust the certificate with tls_ca_file or tls_cert_fingerprint`. See [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+
 ## Observer peer silence alert (`observer.peers.silent_alert_minutes`)
 
 The daemon checks every registered observer peer once a minute (its own row is skipped). A peer that has not pushed for longer than the threshold raises one warning system alert, "Observer peer silent: <name>", per outage; when it pushes again, one info alert, "Observer peer recovered: <name>", follows. A peer that never pushed is measured from its registration time. This replaces the old numeric badge on the PWA Settings nav button, which no longer exists; per-peer "Stale (age)" and "Never pushed" notes now sit on the peer rows in the Observer list.

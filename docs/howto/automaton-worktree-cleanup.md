@@ -309,7 +309,11 @@ never removes a worktree with uncommitted changes, never touches a running or
 unfinished Automaton, never uses `--force` or `-D`, never removes anything
 outside the `automaton/` branch namespace or the daemon's own scratch files,
 and never follows a symbolic link. In `off` it does not even run git for the
-cleanup. The disk alert never removes anything.
+cleanup. The disk alert never removes anything. Its status record is guarded
+the same way: the status file path is resolved once inside the data
+directory, a data directory that is not usable leaves the status recorder
+inert (it neither loads nor saves anything), and the "still there" probe on a
+failed worktree path never stats an empty, NUL-laden or `../`-climbing path.
 
 ## Skipped by reason, permission errors and the fix
 
