@@ -437,3 +437,9 @@ Operator, quoted: "Why are we using opus, i never authorized that is always sonn
 Rule: Claude work runs on Sonnet or Haiku. Anything that seems to need a higher model is asked first.
 
 Finding: 252 sessions are recorded as opus (122 verifiers, 82 workers, 48 other; 53 on 2026-11-15, 29 on 2026-11-16, bursts of 73 a day on 2026-10-14 and 2026-10-15). A Claude session started with no model uses the Claude command default for the account, Opus. The judge session of one Automaton was running on Opus when found and was ended. Code fix filed as a draft Automaton (12480001): every Claude start passes an explicit model, Sonnet by default, Haiku for mechanical work, Opus only when an operator names it.
+
+## 2026-11-16 09:00 - Shipped features turned on
+
+Operator, quoted: "Look at all features since staying 9.0 to 10.0, what is not enabled that was part of our automation planning,  use it,  turn it on, this was my request last night" and "How do we set everything queued with the right model".
+
+Done: task routing is on (mechanical task types go to pi, code to Sonnet, no Opus), decompose lint is on in enforce mode (it was shadow), the planner model is Sonnet, and the five Automata that named no model are pinned to Sonnet. The watch now flags any session running on Opus. Not turned on, with the reason: default quality gates (needs a baseline command from the operator), planning routing (needs rules), the task attempt and no-progress limits (reviewing the recommended values), capacity fall-through is already on.
