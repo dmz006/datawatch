@@ -21,22 +21,22 @@ func TestCountUnlandedBranches(t *testing.T) {
 		oldestAt time.Duration
 	}{
 		{name: "empty", in: nil,
-			state: map[string]int{LandingLanded: 0, LandingPending: 0, LandingLive: 0, LandingUnlanded: 0},
+			state: map[string]int{CountLanded: 0, CountPending: 0, CountLive: 0, CountUnlanded: 0},
 			age:   map[string]int{AgeUnderDay: 0, AgeUnderWeek: 0, AgeOlder: 0}},
 		{name: "just under one day", in: []UnlandedBranch{br("a", UnlandedLanded, day-time.Second)},
-			state: map[string]int{LandingLanded: 1}, age: map[string]int{AgeUnderDay: 1}},
+			state: map[string]int{CountLanded: 1}, age: map[string]int{AgeUnderDay: 1}},
 		{name: "exactly one day", in: []UnlandedBranch{br("a", UnlandedNeedsDecision, day)},
-			state: map[string]int{LandingUnlanded: 1}, age: map[string]int{AgeUnderWeek: 1}},
+			state: map[string]int{CountUnlanded: 1}, age: map[string]int{AgeUnderWeek: 1}},
 		{name: "just under one week", in: []UnlandedBranch{br("a", UnlandedSuperseded, week-time.Second)},
-			state: map[string]int{LandingPending: 1}, age: map[string]int{AgeUnderWeek: 1}, oldest: "automaton/a", oldestAt: week - time.Second},
+			state: map[string]int{CountPending: 1}, age: map[string]int{AgeUnderWeek: 1}, oldest: "automaton/a", oldestAt: week - time.Second},
 		{name: "exactly one week", in: []UnlandedBranch{br("a", UnlandedSuperseded, week)},
-			state: map[string]int{LandingPending: 1}, age: map[string]int{AgeOlder: 1}, oldest: "automaton/a", oldestAt: week},
+			state: map[string]int{CountPending: 1}, age: map[string]int{AgeOlder: 1}, oldest: "automaton/a", oldestAt: week},
 		{name: "mixed with oldest pending", in: []UnlandedBranch{
 			br("a", UnlandedSuperseded, 2*day), br("b", UnlandedSuperseded, 9*day),
 			br("c", "", time.Hour), br("d", UnlandedNeedsDecision, 30*day),
 			{AutomatonID: "e", Branch: "automaton/e", Recommendation: UnlandedLanded},
 		},
-			state:  map[string]int{LandingPending: 2, LandingLive: 1, LandingUnlanded: 1, LandingLanded: 1},
+			state:  map[string]int{CountPending: 2, CountLive: 1, CountUnlanded: 1, CountLanded: 1},
 			age:    map[string]int{AgeUnderDay: 1, AgeUnderWeek: 1, AgeOlder: 3},
 			oldest: "automaton/b", oldestAt: 9 * day},
 	}

@@ -11,16 +11,16 @@ import (
 
 // Landing states counted by CountUnlandedBranches.
 const (
-	// LandingLanded: every commit is already on the default branch.
-	LandingLanded = "landed"
-	// LandingPending: commits are not on the default branch but later work
+	// CountLanded: every commit is already on the default branch.
+	CountLanded = "landed"
+	// CountPending: commits are not on the default branch but later work
 	// replaced them; the branch waits for cleanup.
-	LandingPending = "pending"
-	// LandingLive: the branch has no settled recommendation yet.
-	LandingLive = "live"
-	// LandingUnlanded: commits are not on the default branch and need a
+	CountPending = "pending"
+	// CountLive: the branch has no settled recommendation yet.
+	CountLive = "live"
+	// CountUnlanded: commits are not on the default branch and need a
 	// decision.
-	LandingUnlanded = "unlanded"
+	CountUnlanded = "unlanded"
 )
 
 // Age bands counted by CountUnlandedBranches.
@@ -51,13 +51,13 @@ type UnlandedCounts struct {
 func LandingStateOf(recommendation string) string {
 	switch recommendation {
 	case UnlandedLanded:
-		return LandingLanded
+		return CountLanded
 	case UnlandedSuperseded:
-		return LandingPending
+		return CountPending
 	case UnlandedNeedsDecision:
-		return LandingUnlanded
+		return CountUnlanded
 	default:
-		return LandingLive
+		return CountLive
 	}
 }
 
@@ -81,7 +81,7 @@ func AgeBandOf(age time.Duration) string {
 // zero when empty.
 func CountUnlandedBranches(branches []UnlandedBranch, now time.Time) UnlandedCounts {
 	c := UnlandedCounts{
-		ByState: map[string]int{LandingLanded: 0, LandingPending: 0, LandingLive: 0, LandingUnlanded: 0},
+		ByState: map[string]int{CountLanded: 0, CountPending: 0, CountLive: 0, CountUnlanded: 0},
 		ByAge:   map[string]int{AgeUnderDay: 0, AgeUnderWeek: 0, AgeOlder: 0},
 	}
 	for _, b := range branches {
@@ -95,7 +95,7 @@ func CountUnlandedBranches(branches []UnlandedBranch, now time.Time) UnlandedCou
 			band = AgeBandOf(age)
 		}
 		c.ByAge[band]++
-		if state != LandingPending || b.LastActivity.IsZero() {
+		if state != CountPending || b.LastActivity.IsZero() {
 			continue
 		}
 		if c.OldestPending == nil || age > c.OldestPending.Age {

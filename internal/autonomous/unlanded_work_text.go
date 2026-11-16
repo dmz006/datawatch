@@ -33,7 +33,7 @@ func renderUnlandedCounts(b *strings.Builder, c *UnlandedCounts) {
 		return
 	}
 	fmt.Fprintf(b, "Counts: %d landed, %d pending, %d live, %d unlanded\n",
-		c.ByState[LandingLanded], c.ByState[LandingPending], c.ByState[LandingLive], c.ByState[LandingUnlanded])
+		c.ByState[CountLanded], c.ByState[CountPending], c.ByState[CountLive], c.ByState[CountUnlanded])
 	fmt.Fprintf(b, "Age: %d under one day, %d under one week, %d older\n",
 		c.ByAge[AgeUnderDay], c.ByAge[AgeUnderWeek], c.ByAge[AgeOlder])
 	if o := c.OldestPending; o != nil {

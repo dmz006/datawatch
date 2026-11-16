@@ -107,7 +107,7 @@ func TestUnlandedCountsParity_EverySurfaceSameCounts(t *testing.T) {
 	}
 
 	want := parityCounts{
-		ByState: map[string]int{autonomous.LandingLanded: 1, autonomous.LandingPending: 2, autonomous.LandingLive: 1, autonomous.LandingUnlanded: 1},
+		ByState: map[string]int{autonomous.CountLanded: 1, autonomous.CountPending: 2, autonomous.CountLive: 1, autonomous.CountUnlanded: 1},
 		ByAge:   map[string]int{autonomous.AgeUnderDay: 2, autonomous.AgeUnderWeek: 1, autonomous.AgeOlder: 2},
 		Oldest:  "automaton/a2",
 	}

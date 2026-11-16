@@ -169,7 +169,7 @@ func (a *unlandedAlerter) check(ctx context.Context, enabled bool, threshold int
 		return res
 	}
 	counts := CountUnlandedBranches(branches, now)
-	res.Pending = counts.ByState[LandingPending]
+	res.Pending = counts.ByState[CountPending]
 	if res.Pending <= threshold {
 		res.Outcome = UnlandedAlertAtOrBelow
 		return res
@@ -178,7 +178,7 @@ func (a *unlandedAlerter) check(ctx context.Context, enabled bool, threshold int
 	if oldest == nil {
 		// Every pending branch lacks a last-commit time: still name one.
 		for _, b := range branches {
-			if LandingStateOf(b.Recommendation) == LandingPending {
+			if LandingStateOf(b.Recommendation) == CountPending {
 				title := b.Title
 				if title == "" {
 					title = b.AutomatonID
