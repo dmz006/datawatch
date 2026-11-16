@@ -28,13 +28,15 @@ type UncommittedFile struct {
 
 // DetectUncommittedWork lists the files git sees as modified, staged, deleted,
 // renamed or untracked in dir, using git status through the read-only run
-// (nil means defaultDriftGitRunner). Ignored files never appear because git
-// status omits them. Paths are normalized, de-duplicated and sorted, and the
-// daemon's own files are dropped: scratch artifacts of the Automata runner, the
-// tooling files the daemon writes into a project directory when a session
-// starts (see isDaemonToolingFile and isDaemonIgnoreChange) and anything
-// gitguard.Default refuses to stage. An empty dir or a git error returns an
-// error so the caller can skip the check.
+// (nil means defaultDriftGitRunner). Files the repository's own ignore rules
+// ignore and that are not in the index never appear, along with the daemon's
+// own files: scratch artifacts of the Automata runner, the tooling files the
+// daemon writes into a project directory when a session starts (see
+// isDaemonToolingFile and isDaemonIgnoreChange), anything gitguard.Default
+// refuses to stage, and files whose content is only the daemon's injected
+// marked sections (see daemonSectionsOnlyChange and daemonSectionsOnlyUntracked).
+// Paths are normalized, de-duplicated and sorted, and an empty dir or a git
+// error returns an error so the caller can skip the check.
 func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) ([]UncommittedFile, error) {
 	files, _, err := DetectUncommittedWorkSkipping(ctx, dir, run)
 	return files, err
@@ -70,6 +72,19 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 		keep[p] = true
 	}
 
+	// A file the repository's own ignore rules ignore and that is not in the
+	// index cannot be part of a commit anyway, so it is never the task's work.
+	// An index check that fails keeps the entry, following the conservative
+	// pattern of classifyTaskCommitPaths.
+	ignoreSet := ignoredUntrackedPaths(ctx, dir, paths)
+	dropIgnored := map[string]bool{}
+	for p := range ignoreSet {
+		cached, cerr := run(ctx, dir, "ls-files", "--cached", "--", p)
+		if cerr == nil && strings.TrimSpace(cached) == "" {
+			dropIgnored[normalizeDriftPath(p)] = true
+		}
+	}
+
 	seen := make(map[string]bool, len(files))
 	result := make([]UncommittedFile, 0, len(files))
 	var skipped []string
@@ -82,7 +97,7 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 			}
 			continue
 		}
-		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] {
+		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] || dropIgnored[f.Path] {
 			continue
 		}
 		if isIgnoreFileName(f.Path) && isDaemonIgnoreChange(ctx, dir, f.Path, run) {
@@ -91,6 +106,11 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 		// A modified tracked file whose only difference from HEAD is the
 		// daemon's own marked blocks is not the task's work.
 		if f.Status != "??" && daemonSectionsOnlyChange(ctx, dir, f.Path, run) {
+			continue
+		}
+		// A newly untracked file that holds nothing but the daemon's own
+		// marked blocks is not the task's work either.
+		if f.Status == "??" && daemonSectionsOnlyUntracked(ctx, dir, f.Path) {
 			continue
 		}
 		seen[f.Path] = true
