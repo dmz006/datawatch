@@ -8,6 +8,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 )
 
 // lintFindingsCap bounds the runner output kept in LintGateResult.Findings.
@@ -137,4 +138,49 @@ func capLintFindings(s string) string {
 		s = s[:lintFindingsCap]
 	}
 	return s
+}
+
+// VerifyLintRunner is the LintRunner the verification lint gate uses after
+// a passing verification script. Tests replace it with a fake.
+var VerifyLintRunner LintRunner = DefaultLintRunner
+
+// applyLintGate runs the lint gate over inv.ProjectDir after a passing
+// verification script. It returns "" when the gate passes, no Go package
+// was touched, or the directory is not a git work tree; otherwise it
+// returns the failure message (starting "lint gate failed") and appends it
+// to inv.ScriptOutput so the operator sees it.
+func applyLintGate(ctx context.Context, inv *GuardrailInvocation) string {
+	if inv.ProjectDir == "" {
+		return ""
+	}
+	if out, err := lintGateGit(ctx, inv.ProjectDir, "rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(out) != "true" {
+		return ""
+	}
+	res, err := LintGateCheck(ctx, inv.ProjectDir, VerifyLintRunner)
+	var msg string
+	switch {
+	case err != nil:
+		msg = "lint gate failed: " + err.Error()
+	case !res.Passed:
+		msg = "lint gate failed: findings in " + strings.Join(res.Packages, " ") + ":\n" + res.Findings
+	default:
+		return ""
+	}
+	if inv.ScriptOutput != "" {
+		inv.ScriptOutput += "\n"
+	}
+	inv.ScriptOutput += msg
+	return msg
+}
+
+// lintGateBlockVerdict is the deterministic block verdict recorded when
+// the lint gate fails a unit whose verification script passed.
+func lintGateBlockVerdict(msg string) GuardrailVerdict {
+	return GuardrailVerdict{
+		Guardrail: "lint-gate",
+		Outcome:   "block",
+		Severity:  "high",
+		Summary:   msg,
+		VerdictAt: time.Now(),
+	}
 }

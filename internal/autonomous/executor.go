@@ -3059,6 +3059,22 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		m.recordVerifyCeiling(t, inv.scriptLaunch)
 		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
 	}
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+				return false, "", err
+			}
+			m.store.WithLock(func() {
+				t.Verdicts = append(t.Verdicts, v)
+				t.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, "", nil
+		}
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
@@ -3172,6 +3188,22 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+				return false, nil, err
+			}
+			m.store.WithLock(func() {
+				s.Verdicts = append(s.Verdicts, v)
+				s.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, nil, nil
+		}
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
