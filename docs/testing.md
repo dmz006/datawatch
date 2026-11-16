@@ -252,18 +252,28 @@ parts, and the exit code is 0 either way.)
 
 ## Automaton task verification: the lint step
 
-When an Automaton task's diff touches Go files, task verification also runs the
-repository lint — `golangci-lint` over the touched packages — after the task's
-verification script passes. A clean lint is required: any lint finding fails
-verification, and the failure reason carries the finding text so the next attempt
-(and the operator) can see what to fix. A task whose diff touches no Go files skips
-the lint step.
+When an Automaton task's or story's changed files touch Go files, verification
+also runs the repository lint — `golangci-lint` over the touched packages — after
+the verification script passes. The gate counts the branch's diff against its
+merge base with `main` **plus the untracked files**, keeps the Go files, and
+lints only their package directories. A clean lint is required: any lint finding
+fails the unit (the task, or the story's verification as a whole), and the
+failure is recorded as a **non-retryable** `content` failure with source
+`lint-gate` — the finding text (capped at 8 KiB) goes into the failure reason and
+is appended to the script output, so the operator sees exactly what to fix.
+There is no automatic retry after this failure: fix the findings (or install
+`golangci-lint` on the worker's node) and reset the unit. A unit whose changed
+files touch no Go files, or that has no project directory, or a project
+directory that is not a git work tree, skips the lint step.
 
-To reproduce the check locally before the verifier runs it, lint the packages the
-branch touches:
+To reproduce the check exactly as the gate takes it, lint the packages the gate
+would take:
 
 ```bash
-pkgs=$(git diff --name-only "$(git merge-base HEAD main)" -- '*.go' | xargs -r -n1 dirname | sort -u | sed 's|^|./|')
+files=$(printf '%s\n' \
+  "$(git diff --name-only "$(git merge-base HEAD main)" -- '*.go')" \
+  "$(git ls-files --others --exclude-standard -- '*.go')" | sed '/^$/d')
+pkgs=$(printf '%s\n' "$files" | xargs -r -n1 dirname | sort -u | sed 's|^|./|')
 golangci-lint run $pkgs
 ```
 
@@ -978,7 +988,7 @@ These packages depend on external services that can't be easily unit-tested:
 - **LLM backends** (6 packages): require running LLM servers (Ollama, OpenCode, etc.)
 - **channel, wizard, signal**: require Node.js runtime or signal-cli Java process
 
-See [test-coverage plan](plans/2026-04-12-test-coverage.md) for roadmap to improve.
+See [test-coverage plan](plans/historical-plans/2026-04-12-test-coverage.md) for roadmap to improve.
 
 ### Pre-release Validation Checklist (v2.3.0)
 
