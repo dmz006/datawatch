@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.181.0 — Remember the header server dropdown choice per browser
+
+### Changed
+
+- Remember the header server dropdown choice per browser.
+
 ## v9.180.2 — Two data races found by the race detector
 
 ### Fixed
