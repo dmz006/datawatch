@@ -21,16 +21,17 @@ func intermittentTestDefect(test, commit string) mergeshadow.IntermittentDefect 
 
 func TestIntermittentHousekeepingViewRow(t *testing.T) {
 	m := &Manager{dataDir: t.TempDir()}
-	if got := m.HousekeepingRepairsView(); got.IntermittentDefects == nil || len(got.IntermittentDefects) != 0 {
-		t.Fatalf("empty store: rows = %#v, want empty non-nil", got.IntermittentDefects)
+	base := m.HousekeepingRepairsView()
+	if base.IntermittentDefects == nil || len(base.IntermittentDefects) != 0 {
+		t.Fatalf("empty store: rows = %#v, want empty non-nil", base.IntermittentDefects)
 	}
 	d := intermittentTestDefect("TestFlaky", "abc123")
 	if _, err := mergeshadow.RecordIntermittentDefects(m.dataDir, "a1", []mergeshadow.IntermittentDefect{d}); err != nil {
 		t.Fatal(err)
 	}
 	v := m.HousekeepingRepairsView()
-	if len(v.Groups) != 4 {
-		t.Errorf("groups = %d, want the 4 repair groups unchanged", len(v.Groups))
+	if len(v.Groups) != len(base.Groups) {
+		t.Errorf("groups = %d, want the %d repair groups unchanged by recording an intermittent defect", len(v.Groups), len(base.Groups))
 	}
 	if len(v.IntermittentDefects) != 1 {
 		t.Fatalf("rows = %d, want 1", len(v.IntermittentDefects))
