@@ -192,6 +192,14 @@ s_docker_agent_base() {
   docker build -f docker/dockerfiles/Dockerfile.agent-base --build-arg VERSION=pre-tag \
     -t datawatch-agent-base:pre-tag . || return 1
   if command -v trivy >/dev/null 2>&1; then
+    # Isolated, throwaway scan cache: created under the operator's temp space
+    # (never a fixed shared path) and removed on every exit path — normal
+    # finish, a failing scan, or an interrupted script.
+    TRIVY_CACHE_DIR="$(mktemp -d)" || return 1
+    export TRIVY_CACHE_DIR
+    trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; write_record' EXIT
+    trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; exit 130' INT
+    trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; exit 143' TERM
     trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 \
       --format table datawatch-agent-base:pre-tag
   else
