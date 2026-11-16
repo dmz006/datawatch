@@ -110,6 +110,7 @@ type automataEventLogSources struct {
 	repoCI    automataRepoCIWatchStateSource
 	depUpdate automataDependencyUpdateSource
 	errors    automataRawErrorsSource
+	holds     automataHoldsSource
 }
 
 // automataEventLogSourcesFor builds the sources from the Automata manager's
@@ -158,6 +159,9 @@ func (s *Server) automataEventLogSourcesFor(ctx context.Context) automataEventLo
 			}
 			return runs
 		}
+	}
+	if mgr != nil {
+		src.holds = mgr.ListPRDs
 	}
 	if mgr != nil {
 		src.errors = func() []automataRawError {
@@ -257,6 +261,9 @@ func (s *Server) collectAutomataEvents(ctx context.Context) ([]AutomataEvent, er
 	}
 	if src.errors != nil {
 		steps = append(steps, func() ([]AutomataEvent, error) { return AutomataEventsFromRawErrors(src.errors) })
+	}
+	if src.holds != nil {
+		steps = append(steps, func() ([]AutomataEvent, error) { return AutomataEventsFromHolds(src.holds) })
 	}
 	lists := make([][]AutomataEvent, 0, len(steps))
 	for _, step := range steps {

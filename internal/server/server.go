@@ -511,6 +511,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Cancelled-to-Completed migration: POST /api/autonomous/completed/migrate
 	// [?dry_run=&limit=&id=].
 	apiMux.HandleFunc("/api/autonomous/completed/migrate", api.handleAutonomousCompletedMigrate)
+	// Operator hold: GET /api/autonomous/held (the held group) and
+	// POST /api/autonomous/held/migrate {dry_run,ids,reason,condition,until,actor}.
+	apiMux.HandleFunc("/api/autonomous/held", api.handleAutonomousHeld)
+	apiMux.HandleFunc("/api/autonomous/held/migrate", api.handleAutonomousHeldMigrate)
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)

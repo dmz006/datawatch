@@ -706,6 +706,9 @@ body {
 .prd-card-status-approved      { border-left-color: var(--accent); }
 .prd-card-status-running       { border-left-color: var(--success); }
 .prd-card-status-paused        { border-left-color: var(--warning); }
+/* Held is a deliberate pause by decision, not a block: neutral colour,
+   distinct from running (green), paused (amber) and blocked (red). */
+.prd-card-status-held          { border-left-color: var(--text2); }
 .prd-card-status-completed     { border-left-color: var(--text2); }
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
@@ -1040,7 +1043,7 @@ body {
 .work-tile.prd-card-status-paused .work-tile-dot,
 .work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
 .work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
-
+.work-tile.prd-card-status-held .work-tile-dot { background: var(--text2); }
 /* compact: one column of two-line rows (420px to 719px). Line one is the title,
    the status chip and the count; line two is the backend, the tag count and the
    last activity. Actions move into the overflow menu. */
@@ -3342,6 +3345,11 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .state-badge-running { animation: none; opacity: 1; }
 }
 
+/* The hold record slot (detail view + card): a left neutral border marks
+   the deliberate pause; the look-again/expired line is the action cue. */
+.automaton-hold-record { border-left: 3px solid var(--text2); }
+.automaton-hold-record .automaton-hold-lookagain { font-weight: 600; color: var(--text); }
+
 /* GH#186 — animated-eye content-loading state, parity with the apps'
    DatawatchLoadingContent / CardSkeleton (operator 2026-10-06). The
    canvas's own animation already self-disables under
@@ -3466,6 +3474,9 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+/* Held: a neutral status pill — no pulse animation (deliberate pause,
+   not a running state). */
+.state-badge-held { background: rgba(140,140,160,0.15); color: var(--text2); }
 .state-badge-stalled { background: rgba(239,68,68,0.1); color: var(--error); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }

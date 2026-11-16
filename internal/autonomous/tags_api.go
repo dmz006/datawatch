@@ -174,7 +174,9 @@ func (a *API) SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *strin
 
 // AttentionAutomata returns the Automata that need the operator's attention:
 // those whose status is in statuses, plus every Automaton with a task held for
-// operator review. Each is its summary view, newest first. The result is never
+// operator review. Each is its summary view, newest first. A held Automaton is
+// never returned, even when held is listed in statuses or it carries a task
+// held for review: the operator already decided it waits. The result is never
 // nil.
 func (a *API) AttentionAutomata(statuses []string) []any {
 	want := make(map[string]bool, len(statuses))
@@ -188,6 +190,9 @@ func (a *API) AttentionAutomata(statuses []string) []any {
 	out := []any{}
 	inherited := a.M.InheritedTagsSnapshot()
 	for _, p := range prds {
+		if p.Status == PRDHeld {
+			continue
+		}
 		view := BuildSummaryView(p)
 		view.InheritedTags = inherited(p.ID)
 		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 || reviewBlockHoldText(p) != "" {

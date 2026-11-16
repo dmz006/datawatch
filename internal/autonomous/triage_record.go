@@ -435,14 +435,17 @@ func (m *Manager) ClearTriageRecord(prdID string) error {
 
 // ListTriageRecords returns the records currently stored on all
 // Automata in the store (copies, safe to read after the call), newest
-// Automaton first.
+// Automaton first. An Automaton on hold is waiting by the operator's
+// decision, not stuck, so its stored record is left out of the read; the
+// record itself stays on the Automaton and shows again if the hold is
+// released back to a failed or blocked state.
 func (m *Manager) ListTriageRecords() []*TriageRecord {
 	if m.store == nil {
 		return nil
 	}
 	out := []*TriageRecord{}
 	for _, p := range m.store.ListPRDs() {
-		if p.Triage == nil {
+		if p.Triage == nil || p.Status == PRDHeld {
 			continue
 		}
 		rec := *p.Triage

@@ -76,7 +76,8 @@ type CompletedMigrationReport struct {
 	// LeftCancelled counts cancelled records left exactly as they are: no
 	// shipped record and no proof that the branch is merged.
 	LeftCancelled int `json:"left_cancelled"`
-	// LeftOther counts blocked or failed records (single-id mode) left alone.
+	// LeftOther counts blocked or failed records (single-id mode) and held
+	// records left alone.
 	LeftOther int `json:"left_other,omitempty"`
 	// Deferred counts candidates not looked at because Limit was reached.
 	Deferred int      `json:"deferred,omitempty"`
@@ -380,6 +381,12 @@ func (m *Manager) MigrateCompleted(ctx context.Context, opts CompletedMigrationO
 			m.readLocked(func() { status = string(r.prd.Status) })
 		} else {
 			status = string(r.auto.Status)
+		}
+		if r.prd != nil && PRDStatus(status) == PRDHeld {
+			// A held record waits by operator decision: it is never moved to
+			// completed, in a full pass or when named by id.
+			rep.LeftOther++
+			continue
 		}
 		if status == string(PRDCompleted) {
 			var hist bool

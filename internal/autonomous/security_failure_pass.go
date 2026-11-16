@@ -235,8 +235,8 @@ func (c *Coordinator) securityFailureLinkedPRD(sha string) *PRD {
 	}
 	for _, p := range c.m.store.ListPRDs() {
 		snap, ok := c.m.store.SnapshotPRD(p.ID)
-		if !ok {
-			continue
+		if !ok || snap.Status == PRDHeld {
+			continue // a held Automaton is never stopped or blocked by this pass
 		}
 		if prdLastPostVerifySHA(snap) == sha {
 			return snap
