@@ -36496,8 +36496,8 @@ window.usageBackoffStopPolling = function () {
 // and writes settings back through the config endpoint; it computes nothing itself.
 // The effort ceiling is read-only here: it is set per Automaton with the effort-ceiling
 // tools. Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNGS = ['lower_inflight', 'route_entry', 'hold_entry', 'route_pi_prompt', 'hold_claude'];
-const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_entry: 'burn_guard_rung_route_entry', hold_entry: 'burn_guard_rung_hold_entry', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
+const BURN_GUARD_RUNGS = ['lower_inflight', 'route_entry', 'route_cheaper_model', 'hold_entry', 'route_pi_prompt', 'hold_claude'];
+const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_entry: 'burn_guard_rung_route_entry', route_cheaper_model: 'burn_guard_rung_route_cheaper_model', hold_entry: 'burn_guard_rung_hold_entry', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
 const BURN_GUARD_REFRESH_MS = 60000;

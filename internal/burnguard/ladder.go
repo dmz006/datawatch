@@ -15,9 +15,10 @@ import (
 // names are still accepted in saved configs and saved state and normalize to the
 // entry-generic names (NormalizeRung).
 const (
-	RungLowerInflight = "lower_inflight"
-	RungRouteEntry    = "route_entry"
-	RungHoldEntry     = "hold_entry"
+	RungLowerInflight     = "lower_inflight"
+	RungRouteEntry        = "route_entry"
+	RungRouteCheaperModel = "route_cheaper_model"
+	RungHoldEntry         = "hold_entry"
 
 	// Legacy first-version rung names. They normalize to the entry-generic names above
 	// (NormalizeRung) and are kept for saved configs and saved state.
@@ -33,7 +34,7 @@ var legacyRungNames = map[string]string{
 
 // KnownRungs lists the entry-generic rung names.
 func KnownRungs() []string {
-	return []string{RungLowerInflight, RungRouteEntry, RungHoldEntry, RungRoutePiPrompt, RungHoldClaude}
+	return []string{RungLowerInflight, RungRouteEntry, RungRouteCheaperModel, RungHoldEntry, RungRoutePiPrompt, RungHoldClaude}
 }
 
 // NormalizeRung resolves one rung name: an entry-generic name passes through, a legacy
@@ -67,6 +68,14 @@ func IsRouteRung(rung string) bool {
 	return ok && n == RungRouteEntry
 }
 
+// IsRouteCheaperModelRung reports whether rung names the route_cheaper_model rung, which
+// sends the entry's new work to its own cheaper model (the same backend, a different
+// model). It has no legacy first-version name.
+func IsRouteCheaperModelRung(rung string) bool {
+	n, ok := NormalizeRung(rung)
+	return ok && n == RungRouteCheaperModel
+}
+
 // IsLowerInflightRung reports whether rung is the lower-inflight rung.
 func IsLowerInflightRung(rung string) bool {
 	n, ok := NormalizeRung(rung)
@@ -97,6 +106,10 @@ type EntryTarget struct {
 	// RouteTo is where the route rung sends new work; empty makes the route rung a
 	// rung that changes nothing.
 	RouteTo string `json:"route_to,omitempty"`
+	// CheaperModel is the model the route_cheaper_model rung sends the entry's new work
+	// to (the same backend's cheaper model, e.g. Haiku for a Claude entry); empty makes
+	// the rung one that changes nothing.
+	CheaperModel string `json:"cheaper_model,omitempty"`
 	// HeldModels limits the hold rung to these models; empty holds the whole entry.
 	HeldModels []string `json:"held_models,omitempty"`
 }
@@ -110,13 +123,14 @@ type ActionKind string
 const (
 	ActionSetInflight  ActionKind = "set_inflight"
 	ActionRouteBackend ActionKind = "route_backend"
+	ActionRouteModel   ActionKind = "route_model"
 	ActionHoldNewWork  ActionKind = "hold_new_work"
 )
 
 // ActionKinds lists every kind a Decision may carry. A release is the same kind with
 // Release set.
 func ActionKinds() []ActionKind {
-	return []ActionKind{ActionSetInflight, ActionRouteBackend, ActionHoldNewWork}
+	return []ActionKind{ActionSetInflight, ActionRouteBackend, ActionRouteModel, ActionHoldNewWork}
 }
 
 // Action is one admission-side change.
@@ -130,9 +144,11 @@ type Action struct {
 	// Value, the route or the hold is lifted.
 	Release bool `json:"release,omitempty"`
 	// Backend is the backend whose admission changes; To is the backend new work is routed
-	// to (route_backend only).
+	// to (route_backend only); Model is the model new work runs on (route_model only,
+	// the same backend).
 	Backend string `json:"backend,omitempty"`
 	To      string `json:"to,omitempty"`
+	Model   string `json:"model,omitempty"`
 	// Value is the inflight cap to set (set_inflight only).
 	Value int `json:"value,omitempty"`
 	// Models limits a hold to these models of the backend (hold_new_work only); empty
@@ -173,7 +189,9 @@ type LadderSettings struct {
 // setting whose value would raise a question per change.
 const askOnOffHint = "Set usage.burn_guard.ask_on_change to true to get a question per change."
 
-// DefaultLadder is the ladder used when none is configured.
+// DefaultLadder is the ladder used when none is configured. route_cheaper_model is not
+// in the default: it is a no-op until an entry resolves a cheaper model, so it is
+// opted in by the ladder setting where it sits before hold_entry.
 func DefaultLadder() []string {
 	return []string{RungLowerInflight, RungRouteEntry, RungHoldEntry}
 }
@@ -466,6 +484,11 @@ func (l *Ladder) apply(rung string, inflight int) []Action {
 			return nil
 		}
 		return []Action{{Kind: ActionRouteBackend, Rung: rung, Backend: t.Backend, To: t.RouteTo}}
+	case RungRouteCheaperModel: // no legacy name; routes to the entry's own cheaper model
+		if t.CheaperModel == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteModel, Rung: rung, Backend: t.Backend, Model: t.CheaperModel}}
 	case RungHoldEntry, RungHoldClaude: // the legacy name: the same hold rung
 		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
@@ -488,6 +511,11 @@ func (l *Ladder) release() []Action {
 			return nil
 		}
 		return []Action{{Kind: ActionRouteBackend, Rung: rung, Release: true, Backend: t.Backend, To: t.RouteTo}}
+	case RungRouteCheaperModel: // no legacy name; releases the cheaper-model route
+		if t.CheaperModel == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteModel, Rung: rung, Release: true, Backend: t.Backend, Model: t.CheaperModel}}
 	case RungHoldEntry, RungHoldClaude: // the legacy name: the same hold rung
 		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Release: true, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
@@ -514,6 +542,10 @@ func describe(acts []Action, original int) string {
 			parts = append(parts, fmt.Sprintf("routed new %s work to %s.", a.Backend, a.To))
 		case a.Kind == ActionRouteBackend:
 			parts = append(parts, fmt.Sprintf("stopped routing new %s work to %s.", a.Backend, a.To))
+		case a.Kind == ActionRouteModel && !a.Release:
+			parts = append(parts, fmt.Sprintf("routing new %s work to the cheaper model %s; running sessions continue.", a.Backend, a.Model))
+		case a.Kind == ActionRouteModel:
+			parts = append(parts, fmt.Sprintf("stopped routing new %s work to the cheaper model %s; the original model routing is restored.", a.Backend, a.Model))
 		case a.Kind == ActionHoldNewWork && !a.Release && len(a.Models) > 0:
 			parts = append(parts, fmt.Sprintf("holding new %s work on models %s; running sessions continue.", a.Backend, strings.Join(a.Models, ", ")))
 		case a.Kind == ActionHoldNewWork && !a.Release:

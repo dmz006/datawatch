@@ -4137,6 +4137,7 @@
   "burn_guard_state_waiting": "waiting for a projection",
   "burn_guard_rung_lower_inflight": "Lower Claude inflight cap",
   "burn_guard_rung_route_entry": "Route the entry's work to a lighter backend",
+  "burn_guard_rung_route_cheaper_model": "Route the entry's work to a cheaper model on the same backend",
   "burn_guard_rung_hold_entry": "Hold the entry's work. Running sessions continue",
   "burn_guard_rung_route_pi_prompt": "Route work to pi-prompt",
   "burn_guard_rung_hold_claude": "Hold Claude work",

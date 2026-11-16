@@ -57,6 +57,10 @@ func (o *inflightOverrides) clear(name string) {
 // burnGuardRoutes records the backends whose new work is routed elsewhere.
 var burnGuardRoutes = &routeTable{m: map[string]string{}}
 
+// burnGuardModelRoutes records, by backend, the model new work is run with when the
+// route_cheaper_model rung sends that backend's new work to a cheaper model.
+var burnGuardModelRoutes = &routeTable{m: map[string]string{}}
+
 type routeTable struct {
 	mu sync.Mutex
 	m  map[string]string
@@ -132,6 +136,20 @@ func (a burnGuardAdmission) RouteBackend(from, to string, on bool) error {
 		burnGuardRoutes.m[from] = to
 	} else {
 		delete(burnGuardRoutes.m, from)
+	}
+	return nil
+}
+
+// RouteModel is the route_cheaper_model seam: it records (on) or forgets (off) which
+// model new work of backend runs with. It changes only the model of new work on the
+// same backend and never ends a running session.
+func (a burnGuardAdmission) RouteModel(backend, model string, on bool) error {
+	burnGuardModelRoutes.mu.Lock()
+	defer burnGuardModelRoutes.mu.Unlock()
+	if on && model != "" {
+		burnGuardModelRoutes.m[backend] = model
+	} else {
+		delete(burnGuardModelRoutes.m, backend)
 	}
 	return nil
 }
@@ -245,6 +263,7 @@ func wireBurnGuard(ctx context.Context, cfg *config.Config, httpServer *server.H
 	}
 	// Admission reads the route when it resolves a task's backend.
 	autonomouspkg.SetBackendRoute(burnGuardRoutes.RouteFor)
+	autonomouspkg.SetBackendModelRoute(burnGuardModelRoutes.RouteFor)
 	httpServer.StartBurnGuard(ctx)
 }
 

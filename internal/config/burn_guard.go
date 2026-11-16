@@ -16,9 +16,10 @@ import (
 const (
 	// Ladder rung names, in the order the default ladder applies them. They are
 	// entry-generic: each rung acts on the ladder's entry, not on any fixed backend.
-	BurnGuardRungLowerInflight = "lower_inflight"
-	BurnGuardRungRouteEntry    = "route_entry"
-	BurnGuardRungHoldEntry     = "hold_entry"
+	BurnGuardRungLowerInflight     = "lower_inflight"
+	BurnGuardRungRouteEntry        = "route_entry"
+	BurnGuardRungRouteCheaperModel = "route_cheaper_model"
+	BurnGuardRungHoldEntry         = "hold_entry"
 
 	// Legacy first-version rung names (now route_entry and hold_entry). They are
 	// still accepted in saved configs and normalize to the entry-generic names
@@ -134,6 +135,11 @@ type BurnGuardEntryConfig struct {
 	// RouteTo is the backend the route rung sends new work to; empty means the
 	// route rung does nothing for this entry.
 	RouteTo string `yaml:"route_to,omitempty" json:"route_to,omitempty"`
+	// RouteCheaperModel is the model the route_cheaper_model rung sends this entry's
+	// new work to: the entry's own cheaper model (for a Claude entry, Haiku). Empty
+	// means the entry's own cheapest priced model (resolved from its per-model cost
+	// rates); it changes the model, not the backend.
+	RouteCheaperModel string `yaml:"route_cheaper_model,omitempty" json:"route_cheaper_model,omitempty"`
 	// PointsPerUSD converts a flat entry's dollar-priced tokens to points of its
 	// weekly allowance; 0 means price the tokens with the guard-wide cache
 	// coefficients (the fitted ones) instead.
@@ -148,6 +154,51 @@ func (e BurnGuardEntryConfig) HasUsageSource() bool {
 // IsMetered reports whether the entry is on a metered plan.
 func (e BurnGuardEntryConfig) IsMetered() bool {
 	return strings.EqualFold(strings.TrimSpace(e.Plan), BurnGuardPlanMetered)
+}
+
+// EntryModelCost pairs one model of an LLM entry with its resolved input and
+// output USD price per 1K tokens (the per-model cost rate, backend-fallback
+// merged in). It is the input to PickCheaperModel.
+type EntryModelCost struct {
+	Model   string
+	InPerK  float64
+	OutPerK float64
+}
+
+// PickCheaperModel returns an entry's cheaper model: the model the
+// route_cheaper_model rung should send this entry's new work to. It is the
+// cheapest-priced model other than the entry's own (by input+output per 1K),
+// using each model's own cost rate. A Claude entry (preferHaiku) prefers the
+// haiku-named model over another model of the same price, and a haiku model
+// never loses to another model on price alone: it wins unless the cheapest
+// non-haiku model is strictly cheaper than it. An entry's own model and empty
+// names are excluded. "" when there is no other model (nothing to route to).
+func PickCheaperModel(own string, preferHaiku bool, models []EntryModelCost) string {
+	own = strings.TrimSpace(own)
+	var rest []EntryModelCost
+	for _, m := range models {
+		if m.Model == "" || m.Model == own {
+			continue
+		}
+		rest = append(rest, m)
+	}
+	if len(rest) == 0 {
+		return ""
+	}
+	haiku := func(m string) bool { return strings.Contains(strings.ToLower(m), "haiku") }
+	cost := func(m EntryModelCost) float64 { return m.InPerK + m.OutPerK }
+	best := rest[0]
+	for _, c := range rest[1:] {
+		cc, bc := cost(c), cost(best)
+		if cc < bc {
+			best = c
+			continue
+		}
+		if cc == bc && preferHaiku && haiku(c.Model) && !haiku(best.Model) {
+			best = c
+		}
+	}
+	return best.Model
 }
 
 // EffectiveEntries returns the entries the guard evaluates: the configured ones with a
@@ -178,8 +229,14 @@ func (c BurnGuardConfig) EffectiveEntries() []BurnGuardEntryConfig {
 }
 
 var (
-	burnGuardRungs    = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungHoldEntry}
-	burnGuardCeilings = []string{BurnGuardCeilingLow, BurnGuardCeilingMedium, BurnGuardCeilingHigh, BurnGuardCeilingCheapBackend}
+	// burnGuardRungs is the set of ladder rung names a configured ladder may use, in the
+	// order the rungs are canonically applied. route_cheaper_model is allowed here so a
+	// ladder can place it (canonically before hold_entry), but it is not in the always-on
+	// default ladder because it is a no-op until an entry resolves a cheaper model.
+	burnGuardRungs = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungRouteCheaperModel, BurnGuardRungHoldEntry}
+	// burnGuardDefaultLadder is the ladder applied when none is configured.
+	burnGuardDefaultLadder = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungHoldEntry}
+	burnGuardCeilings      = []string{BurnGuardCeilingLow, BurnGuardCeilingMedium, BurnGuardCeilingHigh, BurnGuardCeilingCheapBackend}
 )
 
 // burnGuardLegacyRungs maps legacy first-version rung names to their
@@ -217,7 +274,7 @@ func DefaultBurnGuard() BurnGuardConfig {
 		IntervalMinutes:            BurnGuardIntervalMinutesDefault,
 		MarginPoints:               BurnGuardMarginPointsDefault,
 		MaxProjectionGapPoints:     BurnGuardProjectionGapDefault,
-		Ladder:                     append([]string(nil), burnGuardRungs...),
+		Ladder:                     append([]string(nil), burnGuardDefaultLadder...),
 		StepBack:                   true,
 		CacheWritePointsPerMillion: BurnGuardCacheWriteDefault,
 		CacheReadPointsPerMillion:  BurnGuardCacheReadDefault,
