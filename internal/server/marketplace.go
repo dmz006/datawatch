@@ -303,8 +303,11 @@ func (s *Server) handleComputeNodeModelPull(w http.ResponseWriter, r *http.Reque
 		UpdatedAt: time.Now().UTC(),
 	}
 	globalPullTasks.add(task)
+	// Answer with a copy taken before the pull goroutine starts: the goroutine
+	// updates the registered task while the response is still being encoded.
+	snapshot := *task
 	go s.runOllamaPull(taskID, n, body.Model)
-	writeJSONOK(w, task)
+	writeJSONOK(w, &snapshot)
 }
 
 // handleComputeNodeModelDelete — DELETE /api/compute/nodes/<n>/models/<model>

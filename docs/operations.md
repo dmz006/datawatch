@@ -2846,6 +2846,69 @@ protected paths decision, a run that could not start, or an updated Automaton
 waiting for review). See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
+### Build-host toolchain freshness check
+
+`scripts/check-toolchain.sh` compares the development tools installed on the
+machine that builds datawatch with the newest stable release: Go, `gosec`,
+`govulncheck`, `gitleaks`, `golangci-lint`, `trivy` and `goreleaser`. It is
+development tooling for the build host, not a daemon feature: the daemon never
+runs it, it has no setting in `config.yaml` or Settings, and it has no REST,
+MCP, CLI, chat or web app surface. It is separate from the weekly dependency
+update above, which updates the repository's dependencies and never touches the
+tools on the build host.
+
+Run it by hand: `make check-toolchain` (or `bash scripts/check-toolchain.sh`). The tool list is
+`toolchain.yaml` at the repository root (name, version command, a `sed`
+expression that reads the version, and where the newest version comes from:
+the go.dev download feed, the latest GitHub release, or the Go module proxy).
+The Go target is the `go` directive of `go.mod`, read each time, so the check
+follows the repository's Go line.
+
+It is read-only: it runs only each tool's version command, makes HTTPS reads
+(`go.dev`, `api.github.com`, `proxy.golang.org`; an optional `GITHUB_TOKEN` is
+sent to `api.github.com` only) and writes nothing outside a temporary folder it
+removes on exit. It prints a table of tool, installed version, newest version
+and status, then one `note:` line on standard error per source it could not
+read.
+
+| Status | Meaning |
+|---|---|
+| `CURRENT` | Installed equals the newest, or is newer. |
+| `PATCH-BEHIND` | A tool other than Go, same major and minor, older patch. Informational. |
+| `BEHIND` | A tool other than Go, a minor or major behind. |
+| `GO-BEHIND` | Go is older than the newest stable patch of the `go.mod` line. |
+| `MISSING` | The tool is not on `PATH`. Reported, never fatal. |
+| `UNREACHABLE` | The newest or the installed version could not be read or parsed. |
+
+Exit code `1` when Go is `GO-BEHIND` or any tool is `BEHIND`; `0` in every
+other case, including `UNREACHABLE` and `MISSING`. A network error never makes
+the check fail, so an offline host looks clean: read the table, not only the
+exit code. `BEHIND` covers every listed tool, not only the security scanners,
+and one minor behind counts for a `0.x` tool such as `trivy`.
+
+A tool built from source without version stamping (it prints `Version: dev` or
+`version is set by build process`) cannot be compared and shows `UNREACHABLE`
+with a note naming its version command. Rebuild it from a tagged release with
+its version stamped, or install a release binary.
+
+`scripts/check-toolchain_test.sh` tests it without the network or the real
+tools: a `TOOLCHAIN_FIXTURE_DIR` folder supplies the newest versions, fake tool
+scripts on a private `PATH` supply the installed ones, and the six scenarios
+(Go one patch behind, all current, sources unreachable, a tool missing, a minor
+behind, a patch behind) each assert the printed row and the exit code. Run it
+with `bash scripts/check-toolchain_test.sh` after editing the script or
+`toolchain.yaml`.
+
+`make check-toolchain` runs the same script and belongs to the local pre-tag
+run; `make build`, `make lint`, the merge gates and CI do not call it, so
+nothing enforces it until someone runs it. Run it daily from cron, a systemd
+timer or a `datawatch schedule spawn` schedule, and update Go as described in
+[howto/build-host-toolchain.md](howto/build-host-toolchain.md).
+Operator review still needed: whether `BEHIND` should fail for every listed tool
+or only for the security scanners and Go, and whether it should join the merge
+helper. Reference:
+[howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
+
 ---
 
 ## 8. Web UI Features
@@ -3404,7 +3467,7 @@ See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup
 3. **The Automata tab's Automation sub-tab.** The re-render path covers it in this tree, but confirm it live if you rely on it — it was the point least confirmed in the operator's 2026-11-08 report.
 4. **Unreachable remote.** If a tab shows an error or no data after a dropdown change, the remote itself is the first thing to suspect — the dropdown marks a down peer with a "(unreachable)" suffix (still selectable) and the federated error panel offers a "Back to <local hostname>" button rather than leaving the previous server's data behind. While a remote is the active server, one-tap returns to local are available: the clickable 🌐 <name> indicator on the Sessions toolbar (it appears while the remote is active and clicking it returns to local; it sits on the Tree/History line below the one-line toolbar, which is behind the header's 🔍 search-&-filters toggle — turn it on if the line is not visible; it is the `.server-indicator` chip in `renderSessionsView`, pinned in `internal/server/web/app-select-server-controls.test.js`) and the **Back to <local hostname>** button on that server's row in Settings → Comms → Remote Servers.
 5. **The remembered dropdown choice.** This is also client-side PWA behaviour, not a daemon contract (save on every real selection and the boot restore in `internal/server/web/app.js` — `_serverChoiceSave` / `_serverChoiceSettleBoot`, pinned in `internal/server/web/app-header-server-dropdown.test.js` and `internal/server/web/app-server-choice-persist.test.js`), and no live verification had been run for it as of this writing. On the build in use, on a two-host setup: pick a federated host, reload the page, and confirm the tab opens on that host (not **All servers**, not **This server**) with one fetch round of boot traffic against it — no second refresh round; pick **All servers** and repeat; then remove or disable the peer while its choice is saved and confirm the PWA starts on **All servers** and does not keep re-offering the stale peer on the next reload. In a browser profile with local storage blocked, confirm the choice still follows you page-to-page within the visit but does not survive a reload.
-6. **Mobile parity for the remembered choice.** The PWA now persists the header choice per browser (the local-storage key `dw_server_choice`), where the Android and iOS clients do not yet; per this project's Mobile-Parity Rule an operator-visible PWA change needs a `datawatch-app` issue or comment — none is referenced in the tree as of this writing, so the operator should file or comment it before the mobile clients ship the dropdown themselves.
+6. **Mobile parity for the remembered choice.** The PWA now persists the header choice per browser (the local-storage key `dw_server_choice`), where the Android and iOS clients do not yet; per this project's Mobile-Parity Rule an operator-visible PWA change needs a `datawatch-app` issue or comment — tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482) ("Remember the header server dropdown choice"), which already carries the mobile acceptance criteria: remember the chosen server entry (All, this server, or a peer name) across app restarts, restore it before the first data load, fall back to All when the saved peer is no longer in the server list, no new strings and no locale change. If a fix or follow-up to that behaviour ships in datawatch (e.g. the settle-bound fix below), comment #482 with the version, what changed, and the refreshed acceptance criteria before release; the mobile clients must not ship the dropdown from memory of the PWA before #482 is closed.
 
 ### Configure via Chat Commands
 
