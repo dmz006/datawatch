@@ -115,3 +115,4 @@ tmp-sandbox/
 
 # pre-tag runner record (scripts/pre-tag.sh)
 .datawatch/pre-tag-record
+/.smoke-scratch/

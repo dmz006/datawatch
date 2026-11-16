@@ -7995,6 +7995,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetAlertFn(func(title, body string) {
 				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// One-time landing migration: archived Automata whose branch is not
+			// on the default branch are marked pending; the count is logged and
+			// raised as one operator alert through the hook above. Runs in a
+			// goroutine (read-only git) and a done marker stops re-runs.
+			amgr.StartLandingMigration()
 			// Back-off flags restored at start: decision log, alert, audit.
 			recordRestoredBackoff(amgr)
 			// Undeclared-edit detection: raise the operator alert at the

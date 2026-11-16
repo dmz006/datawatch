@@ -86,7 +86,7 @@ func TestLandingStates(t *testing.T) {
 					t.Fatal("archive of a pending landing succeeded")
 				}
 				msg := err.Error()
-				for _, w := range []string{"Automaton", got.Git.Branch, "merge it", "keep or drop"} {
+				for _, w := range []string{"automaton", got.Git.Branch, "merge it", "keep or drop"} {
 					if !strings.Contains(msg, w) {
 						t.Fatalf("archive error %q missing %q", msg, w)
 					}
@@ -136,7 +136,16 @@ func TestLandingMigration(t *testing.T) {
 	merged := mk(PRDArchived, "automaton/merged")
 	noBranch := mk(PRDArchived, "")
 	notArchived := mk(PRDCancelled, "automaton/cancelled")
+	// Fast-forwarded (or merge-commit) branch: its tip is on main, so it has
+	// no commits ahead; the merge proof calls that "empty", and the migration
+	// must still leave it alone (nothing left to land).
+	fastForwarded := mk(PRDArchived, "automaton/ff")
 	git := newCMGit("automaton/merged")
+	git.script[joinArgs("rev-parse", "--verify", "refs/heads/automaton/ff")] = scriptStep{out: proofTipSHA + "\n"}
+	git.script[joinArgs("rev-list", "--count", "main..automaton/ff")] = scriptStep{out: "0\n"}
+	git.script[joinArgs("cherry", "main", "automaton/ff")] = scriptStep{out: ""}
+	git.script[joinArgs("log", "main..automaton/ff", "--format=%s")] = scriptStep{out: ""}
+	// "log main --format=%s" is already scripted by the merged branch.
 
 	n, err := m.MigrateLanding(context.Background(), LandingMigrationOpts{Repo: "/repo", Git: git})
 	if err != nil {
@@ -149,7 +158,7 @@ func TestLandingMigration(t *testing.T) {
 	if got.Landing == nil || got.Landing.State != LandingPending || got.Status != PRDArchived || len(got.Decisions) != 0 {
 		t.Fatalf("unmerged = status %s landing %+v decisions %d", got.Status, got.Landing, len(got.Decisions))
 	}
-	for _, p := range []*PRD{merged, noBranch, notArchived} {
+	for _, p := range []*PRD{merged, noBranch, notArchived, fastForwarded} {
 		g, _ := m.store.GetPRD(p.ID)
 		if g.Landing != nil {
 			t.Fatalf("%s landing changed: %+v", p.Git.Branch, g.Landing)
@@ -158,5 +167,45 @@ func TestLandingMigration(t *testing.T) {
 	n, err = m.MigrateLanding(context.Background(), LandingMigrationOpts{Repo: "/repo", Git: git})
 	if err != nil || n != 0 {
 		t.Fatalf("second run = %d, %v; want 0, nil", n, err)
+	}
+}
+
+func TestLandingMigrationOnceAlertsAndMarksDone(t *testing.T) {
+	m := cmFixture(t)
+	p, err := m.store.CreatePRD("spec", "/p", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Status = PRDArchived
+	p.Git.Branch = "automaton/unmerged"
+	if err := m.store.SavePRD(p); err != nil {
+		t.Fatal(err)
+	}
+	var alerts []string
+	m.SetAlertFn(func(title, body string) { alerts = append(alerts, title+": "+body) })
+	git := newCMGit()
+
+	n, err := m.RunLandingMigrationOnce(context.Background(), LandingMigrationOpts{Repo: "/repo", Git: git})
+	if err != nil || n != 1 {
+		t.Fatalf("first pass = %d, %v; want 1, nil", n, err)
+	}
+	if len(alerts) != 1 || !strings.Contains(alerts[0], "marked 1 archived") {
+		t.Fatalf("alerts = %q, want one alert naming the count", alerts)
+	}
+	if !m.LandingMigrationDone() {
+		t.Fatal("done marker not written after a clean pass")
+	}
+	// A later start with the marker present does nothing, even for a new
+	// record that would otherwise be marked.
+	q, _ := m.store.CreatePRD("spec", "/p", "", "", "")
+	q.Status = PRDArchived
+	q.Git.Branch = "automaton/later"
+	_ = m.store.SavePRD(q)
+	n, err = m.RunLandingMigrationOnce(context.Background(), LandingMigrationOpts{Repo: "/repo", Git: git})
+	if err != nil || n != 0 || len(alerts) != 1 {
+		t.Fatalf("second pass = %d, %v, alerts %d; want 0, nil, 1", n, err, len(alerts))
+	}
+	if g, _ := m.store.GetPRD(q.ID); g.Landing != nil {
+		t.Fatalf("second pass changed a record: %+v", g.Landing)
 	}
 }
