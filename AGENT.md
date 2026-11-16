@@ -2279,4 +2279,3 @@ memory_recall "recent work this codebase"
 - Build, test, and release procedures
 - Known patterns and gotchas to avoid
 - Directory structure and key files
-
