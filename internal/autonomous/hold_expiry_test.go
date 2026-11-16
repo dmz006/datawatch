@@ -23,7 +23,9 @@ import (
 )
 
 var (
-	holdExpiryStart = time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)
+	// The start is the real current time: Hold checks the look-again time against
+	// the real clock, so a fixed date goes stale and the tests then fail.
+	holdExpiryStart = time.Now().UTC().Truncate(time.Second)
 	holdExpiryUntil = holdExpiryStart.Add(time.Hour)
 )
 

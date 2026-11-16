@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// holdStartLook is the fixed look-again time the tests put on a hold.
-var holdStartLook = time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC)
+// holdStartLook is the look-again time the tests put on a hold: three days from
+// now, so it stays in the future whenever the tests run.
+var holdStartLook = time.Now().UTC().Add(72 * time.Hour).Truncate(time.Second)
 
 // holdStartMark puts a stored Automaton on hold the way Manager.Hold leaves
 // it: status held and a hold record, with the status it had in From.
@@ -60,7 +61,7 @@ func TestHoldLaneFillNeverStartsAHeldAutomaton(t *testing.T) {
 	if d.EligibilityReason != LaneFillReasonOperatorHold || d.Action != LaneFillActionBlocked {
 		t.Errorf("decision = %+v, want a blocked decision with code %s", d, LaneFillReasonOperatorHold)
 	}
-	for _, want := range []string{"wait for the release", "2026-11-20T08:00:00Z"} {
+	for _, want := range []string{"wait for the release", holdStartLook.Format(time.RFC3339)} {
 		if !strings.Contains(d.Reason, want) {
 			t.Errorf("refusal text %q must name %q", d.Reason, want)
 		}
