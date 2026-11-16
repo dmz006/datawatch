@@ -116,6 +116,14 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "fixed_calendar_date_in_test",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "fixed_calendar_date_in_test: the task asks the worker to write a test with a fixed calendar date; that date passes and the gate fails later; take times from the current time instead, for example time.Now with a fixed offset, or an injected clock.",
+			Match: config.DecomposeLintMatch{
+				FixedCalendarDateInTest: true,
+			},
+		},
+		{
 			ID:       "final_gate_without_script",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "final_gate_without_script: a final_gate task declares no verification script, no verification_script_reason and no usable report path; the end-to-end gate must be verifiable, so give it a script, a report path under .datawatch/reports/, or state why it has none.",

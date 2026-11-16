@@ -261,6 +261,7 @@ func TestDecomposeLintEffectiveRulesDefault(t *testing.T) {
 		{"read_only_unverifiable", "block"},
 		{"verify_script_task_files_only", "block"},
 		{"verify_script_docs_without_sync", "block"},
+		{"fixed_calendar_date_in_test", "warn"},
 		{"final_gate_without_script", "block"},
 		{"no_verification_script", "warn"},
 		{"unexecutable_verification_script", "warn"},
@@ -299,8 +300,8 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 		},
 	}
 	got := EffectiveRules(cfg)
-	if len(got) != 14 {
-		t.Fatalf("got %d rules, want 13 built-in + 1 new", len(got))
+	if len(got) != 15 {
+		t.Fatalf("got %d rules, want 14 built-in + 1 new", len(got))
 	}
 	// replaced at its original position (index 1)
 	if got[1].ID != "runs_hosting_cli" || got[1].Message != "Operator-local guidance for hosting CLI use." {
@@ -357,8 +358,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		t.Fatalf("Validate with bare disabled rules: %v", err)
 	}
 	gotA := EffectiveRules(cfgA)
-	if ids := idsOf(gotA); len(ids) != 11 {
-		t.Fatalf("disabled-flag: got %v, want the 11 non-disabled built-ins", ids)
+	if ids := idsOf(gotA); len(ids) != 12 {
+		t.Fatalf("disabled-flag: got %v, want the 12 non-disabled built-ins", ids)
 	}
 	absent(t, gotA, "runs_hosting_cli", "names_tracker_id")
 
@@ -367,21 +368,21 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		DisabledRules: []string{"edits_version_variable", "no_verification_script"},
 	}
 	gotB := EffectiveRules(cfgB)
-	if ids := idsOf(gotB); len(ids) != 11 {
-		t.Fatalf("disabled-list: got %v, want the 11 non-listed built-ins", ids)
+	if ids := idsOf(gotB); len(ids) != 12 {
+		t.Fatalf("disabled-list: got %v, want the 12 non-listed built-ins", ids)
 	}
 	absent(t, gotB, "edits_version_variable", "no_verification_script")
 
 	// (c) disabling an operator-added rule removes it; the built-in
-	// pack (13 rules) is untouched.
+	// pack (14 rules) is untouched.
 	cfgC := config.DecomposeLintConfig{
 		Rules: []config.DecomposeLintRule{
 			{ID: "operator_rule", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}, Disabled: true},
 		},
 	}
 	gotC := EffectiveRules(cfgC)
-	if ids := idsOf(gotC); len(ids) != 13 {
-		t.Fatalf("operator rule disabled: got %v, want the 13 built-ins", ids)
+	if ids := idsOf(gotC); len(ids) != 14 {
+		t.Fatalf("operator rule disabled: got %v, want the 14 built-ins", ids)
 	}
 	absent(t, gotC, "operator_rule")
 
