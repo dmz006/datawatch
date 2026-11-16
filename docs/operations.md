@@ -6835,6 +6835,32 @@ A read that matches nothing is an empty list, not an error. The full field docum
 
 ---
 
+## Held Automata (`held` status — operator hold)
+
+An operator hold is a deliberate pause: the operator puts an Automaton on hold for a reason they choose, for example *until after the release*. A held Automaton waits **by operator decision** — it is not blocked, not failed and not waiting for review; nothing starts it, and its tasks keep their state. Held is its own count: it never enters the blocked, waiting or running totals, and the Held group is never a queue the daemon drains.
+
+**Config: not applicable.** There is no configuration key for the held state — nothing to enable, no threshold, no budget, no key that changes which statuses a hold may start from. A hold stands, gets extended or is released only by an operator action; the daemon's periodic expiry tick only marks an `until` that has passed and raises the one `Hold expired` alert for it.
+
+**What a hold records.** `reason` (required when placing, at most 500 characters), optional `condition` (free text shown to the operator — never evaluated), optional `until` (an RFC 3339 time, a date such as `2026-12-01` = end of that day UTC, or a duration such as `72h`), who set it, and when. A hold is allowed from `draft`, `needs_review`, `approved`, `revisions_asked`, `paused`, `blocked` and `failed`; the daemon refuses it from `planning`, `running`, `completed`, `rejected`, `cancelled` and `archived`. Running hold on an Automaton that is already held **extends** it: a field you give replaces the stored one, a field you leave out is kept. A release returns the Automaton to the status it had when it was held (a blocked one gets its blocked reason back) — and still starts nothing; the normal paths pick it up from there.
+
+**The five actions on every operator surface.**
+
+| Action | REST | CLI | Comm channel | MCP | Web app |
+|---|---|---|---|---|---|
+| Hold / extend | `POST /api/autonomous/prds/{id}/hold` — body `{reason, condition, until, actor}`; one route for both | `datawatch autonomous prd-hold <id> --reason <text> [--condition <text>] [--until <time>] [--actor <name>]` | `autonomous hold <id> <reason words> [until=<value>] [condition=<words>]` | `autonomous_prd_hold` | **Hold** on an Automaton card, or **Extend** on a held card (the same dialog) |
+| Release | `POST /api/autonomous/prds/{id}/release_hold` — body `{note, actor}` | `datawatch autonomous prd-release-hold <id> [--note <text>] [--actor <name>]` | `autonomous release-hold <id> [note]` | `autonomous_prd_release_hold` | **Release** on a held card, or per-row in the **Held Automata** Inbox group |
+| Read the held group | `GET /api/autonomous/held` — expired first, then soonest `until`, then oldest hold | `datawatch autonomous held` | `autonomous held` | `autonomous_held` | the **Held Automata** Inbox group, the `held` status in the list, the `held` progress column |
+| Hold migration — dry run | `POST /api/autonomous/held/migrate` with `{dry_run: true}` (or no `ids`) — lists the look-alikes, changes nothing | `datawatch autonomous held-migrate --dry-run` | `autonomous held-migrate dry_run=true` | `autonomous_held_migrate` with no `ids` | — |
+| Hold migration — real run | the same route with `{ids: […], reason: "…", condition?, until?}` — `reason` is yours, never generated | `datawatch autonomous held-migrate --id <id> [--id <id>…] --reason <text> [--condition <text>] [--until <time>]` | `autonomous held-migrate id=… [id=…] reason=… [condition=…] [until=…]` | `autonomous_held_migrate` with `ids` and your `reason` | the **Hold** dialog above, per Automaton |
+
+A real migration run is refused while a final gate is running and skips, with a reason, any id that is missing, already held, or not blocked or failed. The three look-alike rules: a failed Eval run / eval-measurement, parked design work, and a blocked reason that says hold or *until after*. Read the dry run first; the ids you choose are the only ones held.
+
+**Where a held Automaton is shown.** The **Held Automata** group (Inbox and the Automaton view's held tiles), Triage rows marked *Held by the operator* (triage still reads — holding is not a triage action), the `held` column of Progress, the dashboard's Held & blocked line, and the `held` count in status reads. Attention lists report a held Automaton rather than acting on it.
+
+**What never touches a held Automaton.** Nothing auto-starts it. Lane fill skips it, the executor does not run it (a hold that lands mid-task stops the next step), the supervisor loop does not push it, housekeeping repairs never change it, no retry budget applies, and answering a question does not resume it. The only write paths are the five routes above — no loop, housekeeping step, lane fill or boot pass places, extends or releases a hold.
+
+The full how-to — what a hold records, operations, expiry, the held group, what stays away, and the hold migration's three rules — is [howto/automaton-hold.md](howto/automaton-hold.md).
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
 When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each completed Automaton's branch with `main` so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.

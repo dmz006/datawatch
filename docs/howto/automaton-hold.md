@@ -2,6 +2,27 @@
 docs:
   index: true
   topics: [autonomous, automaton, hold, held, operator hold, release, extend, lane fill, housekeeping]
+exec_steps:
+  - tool: autonomous_held
+    description: Read the Held group: every Automaton on hold with its title, reason, condition and look-again line (expired holds first)
+    args: {}
+    read_only: true
+  - tool: autonomous_prd_hold
+    description: Put one Automaton on hold with a required reason; optionally give a condition and a look-again time. Calling it while the Automaton is already held extends the hold
+    args: {id: "{{params.id}}", reason: "{{params.reason}}", condition: "{{params.condition}}", until: "{{params.until}}"}
+    read_only: false
+  - tool: autonomous_prd_release_hold
+    description: Release the hold; the Automaton returns to the status it had and nothing starts it
+    args: {id: "{{params.id}}"}
+    read_only: false
+  - tool: autonomous_held_migrate
+    description: Dry run first: list the blocked or failed Automata that look like they are waiting on purpose; no ids, nothing is written
+    args: {dry_run: true}
+    read_only: true
+  - tool: autonomous_held_migrate
+    description: After reviewing the dry-run list, a real run puts the chosen ids on hold with the reason you supply
+    args: {ids: "{{params.ids}}", reason: "{{params.reason}}", condition: "{{params.condition}}", until: "{{params.until}}"}
+    read_only: false
 ---
 
 # Put an Automaton on hold
@@ -136,15 +157,34 @@ runs it: no loop, housekeeping step or startup path does.
   tasks. See [housekeeping repairs](automaton-housekeeping-repairs.md#what-the-daemon-never-does).
 - **Answering a question** does not resume a held Automaton's tasks.
 
-## Review before relying on it
+## How to hold, extend, release and migrate, on every surface
 
-- Operator surfaces that ship: the REST routes (`POST
-  /api/autonomous/prds/{id}/hold` for hold and extend, `POST
-  /api/autonomous/prds/{id}/release_hold`, `GET /api/autonomous/held` for the
-  held group, `POST /api/autonomous/held/migrate` for the hold migration) and
-  the web app surfaces in [Held Automata](#held-automata).
-- CLI, MCP and comm verbs for the hold operations do not exist yet; parity
-  for those surfaces (and the mobile app) is still to be planned and filed.
-- Nothing places, extends or releases a hold by itself: no loop, housekeeping
-  step, lane fill or boot pass does, the expiry tick only marks the hold and
-  alerts once (above), and a release is an operator action.
+The four verbs — **hold** (also extend), **release**, **read the held group**
+and the **hold migration** — are reachable the same way on every operator
+surface:
+
+| Verb | REST | CLI | comm | MCP | Web app |
+|---|---|---|---|---|---|
+| Hold / extend | `POST /api/autonomous/prds/{id}/hold` — one route for both; a field you give replaces the stored one, a field you leave out is kept | `datawatch autonomous prd-hold <id> --reason <text> [--condition <text>] [--until <time>] [--actor <name>]` | `autonomous hold <id> <reason words> [until=<value>] [condition=<words>]` | `autonomous_prd_hold` (`id`, `reason`, `condition`, `until`, `actor`) | **Hold** on an Automaton card, or **Extend** on a held card — the same dialog: reason required, condition and look-again time optional |
+| Release | `POST /api/autonomous/prds/{id}/release_hold` | `datawatch autonomous prd-release-hold <id> [--note <text>] [--actor <name>]` | `autonomous release-hold <id> [note words]` | `autonomous_prd_release_hold` (`id`, `note`, `actor`) | **Release** on a held card, or per-row in the **Held Automata** Inbox group |
+| Held group | `GET /api/autonomous/held` | `datawatch autonomous held` | `autonomous held` | `autonomous_held` | **Held Automata** Inbox group, the `held` status in the list, the `held` progress column |
+| Hold migration | `POST /api/autonomous/held/migrate` — dry run or no ids lists candidates only | `datawatch autonomous held-migrate --dry-run`, then `--id <id> --reason <text>` for a real run | `autonomous held-migrate [dry_run=true]`, then with `id=…` and `reason=` | `autonomous_held_migrate` — dry run first (`dry_run: true`), then the real run with `ids` and your `reason` | the **Hold** dialog above, per Automaton |
+
+**Config: not applicable.** There is no configuration key for the held state
+— nothing to enable, a threshold, or a budget to set, and no setting that
+changes which statuses a hold may start from. A hold stands, gets extended or
+is released only by an operator action; the daemon's periodic expiry tick
+only marks and alerts (above).
+
+On the MCP surface, a dry-run-first migration reads:
+
+1. `autonomous_held_migrate` with `dry_run: true` — the candidate list only;
+2. read it, choose the ids;
+3. `autonomous_held_migrate` with those `ids` and the `reason` you supply —
+   the reason is never generated or defaulted, and condition and look-again
+   time apply to every chosen id.
+
+Nothing else places, extends or releases a hold: no loop, housekeeping step,
+lane fill or boot pass does. The REST routes, the verbs and the web app
+surfaces in [Held Automata](#held-automata) are the write paths; the mobile
+app does not carry the hold surface yet.
