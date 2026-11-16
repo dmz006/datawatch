@@ -119,6 +119,37 @@ the capacity card in the web app). Each active flag prints as
 `claude-code: resets <time> (<reason>)`. An Automaton task held by the flag shows
 a wait reason starting `backoff:` and starts by itself when the flag clears.
 
+### Admission: confirm a start against the flag
+
+The admission check takes a model, so you can confirm how a model-limited flag
+applies to a start before anything starts:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch capacity admission <backend> [node] [model]` |
+| Comm channel | `capacity admission <backend> [node] [model]` |
+| MCP | `capacity_admission` with `backend` and `model` |
+| REST | `GET /api/capacity/admission?backend=claude-code&model=opus` |
+
+The daemon applies the flag to the model the check names: a check on a held
+model is queued with a `backoff:` wait reason (or offered an alternate), and
+the same check with no model, or with a model not held, is admitted. It is a
+dry run: nothing starts, queues or changes.
+
+### Audit of a model-scoped set or clear
+
+Every set and clear is written to the operator audit log, and a model-scoped
+operation carries its model list:
+
+- `autonomous_usage_backoff_set` — the actor, backend, `until`, `source`, and
+  `models` (lowercased) when the set named models; a whole-backend set has no
+  `models` key.
+- `autonomous_usage_backoff_cleared` — the actor and backend, and `models`
+  when the clear was model-scoped.
+
+Read them with the `audit_query` MCP tool (`action: autonomous_usage_backoff_set`)
+or `GET /api/audit?action=autonomous_usage_backoff_set`.
+
 ## Flags survive a daemon restart
 
 Every set, clear and expiry writes the flags to `backoff.json` under the
@@ -182,6 +213,23 @@ A restored flag is the daemon's saved state, not a fresh reading, so check it:
   `autonomous_usage_backoff_cleared`.
 - **A burn-guard flag you want gone.** Clearing it works, but the guard may set it
   again next interval. Change the guard instead (see [Burn guard](burn-guard.md)).
+
+## Parity
+
+The held-model list works on every surface, and this page documents each of
+them:
+
+| Surface | Status | Set | Clear | Admission | Audit |
+|---|---|---|---|---|---|
+| **MCP** | `usage_backoff_status` | `usage_backoff_set` (`models`) | `usage_backoff_clear` (`models`) | `capacity_admission` (`model`) | `audit_query` |
+| **REST** | `GET /api/usage-backoff` (`holds`) | `POST /api/usage-backoff` (`models`) | `DELETE /api/usage-backoff` (`models`) | `GET /api/capacity/admission?model=` | `GET /api/audit?action=` |
+| **CLI** | `datawatch usage-backoff status` | `--models a,b` | `--models a,b` | `datawatch capacity admission <backend> [node] [model]` | via the REST audit routes |
+| **Comm channel** | `usage_backoff` | `usage_backoff set <backend> <minutes> [reason …] [models=a,b]` | `usage_backoff clear [backend|all] [models=a,b]` | `capacity admission <backend> [node] [model]` | via the REST audit routes |
+| **Web app** | the usage and capacity cards | the **Models** field | the **Models** field | — | — |
+
+The **wait reason** (`backoff: ... for models opus, sonnet until ...`) and the
+**restart file** (`backoff.json`, which keeps each flag's model list) behave the
+same on every surface, because every surface writes to the same registry.
 
 ## See also
 
