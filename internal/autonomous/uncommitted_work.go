@@ -227,18 +227,14 @@ func ignoreFileLines(text string) map[string]bool {
 // compared with an empty one. Any other change, including one the worker made,
 // is not the daemon's.
 func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
-	cleaned, ok := localRelPath(rel)
-	if !ok {
+	// Containment — lexical ('..' / absolute / NUL) and against the resolved
+	// base, so a symlink pointing outside dir is refused — is checked once
+	// in repoFileInside, and the returned path is what gets read.
+	curPath, err := repoFileInside(dir, rel)
+	if err != nil {
 		return false
 	}
-	if strings.ContainsRune(cleaned, 0) {
-		return false
-	}
-	checked := filepath.FromSlash(cleaned)
-	if !filepath.IsLocal(checked) {
-		return false
-	}
-	cur, err := os.ReadFile(filepath.Join(dir, checked)) // #nosec G304 -- checked is a lexically local path and dir is the Automaton's own project directory
+	cur, err := os.ReadFile(curPath)
 	if err != nil {
 		return false
 	}
@@ -375,8 +371,9 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 //  1. A path that lexically escapes the repository (absolute, or starting
 //     with ".." once cleaned) or contains a NUL byte is never skipped: it goes to add and pathspec so git fails
 //     with its own error.
-//  2. A path that exists in the worktree (Lstat succeeds) goes to add and
-//     pathspec.
+//  2. A path that exists in the worktree — under dir and not reachable only
+//     through a symlink that escapes dir (the stat is containment-checked)
+//     — goes to add and pathspec.
 //  3. A path missing from the worktree but present in the index is a tracked
 //     file deleted on disk: add (git add stages the deletion) and pathspec.
 //  4. A path missing from the worktree and index but present in HEAD is a
@@ -406,11 +403,16 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 			pathspec = append(pathspec, p)
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(dir, rel)); err == nil {
-			add = append(add, p)
-			pathspec = append(pathspec, p)
-			continue
+		if inside, ierr := repoFileInside(dir, rel); ierr == nil {
+			if _, lerr := os.Lstat(inside); lerr == nil {
+				add = append(add, p)
+				pathspec = append(pathspec, p)
+				continue
+			}
 		}
+		// A path that is not stat-able under dir (missing, or reachable only
+		// through a symlink leaving dir) falls through to the index/HEAD
+		// probes below instead of being committed by its relative name.
 		out, err := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p)
 		if err != nil || strings.TrimSpace(out) != "" {
 			add = append(add, p)
