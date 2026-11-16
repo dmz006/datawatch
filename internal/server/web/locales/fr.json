@@ -4136,6 +4136,8 @@
   "burn_guard_state_guarding": "en protection",
   "burn_guard_state_waiting": "en attente d'une projection",
   "burn_guard_rung_lower_inflight": "Abaisser la limite Claude en cours",
+  "burn_guard_rung_route_entry": "Orienter le travail de l'entrée vers un backend plus léger",
+  "burn_guard_rung_hold_entry": "Suspendre le travail de l'entrée. Les sessions en cours continuent",
   "burn_guard_rung_route_pi_prompt": "Router le travail vers pi-prompt",
   "burn_guard_rung_hold_claude": "Suspendre le travail Claude",
   "burn_guard_no_rung": "aucun",

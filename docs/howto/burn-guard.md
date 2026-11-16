@@ -187,18 +187,22 @@ The alert names both projections and which one was used, for example
 
 ## The ladder
 
-The ladder is an ordered list of rungs. Each rung is a change to admission.
+The ladder is an ordered list of rungs. Each rung is a change to admission of the ladder's **entry** (the paid LLM it
+watches), not of any fixed backend. The rung names are entry-generic: a guard
+with several entries applies the same ladder under each entry's own admission.
 
 | Rung | What it does |
 |---|---|
-| `lower_inflight` | Lowers the cap on how many Claude sessions may run at once. The original cap is remembered and restored when the rung is released |
-| `route_pi_prompt` | Sends new Claude work to the `pi-prompt` backend instead |
-| `hold_claude` | Holds new Claude work. Work already running continues; held work starts again when the rung is released |
+| `lower_inflight` | Lowers how many sessions the entry may have running at once. The original cap is remembered and restored when the rung is released |
+| `route_entry` | Sends the entry's new work to the entry's `route_to` backend instead, when one is set (the legacy first-version name for this rung is `route_pi_prompt`) |
+| `hold_entry` | Holds the entry's new work, optionally limited to its `held_models`. Work already running continues; held work starts again when the rung is released (the legacy first-version name is `hold_claude`) |
 
-The default ladder is `lower_inflight`, `route_pi_prompt`, `hold_claude`, in
-that order. You can reorder it or leave a rung out (for example
-`lower_inflight`, `hold_claude`). An unknown or repeated rung is dropped, and an
-empty list means the default.
+The default ladder is `lower_inflight`, `route_entry`, `hold_entry`, in that
+order. You can reorder it or leave a rung out (for example
+`lower_inflight`, `hold_entry`). An unknown or repeated rung is dropped, and an
+empty list means the default. The legacy first-version names `route_pi_prompt`
+and `hold_claude` are still accepted in saved configs and normalize to
+`route_entry` and `hold_entry`.
 
 **Climbing.** When the projection is more than `margin_points` above the target,
 the guard applies the next rung. **Holding.** Inside the margin it changes
@@ -227,7 +231,7 @@ is unchanged, so a script or config file that used the old keys keeps working.
 | `interval_minutes` | Minutes between evaluations, 1 to 1440 | `60` |
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `max_projection_gap_points` | Largest allowed gap between the guard projection and the advice projection. Above it the tick decides on the lower of the two. `0` never compares, so the guard projection alone decides. 0 to 100; a value outside that range is refused | `25` |
-| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_pi_prompt, hold_claude` |
+| `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_entry, hold_entry` |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
 | `ask_on_change` | When false (default) one alert per change and no question; when true the per-change alert still goes out and at most one open question per change is kept | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
@@ -270,7 +274,7 @@ change.
 A step raises a question only when it changed a setting. A hold (changed
 nothing), a `lower_inflight` rung whose cap was already at one, a release that
 would restore a cap that was never lowered, a step that only releases the
-hold (a `hold_claude` release), and turning the guard off all alert but ask
+hold (a `hold_entry` release), and turning the guard off all alert but ask
 nothing. Two more withdrawals keep you from ever answering
 a question that no longer stands: if you turn `ask_on_change` off again, the
 next change withdraws the last open question (reason: *ask_on_change is off,
@@ -330,8 +334,8 @@ To step back yourself:
 - **Run now.** `burn_guard_run` (or **Run now** in the card) evaluates at once; it
   still moves at most one rung.
 - **Raise the margin or reorder the ladder** if the guard acts too early or on a
-  rung you do not want. Take `hold_claude` out of the ladder to keep it from
-  ever pausing new Claude work.
+  rung you do not want. Take `hold_entry` out of the ladder to keep it from
+  ever pausing new work on the entry it guards.
 - **Turn it off.** `enabled: false` releases every rung immediately.
 - **Type a fresh reading** in the usage calculator. The pace line and the fit
   both move with it, and a reading that shows the week is lower than projected

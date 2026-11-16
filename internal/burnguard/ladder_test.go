@@ -56,7 +56,7 @@ func TestBurnGuardAskOnChangeFalseRaisesNoQuestion(t *testing.T) {
 			t.Fatalf("climb %d: %+v", i, d)
 		}
 	}
-	want := []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight}
+	want := []string{RungHoldEntry, RungRouteEntry, RungLowerInflight}
 	for i, r := range want {
 		d := tick(t, l, proj(-10), s, at)
 		if d.Direction != DirectionStepBack || d.Rung != r || d.QuestionText != "" || d.AlertText == "" {
@@ -217,11 +217,11 @@ func TestClimbsOneRungPerTickThenHolds(t *testing.T) {
 		t.Fatalf("texts: %q / %q", d.AlertText, d.QuestionText)
 	}
 	d = tick(t, l, proj(20), settings(), at.Add(time.Hour))
-	if d.Rung != RungRoutePiPrompt || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].To != testTarget.RouteTo || d.Actions[0].Backend != testTarget.Backend {
+	if d.Rung != RungRouteEntry || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].To != testTarget.RouteTo || d.Actions[0].Backend != testTarget.Backend || d.Actions[0].Rung != RungRouteEntry {
 		t.Fatalf("tick 2: %+v", d)
 	}
 	d = tick(t, l, proj(20), settings(), at.Add(2*time.Hour))
-	if d.Rung != RungHoldClaude || d.Actions[0].Kind != ActionHoldNewWork {
+	if d.Rung != RungHoldEntry || d.Actions[0].Kind != ActionHoldNewWork || d.Actions[0].Rung != RungHoldEntry {
 		t.Fatalf("tick 3: %+v", d)
 	}
 	d = tick(t, l, proj(20), settings(), at.Add(3*time.Hour))
@@ -255,7 +255,7 @@ func TestStepsBackOneRungPerTick(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		tick(t, l, proj(20), settings(), at)
 	}
-	want := []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight}
+	want := []string{RungHoldEntry, RungRouteEntry, RungLowerInflight}
 	for i, r := range want {
 		d := tick(t, l, proj(-10), settings(), at)
 		if d.Direction != DirectionStepBack || d.Rung != r || d.Level != 2-i || !d.Actions[0].Release {
@@ -314,9 +314,9 @@ func TestDisabledLadder(t *testing.T) {
 func TestOneRungLadder(t *testing.T) {
 	l, _ := newTestLadder(nil)
 	s := settings()
-	s.Ladder = []string{RungHoldClaude}
+	s.Ladder = []string{RungHoldEntry}
 	d := tick(t, l, proj(30), s, time.Now())
-	if d.Rung != RungHoldClaude || d.Level != 1 {
+	if d.Rung != RungHoldEntry || d.Level != 1 {
 		t.Fatalf("%+v", d)
 	}
 	d = tick(t, l, proj(30), s, time.Now())
@@ -324,7 +324,7 @@ func TestOneRungLadder(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	d = tick(t, l, proj(-30), s, time.Now())
-	if d.Rung != RungHoldClaude || d.Level != 0 || !d.Actions[0].Release {
+	if d.Rung != RungHoldEntry || d.Level != 0 || !d.Actions[0].Release {
 		t.Fatalf("%+v", d)
 	}
 }
@@ -354,7 +354,7 @@ func TestRestartWithPersistedState(t *testing.T) {
 		t.Fatalf("loaded %+v", got)
 	}
 	d, _ := l2.Tick(TickInput{Projection: proj(20), Settings: settings(), Now: at.Add(2 * time.Hour), InflightCap: 2})
-	if d.Rung != RungHoldClaude || d.Previous != 2 {
+	if d.Rung != RungHoldEntry || d.Previous != 2 {
 		t.Fatalf("%+v", d)
 	}
 	for i := 0; i < 2; i++ {
@@ -367,6 +367,100 @@ func TestRestartWithPersistedState(t *testing.T) {
 	if a := d.Actions[0]; a.Kind != ActionSetInflight || a.Value != 3 {
 		t.Fatalf("original cap not restored from persisted state: %+v", a)
 	}
+}
+
+// The first-version rung names (route_pi_prompt, hold_claude) are still accepted in a saved
+// config and a saved state: they normalize to the entry-generic rungs and the ladder
+// behaves exactly as it did for those names, emitting the entry-generic name.
+func TestLegacyRungNamesNormalizeAndBehaveIdentically(t *testing.T) {
+	st := &memStore{}
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+
+	// a legacy config: the first-version ladder names
+	l, err := newTestLadder(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := settings()
+	s.Ladder = []string{RungLowerInflight, RungRoutePiPrompt, RungHoldClaude}
+	d := tick(t, l, proj(20), s, at)
+	if d.Direction != DirectionClimb || d.Rung != RungLowerInflight {
+		t.Fatalf("climb 1: rung %q", d.Rung)
+	}
+	// step two: the legacy route name is accepted and reported entry-generic
+	d = tick(t, l, proj(20), s, at.Add(time.Hour))
+	if d.Rung != RungRouteEntry || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].Rung != RungRouteEntry {
+		t.Fatalf("climb 2 (legacy route name): %+v", d)
+	}
+	// step three: the legacy hold name is accepted and reported entry-generic
+	d = tick(t, l, proj(20), s, at.Add(2*time.Hour))
+	if d.Rung != RungHoldEntry || d.Actions[0].Kind != ActionHoldNewWork || d.Actions[0].Rung != RungHoldEntry {
+		t.Fatalf("climb 3 (legacy hold name): %+v", d)
+	}
+	if !reflect.DeepEqual(DecisionApplied(d), []string{RungLowerInflight, RungRouteEntry, RungHoldEntry}) {
+		t.Fatalf("applied after the legacy-name ladder = %v", d.Applied)
+	}
+	// a restart over the saved state: it still ticks with the legacy config names
+	l2, err := newTestLadder(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d = tick(t, l2, proj(20), s, at.Add(3*time.Hour)) // at the last rung: hold
+	if d.Direction != DirectionHold || d.Changed {
+		t.Fatalf("hold at the last rung: %+v", d)
+	}
+}
+
+// A saved state written under the first-version names loads as the entry-generic ones.
+func TestLegacySavedStateLoadsGeneric(t *testing.T) {
+	st := &memStore{s: LadderState{Applied: []string{RungLowerInflight, RungRoutePiPrompt}}, saves: 0}
+	l, err := NewLadder(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.State().Applied; !reflect.DeepEqual(got, []string{RungLowerInflight, RungRouteEntry}) {
+		t.Fatalf("loaded applied = %v, want the entry-generic names", got)
+	}
+}
+
+// The entry/legacy predicates accept both naming conventions and no other rung.
+func TestRungPredicatesAcceptBothNamingConventions(t *testing.T) {
+	known := map[string]bool{}
+	for _, r := range KnownRungs() {
+		known[r] = true
+	}
+	cases := []struct {r string; ok bool}{
+		{RungLowerInflight, true}, {RungRouteEntry, true}, {RungRoutePiPrompt, true},
+		{RungHoldEntry, true}, {RungHoldClaude, true},
+		{"", false}, {"some_other_rung", false},
+	}
+	for _, c := range cases {
+		if got := known[c.r]; got != c.ok {
+			t.Fatalf("KnownRungs() %q = %v, want %v", c.r, got, c.ok)
+		}
+		if got := IsHoldRung(c.r); got != (c.r == RungHoldEntry || c.r == RungHoldClaude) {
+			t.Fatalf("IsHoldRung(%q) = %v", c.r, got)
+		}
+		if got := IsRouteRung(c.r); got != (c.r == RungRouteEntry || c.r == RungRoutePiPrompt) {
+			t.Fatalf("IsRouteRung(%q) = %v", c.r, got)
+		}
+		if got := IsLowerInflightRung(c.r); got != (c.r == RungLowerInflight) {
+			t.Fatalf("IsLowerInflightRung(%q) = %v", c.r, got)
+		}
+	}
+	if len(KnownRungs()) != 5 {
+		t.Fatalf("KnownRungs = %v, want the five entry/legacy rungs", KnownRungs())
+	}
+}
+
+
+func DecisionApplied(d Decision) []string { return d.Applied }
+
+func burnguardKnownRung(r string) bool {
+	if r == RungLowerInflight || r == RungRouteEntry || r == RungRoutePiPrompt || r == RungHoldEntry || r == RungHoldClaude {
+		return true
+	}
+	return false
 }
 
 func TestSaveErrorStillDecides(t *testing.T) {
@@ -406,7 +500,7 @@ func TestFridayNightReplayThroughLadder(t *testing.T) {
 	// The burn eases: the same replay's projection with the burn removed steps back, one a tick.
 	now := limitHit
 	under := Projection{Projected: 60, Target: 98, OverBy: -38, Ceiling: 100, Margin: 2}
-	for i, want := range []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight} {
+	for i, want := range []string{RungHoldEntry, RungRouteEntry, RungLowerInflight} {
 		d, _ := l.Tick(TickInput{Projection: under, Settings: settings(), Now: now.Add(time.Duration(i) * time.Hour), InflightCap: 2})
 		if d.Direction != DirectionStepBack || d.Rung != want {
 			t.Fatalf("step back %d: %+v", i, d)

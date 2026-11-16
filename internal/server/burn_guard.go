@@ -6,7 +6,12 @@
 //	lower_inflight   lower the entry's inflight cap by one (the original is remembered
 //	                 and restored on release)
 //	route_pi_prompt  route the entry's new work to its route target
-//	hold_claude      hold the entry's new work (on its held models when it lists any)
+//	hold_entry       hold the entry's new work (on its held models when it lists any)
+//
+// The first version of the guard named the hold rungs route_pi_prompt and hold_claude.
+// Those names are still accepted in a saved config and normalize to the entry-generic
+// names: the guard reads every rung from the entry, and the back-off flag of a hold
+// carries the rung name the ladder recorded it under.
 //
 // Every action acts on admission only. The runner has no way to end a session: its session
 // view (BurnGuardSessions) is read-only, and the ladder has no action kind that kills,
@@ -46,13 +51,17 @@ type BurnGuardAdmission interface {
 	// RouteBackend routes (on) or stops routing (off) new work meant for from to to.
 	RouteBackend(from, to string, on bool) error
 	// HoldNewWork holds (on) or releases (off) admission of new work for the backend.
-	HoldNewWork(backend string, on bool) error
+	// rung is the name the ladder recorded for the hold rung it acts on: the guard
+	// records it on the flag it sets, so the rung shown on the flag is the rung in
+	// force, whatever the ladder calls it (entry-generic or legacy first-version name).
+	HoldNewWork(backend, rung string, on bool) error
 }
 
 // BurnGuardModelHold is the optional seam that holds new work on some models of a
 // backend only (an entry's held models). Without it a hold covers the whole backend.
+// rung is the rung name the guard records on the flag it sets (see HoldNewWork).
 type BurnGuardModelHold interface {
-	HoldModels(backend string, models []string, on bool) error
+	HoldModels(backend string, models []string, rung string, on bool) error
 }
 
 // BurnGuardSessions is a read-only view of the session manager. It deliberately has no
@@ -436,7 +445,7 @@ func (g *BurnGuard) tickEntry(ctx context.Context, cfg config.BurnGuardConfig, e
 	// carries through its actions above, and a step back or release clears
 	// them, so only an unchanged hold is renewed here.
 	if !d.Changed && g.holdApplied(d.Applied) {
-		if err := g.hold(e.LLM, e.HeldModels, true); err != nil {
+		if err := g.hold(burnguard.Action{Backend: e.LLM, Models: e.HeldModels, Rung: currentRung(d.Applied)}, true); err != nil {
 			g.fail("renew hold: %v", err)
 		}
 	}
@@ -581,7 +590,7 @@ func (g *BurnGuard) apply(d burnguard.Decision) error {
 		case burnguard.ActionRouteBackend:
 			err = g.adm.RouteBackend(a.Backend, a.To, !a.Release)
 		case burnguard.ActionHoldNewWork:
-			err = g.hold(a.Backend, a.Models, !a.Release)
+			err = g.hold(a, !a.Release)
 		default:
 			err = fmt.Errorf("unknown action kind %q", a.Kind)
 		}
@@ -597,12 +606,14 @@ func (g *BurnGuard) apply(d burnguard.Decision) error {
 }
 
 // hold holds or releases new work on backend: on its held models only when the entry
-// lists some and the admission seam can hold by model, else the whole backend.
-func (g *BurnGuard) hold(backend string, models []string, on bool) error {
-	if mh, ok := g.adm.(BurnGuardModelHold); ok && len(models) > 0 {
-		return mh.HoldModels(backend, models, on)
+// lists some and the admission seam can hold by model, else the whole backend. It hands
+// the admission seam the rung name the ladder recorded the action under, so the flag it
+// sets shows the rung in force rather than an assumed one.
+func (g *BurnGuard) hold(a burnguard.Action, on bool) error {
+	if mh, ok := g.adm.(BurnGuardModelHold); ok && len(a.Models) > 0 {
+		return mh.HoldModels(a.Backend, a.Models, a.Rung, on)
 	}
-	return g.adm.HoldNewWork(backend, on)
+	return g.adm.HoldNewWork(a.Backend, a.Rung, on)
 }
 
 // announce raises the alert and the queue question of a step. The text carries the numbers
@@ -638,10 +649,11 @@ func (g *BurnGuard) announce(d burnguard.Decision, entry string) {
 	}
 }
 
-// holdApplied reports whether the hold rung is in force after the decision.
+// holdApplied reports whether the hold rung is in force after the decision, under either
+// naming: the entry-generic name or the legacy first-version name.
 func (g *BurnGuard) holdApplied(applied []string) bool {
 	for _, rung := range applied {
-		if rung == burnguard.RungHoldClaude {
+		if burnguard.IsHoldRung(rung) {
 			return true
 		}
 	}

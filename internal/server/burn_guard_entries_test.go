@@ -23,10 +23,13 @@ type entryAdmission struct {
 	routes map[string]string
 	held   map[string]bool
 	models map[string][]string
+	// holdRung is the rung name the hold call recorded per backend, so a test can
+	// assert the guard passed the rung in force (entry-generic, not assumed).
+	holdRung map[string]string
 }
 
 func newEntryAdmission() *entryAdmission {
-	return &entryAdmission{caps: map[string]int{}, routes: map[string]string{}, held: map[string]bool{}, models: map[string][]string{}}
+	return &entryAdmission{caps: map[string]int{}, routes: map[string]string{}, held: map[string]bool{}, models: map[string][]string{}, holdRung: map[string]string{}}
 }
 func (a *entryAdmission) InflightCap(b string) int {
 	a.mu.Lock()
@@ -52,17 +55,27 @@ func (a *entryAdmission) RouteBackend(from, to string, on bool) error {
 	}
 	return nil
 }
-func (a *entryAdmission) HoldNewWork(b string, on bool) error {
+func (a *entryAdmission) HoldNewWork(b, rung string, on bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.held[b] = on
+	if on && rung != "" {
+		a.holdRung[b] = rung
+	} else if !on {
+		delete(a.holdRung, b)
+	}
 	delete(a.models, b)
 	return nil
 }
-func (a *entryAdmission) HoldModels(b string, models []string, on bool) error {
+func (a *entryAdmission) HoldModels(b string, models []string, rung string, on bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.held[b] = on
+	if on && rung != "" {
+		a.holdRung[b] = rung
+	} else if !on {
+		delete(a.holdRung, b)
+	}
 	if on {
 		a.models[b] = append([]string(nil), models...)
 	} else {
@@ -171,17 +184,19 @@ func TestBurnGuardHoldsOneEntryWhileTheOtherRuns(t *testing.T) {
 	if adm.held[entryNoSource] {
 		t.Fatalf("%s has no usage source and was held", entryNoSource)
 	}
+	// The legacy first-version rung name (hold_claude) in the entry ladders above
+	// is accepted and reported under its entry-generic name (hold_entry).
 	if st := entryStatus(t, g, entryNoSource); st.Enabled || st.State != "off" || st.HasUsageSource {
 		t.Fatalf("no-source entry status = %+v, want off", st)
 	}
-	if st := entryStatus(t, g, entryFlatOver); st.State != "guarding" || st.Rung != burnguard.RungHoldClaude {
+	if st := entryStatus(t, g, entryFlatOver); st.State != "guarding" || st.Rung != burnguard.RungHoldEntry {
 		t.Fatalf("over entry status = %+v", st)
 	}
 	if st := entryStatus(t, g, entryFlatUnder); st.State != "idle" || st.Level != 0 {
 		t.Fatalf("under entry status = %+v", st)
 	}
 	// The top-level status repeats the first entry's.
-	if s := g.Status(); s.State != "guarding" || s.Rung != burnguard.RungHoldClaude {
+	if s := g.Status(); s.State != "guarding" || s.Rung != burnguard.RungHoldEntry {
 		t.Fatalf("top-level status = %+v", s)
 	}
 	// No backend name is hard-coded anywhere: nothing was done to any other backend.

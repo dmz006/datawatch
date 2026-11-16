@@ -24,7 +24,7 @@ This is a capability-parity issue: the app needs the guard's **status**, its **s
 | `enabled` | Burn guard on | boolean | on | |
 | `interval_minutes` | Minutes between checks | whole number | 60 | 1 to 1440 |
 | `margin_points` | Margin over the pace line (points) | number | 2.0 | 0 to 50 |
-| `ladder` | Ladder order | ordered subset of `lower_inflight`, `route_pi_prompt`, `hold_claude` | all three in that order | |
+| `ladder` | Ladder order | ordered subset of `lower_inflight`, `route_entry`, `hold_entry` (legacy `route_pi_prompt`/`hold_claude` normalize to `route_entry`/`hold_entry`) | all three in that order | |
 | `step_back` | Step back when under the line | boolean | on | |
 | `cache_write_points_per_million` | Cache-write price (points per million tokens) | number | 0.373 | above 0, at most 1000 |
 | `cache_read_points_per_million` | Cache-read price (points per million tokens) | number | 0.0069 | above 0, at most 1000 |

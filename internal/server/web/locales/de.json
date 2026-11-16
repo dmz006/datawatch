@@ -4136,6 +4136,8 @@
   "burn_guard_state_guarding": "aktiv bremsend",
   "burn_guard_state_waiting": "wartet auf eine Prognose",
   "burn_guard_rung_lower_inflight": "Claude-Inflight-Limit senken",
+  "burn_guard_rung_route_entry": "Arbeit des Eintrags an ein leichteres Backend leiten",
+  "burn_guard_rung_hold_entry": "Arbeit des Eintrags anhalten. Laufende Sitzungen fortsetzen",
   "burn_guard_rung_route_pi_prompt": "Arbeit an pi-prompt leiten",
   "burn_guard_rung_hold_claude": "Claude-Arbeit anhalten",
   "burn_guard_no_rung": "keine",

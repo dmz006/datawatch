@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
-	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -136,7 +136,7 @@ func (a burnGuardAdmission) RouteBackend(from, to string, on bool) error {
 	return nil
 }
 
-func (a burnGuardAdmission) HoldNewWork(backend string, on bool) error {
+func (a burnGuardAdmission) HoldNewWork(backend, rung string, on bool) error {
 	if a.bo == nil {
 		return fmt.Errorf("no back-off registry")
 	}
@@ -149,14 +149,18 @@ func (a burnGuardAdmission) HoldNewWork(backend string, on bool) error {
 		now = a.now
 	}
 	until, resetKnown := a.holdDeadline(now())
-	a.bo.SetWithRung(backend, until.In(time.Local), "burn guard: weekly burn projects over the pace line", burnGuardBackoffSource, resetKnown, burnguard.RungHoldClaude)
+	flag := "burn guard: weekly burn projects over the pace line"
+	if backend != "" {
+		flag = fmt.Sprintf("burn guard: entry %s burns over its pace line", backend)
+	}
+	a.bo.SetWithRung(backend, until.In(time.Local), flag, burnGuardBackoffSource, resetKnown, rung)
 	return nil
 }
 
 // HoldModels holds (on) or releases (off) new work on some models of backend only: the
 // guarded entry's held models. The flag carries the models, so work on the backend's
 // other models keeps running.
-func (a burnGuardAdmission) HoldModels(backend string, models []string, on bool) error {
+func (a burnGuardAdmission) HoldModels(backend string, models []string, rung string, on bool) error {
 	if a.bo == nil {
 		return fmt.Errorf("no back-off registry")
 	}
@@ -169,7 +173,7 @@ func (a burnGuardAdmission) HoldModels(backend string, models []string, on bool)
 		now = a.now
 	}
 	until, resetKnown := a.holdDeadline(now())
-	a.bo.SetWithModels(backend, until.In(time.Local), "burn guard: the entry's burn projects over its pace line", burnGuardBackoffSource, resetKnown, burnguard.RungHoldClaude, models)
+	a.bo.SetWithModels(backend, until.In(time.Local), fmt.Sprintf("burn guard: entry %s burns over its pace line (held models: %s)", backend, strings.Join(models, ", ")), burnGuardBackoffSource, resetKnown, rung, models)
 	return nil
 }
 

@@ -14,8 +14,15 @@ import (
 )
 
 const (
-	// Ladder rung names, in the order the default ladder applies them.
+	// Ladder rung names, in the order the default ladder applies them. They are
+	// entry-generic: each rung acts on the ladder's entry, not on any fixed backend.
 	BurnGuardRungLowerInflight = "lower_inflight"
+	BurnGuardRungRouteEntry    = "route_entry"
+	BurnGuardRungHoldEntry     = "hold_entry"
+
+	// Legacy first-version rung names (now route_entry and hold_entry). They are
+	// still accepted in saved configs and normalize to the entry-generic names
+	// (burnGuardLegacyRungs).
 	BurnGuardRungRoutePiPrompt = "route_pi_prompt"
 	BurnGuardRungHoldClaude    = "hold_claude"
 
@@ -54,7 +61,9 @@ type BurnGuardConfig struct {
 	// compare: the gap check is off.
 	MaxProjectionGapPoints float64 `yaml:"max_projection_gap_points" json:"max_projection_gap_points"`
 	// Ladder is the ordered list of rungs applied while over the line
-	// (default lower_inflight, route_pi_prompt, hold_claude).
+	// (default lower_inflight, route_entry, hold_entry). The legacy first-version
+	// names route_pi_prompt and hold_claude are accepted and normalize to
+	// route_entry and hold_entry.
 	Ladder []string `yaml:"ladder,omitempty" json:"ladder,omitempty"`
 	// StepBack undoes rungs in reverse once the projection is back under the
 	// line (default true).
@@ -169,9 +178,30 @@ func (c BurnGuardConfig) EffectiveEntries() []BurnGuardEntryConfig {
 }
 
 var (
-	burnGuardRungs    = []string{BurnGuardRungLowerInflight, BurnGuardRungRoutePiPrompt, BurnGuardRungHoldClaude}
+	burnGuardRungs    = []string{BurnGuardRungLowerInflight, BurnGuardRungRouteEntry, BurnGuardRungHoldEntry}
 	burnGuardCeilings = []string{BurnGuardCeilingLow, BurnGuardCeilingMedium, BurnGuardCeilingHigh, BurnGuardCeilingCheapBackend}
 )
+
+// burnGuardLegacyRungs maps legacy first-version rung names to their
+// entry-generic names.
+var burnGuardLegacyRungs = map[string]string{
+	BurnGuardRungRoutePiPrompt: BurnGuardRungRouteEntry,
+	BurnGuardRungHoldClaude:    BurnGuardRungHoldEntry,
+}
+
+// burnGuardRungName resolves one rung name: the entry-generic name, or the
+// entry-generic name a legacy first-version name maps to. ok is false when the
+// name is not a rung at all.
+func burnGuardRungName(r string) (string, bool) {
+	name, ok := usageChoice(r, burnGuardRungs)
+	if ok {
+		return name, true
+	}
+	if name, ok2 := burnGuardLegacyRungs[r]; ok2 {
+		return name, true
+	}
+	return r, false
+}
 
 // burnGuardLogf receives the warning lines raised while normalising a loaded
 // config. Tests replace it to capture the output.
@@ -251,12 +281,13 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	out.CacheWritePointsPerMillion = price("cache_write_points_per_million", c.CacheWritePointsPerMillion, d.CacheWritePointsPerMillion)
 	out.CacheReadPointsPerMillion = price("cache_read_points_per_million", c.CacheReadPointsPerMillion, d.CacheReadPointsPerMillion)
 
-	// Ladder: keep valid, non-duplicate rungs in order; an empty result is
-	// the default ladder.
+	// Ladder: keep valid, non-duplicate rungs in order (legacy first-version
+	// names normalize to the entry-generic names); an empty result is the
+	// default ladder.
 	out.Ladder = nil
 	seen := map[string]bool{}
 	for _, r := range c.Ladder {
-		name, ok := usageChoice(r, burnGuardRungs)
+		name, ok := burnGuardRungName(r)
 		switch {
 		case !ok:
 			say("[warn] usage.burn_guard.ladder: %q is not a rung — dropped (allowed: %s)", r, strings.Join(burnGuardRungs, ", "))
@@ -306,9 +337,11 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	if len(c.Entries) > 0 {
 		out.Entries = make([]BurnGuardEntryConfig, 0, len(c.Entries))
 		for i, e := range c.Entries {
+			// An entry's ladder keeps valid rungs, legacy names included (empty means
+			// the guard-wide ladder).
 			var rungs []string
 			for _, r := range e.Ladder {
-				if name, ok := usageChoice(r, burnGuardRungs); ok {
+				if name, ok := burnGuardRungName(r); ok {
 					rungs = append(rungs, name)
 				} else {
 					say("[warn] usage.burn_guard.entries[%d].ladder: %q is not a rung — dropped", i, r)
@@ -338,12 +371,14 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	return out
 }
 
-// BurnGuardRungs returns the allowed ladder rung names, in default order.
+// BurnGuardRungs returns the allowed ladder rung names (the entry-generic names), in
+// default order.
 func BurnGuardRungs() []string { return append([]string(nil), burnGuardRungs...) }
 
-// ValidateBurnGuardRung reports an error for a name that is not a ladder rung.
+// ValidateBurnGuardRung reports an error for a name that is not a ladder rung. The
+// legacy first-version names count: they normalize to the entry-generic names.
 func ValidateBurnGuardRung(name string) error {
-	if _, ok := usageChoice(name, burnGuardRungs); !ok {
+	if _, ok := burnGuardRungName(name); !ok {
 		return fmt.Errorf("usage.burn_guard.ladder: %q is not a rung (allowed: %s)", name, strings.Join(burnGuardRungs, ", "))
 	}
 	return nil

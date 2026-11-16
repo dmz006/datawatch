@@ -64,7 +64,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Turn the guard on or off")),
 		mcpsdk.WithNumber("interval_minutes", mcpsdk.Description("Minutes between evaluations, a whole number from 1 to 1440")),
 		mcpsdk.WithNumber("margin_points", mcpsdk.Description("Points the projection may run over the pace line before the guard acts, 0 to 50")),
-		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the line: lower_inflight, route_pi_prompt, hold_claude"), mcpsdk.WithStringItems()),
+		mcpsdk.WithArray("ladder", mcpsdk.Description("Ordered rungs applied while over the pace line: lower_inflight, route_entry, hold_entry (the legacy first-version names route_pi_prompt and hold_claude are accepted and normalize to route_entry and hold_entry). Each rung acts on the ladder's entry, not on any fixed backend"), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("step_back", mcpsdk.Description("Undo rungs in reverse once the projection is back under the line")),
 		mcpsdk.WithNumber("cache_write_points_per_million", mcpsdk.Description("Weekly points per million cache-write tokens, above 0 and at most 1000")),
 		mcpsdk.WithNumber("cache_read_points_per_million", mcpsdk.Description("Weekly points per million cache-read tokens, above 0 and at most 1000")),

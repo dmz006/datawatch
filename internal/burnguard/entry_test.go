@@ -76,9 +76,9 @@ func TestProjectEntryPricesTokensPerModel(t *testing.T) {
 func TestLadderActsOnItsEntryOnly(t *testing.T) {
 	l, _ := NewEntryLadder(nil, EntryTarget{Backend: "metered-x", RouteTo: "", HeldModels: []string{"m1"}})
 	s := settings()
-	s.Ladder = []string{RungRoutePiPrompt, RungHoldClaude}
+	s.Ladder = []string{RungRoutePiPrompt, RungHoldClaude} // the legacy names: accepted, reported generic
 	d, _ := l.Tick(TickInput{Projection: proj(20), Settings: s, Now: entryT0, InflightCap: 2})
-	if d.Rung != RungRoutePiPrompt || len(d.Actions) != 0 {
+	if d.Rung != RungRouteEntry || len(d.Actions) != 0 {
 		t.Fatalf("route rung with no route target should change nothing: %+v", d)
 	}
 	d, _ = l.Tick(TickInput{Projection: proj(20), Settings: s, Now: entryT0, InflightCap: 2})

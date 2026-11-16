@@ -4136,6 +4136,8 @@
   "burn_guard_state_guarding": "抑制中",
   "burn_guard_state_waiting": "予測を待機中",
   "burn_guard_rung_lower_inflight": "Claude の同時実行上限を下げる",
+  "burn_guard_rung_route_entry": "エントリの作業を軽いバックエンドへ回す",
+  "burn_guard_rung_hold_entry": "エントリの作業を保留。進行中のセッションは継続",
   "burn_guard_rung_route_pi_prompt": "作業を pi-prompt に回す",
   "burn_guard_rung_hold_claude": "Claude の作業を保留",
   "burn_guard_no_rung": "なし",
