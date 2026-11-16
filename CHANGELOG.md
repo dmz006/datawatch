@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.2 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
 ## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
 
 ### Changed
