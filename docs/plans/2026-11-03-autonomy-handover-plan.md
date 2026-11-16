@@ -429,3 +429,11 @@ Question: three finished Automata (unlanded-work counts, core automation stabili
 Operator reading: window 39%, week 24% (pace line about 15.4). Operator, quoted: "why are we burning so much are we not using haiku builders and haiku whatever we can and only 1 claude session right?  Guard needs to get us back on track".
 
 Done: the reading is recorded; the claude-code back-off is set until 11:00 (the earlier unlock until 11:00 is ended). Finding: tasks with no model set fall back to the claude-code entry's default model (opus); since 07:00 Opus used 4.0M cache-write tokens against Haiku 0.6M. Window calibration is about 17 window percent per week point, not 10.
+
+## 2026-11-16 08:50 - Opus was never authorized: Sonnet and Haiku only
+
+Operator, quoted: "Why are we using opus, i never authorized that is always sonnet and haiku" and "Sonnet should be able to handle anything if not ask me this has killed our budget and it's only Monday morning".
+
+Rule: Claude work runs on Sonnet or Haiku. Anything that seems to need a higher model is asked first.
+
+Finding: 252 sessions are recorded as opus (122 verifiers, 82 workers, 48 other; 53 on 2026-11-15, 29 on 2026-11-16, bursts of 73 a day on 2026-10-14 and 2026-10-15). A Claude session started with no model uses the Claude command default for the account, Opus. The judge session of one Automaton was running on Opus when found and was ended. Code fix filed as a draft Automaton (12480001): every Claude start passes an explicit model, Sonnet by default, Haiku for mechanical work, Opus only when an operator names it.
