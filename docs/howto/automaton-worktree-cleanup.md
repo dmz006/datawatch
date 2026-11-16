@@ -186,6 +186,20 @@ freed. Where you see it: one summary line in the daemon log per pass
 audit event `autonomous_cache_folder_sweep`. A removal that errors is left in
 place and recorded in the pass result, like the other passes.
 
+**The scan itself is its own housekeeper.** The pre-tag run's Trivy scan (the
+`docker-agent-base` step; see the Pre-tag run section of
+`docs/operations.md`) does not wait for the sweep at all: before the scan it
+creates a **throwaway, isolated cache directory** under the operator's temp
+space — `mktemp -d`, never a fixed shared path — and exports it as
+`TRIVY_CACHE_DIR`, and traps on `EXIT`, `INT` and `TERM` remove that directory
+on **every exit path — a passing scan, a failing scan and an interrupted run
+alike** — so the scan neither reuses a warmed shared cache nor leaves a folder
+behind in the temp directory. The cache is fresh on each run, so the scan
+re-fetches what it needs; that is the trade-off for leaving nothing behind. If
+`trivy` is not on PATH the scan is skipped with a message and no cache
+directory is created. The sweep above remains the net for the stray `go-build`
+and Trivy scan-cache folders it could not remove itself.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.
@@ -291,7 +305,7 @@ lower of that value and the fixed 80 — and when either is at or above its
 threshold the daemon raises one warning alert that names every over-threshold
 disk with its usage. When the temp disk is the one over, the alert body also
 lists the **biggest folders directly in the temp folder** — the top five —
-each with its approximate size and whether a live process holds it. That list
+each with its approximate size and whether a **running process** holds it — its **ownership**, judged by the same `/proc` liveness probe the sweep uses (an open handle into it, or a process working out of it). That list
 is what points you at what is eating the space; in practice it is the stale
 `go-build` and Trivy scan-cache folders the sweep above was added for.
 
@@ -314,6 +328,28 @@ is what points you at what is eating the space; in practice it is the stale
 - Each disk reading also carries its own `threshold`, so a reader knows which
   threshold that reading was checked against even though the two thresholds
 can differ.
+
+## The no-space gate reason (temporary folder full)
+
+The same full-temp condition speaks in one place outside the cleanup: the
+Automaton's final gate, which the daemon runs as the **script gate**. When a
+gate check exits non-zero and its captured output says the storage it wrote to
+ran out — `no space left on device`, `ENOSPC` or `disk quota exceeded`, in any
+casing — the task's failure reason reads **temporary folder full**, not the
+exit code. That exact text is what the daemon's infra-retry classifier matches,
+and it maps it to the `storage_write` class (the device is full, the quota is
+used up, or the file system is read-only): the task takes the infra-retry path
+— a back-off schedule, recorded on the task and as an `infra_retry` decision on
+the Automaton — instead of being counted against it as a failed test. A no-space
+failure at the gate is treated as an **infrastructure storage shortage**, not a
+content or test failure, and the retry is not counted against the task.
+
+The gate's other bad endings keep their own reasons — a gate killed by a
+signal, a gate that never ran, a gate that hit its deadline — so only a
+real no-space exit reads this way. When a daemon restart leaves a finished
+gate result to consume, the same reason comes out of the stored result, so the
+classification does not change across the restart. The reason itself removes
+nothing; it only tells you which side of the failure line the machine is on.
 
 ## Reading the status
 
@@ -402,7 +438,9 @@ outside the `automaton/` branch namespace or the daemon's own scratch files,
 and never follows a symbolic link. It never removes a cache folder whose age
 it cannot read or whose liveness it cannot prove — on platforms without a
 readable `/proc`, that is all of them — and the disk alert never removes
-anything, in any mode. In `off` it does not even run git for the
+anything, in any mode. The no-space gate reason (temporary folder full) is
+only a label on a gate failure plus an infra-retry path; it removes nothing,
+either. In `off` it does not even run git for the
 cleanup, and it does not scan the cache folders either. The only thing that
 still runs in `off` is the disk reading and its alert.
 
