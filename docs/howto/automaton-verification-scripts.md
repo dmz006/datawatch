@@ -176,6 +176,27 @@ A typical fix after a lint finding:
 3. If the task needs no script, set `verification_script_reason` instead.
 4. Dry-run again; the finding disappears when the rule no longer matches.
 
+## 7. The verification lint gate
+
+A task's verification once passed a branch that the repository's own `make lint`
+rejected: the script checked the task's behavior, and nothing ran the linter over
+the code it changed. The lint gate closes that gap.
+
+- **What it lints.** It lists the files the branch changed against its merge base
+  with `main` (untracked files included), keeps the Go files, and lints only their
+  package directories (`./<dir>`). Files outside Go packages are ignored.
+- **No Go change, no lint.** When the branch touches no Go package the gate passes
+  without starting the linter.
+- **Findings fail the gate.** The linter runs as `golangci-lint run <packages>` from
+  the project directory. A non-zero exit fails the gate, and the linter output is
+  kept with the result, trimmed and capped at 8 KiB.
+- **A linter that cannot run is never a pass.** If `golangci-lint` is not on `PATH`
+  or cannot start, the gate returns an error instead of a result; treat it as an
+  infrastructure fault, not as a clean branch.
+
+The gate has no setting of its own; the linter command is fixed and injectable only
+in tests. See **Verification lint gate** in [the definitions](../datawatch-definitions.md#shadow-merge-checks), listed beside the merge lint checks.
+
 ## Still to review (operator)
 
 These points are decisions or checks the docs cannot settle for you:
@@ -191,6 +212,12 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
+- **Lint gate wiring.** The verification lint gate is in the tree with its tests,
+  but no verifier path calls it yet; until it is wired in, a task's verification
+  still does not run lint. Confirm where it runs (per task or at the final gate)
+  and whether its error counts as an infrastructure retry.
+- **Lint version.** The gate uses whatever `golangci-lint` is on `PATH`; it does not
+  check the version CI pins (the shadow merge's lint version pin does that).
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 
