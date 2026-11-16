@@ -16,6 +16,7 @@ func TestConfigureRequestBody(t *testing.T) {
 		{"autonomous.progress.backlog_path", "2026/plans/README.md", "2026/plans/README.md"},
 		{"autonomous.progress.backlog_path", `docs/"odd"/README.md`, `docs/"odd"/README.md`},
 		{"session.auto_git_commit", "true", true},
+		{"autonomous.automation.merge_pending_include_terminal", "false", false},
 		{"session.llm_backend", "claude-code", "claude-code"},
 		{"autonomous.progress.lanes", "5m", "5m"},
 	}
