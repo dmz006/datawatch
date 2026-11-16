@@ -455,16 +455,19 @@ each local event in the normal time, exactly once. When the peer comes back,
 forwarding resumes without a restart; only the events dropped in between are
 lost.
 
-**Reading a peer's events.** The daemon code has a second, opposite direction:
-a peer event subscription that reads a registered peer's pending-events queue
-and feeds each event into local dispatch with `peer` set. **No release setting
-or surface starts it yet**, so it is not something you can turn on; to receive
-a peer's events here, set up forwarding on the peer as described above. When it
-is wired it needs the `autonomous:read` grant for that peer (not
-`autonomous:write`), reads lifecycle events only (never session output, secrets
-or configuration), drops an event the peer itself received as forwarded so two
-peers cannot echo events back and forth, and follows the same
-`autonomous.notify.forwarding.enabled` switch.
+**Reading a peer's events.** The opposite direction is released: a **peer
+event subscription** reads a registered peer's pending-events queue and feeds
+each event into local dispatch with `peer` set. It needs the `autonomous:read`
+grant for that peer (not `autonomous:write`), reads lifecycle events only
+(never session output, secrets or configuration), drops an event the peer
+itself received as forwarded so two peers cannot echo events back and forth,
+and follows the same `autonomous.notify.forwarding.enabled` switch; it runs
+only while `autonomous.notify.forwarding.peer_events` (default `false`) is on
+as well. A read lasts until it is stopped or the daemon restarts. The
+walkthrough, with the CLI, comm, REST and MCP surfaces, is in
+[Reading a peer's events in the subscriptions howto](automaton-lifecycle-subscriptions.md#reading-a-peers-events).
+When the peer can push to you, setting up forwarding on the peer as described
+above is the simpler direction.
 
 **Audit records for forwarding.** The sending side writes
 `autonomous_lifecycle_forward_delivery` (CEF name

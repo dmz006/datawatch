@@ -20,9 +20,14 @@ import (
 type driftGitRunner func(ctx context.Context, dir string, args ...string) (string, error)
 
 // driftGitExec runs git with the given argv and returns its stdout.
-// A plain var so tests can swap it.
+// A plain var so tests can swap it. The program is the fixed "git"
+// binary — no shell — and every variable argument passed to it has
+// already been validated by its caller: dir by validDriftDir
+// (absolute, existing directory, no leading dash) and revisions by
+// safeRevisionArg, so nothing here can turn an argument into an option
+// or a second command.
 var driftGitExec = func(ctx context.Context, argv []string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", argv...) // #nosec G204 -- fixed read-only git subcommands; dir comes from operator-controlled PRD ProjectDir, same trust model as runGitIn (worktree.go)
+	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.Output()
 	return string(out), err
@@ -48,10 +53,33 @@ func hardenedDriftGitArgs(dir string, args []string) []string {
 	return append(out, args[1:]...)
 }
 
-// validDriftDir reports whether dir is safe to pass to git -C: non-empty,
-// absolute and not starting with a dash.
+// validDriftDir reports whether dir is safe to pass to git -C, checked
+// before any argument containing it is built and before git is executed:
+// non-empty, no NUL byte, absolute, not starting with a dash (git would
+// parse it as an option), and an existing directory (a path pointing at a
+// regular file is not a repo).
 func validDriftDir(dir string) bool {
-	return dir != "" && filepath.IsAbs(dir) && !strings.HasPrefix(dir, "-")
+	if dir == "" || strings.ContainsRune(dir, 0) || strings.HasPrefix(dir, "-") {
+		return false
+	}
+	cleaned := filepath.Clean(dir)
+	if !filepath.IsAbs(cleaned) {
+		return false
+	}
+	st, err := os.Stat(cleaned)
+	return err == nil && st.IsDir()
+}
+
+// safeRevisionArg reports whether s is a usable revision for the
+// read-only git invocations in this file: non-empty, no NUL byte and no
+// leading dash. The revision slots of `git log` and `git diff` come before
+// any path separator, so an argument that starts with a dash would be
+// parsed by git as an option — refusing it (treated as "no revision", the
+// capture function then returns its documented empty result instead of
+// executing) removes the only way a revision-shaped value can steer the
+// command. SHAs produced by git rev-parse always satisfy this shape.
+func safeRevisionArg(s string) bool {
+	return s != "" && !strings.ContainsRune(s, 0) && !strings.HasPrefix(s, "-")
 }
 
 // defaultDriftGitRunner shells out to git with hardened options and -C dir.
@@ -89,7 +117,7 @@ func CapturePreTaskDirtyFiles(ctx context.Context, dir string, run driftGitRunne
 // touched by any commit in preSHA..HEAD in dir (git log --name-only).
 // An empty preSHA yields nil, nil.
 func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRunner) ([]string, error) {
-	if preSHA == "" {
+	if !safeRevisionArg(preSHA) {
 		return nil, nil
 	}
 	if run == nil {
@@ -109,7 +137,7 @@ func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRu
 // 0, so a binary edit still has an entry. An empty preSHA, or no changed
 // files, yields nil, nil.
 func CommittedLineStatsSince(ctx context.Context, dir, preSHA string, run driftGitRunner) (map[string]int, error) {
-	if preSHA == "" {
+	if !safeRevisionArg(preSHA) {
 		return nil, nil
 	}
 	if run == nil {

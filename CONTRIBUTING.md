@@ -146,6 +146,7 @@ Steps:
   fixture, `scripts/check-no-load-patterns_test.sh`) and inside `make lint`
   — `make lint` is the local pre-tag list, so run it before every tag. This
   check is part of that pre-tag run on the build host, never a CI step.
+- **Build host toolchain:** `make check-toolchain` belongs to the local pre-tag run; it exits 0 when everything is current or a version source is unreachable, and exits 1 when Go or a tool is behind (see [docs/howto/build-host-toolchain.md](docs/howto/build-host-toolchain.md)).
 
 ## Code Style
 

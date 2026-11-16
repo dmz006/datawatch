@@ -4881,7 +4881,7 @@ paths:
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
-                verify_tls: {type: boolean, description: When true, model pulls to this node verify its https certificate against the system roots. Default false. Update replaces the whole node so omitting it means false.}
+                verify_tls: {type: boolean, description: Kept for configuration compatibility. Model pulls to this node always verify its https certificate against the system roots (plus tls_ca_file or tls_cert_fingerprint when set); there is no per-node off switch.}
       responses:
         "200":
           description: The updated node record
