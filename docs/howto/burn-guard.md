@@ -60,6 +60,124 @@ restart is needed. The effort ceiling and the Claude retry limit are published
 from the `enabled` setting as before, so the billing mode does not switch them
 off.
 
+## What the guard reads per LLM entry
+
+The guard takes two inputs, both about the LLM entry it guards:
+
+- **Your readings** in the [usage calculator](usage-calculator.md) — the
+  percent of the weekly allowance used against its reset. They give the pace
+  line and the advice projection the guard compares against.
+- **The session transcripts** it parses each interval — input, output,
+  cache-write and cache-read tokens per hour, split worker and verifier
+  sessions from everything else, priced into weekly points with the two cache
+  prices (refit at each new reading when `refit_on_reading` is on).
+
+So the guard needs no billing feed of its own: it prices the same tokens the
+[usage calculator](usage-calculator.md) and the [cost
+report](cost-report.md) price, and the readings are the same ones you type.
+
+The entry's **plan type** does not change the guard's math — it always works
+in allowance points and pace lines on the `claude-code` entry — but it sets
+the limits the guard's rungs move:
+
+- `billing_mode` (`allowance`, `api`, `local`) decides whether the guard acts
+  at all (see [Which LLMs it guards](#which-llms-it-guards)). An `api` or
+  `local` entry with a dollar budget is guarded like an allowance entry; the
+  budget itself is enforced at admission by the capacity ledger's budget
+  backpressure, not by the guard.
+- `plan_tier` (`pro`, `max_5x`, `max_20x`, `api`) sets the entry's inflight cap
+  through `autonomous.plan_tier_max_inflight` and its share of a shared dollar
+  ceiling through `autonomous.plan_tier_allocation_usd` (see
+  [Automata capacity](automata-capacity.md)). An explicit `max_inflight` on
+  the entry wins over the table; the `lower_inflight` rung lowers whatever cap
+  is in force.
+
+## Per-model cost rates and their fallback
+
+A model can carry its own USD rates per 1K tokens: `in_per_k`, `out_per_k`,
+`cache_read_per_k` and `cache_write_per_k`. When the cost report or a spend
+calculation prices a row for a model, the rate resolves in this order:
+
+1. **The model's own rate** on the LLM entry — the four rate fields on the
+   matching element of the entry's `models` list.
+2. **The backend's `cost_rates` entry** — the per-backend map of `{in_per_k,
+   out_per_k}`; it has no cache fields, so those resolve only from the model
+   or to nothing.
+3. **The built-in default** for the model, when the daemon knows one.
+
+The report says which one priced each row with its rate source (`model`,
+`backend` or the default), so a surprising figure is always traceable. The
+report prices cache reads and writes from the input rate — a tenth of it for
+a cache read, 1.25 times it for a cache write — and every dollar figure it
+produces is API-equivalent, never a bill.
+
+Set a model's rates from any of these surfaces:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch llm models add <llm> --model <name> [--in-per-k .. --out-per-k .. --cache-read-per-k .. --cache-write-per-k ..]` |
+| Comm channel | `llm models add <name> model=<m> [in_per_k=<usd> out_per_k=<usd> cache_read_per_k=<usd> cache_write_per_k=<usd>]` |
+| MCP | `llm_add_model` with the four `*_per_k` fields |
+| REST | `PUT /api/llms/{name}` with the model under `models`; the per-backend map with `PUT /api/cost/rates` |
+| Web app | the LLM edit form's per-model rate fields (blank leaves the fallback) |
+| YAML config | `in_per_k` and friends on each element of the LLM's `models` list; `cost_rates` for the per-backend map |
+
+Leaving a rate unset is what falls back; an absent rate is read as the
+backend's, never as zero.
+
+## The by-model reports
+
+The cost report carries a **by-model section** (`model_rows`) alongside its
+rows: one row per model name with its input, output and cached tokens and its
+API-equivalent dollars, priced at that model's own rate — the per-model cost
+entry when one is configured, else the backend's rate. It is an equivalence,
+not a bill, and it is absent when the report has no model rows. Read it from
+any surface:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch cost report` — the by-model section renders under the rows |
+| Comm channel | `cost report [group_by=<g>] [since=<t>] [until=<t>]` |
+| MCP | `cost_report` — `model_rows` in the body |
+| REST | `GET /api/cost/report` — `model_rows` in the body |
+| Web app | the **Cost report** card's **By model** section |
+| Script | `scripts/claude-burn.py` reads `model_rows` and prints the by-model breakdown, falling back to the rows when the section is absent |
+
+## Adding a second paid LLM by configuration
+
+Registering another paid LLM is configuration only — nothing to restart, and
+the guard keeps doing its job on the `claude-code` entry. Every surface takes
+the same entry fields:
+
+| Surface | How |
+|---|---|
+| CLI | `datawatch llm add <name> --kind <kind> --billing-mode api --plan-tier <tier>` and, for a dollar limit, `--budget-ceiling-usd <n> --budget-hours <n>` (or `--budget-weekday <day> [--budget-time HH:MM] [--budget-zone <IANA>]`) |
+| MCP | `llm_add` with `billing_mode`, `plan_tier` and the `budget` object |
+| REST | `POST /api/llms` or `PUT /api/llms/{name}` with the same fields |
+| Web app | Settings → Compute → LLM, the **Billing mode** and budget fields on the edit form |
+| Comm channel | `llm add <name> billing_mode=<mode>` (budget through the other surfaces) |
+| YAML config | a `llms:` entry with `billing_mode`, `plan_tier` and `budget`; see the [configuration reference](../config-reference.yaml) |
+
+What each field does to the new entry:
+
+- `billing_mode api` puts its spend on metered dollars in the
+  [cost report](cost-report.md) — never added to the allowance entry's points.
+- `plan_tier` gives it its inflight cap (`autonomous.plan_tier_max_inflight`)
+  and its share of a shared dollar ceiling
+  (`autonomous.plan_tier_allocation_usd`) — see
+  [Automata capacity](automata-capacity.md).
+- A `budget` enforces its ceiling at admission: while the window is full,
+  autonomous work for that LLM waits with a `budget window full:` reason and
+  resumes by itself when the window rolls over; operator-started sessions are
+  never held. See [the per-LLM dollar
+  budget](automata-capacity.md#per-llm-dollar-budget).
+- The [usage calculator](usage-calculator.md) reads the entry's spend into its
+  projections, so the new LLM's pace shows up in the advice.
+
+The burn guard itself still watches only the `claude-code` entry: the second
+LLM is bounded by its own budget, its plan-tier caps and the usage calculator,
+not by the guard's ladder.
+
 ## What it does each interval
 
 1. Reads the session transcripts and counts input, output, cache-write and
@@ -337,6 +455,12 @@ the Automaton's per-kind map, then the daemon-wide map under
 `usage.burn_guard.effort_ceiling`. With the guard disabled every ceiling is a
 no-op.
 
+The `cheaper_backend` ceiling does not lower the effort level; it routes the
+task to the cheaper backend — **`pi-prompt`** — instead, so the work still
+runs, on the cheap model. The same routing is what the Claude retry limit
+applies to a task it gives up on, so the cheaper rung of the guard is always
+the same destination.
+
 **`final_gate` is inert today.** The built-in final gate no longer runs as a
 session — the daemon's
 [script gate](automaton-decompose-lint.md#the-script-gate-the-final-gate-no-longer-spends-a-session)
@@ -401,6 +525,24 @@ The guard still never ends a running session, whichever projection it uses.
 - It does not change a lane count you set; the lane count stays yours (see the
   [usage calculator](usage-calculator.md)).
 - It does not run without readings; type one to give it a pace line.
+
+## Parity
+
+The surfaces this page added or documented in this change:
+
+| Surface | What it now carries |
+|---|---|
+| **YAML / config** | `llms.<name>` entries: `billing_mode`, `plan_tier`, `models[].in_per_k` / `out_per_k` / `cache_read_per_k` / `cache_write_per_k`, `cost_rates`, `budget` |
+| **REST** | `POST /api/llms`, `PUT /api/llms/{name}` (entry fields); `PUT /api/cost/rates` (per-backend map); `GET /api/cost/report` (`model_rows`); `GET /api/budget`, `GET /api/llm-roles` for reading |
+| **MCP** | `llm_add`, `llm_update`, `llm_get`, `llm_list` (entry fields); `llm_add_model` (per-model rates); `cost_report` (`model_rows`); `budget_status` |
+| **CLI** | `datawatch llm add\|update` (`--billing-mode`, `--plan-tier`, `--budget-*`); `datawatch llm models add` (per-model rate flags); `datawatch cost report` (by-model section); `datawatch budget status` |
+| **Comm channel** | `llm add \| update <name> billing_mode=<mode>`, `llm models add` (rate keys), `cost report`, `budget` |
+| **Web app** | Settings → Compute → LLM: **Billing mode**, plan tier, per-model rate fields, budget; the **Cost report** card's **By model** section |
+
+Untouched: the guard's own settings (all still under `usage.burn_guard`, same
+key names), the ladder, the status/alert/question behaviour, and the
+Android/iPhone apps, which track parity separately in the `datawatch-app`
+repository.
 
 ## See also
 
