@@ -242,8 +242,8 @@ A fully-populated entry:
 | `verifier_context_mb` | int | 0 | The context memory in MB one verifier slot holds here, used only to produce the advice figure the node reports — how many verifier slots the node's free GPU memory would hold right now. 0 (unset) means "unknown", so no figure is shown. See [Verifier slots](#verifier-slots) |
 | `tls_ca_file` | string | — | Path, on the daemon's machine, to a PEM CA bundle trusted in addition to the system roots when the daemon connects to an `https://` node. See [Certificates for self-signed and private-CA nodes](#certificates-for-self-signed-and-private-ca-nodes) |
 | `tls_cert_fingerprint` | string | — | SHA-256 fingerprint of the node's certificate, 64 hex digits (colons and spaces accepted, case ignored; stored as 64 lowercase digits). Pins the node: the presented certificate must match. Same section |
-| `tls_insecure_skip_verify` | bool | false | Turns certificate checking off for this node. Audited, shown as a red badge in the PWA, and refused together with `tls_ca_file` or `tls_cert_fingerprint`. Same section |
-| `verify_tls` | bool | false | When true, model pulls to this `https://` node verify the node's certificate against the system roots and fail with an error naming the node if it does not verify. Off by default. Governs model pulls only, and is separate from the three `tls_` settings above. See [Verify the certificate on model pulls](#verify-the-certificate-on-model-pulls) |
+| `tls_insecure_skip_verify` | bool | false | Turns certificate checking off for the probes of this node — model pulls still verify. Audited, shown as a red badge in the PWA, and refused together with `tls_ca_file` or `tls_cert_fingerprint`. Same section |
+| `verify_tls` | bool | false | Kept for configuration compatibility. Model pulls to this `https://` node always verify the node's certificate (system roots, plus `tls_ca_file` or `tls_cert_fingerprint` when set). See [Verify the certificate on model pulls](#verify-the-certificate-on-model-pulls) |
 | `disabled` | bool | false | When true, dispatcher skips this node entirely |
 | `maintenance_windows` | []object | — | Operator-declared blackout periods |
 
@@ -1161,39 +1161,30 @@ Prefer a CA file or a pin. If you must skip verification, set `tls_insecure_skip
 datawatch audit --action compute_node_tls_verification_off
 ```
 
-A supervisor watch finding raised for such a node ends with `; certificate verification is turned off for this node`, so a report you read tells you its basis was unverified.
+A supervisor watch finding raised for such a node ends with `; certificate verification is turned off for this node`, so a report you read tells you its basis was unverified. This setting governs the probes only — model pulls always verify the certificate, and never honor it.
 
 ### Verify the certificate on model pulls
 
-`verify_tls` controls one thing: whether a model pull to the node checks the node's `https://` certificate. It is separate from `tls_ca_file`, `tls_cert_fingerprint` and `tls_insecure_skip_verify`, which govern the usage probes and the supervisor watch probe. Setting `verify_tls` does not change those probes, and setting those three does not change pulls.
+Model pulls to an `https://` node **always verify** the node's certificate, using the node's TLS settings:
 
-- **Off (the default).** Pulls behave as they always have: the certificate is not checked. The default is off because nodes are registered by the operator on a private network and commonly use self-signed certificates, so verifying by default would break existing nodes.
-- **On.** The pull checks the node's certificate against the system roots (the same roots, and the same `SSL_CERT_FILE` and `SSL_CERT_DIR` variables, described above). `tls_ca_file` and `tls_cert_fingerprint` are not used for pulls, so a certificate that only those settings would trust still fails here.
-- **A plain `http://` node** has no certificate and is unaffected either way.
+- **Default:** the certificate must verify against the system roots (the same roots, and the same `SSL_CERT_FILE` and `SSL_CERT_DIR` variables, described above).
+- **`tls_ca_file` set:** the same check, with that CA trusted in addition to the system roots.
+- **`tls_cert_fingerprint` pinned, no CA file:** the presented leaf certificate must match the pin exactly — the pin is the trust signal.
+- **Both set:** the chain must verify against the system roots plus the CA file, and the leaf must match the pin.
 
-Turning it on is the safer choice when the node is reachable across a network you do not control, because a pull then cannot be redirected to an impersonator.
+There is no mode in which a pull verifies nothing: `tls_insecure_skip_verify` never applies to a pull, and a node carrying it falls back to plain system-root verification for its pulls. A plain `http://` node has no certificate and is unaffected.
 
-Turn it on from any surface:
-
-| Surface | How |
-|---|---|
-| REST | `"verify_tls": true` in the body of `POST /api/compute/nodes` or `PUT /api/compute/nodes/<name>` |
-| CLI | `datawatch compute node add <name> --kind ollama --address https://... --verify-tls`, and the same flag on `compute node update` |
-| MCP | `verify_tls: true` on `compute_node_add` or `compute_node_update` |
-| Chat | the pair `verify_tls=true` (or `verify_tls=false`) on `compute node add` and `compute node update` |
-| Web | the **Verify TLS for model pulls** checkbox in the node form |
-
-`compute node update` replaces the whole node, so leaving `verify_tls` out turns it off again. Repeat it on every update.
+`verify_tls` is kept on the node for configuration compatibility — old configs, and the REST, CLI, MCP, chat and PWA surfaces that send it — but it no longer changes behavior, so there is nothing to turn on per node anymore.
 
 When verification fails, the pull stops and the error names the node and the certificate problem:
 
 ```text
-node gpu-box-2: certificate verification failed (verify_tls is on): tls: failed to verify certificate: x509: certificate signed by unknown authority; trust the certificate or turn verify_tls off for this node
+node gpu-box-2: certificate verification failed: tls: failed to verify certificate: x509: certificate signed by unknown authority; trust the certificate with tls_ca_file or tls_cert_fingerprint
 ```
 
-The text between `(verify_tls is on):` and the final `;` is the certificate error itself, for example `x509: certificate signed by unknown authority` or a host name mismatch. Other pull errors, such as an unreachable node, are reported as before.
+The text between `certificate verification failed:` and the final `;` is the certificate error itself, for example `x509: certificate signed by unknown authority` or a host name mismatch. Other pull errors, such as an unreachable node, are reported as before.
 
-For a self-signed node you have two choices: leave `verify_tls` off, or give the node a certificate the system trusts (one from a public authority, or one from your own CA after you add that CA to the system roots of the machine that runs the daemon). The pin and CA file settings above do not help here.
+For a node whose certificate the system does not trust, name the trust on the node instead: add the CA that signed it as `tls_ca_file`, or pin the leaf with `tls_cert_fingerprint`. That makes the pull work without touching the daemon's system roots — this is the supported path for private-CA and self-signed nodes.
 
 ### Troubleshooting certificates
 

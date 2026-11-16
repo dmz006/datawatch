@@ -20013,12 +20013,12 @@ window.openComputeAddPanel = function(existingNode, prefill) {
             <input id="computeNewTLSSkip" type="checkbox" onchange="computeTLSModeChanged()" ${initTLSSkip ? 'checked' : ''} ${!initTLSSkip && (initTLSCA || initTLSFP) ? 'disabled' : ''} />
             ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
           </label>
-          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for the probes of this node (model pulls still verify it). Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
             <input id="computeNewVerifyTLS" type="checkbox" ${initVerifyTLS ? 'checked' : ''} />
-            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls')}${defsLink('compute_verify_tls')}
+            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls (always on; kept for compatibility)')}${defsLink('compute_verify_tls')}
           </label>
-          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.')}</div>
+          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'Kept for configuration compatibility. Model pulls to this node always verify its certificate against the system roots, plus any tls_ca_file or tls_cert_fingerprint set on the node.')}</div>
         </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
