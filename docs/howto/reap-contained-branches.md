@@ -124,5 +124,19 @@ two `POST`s need the autonomous write capability from a federated peer.
    then deleted; the reply names each backup ref.
 3. Changed your mind? `datawatch autonomous branch-reap-restore <branch>`.
 
+## What the operator must still review
+
+- **No timer.** Nothing runs a reap pass on a schedule, and the backup-ref
+  expiry has no caller yet. Backup refs under `refs/datawatch/reap-backup/`
+  accumulate until something prunes them; check their count with
+  `git for-each-ref refs/datawatch/reap-backup/ | wc -l` now and then.
+- **No pass from chat or the web app.** The messaging channel and the web app
+  offer the report and restore only; run a pass from REST, CLI or MCP.
+- **Keep does not protect a branch.** A **Keep** record from the unlanded work
+  review does not stop the reaper; a branch whose commits are all contained is
+  still reaped (and stays restorable until its backup expires).
+- **Restore window.** Lowering `autonomous.reaped_branch_backup_days` shortens
+  the window for every existing backup once pruning runs.
+
 See also: [definitions → Task-subbranch reap](../datawatch-definitions.md),
 [Automaton worktree cleanup](automaton-worktree-cleanup.md).
