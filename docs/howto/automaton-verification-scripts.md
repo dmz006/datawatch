@@ -143,8 +143,18 @@ skipped by the three rules below; the warn rule
 | `verify_script_task_files_only` | block | The script compares only against the task's own files (a literal list equal to them, or a file-listing diff of HEAD, the tree or `main`) and never against the merge base. | Compare against `git merge-base HEAD main` — directly, or through a sourced helper — and compare the result with the cumulative allowed list. |
 | `verify_script_docs_without_sync` | block | The script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`. | Add `make sync-docs` as the script's first step, or source a helper that runs it. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
+| `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
+| `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
+| `verify_script_pipefail_grep_q` | block | With `pipefail` on, a pipeline ends in a quiet grep and can read as a false no-match. | Write the output to a file, then run `grep -q` on the file. |
+| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path another story or task in the plan changes. | Make the allowed list cumulative over the whole plan. |
+| `fixed_calendar_date_in_test` | warn | The task asks for a test that uses a fixed calendar date, which passes now and fails later. | Take times from the current time with an offset, or an injected clock. |
 
-All three are `block`-severity: in `enforce` mode they feed the planner a retry
+**Operator note.** The four `verify_script_*` rules above are the pre-flight
+(details in [section 5a](#5a-preflight-checks-for-planner-written-scripts)). It
+runs when a plan is decomposed and when an edit sets a gate script, and its
+findings appear on the Automaton before any task starts.
+
+The first three are `block`-severity: in `enforce` mode they feed the planner a retry
 with the findings as guidance; in `shadow` mode they are recorded on the
 Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
