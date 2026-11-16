@@ -4137,6 +4137,7 @@
   "burn_guard_state_waiting": "esperando una proyección",
   "burn_guard_rung_lower_inflight": "Bajar el límite de Claude en vuelo",
   "burn_guard_rung_route_entry": "Enviar el trabajo de la entrada a un backend más ligero",
+  "burn_guard_rung_route_cheaper_model": "Enviar el trabajo de la entrada a un modelo más barato en el mismo backend",
   "burn_guard_rung_hold_entry": "Retener el trabajo de la entrada. Las sesiones en curso continúan",
   "burn_guard_rung_route_pi_prompt": "Enviar trabajo a pi-prompt",
   "burn_guard_rung_hold_claude": "Retener el trabajo de Claude",

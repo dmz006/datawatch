@@ -171,11 +171,11 @@ func TestBurnGuardAskOnChangeAlertNamesProjectionTargetAndSetting(t *testing.T) 
 
 func TestActionKindsAreAdmissionOnly(t *testing.T) {
 	got := ActionKinds()
-	want := []ActionKind{"set_inflight", "route_backend", "hold_new_work"}
+	want := []ActionKind{"set_inflight", "route_backend", "route_model", "hold_new_work"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("kinds = %v, want %v", got, want)
 	}
-	// No ActionKind constant outside the three may be declared in the package source.
+	// No ActionKind constant outside the four may be declared in the package source.
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "ladder.go", nil, 0)
 	if err != nil {
@@ -192,8 +192,8 @@ func TestActionKindsAreAdmissionOnly(t *testing.T) {
 		}
 		return true
 	})
-	if n != 3 {
-		t.Fatalf("%d ActionKind constants declared, want 3", n)
+	if n != 4 {
+		t.Fatalf("%d ActionKind constants declared, want 4", n)
 	}
 	for _, k := range got {
 		if s := string(k); strings.Contains(s, "kill") || strings.HasPrefix(s, "end") || strings.Contains(s, "stop") {
@@ -429,9 +429,12 @@ func TestRungPredicatesAcceptBothNamingConventions(t *testing.T) {
 	for _, r := range KnownRungs() {
 		known[r] = true
 	}
-	cases := []struct {r string; ok bool}{
+	cases := []struct {
+		r  string
+		ok bool
+	}{
 		{RungLowerInflight, true}, {RungRouteEntry, true}, {RungRoutePiPrompt, true},
-		{RungHoldEntry, true}, {RungHoldClaude, true},
+		{RungRouteCheaperModel, true}, {RungHoldEntry, true}, {RungHoldClaude, true},
 		{"", false}, {"some_other_rung", false},
 	}
 	for _, c := range cases {
@@ -444,15 +447,17 @@ func TestRungPredicatesAcceptBothNamingConventions(t *testing.T) {
 		if got := IsRouteRung(c.r); got != (c.r == RungRouteEntry || c.r == RungRoutePiPrompt) {
 			t.Fatalf("IsRouteRung(%q) = %v", c.r, got)
 		}
+		if got := IsRouteCheaperModelRung(c.r); got != (c.r == RungRouteCheaperModel) {
+			t.Fatalf("IsRouteCheaperModelRung(%q) = %v", c.r, got)
+		}
 		if got := IsLowerInflightRung(c.r); got != (c.r == RungLowerInflight) {
 			t.Fatalf("IsLowerInflightRung(%q) = %v", c.r, got)
 		}
 	}
-	if len(KnownRungs()) != 5 {
-		t.Fatalf("KnownRungs = %v, want the five entry/legacy rungs", KnownRungs())
+	if len(KnownRungs()) != 6 {
+		t.Fatalf("KnownRungs = %v, want the six entry/legacy rungs", KnownRungs())
 	}
 }
-
 
 func DecisionApplied(d Decision) []string { return d.Applied }
 
@@ -589,6 +594,137 @@ func TestGapLowerNeverSkipsRungWhenOverLine(t *testing.T) {
 	if d.Direction != DirectionClimb || len(d.Applied) != 1 {
 		t.Fatalf("expected a single climb: %+v", d)
 	}
+}
+
+// newCheaperLadder builds a ladder whose only rung is route_cheaper_model, acting on a
+// target with the given cheaper model (cheaperModel may be "" for the no-op case).
+func newCheaperLadder(cheaperModel string) *Ladder {
+	l, err := NewEntryLadder(nil, EntryTarget{Backend: "paid-a", CheaperModel: cheaperModel})
+	if err != nil {
+		panic(err)
+	}
+	return l
+}
+
+func cheaperSettings() LadderSettings {
+	s := settings()
+	s.Ladder = []string{RungRouteCheaperModel}
+	return s
+}
+
+// TestRouteCheaperModelRungRoutesAndReleases: while over, the rung routes new work to
+// the entry's cheaper model; when it steps back, that routing is released and the
+// original model routing is restored. It is a no-op (no action) for an entry that has
+// no cheaper model.
+func TestRouteCheaperModelRungRoutesAndReleases(t *testing.T) {
+	l := newCheaperLadder("claude-haiku-4-5")
+	at := time.Now()
+	d := tick(t, l, proj(20), cheaperSettings(), at)
+	if d.Direction != DirectionClimb || d.Rung != RungRouteCheaperModel || len(d.Actions) != 1 {
+		t.Fatalf("apply: %+v", d)
+	}
+	a := d.Actions[0]
+	if a.Kind != ActionRouteModel || a.Backend != "paid-a" || a.Model != "claude-haiku-4-5" || a.Release {
+		t.Fatalf("apply action: %+v", a)
+	}
+	if a.Rung != RungRouteCheaperModel {
+		t.Fatalf("apply action must carry its rung: %+v", a)
+	}
+	// step back releases the cheaper-model route (same model, Release set)
+	d = tick(t, l, proj(-10), cheaperSettings(), at)
+	if d.Direction != DirectionStepBack || d.Rung != RungRouteCheaperModel || len(d.Actions) != 1 {
+		t.Fatalf("release: %+v", d)
+	}
+	r := d.Actions[0]
+	if r.Kind != ActionRouteModel || r.Backend != "paid-a" || r.Model != "claude-haiku-4-5" || !r.Release {
+		t.Fatalf("release action: %+v", r)
+	}
+	if len(l.State().Applied) != 0 || len(d.Actions) == 0 {
+		t.Fatalf("after release: state %+v", l.State())
+	}
+
+	// no cheaper model: the rung is a no-op and raises no route action either way
+	noop := newCheaperLadder("")
+	if d := tick(t, noop, proj(20), cheaperSettings(), time.Now()); len(d.Actions) != 0 {
+		t.Fatalf("no-op application should have no action: %+v", d)
+	}
+	if d := tick(t, noop, proj(-10), cheaperSettings(), time.Now()); len(d.Actions) != 0 {
+		t.Fatalf("no-op release should have no action: %+v", d)
+	}
+}
+
+// TestRouteCheaperModelRungIsPerEntry: each entry routes to its own cheaper model, so
+// two entries on the same rung carry different model targets independently.
+func TestRouteCheaperModelRungIsPerEntry(t *testing.T) {
+	at := time.Now()
+	cases := []struct{ name, model string }{
+		{"claude", "claude-haiku-4-5"},
+		{"gemini", "gemini-2-flash-lite"},
+	}
+	for _, c := range cases {
+		l := newEntryByName(t, c.name, c.model)
+		d := tick(t, l, proj(20), cheaperSettings(), at)
+		if len(d.Actions) != 1 || d.Actions[0].Kind != ActionRouteModel || d.Actions[0].Model != c.model || d.Actions[0].Backend != c.name {
+			t.Fatalf("entry %s: %+v", c.name, d)
+		}
+	}
+}
+
+// newEntryByName builds a single-rung ladder for a backend with a cheaper model.
+func newEntryByName(t *testing.T, backend, model string) *Ladder {
+	t.Helper()
+	l, err := NewEntryLadder(nil, EntryTarget{Backend: backend, CheaperModel: model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+// TestRouteCheaperModelRungPositionReordersLadder: the rung is first-class in a
+// configured ladder — its position relative to the other rungs is honored, so it applies
+// in the order the ladder lists it (before or after the hold rung).
+func TestRouteCheaperModelRungPositionReordersLadder(t *testing.T) {
+	at := time.Now()
+	newWithLadder := func(ladder []string) *Ladder {
+		l, err := NewEntryLadder(nil, EntryTarget{Backend: "paid-a", CheaperModel: "cheap", RouteTo: "local-b"})
+		if err != nil {
+			panic(err)
+		}
+		return l
+	}
+	sBefore := settings()
+	sBefore.Ladder = []string{RungRouteCheaperModel, RungHoldEntry}
+	rbBefore := newWithLadder(sBefore.Ladder)
+	if d := tick(t, rbBefore, proj(20), sBefore, at); d.Rung != RungRouteCheaperModel || len(d.Actions) != 1 {
+		t.Fatalf("before: %+v", d)
+	}
+	if d := tick(t, rbBefore, proj(20), sBefore, at); d.Rung != RungHoldEntry {
+		t.Fatalf("before 2: %+v", d)
+	}
+
+	sAfter := settings()
+	sAfter.Ladder = []string{RungHoldEntry, RungRouteCheaperModel}
+	rbAfter := newWithLadder(sAfter.Ladder)
+	if d := tick(t, rbAfter, proj(20), sAfter, at); d.Rung != RungHoldEntry {
+		t.Fatalf("after: %+v", d)
+	}
+	if d := tick(t, rbAfter, proj(20), sAfter, at); d.Rung != RungRouteCheaperModel || d.Actions[0].Kind != ActionRouteModel {
+		t.Fatalf("after 2: %+v", d)
+	}
+
+	// and it is not in the always-on default ladder (a no-op until an entry resolves one)
+	if contains(DefaultLadder(), RungRouteCheaperModel) {
+		t.Fatalf("default ladder unexpectedly contains route_cheaper_model: %v", DefaultLadder())
+	}
+}
+
+func contains(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // testTarget is the entry the ladder tests act on; the names are arbitrary.

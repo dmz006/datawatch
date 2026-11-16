@@ -6,6 +6,7 @@
 //	lower_inflight   lower the entry's inflight cap by one (the original is remembered
 //	                 and restored on release)
 //	route_pi_prompt  route the entry's new work to its route target
+//	route_cheaper_model  route this entry's new work to its own cheaper model (same backend)
 //	hold_entry       hold the entry's new work (on its held models when it lists any)
 //
 // The first version of the guard named the hold rungs route_pi_prompt and hold_claude.
@@ -30,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +39,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
@@ -62,6 +65,14 @@ type BurnGuardAdmission interface {
 // rung is the rung name the guard records on the flag it sets (see HoldNewWork).
 type BurnGuardModelHold interface {
 	HoldModels(backend string, models []string, rung string, on bool) error
+}
+
+// BurnGuardModelRoute is the optional seam that the route_cheaper_model rung drives:
+// it routes (on) new work meant for backend to a cheaper model of that same backend,
+// and stops routing (off) to restore the entry's original model routing. It touches
+// only admission of new work; a running session that already picked a model keeps it.
+type BurnGuardModelRoute interface {
+	RouteModel(backend, model string, on bool) error
 }
 
 // BurnGuardSessions is a read-only view of the session manager. It deliberately has no
@@ -90,6 +101,12 @@ type BurnGuardInputs struct {
 	// Rate returns the entry's model's own cost rate (the per-model rate of the LLM
 	// entry configuration); false when none is configured. nil means no rates.
 	Rate func(entry config.BurnGuardEntryConfig) (burnguard.ModelRate, bool)
+	// CheaperModel returns the model the entry's route_cheaper_model rung should send
+	// new work to: the entry's own cheaper model (for a Claude entry, Haiku). The
+	// entry's explicit route_cheaper_model setting wins; otherwise the entry's own
+	// cheapest priced model by its per-model cost rates. "" means the rung is a no-op
+	// for that entry. nil means no cheaper-model resolution (the rung is a no-op).
+	CheaperModel func(entry config.BurnGuardEntryConfig) string
 	// StoreFor returns where an entry other than the first saves its ladder state; nil
 	// means no persistence for those entries.
 	StoreFor func(entry string) burnguard.StateStore
@@ -145,6 +162,7 @@ type BurnGuardEntryStatus struct {
 	Applied        []string              `json:"applied,omitempty"`
 	HeldModels     []string              `json:"held_models,omitempty"`
 	RouteTo        string                `json:"route_to,omitempty"`
+	CheaperModel   string                `json:"cheaper_model,omitempty"`
 	LastProjection *burnguard.Projection `json:"last_projection,omitempty"`
 	LastDecision   *burnguard.Decision   `json:"last_decision,omitempty"`
 }
@@ -332,7 +350,8 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 		st := BurnGuardEntryStatus{
 			LLM: e.LLM, Plan: e.Plan, HasUsageSource: e.HasUsageSource(), Enabled: enabled,
 			Level: d.Level, Applied: d.Applied, HeldModels: e.HeldModels, RouteTo: e.RouteTo,
-			Rung: currentRung(d.Applied), State: entryStateName(enabled, d, proj),
+			CheaperModel: g.entryCheaperModel(e),
+			Rung:         currentRung(d.Applied), State: entryStateName(enabled, d, proj),
 		}
 		if enabled {
 			p := proj
@@ -375,8 +394,22 @@ type guardedEntry struct {
 // entryState returns (building on first use) the state of entry e. The first entry uses
 // the ladder and fitter the runner was built with, so its saved state is the one saved
 // before per-entry guarding.
+// entryCheaperModel resolves the model the entry's route_cheaper_model rung applies: the
+// entry's explicit route_cheaper_model setting else the entry's cheaper model resolved
+// from its per-model cost rates (nil resolver → ""), so the displayed value is exactly
+// the one the ladder routes to. "" means the rung is a no-op for this entry.
+func (g *BurnGuard) entryCheaperModel(e config.BurnGuardEntryConfig) string {
+	if e.RouteCheaperModel != "" {
+		return e.RouteCheaperModel
+	}
+	if g.in.CheaperModel != nil {
+		return g.in.CheaperModel(e)
+	}
+	return ""
+}
+
 func (g *BurnGuard) entryState(e config.BurnGuardEntryConfig, first bool) *guardedEntry {
-	target := burnguard.EntryTarget{Backend: e.LLM, RouteTo: e.RouteTo, HeldModels: append([]string(nil), e.HeldModels...)}
+	target := burnguard.EntryTarget{Backend: e.LLM, RouteTo: e.RouteTo, CheaperModel: g.entryCheaperModel(e), HeldModels: append([]string(nil), e.HeldModels...)}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if first {
@@ -589,6 +622,8 @@ func (g *BurnGuard) apply(d burnguard.Decision) error {
 			err = g.adm.SetInflight(a.Backend, a.Value)
 		case burnguard.ActionRouteBackend:
 			err = g.adm.RouteBackend(a.Backend, a.To, !a.Release)
+		case burnguard.ActionRouteModel:
+			err = g.routeModel(a, !a.Release)
 		case burnguard.ActionHoldNewWork:
 			err = g.hold(a, !a.Release)
 		default:
@@ -614,6 +649,16 @@ func (g *BurnGuard) hold(a burnguard.Action, on bool) error {
 		return mh.HoldModels(a.Backend, a.Models, a.Rung, on)
 	}
 	return g.adm.HoldNewWork(a.Backend, a.Rung, on)
+}
+
+// routeModel routes (on) or stops routing (off) new work meant for the entry's backend
+// to its cheaper model. It drives the optional BurnGuardModelRoute seam; without it the
+// rung has nowhere to take effect and the apply is reported as an error (fail safe).
+func (g *BurnGuard) routeModel(a burnguard.Action, on bool) error {
+	if mr, ok := g.adm.(BurnGuardModelRoute); ok {
+		return mr.RouteModel(a.Backend, a.Model, on)
+	}
+	return fmt.Errorf("route_cheaper_model: no model-route seam wired on the admission seam")
 }
 
 // announce raises the alert and the queue question of a step. The text carries the numbers
@@ -795,6 +840,7 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 		},
 	}
 	in.Rate = s.burnGuardEntryRate
+	in.CheaperModel = s.burnGuardEntryCheaperModel
 	in.StoreFor = func(entry string) burnguard.StateStore {
 		return burnGuardFileStore{path: filepath.Join(s.usageDataDir(), "burn_guard_state."+safeEntryFileName(entry)+".json")}
 	}
@@ -836,6 +882,45 @@ func (s *Server) burnGuardEntryRate(e config.BurnGuardEntryConfig) (burnguard.Mo
 		return burnguard.ModelRate{}, false
 	}
 	return burnguard.ModelRate{InPerK: r.InPerK, OutPerK: r.OutPerK, CacheReadPerK: r.CacheReadPerK, CacheWritePerK: r.CacheWritePerK}, true
+}
+
+// burnGuardEntryCheaperModel is the entry's cheaper model for the route_cheaper_model
+// rung: the entry's own cheapest priced other model by its per-model cost rates (the
+// per-model rate of the LLM entry, backend cost_rates merged in), preferring a Haiku
+// model for a Claude entry. It returns the model name, or "" when there is no other
+// model to route to (the rung is a no-op). It does not read the entry's explicit
+// route_cheaper_model setting; entryState prefers that one when it is set.
+func (s *Server) burnGuardEntryCheaperModel(e config.BurnGuardEntryConfig) string {
+	l, ok := s.llmEntry(e.LLM)
+	if !ok || len(l.Models) == 0 {
+		return ""
+	}
+	rates := map[string]config.CostRateConfig{}
+	for k, v := range session.DefaultCostRates() {
+		rates[k] = config.CostRateConfig{InPerK: v.InPerK, OutPerK: v.OutPerK}
+	}
+	if s.cfg != nil {
+		for k, v := range s.cfg.Session.CostRates {
+			rates[k] = v
+		}
+	}
+	backend := l.Name
+	if backend == "" {
+		backend = e.LLM
+	}
+	var cands []config.EntryModelCost
+	for i := range l.Models {
+		em := l.Models[i]
+		if em.Model == "" || em.Model == e.Model {
+			continue
+		}
+		r := config.ResolveModelCostRate(l, em.Model, backend, rates)
+		cands = append(cands, config.EntryModelCost{Model: em.Model, InPerK: r.InPerK, OutPerK: r.OutPerK})
+	}
+	prefer := l.Kind == inference.KindClaude || l.Kind == inference.KindClaudeCode ||
+		strings.Contains(strings.ToLower(l.Name), "claude") ||
+		strings.Contains(strings.ToLower(e.Model), "claude")
+	return config.PickCheaperModel(e.Model, prefer, cands)
 }
 
 // safeEntryFileName keeps letters, digits, dot, dash and underscore of an entry name.
