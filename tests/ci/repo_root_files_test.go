@@ -18,7 +18,7 @@ var allowedRootFiles = map[string]bool{
 	"AGENT.md": true, "CHANGELOG.md": true, "CLAUDE.md": true, "CODEOWNERS": true,
 	"CONTRIBUTING.md": true, "DATAWATCH-CONTEXT.md": true, "Dockerfile.dev": true,
 	"LICENSE": true, "Makefile": true, "README.md": true, "SECURITY.md": true,
-	"go.mod": true, "go.sum": true,
+	"go.mod": true, "go.sum": true, "toolchain.yaml": true, // the build-host toolchain pins
 }
 
 // Only these directories may hold tracked files at the top level. Evidence,
