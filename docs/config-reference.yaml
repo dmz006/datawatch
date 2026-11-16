@@ -3842,6 +3842,10 @@ autonomous:
   # for those gates. Unset or 0 reads the default of 24 hours; negative is a
   # config error.
   verifier_headroom_max_age_hours: 24
+  # Whole days the backup ref of a reaped Automaton branch is kept before it
+  # is pruned. Unset or 0 reads the default of 30 days; negative is a config
+  # error.
+  reaped_branch_backup_days: 30
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true

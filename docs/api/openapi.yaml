@@ -3776,6 +3776,107 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/branch-reap:
+    get:
+      summary: Branch reaper report
+      description: |
+        The read-side pass of the task sub-branch reaper. `reaped` lists the
+        task sub-branches a pass would reap (their Automaton's landing state
+        has settled and their commits are all on the base), with `commits`
+        the commits they carried, `contained_in` the branch whose content
+        covers them and `reason` the plain sentence; `backup_ref` is present
+        for any of them an earlier pass already backed up. `waiting` lists the
+        branches that would be held (still landing, a commit not contained in
+        the base, or a merge in progress). `backups` lists every backup ref
+        under refs/datawatch/reap-backup/, `branch` the task sub-branch it
+        came from when it matches a stored one, and `sha` the tip it holds.
+        `backup_days` is the retention of those refs in whole days (0 or unset
+        reads 30; autonomous.reaped_branch_backup_days). The report only
+        reads; nothing is backed up, deleted or restored. Only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousBranchReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Branch reaper report (read-side pass)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/run:
+    post:
+      summary: Run one branch reap pass
+      description: |
+        Performs one reap pass. For every Automaton whose landing state has
+        settled, each task sub-branch whose commits are all on the base is
+        backed up to refs/datawatch/reap-backup/ first and then deleted with
+        git branch -D; `waiting` lists the branches held (still landing, a
+        commit not contained in the base, or a merge in progress). Takes no
+        body (a non-empty body is refused); the report (GET
+        /api/autonomous/branch-reap) already computed what would happen.
+        Running the reaper is an operator-approved write and a federated peer
+        needs the autonomous write capability.
+      operationId: autonomousBranchReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/restore:
+    post:
+      summary: Restore one reaped branch
+      description: |
+        Recreates one branch an earlier pass reaped, from its newest backup
+        ref under refs/datawatch/reap-backup/. The body is {"branch": "..."}
+        where branch is the task sub-branch from the report; a missing or
+        empty branch is refused. A branch that was never reaped answers 404.
+        A restore is an operator-approved write and a federated peer needs the
+        autonomous write capability.
+      operationId: autonomousBranchReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The task sub-branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/cleanup:
     get:
       summary: Automation cleanup status
@@ -12362,6 +12463,68 @@ components:
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
         computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
         stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
+    ReapReport:
+      type: object
+      description: |
+        The split of one reap pass: the POST run response on its own, and the
+        reaped and waiting parts of the report. Both lists are empty when no
+        Automaton qualifies.
+      required: [reaped, waiting]
+      properties:
+        reaped:
+          type: array
+          description: The branches a pass would reap (report) or reaped (run)
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches held, and the reason
+          items: {$ref: "#/components/schemas/ReapEntry"}
+    ReapEntry:
+      type: object
+      description: One branch in the reaped or the waiting list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The task sub-branch}
+        backup_ref: {type: string, description: The ref the branch's tip was kept at; present for a branch an earlier pass already backed up}
+        contained_in: {type: string, description: The branch (work or base) whose content covers every commit of the reaped branch}
+        commits: {type: integer, description: The commits the branch carried}
+        reason: {type: string, description: The plain sentence for the entry}
+    ReapSurfaceReport:
+      type: object
+      description: The report, as GET /api/autonomous/branch-reap returns it
+      required: [reaped, waiting, backups, backup_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The task sub-branches that would be reaped
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches that would be held
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        backups:
+          type: array
+          description: Every backup ref under refs/datawatch/reap-backup/, sorted by ref; empty while no pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        backup_days: {type: integer, description: The retention of the backup refs in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    ReapBackup:
+      type: object
+      description: One backup ref under refs/datawatch/reap-backup/
+      required: [ref, sha]
+      properties:
+        branch: {type: string, description: The task sub-branch the ref came from, when its key matches a stored one; empty otherwise}
+        ref: {type: string, description: The full ref name}
+        sha: {type: string, description: The tip the ref holds}
+    ReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/branch-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The branch that came back}
+        backup_ref: {type: string, description: The newest backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     CleanupStatus:
       type: object
       description: |-

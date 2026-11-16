@@ -6880,6 +6880,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":         s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
+			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
@@ -8241,6 +8242,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.verifier_headroom_max_age_hours"]; ok {
 		if v, isInt := toInt(raw); !isInt || v < 0 {
 			http.Error(w, "autonomous.verifier_headroom_max_age_hours: must be a whole number >= 0 (0 or unset = default 24 hours)", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -10929,6 +10936,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// 0 or unset = the default of 24 hours.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
+			}
+		case "autonomous.reaped_branch_backup_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.ReapedBranchBackupDays = n
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)

@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -11,6 +11,19 @@ exec_steps:
     description: List the Automaton work branches and worktrees that are safe to remove right now, and the ones that are held back (read-only)
     args: {}
     read_only: true
+  - tool: autonomous_branch_reap
+    description: Read the branch reaper's report — the task sub-branches a pass would reap, the ones held, and every backup ref (a report; it deletes nothing)
+    args: {}
+    read_only: true
+  - tool: autonomous_branch_reap_run
+    description: Perform one branch reap pass — each listed branch is backed up first, then deleted
+    args: {}
+    read_only: false
+  - tool: autonomous_branch_reap_restore
+    description: Recreate one reaped task sub-branch from its newest backup ref
+    args:
+      branch: "{{params.branch}}"
+    read_only: false
   - tool: get_config
     description: Read the daemon settings, including the autonomous.automation cleanup keys
     args: {}
@@ -38,6 +51,12 @@ exec_steps:
     args:
       key: autonomous.automation.disk_alert_percent
       value: "{{params.percent}}"
+    read_only: false
+  - tool: config_set
+    description: Set the whole days a reaped branch's backup ref is kept before it is pruned (0 or unset = 30)
+    args:
+      key: autonomous.reaped_branch_backup_days
+      value: "{{params.days}}"
     read_only: false
 ---
 
@@ -548,6 +567,123 @@ whose branch read-only git cannot prove merged on the default branch gets a
 | comm | `autonomous landing <id>` shows the record's line. `autonomous landing keep <id> <reason...> [actor=<who>]` and `autonomous landing drop <id> <reason...>` record the decision — both orders work (decision word before or after the id) |
 
 All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
+
+## The task sub-branch reaper (backup first, then remove)
+
+A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
+
+The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
+Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
+in the repository. The **branch reaper** removes those leftovers once the parent
+Automaton has settled (merged — its work branch's commits are all on the base —
+or dropped — its work branch is gone).
+
+**When it is safe.** The reaper works out each Automaton's **landing state** from git alone — **landed**: the work branch exists and every commit of it is already on the base branch by commit *content* (`git cherry`; a cherry-picked copy counts); **dropped**: the work branch is gone, so only the base branch can contain its work; **pending**: the work branch still carries commits not on the base (a comparison git cannot answer reads as pending, so an unknown state never loses a branch) — and skips pending Automata whole. For each settled one it looks at each task branch and removes it only when **every commit on it is contained in the Automaton's work branch or in the base branch**; even one uncontained commit keeps it (with a plain reason), a branch that is already absent is a no-op, and if git cannot compare, the branch is kept — never a guess. And if a merge is in progress (`MERGE_HEAD` in any of the Automata's working directories), the pass ends early and removes nothing, so work mid-merge is never judged against a moving base.
+
+**Backup first.** Before any removal, the reaper writes a backup ref,
+`refs/datawatch/reap-backup/<branch>/<Unix seconds>` (branch-name characters
+that would not be ref-safe become dashes, so `automaton/task-1` lands as
+`refs/datawatch/reap-backup/automaton-task-1/<timestamp>`), and only **then** removes the branch.
+That removal is `git branch -D` — the one forced delete in this area — but it is
+permitted only because the backup ref exists: if the backup ref cannot be
+written, the branch is not removed and the entry is counted. If the backup
+succeeds and the removal fails, the backup ref stands and the branch is still
+restorable. You can inspect a backup any time with
+`git for-each-ref refs/datawatch/reap-backup/`.
+
+**Restore.** A restore takes the branch name and recreates it from the
+*latest* backup ref under that name. If there is no backup ref for that name it
+returns an error — it never guesses a target.
+
+**Expiry.** Backup refs are not permanent. `autonomous.reaped_branch_backup_days`
+is the whole days a reaped branch's backup ref is kept before it is pruned:
+unset or 0 reads the default of **30** days, and a negative value is refused as
+a config error. The expiry prunes only refs inside `refs/datawatch/reap-backup/`
+whose numeric timestamp suffix is already older than the retention; a ref whose
+name has no numeric timestamp is never touched, and pruning closes the restore
+window for that branch.
+
+### Setting the retention
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.reaped_branch_backup_days` |
+| **CLI** | `datawatch config set autonomous.reaped_branch_backup_days 45` |
+| **REST** | `PUT /api/config` or `PUT /api/autonomous/config` with `{"autonomous.reaped_branch_backup_days": 45}` |
+| **Comm channel** | `configure autonomous.reaped_branch_backup_days=45` |
+| **MCP** | the `config_set` call above |
+| **Web app / PWA** | Settings → General, field labelled "Reaped Automaton branch backup kept (days; 0 or unset = 30)" |
+
+It is read live, so a change applies with no restart, and `GET /api/config`
+reports the effective days under `autonomous`.
+
+### Where to see and act
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/branch-reap` for the report: `reaped` (each with `automaton_id`, `backup_ref`, `contained_in`, `commits`, a plain `reason`), `waiting` (same shape, with the reason it was kept), `backups` (every ref under `refs/datawatch/reap-backup/`, the branch named when it matches a stored task sub-branch), `backup_days` and `computed_at`. `POST /api/autonomous/branch-reap/run` performs one pass (takes no body; a pass already in progress answers **409**). `POST /api/autonomous/branch-reap/restore` with `{"branch": "..."}` recreates one branch from its newest backup ref (a branch that was never reaped answers **404**). All three answer **503** while the base repo (`autonomous.worktree_base_repo`) is unset, and the two `POST`s need the autonomous write capability from a federated peer. |
+| CLI | `datawatch autonomous branch-reap [--json]` (report), `datawatch autonomous branch-reap-run [--json]` (pass), `datawatch autonomous branch-reap-restore <branch> [--json]` (restore). All three print the same wording the chat verbs show; `--json` prints the daemon's body untouched. |
+| MCP | `autonomous_branch_reap` (report, read-only), `autonomous_branch_reap_run` (pass) and `autonomous_branch_reap_restore` (restore; `branch` is required). Each defaults to plain wording; `format: json` returns the daemon's body untouched. |
+| Comm channel | `autonomous branch-reap` (report) and `autonomous branch-reap-restore <branch>` (restore). There is **no comm verb for the pass** — that is REST, CLI and MCP only. |
+| Web app / PWA | Automata tab → **Events** sub-tab → the **Branch reaper** card under the cleanup card (it refreshes while the sub-tab is open): "Would be reaped (N)" and "Held — would be kept (N)" with the Automaton, the containment, the commit count and the backup ref per branch, then the backup refs and the retention, and a **Restore** button per listed branch. The card has no run button. |
+| Mobile and wear | The same REST contract, documented in `docs/api/openapi.yaml`. |
+
+A CLI walkthrough of the three steps:
+
+1. `datawatch autonomous branch-reap` — the report:
+   ```
+   Branch reaper preview (the report deletes nothing yet)
+
+   Would be reaped:
+     - automaton/p1--tasks-fix-t1  (Automaton p1)  every commit of automaton/p1--tasks-fix-t1 is on main  [backup refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000]
+
+   Held (branch kept):
+     - automaton/p1--tasks-fix-t2  (Automaton p1)  3 commit(s) of automaton/p1--tasks-fix-t2 are not in main
+
+   Backup refs (retention 30 whole days when unset):
+     - refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000 -> a1b2c3d  (branch automaton/p1--tasks-fix-t1)
+   ```
+   Nothing has been backed up, deleted or restored — a report.
+2. When you are ready: `datawatch autonomous branch-reap-run` — each listed
+   branch gets its backup ref first, then `git branch -D`; the reply says
+   "Reaped (each backup ref was written before the delete)" with the ref per
+   branch. A pass already in progress answers a conflict, not a silent skip.
+3. To bring one back: `datawatch autonomous branch-reap-restore
+   automaton/p1--tasks-fix-t1` — "Branch restored from its newest backup ref"
+   with the branch, the backup ref and the commit it now points at.
+
+### How it relates to the rest of this guide
+
+- It removes **task sub-branches**, not `automaton/<id>` work branches or
+  worktrees — that is the worktrees pass's job, with its own mode, retention
+  window and per-pass limit.
+- It does **not** read the unlanded **Keep** records (`unlanded-keep.json`),
+  the project's **Branch retention** (`projects_defaults.branch_retention_days`)
+  or any of the cleanup pass's state; its safety tests are settlement, the
+  containment check and no merge in progress. A **Keep** record protects the
+  Automaton's work branch from the worktrees pass — it does not speak for the
+task sub-branches. (That a Keep record leaves task sub-branches unprotected is one of the things still to review below.)
+- It is a different feature from *Processes the worker left running* (no branch
+  removal at all) and from the **session-end** reaper, which reaps a session's
+  leftover processes.
+
+### Still needs your review
+
+- **Nothing runs a pass on a timer, and the expiry has no caller.** The
+  report, the pass and the restore are all operator-triggered (above), but no
+  schedule runs a reap pass and nothing calls the backup-ref expiry — the refs
+  accumulate until something prunes them. Review where and when the pass and
+  the expiry should run.
+- **The pass is not on the comm channel or the PWA card.** Those two surfaces
+  have the report and the restore; the pass is REST, CLI and MCP only. Review
+  whether that is the split you want.
+- **Keep-record gap.** A task sub-branch whose parent Automaton you **Keep** for
+  the record is reaped as soon as it is contained (it is still protected only
+  while the landing state is `pending`). If you rely on Keep records as your
+  "do not touch this", review whether the reaper should also honor them.
+- **Retention fit.** 30 days is the default restore window per project. Decide
+  whether it is right for your review cycles before a backup you might need is
+  pruned.
 
 ## Processes the worker left running
 

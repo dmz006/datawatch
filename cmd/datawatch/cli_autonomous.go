@@ -78,6 +78,13 @@ Subcommands:
                                   (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  branch-reap [--json]            The branch reap report: the task sub-branches that would be reaped, the
+                                  ones held, and every backup ref under refs/datawatch/reap-backup/
+                                  (report only, nothing is backed up, deleted or restored)
+  branch-reap-run [--json]        Perform one branch reap pass: each listed branch is backed up first,
+                                  then deleted; held branches are listed (a reaper needs the merge base repo)
+  branch-reap-restore <branch> [--json]
+                                  Recreate one reaped branch from its newest backup ref
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
@@ -361,6 +368,9 @@ Subcommands:
 		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousBranchReapCmd(),
+		newAutonomousBranchReapRunCmd(),
+		newAutonomousBranchReapRestoreCmd(),
 		newAutonomousCleanupCmd(),
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
