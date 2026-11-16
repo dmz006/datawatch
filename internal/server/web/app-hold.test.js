@@ -204,3 +204,21 @@ test('the inbox badge count excludes held Automata (they have their own card cou
   const n = vm.runInContext(code, sb);
   assert.strictEqual(n, 3, '2 triage + 1 security, held excluded');
 });
+
+test('the Held group head help icon and the hold dialog help line link the "Held Automata" section of the hold how-to, via the docs link map', () => {
+  const { sb } = sandbox();
+  assert.strictEqual(vm.runInContext("docsLinkForKey('held_automata_inbox_title')", sb), 'howto/automaton-hold.md#held-automata');
+  const icon = vm.runInContext('window.heldAutomataHelpLink()', sb);
+  assert.ok(icon.includes('/diagrams.html#docs/howto/automaton-hold.md#held-automata'), 'group head icon: ' + icon);
+  const line = vm.runInContext('window.heldHoldDialogHelpLine()', sb);
+  assert.ok(line.includes('/diagrams.html#docs/howto/automaton-hold.md#held-automata'), 'dialog help line: ' + line);
+  assert.ok(line.includes('Help:'), 'dialog line shows the label, not just a bare ?');
+});
+
+test('the held badge keeps a neutral color in style.css (never the error color)', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  const m = css.match(/\.state-badge-held\s*\{[^}]*\}/);
+  assert.ok(m, '.state-badge-held rule exists');
+  assert.ok(!m[0].includes('var(--error)'), 'not the error color: ' + m[0]);
+  assert.ok(m[0].includes('var(--text2)'), 'neutral secondary-text color: ' + m[0]);
+});

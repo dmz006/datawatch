@@ -56,6 +56,27 @@ hold, or set a new hold-until time"). **Extend** with a new look-again time
 clears the mark, so a later expiry raises a new alert; **Release** removes the
 row. A hold with no look-again time never expires.
 
+## Held Automata
+
+Held Automata are one group in every view: never mixed into the failed,
+blocked or waiting-for-review lists and never counted in those totals. The
+web app shows them in three places:
+
+- **Automata list** — `held` is a status of its own, in a neutral color
+  (never the error color), with its own filter and its own group when the
+  list groups by status. A non-held card offers **Hold**: a dialog that
+  requires a reason and takes an optional condition and an optional
+  look-again time. A held card offers **Release** and **Extend** and shows
+  the hold record line: who and when, the reason, the optional condition,
+  and the look-again line ("looked at again on <date>", "no date set" or
+  "hold expired, ready to review").
+- **Inbox** — a **Held Automata** group, listed as in
+  [Where a held Automaton is shown](#where-a-held-automaton-is-shown), with a
+  per-row **Release** button. It carries its own count and is not part of
+  the Inbox, blocked or needs-review badge counts.
+- **Progress** — a `held` column, shown only while at least one Automaton is
+  held (see [Where a held Automaton is shown](#where-a-held-automaton-is-shown) and [Progress](automata-progress.md)).
+
 ## Where a held Automaton is shown
 
 A held Automaton is its own group, never counted as failed, blocked or waiting.
@@ -117,15 +138,13 @@ runs it: no loop, housekeeping step or startup path does.
 
 ## Review before relying on it
 
-- The hold migration and the held-group read exist as Go API methods
-  (`HoldMigrationCandidates`, `MigrateToHold`) and reads. No REST route, CLI
-  command, MCP tool or comm verb for them was confirmed in this change.
-
-- The hold, extend and release operations exist in the Automata engine and the
-  Go API. This change set adds **no REST route, CLI command, MCP tool,
-  comm verb or settings entry** for them, and the PWA only knows `prd.held` as a
-  notify event kind. Until those surfaces ship, a hold cannot be placed from an
-  operator surface. Parity for REST, CLI, MCP, comm and the PWA (and the mobile
-  app) is still to be planned and filed.
-- Whether a held Automaton should appear under its own filter in the Automata
-  list, and where the hold reason shows, is a placement decision for the operator.
+- Operator surfaces that ship: the REST routes (`POST
+  /api/autonomous/prds/{id}/hold` for hold and extend, `POST
+  /api/autonomous/prds/{id}/release_hold`, `GET /api/autonomous/held` for the
+  held group, `POST /api/autonomous/held/migrate` for the hold migration) and
+  the web app surfaces in [Held Automata](#held-automata).
+- CLI, MCP and comm verbs for the hold operations do not exist yet; parity
+  for those surfaces (and the mobile app) is still to be planned and filed.
+- Nothing places, extends or releases a hold by itself: no loop, housekeeping
+  step, lane fill or boot pass does, the expiry tick only marks the hold and
+  alerts once (above), and a release is an operator action.

@@ -12284,6 +12284,9 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     const v = String(s || '').toLowerCase();
     if (['completed', 'approved', 'done', 'passed'].includes(v)) return 'var(--success,#10b981)';
     if (['failed', 'rejected', 'cancelled', 'blocked', 'error'].includes(v)) return 'var(--error)';
+    // held = a deliberate operator pause: a neutral color of its own,
+    // never the error color.
+    if (v === 'held') return 'var(--text2,#94a3b8)';
     if (['waiting', 'needs_review', 'paused', 'pending', 'queued'].includes(v)) return 'var(--warning,#f59e0b)';
     return 'var(--accent2,#60a5fa)';
   };
@@ -15270,6 +15273,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  // The held-Automata group (Inbox) and the hold dialog's help line both
+  // open the "Held Automata" section of the hold how-to (anchor
+  // held-automata), through the group's own key.
+  held_automata_inbox_title: 'howto/automaton-hold.md#held-automata',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -32777,9 +32784,10 @@ function _automatonHoldDialogOpen(id, extend) {
   modal.setAttribute('aria-modal', 'true');
   const title = extend ? (t('automaton_hold_extend') || 'Extend') : (t('automaton_hold_action') || 'Hold');
   const blurb = t(extend ? 'automaton_hold_tooltip_extend' : 'automaton_hold_tooltip_hold');
+  const helpLine = (typeof heldHoldDialogHelpLine === 'function') ? heldHoldDialogHelpLine() : '';
   modal.innerHTML = `<div class="confirm-modal automation-hold-dialog" aria-label="${escHtml(title)}">
     <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}${helpLine}</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
       <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_reason_prompt'))}</span>
         <textarea id="automationHoldReason" rows="2" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;"></textarea>
@@ -38015,6 +38023,36 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   const label = t(helpKey);
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
+
+// _heldDocsPath — the "Held Automata" section of the hold how-to, read
+// off the docs link map through the held group's own key, so the group
+// head help icon and the hold dialog's help line always point at the
+// same section. Null when the map has no entry.
+function _heldDocsPath() {
+  if (typeof docsLinkForKey !== 'function') return null;
+  return docsLinkForKey('held_automata_inbox_title') || null;
+}
+
+// heldAutomataHelpLink — the help icon on the held-Automata group head.
+// Respects the General → "Show inline doc links" toggle like every other
+// card help link.
+function heldAutomataHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:auto;">?</a>`;
+}
+window.heldAutomataHelpLink = heldAutomataHelpLink;
+
+// heldHoldDialogHelpLine — the help line inside the hold dialog (the same
+// "Held Automata" section as the group head icon).
+function heldHoldDialogHelpLine() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--accent2,#60a5fa);text-decoration:underline;">${escHtml(label)}</a>`;
+}
+window.heldHoldDialogHelpLine = heldHoldDialogHelpLine;
 window.triageCardHtml = function(record) {
   if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
@@ -44660,7 +44698,7 @@ const _AUTOMATION_SUBTABS = [
         <div style="display:flex;align-items:center;gap:8px;min-width:0;">
           <div class="cap-title">${escHtml(t('held_automata_inbox_title'))}</div>
           <span id="automationHeldAutomataCount" class="held-automata-count" style="display:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--text2);"></span>
-          <button type="button" id="automationHeldAutomataHelpLink" title="${escHtml(t('automation_help_held_automaton'))}" aria-label="${escHtml(t('automation_help_held_automaton'))}" onclick="window.open('/diagrams.html#docs/howto/automaton-hold.md#held-automata', '_blank', 'noopener')" style="margin-left:auto;color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:18px;height:18px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;">?</button>
+          ${heldAutomataHelpLink()}
         </div>
         <div id="automationHeldAutomataBody"></div>
       </div>

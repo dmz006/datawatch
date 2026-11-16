@@ -85,6 +85,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automaton_hold_toast_released",
 		"automaton_hold_toast_extended",
 		"held_automata_inbox_title",
+		"automaton_hold_action",
 		"held_automata_inbox_empty",
 		"automation_help_held_automaton",
 		"progress_card_col_held",
