@@ -35,6 +35,12 @@
 // the operator's autonomous.task_templates (see task_templates.go).
 // Mode off applies nothing.
 //
+// Every lint pass also runs the verification-script pre-flight
+// (RunVerifyScriptPreflight) and adds its block findings to the set, so
+// they drive the enforce-mode retry. In mode off the pre-flight still
+// runs once; when it finds anything it records those findings with mode
+// off, and nothing is retried.
+//
 // LintPRD is the operator's dry-run counterpart: the same engine
 // (EffectiveRules + LintTasks) over a PRD's STORED stories — it
 // computes no templates, writes nothing to the PRD and never calls
@@ -129,6 +135,19 @@ type decomposeRetryStep func(feedback string) (title, raw string, stories []Stor
 func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story, retry decomposeRetryStep) (string, string, []Story) {
 	st := m.decomposeLintSettingsSnapshot()
 	if st.mode == config.DecomposeLintModeOff {
+		// The lint pass stays off, but the verification-script pre-flight
+		// still runs and records what it finds; nothing is retried.
+		ensurePlanIDs(stories)
+		pf := RunVerifyScriptPreflight(prd.ProjectDir, stories)
+		if len(pf) > 0 {
+			prd.DecomposeLint = &DecomposeLintRecord{
+				Findings: pf,
+				Mode:     st.mode,
+				Attempts: 1,
+				LintedAt: time.Now(),
+			}
+			_ = m.store.SavePRD(prd)
+		}
 		return title, raw, stories
 	}
 	applyTemplates := func(s []Story) []Story {
@@ -142,6 +161,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	}
 	findings := func(s []Story) []LintFinding {
 		f := LintTasksIn(prd.ProjectDir, m.daemonModeStories(s), st.rules)
+		f = append(f, RunVerifyScriptPreflight(prd.ProjectDir, s)...)
 		if f == nil {
 			f = []LintFinding{}
 		}
