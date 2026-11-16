@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
 ## v9.179.1 — Run the repository lint in task verification
 
 ### Changed
