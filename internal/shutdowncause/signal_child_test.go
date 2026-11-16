@@ -37,7 +37,7 @@ func runSignalParentRole() int {
 	}
 	// Announce that we are running (our /proc cmdline is now set) before
 	// sending anything; the parent waits for this line through a pipe.
-	fmt.Fprintln(os.Stdout, childStartedLine)
+	_, _ = fmt.Fprintln(os.Stdout, childStartedLine)
 	if err := signalProc(pid, syscall.SIGTERM); err != nil {
 		fmt.Fprintf(os.Stderr, "signal-parent role: kill %d: %v\n", pid, err)
 		return 3

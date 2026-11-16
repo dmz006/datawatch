@@ -24,7 +24,7 @@ func TestReadLineWithTimeout(t *testing.T) {
 	})
 	t.Run("timeout", func(t *testing.T) {
 		r, w := io.Pipe()
-		defer w.Close()
+		defer func() { _ = w.Close() }()
 		if _, err := readLineWithTimeout(r, 20*time.Millisecond); err == nil {
 			t.Fatal("want timeout error")
 		}
