@@ -1321,6 +1321,61 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "reject", "automaton", id, map[string]any{"reason": req.Reason}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Landing state — operator decision on the Automaton's work branch. The
+	// landing record (state, commit, actor, at, reason) already rides on the
+	// PRD read; keep records the branch as kept unmerged on purpose, drop
+	// that the work will not be merged. Both need a non-empty reason and are
+	// refused once the branch has landed.
+	case "landing/keep", "landing_keep":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor, Reason string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		ldr, ok := s.autonomousMgr.(landingDecider)
+		if !ok {
+			http.Error(w, "landing decisions are not supported by this daemon", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ldr.KeepLanding(id, req.Actor, req.Reason)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "landing_keep", "automaton", id, map[string]any{"reason": req.Reason})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+	case "landing/drop":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor, Reason string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		ldr, ok := s.autonomousMgr.(landingDecider)
+		if !ok {
+			http.Error(w, "landing decisions are not supported by this daemon", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ldr.DropLanding(id, req.Actor, req.Reason)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "landing_drop", "automaton", id, map[string]any{"reason": req.Reason})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "reset_to_draft":
 		// v8.20.1 — operator restores a cancelled PRD to draft for re-decompose + re-run.
 		if r.Method != http.MethodPost {
