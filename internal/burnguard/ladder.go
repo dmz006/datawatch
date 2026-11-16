@@ -7,18 +7,28 @@ import (
 	"time"
 )
 
-// Rung names. They match the values the usage.burn_guard.ladder setting accepts.
+// Rung names. They match the values the usage.burn_guard.ladder setting accepts. The
+// names are kept from the first version of the guard for saved configs and saved state;
+// they act on the ladder's entry (EntryTarget), not on any fixed backend:
+// route_pi_prompt routes the entry's new work to the entry's route target, and
+// hold_claude holds new work on the entry (or on its held models).
 const (
 	RungLowerInflight = "lower_inflight"
 	RungRoutePiPrompt = "route_pi_prompt"
 	RungHoldClaude    = "hold_claude"
 )
 
-// ClaudeBackend and PiBackend are the backends the default rungs act on.
-const (
-	ClaudeBackend = "claude-code"
-	PiBackend     = "pi-prompt"
-)
+// EntryTarget is the paid LLM entry a ladder acts on. Every backend name an action
+// carries comes from here; the ladder has no backend name of its own.
+type EntryTarget struct {
+	// Backend is the entry (backend) whose admission the rungs change.
+	Backend string `json:"backend"`
+	// RouteTo is where the route rung sends new work; empty makes the route rung a
+	// rung that changes nothing.
+	RouteTo string `json:"route_to,omitempty"`
+	// HeldModels limits the hold rung to these models; empty holds the whole entry.
+	HeldModels []string `json:"held_models,omitempty"`
+}
 
 // ActionKind is what the daemon is asked to change. Every kind acts on admission only (how
 // many sessions may start, where new work goes, whether new work waits). There is no kind
@@ -50,6 +60,9 @@ type Action struct {
 	To      string `json:"to,omitempty"`
 	// Value is the inflight cap to set (set_inflight only).
 	Value int `json:"value,omitempty"`
+	// Models limits a hold to these models of the backend (hold_new_work only); empty
+	// holds the whole backend.
+	Models []string `json:"models,omitempty"`
 }
 
 // Direction is what the tick did to the ladder.
@@ -96,7 +109,7 @@ type LadderState struct {
 	Applied []string `json:"applied,omitempty"`
 	// LastChange is when a rung was last applied or released.
 	LastChange time.Time `json:"last_change,omitempty"`
-	// OriginalInflight is the claude-code inflight cap before lower_inflight was applied;
+	// OriginalInflight is the entry's inflight cap before lower_inflight was applied;
 	// it is what releasing the rung restores. Zero when that rung is not in force.
 	OriginalInflight int `json:"original_inflight,omitempty"`
 }
@@ -113,7 +126,7 @@ type TickInput struct {
 	Projection Projection
 	Settings   LadderSettings
 	Now        time.Time
-	// InflightCap is the claude-code inflight cap now in force. It is read only when
+	// InflightCap is the entry's inflight cap now in force. It is read only when
 	// lower_inflight is applied, to record the original.
 	InflightCap int
 }
@@ -178,9 +191,27 @@ func changesSetting(acts []Action, applyCap int) bool {
 // Ladder is the state machine. It is not safe for concurrent use; the daemon calls Tick from
 // one goroutine.
 type Ladder struct {
-	store StateStore
-	state LadderState
+	store  StateStore
+	state  LadderState
+	target EntryTarget
 }
+
+// NewEntryLadder is NewLadder for a ladder that acts on target.
+func NewEntryLadder(store StateStore, target EntryTarget) (*Ladder, error) {
+	l, err := NewLadder(store)
+	if err != nil {
+		return nil, err
+	}
+	l.target = target
+	return l, nil
+}
+
+// Target is the entry the ladder acts on.
+func (l *Ladder) Target() EntryTarget { return l.target }
+
+// SetTarget changes the entry the ladder acts on (a config change). Rungs already in
+// force keep their state; their release acts on the new target.
+func (l *Ladder) SetTarget(t EntryTarget) { l.target = t }
 
 // NewLadder loads the saved state from store (which may be nil for no persistence).
 func NewLadder(store StateStore) (*Ladder, error) {
@@ -343,17 +374,22 @@ func nextRung(ladder, applied []string) (string, bool) {
 	return "", false
 }
 
-// apply puts a rung in force and returns its admission actions.
+// apply puts a rung in force and returns its admission actions, all on the ladder's
+// entry. A route rung with no route target changes nothing.
 func (l *Ladder) apply(rung string, inflight int) []Action {
 	l.state.Applied = append(l.state.Applied, rung)
+	t := l.target
 	switch rung {
 	case RungLowerInflight:
 		l.state.OriginalInflight = inflight
-		return []Action{{Kind: ActionSetInflight, Backend: ClaudeBackend, Value: lowered(inflight)}}
+		return []Action{{Kind: ActionSetInflight, Backend: t.Backend, Value: lowered(inflight)}}
 	case RungRoutePiPrompt:
-		return []Action{{Kind: ActionRouteBackend, Backend: ClaudeBackend, To: PiBackend}}
+		if t.RouteTo == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteBackend, Backend: t.Backend, To: t.RouteTo}}
 	case RungHoldClaude:
-		return []Action{{Kind: ActionHoldNewWork, Backend: ClaudeBackend}}
+		return []Action{{Kind: ActionHoldNewWork, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
 	return nil
 }
@@ -363,15 +399,19 @@ func (l *Ladder) release() []Action {
 	n := len(l.state.Applied)
 	rung := l.state.Applied[n-1]
 	l.state.Applied = l.state.Applied[:n-1]
+	t := l.target
 	switch rung {
 	case RungLowerInflight:
 		orig := l.state.OriginalInflight
 		l.state.OriginalInflight = 0
-		return []Action{{Kind: ActionSetInflight, Release: true, Backend: ClaudeBackend, Value: orig}}
+		return []Action{{Kind: ActionSetInflight, Release: true, Backend: t.Backend, Value: orig}}
 	case RungRoutePiPrompt:
-		return []Action{{Kind: ActionRouteBackend, Release: true, Backend: ClaudeBackend, To: PiBackend}}
+		if t.RouteTo == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteBackend, Release: true, Backend: t.Backend, To: t.RouteTo}}
 	case RungHoldClaude:
-		return []Action{{Kind: ActionHoldNewWork, Release: true, Backend: ClaudeBackend}}
+		return []Action{{Kind: ActionHoldNewWork, Release: true, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
 	return nil
 }
@@ -396,6 +436,8 @@ func describe(acts []Action, original int) string {
 			parts = append(parts, fmt.Sprintf("routed new %s work to %s.", a.Backend, a.To))
 		case a.Kind == ActionRouteBackend:
 			parts = append(parts, fmt.Sprintf("stopped routing new %s work to %s.", a.Backend, a.To))
+		case a.Kind == ActionHoldNewWork && !a.Release && len(a.Models) > 0:
+			parts = append(parts, fmt.Sprintf("holding new %s work on models %s; running sessions continue.", a.Backend, strings.Join(a.Models, ", ")))
 		case a.Kind == ActionHoldNewWork && !a.Release:
 			parts = append(parts, fmt.Sprintf("holding new %s work; running sessions continue.", a.Backend))
 		case a.Kind == ActionHoldNewWork:

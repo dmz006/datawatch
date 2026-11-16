@@ -72,6 +72,7 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("retry_limit_claude", mcpsdk.Description("Most retries of one task on Claude, a whole number from 0 to 20")),
 		mcpsdk.WithBoolean("ask_on_change", mcpsdk.Description("When false (default) the guard sends one alert per change and no question; when true it keeps at most one open question")),
 		mcpsdk.WithNumber("max_projection_gap_points", mcpsdk.Description("Points of disagreement between the guard and the usage advice before the guard takes the lower projection; 0 never compares; default 25; see the burn guard how-to")),
+		mcpsdk.WithString("entries", mcpsdk.Description("The paid LLM entries the guard evaluates, as a JSON list: each {llm, usage_source: readings|none, plan: flat|metered, period_target (percent for flat, dollars for metered), model, ladder, held_models, route_to, points_per_usd}. An entry with no usage source is never held. An empty list returns to the single default entry")),
 	)
 }
 
@@ -79,7 +80,7 @@ var burnGuardConfigArgs = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude", "ask_on_change",
-	"max_projection_gap_points",
+	"max_projection_gap_points", "entries",
 }
 
 func (s *Server) handleBurnGuardConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

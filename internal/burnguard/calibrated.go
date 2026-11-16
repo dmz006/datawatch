@@ -111,7 +111,7 @@ func tokenRate(buckets []Bucket, readAt, now, through time.Time, coef Coefficien
 		return 0, false
 	}
 	t := tokensBetween(buckets, readAt, now, through)
-	points := t.cw/1e6*coef.CacheWritePerM + t.cr/1e6*coef.CacheReadPerM
+	points := price(t, coef)
 	return points * ratio / hours, true
 }
 
