@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.0 — Build-host toolchain freshness check
+
+### Changed
+
+- Build-host toolchain freshness check.
+
 ## v9.181.0 — Remember the header server dropdown choice per browser
 
 ### Changed
