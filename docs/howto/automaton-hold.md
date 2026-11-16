@@ -45,9 +45,9 @@ never touched.
 ## Operations
 
 - **Hold** is allowed from `draft`, `needs_review`, `approved`, `revisions_asked`,
-  `paused`, `blocked` and `failed`. An Automaton that is running, planning,
-  completed, cancelled, archived or already held is refused with a message
-  naming the allowed statuses.
+  `paused`, `blocked` and `failed`. An Automaton that is planning, running,
+  completed, rejected, cancelled, archived or already held is refused with a
+  message naming the allowed statuses.
 - **Extend** changes the hold of a held Automaton: a field you give replaces the
   stored one, a field you leave out is kept, and the expiry mark is cleared. The
   status stays `held`.
