@@ -99,8 +99,32 @@ decompose output, the advisory tree lock, the session discovery file
 to it), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
 other change to the file is counted), and anything the daemon's staging guard
-refuses to commit. Files git ignores never show up in `git status`, so they are
-not counted either. Do not confuse this list with the generated artefacts —
+refuses to commit. Three more kinds of file never enter the list:
+
+- **Ignored, untracked files.** A file the repository's own ignore rules
+  ignore and that the repository does not track is dropped by the check
+  itself, whatever `git status` reports, so it is never the reason for a hold
+  and never appears in the question. A tracked file is still counted even when
+  it matches an ignore rule, and if git cannot answer the ignore question the
+  file is counted anyway — the error goes the way of holding you, not of
+  letting the task go.
+- **A tracked file that holds only the daemon's sections.** When the daemon
+  injects its marked sections into a rules file (the session guardrails
+  header, the memory, RTK, cross-session and platform context blocks), and the
+  file's only difference from the last commit is those sections, the file is
+  not counted. The same file with a real edit outside them is counted.
+- **A file that exists only to carry the daemon's sections.** A newly created
+  file whose whole content is the daemon's marked sections is not counted
+  either — but the moment it carries anything of its own, it is.
+
+The last two rules mean the check does not see a rules file whose content is
+only the daemon's injected sections, on the per-task list and on the
+before-finished list alike. And if you keep notes or evidence under a
+git-ignored path such as `.datawatch/` and wanted the check to hold a task
+that touched them, note that git-ignored, untracked files are outside the
+check's view: they would need to be tracked to be held on.
+
+Do not confuse this list with the generated artefacts —
 the small documents the daemon renders for your work when the Automaton
 finishes: at the finished check they count unless the daemon is the only one
 who wrote them (below).
