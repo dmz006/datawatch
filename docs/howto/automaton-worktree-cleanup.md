@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders]
 exec_steps:
   - tool: autonomous_cleanup_status
-    description: Read what both cleanup passes did last, the two disk readings and the disk alert
+    description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
     args: {}
     read_only: true
   - tool: autonomous_safe_to_delete
@@ -77,12 +77,13 @@ is that project's own default branch, whatever it is called.
 
 ## What it removes
 
-There are two passes. Each has its own mode, counts and last-run record.
+Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, removes stale `go-build` and Trivy scan-cache folders directly in your temp directory; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
 
 | Pass | What it removes | When |
 |---|---|---|
 | **Worktrees** | A finished Automaton's work branch and its worktree | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed |
 | **Temp files** | The scratch files and directories the daemon's own worker sessions created in the temporary directory | When the session ends, and again on a periodic sweep for anything that refused to go the first time |
+| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep — the sweep is their only cleanup |
 
 The first time something is removed is the **owner** path: the Automaton or
 session cleans up after itself the moment it ends. The periodic sweep is the
@@ -142,6 +143,49 @@ record of what the daemon created is kept in memory, scratch left behind by an
 earlier daemon process (one that crashed, or ran before a restart) is not
 attributed and is left alone; remove those by hand if you want them gone.
 
+**The cache folders sweep.** A build or scan runs under the Automaton's
+worktree, but its cache folders land in **your temp directory**, not in the
+Automaton's directory or worktree: Go's build cache folders (`go-build`) and
+Trivy's scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover
+them — the daemon never recorded creating them, and they do not carry the
+`datawatch-` prefix — and nothing on the worktree side ever does. Left alone,
+they outlive every Automaton that made them and the temp directory grows until
+builds and tests start failing. The sweep is the only thing that removes them.
+
+It runs once when the daemon starts, before the first poll, and on every
+coordinator poll beside the temp sweep, in every mode. It looks only at entries
+directly under the temp directory (a symbolic link there is counted as skipped
+and never followed; a folder inside a subfolder is outside the pass), and
+removes one only if all of these hold:
+
+1. its name is a Go build cache folder (`go-build`, or `go-build` followed by
+   digits) or a Trivy scan-cache folder (a `trivy*` name containing
+   `scan-cache` or `scan_cache`) — anything else is left and counted as
+   skipped;
+2. it is a directory, not a file or a symbolic link;
+3. it is at least **60 minutes** old by its last modification — a fixed
+   retention, not `cleanup_retention_hours` and not a setting you can change;
+   an age the sweep cannot read is not removable; and
+4. no live process holds it: no open handle into the folder, and no live
+   process with its working directory inside it.
+
+Point 4 is the **liveness probe**. On Linux the daemon walks `/proc` for every
+live process and checks its open files and working directory against the
+folder. On a platform without `/proc` — or when `/proc` cannot be read —
+liveness is **unknown**, and unknown is treated as held: the folder is kept.
+In practice the sweep is a no-op on hosts without a readable `/proc`, even in
+`on` mode; it removes nothing it cannot prove safe.
+
+The mode is the same `autonomous.automation.cleanup_mode` as the other passes:
+`off` does nothing, not even a scan; `report` lists the folders that would be
+removed and removes nothing; `on` removes. The per-pass removal limit
+caps the worktrees and temp passes, not this one. Its result — like the temp
+sweep's — always carries the number of folders removed and the bytes of space
+freed. Where you see it: one summary line in the daemon log per pass
+(`cache-folder-sweep`) with the counts, skip reasons and bytes freed, plus the
+audit event `autonomous_cache_folder_sweep`. A removal that errors is left in
+place and recorded in the pass result, like the other passes.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.
@@ -166,6 +210,12 @@ mode is read live, so a change applies on the next poll without a restart.
 
 A value that is not allowed is refused with an error and nothing is written.
 Entries past the per-pass limit are simply left for the next pass.
+
+One threshold next to these is fixed, not a setting: the disk holding the temp
+folder always alerts at **80%** or lower — the lower of `disk_alert_percent`
+and 80, with 80 as the ceiling (so at the default 85 the effective temp-disk
+threshold is 80). The worktree disk keeps whatever you have set. See **The
+disk alert**.
 
 ## Base requirements
 
@@ -200,8 +250,9 @@ the counts show what a pass found it could remove.
    is still running, reads keep serving the last successful result, so a slow
    or failing refresh never leaves the card blank or blocked, and a failed
    refresh is counted in the daemon stats.
-3. The daemon log carries one summary line per pass
-   (`worktree-cleanup` and `temp-sweep`) with the mode and the counts.
+3. The daemon log carries one summary line per
+   pass (`worktree-cleanup`, `temp-sweep` and `cache-folder-sweep`) with the
+   mode and the counts.
 
 ### Moving from report to on
 
@@ -232,20 +283,37 @@ never set is not shown; it is running on its default.
 
 ## The disk alert
 
-Alongside the two passes the daemon measures how full two disks are: the one
+Alongside the passes the daemon measures how full two disks are: the one
 holding the worktree base repository, and the one holding the daemon's
-temporary directory. When either is at or above `disk_alert_percent`, it raises
-one warning alert that names the disk and its usage and says that removing the
-Automaton worktrees and session scratch that live there would free space.
+temporary directory. Each is checked against its own threshold — the worktree
+disk against `disk_alert_percent` (default 85), the temp disk against the
+lower of that value and the fixed 80 — and when either is at or above its
+threshold the daemon raises one warning alert that names every over-threshold
+disk with its usage. When the temp disk is the one over, the alert body also
+lists the **biggest folders directly in the temp folder** — the top five —
+each with its approximate size and whether a live process holds it. That list
+is what points you at what is eating the space; in practice it is the stale
+`go-build` and Trivy scan-cache folders the sweep above was added for.
 
-- The alert is **rate limited**: while a disk stays above the threshold it
+- The alert is **rate limited**: while a disk stays above its threshold it
   fires at most once an hour, not once per poll. The time it last fired is kept
   across daemon restarts, so a restart does not repeat an alert.
-- The disk check runs in **every** mode, `off` included. The alert only tells
-  you to free space. It never removes anything by itself.
+- The disk check runs in **every** mode, `off` included. The alert only names
+  what is full and what is biggest on it. It never removes anything — nor does
+  its wording promise to: the cleanup paths are the ones that remove, and the
+  alert says so.
 - If a disk cannot be measured, the status says there is no reading for it and
   it cannot raise an alert; it is never shown as 0%.
 - The worktree disk reading is absent while no worktree base repository is set.
+- While the temp disk is at or above its threshold, a read of the status
+  carries the same folder report — `biggest_temp_folders`: the top five
+  folders directly in the temp folder, each with its path, approximate size
+  and its liveness (`held`, `liveness_known`). It is measured on the check
+  that found the disk over, is absent until the first such check, and clears
+  again once the disk drops back below its threshold.
+- Each disk reading also carries its own `threshold`, so a reader knows which
+  threshold that reading was checked against even though the two thresholds
+can differ.
 
 ## Reading the status
 
@@ -277,10 +345,11 @@ and, for the whole status:
 
 | Field | Meaning |
 |---|---|
-| `worktree_disk`, `temp_disk` | Path and usage percent of each guarded disk, and whether it is over the threshold |
-| `disk_alert_percent` | The threshold in force |
-| `disk_alert` | True while either disk is at or above the threshold, as of the last check |
+| `worktree_disk`, `temp_disk` | Path and usage percent of each guarded disk, whether it is over its own threshold (`alert`), and the `threshold` that reading was checked against |
+| `disk_alert_percent` | The threshold you set, in force |
+| `disk_alert` | True while either disk is at or above its own threshold, as of the last check |
 | `last_disk_alert_at` | When the alert last actually fired; absent until it has |
+| `biggest_temp_folders` | While the temp disk is at or above its threshold: the top five folders directly in the temp folder, each as `path`, `size`, `held`, `liveness_known`. Absent until the first such reading, and cleared once the disk drops back below its threshold |
 
 Keys with no value are **absent**, not `null`.
 
@@ -302,11 +371,14 @@ daemon log are where to look.
    Automaton cleanup (disk alert threshold: 85%):
      worktrees pass: not run yet
      temp pass: not run yet
-     worktree disk: /srv/projects/app at 42%
-     temp dir disk: /tmp at 31%
+     worktree disk: /srv/projects/app at 42% (threshold 85%)
+     temp dir disk: /tmp at 31% (threshold 80%)
      disk alert: not active
    This is a status read only: the cleanup passes do the removing, not this read.
    ```
+
+   Note the two different thresholds on the two disk lines: the worktree disk
+   is checked at the 85 you set, the temp dir disk at the fixed 80.
 
 2. After a few Automata have finished, read it again. In `report` mode:
 
@@ -327,8 +399,12 @@ It never removes a branch with commits that are not on the default branch,
 never removes a worktree with uncommitted changes, never touches a running or
 unfinished Automaton, never uses `--force` or `-D`, never removes anything
 outside the `automaton/` branch namespace or the daemon's own scratch files,
-and never follows a symbolic link. In `off` it does not even run git for the
-cleanup. The disk alert never removes anything.
+and never follows a symbolic link. It never removes a cache folder whose age
+it cannot read or whose liveness it cannot prove — on platforms without a
+readable `/proc`, that is all of them — and the disk alert never removes
+anything, in any mode. In `off` it does not even run git for the
+cleanup, and it does not scan the cache folders either. The only thing that
+still runs in `off` is the disk reading and its alert.
 
 ## Skipped by reason, permission errors and the fix
 
