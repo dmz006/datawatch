@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, branch reaper, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what both cleanup passes did last, the two disk readings and the disk alert
@@ -11,6 +11,19 @@ exec_steps:
     description: List the Automaton work branches and worktrees that are safe to remove right now, and the ones that are held back (read-only)
     args: {}
     read_only: true
+  - tool: autonomous_branch_reap
+    description: Read the branch reaper's report — the task sub-branches a pass would reap, the ones held, and every backup ref (a report; it deletes nothing)
+    args: {}
+    read_only: true
+  - tool: autonomous_branch_reap_run
+    description: Perform one branch reap pass — each listed branch is backed up first, then deleted
+    args: {}
+    read_only: false
+  - tool: autonomous_branch_reap_restore
+    description: Recreate one reaped task sub-branch from its newest backup ref
+    args:
+      branch: "{{params.branch}}"
+    read_only: false
   - tool: get_config
     description: Read the daemon settings, including the autonomous.automation cleanup keys
     args: {}
@@ -468,6 +481,41 @@ window for that branch.
 It is read live, so a change applies with no restart, and `GET /api/config`
 reports the effective days under `autonomous`.
 
+### Where to see and act
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/branch-reap` for the report: `reaped` (each with `automaton_id`, `backup_ref`, `contained_in`, `commits`, a plain `reason`), `waiting` (same shape, with the reason it was kept), `backups` (every ref under `refs/datawatch/reap-backup/`, the branch named when it matches a stored task sub-branch), `backup_days` and `computed_at`. `POST /api/autonomous/branch-reap/run` performs one pass (takes no body; a pass already in progress answers **409**). `POST /api/autonomous/branch-reap/restore` with `{"branch": "..."}` recreates one branch from its newest backup ref (a branch that was never reaped answers **404**). All three answer **503** while the base repo (`autonomous.worktree_base_repo`) is unset, and the two `POST`s need the autonomous write capability from a federated peer. |
+| CLI | `datawatch autonomous branch-reap [--json]` (report), `datawatch autonomous branch-reap-run [--json]` (pass), `datawatch autonomous branch-reap-restore <branch> [--json]` (restore). All three print the same wording the chat verbs show; `--json` prints the daemon's body untouched. |
+| MCP | `autonomous_branch_reap` (report, read-only), `autonomous_branch_reap_run` (pass) and `autonomous_branch_reap_restore` (restore; `branch` is required). Each defaults to plain wording; `format: json` returns the daemon's body untouched. |
+| Comm channel | `autonomous branch-reap` (report) and `autonomous branch-reap-restore <branch>` (restore). There is **no comm verb for the pass** — that is REST, CLI and MCP only. |
+| Web app / PWA | Automata tab → **Events** sub-tab → the **Branch reaper** card under the cleanup card (it refreshes while the sub-tab is open): "Would be reaped (N)" and "Held — would be kept (N)" with the Automaton, the containment, the commit count and the backup ref per branch, then the backup refs and the retention, and a **Restore** button per listed branch. The card has no run button. |
+| Mobile and wear | The same REST contract, documented in `docs/api/openapi.yaml`. |
+
+A CLI walkthrough of the three steps:
+
+1. `datawatch autonomous branch-reap` — the report:
+   ```
+   Branch reaper preview (the report deletes nothing yet)
+
+   Would be reaped:
+     - automaton/p1--tasks-fix-t1  (Automaton p1)  every commit of automaton/p1--tasks-fix-t1 is on main  [backup refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000]
+
+   Held (branch kept):
+     - automaton/p1--tasks-fix-t2  (Automaton p1)  3 commit(s) of automaton/p1--tasks-fix-t2 are not in main
+
+   Backup refs (retention 30 whole days when unset):
+     - refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000 -> a1b2c3d  (branch automaton/p1--tasks-fix-t1)
+   ```
+   Nothing has been backed up, deleted or restored — a report.
+2. When you are ready: `datawatch autonomous branch-reap-run` — each listed
+   branch gets its backup ref first, then `git branch -D`; the reply says
+   "Reaped (each backup ref was written before the delete)" with the ref per
+   branch. A pass already in progress answers a conflict, not a silent skip.
+3. To bring one back: `datawatch autonomous branch-reap-restore
+   automaton/p1--tasks-fix-t1` — "Branch restored from its newest backup ref"
+   with the branch, the backup ref and the commit it now points at.
+
 ### How it relates to the rest of this guide
 
 - It removes **task sub-branches**, not `automaton/<id>` work branches or
@@ -485,12 +533,14 @@ task sub-branches. (That a Keep record leaves task sub-branches unprotected is o
 
 ### Still needs your review
 
-- **No operator surface yet.** At this commit there is no REST route, MCP tool,
-  CLI verb, chat verb or PWA control that triggers a reap pass, a restore or
-  the backup expiry: they are engine-level operations with no caller or
-  schedule wired yet. If your workflow expects a `datawatch autonomous reap`
-  style command or a restore button, that surface does not exist — do not plan
-  on it, and nothing reaps these branches on a timer today.
+- **Nothing runs a pass on a timer, and the expiry has no caller.** The
+  report, the pass and the restore are all operator-triggered (above), but no
+  schedule runs a reap pass and nothing calls the backup-ref expiry — the refs
+  accumulate until something prunes them. Review where and when the pass and
+  the expiry should run.
+- **The pass is not on the comm channel or the PWA card.** Those two surfaces
+  have the report and the restore; the pass is REST, CLI and MCP only. Review
+  whether that is the split you want.
 - **Keep-record gap.** A task sub-branch whose parent Automaton you **Keep** for
   the record is reaped as soon as it is contained (it is still protected only
   while the landing state is `pending`). If you rely on Keep records as your
