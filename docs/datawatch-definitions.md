@@ -1340,7 +1340,7 @@ The field no longer changes behavior: a pull verifies whether it is `true` or `f
 
 It is separate from `tls_ca_file`, `tls_cert_fingerprint` and `tls_insecure_skip_verify` in the probes: those three govern the usage and supervisor watch probes only. For pulls the direction reverses — `tls_ca_file` and `tls_cert_fingerprint` do help a pull (a private CA or a pinned leaf the system does not otherwise trust), while `tls_insecure_skip_verify` does not.
 
-Set it with `verify_tls` in the body of `POST` and `PUT /api/compute/nodes` (REST), `--verify-tls` on `datawatch compute node add` and `update` (CLI), `verify_tls` on the MCP `compute_node_add` and `compute_node_update` tools, the chat pair `verify_tls=true|false`, and the **Verify TLS for model pulls** checkbox in the PWA node form. Update replaces the whole node, so leaving it out leaves it `false` — the pull verifies either way. Walkthrough: [`howto/compute-nodes.md`](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+Set it with `verify_tls` in the body of `POST` and `PUT /api/compute/nodes` (REST), `--verify-tls` on `datawatch compute node add` and `update` (CLI), `verify_tls` on the MCP `compute_node_add` and `compute_node_update` tools, the chat pair `verify_tls=true|false`, and the **Verify TLS for model pulls (always on; kept for compatibility)** checkbox in the PWA node form — still sent when the node is saved, but without effect on pulls. Update replaces the whole node, so leaving it out leaves it `false` — the pull verifies either way. Walkthrough: [`howto/compute-nodes.md`](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
 
 **Supported kinds (LLM API protocol):**
 - `ollama` — native Ollama HTTP API (local or remote)
