@@ -150,6 +150,29 @@ Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
 for the whole rule pack.
 
+## 5a. Preflight checks for planner-written scripts
+
+Verification and final-gate scripts written by the planner used to fail on
+their first real run for reasons that had nothing to do with the task. The
+preflight checks catch four of those causes by reading the script text, never
+by running the script. Each finding names the script (repo-relative), the line
+(0 when no line applies), the rule id and a message.
+
+| Rule id | What it catches | How to fix it |
+|---|---|---|
+| `verify_script_syntax` | `<shell> -n` reports a syntax error in a script whose shebang names `bash`, `sh`, `dash`, `ksh` or `zsh`. At most one finding per script. A script whose interpreter is not installed is not flagged. | Fix the syntax at the reported line. |
+| `verify_script_shell_mismatch` | The script calls a helper with one shell (for example `sh helper.sh`) while the helper's shebang names another (`#!/usr/bin/env bash`). Helpers that cannot be read, or have no shell shebang, are skipped. | Call the helper with the shell its shebang names, or run it directly. |
+| `verify_script_pipefail_grep_q` | The script enables `pipefail` (`set -o pipefail`, `set -euo pipefail`) and pipes into a quiet grep (`-q`, `-qE`, `-Eq`, `--quiet`, also after `\|&`). grep exits at the first match, the upstream command gets a broken pipe, and the check reads as a false no-match. | Write the pipeline's output to a file, then test the file with `grep -q`. |
+| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path that some story or task in the **whole plan** changes. Files named by the built-in standard task templates count as covered (a templated path is cut to its static folder). A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
+
+**Current state.** The checks and their unit tests are in
+`internal/autonomous/verify_script_preflight*.go`. In this tree nothing outside
+those files calls them yet, so no planner, dry run or decompose-lint surface
+reports these rule ids. They are not listed in the decompose-lint rule pack,
+have no severity and no configuration setting. When they are wired in, this
+section and the rule pack table must be updated with where they run and with
+their severity.
+
 ## 6. Set a task's script or reason with the edit tools
 
 On a task that is still editable (the Automaton is in `needs_review`,
@@ -191,6 +214,11 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
+- **Preflight checks are not wired in.** The four `verify_script_*` preflight
+  rules in [section 5a](#5a-preflight-checks-for-planner-written-scripts) exist
+  as code and unit tests only. Decide where they should run (decompose lint,
+  dry run, or before the first script run) and at what severity; until then a
+  planner-written script can still fail its first run for these reasons.
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 
