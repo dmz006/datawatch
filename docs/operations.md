@@ -2847,6 +2847,65 @@ suppressed after the channel connects (`channel_ready: true`). This eliminates t
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
 
+### Alerts quick reply answers the operator question
+
+On the web app, every quick reply — the **Quick reply** dropdown on a
+prompt alert, the session-detail Yes/No/Stop chips, the session quick
+commands, and the card quick commands — first goes through an
+open-question gate before its text would be typed into a session:
+
+- The session has an open question and the reply matches one of its
+  options (option id or label, case-insensitive, plus the approve/yes and
+  reject/no synonyms) → the reply **answers that question** through the
+  same path as the question card (`POST /api/questions/{id}/answer`,
+  surface `pwa`); the question is recorded as answered (visible in the
+  question list and its history, with who answered and the surface), the
+  confirmation names the chosen option and shows what was sent, and the
+  session resumes. Before the fix
+  the reply was typed as text into the session (`send <id>: <text>`), so
+  the question stayed open.
+- The session has an open question but the reply matches none of its
+  options → the reply is refused with a plain toast naming the pressed
+  label and the question's options; nothing is sent anywhere.
+- The session has more than one open question → the reply is refused and
+  points to the Questions card in the Automation view.
+- The session has no open question → the reply is typed into the session
+  exactly as before (session input; for the alert dropdown, the
+  `send <id>: <text>` command).
+
+No setting or endpoint is added; the three toast strings ship in the five
+web-app locales (`en`, `es`, `fr`, `de`, `ja`). See
+[`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md),
+[`howto/operator-questions-answering.md`](howto/operator-questions-answering.md#quick-replies-answer-the-sessions-question)
+and the [Quick reply](glossary.md#quick-reply) glossary entry.
+
+**Messaging channels.** `send <id>: <text>` from a messaging channel
+uses the same gate when the text is a saved command (`!name`/`/name`),
+an approve/reject word, or an option id/label of the session's open
+question: one open question with one matching option → answered
+(surface `comm:<channel>`, reply `question answered`); no single match
+or several open questions → `quick reply refused` with the options or
+question ids, nothing sent; no open question or ordinary text → typed
+into the session as before. Waiting-input alerts now hint
+`Reply: send <id>: <answer>  answers: …` when the session has exactly
+one open question, and fall back to the saved command list otherwise.
+See [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
+**Still needs operator review:**
+
+- Messaging channels: if the daemon's questions API is unreachable the
+  router silently falls back to typing the text into the session;
+  confirm that fallback is acceptable.
+- A plain `yes`/`no` sent to a session with an open question now answers
+  the question instead of typing the word; confirm on a live channel.
+- Mobile parity: the Android and iPhone apps do not have this
+  quick-reply→question routing yet; file or link the datawatch-app
+  parity issue.
+- Confirm the answered/refused toasts read well on a real device (the
+  behavior itself is covered by the web-app test suite).
+- The parity-status row for this change marks Android and iPhone as not
+  built; update it once the companion-app parity issue lands.
+
 ### Alerts tab (help link, state row, refresh)
 
 The PWA's Alerts tab was tidied for a narrow phone viewport (operator

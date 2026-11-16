@@ -5870,5 +5870,8 @@
   "state_chips_all": "All",
   "state_chips_selected": "Selected filters",
   "state_chips_clear_all": "Clear all",
-  "state_chips_remove": "Remove %1$s"
+  "state_chips_remove": "Remove %1$s",
+  "quick_reply_answered": "Answered with option %1$s",
+  "quick_reply_refused_no_option": "Quick reply %1$s doesn't match any option of this session's open question. Options: %2$s",
+  "quick_reply_multiple_questions": "This session has more than one open question. Answer them on the Questions page (Automation view)."
 }

@@ -5870,5 +5870,8 @@
   "state_chips_all": "Alle",
   "state_chips_selected": "Ausgewählte Filter",
   "state_chips_clear_all": "Alle löschen",
-  "state_chips_remove": "%1$s entfernen"
+  "state_chips_remove": "%1$s entfernen",
+  "quick_reply_answered": "Beantwortet mit der Option %1$s",
+  "quick_reply_refused_no_option": "Der Schnellbefehl %1$s passt zu keiner Option der offenen Frage dieser Sitzung. Optionen: %2$s",
+  "quick_reply_multiple_questions": "Diese Sitzung hat mehr als eine offene Frage. Beantworte sie auf der Fragen-Seite (Ansicht Automation)."
 }

@@ -5870,5 +5870,8 @@
   "state_chips_all": "Todos",
   "state_chips_selected": "Filtros seleccionados",
   "state_chips_clear_all": "Limpiar todo",
-  "state_chips_remove": "Quitar %1$s"
+  "state_chips_remove": "Quitar %1$s",
+  "quick_reply_answered": "Respondida con la opción %1$s",
+  "quick_reply_refused_no_option": "La respuesta rápida %1$s no coincide con ninguna opción de la pregunta abierta de esta sesión. Opciones: %2$s",
+  "quick_reply_multiple_questions": "Esta sesión tiene más de una pregunta abierta. Resuélvelas en la página de preguntas (vista de Automation)."
 }

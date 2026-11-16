@@ -5870,5 +5870,8 @@
   "state_chips_all": "Tous",
   "state_chips_selected": "Filtres sélectionnés",
   "state_chips_clear_all": "Tout effacer",
-  "state_chips_remove": "Retirer %1$s"
+  "state_chips_remove": "Retirer %1$s",
+  "quick_reply_answered": "Répondu avec l'option %1$s",
+  "quick_reply_refused_no_option": "La réponse rapide %1$s ne correspond à aucune option de la question ouverte de cette session. Options : %2$s",
+  "quick_reply_multiple_questions": "Cette session a plus d'une question ouverte. Répondez-les sur la page des questions (vue Automation)."
 }
