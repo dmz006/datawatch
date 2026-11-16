@@ -1077,7 +1077,9 @@ to read there is nothing for a re-attempt to fix. The failure ladder just
 reproduces the same failure until the task is held for review and the
 Automaton is blocked. So datawatch refuses that shape of task at planning
 time and accepts a declared report as the task's output at verification
-time.
+time. A report written under the `.datawatch/` folder is git-ignored and
+stays on the local machine — it is never committed and does not count as
+uncommitted work.
 
 **The planning refusals.** Two deterministic checks, no LLM, both refuse a
 read-only task that declares neither a verification script nor a report
