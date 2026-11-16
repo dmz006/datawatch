@@ -3003,14 +3003,29 @@ bucket, not a stored status value.
   with the merge time as the completion time; one `completed_migration`
   decision-log line per record (what, why, how to undo); idempotent; refused
   while a final gate runs; `MarkPRDCompleted` is the single-record write the
-  merge pipeline's `mark_completed` post-ship step and the migration share.
-  It never touches a session.
+  merge pipeline's `mark_completed` post-ship step and the migration share;
+  both paths also record the record's **landing** as `landed` with the merge
+  commit. It never touches a session.
+- **`internal/autonomous/landing.go`** — the per-record **landing record**
+  (`PRD.Landing`, `models.go`): `pending` (set by `markLandingPendingLocked`
+  when the work branch is created — `executor.go`, `worktree.go`), `landed`
+  (`markLandingLandedLocked`, from `MarkPRDCompleted`), `kept` / `dropped`
+  (`KeepLanding` / `DropLanding`, each needing an actor and a non-empty
+  reason, refused when already landed, one `landing_keep` / `landing_drop`
+  decision each). `Archive` (`manager.go`) refuses a `pending` landing, the
+  branch named. `MigrateLanding` (same file) is the one-time backfill:
+  archived, has a branch, no record, git cannot prove merged → `pending`
+  (actor `landing_migration`); idempotent, no status or decision, skips when
+  the default branch is unknown. Tests: `landing_test.go`
+  (`TestLandingStates`, `TestLandingKeepDropRequireActorAndReason`,
+  `TestLandingNoBranchNoRecord`, `TestLandingMigration`).
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking
   goroutine when `autonomous.shipped.backfill_on_start` is on).
 - **Post-ship step.** `mark_completed` is the fifth post-ship built-in
-  (`internal/mergepipeline/posthook_builtins.go`); the merge helper's
+  (`internal/mergepipeline/posthook_builtins.go`); it marks the Automaton
+  Completed and records its landing as `landed`; the merge helper's
   `completed_mark` step in `scripts/merge-shipped-record.sh` reaches the same
   result through `completed-migrate --id`.
 - **Surfaces**

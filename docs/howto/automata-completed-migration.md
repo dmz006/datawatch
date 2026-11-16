@@ -38,7 +38,9 @@ migration** moves it there:
   commit time — **never the time you ran the migration**.
 - An Automation moves when every non-skipped member is merged or completed.
 - Each changed record gets a `completed_migration` decision with the reason
-  and commit, so the history shows why the status changed.
+  and commit, so the history shows why the status changed — and its landing
+  is recorded as `landed` with the same commit (see [Automaton worktree
+cleanup](automaton-worktree-cleanup.md#the-landing-record)).
 
 It never starts, stops, kills or signals a session, and no git command
 writes.

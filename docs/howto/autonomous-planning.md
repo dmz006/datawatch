@@ -204,6 +204,9 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PR
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/run
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/cancel
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/archive
+# (Archive is refused while the Automaton's landing record is still pending:
+#  its work branch has not landed on the default branch yet — ship it, or
+#  record keep or drop for its landing. See howto/automaton-worktree-cleanup.md, "The landing record".)
 
 # Hard delete.
 curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \

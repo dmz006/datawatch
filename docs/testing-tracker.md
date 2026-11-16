@@ -6079,3 +6079,17 @@ Tests that a worker already waiting for capacity re-reads `autonomous.capacity_f
 | An explicit-backend task waits with the setting off and falls through, with the explicit note, with it on; PRD-level explicit backend notes on the first pass | **Yes** | **No** | `TestCapacityFallthrough_ExplicitBackendWaitsOffAndFallsThroughOn`, `_ExplicitBackendNoteOnFirstPass`, same file | |
 | Explicit-backend levels: task, story, PRD, Automaton; none is not explicit | **Yes** | **No** | `TestCapacityFallthrough_HasExplicitBackendLevels`, same file | |
 | Ledger per-pass recheck: retargets and grants a waiter, keeps the wait bound, nil recheck is plain Acquire | **Yes** | **No** | `TestAcquireRechecking_*` (`internal/capacity/ledger_recheck_test.go`): manual clock | |
+
+## Landing record (pending/landed/kept/dropped), archive refusal and the landing migration — unreleased
+
+Tests the per-Automaton landing record: a branch starts `pending`, the completed mark (the `mark_completed` post-ship hook's path) records `landed` with the merge commit, `kept` and `dropped` require an actor and a reason and write `landing_keep` / `landing_drop` decisions, Archive is refused on a `pending` landing (with the branch named in the error) and passes once the landing is resolved, and the one-time migration backfills `pending` for archived Automata whose branch git cannot prove merged. Run with `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous -count=1 -run 'Landing'`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| New branch starts `pending`; Archive of a `pending` landing is refused (completed, rejected, cancelled Automata), error names the branch and says merge or record keep or drop | **Yes** | **No** | `TestLandingStates` subtests `pending completed refused`, `pending rejected refused`, `pending cancelled refused` (`internal/autonomous/landing_test.go`) | No daemon needed. |
+| `MarkPRDCompleted` records `landed` with the merge commit (from cancelled and from already-completed) and Archive then passes | **Yes** | **No** | `TestLandingStates` subtests `landed via MarkPRDCompleted`, `landed on already completed`, same file | The pipeline `mark_completed` hook's write path. |
+| `KeepLanding` / `DropLanding` set the state, write the decision, and Archive passes | **Yes** | **No** | `TestLandingStates` subtests `kept`, `dropped`, same file | Decision kinds `landing_keep` / `landing_drop` asserted. |
+| Keep and drop require an actor and a non-empty reason | **Yes** | **No** | `TestLandingKeepDropRequireActorAndReason`, same file | `actor ""` refused, reason `" "` refused. |
+| No branch, no landing record; such a record archives as before | **Yes** | **No** | `TestLandingNoBranchNoRecord`, same file | |
+| Migration marks archived-unmerged Automata `pending` and leaves merged, no-branch, non-archived and already-recorded ones alone (idempotent second run) | **Yes** | **No** | `TestLandingMigration` (`internal/autonomous/landing_test.go`): fake git runner | Skips rather than guesses when the default branch is unknown. |
+| REST / CLI / comm / MCP / PWA keep-drop surface | **No** | **No** | — | **Not built yet:** `KeepLanding`, `DropLanding`, `MigrateLanding` are daemon APIs only; surfaces are the planned follow-up. |
