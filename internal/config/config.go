@@ -3670,6 +3670,11 @@ type AutonomousConfig struct {
 	// gates. 0 or unset means the default of 24 hours; a negative value is
 	// a config error. Read through EffectiveVerifierHeadroomMaxAge.
 	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
+	// ReapedBranchBackupDays is how many whole days the backup ref kept for
+	// a reaped Automaton branch stays before it is pruned. 0 or unset means
+	// the default of 30 days; a negative value is a config error. Read
+	// through EffectiveReapedBranchBackupDays.
+	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -4323,6 +4328,20 @@ func (a AutonomousConfig) BranchRefreshLimit() int {
 // autonomous.verifier_headroom_max_age_hours: a headroom measurement older
 // than this many hours is stale for the verifier cap gates.
 const VerifierHeadroomMaxAgeHoursDefault = 24
+
+// ReapedBranchBackupDaysDefault is the default of
+// autonomous.reaped_branch_backup_days: the backup ref of a reaped Automaton
+// branch is kept this many days.
+const ReapedBranchBackupDaysDefault = 30
+
+// EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
+// with 0, unset or a non-positive value reading the default of 30 days.
+func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
+	if a.ReapedBranchBackupDays <= 0 {
+		return ReapedBranchBackupDaysDefault
+	}
+	return a.ReapedBranchBackupDays
+}
 
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
 // gates use: autonomous.verifier_min_free_mem_mb when set (0 = check off),
@@ -8687,6 +8706,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
 		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
+		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
