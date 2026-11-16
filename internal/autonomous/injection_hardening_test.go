@@ -219,12 +219,9 @@ func TestDriftCaptureRefusesUnsafeDirOrRevisionWithoutExec(t *testing.T) {
 		if v := CapturePreTaskDirtyFiles(ctx, dir, nil); v != nil {
 			t.Errorf("dir %q: expected nil capture", dir)
 		}
-		if _, err := CommittedFilesSince(ctx, dir, "abc1234", nil); err == nil {
-			// an invalid dir refuses inside the runner; either way no exec
-		}
-		if _, err := CommittedLineStatsSince(ctx, dir, "abc1234", nil); err == nil {
-			// same as above
-		}
+		// an invalid dir refuses inside the runner; either way no exec
+		_, _ = CommittedFilesSince(ctx, dir, "abc1234", nil)
+		_, _ = CommittedLineStatsSince(ctx, dir, "abc1234", nil)
 	}
 	if calls != 0 {
 		t.Fatalf("calls for unsafe dirs = %d; want 0", calls)

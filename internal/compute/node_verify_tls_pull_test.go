@@ -80,7 +80,7 @@ func pullOnce(t *testing.T, client *http.Client, addr string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("pull: status %d", resp.StatusCode)
 	}
@@ -207,7 +207,7 @@ func TestPullTLSOnTagsEndpoint(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil
 	}
 	n := &Node{Name: "gpu-tags", Address: fake.URL}
