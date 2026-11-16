@@ -926,6 +926,19 @@ The status describes a run with no project or task kind override, so an opt-out 
 | **MCP** | `config_set`; `autonomous_status` for the effective ceiling |
 | **Comm channel** | `configure resource_limits.memory_share_percent=<n>` |
 
+### Verification lint gate
+
+After a task's or story's verification script passes, datawatch lints the Go
+packages the branch changed against its merge base with `main` by running
+`golangci-lint run <packages>` from the project directory. Findings, or a linter
+that is missing from `PATH` or cannot start, block the unit with a `lint-gate`
+verdict and a non-retryable `content` failure reason; the message (starting
+`lint gate failed`) is appended to the script output. Units with no Go change,
+no project directory, or a project directory that is not a git work tree skip
+the gate. There is no setting for it: make sure every worker node has
+`golangci-lint` installed. Details are in
+[the verification-scripts how-to](howto/automaton-verification-scripts.md#7-the-verification-lint-gate).
+
 ### Verifier node limit
 
 Verifier runs take a lease on the node's own **verifier pool**, not the pool of the workers they check. Each compute node that hosts a local engine gets one verifier slot by default — one verifier at a time in its own pool, running alongside the executor's sessions — so a verification no longer queues behind the worker count on the node. A node that hosts no local engine, or one whose `verifier_slots` is set to `0`, has no verifier pool: a verifier for that node leases its executor pool (the node's `session_slots` / `max_concurrent_sessions` limit) exactly as before. The verifier pool never raises the executor's limit; the two coexist under their own caps, and a node with one GPU runs one verifier at a time by default.

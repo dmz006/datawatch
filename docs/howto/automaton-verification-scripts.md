@@ -194,6 +194,19 @@ the code it changed. The lint gate closes that gap.
   or cannot start, the gate returns an error instead of a result; treat it as an
   infrastructure fault, not as a clean branch.
 
+**When it runs.** The gate runs during verification of every task and every story,
+right after the verification script passes and before any guardrail runs. A script
+that fails never reaches the gate. The gate is skipped (counts as a pass) when the
+unit has no project directory or the directory is not a git work tree.
+
+**What a failure looks like.** A failing gate records a `lint-gate` verdict with
+outcome `block` and severity `high`, sets the unit's failure reason to category
+`content`, source `lint-gate`, not retryable, and appends the message (starting
+`lint gate failed`) to the script output you see on the task. No guardrail runs
+after it. Both linter findings and a linter that cannot start produce this block;
+a missing `golangci-lint` is not retried as infrastructure. Fix the findings (or
+install the linter on the worker's node) and reset the task.
+
 The gate has no setting of its own; the linter command is fixed and injectable only
 in tests. See **Verification lint gate** in [the definitions](../datawatch-definitions.md#shadow-merge-checks), listed beside the merge lint checks.
 
@@ -212,10 +225,12 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
-- **Lint gate wiring.** The verification lint gate is in the tree with its tests,
-  but no verifier path calls it yet; until it is wired in, a task's verification
-  still does not run lint. Confirm where it runs (per task or at the final gate)
-  and whether its error counts as an infrastructure retry.
+- **Lint gate blocks on a missing linter.** The gate now runs after every passing
+  task and story script. A node without `golangci-lint` on `PATH` blocks every Go
+  task as a non-retryable content failure, not an infrastructure retry. Confirm
+  each worker node has the linter, or decide whether that case should be retried.
+- **No off switch.** The gate cannot be turned off per Automaton or globally; a
+  repository with pre-existing findings in a touched package blocks until fixed.
 - **Lint version.** The gate uses whatever `golangci-lint` is on `PATH`; it does not
   check the version CI pins (the shadow merge's lint version pin does that).
 - **Mobile apps.** The task editor fields are described for the web app only;
