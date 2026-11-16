@@ -26,7 +26,8 @@ import (
 // two copies are equal after StripDaemonSections, and the raw contents differ
 // (an unchanged file is not a daemon-only change). Every other case — missing
 // or unreadable working copy, file absent from HEAD, cancelled context, or an
-// unsafe path (empty, absolute, escaping upward, NUL byte) — returns false.
+// unsafe path (empty, absolute, escaping upward, NUL byte, or a symlink chain
+// leaving dir) — returns false.
 func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
 	if run == nil {
 		return false
@@ -38,15 +39,13 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 	if ctx.Err() != nil {
 		return false
 	}
-	if strings.ContainsRune(rel, 0) {
+	// Containment is validated once, against the resolved base (symlinks
+	// included), and the returned path is what gets read.
+	curPath, err := repoFileInside(dir, rel)
+	if err != nil {
 		return false
 	}
-	relOS := filepath.FromSlash(rel)
-	if !filepath.IsLocal(relOS) {
-		return false
-	}
-	checkedRel := relOS
-	cur, err := os.ReadFile(filepath.Join(dir, checkedRel))
+	cur, err := os.ReadFile(curPath)
 	if err != nil {
 		return false
 	}

@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
 
 // cleanupStatusFile is persisted next to the merge-shadow record
@@ -216,13 +217,33 @@ type cleanupStatusRecorder struct {
 	interval time.Duration // disk-alert rate limit
 }
 
-// newCleanupStatusRecorder opens (or starts) the status in dir, the
-// same data directory the merge-shadow record lives in. A corrupt
-// persisted file is kept out of the way of the live status: the
-// recorder starts clean rather than crashing the daemon start.
+// cleanupStatusFileIn resolves the fixed status file name inside dir, the
+// same data directory the merge-shadow record lives in. Resolution happens
+// once, in one place, through gitguard.ContainedPath: the base and the
+// joined name must be absolute, cleaned and the join must stay under the
+// resolved base (symlinks included). A base that is not usable — empty or
+// NUL-laden — returns "", in which case the recorder stays inert instead of
+// joining the fixed name onto the process working directory.
+func cleanupStatusFileIn(dir string) string {
+	joined := dir
+	if dir != "" {
+		joined = filepath.Join(dir, cleanupStatusFile)
+	}
+	if p, err := gitguard.ContainedPath(dir, joined); err == nil {
+		return p
+	}
+	return ""
+}
+
+// newCleanupStatusRecorder opens (or starts) the status in dir with the
+// resolved path above. A corrupt persisted file is kept out of the way of
+// the live status: the recorder starts clean rather than crashing the
+// daemon start. A recorder with no usable data directory has an empty path
+// and neither loads nor saves anything.
 func newCleanupStatusRecorder(dir string) *cleanupStatusRecorder {
+	path := cleanupStatusFileIn(dir)
 	r := &cleanupStatusRecorder{
-		path:     filepath.Join(dir, cleanupStatusFile),
+		path:     path, // "" = no usable data directory: recorder is inert
 		stat:     realStatser{},
 		liveness: cacheFolderLiveness, // whether a live process holds a folder (cache_folder_liveness.go)
 		now:      func() time.Time { return time.Now().UTC() },
@@ -231,7 +252,9 @@ func newCleanupStatusRecorder(dir string) *cleanupStatusRecorder {
 			DiskAlertPercent: config.DefaultAutomationDiskAlertPercent,
 		},
 	}
-	r.load()
+	if path != "" {
+		r.load()
+	}
 	return r
 }
 
@@ -445,8 +468,12 @@ func (r *cleanupStatusRecorder) RecordTempRelease(count int, source string) {
 
 // load restores the persisted status; a missing file is the normal
 // first start, a corrupt one is logged and dropped (a bad status
-// record must never break the daemon).
+// record must never break the daemon). An empty path (no usable data
+// directory) is inert: nothing is read.
 func (r *cleanupStatusRecorder) load() {
+	if r.path == "" {
+		return
+	}
 	data, err := os.ReadFile(r.path)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -467,8 +494,12 @@ func (r *cleanupStatusRecorder) load() {
 
 // save persists the current status. Best effort: a write failure is
 // logged, not returned — the status is observability, not state the
-// daemon depends on.
+// daemon depends on. An empty path (no usable data directory) is
+// inert: nothing is written.
 func (r *cleanupStatusRecorder) save() {
+	if r.path == "" {
+		return
+	}
 	data, err := json.Marshal(r.st)
 	if err != nil {
 		log.Printf("[autonomous] cleanup status: encode: %v", err)
@@ -711,6 +742,23 @@ const (
 	cleanupPermissionGone = "The folders that could not be removed are already gone, so nothing needs to be done."
 )
 
+// worktreePathExists reports whether p exists. The failed-worktree list
+// only decides the wording of a record ("still there" versus "already
+// gone"), so the probe is deliberately narrow: a path that is empty, NUL
+// laden, ".", ".." or that climbs out of the current directory ("../...")
+// is not stat'ed at all, and a passing path gets nothing done to it
+// beyond an Lstat (the symlink is inspected, never followed).
+func worktreePathExists(p string) bool {
+	cleaned := filepath.Clean(p)
+	if p == "" || strings.ContainsRune(p, 0) ||
+		cleaned == "." || cleaned == ".." ||
+		strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return false
+	}
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
 // ClassifyCleanupPermissionErrors turns the permission failures of one
 // worktree pass into a single record. It returns nil when no failure was
 // refused for permission. A folder that no longer exists is harmless; when
@@ -735,7 +783,7 @@ func ClassifyCleanupPermissionErrors(failed []WorktreeCleanupFailed) *CleanupPer
 	sort.Strings(paths)
 	exist := false
 	for _, p := range paths {
-		if _, err := os.Lstat(p); err == nil {
+		if worktreePathExists(p) {
 			exist = true
 			break
 		}

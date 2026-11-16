@@ -483,7 +483,14 @@ datawatch llm force-delete my-ollama
 
 5. Click the pencil icon to open the Edit LLM form. The **Enabled Models**
    section shows `{node, model}` pairs with × to remove and **+ Add model**
-   to pin a new pair. Click **Save** to apply changes.
+   to pin a new pair. Click **Save** to apply changes. The Name, the
+   `{node, model}` pairs and the API Key / Timeout values go into the form's
+   `value` attributes HTML-escaped (`escHtml`), so a value that carries
+   quotes or angle brackets is displayed as text and round-trips unchanged
+   on re-save — never live markup or a live attribute (fixes the
+   `xss-through-dom` finding in this form, alert 850; closure is confirmed
+   when the next "Open high/critical alerts" gate run on main is green —
+   see [operations.md](../operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run)).
 
 ![Edit LLM form — Enabled Models section showing node/model pairs, + Add model, Auto-enable toggle](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm-detail.png)
 

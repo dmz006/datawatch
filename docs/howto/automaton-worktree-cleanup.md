@@ -404,7 +404,11 @@ it cannot read or whose liveness it cannot prove — on platforms without a
 readable `/proc`, that is all of them — and the disk alert never removes
 anything, in any mode. In `off` it does not even run git for the
 cleanup, and it does not scan the cache folders either. The only thing that
-still runs in `off` is the disk reading and its alert.
+still runs in `off` is the disk reading and its alert. Its status record is
+guarded the same way: the status file path is resolved once inside the data
+directory, a data directory that is not usable leaves the status recorder
+inert (it neither loads nor saves anything), and the "still there" probe on a
+failed worktree path never stats an empty, NUL-laden or `../`-climbing path.
 
 ## Skipped by reason, permission errors and the fix
 
