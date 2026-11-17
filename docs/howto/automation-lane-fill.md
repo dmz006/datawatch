@@ -262,6 +262,7 @@ also has no switch of its own: it mirrors the plan-coverage gate
 (`autonomous.plan_coverage_check`, `block` by default, overridable per
 project) and fires only on a `needs_review` Automaton whose stored record is
 failing without a covering acknowledgment.
+To clear it, read the plan coverage report on the Automaton and either fix the plan or acknowledge the report with a note; the lane then starts the Automaton on its next poll.
 
 If a check cannot be made (git cannot be read, the filesystem view is not
 there), the answer is "unknown" and **never** refuses. The base-branch check
