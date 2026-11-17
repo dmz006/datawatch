@@ -114,7 +114,9 @@ func isStorageErrno(err error) bool {
 // because the device is full, the quota is used up or the file system is
 // read-only. A worker session reports these as text.
 var storageWriteTexts = []string{
+	"temporary folder full",
 	"no space left on device",
+	"enospc",
 	"device is full",
 	"disk quota exceeded",
 	"read-only file system",
