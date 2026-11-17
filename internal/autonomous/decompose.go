@@ -44,6 +44,17 @@ const planWriteFilesRuleBullet = `- Every task whose title starts with a write v
   installs and investigations are read-only and take that line.
 `
 
+// planFullFilePathRuleBullet is the Rules bullet, shared by both planning
+// prompts, that tells the planner to write every file path in full. The
+// plan-coverage structural lint (plan_coverage_findings.go) extracts
+// file-name tokens that stop at whitespace, so a path split by a space or
+// shortened with an ellipsis is reported as a file that exists nowhere. The
+// marker sentence 'must be written exactly as its real repo-relative path'
+// is asserted by the verification script and must stay on one line. No
+// percent sign: PlanningPrompt goes through fmt.Sprintf.
+const planFullFilePathRuleBullet = `- Every file named anywhere in a task title, spec or files list must be written exactly as its real repo-relative path, the full path in one piece. No space inside a file name, no ellipsis, no abbreviation, no truncation, and no wrapping part of a path into prose. A long hyphenated file name is spelled out completely. A file whose name would need a space is given a hyphenated name by whoever creates it instead. A spec may never carry a display form of a path: a severed name such as 'docs/plans/2026-11-16-re' or a report path written as prose is a defect, because the plan-coverage structural lint extracts file-name tokens that stop at whitespace and reports the fragment as a file that exists neither in the tree nor in an earlier task's files_generated.
+`
+
 // planReadOnlyFlagRuleBullet is the Rules bullet, shared by both planning
 // prompts, that tells the planner when to set the task-level read_only
 // flag. It is the structured counterpart of the READ-ONLY: spec line in
@@ -117,7 +128,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -210,7 +221,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planFullFilePathRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + planWorkerProfileRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
