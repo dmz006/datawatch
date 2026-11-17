@@ -3252,7 +3252,8 @@ autonomous:
     # value is refused.
     merge_conflict_policy: additive_then_model
     # merge_conflict_model: the model that resolves a conflict. Default empty,
-    # which uses the strongest configured planning model.
+    # which reads the non-Opus daemon default ("sonnet"); a model the operator
+    # names, an Opus model included, is used as written.
     merge_conflict_model: ""
     # merge_retry_seconds: whole seconds between timed merge retry passes over
     # blocked merges. Default 60. 0 turns the timer off. A negative value is

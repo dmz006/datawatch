@@ -2670,7 +2670,7 @@ Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks
   - `read_only_tasks` — default `true` (`EffectiveReadOnlyTasks`). A task with `read_only` set skips the per-tree write lock (`internal/autonomous/read_only_parallel.go`).
   - `worktree_per_task` — default `true` (`EffectiveWorktreePerTask`). Each parallel task runs in its own worktree and branch (`task_worktree.go`).
   - `merge_conflict_policy` — default `additive_then_model` (`EffectiveMergeConflictPolicy`); valid `additive_then_model`, `block`, `triage`; checked by `config.ValidateMergeConflictPolicy`, which refuses an unknown value on load and on write.
-  - `merge_conflict_model` — default empty (`EffectiveMergeConflictModel`); empty means the strongest configured planning model.
+  - `merge_conflict_model` — default empty (`EffectiveMergeConflictModel`); empty reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written.
 - **Merge back:** task branches merge into the Automaton branch in dependency order, one at a time, under the conflict policy (`internal/autonomous/task_merge.go`). The merge state (`pending`, `merged`, `conflict`, `held`) and the merge commit are fields of the task.
 - **Metrics:** `internal/autonomous/parallel_metrics.go` records total and read-only task counts, concurrent tasks, wall-clock and serial seconds and the speedup when an Automaton completes; they ride on the Automaton read.
 - **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
