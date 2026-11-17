@@ -516,6 +516,15 @@ work waits for it, lane fill raises one alert:
 - it goes through the normal alert path, at warning level, and is listed in the
   status under the idle lane alerts.
 
+The reverse also holds: a lane that is idle because **every** Automaton waiting
+for it is refused — for example the only queued one is refused as
+`plan_coverage_blocked` — has no eligible work, so no idle alert fires, and
+the lane's newest decision stays the `blocked <id>: [reason] ...` line. That is
+the refusal rules working, not a stuck lane: the lane starts its first
+eligible Automaton on the next poll once one exists, and clearing the refusal
+is what makes a refused Automaton eligible again (see the `plan_coverage_blocked`
+row in the table above and the troubleshooting row below).
+
 `idle_alert_minutes: 0` turns the alert off. The alert is read live, so a change
 needs no restart.
 
