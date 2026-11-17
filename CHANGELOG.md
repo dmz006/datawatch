@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
+
+### Changed
+
+- Fix the shutdowncause child process scan flake in the full test run.
+
 ## v9.182.2 — Fix open high and critical CodeQL alerts
 
 ### Changed
