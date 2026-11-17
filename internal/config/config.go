@@ -9455,7 +9455,8 @@ type AutonomousParallelConfig struct {
 	// means the default (see autonomous.EffectiveMergeConflictPolicy).
 	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
 	// MergeConflictModel: model that resolves a merge conflict. Empty
-	// means the strongest configured planning model.
+	// reads the non-Opus daemon default (config.MergePipelineDefaultConflictModel);
+	// an operator-named model, an Opus model included, is used as written.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
 	// MergeRetrySeconds: whole seconds between timed merge retry passes.
 	// Pointer so an explicit 0 (timer off) survives; nil means the default

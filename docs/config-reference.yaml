@@ -1526,7 +1526,10 @@ autonomous:
   # (automation_cleanup_max_removals_per_pass).
   #
   # disk_alert_percent: whole number, clamped to 1..100. The disk-usage
-  # percent at or above which a disk alert is raised. An unset key (0) reads
+  # percent at or above which the worktree-disk alert is raised (the disk
+  # holding the worktree base repository). The temp-folder disk always checks
+  # against the lower of this value and the fixed 80, so at the default 85
+  # the temp disk alerts at 80. An unset key (0) reads
   # the 85 default; a stored value below 1 reads as 1 and above 100 reads as
   # 100 — the clamp happens on read, the write is never refused for range.
   # Settable via PUT /api/config (key autonomous.automation.disk_alert_percent),
@@ -2313,9 +2316,10 @@ autonomous:
   # conflict_policy: stop_and_ask | mechanical | mechanical_and_model. Default
   #   mechanical_and_model. A policy that needs a model degrades to
   #   stop_and_ask when no model is set or none can be reached.
-  # conflict_model: a name in the LLM registry. Unset reads the built-in default
-  #   name (claude-opus-5-5); an explicit empty string means no model. Never adds
-  #   or changes a registry entry.
+  # conflict_model: a name in the LLM registry. Unset reads the non-Opus daemon
+  #   default name (sonnet); a model the operator names, an Opus model
+  #   included, is used as written; an explicit empty string means no model.
+  #   Never adds or changes a registry entry.
   # conflict_mode: shadow | on. Default shadow. shadow runs the conflict model
   #   without acting on its proposal; on acts on the proposal.
   # conflict_confirm_first_n: a whole number. Default 5. How many of a project's
@@ -2357,7 +2361,7 @@ autonomous:
   #   source_order: [file, record]
   #   fallback_on_bad_file: record
   #   conflict_policy: mechanical_and_model
-  #   conflict_model: claude-opus-5-5
+  #   conflict_model: sonnet
   #   conflict_mode: shadow
   #   conflict_confirm_first_n: 5
   #   version_files: []
@@ -3252,7 +3256,8 @@ autonomous:
     # value is refused.
     merge_conflict_policy: additive_then_model
     # merge_conflict_model: the model that resolves a conflict. Default empty,
-    # which uses the strongest configured planning model.
+    # which reads the non-Opus daemon default ("sonnet"); a model the operator
+    # names, an Opus model included, is used as written.
     merge_conflict_model: ""
     # merge_retry_seconds: whole seconds between timed merge retry passes over
     # blocked merges. Default 60. 0 turns the timer off. A negative value is
@@ -3551,18 +3556,22 @@ autonomous:
   verification_backend: ""
   # BL25 verifier model override. Empty = default to the PRD's own model
   # when verification_backend was also left empty and the PRD's backend was
-  # ask-compatible (v8.36.0); otherwise the resolved backend's own default
-  # model.
+  # ask-compatible (v8.36.0); otherwise the daemon default model for that
+  # backend (sonnet on claude-code — the explicit-model policy, never the
+  # backend's built-in default).
   verification_model: ""
   # v9.10.18 — pinned model for the guardrail JUDGE (rules-review, ci-watch,
   # per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier
   # precedence chain that replaces the old silent backend-default fallback:
   # PRD guardrail_model → task guardrail_model → this field →
   # verification_model → planning_model. Empty = the tier falls through to
-  # the next; if ALL tiers resolve to nothing servable on the judge
-  # backend, the record gets a loud non-retried infra-category block
-  # (ErrNoGuardrailModel) — a pi-family judge NEVER runs on the backend's
-  # built-in default model. Pairing is validated per tier (a bare Claude
+  # the next; a pi-family judge whose tiers all resolve to nothing servable
+  # gets a loud non-retried infra-category block (ErrNoGuardrailModel) and a
+  # pi-family judge NEVER runs on the backend's built-in default model. A
+  # claude-code judge with no model named at the PRD or task level now
+  # resolves to the daemon default (sonnet) instead of that block — the
+  # explicit-model policy; a pin the backend cannot serve is still a loud
+  # failure. Pairing is validated per tier (a bare Claude
   # alias on a pi-family backend, or a provider-qualified model on
   # claude-code, is skipped with a recorded reason).
   guardrail_model: ""

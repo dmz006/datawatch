@@ -153,14 +153,17 @@ func BuiltInRiskClasses() map[string]RiskClass {
 // security-tagged Automata to a stronger planner (the first entry of
 // Planners; the second is its escalation target). These are examples
 // only: they are never active by default (PlanningRoutingDefaults
-// ships no rules and Enabled=false).
+// ships no rules and Enabled=false). The shipped claude-code planner
+// models are the non-Opus daemon default; an operator who wants a
+// premium planner writes one explicitly in a rule's Planners entry and
+// it passes through untouched.
 func ExampleRules() []PlanningRule {
 	return []PlanningRule{
 		{
 			Name:  "security-strong",
 			Match: PlanningMatch{RiskClass: []string{"security"}, Tags: []string{"security"}},
 			Planners: []PlannerRef{
-				{Backend: "claude-code", Model: "claude-opus-5-5"},
+				{Backend: "claude-code", Model: "sonnet"},
 				{Backend: "pi-prompt", Model: "qwen3.8:27b"},
 			},
 		},
@@ -168,7 +171,7 @@ func ExampleRules() []PlanningRule {
 			Name:  "design-strong",
 			Match: PlanningMatch{Tags: []string{"design", "ui"}},
 			Planners: []PlannerRef{
-				{Backend: "claude-code", Model: "claude-opus-5-5"},
+				{Backend: "claude-code", Model: "sonnet"},
 				{Backend: "pi-prompt", Model: "qwen3.8:27b"},
 			},
 		},

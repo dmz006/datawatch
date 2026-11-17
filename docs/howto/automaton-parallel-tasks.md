@@ -39,7 +39,7 @@ All four live under `autonomous.parallel` and are changeable from the web app
 | `autonomous.parallel.read_only_tasks` | `true` | A task flagged read only skips the tree lock and runs beside other tasks. `false` makes every task take the lock. |
 | `autonomous.parallel.worktree_per_task` | `true` | Each task that runs alongside others gets its own worktree and branch off the Automaton branch. `false` keeps all tasks in the one worktree. |
 | `autonomous.parallel.merge_conflict_policy` | `additive_then_model` | What happens when a task branch does not merge cleanly: `additive_then_model`, `block` or `triage`. |
-| `autonomous.parallel.merge_conflict_model` | empty | The model that resolves a conflict. Empty uses the strongest configured planning model. |
+| `autonomous.parallel.merge_conflict_model` | empty | The model that resolves a conflict. Empty reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written. |
 
 An explicit `false` is kept; only an absent key reads the default.
 

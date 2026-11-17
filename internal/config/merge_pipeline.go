@@ -107,10 +107,12 @@ const PostShipMaxHooks = 20
 const (
 	// MergePipelineDefaultFileName is the pipeline file looked for in a project.
 	MergePipelineDefaultFileName = ".datawatch/merge-pipeline.yaml"
-	// MergePipelineDefaultConflictModel is the strong model that proposes a
-	// conflict resolution unless the operator names another. It is a name in
-	// the LLM registry.
-	MergePipelineDefaultConflictModel = "claude-opus-5-5"
+	// MergePipelineDefaultConflictModel is the daemon-default model that
+	// proposes a conflict resolution when the operator names none: the
+	// non-Opus daemon default, a name in the LLM registry. An operator who
+	// wants a premium model on the merge line pins one (conflict_model) and
+	// that value always passes through untouched.
+	MergePipelineDefaultConflictModel = "sonnet"
 )
 
 // Release sizing. A release size is the step a merge adds to the version; the

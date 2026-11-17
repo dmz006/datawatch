@@ -87,6 +87,16 @@ names no backends and sets no Claude session cap, the judge has nothing to
 choose from. It then uses the unit's own guardrail backend, and only on its
 first attempt.
 
+**The model the judge runs on.** A model named at the PRD or task level — or
+a global guardrail or verification model the backend can serve — is used as
+named, including a premium Opus or Fable model the operator chose. A
+`claude-code` judge with no model named anywhere runs on the daemon default
+model, `sonnet`: before the explicit-model policy that case was a loud
+`no guardrail model` block verdict and the judge never launched, so the
+unconfigured judge is now judged on an explicit model instead of blocked. A
+pin that names a model the backend cannot serve still fails loudly.
+See [Explicit model policy](explicit-model-policy.md).
+
 ## The three modes for judges
 
 A judge uses the verifier policy's mode. The selector runs the same rules for

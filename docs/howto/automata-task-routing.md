@@ -118,6 +118,14 @@ then an Automaton LLM, then the routing table, then the global default. The
 table applies only where none of the others is set. A hand-set task, story or
 Automaton LLM always wins.
 
+**A model that ends up empty gets the daemon default.** Whatever level wins
+the chain above, if it is a `claude-code` backend with no model and nothing
+more specific named one, the session starts on the daemon default model:
+`sonnet` for normal work, `haiku` for the mechanical task types. It never
+starts on the backend's built-in default, which on some installs is a premium
+(Opus-class) model. A model named at any level — premium included — passes
+through unchanged. See [Explicit model policy](explicit-model-policy.md).
+
 The table never touches:
 
 - a task that was **edited by hand** (edit task, set task LLM or set task
