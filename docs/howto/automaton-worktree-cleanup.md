@@ -607,14 +607,28 @@ unlanded) and is never an error.
 
 What you can still see when an action cannot run:
 
+Gate refusals — the request was rejected before the action ran, and nothing
+was touched:
+
 | Answer | Meaning | What to do |
 |---|---|---|
 | **503** `autonomous disabled` | Automata are off on this daemon | Turn Automata on (`autonomous.enabled`), then retry |
 | **403** `session token lacks capability: ...` | A federated peer called the route without the autonomous read (GET) or write (POST) capability | Grant that capability to the peer, or run the action on the daemon itself |
 | **405** `method not allowed` | The route was called with the wrong method | Use the method in the table above |
 
-No other refusal comes from the gate; any other error is the action's own (for
-example a branch that no longer exists) and its message says what failed.
+The action's own failures — the request passed the gate and the action ran. The message says what failed, and the same failure keeps answering the same way while the cause is not resolved:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **400** | Incomplete or invalid input: `branch is required`, `worktree is required`, `confirm is required to delete a worktree`, `no base repository is configured`, `commit message is empty`, `worktree is outside the Automaton worktree base`, `the worktree has no uncommitted files` (an invalid JSON body answers **400** too) | Send the missing field (a delete needs `confirm: true`), configure the base repository, or pick a worktree inside the worktree base that actually has uncommitted files |
+| **404** `branch is not in the unlanded list` | `keep`, `archive-branch` or `delete-worktree` was called for a branch that is not in the current unlanded list (it was archived or deleted, or was never listed) | Read the list again (`GET /api/autonomous/unlanded-work`) and act on a branch it names |
+| **409** | The action's own failure — for example the delete's bundle backup could not be written or verified (in which case nothing was removed), or the working directory refused the archive ref | Read the message for the cause, clear it, then rerun the action |
+
+One operator flag: because the current build proves at build time that the
+wrapper carries every gate method, a daemon answering **503**
+`Housekeeping actions unavailable` on any of the seven routes above is an old
+build from before the fix — upgrade the daemon binary, there is no setting
+that changes that answer.
 
 ### Daily pending-branch alert
 
