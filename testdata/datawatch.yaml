@@ -34,6 +34,12 @@ server:
   tls_enabled: true
   tls_auto_generate: true
   tls_port: 8443
+  # PWA/PRD stories seed shell sessions and automaton fixtures in /tmp
+  # (TS-748/797/798/799/821/822/823/844); since the request-side project-dir
+  # guard (gitguard.ResolveProjectDir) refuses any directory outside the
+  # daemon's allowed project roots, this disposable loopback test daemon
+  # allows the sandbox seed directory /tmp.
+  allowed_project_roots: ["/tmp"]
 
 mcp:
   enabled: true

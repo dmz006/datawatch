@@ -231,9 +231,15 @@ async function runScenario(page, { label, base, trusted }) {
     installCounting();
   }
 
-  // Open the first session card → its detail view.
-  await page.waitForSelector('.session-card[data-full-id]', { timeout: 20000 });
-  const fullId = await page.evaluate(() => document.querySelector('.session-card[data-full-id]').dataset.fullId);
+  // Open the first session entry → its detail view. Entries render as
+  // .session-card (list mode) or tiles carrying data-sess-id (the default
+  // tiles/compact layout); both are driven by the same state.sessions list.
+  await page.waitForSelector('.session-card[data-full-id], [data-sess-id]', { timeout: 20000 });
+  const fullId = await page.evaluate(() => {
+    const el = document.querySelector('.session-card[data-full-id]') || document.querySelector('[data-sess-id]');
+    return el ? (el.dataset.fullId || el.dataset.sessId) || null : null;
+  });
+  if (!fullId) throw new Error('first session entry has no id (expected dataset.fullId or dataset.sessId)');
   console.log(`[TS-797][${label}] opened session detail: ${fullId}`);
   await page.evaluate((id) => navigate('session-detail', id), fullId);
   await page.waitForFunction(
