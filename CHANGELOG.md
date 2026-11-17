@@ -5,9 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
+
 ### Changed
 
-- The task branch's pre-merge cleanup now also drops the two root launcher files (the per-session MCP config and the starting context document) when a branch committed them but the target state has none — a launcher-named file that belongs to the target state, and a same-named file in a subfolder, are both kept.
+- Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e.
+
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
 
 ## v9.182.7 — 3e500001
 

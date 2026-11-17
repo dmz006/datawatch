@@ -119,6 +119,11 @@ type LaneFillCandidate struct {
 	AllTasksDone    bool
 	// NeedsMergeFlag: the finished work still needs a merge.
 	NeedsMergeFlag bool
+	// CoverageGateBlocked is true when the Automaton's stored plan-coverage
+	// record currently fails the Approve gate in block mode with no covering
+	// acknowledgment (Manager.planCoverageGateBlocks); a needs_review
+	// candidate with it is refused by the plan-coverage rule.
+	CoverageGateBlocked bool `json:"coverage_gate_blocked,omitempty"`
 	// InAutomation: a member of an Automation, which starts it.
 	InAutomation bool
 	// BackendChangeAllowed says whether the set-llm status rules allow
