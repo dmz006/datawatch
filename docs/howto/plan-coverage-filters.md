@@ -79,6 +79,17 @@ suppressed. The same plan also says "wire it into
 `internal/scheduler/daily.go`, which does not exist and no task creates" —
 that finding still shows up and still fails the report.
 
+**One shape this filter cannot rescue.** The matching works over *names*,
+exactly as written — and a name is one piece, up to the first space. A
+path written severed or broken across a line (`docs/plans/2026-11-16-re`)
+is a different name from the full path the plan's tasks declare: the
+file-list match needs the exact name, so a fragment is not treated as the
+plan's own output, and a missing-file finding shows up for the fragment
+even when a task creates the full file elsewhere in the plan. The
+planning prompts carry the **full-file-path rule** to keep plans from
+being written that way in the first place — see
+[the decompose-lint how-to](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too).
+
 ### Filter 2 — only scoped sentences count as requirements
 
 `autonomous.plan_coverage_scoped_requirements` (on by default).
