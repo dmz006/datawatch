@@ -521,3 +521,18 @@ Done:
 - The Opus-launch fix `12480001` (a Claude launch with no model runs the account default, which is Opus) was raised to priority 95; it is the first thing to land before the back-off comes off.
 
 Still to settle before Claude is generally open again: the explicit-model fix landing, the disagreement between the daemon burn guard (projects the week end, graded steps) and the supervisor cron guard (pace line, on or off), and the cost of the supervisor session itself (cadence cut to 30 minutes at 20:45).
+
+## 2026-11-16 21:10 — operator: "fix this" means retire the registry and bring the 9.0 to 10.0 history into datawatch
+
+Operator, quoted: "When I said fix this before it can come back, this is the stuff we are working on right now The registry thing it needs to be fixed and removed so it doesn't become an issue and we can start actually using data watch is Managing our project and yes get the historical records from 9 until all of our stuff for 10 properly in there". My earlier reading (the Opus launches and the burn) was wrong: "it" is the registry.
+
+Facts from the previews (nothing written by them):
+- The plans migration had already been applied: 917 plans and links exist. The Release 10.0 and Release 11.0 plans exist. Release 10.0 holds the 9.0 to 10.0 Automata in seven themes.
+- The plans migration preview would create 21 more plans, all from registry rows that name no Automaton, including shipped rows, with titles taken from the status column, and it reports 30 conflicts. Filed as Automaton `bcf30001` (priority 80); it must land before registry rows are converted.
+- Registry rows: 549 in the file, 500+ as records. 224 are shipped rows naming a 9.x release: 161 name an Automaton (their history is in the daemon through it) and 63 name none (their history is only in the row). 325 are decisions, open items, plans, findings and process notes. Outside the daemon: 159 files in docs/plans, 177 parity drafts, 260 historical plan files, 21 reports. The changelog runs 638 versions from 9.0.0 (2026-10-09) to the latest.
+
+Done 2026-11-16 21:10:
+- Release migration applied from its exact preview: 10 Automata attached to Release 10.0. All 19 unplaced Automata (the 10 plus the 11 findings Automata filed today, and the proposal) placed in themes; Release 10.0 now holds 382 items (core automation 139, release tooling 88, sessions 80, security 29, web app 28, docs and research 12, mobile 6) with 1 left unplaced from earlier. The 7 conflicts (items another release plan already holds) were left alone.
+- The retirement proposal `9df40001` (planned on Claude Sonnet, approved, running on pi with all tasks pinned to the node model) inventories the history from 9.0 by kind and writes the proposal; `bcf30001` joined Automation `ae659210`.
+
+Next, in order: the proposal and inventory land; the operator answers the one display question (how a backlog Automation shows on the Projects page); implementation Automata for the conversion of the 63 history-only shipped rows and the 325 other rows, the README export, stopping the post-ship hook from writing registry rows, removing the registry and finding record kinds from every surface, cleaning docs/plans, and retiring the tidy scripts and registry checks.
