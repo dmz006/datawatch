@@ -613,3 +613,11 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - `autonomous.default_quality_gates.enabled` went back to false. With the gate on (turned on at 00:24 in warn-only mode), every task sat in verifying while the gate ran `go test`: one run for the touched packages plus the smoke set (which includes the whole autonomous and server packages) and one `go test ./...`; the autonomous package alone reaches its ten-minute test limit, the host load sat near 10, and every gate ended `quality_gate_invalid` (timed out, killed), which only warns. The cost was paid on every task and nothing was learned, which is the case 5a names for turning a feature back off.
 - The failure is filed as an Automaton in Automation `e8e71305` (a configured wall-clock budget, a smoke set whose packages fit it, one gate run per Automaton, yield to workers under load, and a faster autonomous test suite). The gate comes back on when that ships. Review date: when the Automaton merges.
 - Quote on turning a feature back off only when it blocks throughput: the 5a rule of the supervisor rules, from the operator's 2026-11-16 direction ("We want bugs to show up. We want to turn them on and get things to break so we can fix them.").
+
+## 2026-11-17 05:30 — promotion: git secret scan shadow to enforce
+
+- `git.secret_scan.mode` went from `shadow` to `enforce`: a push that carries a secret is now refused instead of reported. Shadow evidence: 107 scan runs since the daemon started, 0 findings, 0 shadow reports, so no false positive was recorded against the five built-in detectors (private key, AWS access key, GitHub token, generic token, Slack token) with an empty allow-list.
+- Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
+- Exit criterion and rollback: if a push is refused for a value that is not a secret, add its fingerprint to the allow-list (never turn the scan off) and file the detector as a defect; read `secret_scan_stats` at each tick for refusals. Review date: 2026-11-20.
+- Next in order: observer pull.
+- Also this tick: pi lanes were idle with work queued, so decomposition of the two finished-script and launcher-file fixes was started on pi; the merge chain for the leak-check fix is in its merge gates.
