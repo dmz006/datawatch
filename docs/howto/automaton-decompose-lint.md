@@ -515,6 +515,19 @@ writes keep passing after earlier tasks land. A generated script must:
 4. run gofmt only on the listed changed Go files, never a whole package or
    directory.
 
+The same rules area pins the planner to **full file paths verbatim**: every
+file named anywhere in a task title, spec or files list is written exactly
+as its real repo-relative path, in one piece — no space inside the name, no
+ellipsis, no abbreviation, no truncation. Older plans showed the failure the
+rule prevents: a name severed to `docs/plans/2026-11-16-re…`, a stray `Run`
+left where a path was cut from its tail, a report path reduced to prose like
+`Th-final-gate.txt`. The plan-coverage structural check extracts file-name
+tokens that stop at the first space, so it reads a name cut mid-way as a
+missing file and blocks approval until the spec carries the complete path.
+What the rule covers, and why it is a prompt rule rather than a lint rule,
+is in
+[§ The full-file-path rule is always enforced too](#the-full-file-path-rule-is-always-enforced-too).
+
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose

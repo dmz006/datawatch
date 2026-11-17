@@ -228,6 +228,19 @@ A suppressed finding is not hidden — it is **counted**. Read the record and:
   the four filter values pinned at decompose time; if the panel still looks
   like it has noise, confirm those values are the ones you expect before
   concluding a filter is off.
+- **A name cut at a space reads as a different file.** If the spec mentions a
+  file name **cut at a space** — a truncated fragment such as
+  `docs/plans/2026-11-16-re` or a report path written as prose — the
+  structural check extracts the leading fragment as a file name on its own
+  and reports a finding like "names file … which exists neither in the
+  project tree…" even though the real file exists and was planned under its
+  full name. That is a false missing-file finding: the match is by exact
+  name, and the fragment is not a name anything wrote. The plan now pins the
+  planner to **full file paths verbatim** at decompose time — see
+  [the full-file-path rule](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too)
+  — so the symptom is prevented where the plan is written. If you do meet
+  one, the fix is to put the complete path back into the task's spec and
+  files list, not to hunt the tree for the fragment.
 
 See also:
 
