@@ -43,6 +43,11 @@ over routing, in this order:
 Routing is a pure lookup. It calls no model and reads no Automaton content
 beyond the routing input (kind, tags, project, spec size, touched files).
 
+Whichever of those levels supplies the planner, if it is a `claude-code`
+backend with no model and nothing above it named one, the planner session
+starts on the daemon default model, `sonnet`, not the backend's built-in
+default. See [Explicit model policy](explicit-model-policy.md).
+
 ## Rules: order and first match
 
 `rules` is an ordered list. datawatch walks it top to bottom and the **first

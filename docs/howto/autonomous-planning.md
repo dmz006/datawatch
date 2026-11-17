@@ -73,7 +73,7 @@ autonomous:
   enabled: true
   planning_backend: claude-code   # was "decomposition_backend" before v7.0
   planning_effort: high           # was "decomposition_effort"
-  planning_model: ""              # was "decomposition_model" — empty = LLM default
+  planning_model: ""              # was "decomposition_model" — empty = the daemon default model for that backend (sonnet on claude-code), not the backend's built-in default
   max_concurrent_tasks: 1         # tasks of one Automaton run at once; 1 = sequential
 ```
 
@@ -387,7 +387,10 @@ Most specific wins: task → story → Automaton → Automation → global. Set 
 **backend** at the level you want; a model or effort without any
 per-unit backend leaves the verifier on the global path. An explicit
 backend also skips the `verification_backends` pool. Send `""` (or an
-empty field in the PWA) to clear and inherit again.
+empty field in the PWA) to clear and inherit again. A `claude-code`
+verifier that ends up with no model from any of those levels runs on the
+daemon default model, `sonnet`, not the backend's built-in default — see
+[Explicit model policy](explicit-model-policy.md).
 
 ```bash
 # Stronger verifier for one risky task.

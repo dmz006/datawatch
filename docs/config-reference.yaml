@@ -3551,18 +3551,22 @@ autonomous:
   verification_backend: ""
   # BL25 verifier model override. Empty = default to the PRD's own model
   # when verification_backend was also left empty and the PRD's backend was
-  # ask-compatible (v8.36.0); otherwise the resolved backend's own default
-  # model.
+  # ask-compatible (v8.36.0); otherwise the daemon default model for that
+  # backend (sonnet on claude-code — the explicit-model policy, never the
+  # backend's built-in default).
   verification_model: ""
   # v9.10.18 — pinned model for the guardrail JUDGE (rules-review, ci-watch,
   # per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier
   # precedence chain that replaces the old silent backend-default fallback:
   # PRD guardrail_model → task guardrail_model → this field →
   # verification_model → planning_model. Empty = the tier falls through to
-  # the next; if ALL tiers resolve to nothing servable on the judge
-  # backend, the record gets a loud non-retried infra-category block
-  # (ErrNoGuardrailModel) — a pi-family judge NEVER runs on the backend's
-  # built-in default model. Pairing is validated per tier (a bare Claude
+  # the next; a pi-family judge whose tiers all resolve to nothing servable
+  # gets a loud non-retried infra-category block (ErrNoGuardrailModel) and a
+  # pi-family judge NEVER runs on the backend's built-in default model. A
+  # claude-code judge with no model named at the PRD or task level now
+  # resolves to the daemon default (sonnet) instead of that block — the
+  # explicit-model policy; a pin the backend cannot serve is still a loud
+  # failure. Pairing is validated per tier (a bare Claude
   # alias on a pi-family backend, or a provider-qualified model on
   # claude-code, is skipped with a recorded reason).
   guardrail_model: ""
