@@ -482,3 +482,16 @@ Operator, quoted: "Why would you cancel something final,  was it canceled or fin
 - Stale unlanded work: yes. Each of the 49 on the board is trial-merged in a throwaway tree; the clean ones land through the supervisor's chain (which also produces the comparison data the daemon needs) and only real conflicts come to the operator.
 - Pack workflow graphs: added as research first, `docs/plans/2026-11-16-pack-workflow-graph-research.md`: display only, then editable, tied to the pack design (72bc0001); recommendation is to keep datawatch's own graph schema and use LangGraph as an interchange target, not as a second runtime.
 - The `test/` folder in the main checkout is a root-owned 82-byte lockfile left over from 2026-10-20; it is ignored locally and does not need to be removed, but `sudo rm -rf` would clear it.
+
+## 2026-11-16 20:50 — operator: features must ship running; promotion is the supervisor's job
+
+Operator, quoted: "The entire purpose of the local daemon is for us to do this development. We need to have features enabled by default, otherwise we would not have asked for them to be developed. They're features we need. So we can do the automations, we can get DataWatch tested and debugged. We want bugs to show up. We want to turn them on and get things to break so we can fix them. That's the purpose of this. This is what your function is. I've asked for these things to be built. You build and ship them actually running so we can actually use them. That's one of our plans is to start using DataWatch to manage this. You are supervised to shadow the change so we can see if things are not working. What will it take to get things back on track?"
+
+Why it lapsed: the 2026-11-15 rule (turn shipped modes on, at each hourly tick) lived only in memory, not in the tick procedure, so context resets dropped it. The shipped event wake was never switched on, and the daemon supervisor watch had no comparison record, so its agreement never started.
+
+Done 2026-11-16 20:50:
+- `supervisor_loop.wake.enabled` set to true (defaults: 11 event kinds, 30 second coalescing, 20 minute fallback).
+- `autonomous.automation.supervisor_watch.script_output_path` set, and `scripts/supervisor-watch.py --record` runs every 2 minutes from a user systemd timer (`sv-watch-record`, no model call), so the one-day agreement count can start.
+- Step 5a (promotion review) added to the hourly tick in the supervisor rules doc, with this quote.
+
+Next, one per tick, in this order, each read, compared, turned on and checked: the decision gate and the held-question mode (both shadow, read the decision log first), planning routing (its example rows name a premium model, so read the rows before turning it on), default quality gates, post-ship hooks, the scan fix loop and rules grader, scope breadth, plan review mode, tag placement by backend and project, the git secret scan (shadow), the observer pull. Then the five script checks the daemon watch lacks, and retiring the cron watch after one agreed day.
