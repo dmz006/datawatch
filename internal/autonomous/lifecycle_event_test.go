@@ -75,32 +75,80 @@ func TestLifecycle_FanOut(t *testing.T) {
 	}
 }
 
+// A slow subscriber must never hold up publish: the slow subscriber
+// blocks on its delivery until we release it, emit of the whole burst
+// completes in the meantime (a failure mode that would deadlock the
+// test is caught by the generous timeout on the goroutine — emit is
+// designed not to block, so timing out is the failure, not the slow
+// subscriber), the fast subscribers finish, and the parked subscriber
+// gets the events on release (per-subscriber queues give each its own
+// delivery pace; the slow one's queue is larger than the burst, so it
+// holds back, it never drops).
 func TestLifecycle_SlowSubscriberIsolation(t *testing.T) {
 	m := &Manager{}
 	d := m.lifecycleBus()
 	defer d.Close()
 
 	release := make(chan struct{})
-	var once sync.Once
-	unblock := func() { once.Do(func() { close(release) }) }
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
 	defer unblock()
 
-	m.Subscribe(LifecycleFilter{}, func(LifecycleEvent) { <-release })
+	slowStarted := make(chan struct{})
+	var startedOnce sync.Once
+	m.Subscribe(LifecycleFilter{}, func(LifecycleEvent) {
+		startedOnce.Do(func() { close(slowStarted) })
+		<-release // parks here until we release: the "slow subscriber"
+	})
 	fast1, fast2 := &collector{}, &collector{}
 	m.Subscribe(LifecycleFilter{}, fast1.add)
 	m.Subscribe(LifecycleFilter{}, fast2.add)
 
 	const n = 200 // < queue size so the fast subscribers never drop
-	start := time.Now()
-	for i := 0; i < n; i++ {
-		m.emit(taskEvent(i))
+
+	// Run the whole burst in a goroutine: a hanging emit must fail the
+	// test (time out), not stall it. The 5s window is generous and is
+	// only a failure guard — emit never blocks, so every emit completes
+	// immediately and done closes well within it.
+	emitDone := make(chan struct{})
+	go func() {
+		for i := 0; i < n; i++ {
+			m.emit(taskEvent(i))
+		}
+		close(emitDone)
+	}()
+	select {
+	case <-emitDone:
+	case <-time.After(5 * time.Second):
+		unblock()
+		t.Fatalf("%d emits did not complete while a subscriber was parked — emit blocked on a subscriber", n)
 	}
-	if el := time.Since(start); el > 50*time.Millisecond {
-		t.Fatalf("%d emits took %v with a blocked subscriber; emit must not block", n, el)
-	}
+
+	// Provable state: every fast subscriber already received the whole
+	// burst while the slow subscriber was still parked. The slow one's
+	// queue holds the events it has not consumed yet, so none are lost.
 	for _, c := range []*collector{fast1, fast2} {
 		waitFor(t, "fast subscriber", func() bool { return len(c.snapshot()) == n })
 	}
+
+	// The slow subscriber is provably parked: it already started on its
+	// first event (slowStarted closed) and can only unblock via release,
+	// which we still hold.
+	waitFor(t, "slow subscriber parked on its first event", func() bool {
+		select {
+		case <-slowStarted:
+			return true
+		default:
+			return false
+		}
+	})
+	select {
+	case <-release:
+		t.Fatal("release closed before the test closed it — slow subscriber already ran on")
+	default:
+	}
+
+	// Release: the subscriber continues from where it parked.
 	unblock()
 }
 
@@ -110,33 +158,42 @@ func TestLifecycle_QueueOverflowDropsNotBlocks(t *testing.T) {
 	defer d.Close()
 
 	release := make(chan struct{})
-	defer close(release)
-	started := make(chan struct{}, 1)
-	m.Subscribe(LifecycleFilter{}, func(LifecycleEvent) {
-		select {
-		case started <- struct{}{}:
-		default:
-		}
+	started := make(chan struct{})
+	// Park one dedicated subscriber inside the first delivery: while its
+	// callback holds event 0 the queue is empty and nothing drains it, so
+	// a burst of exactly lifecycleQueueSize+extra events leaves exactly
+	// extra in THIS subscriber's dropped counter — regardless of what the
+	// other live subscribers (including the Manager's built-in lifeHistory
+	// recorder) do with their own queues and goroutines.
+	s, cancel := d.subscribeCounted(LifecycleFilter{}, func(LifecycleEvent) {
+		close(started)
 		<-release
 	})
+	defer func() { // run after d.Close is scheduled below only in the success path
+		close(release)
+		cancel()
+	}()
 	m.emit(taskEvent(-1))
-	<-started // goroutine is now stuck inside fn; queue is empty
+	<-started // parked callback holds event 0; queue is empty and undrained
 
 	const extra = 10
-	done := make(chan struct{})
+	emitDone := make(chan struct{})
 	go func() {
 		for i := 0; i < lifecycleQueueSize+extra; i++ {
 			m.emit(taskEvent(i))
 		}
-		close(done)
+		close(emitDone)
 	}()
+	// Safety net only, not an assertion: publish never blocks, so
+	// reaching this far is a genuine hang, not a scheduling flake.
 	select {
-	case <-done:
-	case <-time.After(time.Second):
+	case <-emitDone:
+	case <-time.After(5 * time.Second):
+		close(release)
 		t.Fatal("emit blocked on a full subscriber queue")
 	}
-	if got := d.droppedTotal(); got != extra {
-		t.Fatalf("dropped = %d, want %d", got, extra)
+	if got := s.dropped.Load(); got != extra {
+		t.Fatalf("subscriber dropped %d, want %d", got, extra)
 	}
 }
 

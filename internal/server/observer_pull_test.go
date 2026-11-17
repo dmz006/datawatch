@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -267,11 +268,16 @@ func (tk *testTicker) Stop()                  {}
 
 // testTickers hands out channel-driven tickers so worker goroutines park
 // after their initial fetch instead of running a real schedule.
-type testTickers struct{ list []*testTicker }
+type testTickers struct {
+	mu   sync.Mutex // several collector workers ask for a ticker at once
+	list []*testTicker
+}
 
 func (r *testTickers) new(time.Duration) observer.Ticker {
 	tk := &testTicker{ch: make(chan time.Time, 16)}
+	r.mu.Lock()
 	r.list = append(r.list, tk)
+	r.mu.Unlock()
 	return tk
 }
 

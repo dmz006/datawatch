@@ -86,7 +86,7 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.held', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
@@ -3138,11 +3138,26 @@ function _projectsSectionToggleState(card, collapsed) {
     if (chev) chev.textContent = collapsed ? '▸' : '▾';
   }
 }
+// _stripTagsStable removes tag-shaped spans from a string by repeating the
+// strip until none remain (a fixed-point sanitizer). CodeQL's
+// js/incomplete-multi-character-sanitization (alert 849) flags a single
+// pass of the multi-character pattern /<[^>]*>/ as an incomplete sanitizer;
+// the fixed-point form is the rule's accepted shape. The two forms are
+// behavior-identical for this pattern (one left-to-right pass already
+// leaves no surviving '<' with a surviving '>' after it -- verified by
+// exhaustive string comparison, zero differences), so operator-visible
+// output does not change; the loop makes the stability contract explicit
+// instead of relying on single-pass match semantics.
+function _stripTagsStable(s) {
+  let out = String(s === null || s === undefined ? '' : s);
+  while (/<[^>]*>/.test(out)) out = out.replace(/<[^>]*>/g, '');
+  return out;
+}
 // _projectsSectionCard wraps a section in a card with a title row, a collapse
 // toggle and a body. titleHtml is already escaped; titleText is its plain form.
 function _projectsSectionCard(id, titleHtml, innerHtml, titleText) {
   const collapsed = _projectsSectionCollapsed(id);
-  const plain = titleText === undefined ? String(titleHtml).replace(/<[^>]*>/g, '') : titleText;
+  const plain = titleText === undefined ? _stripTagsStable(titleHtml) : titleText;
   const label = t(collapsed ? 'projects_section_expand' : 'projects_section_collapse', [plain]);
   return `<div class="project-section-card${collapsed ? ' collapsed' : ''}" id="projectSection-${id}" data-section="${id}" data-title="${escHtml(plain)}">` +
     `<div class="project-section-header"><span class="project-section-title">${titleHtml}</span>` +
@@ -5269,7 +5284,7 @@ function _planRecordsFresh(project) {
     project: project || '',
     status: 'idle',      // idle | loading | ready | error | disabled
     kind: 'registry_row',
-    stateFilter: '',
+    states: [],         // selected state keys (a set; [] === all states)
     q: '',
     recs: [],
     total: 0,
@@ -5518,6 +5533,27 @@ function planRecordsBodyHtml(v) {
 
 // planRecordsSectionHtml is the whole Records section for one state object
 // (see _planRecordsFresh). It is empty until the first answer has come, and
+// planRecordsStateChipsHtml builds the card's state chip set for the current
+// view kind: one chip per state of that kind, so a view is filterable by any
+// combination of them — the server accepts the states together as
+// state=one,two,three. The selection has its own cs_state_chips_* key via the
+// shared helper; the chip's own change handler is the mutation path (it seeds
+// the card's mirror and refetches).
+function planRecordsStateChipsHtml(kind, st) {
+  const chips = createStateChipSet({
+    name: 'planRecordsState',
+    items: (Array.isArray(_PLAN_RECORD_STATES[kind]) ? _PLAN_RECORD_STATES[kind] : []).map(function (s) { return { key: s, label: _planRecordsStateLabel(s) }; }),
+    total: (st && st.kind === kind) ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _planRecords.states = sel.slice();
+      _planRecordsLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 // stays empty while the feature is off or not wired.
 function planRecordsSectionHtml(v) {
   if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
@@ -5525,7 +5561,7 @@ function planRecordsSectionHtml(v) {
   const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
   const controls = v.view === 'list'
     ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <div id="planRecordsStateFilter" class="state-chip-row" style="display:inline-block;vertical-align:middle;">${planRecordsStateChipsHtml(kind, v)}</div>
         <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
         <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
         <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
@@ -5571,10 +5607,11 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.states = window._stateChipSets.planRecordsState.get();
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   let url;
   if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
   else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
@@ -5602,13 +5639,16 @@ window.planRecordsSetKind = function(kind) {
   const st = _planRecords;
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
-  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
+  st.kind = kind; st.states = []; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
-  _planRecords.stateFilter = String(state || '');
+  const csv = String(state || '');
+  _planRecords.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
 // planRecordsSearchInput waits for a pause in typing, then calls the search
@@ -5842,7 +5882,7 @@ function _plansBrowserFresh(project) {
     backlog: [], backlogTotal: 0,
     error: '', notice: '',
     seq: 0,
-    q: '', stateFilter: '',
+    q: '', states: [],  // selected state keys (a set; [] === all states)
     // archived is the archive scope (GET ?archived=): 'exclude' is the default
     // and sends no parameter, 'include' shows archived plans after the live
     // ones, 'only' shows only them.
@@ -5988,7 +6028,8 @@ function _plansLower(s) { return String(s || '').toLowerCase(); }
 // loaded Automata, or a registry row or finding linked to it matches. The row
 // and finding part is answered by the browse search route (matchPlans).
 function _plansMatch(st, p) {
-  if (st.stateFilter && p.state !== st.stateFilter) return false;
+  const sel = Array.isArray(st.states) ? st.states : [];
+  if (sel.length && sel.indexOf(p.state) < 0) return false;
   const q = _plansLower(st.q).trim();
   if (!q) return true;
   if (_plansLower(p.title).indexOf(q) >= 0) return true;
@@ -6013,7 +6054,12 @@ window.plansBrowserSearchInput = function(val) {
     _plansBrowserPaint();
   }, 250);
 };
-window.plansBrowserSetState = function(v) { _plansBrowser.stateFilter = String(v || ''); _plansBrowserPaint(); };
+window.plansBrowserSetState = function(v) {
+  const csv = String(v || '');
+  if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
+  _plansBrowser.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  _plansBrowserPaint();
+};
 
 // ── HTML ────────────────────────────────────────────────────────────────────
 function _plansStateLabel(state) {
@@ -6122,7 +6168,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
   const shown = list.filter(p => _plansMatch(st, p));
-  const filtering = !!(st.stateFilter || st.q.trim());
+  const filtering = !!(st.states.length || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
     ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
@@ -6138,8 +6184,8 @@ function plansBrowserListHTML(st) {
   const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
   const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
   let html = notice + main.rows + main.more;
-  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
-    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
   if (st.backlogTotal > 0 || back.count) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
@@ -6149,15 +6195,33 @@ function plansBrowserListHTML(st) {
   return html;
 }
 
+// plansBrowserStateChipsHtml is the browser's state filter as a multi-select
+// chip set: one chip per registry state, any combination selectable. The
+// selection has its own cs_state_chips_* key via the shared helper, and the
+// chip's own change handler is the mutation path (seeds the mirror, repaints).
+function plansBrowserStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'plansBrowserState',
+    items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _plansBrowser.states = sel.slice();
+      _plansBrowserPaint();
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function plansBrowserHTML(p) {
   const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
   _plansBrowserEnsureUnattributed();
-  const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  const stateSel = plansBrowserStateChipsHtml(st);
   const archOpts = ['exclude', 'include', 'only'].map(v => `<option value="${v}"${st && st.archived === v ? ' selected' : ''}>${escHtml(t(v === 'exclude' ? 'plans_release_archived_live' : v === 'include' ? 'plans_release_archived_with' : 'plans_release_archived_only'))}</option>`).join('');
   const docsUrl = '/diagrams.html#docs/howto/plan-records.md';
   const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
     <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
-    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select>
+    <div id="plansBrowserState" class="state-chip-row" style="vertical-align:middle;">${stateSel}</div>
     <select id="plansBrowserArchived" class="form-select" aria-label="${escHtml(t('plans_release_archived_label'))}" style="font-size:12px;" onchange="plansReleaseSetArchived(this.value)">${archOpts}</select>
     <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_docs_help'))} <a href="${escHtml(docsUrl)}" style="font-size:11px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>
     <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
@@ -6997,7 +7061,7 @@ const _RECORDS_TAB_PAGE = 50;
 const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
 
 function _recordsTabFresh(project) {
-  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+  return { project: project || '', status: 'idle', q: '', kind: '', states: [], rows: [], total: 0, error: '', seq: 0 };
 }
 let _recordsTab = _recordsTabFresh('');
 
@@ -7009,10 +7073,11 @@ function _recordsTabLoad(more) {
   const st = _recordsTab;
   const seq = ++st.seq;
   if (!more) st.status = 'loading';
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.states = window._stateChipSets.recordsTabState.get();
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
   if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
   if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
     if (_recordsTab !== st || seq !== st.seq) return;
     const rows = r && Array.isArray(r.records) ? r.records : [];
@@ -7057,11 +7122,32 @@ function recordsTabListHTML(st) {
   return status + st.rows.map(_recordsTabRowHTML).join('') + more;
 }
 
+// recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
+// chip set: one chip per state of the selected plan/finding type, any
+// combination selectable (the server accepts the states as
+// state=one,two,three). Its selection has its own cs_state_chips_* key via
+// the shared helper; the chip's own change handler is the mutation path
+// (seeds the tab's mirror and reloads).
+function recordsTabStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'recordsTabState',
+    items: _RECORDS_TAB_STATES.map(function (s) { return { key: s, label: _recordsTabStateLabel(s) }; }),
+    total: (st && st.status === 'ready') ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _recordsTab.states = sel.slice();
+      _recordsTabLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function recordsTabHTML(p) {
   const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
   const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
   const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
-  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const stateSel = `<div id="recordsTabStateFilter" class="records-tab-state-filter state-chip-row" style="vertical-align:middle;">${recordsTabStateChipsHtml(st)}</div>`;
   const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
   return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
@@ -7083,7 +7169,12 @@ window.recordsTabSearchInput = function(v) {
   window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
 };
 window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
-window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) {
+  const csv = String(v || '');
+  _recordsTab.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
+  return _recordsTabLoad(false);
+};
 window.recordsTabMore = function() { return _recordsTabLoad(true); };
 
 // recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
@@ -9872,6 +9963,161 @@ function _sheetRestore(view, snap, patchFn) {
   return root;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED multi-select state chip set — ONE reusable helper.
+//
+// Renders + manages the Sessions-page status-filter chip row for any other
+// page. Reuses the Sessions implementation's pieces and rules verbatim:
+// same container marker (`.state-filter-chips`), same chip class family
+// (`.backend-filter-badge`, `.active`, `.badge-count`), same colored state
+// dot, same native <button> with aria-pressed, same "Label (count)" tooltip,
+// same multi-select semantics (an empty selection === all states; a second
+// click clears that one chip; the "All" chip clears the whole group; 0-count
+// chips hide until picked, then stay visible so the pick can be backed out)
+// and the same per-viewer localStorage pattern — Sessions persists under
+// `cs_session_state_chips`; every other page gets its OWN `cs_state_chips_<name>`
+// key and never shares one with another page.
+//
+//   const chips = createStateChipSet({
+//     name: 'alerts-kind',            // → storage key cs_state_chips_alerts_kind
+//     total: 12,                      // optional — the "All" chip's count
+//     items: [                        // display order
+//       { key: 'failed', label: t('session_chip_failed'),
+//         count: 3, color: 'var(--error,#ef4444)' },
+//     ],
+//     onChange: (selected) => {},     // optional — after every change
+//   });
+//   chips.html();        // '<div class="state-filter-chips state-chip-set">…</div>' — re-call after data changes
+//   chips.summaryHTML(); // compact line: removable chips + "Clear all" ('' when nothing selected)
+//   chips.get();         // selected keys; [] === all states
+//   chips.toggle(key); chips.clear(); chips.isSelected(key); chips.match(key);
+//
+// Every page passes its OWN `name` so its filter is stored under its own
+// per-viewer key — two pages must not reuse one, or their filters would
+// track each other.
+// ─────────────────────────────────────────────────────────────────────────────
+window._stateChipSets = window._stateChipSets || {};
+
+function createStateChipSet(opts) {
+  const o = opts || {};
+  const name = String(o.name || 'chips').replace(/[^a-zA-Z0-9]+/g, '_');
+  const storageKey = 'cs_state_chips_' + name;
+  const items = (Array.isArray(o.items) ? o.items : [])
+    .filter(it => it && (it.key != null))
+    .map(it => ({
+      key: String(it.key),
+      label: String((it.label != null && it.label !== '') ? it.label : it.key),
+      color: it.color ? String(it.color) : '',
+      count: (it.count != null) ? it.count : null,
+    }));
+  const known = new Set(items.map(it => it.key));
+  let sel = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(raw)) sel = raw.map(String).filter(k => known.has(k));
+  } catch (_) { sel = []; } // corrupt/absent entry: start from "all"
+
+  function persist(next) {
+    try {
+      if (next.length) localStorage.setItem(storageKey, JSON.stringify(next));
+      else localStorage.removeItem(storageKey); // empty set === all: don't keep an empty array around
+    } catch (_) { /* storage blocked: the selection still lives in memory for this page */ }
+  }
+  function emit(next) {
+    if (typeof o.onChange === 'function') {
+      try { o.onChange(next.slice()); } catch (_) { /* a page callback must never kill the control */ }
+    }
+  }
+  function chipInner(it) {
+    // Same dot + label + count composition as _sessionsSheetStateChips().
+    return (it.color ? `<span style="color:${it.color};">●</span> ` : '')
+      + escHtml(it.label)
+      + (it.count != null ? `<span class="badge-count">${it.count}</span>` : '');
+  }
+
+  const api = {
+    name: name,
+    storageKey: storageKey,
+    // Empty array === all states selected.
+    get: () => sel.slice(),
+    isSelected: key => sel.indexOf(String(key)) >= 0,
+    // Row predicate for the page's list: passes everything when nothing is picked.
+    match: stateKey => sel.length === 0 || sel.indexOf(String(stateKey)) >= 0,
+    toggle: function (key) {
+      key = String(key);
+      if (!known.has(key)) return;
+      const next = sel.slice();
+      const i = next.indexOf(key);
+      if (i >= 0) next.splice(i, 1); else next.push(key); // second click clears that one chip
+      sel = next;
+      persist(next); emit(next);
+    },
+    clear: function () { // the "All" chip / summary "Clear all": whole group → all states
+      if (!sel.length) return;
+      sel = [];
+      persist(sel); emit(sel);
+    },
+    html: function () {
+      const allLabel = _stx('state_chips_all', 'All');
+      const hasTotal = (o.total != null) && o.total >= 0;
+      const allActive = sel.length === 0;
+      const allTitle = hasTotal ? `${allLabel} (${o.total})` : allLabel;
+      const allBtn = `<button class="backend-filter-badge ${allActive ? 'active' : ''}" type="button" onclick="stateChipsClear('${escJsAttr(name)}')" title="${escAttr(allTitle)}" aria-pressed="${allActive ? 'true' : 'false'}">${escHtml(allLabel)}${hasTotal ? `<span class="badge-count">${o.total}</span>` : ''}</button>`;
+      // GATE (operator 2026-05-10), same rule as Sessions: hide 0-count chips
+      // unless already picked; chips without a count are always shown.
+      const visible = items.filter(it => it.count == null || it.count > 0 || sel.indexOf(it.key) >= 0);
+      const chipsHtml = visible.map(it => {
+        const active = sel.indexOf(it.key) >= 0;
+        const title = (it.count != null) ? `${it.label} (${it.count})` : it.label;
+        return `<button class="backend-filter-badge ${active ? 'active' : ''}" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(it.key)}')" title="${escAttr(title)}" aria-pressed="${active ? 'true' : 'false'}"${it.color ? ` style="border-left:3px solid ${it.color};"` : ''}>${chipInner(it)}</button>`;
+      }).join('');
+      return `<div class="state-filter-chips state-chip-set">${allBtn}${chipsHtml}</div>`;
+    },
+    summaryHTML: function () {
+      // Compact summary line with a removable chip per selected value + a
+      // "Clear all" (same shape as the Sessions selected-filter line).
+      if (!sel.length) return '';
+      const byKey = {};
+      items.forEach(it => { byKey[it.key] = it; });
+      const selChips = sel.map(k => {
+        const it = byKey[k] || { label: k, color: '', count: null };
+        const removeTitle = _stx('state_chips_remove', 'Remove %1$s').replace('%1$s', it.label);
+        return `<button class="backend-filter-badge active" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(k)}')" title="${escAttr(removeTitle)}">${chipInner(it)}<span aria-hidden="true">✕</span></button>`;
+      }).join('');
+      const label = _stx('state_chips_selected', 'Selected filters');
+      const clearBtn = `<button type="button" class="state-chip-clear-all" onclick="stateChipsClear('${escJsAttr(name)}')">${escHtml(_stx('state_chips_clear_all', 'Clear all'))}</button>`;
+      return `<div class="state-chip-summary"><span class="state-chip-label">${escHtml(label)}:</span>${selChips}${clearBtn}</div>`;
+    },
+  };
+  // Registry the inline onclick handlers dispatch through (re-created on
+  // every page render with the same name — the fresh instance wins).
+  window._stateChipSets[name] = api;
+  return api;
+}
+window.createStateChipSet = createStateChipSet;
+window.stateChipsToggle = function (name, key) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.toggle(key);
+};
+window.stateChipsClear = function (name) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.clear();
+};
+
+// _stateChipsReconcile brings a built chip set's selection in line with a
+// comma-separated state list (a programmatic setter's new value) without
+// letting the chip's own change handler load the page for every toggle.
+function _stateChipsReconcile(chips, csv) {
+  const want = String(csv || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  window._stateChipsSeeding = true;
+  try {
+    chips.get().forEach(function (k) { if (want.indexOf(k) < 0) chips.toggle(k); });
+    want.forEach(function (k) { if (!chips.isSelected(k)) chips.toggle(k); });
+  } finally {
+    window._stateChipsSeeding = false;
+  }
+}
+
 // Shared chip markup so the full paint and the in-place patch always agree
 // byte-for-byte (the patch skips the write when they already do).
 function _sessionsSheetWatchBtnHTML() {
@@ -10770,6 +11016,9 @@ function showCardCmds(fullId) {
 
 function cardHandleQuickCmd(sel, fullId) {
   const val = sel.value;
+  // The option's display text ("approve") is the label the operator
+  // pressed; the value ("yes") is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -10779,7 +11028,7 @@ function cardHandleQuickCmd(sel, fullId) {
     return;
   }
   event.stopPropagation();
-  cardSendCmd(fullId, val);
+  cardSendCmd(fullId, val, label);
 }
 
 function cardSendCustom(fullId, shortId) {
@@ -10796,7 +11045,7 @@ function cardSendKey(fullId, keyName) {
   showToast('Sent: ' + keyName, 'success', 1500);
 }
 
-function cardSendCmd(fullId, cmd) {
+function cardSendCmd(fullId, cmd, label) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
   } else if (cmd === '__esc__') {
@@ -10816,7 +11065,12 @@ function cardSendCmd(fullId, cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: fullId, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(fullId, label || cmd, cmd, () => {
+      send('send_input', { session_id: fullId, text: cmd });
+    });
+    return;
   }
   showToast('Sent', 'success', 1500);
 }
@@ -13047,6 +13301,9 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     const v = String(s || '').toLowerCase();
     if (['completed', 'approved', 'done', 'passed'].includes(v)) return 'var(--success,#10b981)';
     if (['failed', 'rejected', 'cancelled', 'blocked', 'error'].includes(v)) return 'var(--error)';
+    // held = a deliberate operator pause: a neutral color of its own,
+    // never the error color.
+    if (v === 'held') return 'var(--text2,#94a3b8)';
     if (['waiting', 'needs_review', 'paused', 'pending', 'queued'].includes(v)) return 'var(--warning,#f59e0b)';
     return 'var(--accent2,#60a5fa)';
   };
@@ -13502,14 +13759,18 @@ window.stopArrowRepeat = function() {
 };
 
 // GH#172 D68 — chat quick-reply chips (Yes/No/Stop), shown only while a
-// session is waiting_input. Fills the composer and sends through the
-// same path as a typed reply (tmux or channel routing already handled
-// inside sendSessionInput).
+// session is waiting_input. Routed through the open-question gate: with an
+// open question for this session the chip answers it (nothing typed); with
+// none it fills the composer and sends through the same path as a typed
+// reply (tmux or channel routing already handled inside sendSessionInput).
 function chatQuickReply(text) {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  inputEl.value = text;
-  sendSessionInput();
+  if (!state.activeSession) { inputEl.value = text; sendSessionInput(); return; }
+  quickReplyRoute(state.activeSession, text, text, () => {
+    inputEl.value = text;
+    sendSessionInput();
+  });
 }
 
 // Image-send pending indicator — while a session input carrying
@@ -14584,6 +14845,9 @@ function loadSavedCmdsQuick(sessionId) {
 
 function handleQuickCmd(sel) {
   const val = sel.value;
+  // The option's display text is the label the operator pressed; the value
+  // is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -14608,7 +14872,7 @@ function handleQuickCmd(sel) {
     }).catch(err => showToast('Guardrail error: ' + String(err), 'error', 3000));
     return;
   }
-  sendSavedCmd(val);
+  sendSavedCmd(val, label);
 }
 
 function sendCustomCmd() {
@@ -14626,7 +14890,7 @@ function hideCustomCmd() {
   if (input) input.value = '';
 }
 
-function sendSavedCmd(cmd) {
+function sendSavedCmd(cmd, label) {
   if (!state.activeSession) return;
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: state.activeSession, text: '' });
@@ -14649,7 +14913,12 @@ function sendSavedCmd(cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: state.activeSession, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(state.activeSession, label || cmd, cmd, () => {
+      send('send_input', { session_id: state.activeSession, text: cmd });
+    });
+    return;
   }
 }
 
@@ -16033,6 +16302,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  // The held-Automata group (Inbox) and the hold dialog's help line both
+  // open the "Held Automata" section of the hold how-to (anchor
+  // held-automata), through the group's own key.
+  held_automata_inbox_title: 'howto/automaton-hold.md#held-automata',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -18623,27 +18896,27 @@ function buildComputeNodeForm(n) {
         <input id="fe_hw_arch" class="form-input" placeholder="Arch" value="${escHtml(hw.arch||'')}" />
         <input id="fe_hw_gpu_vendor" class="form-input" placeholder="GPU vendor" value="${escHtml(hw.gpu_vendor||'')}" />
         <input id="fe_hw_gpu_model" class="form-input" placeholder="GPU model" value="${escHtml(hw.gpu_model||'')}" />
-        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${hw.gpu_count||''}" />
-        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${hw.memory_gb||''}" />
-        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${hw.cpu_cores||''}" />
+        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${escHtml(hw.gpu_count||'')}" />
+        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${escHtml(hw.memory_gb||'')}" />
+        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${escHtml(hw.cpu_cores||'')}" />
       </div>
     </div>
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
-    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
+    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${escHtml(cap.max_concurrent_models||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
-    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
+    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${escHtml(n.max_concurrent_sessions||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
-    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
+    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${escHtml(n.session_slots||'')}" />
     <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
          as typed, so the three fields round-trip through the collector. -->
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
-    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${n.verifier_slots == null ? '' : n.verifier_slots}" />
+    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${escHtml(n.verifier_slots == null ? '' : n.verifier_slots)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_min_free_mem_mb')||'Verifier min free memory, MB (empty = default, 0 = off)')}</label>
-    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb}" />
+    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_context_mb')||'Verifier context, MB (0 = no suggestion)')}</label>
-    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${n.verifier_context_mb == null ? '' : n.verifier_context_mb}" />
+    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_context_mb == null ? '' : n.verifier_context_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
-    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
+    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${escHtml(n.scheduling_priority||50)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_compute_tags', (n.tags||[]).join(', '), { freeform: true, placeholder: 'gpu, high-memory…' })}
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
@@ -18653,7 +18926,11 @@ function buildComputeNodeForm(n) {
     <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
       <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
         <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+        <!-- CodeQL js/xss-through-dom (alert 850): n.name is operator
+             textarea input embedded as a single-quoted JS literal inside the
+             inline handler; escHtml alone is defeated by the HTML attribute
+             decode step, so use escJsAttr (BL394 §3h). -->
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
       </div>
       <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
     </div>
@@ -19004,9 +19281,9 @@ function buildLLMForm(l) {
     <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="${l.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', l.api_key_ref_prefix ? ' — '+l.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" />
     ${l.api_key_ref_present ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref_hint')||'Leave blank to keep the current key. Type a new value to replace it.')}</div>` : ''}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
-    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
+    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${escHtml(l.timeout_seconds||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
+    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${escHtml(l.max_inflight||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
@@ -19260,11 +19537,11 @@ window._renderLLMEditPanel = function(existing) {
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
-        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
+        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${escHtml(existing.timeout_seconds||'')}" placeholder="0" />
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
+        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${escHtml(existing.max_inflight||'')}" placeholder="0" />
         <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
       </div>
       <div class="wizard-field">
@@ -19291,11 +19568,11 @@ window._renderLLMEditPanel = function(existing) {
         <div style="display:flex;gap:6px;">
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_cols')||'Console width (cols)')}</label>
-            <input id="llmEditCols" type="number" min="0" class="form-input" value="${existing.console_cols||''}" placeholder="120" />
+            <input id="llmEditCols" type="number" min="0" class="form-input" value="${escHtml(existing.console_cols||'')}" placeholder="120" />
           </div>
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_rows')||'Console height (rows)')}</label>
-            <input id="llmEditRows" type="number" min="0" class="form-input" value="${existing.console_rows||''}" placeholder="40" />
+            <input id="llmEditRows" type="number" min="0" class="form-input" value="${escHtml(existing.console_rows||'')}" placeholder="40" />
           </div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -19782,12 +20059,12 @@ window.openComputeAddPanel = function(existingNode, prefill) {
             <input id="computeNewTLSSkip" type="checkbox" onchange="computeTLSModeChanged()" ${initTLSSkip ? 'checked' : ''} ${!initTLSSkip && (initTLSCA || initTLSFP) ? 'disabled' : ''} />
             ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
           </label>
-          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for the probes of this node (model pulls still verify it). Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
             <input id="computeNewVerifyTLS" type="checkbox" ${initVerifyTLS ? 'checked' : ''} />
-            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls')}${defsLink('compute_verify_tls')}
+            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls (always on; kept for compatibility)')}${defsLink('compute_verify_tls')}
           </label>
-          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.')}</div>
+          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'Kept for configuration compatibility. Model pulls to this node always verify its certificate against the system roots, plus any tls_ca_file or tls_cert_fingerprint set on the node.')}</div>
         </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
@@ -19814,7 +20091,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_port')||'Port')}</label>
-                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${initDN.port||''}" />
+                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${escHtml(initDN.port||'')}" />
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_container_name')||'Container name (optional)')}</label>
@@ -19857,7 +20134,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_timeout')||'Timeout (seconds)')}</label>
-                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${initDP.timeout_seconds||''}" />
+                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${escHtml(initDP.timeout_seconds||'')}" />
               </div>
             </div>
           </div>
@@ -19875,16 +20152,16 @@ window.openComputeAddPanel = function(existingNode, prefill) {
           <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" value="${escHtml(hw.arch||'')}" />
           <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" value="${escHtml(hw.gpu_vendor||'')}" />
           <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" value="${escHtml(hw.gpu_model||'')}" />
-          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${hw.gpu_count||''}" oninput="computeRecomputeMax()" />
+          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${escHtml(hw.gpu_count||'')}" oninput="computeRecomputeMax()" />
           <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" value="${cap.gpu_mem_gb && hw.gpu_count ? Math.round(cap.gpu_mem_gb / Math.max(1, hw.gpu_count)) : ''}" oninput="computeRecomputeMax()" />
-          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${hw.memory_gb||''}" />
-          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${hw.cpu_cores||''}" />
+          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${escHtml(hw.memory_gb||'')}" />
+          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${escHtml(hw.cpu_cores||'')}" />
         </div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
         <div style="display:flex;gap:6px;align-items:center;">
-          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${cap.max_concurrent_models||''}" />
+          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${escHtml(cap.max_concurrent_models||'')}" />
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
       </div>
@@ -19901,7 +20178,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
           <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
         </div>
         <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
@@ -25480,6 +25757,7 @@ const GENERAL_CONFIG_FIELDS = [
     // need a fresh measurement with this much free memory left. 0 or unset is the default.
     { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier min free memory (MB; unset = 1024, 0 = check off)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', placeholder: '1024' },
     { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom max age (hours; 0 or unset = 24)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', placeholder: '24' },
+    { key: 'autonomous.reaped_branch_backup_days', label: 'Reaped Automaton branch backup kept (days; 0 or unset = 30)', labelKey: 'settings_reaped_branch_backup_days', type: 'number', placeholder: '30' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
@@ -25567,6 +25845,11 @@ const GENERAL_CONFIG_FIELDS = [
     // turns the live loop detector compares ("Pi worker observability" in
     // docs/operations.md). 0 turns loop detection off (default 3).
     { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
+    // Daily pending-branch alert: once per calendar day, one alert naming the
+    // oldest pending Automaton branch when more than the threshold wait for
+    // cleanup (default on, threshold 3; 0 alerts on any pending branch).
+    { key: 'autonomous.unlanded_alert_enabled', label: 'Daily pending-branch alert', labelKey: 'settings_unlanded_alert_enabled', helpKey: 'settings_unlanded_alert_enabled_help', type: 'toggle', default: true },
+    { key: 'autonomous.unlanded_alert_threshold', label: 'Pending-branch alert threshold (default 3)', labelKey: 'settings_unlanded_alert_threshold', helpKey: 'settings_unlanded_alert_threshold_help', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', labelKey: 'settings_auto_fix_retries', helpKey: 'settings_auto_fix_retries_help', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
@@ -25739,6 +26022,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.merge_pending_include_terminal', label: 'Automaton merge-pending check covers terminal Automata (archived, needs_review, blocked and failed, beside completed; default on)', labelKey: 'settings_automation_merge_pending_include_terminal', type: 'toggle' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
@@ -30665,23 +30949,29 @@ function _serverChoiceSettleBoot() {
   }
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (name) => {
+    let timeoutId = null;
+    // finish(name, saveAll) commits the choice. The fallback save only runs
+    // through this guard — once a validated restore has settled, the pending
+    // settle timeout must not be able to overwrite the saved value (or a
+    // choice the user made in the meantime) with 'all'.
+    const finish = (name, saveAll) => {
       if (settled) return;
       settled = true;
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (saveAll) _serverChoiceSave('all'); // stale or unvalidatable: persist the fallback
       state.activeServer = name;
       resolve(name);
     };
     _onServerListReady(() => {
       if (_pickerServers().some(s => s.name === choice)) {
-        finish(choice); // validated: the saved peer is still listed and enabled
+        finish(choice, false); // validated: the saved peer is still listed and enabled
       } else {
-        _serverChoiceSave('all'); // stale: peer removed or disabled
-        finish('all');
+        finish('all', true); // stale: peer removed or disabled
       }
     });
     // The list never arrived (the local daemon's /api/servers is down or
     // slow): do not hold boot open — an unvalidatable choice is All.
-    setTimeout(() => { _serverChoiceSave('all'); finish('all'); }, _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
+    timeoutId = setTimeout(() => finish('all', true), _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
   });
 }
 
@@ -32958,6 +33248,7 @@ const _AUTOMATA_STATE_RANK = {
   revisions_asked:  0,
   blocked:          1,
   paused:           1,
+  held:             3,
   running:          2,
   decomposing:      2,
   approved:         3,
@@ -33003,7 +33294,7 @@ window.toggleAutomataWatchFilter = function() {
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','held','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 // _automataBaseList is the Automata list before the tag and facet filters: the
@@ -33339,6 +33630,21 @@ function renderAutomataCard(prd, alsoInHtml) {
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
     : '';
+  // Hold / Release / Extend — the held Automaton's card actions. Hold is a
+  // pause, not a block: the card button stays visible on every state that
+  // is still holdable (server side is authoritative; running/planning/
+  // completed/cancelled/archived refuse a hold), and Release + Extend only
+  // on a held card. Expiry never auto-releases — the card keeps both
+  // buttons and the "ready to review" line.
+  const holdBtn = status !== 'held' && ['draft','needs_review','approved','revisions_asked','paused','blocked','failed'].includes(status)
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_hold')||'Put this Automaton on hold')}" onclick="event.stopPropagation();automataHold(${escId})">⏸ ${escHtml(t('automaton_hold_action')||'Hold')}</button>`
+    : '';
+  const releaseBtn = status === 'held'
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automaton_hold_tooltip_release')||'Release this held Automaton')}" onclick="event.stopPropagation();automataRelease(${escId})">▶ ${escHtml(t('automaton_hold_release')||'Release')}</button>`
+    : '';
+  const extendBtn = status === 'held'
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_extend')||'Extend this hold')}" onclick="event.stopPropagation();automataExtend(${escId})">↻ ${escHtml(t('automaton_hold_extend')||'Extend')}</button>`
+    : '';
   // Pin and watch sit in the tile's overflow menu; the marks show their state
   // in the header while the menu is closed.
   const isWatched = _automataState.watched.has(id);
@@ -33355,6 +33661,10 @@ function renderAutomataCard(prd, alsoInHtml) {
   const full = _automataFullPrd(prd);
   const counts = _tileAutomataCounts(prd);
   const held = _prdHeldBadgeHTML(prd);
+  // The held Automaton's hold record: reason, condition, who/when and the
+  // look-again line (or the "ready to review" line once expired). Shown on
+  // the card body and in the detail view; a release drops it.
+  const holdRec = (status === 'held' || (prd.hold || prd.Hold)) ? _automatonHoldRecordHtml(prd) : '';
   const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
     </details>`;
@@ -33381,9 +33691,9 @@ function renderAutomataCard(prd, alsoInHtml) {
     alsoInHtml,
     updatedAt: prd.updated_at,
     nowMs: Date.now(),
-    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${holdBtn}${releaseBtn}${extendBtn}${approveBtn}`,
     menuHtml: `${watchItem}${pinItem}`,
-    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    bodyHtml: `${position}${holdRec ? `<div class="automaton-hold-record">${holdRec}</div>` : ''}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
     afterHtml: storiesDetail + graphDetail,
   });
 }
@@ -33485,6 +33795,163 @@ window.automataCancel = function(id, status) {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
       .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
       .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  });
+};
+
+// ── Automaton hold: dialog, actions, record line ────────────────────────
+// Holding is a deliberate pause (the Automaton stops advancing, it is not
+// failed or blocked). The same POST /hold endpoint places and extends a
+// hold; the dialog differs only in whether a previous reason carries over.
+// Release is POST /release_hold and restores the status the Automaton had
+// before the hold. Expiry never releases: an expired hold keeps its
+// buttons and gains the "ready to review" line (server wording in
+// next_look_text, mirrored here from the hold record for the card views).
+
+// The read view's look-again line, localized. The server already computes
+// it ("looked at again on <date>", "no date set", "hold expired, ready to
+// review") in next_look_text; we render the local wording from the fields
+// so the UI copy is translated.
+function _automatonHoldLookAgainText(h) {
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  return !isNaN(untilTs) && untilTs < Date.now() ? t('automaton_hold_expired') : t('automaton_hold_no_date');
+}
+
+// _automatonHoldRecordHtml renders the hold record lines: reason,
+// condition, who/when, and the look-again wording. Pure; the only outside
+// reads are the hold fields on the PRD (camelCase or, from the detail GET,
+// PascalCase) which are read once here.
+function _automatonHoldRecordHtml(prd) {
+  const h = (prd && (prd.hold || prd.Hold)) || null;
+  if (!h) return '';
+  const dt = v => { const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); };
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  const expired = h.expired === true || (!isNaN(untilTs) && untilTs < Date.now());
+  const lines = [];
+  if (h.reason) lines.push(`<div class="automaton-hold-line"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(h.reason)}</div>`);
+  if (h.condition) lines.push(`<div class="automaton-hold-line" style="color:var(--text2);"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(h.condition)}</div>`);
+  const by = [h.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(h.held_by) : '', h.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(dt(h.held_at)) : ''].filter(Boolean).join(' · ');
+  lines.push(`<div class="automaton-hold-line" style="color:var(--text2);font-size:11px;">${by || escHtml(t('automaton_hold_no_date'))}</div>`);
+  lines.push(`<div class="automaton-hold-line automaton-hold-lookagain">${escHtml(expired ? t('automaton_hold_expired') : (!isNaN(untilTs) ? t('automaton_hold_until_label') + ': ' + escHtml(dt(h.until)) : t('automaton_hold_no_date')))}</div>`);
+  return `<div class="automaton-hold-record" style="margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(120,120,140,0.06);">${lines.join('')}</div>`;
+}
+window._automatonHoldRecordHtml = _automatonHoldRecordHtml;
+
+// _automatonHoldValidate checks the dialog fields. A new hold must carry a
+// reason; an extension may restate the same one. until and condition stay
+// optional; the server parses until (RFC 3339, a date, or a duration).
+function _automatonHoldValidate(fields, extend) {
+  const reason = (fields && fields.reason) ? String(fields.reason).trim() : '';
+  if (!reason) {
+    const err = new Error(t('automaton_hold_reason_required') || t('automaton_hold_reason_prompt')); // "A reason is required for the hold"
+    err.field = 'reason';
+    return { ok: false, error: err };
+  }
+  const payload = {
+    reason,
+    condition: (fields.condition) ? String(fields.condition).trim() : '',
+    until: (fields.until) ? String(fields.until).trim() : '',
+    actor: 'operator',
+  };
+  return { ok: true, payload };
+}
+window._automatonHoldValidate = _automatonHoldValidate;
+
+// automatonHoldSubmit validates and POSTs to /hold. It never throws:
+// an empty reason rejects with a reason-marked error; a transport failure
+// reports through showError and resolves (the card reloads either way, so
+// the state the server actually has is what the UI shows next).
+window.automatonHoldSubmit = function(id, fields, extend) {
+  const v = _automatonHoldValidate(fields, !!extend);
+  if (!v.ok) return Promise.reject(v.error);
+  const doneKey = extend ? 'automaton_hold_toast_extended' : 'automaton_hold_toast_set';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/hold', { method: 'POST', body: JSON.stringify(v.payload) })
+    .then(() => { showToast(t(doneKey), 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
+};
+
+// automataHold / automataExtend open the dialog in a browser; with fields
+// passed directly they submit immediately (the node tests take this path).
+window.automataHold = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, false);
+  return _automatonHoldDialogOpen(id, false);
+};
+window.automataExtend = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, true);
+  return _automatonHoldDialogOpen(id, true);
+};
+
+// _automatonHoldDialogOpen is the modal dialog: a required reason plus
+// optional until and condition. Submitting with an empty reason leaves the
+// dialog open and shows the reason error; it never POSTs.
+function _automatonHoldDialogOpen(id, extend) {
+  if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function') return Promise.resolve();
+  const existing = document.getElementById('automationHoldDialog');
+  if (existing && typeof existing.remove === 'function') existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'automationHoldDialog';
+  modal.className = 'confirm-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  const title = extend ? (t('automaton_hold_extend') || 'Extend') : (t('automaton_hold_action') || 'Hold');
+  const blurb = t(extend ? 'automaton_hold_tooltip_extend' : 'automaton_hold_tooltip_hold');
+  const helpLine = (typeof heldHoldDialogHelpLine === 'function') ? heldHoldDialogHelpLine() : '';
+  modal.innerHTML = `<div class="confirm-modal automation-hold-dialog" aria-label="${escHtml(title)}">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}${helpLine}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_reason_prompt'))}</span>
+        <textarea id="automationHoldReason" rows="2" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;"></textarea>
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_until_prompt'))}</span>
+        <input id="automationHoldUntil" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_condition_prompt'))}</span>
+        <input id="automationHoldCondition" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+    </div>
+    <div id="automationHoldError" style="display:none;font-size:12px;color:var(--error);margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" style="font-size:12px;padding:4px 16px;" id="automationHoldCancel">${escHtml(t('action_cancel'))}</button>
+      <button type="button" class="btn-primary" style="font-size:12px;padding:4px 16px;" id="automationHoldSubmitBtn">${escHtml(title)}</button>
+    </div>
+  </div>`;
+  if (typeof modal.addEventListener === 'function') {
+    modal.addEventListener('click', e => { if (e && e.target === modal) modal.remove(); });
+  }
+  document.body.appendChild(modal);
+  const cancel = () => { if (modal.parentNode) modal.remove(); };
+  const submit = () => {
+    const v = _automatonHoldValidate({
+      reason: (document.getElementById('automationHoldReason') || {}).value || '',
+      until: (document.getElementById('automationHoldUntil') || {}).value || '',
+      condition: (document.getElementById('automationHoldCondition') || {}).value || '',
+    }, extend);
+    if (!v.ok) {
+      const errEl = document.getElementById('automationHoldError');
+      if (errEl) { errEl.textContent = v.error.message; errEl.style.display = ''; }
+      const rEl = document.getElementById('automationHoldReason');
+      if (rEl && typeof rEl.focus === 'function') rEl.focus();
+      return;
+    }
+    cancel();
+    window.automatonHoldSubmit(id, { reason: v.payload.reason, until: v.payload.until, condition: v.payload.condition }, extend);
+  };
+  const cBtn = document.getElementById('automationHoldCancel');
+  const sBtn = document.getElementById('automationHoldSubmitBtn');
+  if (cBtn) cBtn.onclick = cancel;
+  if (sBtn) sBtn.onclick = submit;
+  const rEl = document.getElementById('automationHoldReason');
+  if (rEl && typeof rEl.focus === 'function') rEl.focus();
+  return Promise.resolve();
+}
+
+// automataRelease asks once, then POSTs /release_hold. The server restores
+// the status held in the record; the UI just reloads the list.
+window.automataRelease = function(id) {
+  showConfirmModal(t('automaton_hold_release_ask') || 'Release this held Automaton now?', () => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/release_hold', { method: 'POST' })
+      .then(() => { showToast(t('automaton_hold_toast_released') || 'Hold released', 'info', 2000); loadAutomataPanel(); })
+      .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
   });
 };
 
@@ -35613,6 +36080,13 @@ function _renderDetailContent(prd) {
   const triageSlot = (status === 'failed' || status === 'blocked')
     ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
     : '';
+  // The hold slot: a held Automaton carries its hold record (reason,
+  // condition, who/when, look-again or the expired line) above every
+  // sub-tab, so a held state is never lost behind a tab switch — the same
+  // self-contained slot pattern as the triage card.
+  const holdSlot = status === 'held'
+    ? `<div id="prdHoldRecord" class="prd-capacity-slot hold-slot" style="margin-top:10px;">${_automatonHoldRecordHtml(prd)}</div>`
+    : '';
   // The merge-pending badge slot sits beside it for a finished Automaton: it
   // paints from the last merge read at once and again when a fresh read lands.
   const mergeSlot = status === 'completed'
@@ -35625,6 +36099,7 @@ function _renderDetailContent(prd) {
     ${window.protectedPathsBannerHtml(prd)}
     ${window.protectedPathsAuthorisedHtml(prd)}
     ${triageSlot}
+    ${holdSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -38259,6 +38734,14 @@ function _mergeStatusBlockHtml(status) {
   const lines = [];
   if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
   if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  // The shadow pass counts: how many decisions it recorded and how many of
+  // those were later found to have been false (0 while the mode is off or
+  // no pass has run yet, so the line only appears once a decision exists).
+  if (typeof s.shadow_decisions_total === 'number' && s.shadow_decisions_total > 0) {
+    const falseCount = (typeof s.shadow_decisions_false === 'number') ? s.shadow_decisions_false : 0;
+    const text = t('merge_shadow_decisions_counts', [String(s.shadow_decisions_total), String(falseCount)]);
+    lines.push(`<div class="merge-status-shadow" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_shadow_decisions_counts', 'merge_shadow_decisions_help')}</div>`);
+  }
   return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {
@@ -38668,6 +39151,36 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   const label = t(helpKey);
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
+
+// _heldDocsPath — the "Held Automata" section of the hold how-to, read
+// off the docs link map through the held group's own key, so the group
+// head help icon and the hold dialog's help line always point at the
+// same section. Null when the map has no entry.
+function _heldDocsPath() {
+  if (typeof docsLinkForKey !== 'function') return null;
+  return docsLinkForKey('held_automata_inbox_title') || null;
+}
+
+// heldAutomataHelpLink — the help icon on the held-Automata group head.
+// Respects the General → "Show inline doc links" toggle like every other
+// card help link.
+function heldAutomataHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:auto;">?</a>`;
+}
+window.heldAutomataHelpLink = heldAutomataHelpLink;
+
+// heldHoldDialogHelpLine — the help line inside the hold dialog (the same
+// "Held Automata" section as the group head icon).
+function heldHoldDialogHelpLine() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--accent2,#60a5fa);text-decoration:underline;">${escHtml(label)}</a>`;
+}
+window.heldHoldDialogHelpLine = heldHoldDialogHelpLine;
 window.triageCardHtml = function(record) {
   if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
@@ -39432,6 +39945,92 @@ window.safeDeleteCardHtml = function(report) {
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
+// ── Branch reaper card ─────────────────────────────────────────────────────
+// branchReapCardHtml(report) draws the body of GET
+// /api/autonomous/branch-reap:
+// { reaped: [{automaton_id, branch, backup_ref, contained_in, commits, reason}],
+//   waiting: [...same], backups: [{branch, ref, sha}], backup_days,
+//   computed_at }. A missing or malformed body reads as an empty report.
+// The report itself deletes nothing; the only write surface is the Restore
+// button on a reaped entry, which posts the one branch to
+// /api/autonomous/branch-reap/restore (its click is delegated, because the
+// loader re-paints the card's innerHTML on every tick).
+function _branchReapLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _branchReapSection(title, rows, emptyText) {
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    (rows.length ? rows.join('') : _branchReapLine(emptyText));
+}
+function _branchReapEntryRow(e) {
+  const branch = String(e.branch || '');
+  const restore = branch
+    ? `<button type="button" class="branch-reap-restore-btn" data-branch-reap-restore="${escHtml(branch)}" style="margin-top:4px;max-width:100%;">${escHtml(t('branch_reap_restore_btn'))}</button>`
+    : '';
+  return `<div class="branch-reap-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    _branchReapLine(branch, 'font-weight:600;') +
+    (e.automaton_id ? _branchReapLine(t('branch_reap_automaton', [String(e.automaton_id)])) : '') +
+    (e.reason ? _branchReapLine(String(e.reason)) : '') +
+    (e.contained_in ? _branchReapLine(t('branch_reap_contained', [String(e.contained_in)])) : '') +
+    (Number(e.commits) ? _branchReapLine(t('branch_reap_commits', [Number(e.commits)])) : '') +
+    (e.backup_ref ? _branchReapLine(t('branch_reap_backup', [String(e.backup_ref)])) : '') +
+    restore + `</div>`;
+}
+function _branchReapBackupRow(bk) {
+  const parts = [String(bk.ref || '')];
+  if (bk.sha) parts.push('→ ' + String(bk.sha));
+  if (bk.branch) parts.push('(' + String(bk.branch) + ')');
+  return _branchReapLine(parts.filter(Boolean).join(' '));
+}
+window.branchReapCardHtml = function(report) {
+  const r = (report && typeof report === 'object') ? report : {};
+  const reaped = Array.isArray(r.reaped) ? r.reaped.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const waiting = Array.isArray(r.waiting) ? r.waiting.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const backups = Array.isArray(r.backups) ? r.backups.filter(b => b && typeof b === 'object' && b.ref) : [];
+  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
+  const head = `<div class="cap-title">${escHtml(t('branch_reap_card_title'))}</div>`;
+  const computedLine = computedAt ? _branchReapLine(t('branch_reap_computed_at', [computedAt])) : '';
+  const note = _branchReapLine(t('branch_reap_preview_note'));
+  const retentionLine = _branchReapLine(Number(r.backup_days) > 0
+    ? t('branch_reap_retention_days', [Number(r.backup_days)])
+    : t('branch_reap_retention_default'));
+  const reapedRows = reaped.map(_branchReapEntryRow);
+  const waitingRows = waiting.map(_branchReapEntryRow);
+  const emptyAll = reaped.length === 0 && waiting.length === 0;
+  const body = emptyAll
+    ? _branchReapLine(t('branch_reap_empty'))
+    : _branchReapSection(t('branch_reap_reaped_heading', [reaped.length]), reapedRows, t('branch_reap_reaped_empty')) +
+      _branchReapSection(t('branch_reap_waiting_heading', [waiting.length]), waitingRows, t('branch_reap_waiting_empty'));
+  return `<div class="prd-capacity-card branch-reap-card" style="min-width:0;">${head}${computedLine}${note}${retentionLine}` +
+    body +
+    _branchReapSection(t('branch_reap_backups_heading'), backups.map(_branchReapBackupRow), t('branch_reap_backups_none')) + `</div>`;
+};
+// _branchReapEnsureRestoreHandler binds the delegated Restore click once per
+// page load. The loader replaces the card's innerHTML on every tick, so the
+// handler lives on the document and re-targets the fresh button on each click.
+let _branchReapRestoreBound = false;
+window._branchReapEnsureRestoreHandler = function() {
+  if (_branchReapRestoreBound) return;
+  _branchReapRestoreBound = true;
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-branch-reap-restore]') : null;
+    if (!btn || btn.disabled) return;
+    const branch = btn.getAttribute('data-branch-reap-restore');
+    if (!branch) return;
+    btn.disabled = true;
+    btn.textContent = t('branch_reap_restoring');
+    apiFetch('/api/autonomous/branch-reap/restore', { method: 'POST', body: JSON.stringify({ branch }) })
+      .then(() => {
+        showToast(t('branch_reap_restore_ok', [branch]), 'success', 4000);
+        // The delete already happened; re-read the report so the card
+        // reflects the restored branch and the backup ref it now lives as.
+        const ctl = window._listLoaders && window._listLoaders.automation_branch_reap;
+        if (ctl && ctl.load) ctl.load();
+      })
+      .catch(err => { showToast(t('branch_reap_restore_err', [branch, ((err && err.message) || String(err))]), 'error', 6000); });
+  }, true);
+};
+
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
@@ -39899,6 +40498,31 @@ function _unlandedWorkBranches(data) {
   const b = data && typeof data === 'object' ? data.branches : null;
   return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
 }
+// unlandedCountsHtml(counts, alertCfg) draws the compact counts block from the
+// read's counts section: one count per landing state, one per age band, the
+// oldest pending branch, and a marker when the pending count is above the
+// daily alert threshold (alertCfg from GET /api/autonomous/config).
+const UNLANDED_COUNT_STATES = ['landed', 'pending', 'live', 'unlanded'];
+const UNLANDED_COUNT_AGES = ['under_one_day', 'under_one_week', 'older'];
+window.unlandedCountsHtml = function(counts, alertCfg) {
+  if (!counts || typeof counts !== 'object') return '';
+  const num = (m, k) => Number(m && typeof m === 'object' ? m[k] : 0) || 0;
+  const chip = (key, n) => `<span class="unlanded-counts-chip" data-key="${escHtml(key)}">${escHtml(t('unlanded_counts_' + key, [n]))}</span>`;
+  const states = UNLANDED_COUNT_STATES.map(k => chip(k, num(counts.by_state, k))).join('');
+  const ages = UNLANDED_COUNT_AGES.map(k => chip(k, num(counts.by_age, k))).join('');
+  const pending = num(counts.by_state, 'pending');
+  const cfg = alertCfg && typeof alertCfg === 'object' ? alertCfg : null;
+  const threshold = cfg && Number.isFinite(Number(cfg.threshold)) ? Number(cfg.threshold) : null;
+  const over = !!cfg && cfg.enabled !== false && threshold !== null && pending > threshold;
+  const o = counts.oldest_pending;
+  const oldest = o && typeof o === 'object' && o.branch
+    ? `<div class="unlanded-counts-oldest" data-branch="${escHtml(String(o.branch))}">${escHtml(t('unlanded_counts_oldest', [String(o.title || o.branch), String(o.branch), String(o.age || '')]))}</div>` : '';
+  const marker = over ? `<div class="unlanded-counts-over">${escHtml(t('unlanded_counts_over_threshold', [pending, threshold]))}</div>` : '';
+  return `<div class="unlanded-counts">` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_state'))}</span>${states}</div>` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_age'))}</span>${ages}</div>` +
+    oldest + marker + `</div>`;
+};
 window.unlandedWorkCardHtml = function(data) {
   const list = _unlandedWorkBranches(data);
   if (!list.length) return '';
@@ -39915,7 +40539,7 @@ window.unlandedWorkCardHtml = function(data) {
       _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
       `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
   }).join('');
-  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${window.unlandedCountsHtml(data.counts, window._unlandedAlertCfg)}${rows}</div>`;
 };
 
 window.unlandedWorkAct = function(btn, act) {
@@ -39933,6 +40557,12 @@ window.unlandedWorkAct = function(btn, act) {
 };
 
 function _automationUnlandedWorkLoader() {
+  if (!window._unlandedAlertCfgFetched) {
+    window._unlandedAlertCfgFetched = true;
+    apiFetch('/api/autonomous/config').then(ac => {
+      if (ac && typeof ac === 'object') window._unlandedAlertCfg = { enabled: ac.unlanded_alert_enabled !== false, threshold: ac.unlanded_alert_threshold };
+    }).catch(() => { window._unlandedAlertCfgFetched = false; });
+  }
   return window._listLoaders.automation_unlanded_work || listLoader({
     key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
     failedText: msg => t('unlanded_work_failed', [msg]),
@@ -41336,7 +41966,7 @@ const PROGRESS_METHOD_FIELDS = {
 const PC_KEYS = {
   col: {
     records: 'progress_card_col_records', done: 'progress_card_col_done', running: 'progress_card_col_running',
-    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', tasks: 'progress_card_col_tasks',
+    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', held: 'progress_card_col_held', tasks: 'progress_card_col_tasks',
     tasks_done: 'progress_card_col_tasks_done', left: 'progress_card_col_left', work_time: 'progress_card_col_work_time',
     median: 'progress_card_col_median', mean_task: 'progress_card_col_mean_task',
   },
@@ -41432,13 +42062,19 @@ function _pcHelp() {
 
 function _pcTable(data, axis) {
   const groups = (data && data.groups) || {};
-  const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
+  // The held column is shown only when at least one Automaton is on hold, the
+  // same rule the CLI text and the read view keep (a whole of zeros would add
+  // a column nobody can act on).
+  const anyHeld = [data && data.totals, groups.feature, groups.bug, groups.other].some(g => _pcIsNum(g && g.held) && g.held > 0)
+    || Object.values((data && data.grouped) || {}).some(map => Object.values(map || {}).some(g => _pcIsNum(g && g.held) && g.held > 0));
+  const cols = ['records', 'done', 'running', 'waiting', 'blocked'].concat(anyHeld ? ['held'] : []).concat(['tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task']);
   const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
   const cell = h => `<td style="text-align:right;padding:2px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;">${h}</td>`;
   const rowHtml = (label, g) => {
     g = g || {};
     return `<tr><th scope="row" style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(label)}</th>` +
       cell(_pcNum(g.prds)) + cell(_pcNum(g.done)) + cell(_pcNum(g.running)) + cell(_pcNum(g.waiting)) + cell(_pcNum(g.blocked)) +
+      (anyHeld ? cell(_pcNum(g.held)) : '') +
       cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
       cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
   };
@@ -43299,7 +43935,7 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_prd', 'PRD status', [
     'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
     'prd.active', 'prd.running', 'prd.completed', 'prd.rejected', 'prd.cancelled',
-    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused']],
+    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused', 'prd.held']],
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
@@ -43844,6 +44480,47 @@ function _renderDetailCost(prd) {
 }
 
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
+// Landing state: the operator's record of what happens to an Automaton's
+// unmerged work branch — state (pending / landed / kept / dropped), commit,
+// actor, at, reason — plus the keep/drop decisions once the record is still
+// pending. The record arrives in the PRD JSON (its landing field, part of
+// every Automaton read); keep/drop POST to
+// /api/autonomous/prds/{id}/landing/keep|drop. Renders in the Overview
+// sub-tab of the Automaton detail page.
+function renderLandingState(prd) {
+  const l = prd.landing || prd.Landing;
+  const label = escHtml(t('automata_detail_landing') || 'Landing');
+  if (!l) {
+    return `<div class="prd-detail-landing" style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${label}</div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_detail_landing_none') || 'No landing record yet — the Automaton has no work branch to keep or drop.')}</div>
+    </div>`;
+  }
+  const st = l.state || '';
+  const stMap = { pending: t('automata_detail_landing_state_pending'), landed: t('automata_detail_landing_state_landed'), kept: t('automata_detail_landing_state_kept'), dropped: t('automata_detail_landing_state_dropped') };
+  const stTxt = stMap[st] || st;
+  const color = st === 'landed' ? '#10b981' : st === 'kept' ? '#3b82f6' : st === 'dropped' ? '#ef4444' : '#f59e0b';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  const rows = [];
+  if (l.commit) rows.push([t('automata_detail_landing_commit') || 'Commit', `<code style="font-size:10px;">${escHtml(l.commit)}</code>`]);
+  if (l.actor) rows.push([t('automata_detail_landing_actor') || 'Actor', escHtml(l.actor)]);
+  if (l.at) rows.push([t('automata_detail_landing_at') || 'Time', escHtml(_fmtDate(l.at))]);
+  if (l.reason) rows.push([t('automata_detail_landing_reason') || 'Reason', escHtml(l.reason)]);
+  const decisions = st === 'pending'
+    ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="prd-landing-btn prd-landing-keep" style="font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/keep','reason',${escHtml(JSON.stringify(t('automata_detail_landing_keep_prompt') || 'Reason for keeping this branch unmerged (required)'))})">${escHtml(t('automata_detail_landing_keep_btn') || 'Keep (branch not merged)')}</button>
+        <button class="prd-landing-btn prd-landing-drop" style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid #ef4444;color:#ef4444;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/drop','reason',${escHtml(JSON.stringify(t('automata_detail_landing_drop_prompt') || 'Reason the work will not be merged (required)'))})">${escHtml(t('automata_detail_landing_drop_btn') || 'Drop (work not merged)')}</button>
+      </div>`
+    : '';
+  return `<div class="prd-detail-landing" style="margin-top:10px;display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:11px;margin-bottom:2px;"><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-weight:700;font-size:10px;background:${color}22;color:${color};border:1px solid ${color}55;">${escHtml(stTxt)}</span></div>
+      ${rows.map(([k, v]) => `<div style="font-size:11px;color:var(--text2);">${escHtml(k)}: ${v}</div>`).join('')}
+    </div>
+    ${decisions}
+  </div>`;
+}
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -43883,6 +44560,7 @@ function _renderDetailOverview(prd) {
     ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${renderLandingState(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
@@ -44552,6 +45230,17 @@ registerAutomationCardSlot('events', {
   mount: () => listLoaderAll([_automationCleanupLoader()]),
   stop: () => _automationStopLoaders(['automation_cleanup']),
 });
+// The branch reaper report renders under the cleanup card on the Automata
+// Events sub-tab (reaped + waiting entries with reasons, the backup refs, and
+// the Restore write). Like the two above, its loader polls only while the
+// Events sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationBranchReapCard',
+  order: 120,
+  html: `<div id="automationBranchReapCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => { window._branchReapEnsureRestoreHandler(); listLoaderAll([_automationBranchReapLoader()]); },
+  stop: () => _automationStopLoaders(['automation_branch_reap']),
+});
 // ── Cost report chart cards ──────────────────────────────────────────────────
 // Four bounded cards in the Automata page's cost report area: cost over time,
 // tool usage, retries and failure categories, and the combined report. Each
@@ -45085,7 +45774,11 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
-const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
+const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'automation_held_automata', 'supervisor'];
+// Held Automata are their own group: they appear on their own card with
+// their own count, never inside the triage (failed/blocked) count or the
+// Inbox needs-review badge.
+const _AUTOMATION_INBOX_BADGE_EXCLUDED = ['automation_held_automata'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
 // (everything) or one selected project. A project scope applies only while
@@ -45152,6 +45845,16 @@ function _inboxScopeData(key, data) {
   const keep = x => _inboxItemInProject(x, scope.project);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_held_automata') {
+    // A held row names its project by name or directory; _inboxItemInProject
+    // reads the same fields off the row (project_dir) and the Automaton its
+    // prd_id names, so the cut behaves like the other Inbox groups.
+    if (typeof data === 'object' && Array.isArray(data.held)) {
+      const held = data.held.filter(v => v && typeof v === 'object' && _inboxItemInProject({ prd_id: v.id, project_dir: v.project, system_tags: [] }, scope.project));
+      return Object.assign({}, data, { held, total: held.length, expired: held.filter(v => v && v.expired).length });
+    }
+    return data;
+  }
   if (key === 'automation_questions') {
     if (data.__automationQuestionsDisabled) return data;
     if (Array.isArray(data)) return data.filter(keep);
@@ -45171,6 +45874,7 @@ function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_held_automata') return (data && Array.isArray(data.held)) ? data.held.length : 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
     const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
@@ -45212,6 +45916,7 @@ function _automationInboxRescope() {
 function _automationInboxBadgeCount() {
   let n = 0;
   _AUTOMATION_INBOX_KEYS.forEach(k => {
+    if (_AUTOMATION_INBOX_BADGE_EXCLUDED.indexOf(k) >= 0) return; // held has its own card count
     if (Object.prototype.hasOwnProperty.call(_automationInboxCounts, k)) { n += _automationInboxCounts[k]; return; }
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl && ctl.state && ctl.state.hasData && !(k === 'automation_questions' && _automationQuestionsState.history)) n += _automationInboxCountOf(k, ctl.state.data);
@@ -45243,7 +45948,7 @@ function _automationInboxLoaderActive() {
   return _automataNormalizeTab() === 'automation';
 }
 function _automationInboxLoaders() {
-  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()];
+  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader(), _automationHeldAutomataLoader()];
 }
 // Start the Inbox polling behind another sub-tab: only the loaders that are
 // not already running are loaded.
@@ -45284,6 +45989,17 @@ const _AUTOMATION_SUBTABS = [
       </div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <!-- Held Automata: their own group card. The count on the head is the
+           group count; held never feeds the Inbox needs-review badge or the
+           triage (failed/blocked) count. -->
+      <div id="automationHeldAutomataCard" class="prd-capacity-card held-automata-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <div class="cap-title">${escHtml(t('held_automata_inbox_title'))}</div>
+          <span id="automationHeldAutomataCount" class="held-automata-count" style="display:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--text2);"></span>
+          ${heldAutomataHelpLink()}
+        </div>
+        <div id="automationHeldAutomataBody"></div>
+      </div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
@@ -45430,7 +46146,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_branch_reap', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -46143,6 +46859,22 @@ function _automationCleanupLoader() {
   });
 }
 
+// _automationBranchReapLoader reads the branch reaper report on the Automata
+// Events sub-tab, under the safe-to-delete and cleanup cards. The read lists
+// the worktree base repository and the backup refs, so it polls slowly like
+// the safe-to-delete read; its failed state is the list loader's banner. The
+// report is a preview — the only write is the per-entry Restore button, which
+// posts the branch to POST /api/autonomous/branch-reap/restore.
+function _automationBranchReapLoader() {
+  return window._listLoaders.automation_branch_reap || listLoader({
+    key: 'automation_branch_reap', el: 'automationBranchReapCard', url: '/api/autonomous/branch-reap', pollMs: 60000,
+    timeoutMs: 45000,
+    failedText: msg => t('branch_reap_failed', [msg]),
+    active: () => !!document.getElementById('automationBranchReapCard'),
+    render: report => window.branchReapCardHtml(report),
+  });
+}
+
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
 // Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
@@ -46784,6 +47516,113 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
+// ── quick-reply → open question routing ──────────────────────────────────────
+// quickReplyRoute is the single gate every Sessions-page quick reply goes
+// through before a label's text is typed into a session (the card quick
+// commands, the session quick commands, the chat Yes/No/Stop chips, and the
+// alerts quick-reply select). It checks whether this session has an open
+// question and routes the reply there instead of typing it:
+//   - no open question for the session → the caller's type-into-session
+//     fallback runs, exactly as before;
+//   - one open question and the reply matches one of its options (text
+//     equal to an option id or label, case-insensitive, plus the small
+//     approve/reject synonym set) → the option is posted to
+//     POST /api/questions/{id}/answer with surface pwa and nothing is
+//     typed into the session;
+//   - one open question but no matching option, or more than one open
+//     question → the reply is refused with a plain message (naming the
+//     pressed label and the question's option labels, or pointing to the
+//     Questions page) and nothing is sent anywhere;
+//   - a failed answer (409 no longer open, 400 the server refusing the
+//     text) → the server's message shows as a toast and nothing is typed.
+// On success the toast names the option that was chosen and the question
+// card refreshes through window.refreshAutomationQuestions when it exists.
+// The typeIntoSession callback is the caller's previous send path; it runs
+// only in the no-question case.
+const _QUICK_REPLY_SYNONYM_GROUPS = [
+  ['yes', 'approve', 'approved'],
+  ['no', 'reject', 'rejected'],
+];
+
+// _quickReplyQuestionForSession reports whether a question record belongs
+// to the session a quick reply was pressed for. The record's session_id
+// may carry the short or the full id, so both sides compare on the raw id
+// and on the last dash segment.
+function _quickReplyQuestionForSession(q, sessionId) {
+  const qid = q && q.session_id ? String(q.session_id) : '';
+  const sid = String(sessionId || '');
+  if (!qid || !sid) return false;
+  if (qid === sid) return true;
+  const short = n => String(n).split('-').pop();
+  return qid === short(sid) || short(qid) === short(sid);
+}
+window._quickReplyQuestionForSession = _quickReplyQuestionForSession;
+
+// _quickReplyOptionFor resolves a pressed quick reply (its label and the
+// text it would type) against one question's options and returns the
+// matched option's id, or '' when it must not guess: no match, or more
+// than one option matching. A direct hit is the option's id or label
+// equal to the label or the value, case-insensitive; a synonym hit is the
+// approve/approved/yes and reject/rejected/no groups, so "Approved" and
+// "yes" both resolve to a Yes option.
+function _quickReplyOptionFor(options, label, value) {
+  const cands = [label, value]
+    .map(w => String(w == null ? '' : w).trim().toLowerCase())
+    .filter(Boolean);
+  const opts = (Array.isArray(options) ? options : []).filter(o => o && (o.id || o.label));
+  if (!cands.length || !opts.length) return '';
+  const direct = opts.filter(o => cands.includes(String(o.id).toLowerCase()) || cands.includes(String(o.label || '').toLowerCase()));
+  if (direct.length === 1) return String(direct[0].id);
+  if (direct.length > 1) return '';
+  for (const c of cands) {
+    const group = _QUICK_REPLY_SYNONYM_GROUPS.find(g => g.includes(c));
+    if (!group) continue;
+    const m = opts.filter(o => group.includes(String(o.id).toLowerCase()) || group.includes(String(o.label || '').toLowerCase()));
+    if (m.length === 1) return String(m[0].id);
+    if (m.length > 1) return '';
+  }
+  return '';
+}
+window._quickReplyOptionFor = _quickReplyOptionFor;
+
+function quickReplyRoute(sessionId, label, value, typeIntoSession) {
+  const sid = String(sessionId || '');
+  const fallback = typeof typeIntoSession === 'function' ? typeIntoSession : null;
+  const runFallback = () => { if (fallback) fallback(); };
+  if (!sid) { runFallback(); return Promise.resolve(); }
+  return apiFetch('/api/questions?state=open&limit=50')
+    .catch(() => null)
+    .then(body => {
+      const open = ((body && Array.isArray(body.questions)) ? body.questions : [])
+        .filter(q => _quickReplyQuestionForSession(q, sid));
+      if (!open.length) { runFallback(); return; }
+      if (open.length > 1) {
+        showToast(String(t('quick_reply_multiple_questions') || 'This session has more than one open question. Answer them on the Questions page (Automation view).'), 'error', 6000);
+        return;
+      }
+      const q = open[0];
+      const optionId = _quickReplyOptionFor(q.options, label, value);
+      if (!optionId) {
+        const labels = (Array.isArray(q.options) ? q.options : [])
+          .map(o => (o && (o.label || o.id)) ? String(o.label || o.id) : '')
+          .filter(Boolean).join(', ');
+        showToast(String(t('quick_reply_refused_no_option') || "Quick reply %1$s doesn't match any option of this session's open question. Options: %2$s")
+          .replace('%1$s', String(label || value || '')).replace('%2$s', labels), 'error', 6000);
+        return;
+      }
+      return _questionAnswerSubmit(q.id, '', optionId, '')
+        .then(() => {
+          const optLabel = _questionAnswerOptionLabel(q.options, optionId) || optionId;
+          showToast(String(t('quick_reply_answered') || 'Answered with option %1$s').replace('%1$s', optLabel), 'success');
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        })
+        .catch(err => {
+          showToast(_questionAnswerErrorMessage(err), 'error', 6000);
+        });
+    });
+}
+window.quickReplyRoute = quickReplyRoute;
+
 // _questionContextSafeViewerURL gives the viewer link back only when it is a
 // same-origin relative link: it starts with a single slash and carries no
 // backslash, whitespace or control characters. Anything else is '' and the
@@ -47090,6 +47929,67 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+
+// _automationHeldQuestionsLoader is the held section on GET
+// /api/autonomous/held-questions, polled at the same cadence as the
+// cards beside it. The report always carries the server's effective
+// mode (shadow when unset); when the operator-question subsystem is
+// disabled the route answers 503 and the failed line paints — the card
+// needs no disabled sentinel of its own.
+// _automationHeldAutomataLoader is the Held Automata group card on GET
+// /api/autonomous/held (the held group: expired first, every row keeping
+// reason, condition and look-again wording from the one read view). The
+// group has its own card count and is kept out of the Inbox needs-review
+// badge and of the triage failed/blocked count.
+function _automationHeldAutomataLoader() {
+  return window._listLoaders.automation_held_automata || listLoader({
+    key: 'automation_held_automata', el: 'automationHeldAutomataBody', url: '/api/autonomous/held', pollMs: 5000,
+    failedText: msg => t('held_automata_inbox_failed', [msg]),
+    active: _automationInboxLoaderActive,
+    onData: data => { _automationInboxCountSet('automation_held_automata', data); window._heldAutomataUpdateCount(); },
+    render: body => window.heldAutomataListHtml(_inboxScopeData('automation_held_automata', body)),
+  });
+}
+
+// _heldAutomataUpdateCount paints the group count on the card head when the
+// card exists; it is safe to call from onData before the tab has mounted.
+function _heldAutomataUpdateCount() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('automationHeldAutomataCount');
+  if (!el) return;
+  const ctl = window._listLoaders && window._listLoaders.automation_held_automata;
+  const n = (ctl && ctl.state && ctl.state.hasData && ctl.state.data) ? _automationInboxCountOf('automation_held_automata', ctl.state.data) : 0;
+  el.textContent = String(n);
+  el.style.display = n > 0 ? '' : 'none';
+}
+window._heldAutomataUpdateCount = _heldAutomataUpdateCount;
+
+// heldAutomataListHtml renders the Held Automata group: one row per held
+// Automaton with reason, condition, held by/at, the look-again line (or
+// the expired line) and a Release button. Empty state from the locale.
+window.heldAutomataListHtml = function(body) {
+  const held = (body && Array.isArray(body.held)) ? body.held : [];
+  if (!held.length) return `<div class="held-automata-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_automata_inbox_empty'))}</div>`;
+  const rows = held.map(function(v) {
+    if (!v || typeof v !== 'object') return '';
+    const id = String(v.id || '');
+    const title = v.title || id;
+    const cond = v.condition ? `<div style="color:var(--text2);font-size:11px;"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(v.condition)}</div>` : '';
+    const exp = v.expired ? `<div class="held-automata-expired" style="font-size:11px;color:var(--warning,#d9a);"><b>${escHtml(t('automaton_hold_expired'))}</b></div>` : '';
+    const look = v.until && !v.expired ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automaton_hold_until_label'))}: ${escHtml(v.next_look_text || new Date(v.until).toLocaleString())}</div>` : '';
+    const by = [v.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(v.held_by) : '', v.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(new Date(v.held_at).toLocaleString()) : ''].filter(Boolean).join(' · ');
+    const btn = id ? `<button type="button" class="btn-primary" style="font-size:11px;padding:2px 10px;" title="${escHtml(t('automaton_hold_tooltip_release'))}" onclick="event.stopPropagation(); if (typeof automataRelease === 'function') automataRelease('${escHtml(id)}')">${escHtml(t('automaton_hold_release'))}</button>` : '';
+    return `<div class="held-automata-row" data-held-prd="${escHtml(id)}" style="padding:8px 0;border-top:1px solid rgba(128,128,128,.2);display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;min-width:0;">
+      <div style="flex:1 1 220px;min-width:0;">
+        <div style="font-weight:600;font-size:12px;overflow-wrap:anywhere;">${escHtml(title)} <span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(id)}</span></div>
+        ${v.reason ? `<div style="font-size:12px;"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(v.reason)}</div>` : ''}
+        ${cond}${exp}${look}${by ? `<div style="font-size:11px;color:var(--text2);">${by}</div>` : ''}
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
+  return `<div class="held-automata-body" style="display:flex;flex-direction:column;min-width:0;">${rows}</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -50926,9 +51826,14 @@ function switchAlertTab(tab) {
 }
 
 function alertSendCmd(sessID, command) {
-  apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
-    .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
-    .catch(e => showToast('Error: ' + e.message, 'error'));
+  // Routed through the open-question gate: with an open question for this
+  // session the reply answers it (nothing typed); with none it sends the
+  // text into the session, exactly as before.
+  quickReplyRoute(sessID, command, command, () => {
+    apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
+      .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
+      .catch(e => showToast('Error: ' + e.message, 'error'));
+  });
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
@@ -60967,7 +61872,7 @@ const _TAG_DRILL_BELOW = 720;      // drill-down under this width; sections from
 const _TAG_COLLAPSE_ABOVE = 8;     // more top-level tags than this: sections start closed
 const _TAG_CRUMB_LEVELS = 3;       // deeper paths collapse their middle crumbs
 const _TAG_AUTOMATA_STATUS_BADGES = {
-  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'blocked', 'completed'],
+  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'held', 'blocked', 'completed'],
   history: ['cancelled', 'rejected', 'archived'],
 };
 

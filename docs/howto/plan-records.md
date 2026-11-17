@@ -80,15 +80,15 @@ candidates so you can repeat the call with an id.
 
 | Surface | How |
 |---|---|
-| REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state`, `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
-| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. |
-| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. |
-| Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
+| REST | `GET` and `POST /api/plan-records/registry-rows` and `/api/plan-records/findings`; `GET` and `PUT` on `.../{ref}`; `GET /api/plan-records/search?q=`; `POST /api/plan-records/import[?dry_run=true]`. List filters: `project`, `state` (one state, or a comma-separated list), `legacy_number`, `limit` (default 50, most 500), `offset`. There is no delete route. Reads need `autonomous:read`, writes `autonomous:write`. |
+| MCP | `plan_record_list`, `plan_record_get`, `plan_record_create`, `plan_record_update`, `plan_record_search`, `plan_record_import`. `list` and `search` take `state`, one state or a comma-separated list of them. |
+| CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. The `list` and `search` `--state` filter takes one state, or a comma-separated list of them. |
+| Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S[,S...]]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
 | Release plans | `GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `GET /api/projects/{name}/plans?archived=`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme list\|add\|rename\|remove\|place\|unplace\|reorder\|reorder-items`, `archive`, `restore`, `unattributed`, `attach` (several ids), `migrate --release`, `row-plans list\|convert`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|attach\|migrate release`. Web: the release controls of the Plans sub-tab. See *Release plans and themes* and the sections after it. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
-| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a state filter, a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The sections hide themselves when plan records are off. |
+| PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
 `plan_record_updated` audit event; a real import writes one
@@ -132,7 +132,10 @@ prefix) and `get "Old title"` (an older title) all reach the same record when
 the match is unique. When two projects use the same title, add `--project`
 (`project` on the other surfaces) to choose. `datawatch plan-record search
 <words>` looks through titles, older titles and notes, with title hits first,
-and `list` filters by `project`, `state` or `legacy_number`.
+and `list` filters by `project`, `state` (one state, or a comma-separated
+list of them) or `legacy_number`; `search` takes the same filters along with
+the words. A state the kind does not accept is refused with a message naming
+the states it does.
 
 ## Importing the old files
 
@@ -629,6 +632,11 @@ Nothing here turns on by itself. These are yours to settle:
   run the migration again.
 - **Backlog order.** Open rows with no Automaton become backlog plans ordered by
   their old row number. Check that this is the order you want.
+- **The state chip sets.** The Plans browser, the Records sub-tab and the
+  Registry and findings card now filter state with multi-select chip sets, and
+  each remembers its picks in the browser that made them. Check that the chip
+  labels — each state's name plus **All**, **Selected filters** and
+  **Clear all** — read well in the languages you use.
 - **The release migration, before you approve it.** Read the preview's
   `conflicts` (an Automaton another plan holds is never moved; detach it or
   leave it), `unplaced` (attached with no theme; place them by hand) and
@@ -686,6 +694,11 @@ Nothing here turns on by itself. These are yours to settle:
 - **Archive is refused for a protected plan.** The plan you named as protected
   still holds Automata. Choose another plan to archive, or detach its Automata
   first.
+- **A state filter seems stuck or surprising.** Its picks are remembered in
+  the browser that made them, separately for the Plans browser, the Records
+  sub-tab and the registry card — on the browser, never the daemon, and in no
+  other browser. Pick the group's **All** chip to clear the whole set; a
+  picked chip clears itself when picked again.
 
 ## Building plans from arcs and rows
 
@@ -771,7 +784,10 @@ with `limit` (default 50, most 500) and `offset`.
   the plan you asked about.
 - `GET /api/plan-records/browse` lists every registry row and finding with the
   plan and Automata each links to. Filter with `q` (words in the title), `kind`,
-  `state` and `project`.
+  `state` and `project`. The `state` filter takes one state, or a
+  comma-separated list of them; without a `kind` a state of either kind is
+  admitted, with a `kind` only the states of that kind, and a state neither
+  vocabulary knows is refused naming the valid states.
 
 Points are usage points, never dollars; an Automaton with no figure counts as 0.
 The lists read the plan-record summary index, so they stay fast with thousands of
@@ -790,8 +806,12 @@ blocked and held Automata), its tasks (read only when the plan is opened, with
 row numbers. The up and down buttons reorder plans and a plan's Automata;
 **Create plan** adds one, and the attach controls link an Automaton, an
 Automation or a finding by id. The search box covers plan, Automaton, registry
-row and finding titles and the state filter narrows by plan state; reordering is
-off while either is in use. Which plans are expanded is remembered in this
+row and finding titles and the state filter narrows by plan state — the state filter
+is a multi-select chip set: no chip picked means all states, several picked mean a plan
+matches *any* of the picked states, a second tap on a picked chip removes exactly that
+one, and the group's **All** chip, active while nothing is picked, clears the whole set;
+reordering is off while either is in use. The state picks are remembered in this
+browser, separately from the other state filters. Which plans are expanded is remembered in this
 browser only. The **Overview** page sub-tab starts with a summary (active
 plans, what is next, counts), and the **Records** page sub-tab lists every
 registry row and finding. The controls call the routes in the next section.

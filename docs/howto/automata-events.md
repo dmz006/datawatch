@@ -24,7 +24,7 @@ cleanup report — not a replay of past alerts.
 | **retry** | One row per task that was retried or is held after an infrastructure failure. A retried row says which failure class, attempt *n* of *m*, and when the next retry is due; a held row says how many retries were spent and what to do | info; **warn** when the task is held |
 | **check** | The findings the Automata checks recorded, newest first; the reason names the check that wrote it | info |
 | **cleanup** | One row per branch in the safe-to-delete report (safe rows; held rows, warn when the worktree has uncommitted changes) plus one cleanup status row covering both cleanup passes and the disk readings | info; **warn** held-for-dirty or disk alert; **error** when a pass recorded a failure |
-| **alert** | Part of the kind vocabulary, reserved for daemon alerts; today the feeds report an alert as the **warn** severity of their own row rather than a separate alert row | — |
+| **alert** | Part of the kind vocabulary, reserved for daemon alerts; today the feeds report an alert as the **warn** severity of their own row rather than a separate alert row. The one exception is an expired operator hold: one warn alert row, "Hold expired: <title> is ready to review" (see [Put an Automaton on hold](automaton-hold.md#when-the-look-again-time-passes)) | **warn** for an expired hold |
 | **error** | The raw errors the daemon recorded — from its error records and from the failure reasons on failed tasks — classified into what happened, why it matters and what to do next. A reviewed outcome ("content" failure) is a judgment, not an error, and does not appear here | **error**, or quiet **info** when harmless |
 
 ## Reading the stream
@@ -71,7 +71,7 @@ directly.
 
 **In the PWA**
 
-- **Kind** chips toggle one or more event kinds on and off.
+- **Kind** chips toggle one or more event kinds on and off: no chip picked means every kind shows, several picked means an event matches *any* of the picked kinds, and a second tap on a picked chip removes exactly that one. They are multi-select, like the state chip sets on the Projects pages.
 - **Project** narrows the list to one project; *All projects* clears it.
 - **Search events** matches text in the summary, detail, project and the
   Automaton/Automation names, case-insensitively.
@@ -165,6 +165,7 @@ and extra credit forms (**Settings → General → Automata**).
 
 - [Supervisor watch](automation-supervisor-watch.md) — the findings behind the `watch` rows
 - [Lane fill](automation-lane-fill.md) — the decisions behind the `decision` rows
+- [Put an Automaton on hold](automaton-hold.md) — the expired-hold row
 - [Infrastructure retry](infrastructure-retry.md) — the holds behind the `retry` rows
 - [Automata checks and ship](automata-checks-and-ship.md) — the checks behind the `check` rows
 - [Worktree cleanup](automaton-worktree-cleanup.md) — the passes behind the `cleanup` rows

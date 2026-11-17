@@ -26,7 +26,8 @@ import (
 // two copies are equal after StripDaemonSections, and the raw contents differ
 // (an unchanged file is not a daemon-only change). Every other case — missing
 // or unreadable working copy, file absent from HEAD, cancelled context, or an
-// unsafe path (empty, absolute, escaping upward, NUL byte) — returns false.
+// unsafe path (empty, absolute, escaping upward, NUL byte, or a symlink chain
+// leaving dir) — returns false.
 func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
 	if run == nil {
 		return false
@@ -38,15 +39,13 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 	if ctx.Err() != nil {
 		return false
 	}
-	if strings.ContainsRune(rel, 0) {
+	// Containment is validated once, against the resolved base (symlinks
+	// included), and the returned path is what gets read.
+	curPath, err := repoFileInside(dir, rel)
+	if err != nil {
 		return false
 	}
-	relOS := filepath.FromSlash(rel)
-	if !filepath.IsLocal(relOS) {
-		return false
-	}
-	checkedRel := relOS
-	cur, err := os.ReadFile(filepath.Join(dir, checkedRel))
+	cur, err := os.ReadFile(curPath)
 	if err != nil {
 		return false
 	}
@@ -61,6 +60,39 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 		return false
 	}
 	return platformcontext.StripDaemonSections(string(cur)) == platformcontext.StripDaemonSections(head)
+}
+
+// daemonSectionsOnlyUntracked is the untracked sibling of
+// daemonSectionsOnlyChange: for a file git reports as untracked ("??") it
+// answers whether the file holds nothing of the task's own — its content, after
+// platformcontext.StripDaemonSections removes the daemon's marked blocks
+// (platform context, RTK, cross-session, Memory, Session Guardrails), is empty
+// or whitespace-only. A rules file that exists only to carry the daemon's
+// injected sections is not the task's work. It needs no git: the working copy
+// alone is enough, so it needs no runner. It fails closed like its sibling: a
+// missing or unreadable working copy, an unsafe path (empty, absolute,
+// escaping upward, NUL byte) or a cancelled context all return false.
+func daemonSectionsOnlyUntracked(ctx context.Context, dir, rel string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	rel = normalizeDriftPath(rel)
+	if _, ok := localRelPath(rel); !ok {
+		return false
+	}
+	if strings.ContainsRune(rel, 0) {
+		return false
+	}
+	relOS := filepath.FromSlash(rel)
+	if !filepath.IsLocal(relOS) {
+		return false
+	}
+	cur, err := os.ReadFile(filepath.Join(dir, relOS)) // #nosec G304 -- relOS is a lexically local path and dir is the Automaton's own project directory
+	if err != nil {
+		return false
+	}
+	stripped := platformcontext.StripDaemonSections(string(cur))
+	return strings.TrimSpace(stripped) == ""
 }
 
 // filterDaemonOnlyPorcelain removes from line-based `git status --porcelain`

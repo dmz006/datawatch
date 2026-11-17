@@ -1281,7 +1281,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `compute_nodes[].tls_insecure_skip_verify` | bool | `false` | Turns off TLS certificate verification for this node: the daemon's node usage probes (loaded models via `/api/ps`, GPU stats from `monitoring_endpoint`) and the supervisor watch probe. Off by default, so certificates are verified. Last resort only; prefer `tls_ca_file` or `tls_cert_fingerprint`. When on, it is reported in the node record, the PWA and the audit log. Cannot be combined with `tls_ca_file` or `tls_cert_fingerprint`: node add and update reject the combination, and a seeded node that sets both has its TLS probes fail instead of falling back to skipping verification. |
 | `compute_nodes[].tls_ca_file` | string | `""` | Path to a PEM CA bundle trusted in addition to the system roots when verifying this node's certificate. Use it when the node serves a certificate from a private CA. May be combined with `tls_cert_fingerprint`; cannot be combined with `tls_insecure_skip_verify`. |
 | `compute_nodes[].tls_cert_fingerprint` | string | `""` | SHA-256 fingerprint of this node's leaf certificate, pinned instead of chain verification. Use it for a single self-signed certificate. Accepts 64 hex characters, case-insensitive, colons optional. May be combined with `tls_ca_file`; cannot be combined with `tls_insecure_skip_verify`. |
-| `compute_nodes[].verify_tls` | bool | `false` | When `true`, model pulls to this node (the compute-node model pull, the marketplace task pull and the model loader's pull) verify the node's `https://` certificate against the system roots, and a failed check fails the pull with an error that names the node and the certificate problem. Off by default, so pulls do not check the certificate. Governs model pulls only; it is separate from `tls_ca_file`, `tls_cert_fingerprint` and `tls_insecure_skip_verify`, which govern the usage and supervisor watch probes, and a pull does not use the CA file or pin. Node update replaces the whole node, so leaving it out turns it off. |
+| `compute_nodes[].verify_tls` | bool | `false` | Kept for configuration compatibility. Model pulls to this node (the compute-node model pull, the marketplace task pull and the model loader's pull) always verify the node's `https://` certificate: against the system roots (plus `tls_ca_file` when set), or the `tls_cert_fingerprint` leaf pin when it is set; a failed check fails the pull with an error that names the node and the certificate problem. There is no per-node off switch — `tls_insecure_skip_verify` governs the usage and supervisor watch probes only and never applies to a pull. Node update still replaces the whole node, so leaving it out leaves it `false`. |
 | `compute_nodes[].scheduling_priority` | int | `50` (when `0` or unset) | Node priority, 0 to 100. When an LLM entry's pool lists two or more nodes, the ledger places a worker on the least-loaded healthy node that has a free slot (pool used count over its limit); priority only breaks a tie between equally loaded nodes, and a remaining tie keeps the order of the entry's list (`internal/capacity/ledger.go`). Set through REST, MCP `compute_node_add`/`compute_node_update`, the CLI `compute node add|update` and the PWA node form. |
 | `llms[].compute_nodes` | list of names | empty | LLM registry entry, not a `config.yaml` key. The list of compute nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate, and the request goes to the least loaded candidate (`scheduling_priority` only breaks a tie, then list order); a node that does not serve the model is skipped, and one engine per node still applies. With one node it behaves as before. With two or more candidates it is the pool the ledger picks from, and each worker's model is loaded on the chosen node before it starts; a failed load alerts, releases the lease and tries another node of the list. Set with `--compute-nodes` on `datawatch llm add|update`, REST `PUT /api/llms/{name}` and MCP `llm_add`/`llm_update`. |
 | `compute_nodes[].session_slots` | int | `0` | Operator's worker count for a node that hosts a local engine. `0` derives it from observer data (`compute.NodeSlots`, `internal/compute/slots.go`): one slot per GPU limited by free GPU memory against the served model, or free system memory divided by model size with no GPU data, at least one slot. A positive value wins over the derived count. `max_concurrent_sessions` still caps the result. A negative value is rejected when the config loads (`validateLoaded`, `internal/config/config.go`) and when the node is saved (`Node.Validate`). The same field is on the node record in `internal/compute/node.go`, saved by the registry, and set through REST, MCP, the CLI, the comm channel and the PWA node form. |
@@ -1926,6 +1926,16 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   (via contains “restart”), `api-stop`, `unknown`. The file is written
   atomically (temp file + rename) and read back with
   `shutdowncause.ReadLast`.
+- **/proc fallback candidate order:** when the sender is attributed from
+  the process table, candidates are ranked so the most specific evidence
+  comes first: a process whose cmdline names the daemon's own pid as a
+  whole token (for example `kill <pid>` or `pkill --pid=<pid>`) ranks
+  above processes that only name the `datawatch` unit (for example a
+  `systemctl stop datawatch-other` for an unrelated unit whose name merely
+  contains the word). Within each group lower pids come first, so the
+  order is deterministic. The first candidate is the recorded sender. This
+  is what stops an unrelated same-host process from being attributed as
+  the stop sender in a full `go test` run.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1937,12 +1947,22 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   misreported as an already-shown stop.
 - **Regression test:** `internal/shutdowncause/signal_child_test.go`
   (`TestSignalChildProcScan`) re-executes the test binary as a child
-  (TestMain helper-env pattern); the child sends SIGTERM to the parent by
-  the exact PID it was passed. It asserts `Signal=terminated`; on the siginfo
-  path `SenderPID` must equal the child’s PID, on the /proc fallback the
-  child must appear among `CandidatesFor` results with the test binary in
-  its cmdline. Skips with a message on non-Linux; signals only its own
-  process via the child it started.
+  (TestMain helper-env pattern) with the recognizable stop-sender cmdline
+  `<binary> kill <parent pid>`. The child announces that it is running by
+  printing a `child-started` line to stdout, and only then sends SIGTERM
+  to that exact pid — nothing else, ever. The parent waits for that line
+  (30 second bound) and then polls the child's own `/proc/<pid>/cmdline`
+  until the stop-sender line is visible (10 second bound): explicit
+  readiness signals instead of a scheduling assumption, so the test passes
+  inside a full `go test` run of the module, not only alone. The child
+  stays alive while the parent holds its stdin pipe open (EOF releases it,
+  plus a 120 second safety cap), so it is still present in the process
+  table when the procscan attributes it. It asserts `Signal=terminated`;
+  on the siginfo path `SenderPID` must equal the child's PID, on the
+  /proc fallback the child must appear among `CandidatesFor` results with
+  the test binary in its cmdline, and the captured cause must not point at
+  some other process. Skips with a message on non-Linux; signals only its
+  own process via the child it started.
 
 ---
 
@@ -2402,9 +2422,10 @@ The daemon observes the in-flight model request of a worker or verifier session 
 - **Config keys:** both live on `config.AutonomousAutomationConfig` in `internal/config/config.go`.
   - `autonomous.automation.merge_pending_mode`: `off` (default), `shadow` or `on`. An unset key reads `off` via `EffectiveMergePendingMode`. On config load (`validateLoaded` → `ValidateMergePendingMode`) an empty value is accepted as unset and any other unknown word is an error; the write paths (`validateMergePendingMode` in `internal/server/api.go`: `PUT /api/config` and the Automata config object) refuse an empty string and any unknown word with a 400.
   - `autonomous.automation.merge_pending_alert_minutes`: whole minutes >= 0. Unset reads `DefaultAutomationMergePendingAlertMinutes` (30); an explicit 0 turns the alert off and survives a round trip (`MergePendingAlertMinutes` is a `*int`, read through `EffectiveMergePendingAlertMinutes`). A negative value is refused with a 400 on the write paths (`validateMergePendingAlertMinutes`) and with an error on config load.
+  - `autonomous.automation.merge_pending_include_terminal`: bool, default true (`MergePendingIncludeTerminal` is a `*bool`; unset reads `DefaultMergePendingIncludeTerminal` through `EffectiveMergePendingIncludeTerminal`). When true the pass also covers archived, needs_review, blocked and failed Automata with a work branch; false keeps it to completed Automata. It is bridged into the manager's `AutomationConfig` in `cmd/datawatch/main.go`; the REST/CLI/comm/MCP/PWA write paths for this key are not wired yet, so it is set in YAML.
   - Both are read live on every tick, so a change applies to the next tick with no restart. Chat `configure`, MCP `autonomous_config_set` (`automation_merge_pending_mode`, `automation_merge_pending_alert_minutes`) and the PWA Automata settings fields write the same keys.
 - **Comparison:** `internal/autonomous/merge_compare.go` classifies a finished Automaton's `automaton/<id>` branch against `main` with read-only git (`rev-list`, `cherry`, `log`): `merged`, `pending`, `needs_look` (patch and subject line disagree), `empty` or `unknown` (not compared, or a git error). One comparison is bounded by `mergePendingGitTimeout` (30 seconds, `internal/autonomous/merge_pending_pass.go`) and results are cached while the branch tip and the `main` tip are unchanged.
-- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`.
+- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`. Archived, needs_review, blocked and failed Automata (while `merge_pending_include_terminal` is on) never get a `merge_pending` record — a failed or blocked one keeps its triage record untouched — so their episode is kept in memory by Automaton id (`mergePendingState.episodes`, pruned with the other maps, seeded from a `merge_pending` record carried over from completed); they raise the same one alert per episode, whose title and body name the Automaton, its state and the branch. An episode ends when the branch is merged, empty or `needs_look`. Shadow decisions carry `automaton_state` and `found_false` (a `would_alert` decision whose episode later ended empty or `needs_look`); `merge_shadow_decisions.json` is an object holding `decisions_total`, `decisions_false` and `decisions` (an older bare list still loads), reported as `shadow_decisions_total` and `shadow_decisions_false` by the merge status read.
 - **Report (batched fetch):** `internal/autonomous/merge_safe_delete.go` builds the safe-to-delete report. It issues no command that changes anything, and keeps git work down: a fixed listing cost (one `for-each-ref` with the ahead-behind atom — falling back to a plain ref listing plus one `rev-list --count` per branch on older git — and one `worktree list`, plus one base subject log only when at least one branch is ahead), then per-branch at most two calls (cherry, branch subject log) plus one status read per safe candidate worktree, run through a bounded worker pool (`safeDeleteGitConcurrency`, 4).
 - **Report (cache):** `merge_safe_delete_cache.go` front-loads that: a per-repository in-memory cache for 60 seconds (`safeDeleteCacheTTL`), cold reads single-flight (concurrent readers share one computation, or its unwrapped error), fresh reads served at once, stale reads served at once with `Stale` set and the original computation time still stamped as `ComputedAt` — plus exactly one background refresh per repository at a time, bounded by `safeDeleteRefreshTimeout` (60 s), whose failure keeps the last good report and logs one line (`[autonomous] safe-to-delete cache refresh: repo ...`).
 - **Report (stats):** `merge_safe_delete_stats.go` records the counters (`Refreshes`, `RefreshFailures`, `SlowReports`, `LastDurationMs`, `LastComputedAt`, `Worktrees`) behind `SafeDeleteStats`, and a computation longer than `safeDeleteSlowWarn` (3 s) is logged exactly once with the duration, threshold and worktree count — never repository, branch or worktree names or paths. `merge_status.go` holds the merge status model, `merge_text.go` the shared CLI/comm/alert wording (including the computed-at line and the stale note, both only when the report carries them).
@@ -2900,6 +2921,19 @@ global default. Web surface: settings card *Pi (worker backend)*
   `DetectLoop` turn window. Web surface: the autonomous settings card
   (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
   `settings_loop_detect_turns` in all 5 locales.
+- **`autonomous.unlanded_alert_enabled`** / **`autonomous.unlanded_alert_threshold`**
+  (`Autonomous.UnlandedAlertEnabled *bool` / `UnlandedAlertThreshold *int` in
+  `internal/config/config.go`; `internal/config/unlanded_alert.go`: `nil` →
+  on / 3, `0` threshold alerts on any pending branch, negative rejected by
+  `ValidateUnlandedAlertThreshold` at load and every write edge). Mirrored on
+  `autonomous.Config`; the daily check (`internal/autonomous/unlanded_alert.go`,
+  started from the poll loop in `Manager.run`) reads the live manager Config on
+  each tick and persists the last-alerted day in `unlanded_alert.json`. REST
+  keys in `internal/server/unlanded_alert_config.go`; the
+  `/api/autonomous/config` path validates in `autonomous.validateUnlandedAlertPatch`.
+  Web surface: the autonomous settings card with labels
+  `settings_unlanded_alert_enabled` / `settings_unlanded_alert_threshold` in all
+  5 locales.
 
 ### Tests
 
@@ -3003,14 +3037,34 @@ bucket, not a stored status value.
   with the merge time as the completion time; one `completed_migration`
   decision-log line per record (what, why, how to undo); idempotent; refused
   while a final gate runs; `MarkPRDCompleted` is the single-record write the
-  merge pipeline's `mark_completed` post-ship step and the migration share.
-  It never touches a session.
+  merge pipeline's `mark_completed` post-ship step and the migration share;
+  both paths also record the record's **landing** as `landed` with the merge
+  commit. It never touches a session.
+- **`internal/autonomous/landing.go`** — the per-record **landing record**
+  (`PRD.Landing`, `models.go`): `pending` (set by `markLandingPendingLocked`
+  when the work branch is created — `executor.go`, `worktree.go`), `landed`
+  (`markLandingLandedLocked`, from `MarkPRDCompleted`), `kept` / `dropped`
+  (`KeepLanding` / `DropLanding`, each needing an actor and a non-empty
+  reason, refused when already landed, one `landing_keep` / `landing_drop`
+  decision each). `Archive` (`manager.go`) refuses a `pending` landing, the
+  branch named. `MigrateLanding` (same file) is the one-time backfill:
+  archived, has a branch, no record, git cannot prove merged → `pending`
+  (actor `landing_migration`); idempotent, no status or decision, skips when
+  the default branch is unknown. `RunLandingMigrationOnce` /
+  `StartLandingMigration` (same file) are its only production caller:
+  `cmd/datawatch/main.go` starts it in a goroutine right after `SetAlertFn`;
+  it logs the count, alerts when above zero, and writes
+  `landing_migration.done` after a clean pass. Tests: `landing_test.go`
+  (`TestLandingStates`, `TestLandingKeepDropRequireActorAndReason`,
+  `TestLandingNoBranchNoRecord`, `TestLandingMigration`,
+  `TestLandingMigrationOnceAlertsAndMarksDone`).
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking
   goroutine when `autonomous.shipped.backfill_on_start` is on).
 - **Post-ship step.** `mark_completed` is the fifth post-ship built-in
-  (`internal/mergepipeline/posthook_builtins.go`); the merge helper's
+  (`internal/mergepipeline/posthook_builtins.go`); it marks the Automaton
+  Completed and records its landing as `landed`; the merge helper's
   `completed_mark` step in `scripts/merge-shipped-record.sh` reaches the same
   result through `completed-migrate --id`.
 - **Surfaces**

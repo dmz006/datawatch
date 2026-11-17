@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.175.5"
+var Version = "9.182.3"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -881,6 +881,26 @@ func (s *Server) RegisterNativePlugin(p NativePlugin) {
 // internal/autonomous.Manager. Defining it as an interface keeps
 // server-package tests free of a hard dependency on the autonomous
 // package and lets us swap in a fake.
+// automatonHolder is the optional AutonomousAPI extension for the operator
+// hold: put an Automaton on hold, change the hold, release it. Fakes that do
+// not hold anything simply do not implement it.
+type automatonHolder interface {
+	Hold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ExtendHold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ReleaseHold(id, actor, note string) (any, error)
+}
+
+// heldGroupReader is the optional extension that returns the held group.
+type heldGroupReader interface {
+	HeldAutomata() autonomous.HeldGroup
+}
+
+// holdMigrator is the optional extension that lists look-alike blocked or
+// failed Automata and holds the chosen ones.
+type holdMigrator interface {
+	MigrateToHold(opts autonomous.HoldMigrationOpts) (autonomous.HoldMigrationReport, error)
+}
+
 type AutonomousAPI interface {
 	Config() any
 	SetConfig(any) error
@@ -6790,7 +6810,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
-			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			"loop_detect_turns": config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			// Daily pending-branch alert: effective values (unset reads on
+			// and 3), so the keys are never absent from the read surface.
+			"unlanded_alert_enabled":               config.UnlandedAlertEnabledEffective(s.cfg.Autonomous.UnlandedAlertEnabled),
+			"unlanded_alert_threshold":             config.UnlandedAlertThresholdEffective(s.cfg.Autonomous.UnlandedAlertThreshold),
 			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
@@ -6856,6 +6880,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":         s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
+			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
@@ -6949,10 +6974,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
 				// Merge-pending check: the mode reads off when unset, the alert
 				// minutes read the 30-minute default when unset and an explicit
-				// 0 stays 0 (the merge-pending alert off).
-				"child_inherit":               s.cfg.Autonomous.Automation.EffectiveChildInherit(),
-				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
-				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				// 0 stays 0 (the merge-pending alert off). include_terminal reads
+				// true (on) when unset and an explicit false stays false.
+				"child_inherit":                  s.cfg.Autonomous.Automation.EffectiveChildInherit(),
+				"merge_pending_mode":             s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
+				"merge_pending_alert_minutes":    s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				"merge_pending_include_terminal": s.cfg.Autonomous.Automation.EffectiveMergePendingIncludeTerminal(),
 				// Effective, not raw: an empty value reads the "completed"
 				// default via the accessor.
 				"merged_member_policy": s.cfg.Autonomous.Automation.EffectiveMergedMemberPolicy(),
@@ -7489,6 +7516,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
 	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
 	// default and an explicit 0 turns the merge-pending alert off.
+	// include_terminal is a plain boolean: unset reads true (the check covers
+	// terminal Automata beside completed) and an explicit false is preserved.
+	if v, ok := patch["autonomous.automation.merge_pending_include_terminal"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.merge_pending_include_terminal: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	if v, ok := patch["autonomous.automation.merge_pending_mode"]; ok {
 		if verr := validateMergePendingMode(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
@@ -8210,6 +8245,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
+			return
+		}
+	}
 	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -8290,6 +8331,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Branch refresh settings: a non-boolean enabled or a negative or
 	// non-numeric behind limit refuses the whole PUT (branch_refresh_api.go).
 	if err := validateBranchRefreshPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Daily pending-branch alert: a non-boolean enabled or a negative or
+	// non-whole threshold refuses the whole PUT (unlanded_alert_config.go).
+	if err := validateUnlandedAlertPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -10169,6 +10216,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
 			}
+		case "autonomous.automation.merge_pending_include_terminal":
+			// Validated above in handlePutConfig as a JSON boolean; a value
+			// that is not one is left unchanged. An explicit false (terminal
+			// states excluded) is preserved by the pointer.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.MergePendingIncludeTerminal = &b
+			}
 		case "autonomous.automation.merged_member_policy":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -10883,6 +10937,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
 			}
+		case "autonomous.reaped_branch_backup_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.ReapedBranchBackupDays = n
+			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
 		case "autonomous.per_story_approval":
@@ -10891,6 +10950,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case unlandedAlertEnabledKey, unlandedAlertThresholdKey:
+			// Daily pending-branch alert (unlanded_alert_config.go):
+			// handlePutConfig refuses a bad value first; one that reaches
+			// here is skipped.
+			if _, applied := applyUnlandedAlertConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case branchRefreshEnabledKey, branchRefreshLimitKey:
 			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
 			// refuses a bad value first; one that reaches here is skipped.

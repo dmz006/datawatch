@@ -239,6 +239,19 @@ test('the state filter narrows the list and hides the reorder controls while a f
   assert.doesNotMatch(h, /plans-move-up/, 'reordering a filtered list would hide plans from the new order');
 });
 
+test('several states are a set: any of them matches, and an empty set shows all', async () => {
+  const { sb } = load();
+  await openPlans(sb);
+  sb.plansBrowserSetState('planned,in_progress');
+  assert.equal(pr(sb, 'JSON.stringify(_plansBrowser.states)'), '["planned","in_progress"]', 'the mirror is a set, not a string');
+  const h = html(sb);
+  assert.match(h, /data-plan="polish"/);
+  assert.match(h, /data-plan="login-flow"/, 'any of the selected states matches its plan');
+  assert.doesNotMatch(h, /data-plan="idea"/);
+  sb.plansBrowserSetState('');
+  assert.match(html(sb), /data-plan="login-flow"/, 'clearing the set shows every state again');
+});
+
 test('collapse and expand state is remembered under one localStorage key', async () => {
   const { sb } = load();
   await openPlans(sb);

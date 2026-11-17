@@ -107,3 +107,53 @@ func TestMergePendingConfigRejectsNegativeMinutes(t *testing.T) {
 		t.Fatalf("45 loaded as %d", got)
 	}
 }
+
+func TestMergePendingIncludeTerminalDefaultsTrue(t *testing.T) {
+	var unset AutonomousAutomationConfig
+	if !unset.EffectiveMergePendingIncludeTerminal() {
+		t.Fatal("unset merge_pending_include_terminal reads false, want true")
+	}
+	if !DefaultConfig().Autonomous.Automation.EffectiveMergePendingIncludeTerminal() {
+		t.Fatal("default config merge_pending_include_terminal reads false, want true")
+	}
+	cfg, err := loadMergePendingYAML(t, "    merge_pending_mode: shadow\n")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Autonomous.Automation.EffectiveMergePendingIncludeTerminal() {
+		t.Fatal("loaded without the key: reads false, want true")
+	}
+}
+
+func TestMergePendingIncludeTerminalExplicitValuesSurvive(t *testing.T) {
+	for _, tc := range []struct {
+		yaml string
+		want bool
+	}{{"false", false}, {"true", true}} {
+		cfg, err := loadMergePendingYAML(t, "    merge_pending_include_terminal: "+tc.yaml+"\n")
+		if err != nil {
+			t.Fatalf("Load %s: %v", tc.yaml, err)
+		}
+		if got := cfg.Autonomous.Automation.EffectiveMergePendingIncludeTerminal(); got != tc.want {
+			t.Fatalf("merge_pending_include_terminal %s loaded as %v", tc.yaml, got)
+		}
+		path := filepath.Join(t.TempDir(), "saved.yaml")
+		if err := Save(cfg, path); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		back, err := Load(path)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got := back.Autonomous.Automation.EffectiveMergePendingIncludeTerminal(); got != tc.want {
+			t.Fatalf("merge_pending_include_terminal %s after save and reload = %v", tc.yaml, got)
+		}
+		if back.Autonomous.Automation.MergePendingIncludeTerminal == nil {
+			t.Fatalf("explicit %s was dropped on save", tc.yaml)
+		}
+	}
+	// the mode setting still takes exactly off, shadow and on
+	if err := ValidateMergePendingMode("terminal"); err == nil {
+		t.Fatal("merge_pending_mode accepted a value outside off, shadow and on")
+	}
+}

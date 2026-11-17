@@ -1325,6 +1325,13 @@ autonomous:
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5
+  # Daily pending-branch alert (docs/howto/automaton-worktree-cleanup.md).
+  # Once per calendar day, when more pending (superseded) Automaton branches
+  # wait for cleanup than unlanded_alert_threshold, raise one alert naming the
+  # oldest pending branch and its age. Unset enabled reads true; unset
+  # threshold reads 3; 0 alerts on any pending branch; negative is refused.
+  unlanded_alert_enabled: true
+  unlanded_alert_threshold: 3
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.
@@ -1406,6 +1413,14 @@ autonomous:
   # comm `configure autonomous.automation.merge_pending_alert_minutes=45`, the
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
+  #
+  # merge_pending_include_terminal: bool, default true (an unset key reads
+  # true). When on, the merge-pending check also looks at archived,
+  # needs_review, blocked and failed Automata with a work branch, raising one
+  # alert per episode that names the Automaton, its state and the branch; a
+  # failed or blocked Automaton's triage record is left as it is. false keeps
+  # the check to completed Automata only. Set in this file; the other config
+  # surfaces do not write this key yet.
   #
   # child_inherit: bool, default true (an unset key reads true). When on, a
   # child Automaton (a task's child, a fix Automaton, a defect with a parent)
@@ -1753,6 +1768,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merge_pending_include_terminal: true
     child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow
@@ -3826,6 +3842,10 @@ autonomous:
   # for those gates. Unset or 0 reads the default of 24 hours; negative is a
   # config error.
   verifier_headroom_max_age_hours: 24
+  # Whole days the backup ref of a reaped Automaton branch is kept before it
+  # is pruned. Unset or 0 reads the default of 30 days; negative is a config
+  # error.
+  reaped_branch_backup_days: 30
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
@@ -4904,7 +4924,7 @@ orchestrator:
 #     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
 #     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
-#     # verify_tls: false                       # true = model pulls to this node verify its certificate against the system roots; default off
+#     # verify_tls: false                       # kept for compatibility: model pulls to this node always verify its certificate (system roots, plus tls_ca_file / tls_cert_fingerprint when set); no per-node off switch
 
 # ── Compute pin keeper ──
 # Node drain state (drained, drain_until, drain_reason) is runtime state kept in

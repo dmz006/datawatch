@@ -129,10 +129,18 @@ func (n *Node) TLSSettingsKey() string {
 	return fmt.Sprintf("%q|%q|%t", n.TLSCAFile, n.TLSCertFingerprint, n.TLSInsecureSkipVerify)
 }
 
+// fingerprintMismatchError is the typed failure of a pinned-cert check;
+// WrapPullError recognizes it so a wrong pin names the node and the fix.
+type fingerprintMismatchError struct{ got, want string }
+
+func (e fingerprintMismatchError) Error() string {
+	return fmt.Sprintf("node cert fingerprint mismatch: got %s want %s", e.got, e.want)
+}
+
 func checkLeafFingerprint(raw []byte, want string) error {
 	sum := sha256.Sum256(raw)
 	if got := hex.EncodeToString(sum[:]); got != want {
-		return fmt.Errorf("node cert fingerprint mismatch: got %s want %s", got, want)
+		return fingerprintMismatchError{got: got, want: want}
 	}
 	return nil
 }

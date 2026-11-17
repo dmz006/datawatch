@@ -208,8 +208,8 @@ func (m *Manager) QuestionTick(ctx context.Context) {
 
 	for _, p := range m.store.ListPRDs() {
 		prd, ok := m.store.SnapshotPRD(p.ID)
-		if !ok {
-			continue
+		if !ok || prd.Status == PRDHeld {
+			continue // a held Automaton's tasks are not resumed by an answer
 		}
 		for _, st := range prd.Story {
 			for _, tk := range st.Tasks {

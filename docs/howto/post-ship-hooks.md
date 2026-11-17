@@ -67,14 +67,16 @@ The five built-ins:
 | `parity_issue` | Opens a parity issue in the companion repository, titled by the title template, with the notify template as its body. |
 | `tag` | Tags the release `vVERSION`; skips rather than fails when the tag already exists. |
 | `notify` | Sends the rendered message through the daemon's notifier (its alert channel); the step fails rather than drops the message when no notifier is wired. |
-| `mark_completed` | Marks the Automaton whose branch just shipped **Completed**, with the release, the merge commit and the merge time. Needs no target setting. Safe to repeat: an Automaton that is already Completed is left alone. It never cancels anything and never touches a session. |
+| `mark_completed` | Marks the Automaton whose branch just shipped **Completed**, with the release, the merge commit and the merge time, and records its branch's **landing** as `landed` with the merge commit. Needs no target setting. Safe to repeat: an Automaton that is already Completed is left alone, and a landing record that already names the commit is left alone. It never cancels anything and never touches a session. |
 
 `mark_completed` is the daemon's own way to finish an Automaton after a ship,
 so nobody cancels a merged Automaton by hand. It is the same outcome the merge
 helper script reaches with its `completed_mark` step, and the one-off
 [Completed migration](automata-completed-migration.md) reaches for older
-records. A run that belongs to no Automaton fails this hook's step with the
-reason named; the ship itself is already done.
+records. Recording the landing as `landed` is what lets the Automaton be
+archived afterwards: an Automaton whose branch has a **pending** landing
+record is refused by Archive until it is `landed`, `kept` or `dropped` — see
+[Automaton worktree cleanup](automaton-worktree-cleanup.md#the-landing-record). A run that belongs to no Automaton fails this hook's step with the reason named; the ship itself is already done.
 
 ## The built-in targets
 

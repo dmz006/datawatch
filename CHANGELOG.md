@@ -5,6 +5,115 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
+
+### Changed
+
+- Fix the shutdowncause child process scan flake in the full test run.
+
+## v9.182.2 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
+
+### Changed
+
+- Fix the peer-down recovery test that fails in the full package run.
+
+## v9.182.0 — Build-host toolchain freshness check
+
+### Changed
+
+- Build-host toolchain freshness check.
+
+## v9.181.0 — Remember the header server dropdown choice per browser
+
+### Changed
+
+- Remember the header server dropdown choice per browser.
+
+## v9.180.2 — Two data races found by the race detector
+
+### Fixed
+
+- **A model pull answered with a record that its own background pull was still updating.** The compute node model pull handler registered the pull task, started the goroutine that updates it, then encoded the same record into the response. The response is now a copy taken before the goroutine starts. The race detector reported it in `TestModelPullAllowedByModelEntry` and `TestModelPullAllowedByPublisher`.
+- **The observer pull test ticker helper was not safe for the several collector workers that ask it for a ticker at once.** It now holds a lock, which removes the race and the occasional failure of `TestHandleObserverPull_FailedPeerIsStaleWithReason`.
+
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
+## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
+
+### Changed
+
+- Merge-pending sweep covers every terminal state and leaves shadow mode.
+
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
+## v9.176.2 — Quick replies answer the pending operator question
+
+### Changed
+
+- Quick replies answer the pending operator question.
+
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
+
+## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
+
+### Changed
+
+- Multi-select state filters on Automata, Projects and Plans.
+
+## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
+
+### Changed
+
+- Give the agent-aider image Python 3.11.5 or newer for soupsieve 4.
+
 ## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
 
 ### Fixed
@@ -366,7 +475,11 @@ The Projects page now decides which project an Automaton belongs to by an explic
 
 ### Changed
 
-- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting.
+- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage, key `dw_server_choice`), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting. Mobile parity for this persisted choice is tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482).
+
+### Fixed
+
+- **The remembered server choice is no longer overwritten by the settle bound once boot has settled.** The boot settle step's fallback timer (which turns an unvalidatable saved choice into **All servers** when the server list cannot be fetched in time) was never cleared when another path settled, and its callback saved **All servers** unconditionally — so a page open longer than the bound could have its validated saved choice, or a choice the operator picked in the meantime, silently overwritten with "all" in local storage. Each now-settle path (validated peer, stale fallback, the bound) commits through one guarded finish: the first to settle wins and clears the pending bound, and the "all" save only runs through that guard. New PWA tests fire the bound's callback after a validated restore and pin that the stored choice — and a choice made after boot — do not change.
 
 ## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
 

@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.175.5"
+var Version = "9.182.3"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4670,6 +4670,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
 			BranchRefreshEnabled:             acfgIn.BranchRefreshEnabled,
 			BranchRefreshBehindLimit:         acfgIn.BranchRefreshBehindLimit,
+			UnlandedAlertEnabled:             acfgIn.UnlandedAlertEnabled,
+			UnlandedAlertThreshold:           acfgIn.UnlandedAlertThreshold,
 			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
 			GateDisagreement:                 acfgIn.GateDisagreement,
@@ -4823,6 +4825,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				MergePendingMode:         acfgIn.Automation.MergePendingMode,
 				MergePendingAlertMinutes: acfgIn.Automation.MergePendingAlertMinutes,
 				MergedMemberPolicy:       acfgIn.Automation.MergedMemberPolicy,
+				// MergePendingIncludeTerminal is a pointer: nil (unset) reads
+				// the on default in the manager.
+				MergePendingIncludeTerminal: acfgIn.Automation.MergePendingIncludeTerminal,
 				// ChildInherit is a pointer: nil (unset) reads the on default.
 				ChildInherit:          acfgIn.Automation.ChildInherit,
 				CreateSearchMode:      acfgIn.Automation.CreateSearchMode,
@@ -8013,6 +8018,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetAlertFn(func(title, body string) {
 				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// One-time landing migration: archived Automata whose branch is not
+			// on the default branch are marked pending; the count is logged and
+			// raised as one operator alert through the hook above. Runs in a
+			// goroutine (read-only git) and a done marker stops re-runs.
+			amgr.StartLandingMigration()
 			// Back-off flags restored at start: decision log, alert, audit.
 			recordRestoredBackoff(amgr)
 			// Undeclared-edit detection: raise the operator alert at the

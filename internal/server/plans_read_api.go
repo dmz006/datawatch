@@ -508,13 +508,20 @@ func (s *Server) handlePlanRecordBrowse(w http.ResponseWriter, r *http.Request) 
 		f.Kind = k
 	}
 	if v := q.Get("state"); v != "" {
-		st := planrecords.State(v)
-		if (f.Kind == planrecords.KindFinding || !planrecords.ValidState(planrecords.KindRegistryRow, st)) &&
-			(f.Kind == planrecords.KindRegistryRow || !planrecords.ValidState(planrecords.KindFinding, st)) {
-			planRecordsError(w, http.StatusBadRequest, "state "+strconv.Quote(v)+" is not a valid state for this kind")
+		kinds := []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding}
+		if f.Kind != "" {
+			kinds = []planrecords.Kind{f.Kind}
+		}
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds))
+		if err != nil {
+			planRecordsError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		f.State = st
+		if len(words) == 0 {
+			planRecordsError(w, http.StatusBadRequest, "state must be one of "+strings.Join(stateWords(kinds), ", "))
+			return
+		}
+		f.States = statesFromWords(words)
 	}
 	rows, total := s.planRecords.Browse(f)
 	out := make([]browseRow, 0, len(rows))

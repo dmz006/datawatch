@@ -633,6 +633,14 @@ func (a *API) SetConfig(v any) error {
 			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
 		}
 	}
+	// unlanded_alert_enabled / unlanded_alert_threshold — the daily
+	// pending-branch alert. A present enabled key must be a JSON boolean and
+	// a present threshold a whole number >= 0, checked before any merge so
+	// every write path (REST, MCP, comm) refuses a bad value the same way.
+	// null or absent leaves the current value.
+	if verr := validateUnlandedAlertPatch(raw); verr != nil {
+		return verr
+	}
 	// request_watch is checked with the same rules as PUT /api/config, so
 	// every write path (REST, MCP, comm) refuses a bad value the same way
 	// before anything is merged. An omitted or null block passes.
@@ -954,6 +962,13 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 	if _, ok := a.prdStatus(id); !ok {
 		return false, fmt.Errorf("prd %q not found", id)
 	}
+	// A held Automaton is refused before a slot is claimed or prep can change
+	// its status: nothing starts it until the operator releases the hold.
+	if p, ok := a.M.Store().GetPRD(id); ok {
+		if err := a.M.refuseHeld(p); err != nil {
+			return false, err
+		}
+	}
 	execs := a.spawnFn != nil && a.verify != nil
 	var ctx context.Context
 	if execs {
@@ -1078,6 +1093,40 @@ func (a *API) Resume(id, actor string) (any, error) {
 	if err := a.Run(id); err != nil {
 		return nil, err
 	}
+	return updated, nil
+}
+
+// Hold puts an Automaton on hold through Manager.Hold. A held Automaton waits
+// by operator decision; nothing here starts an executor.
+func (a *API) Hold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.Hold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ExtendHold changes the hold on a held Automaton through Manager.ExtendHold.
+// It does not start an executor.
+func (a *API) ExtendHold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.ExtendHold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ReleaseHold ends a hold through Manager.ReleaseHold and restores the status
+// the Automaton had. It does not start an executor; the operator runs the
+// Automaton afterwards if it should run.
+func (a *API) ReleaseHold(id, actor, note string) (any, error) {
+	updated, err := a.M.ReleaseHold(id, actor, note)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
 	return updated, nil
 }
 
@@ -2516,6 +2565,19 @@ func (a *API) MigrateCompleted(dryRun bool, limit int, id string) (any, error) {
 		return nil, err
 	}
 	return report, nil
+}
+
+// HoldMigrationCandidates lists the blocked or failed Automata that look like
+// they should be on hold. It reads data and writes nothing.
+func (a *API) HoldMigrationCandidates() []HoldMigrationCandidate {
+	return a.M.HoldMigrationCandidates()
+}
+
+// MigrateToHold puts the Automata the operator chose on hold with the reason
+// the operator supplied (see Manager.MigrateToHold). It runs only when the
+// operator asks; nothing in the package calls it on its own.
+func (a *API) MigrateToHold(opts HoldMigrationOpts) (HoldMigrationReport, error) {
+	return a.M.MigrateToHold(opts)
 }
 
 // SweepTags re-derives the system tags of every existing Automata object

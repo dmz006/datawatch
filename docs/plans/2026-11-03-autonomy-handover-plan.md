@@ -405,3 +405,80 @@ Operator, 2026-11-11 20:48, quoted: "That was meant to be correct the note item 
 
 - 2026-11-14, on the authentication and authorization layer: "For the auth, file it but it is an 11.0 feature". Filed as the design Automaton 2fbf0001, kept as a draft with the later-release tag and no decompose or approval until the operator releases the hold. Earlier the same day the operator raised the direction ("we are getting to a point where we need an Auth layer and with it multi user, local, interfaces and api, a token worked for a while but full Auth with oauth compatible").
 - 2026-11-14, on the instance-level MCP config admin token (question q-18e80740ce702fa71cbc from Automaton e9e90001): "Don't change mcp for now". Answer: proceed with the opt-in legacy mode, the admin-token instance file stays as it is; the scoped session credential change is not made for the MCP config now.
+
+## 2026-11-15: Merge scripts Automaton stays in Release 10.0 (operator answer)
+
+Question: the Automaton "Merge scripts in the repository with shadow pipeline comparison" is running and was unattached; should it stay in Release 10.0 or move to 11.0? Operator, 2026-11-15: "that is key to our 10.0 release with datawatch managing releses of course it i sin 10.0!!" Result: attached to plan release-10-0.
+
+## 2026-11-15: shipped automation modes are turned on by the supervisor (operator answer)
+
+Operator, 2026-11-15: "lets get these features active that is why i asked for and had you build them!!" and "they shuld be shipped same for new features as they come out don't want on me that is the purpose of this beign buit!" Shadow mode means the feature decides and records what it would do but changes nothing and raises no alert; it exists so the supervisor can compare it with the manual check and then promote it. Done 2026-11-15 19:1x: `autonomous.task_override_statuses` now includes `running`; `repo_ci_watch.mode` on for the datawatch and pidp11-hacs repos; `merge_pending_mode`, `create_search_mode`, `security_failure.mode` and `decompose_lint.mode` on. Rule from now on: each new mode setting is switched on when it ships, after one look at its shadow records, and the change is recorded here.
+
+## 2026-11-15: a known one-line merge fix is made by the supervisor, and the back-off lifts at the pace crossing (operator answers)
+
+Question: the merge of the queue-overflow test fix failed on one lint finding, an unused helper left by the branch, and the Automaton was archived. Operator, 2026-11-15: "seems a one line hand edit is faster than waiting on a full automation to fix one line, seems like a good use of a build supervisor fixing the smaller build and not taking a full build cycle for a quick fix already known if it can". Decision: when a merge gate finds a small, already-known fix (one finding, no behaviour change), the supervisor makes it as its own commit on top of the merge in the merge worktree, runs build, lint and the touched package tests, ships, and says so in the report. Anything larger still goes through an Automaton. Follow-up kept open: the Automaton's own verification passed with that lint error, so it does not run the repository lint.
+
+Question: the weekly pace back-off set until the next window end would idle the queue for the stretch between the estimate falling within 2 points of the pace line and that window end. Operator, 2026-11-15: "if the estimate is 9:30 to 9:50 or 10, and it resets at 11, we could lose 1.5hr or so of work". Decision: a week-pace back-off ends at the time the week estimate crosses the pace line plus 2 points, not at a window end, and the guard clears it as soon as the estimate is inside that margin. A window at 85 percent or more still backs off to the window end. The guard rules file carries the same standing rule.
+
+## 2026-11-16: the three held completion reviews run on Claude during a bounded window (operator answer)
+
+Question: three finished Automata (unlanded-work counts, core automation stability 2, the Automaton landing record) were held in needs_review because the pi judge timed out at its 30-minute limit, and the second judge backend, Claude, was held by the weekly back-off; should the three reviews run on Claude now, one at a time, or wait for the back-off to lift at 09:30. Operator, 2026-11-16: "2% window,  19% week, yes run judges". Decision: the supervisor opened a bounded window at about 05:00 by clearing the claude-code back-off, pinned each of the three judges to Claude Sonnet, and set a one-shot job to put the back-off back until 09:30 at 05:35. The Claude cap of one session runs the judges one at a time, and an Automaton already waiting on Claude (d1130001) was moved to the back of the queue for the window so its worker does not take the slot. Finding kept for the design list: approving and running a needs_review Automaton does not retrigger its completion review while the second judge backend is held, and the review reserve admits a judge only when the selector picks it, so a judge-timeout hold on a large diff needs either the back-off to lift, a size-aware choice of judge, or a longer pi judge limit.
+
+## 2026-11-16 08:45 - Claude budget: operator reading and guard re-engaged
+
+Operator reading: window 39%, week 24% (pace line about 15.4). Operator, quoted: "why are we burning so much are we not using haiku builders and haiku whatever we can and only 1 claude session right?  Guard needs to get us back on track".
+
+Done: the reading is recorded; the claude-code back-off is set until 11:00 (the earlier unlock until 11:00 is ended). Finding: tasks with no model set fall back to the claude-code entry's default model (opus); since 07:00 Opus used 4.0M cache-write tokens against Haiku 0.6M. Window calibration is about 17 window percent per week point, not 10.
+
+## 2026-11-16 08:50 - Opus was never authorized: Sonnet and Haiku only
+
+Operator, quoted: "Why are we using opus, i never authorized that is always sonnet and haiku" and "Sonnet should be able to handle anything if not ask me this has killed our budget and it's only Monday morning".
+
+Rule: Claude work runs on Sonnet or Haiku. Anything that seems to need a higher model is asked first.
+
+Finding: 252 sessions are recorded as opus (122 verifiers, 82 workers, 48 other; 53 on 2026-11-15, 29 on 2026-11-16, bursts of 73 a day on 2026-10-14 and 2026-10-15). A Claude session started with no model uses the Claude command default for the account, Opus. The judge session of one Automaton was running on Opus when found and was ended. Code fix filed as a draft Automaton (12480001): every Claude start passes an explicit model, Sonnet by default, Haiku for mechanical work, Opus only when an operator names it.
+
+## 2026-11-16 09:00 - Shipped features turned on
+
+Operator, quoted: "Look at all features since staying 9.0 to 10.0, what is not enabled that was part of our automation planning,  use it,  turn it on, this was my request last night" and "How do we set everything queued with the right model".
+
+Done: task routing is on (mechanical task types go to pi, code to Sonnet, no Opus), decompose lint is on in enforce mode (it was shadow), the planner model is Sonnet, and the five Automata that named no model are pinned to Sonnet. The watch now flags any session running on Opus. Not turned on, with the reason: default quality gates (needs a baseline command from the operator), planning routing (needs rules), the task attempt and no-progress limits (reviewing the recommended values), capacity fall-through is already on.
+
+## 2026-11-16 10:55 - Claude after 11:00: question to the operator
+
+Budget at 10:55: week 24% read at 08:45 against a pace line of about 17 (8 points over); window about 49% by the corrected estimate; burn since 08:45 is 0.6 point, all of it the supervisor session on Sonnet. The claude-code back-off was bridged from 11:00 to 16:00 under the guard rule so Claude is never open before the answer.
+
+Question asked: may Claude work resume at 11:00 for these items, in this order, all on Sonnet: (1) judge the held pre-flight fix f79e0001 (the pi judge timed out), (2) plan the two defect drafts, the explicit Claude model and the stale session records, (3) the CodeQL fix PWA tasks, plus merging the parked usage-hold fix through the daemon's Sonnet conflict resolver (about 0.5 point together). The operator's answer is quoted here when given.
+
+## 2026-11-16 12:35 - Operator reading: hold Claude longer
+
+Operator reading: window 8%, week 26% (pace line about 17.6, 8 points over). Operator, quoted: "8% widow,  26% week,  the opus work messed up our usage,  probably need to hold a bit longer right?"
+
+Done: the claude-code back-off is extended to 21:00. By the guard rule the week is within 2 points of the pace line at Monday 23:19, so the hold probably runs to the 02:00 window end; each window end is re-evaluated. The 10:55 question (resume Claude on Sonnet for four items) is answered by this: not yet. The held items wait: judging the pre-flight fix, planning the defect drafts, the CodeQL fix's remaining Sonnet tasks, merging the usage-hold fix. The week estimate multiplier is raised from 1.3 to 2 because the supervisor session counts for more than the burn script shows.
+
+## 2026-11-16 12:40 - Operator answers: archived without landed work, trivy, planning on pi, the parent Automation, organization
+
+Operator, quoted: "How did we get archived with no work?  Seems like a but. Upgrade trivy, plan work pi but you verify,  pi isn't best planner if you find significant issue stop planning with pi. It's you cancel the parent will it come back,  how do we keep things organized and documented and finish all automation."
+
+What was done and found:
+- Archived without landed work: the daemon supervisor loop job `close_finished_records` archives an Automaton once its review passes and its branch is pushed, whether or not the work reached main (decision log of 659a0001: `archive` by `supervisor-loop` at 09:32, merged by hand at 09:40). The daemon reports 52 finished Automata with commits never merged (38 pending, 13 needing a look, 1 more); 26 pending and all 13 needing a look are archived. This was fixed by the landing record (v9.179.0): the daemon's own close of a finished record is now refused while the landing is pending, live since the 10:46 redeploy, and its one-time migration marked the older archived ones pending. No new defect is needed; the 52 are the backlog.
+- The daemon's own merge job `run_merge_until_conflict` fails every minute with "working tree is not clean": the main checkout holds a root-owned untracked `test/e2e/pwa/package-lock.json` from 2026-10-20. Not yet cleared, because starting automatic merges of 52 old branches needs a decision first.
+- Trivy upgraded from 0.74.0 to 0.76.2 (official release, checksum verified, old binary kept at supervisor-scratch/trivy-0.74.0.bak). It did not fix the failure: both the direct scan and the archive scan of the real agent base image still fail with "invalid tar header", and every layer opens cleanly as a tar. The cause is not found. The trivy Automaton 4f450001 stays held.
+- Planning is on pi (planning_backend pi-prompt, planning_model ollama/qwen3.8-64k:27b); the supervisor verifies each plan and stops planning on pi if it finds a significant issue.
+- Overlap check: three of the four defects filed this morning duplicated existing work. 83940001 contradicted the shipped design "back-off must not block verification, judging and planning" and was cancelled; 47220001 duplicated unlanded 72d1017e (44 commits) and was cancelled. 12480001 and 3e500001 are kept.
+- Cancelling the parent Automation 99ec8719 is final (activation only takes a draft); with `--cancel-in-flight false` nothing running is ended. Awaiting an explicit yes.
+- Organization: `docs/plans/2026-11-16-finish-automation-board.md`, regenerated by `scripts/automation-board.py` from the daemon's data, lists every unfinished item with rules for keeping it current.
+
+## 2026-11-16 13:10 - Backlog work and a shipped feature turned on
+
+Triage after the operator's "why are you a build supervisor not handling that?": 5c0c0001 had a failing final gate because its branch was a day behind main and still carried the old queue-overflow test and a pull collector race that main had already fixed; I merged main into the branch by hand and the gate script passes, and reset the gate. Branch refresh (merge main into an Automaton's branch between tasks, shipped off by default in 9.144.0) is now on, with a behind limit of 20, so long-running branches stop going stale. The pi plan for the temp folder defect (3e500001) came back after one lint retry with a forward dependency (docs task depending on later stories) that the repair tool did not fix; a revision was requested once, and pi planning stops if the revision repeats the error, as the operator said.
+
+## 2026-11-16 14:55 - Operator answers: parent Automation, daemon merging, stale work, pack workflow graphs
+
+Operator, quoted: "Why would you cancel something final,  was it canceled or finished,  we don't cancel finished stuff that was a fix last week,  yes just daemon merge but shadow it and make sure it has no bugs, yes on the stale ones.  Also add to plan that we need for pack to have lang graph for all workflow,  or should be clean and research and see what we can and might be creating doing with that,  display only,  allow changes,  tie to bundle pack since each defined a workflow,  what do your think". And: "So we have a plan to get to datawatch merging" and "Do you need me to remove test folder how did it get there".
+
+- Parent Automation 99ec8719: it is neither cancelled nor finished. It reads `blocked` because I activated a draft whose first four members were already archived finished work; I will not cancel it. Its fifth member d1130001 keeps its own state and runs when Claude opens. If it does not start then, the next step is asked, not a cancel.
+- Daemon merging: yes, in shadow first. The plan is `docs/plans/2026-11-16-daemon-merge-plan.md`. The real merge job (`supervisor_loop.run_merge_until_conflict`) is switched off until the plan's exit criteria hold; the shadow plans (85 stored) show release size and version unset on every plan, no changelog text on any, 168 unresolved conflicts and no comparison ever written.
+- Stale unlanded work: yes. Each of the 49 on the board is trial-merged in a throwaway tree; the clean ones land through the supervisor's chain (which also produces the comparison data the daemon needs) and only real conflicts come to the operator.
+- Pack workflow graphs: added as research first, `docs/plans/2026-11-16-pack-workflow-graph-research.md`: display only, then editable, tied to the pack design (72bc0001); recommendation is to keep datawatch's own graph schema and use LangGraph as an interchange target, not as a second runtime.
+- The `test/` folder in the main checkout is a root-owned 82-byte lockfile left over from 2026-10-20; it is ignored locally and does not need to be removed, but `sudo rm -rf` would clear it.

@@ -137,7 +137,7 @@ func newMergePendingHarness(t *testing.T, mode string, alertMinutes int) (*triag
 	return th, git
 }
 
-const mergeAlertPrefix = "warn|Automaton alpha merge pending|"
+const mergeAlertPrefix = "warn|Automaton alpha merge pending (completed, branch automaton/alpha-work)|"
 
 func TestMergePendingPass_BranchWithCommitsNotOnMain_AlertsAfterThreshold(t *testing.T) {
 	th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
@@ -586,5 +586,184 @@ func TestReadBranchTips_LooseAndPackedRefs(t *testing.T) {
 	}
 	if _, _, ok := readBranchTips(repo, "../escape", "main"); ok {
 		t.Fatal("a ref name with .. resolved")
+	}
+}
+
+// The per-state merge-pending pass over the terminal states other than
+// completed, driven by the scripted git and the pinned coordinator clock.
+
+var mergePassTerminalStates = []PRDStatus{PRDArchived, PRDNeedsReview, PRDBlocked, PRDFailed}
+
+func TestMergePendingPass_PerStateOnModeAlertNamesAutomatonStateBranch(t *testing.T) {
+	for _, state := range mergePassTerminalStates {
+		t.Run(string(state), func(t *testing.T) {
+			th, _ := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+			moveTo(t, th, state)
+			prefix := mergeTerminalPrefix(state)
+
+			th.h.c.triagePass()
+			th.assertNoAlerts(t, prefix)
+			th.advance(10 * time.Minute)
+			th.h.c.triagePass()
+			th.assertAlerts(t, 1, prefix)
+			containsAll(t, th.alertEntry(t, prefix), "alpha", string(state), mergeTestBranch, "2 commit(s)")
+		})
+	}
+}
+
+func TestMergePendingPass_PerStateShadowRecordsDecision(t *testing.T) {
+	for _, state := range mergePassTerminalStates {
+		t.Run(string(state), func(t *testing.T) {
+			th, _ := newMergePendingHarness(t, config.MergePendingModeShadow, 10)
+			moveTo(t, th, state)
+
+			th.h.c.triagePass()
+			th.advance(10 * time.Minute)
+			th.h.c.triagePass()
+			got := th.h.c.MergeShadowDecisions(0)
+			if len(got) != 2 {
+				t.Fatalf("shadow decisions = %+v, want 2", got)
+			}
+			d := got[0]
+			if d.AutomatonID != th.h.prds[0].ID || d.Name != "alpha" || d.AutomatonState != string(state) ||
+				d.Branch != mergeTestBranch || d.State != MergeStatePending || !d.WouldAlert {
+				t.Fatalf("newest decision = %+v, want alpha %s on %s pending would_alert", d, state, mergeTestBranch)
+			}
+			th.assertNoAlerts(t, "warn|Automaton alpha merge pending")
+		})
+	}
+}
+
+func TestMergePendingPass_PerStateTestsDisagreeNeedsLookNoAlert(t *testing.T) {
+	for _, state := range mergePassTerminalStates {
+		for _, mode := range []string{config.MergePendingModeOn, config.MergePendingModeShadow} {
+			t.Run(string(state)+"/"+mode, func(t *testing.T) {
+				th, git := newMergePendingHarness(t, mode, 10)
+				moveTo(t, th, state)
+				// patch test says not merged, subject test says merged
+				git.mu.Lock()
+				git.ahead, git.cherry = 1, "+ aaa\n"
+				git.branchLog, git.baseLog = "Add the first part\n", "Add the first part\n"
+				git.mu.Unlock()
+
+				for i := 0; i < 4; i++ {
+					th.h.c.triagePass()
+					th.advance(10 * time.Minute)
+				}
+				th.assertNoAlerts(t, "warn|Automaton alpha merge pending")
+				for _, d := range th.h.c.MergeShadowDecisions(0) {
+					if d.State != MergeStateNeedsLook || d.WouldAlert {
+						t.Fatalf("shadow decision = %+v, want needs_look without would_alert", d)
+					}
+				}
+				if _, ok := th.h.c.mergeEpisodeFor(th.h.prds[0].ID); ok {
+					t.Fatal("a needs_look branch holds an episode")
+				}
+			})
+		}
+	}
+}
+
+func TestMergePendingPass_AlertDedupPerEpisodeAndInterval(t *testing.T) {
+	for _, state := range mergePassTerminalStates {
+		t.Run(string(state), func(t *testing.T) {
+			th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+			moveTo(t, th, state)
+			prefix := mergeTerminalPrefix(state)
+
+			th.h.c.triagePass()
+			th.advance(9 * time.Minute)
+			th.h.c.triagePass()
+			th.assertNoAlerts(t, prefix) // interval not yet passed
+			th.advance(time.Minute)
+			th.h.c.triagePass()
+			th.assertAlerts(t, 1, prefix) // the interval passed: one alert
+			for i := 0; i < 4; i++ {
+				th.advance(10 * time.Minute)
+				th.h.c.triagePass()
+			}
+			th.assertAlerts(t, 1, prefix) // exactly one per episode
+
+			// the branch merges: the episode ends
+			git.setMerged("branch-1", "base-2")
+			th.h.c.triagePass()
+			if _, ok := th.h.c.mergeEpisodeFor(th.h.prds[0].ID); ok {
+				t.Fatal("episode survived the merge")
+			}
+			// new commits are a new episode, alerting again after the interval
+			git.mu.Lock()
+			git.baseTip = "base-3"
+			git.mu.Unlock()
+			git.setPending("branch-2")
+			th.h.c.triagePass()
+			th.assertAlerts(t, 1, prefix)
+			th.advance(10 * time.Minute)
+			th.h.c.triagePass()
+			th.assertAlerts(t, 2, prefix)
+		})
+	}
+}
+
+func TestMergePendingPass_ShadowStatusCountsFalseDecision(t *testing.T) {
+	th, git := newMergePendingHarness(t, config.MergePendingModeShadow, 10)
+	th.h.m.mu.Lock()
+	th.h.m.coordinator = th.h.c // the status read goes through the manager
+	th.h.m.mu.Unlock()
+	moveTo(t, th, PRDFailed)
+
+	th.h.c.triagePass()
+	th.advance(10 * time.Minute)
+	th.h.c.triagePass() // would_alert decision
+	st := th.h.m.MergeStatus()
+	if st.ShadowDecisionsTotal != 2 || st.ShadowDecisionsFalse != 0 {
+		t.Fatalf("status counts = %d/%d, want 2 total, 0 false", st.ShadowDecisionsTotal, st.ShadowDecisionsFalse)
+	}
+
+	// the alerting episode ends empty: its would_alert decision was false
+	git.mu.Lock()
+	git.ahead, git.cherry, git.branchLog, git.branchTip = 0, "", "", "branch-empty"
+	git.mu.Unlock()
+	th.h.c.triagePass()
+	st = th.h.m.MergeStatus()
+	if st.ShadowDecisionsTotal != 3 || st.ShadowDecisionsFalse != 1 {
+		t.Fatalf("status counts = %d/%d, want 3 total, 1 false", st.ShadowDecisionsTotal, st.ShadowDecisionsFalse)
+	}
+	var marked int
+	for _, d := range th.h.c.MergeShadowDecisions(0) {
+		if d.FoundFalse {
+			marked++
+			if !d.WouldAlert {
+				t.Fatalf("decision %+v marked false without would_alert", d)
+			}
+		}
+	}
+	if marked != 1 {
+		t.Fatalf("found_false decisions = %d, want 1", marked)
+	}
+}
+
+func TestMergePendingPass_IncludeTerminalFalseCompletedOnly(t *testing.T) {
+	for _, state := range mergePassTerminalStates {
+		t.Run(string(state), func(t *testing.T) {
+			th, git := newMergePendingHarness(t, config.MergePendingModeOn, 10)
+			off := false
+			setIncludeTerminal(th, &off)
+			moveTo(t, th, state)
+			for i := 0; i < 3; i++ {
+				th.h.c.triagePass()
+				th.advance(10 * time.Minute)
+			}
+			if n := git.total(); n != 0 {
+				t.Fatalf("git ran %d commands for a %s Automaton, want none", n, state)
+			}
+			th.assertNoAlerts(t, "warn|Automaton alpha merge pending")
+
+			// completed is still covered
+			th.setStatus(t, 0, PRDCompleted)
+			th.h.c.triagePass()
+			th.advance(10 * time.Minute)
+			th.h.c.triagePass()
+			th.assertAlerts(t, 1, mergeAlertPrefix)
+		})
 	}
 }

@@ -55,7 +55,9 @@ func planRecordKindArg(op string, req mcpsdk.CallToolRequest, optional bool) (st
 }
 
 // planRecordFilterQuery builds the list and search query from the shared
-// filter arguments.
+// filter arguments. state may be one state or a comma-separated list: the
+// daemon parses and checks it (planrecords.ParseStateList) and the tool
+// passes the value through unchanged.
 func planRecordFilterQuery(op string, req mcpsdk.CallToolRequest) (url.Values, *mcpsdk.CallToolResult) {
 	q := url.Values{}
 	for _, f := range []string{"project", "state", "automaton"} {
@@ -83,7 +85,7 @@ func (s *Server) toolPlanRecordList() mcpsdk.Tool {
 		mcpsdk.WithDescription("List plan records of one kind, most recently updated first: registry rows (the numbered items of the plans registry) or findings. Each record shows its title first and its id second, with its project, state, legacy row number and review flag. Filter by project, state or the Automaton that shipped or raised it; pass q to narrow by words. Read-only: it never creates or changes a record. Returns the same object as GET /api/plan-records/registry-rows or /findings."),
 		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("registry-row or finding")),
 		mcpsdk.WithString("project", mcpsdk.Description("Only records of this registered project alias")),
-		mcpsdk.WithString("state", mcpsdk.Description("Only records in this state. Registry rows: open, planned, in_progress, blocked, shipped, done, deferred, cancelled. Findings: open, triaged, fixed, wontfix, duplicate")),
+		mcpsdk.WithString("state", mcpsdk.Description("Only records in these states: one state or a comma-separated list. Registry rows: open, planned, in_progress, blocked, shipped, done, deferred, cancelled. Findings: open, triaged, fixed, wontfix, duplicate. A state the route does not admit is refused with the valid names")),
 		mcpsdk.WithString("automaton", mcpsdk.Description("Only records that this Automaton shipped or raised")),
 		mcpsdk.WithString("q", mcpsdk.Description("Only records that match these words")),
 		mcpsdk.WithNumber("legacy_number", mcpsdk.Description("Only the registry row with this old row number")),
@@ -344,7 +346,7 @@ func (s *Server) toolPlanRecordSearch() mcpsdk.Tool {
 		mcpsdk.WithString("q", mcpsdk.Required(), mcpsdk.Description("The words to search for")),
 		mcpsdk.WithString("kind", mcpsdk.Description("Only registry-row or only finding; both when left out")),
 		mcpsdk.WithString("project", mcpsdk.Description("Only records of this registered project alias")),
-		mcpsdk.WithString("state", mcpsdk.Description("Only records in this state")),
+		mcpsdk.WithString("state", mcpsdk.Description("Only records in these states: one state or a comma-separated list; a state the route does not admit is refused with the valid names")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("At most this many hits; default 100, maximum 1000")),
 		mcpsdk.WithNumber("offset", mcpsdk.Description("Skip this many hits, for paging")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),

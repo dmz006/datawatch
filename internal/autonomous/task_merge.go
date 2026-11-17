@@ -433,7 +433,7 @@ func unmergedPaths(ctx context.Context, dir string) []string {
 
 // abortMerge backs out an unfinished merge, restoring the tree it began from.
 func abortMerge(ctx context.Context, dir string) {
-	if _, err := runGitInCtx(ctx, dir, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err != nil {
+	if !mergeInProgress(ctx, NewMergeGitRunner(), dir) {
 		return // no merge in progress
 	}
 	if _, err := runGitInCtx(ctx, dir, "merge", "--abort"); err != nil {

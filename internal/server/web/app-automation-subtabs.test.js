@@ -57,7 +57,7 @@ test('default: a first render of the Automation sub-tab is Inbox, and the row is
 
 // Cards each sub-tab body owns, by element id.
 const OWNED = {
-  inbox: ['automationTriageCard', 'automationQuestionsCard', 'automationHeldQuestionsCard', 'automationSecurityFailureCard'],
+  inbox: ['automationTriageCard', 'automationQuestionsCard', 'automationHeldQuestionsCard', 'automationSecurityFailureCard', 'automationHeldAutomataCard'],
   automations: ['automationFilterBar', 'automationPanel', 'automationReleaseArcCard', 'automationGanttCard'],
   resources: ['automationCapacityCard', 'automationLaneFillCard', 'automationUsageCard'],
   progress: ['progressCard'],
