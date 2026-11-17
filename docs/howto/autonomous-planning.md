@@ -309,7 +309,13 @@ file and is added to the task's generated files.
 
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
-task titled "Add the retry setting to the config loader".
+task titled "Add the retry setting to the config loader". And every one of
+those names is written as **full file paths verbatim** — the exact
+repo-relative path, in one piece, with no space inside, no ellipsis and no
+abbreviation — because the coverage gate extracts names that stop at the
+first space and reads a name cut mid-way as a *different* missing file; the
+rule and its rationale are in
+[the full-file-path section of the decompose-lint how-to](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too).
 
 These are exempt without a marker:
 

@@ -1580,6 +1580,18 @@ type Task struct {
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
 
+	// SecurityFindings — human-readable findings (file:line: detail) from
+	// the daemon's warn-only pre-commit security scan over the task's
+	// worktree, recorded on the task right before its completion commit
+	// by Manager.RecordTaskSecurityFindings. Only the first 20 are stored;
+	// the full volume is on SecurityFindingCount. Warn-only: findings
+	// never change the task's status, and never fail, block or requeue it.
+	SecurityFindings []string `json:"security_findings,omitempty"`
+	// SecurityFindingCount — cumulative number of security-scan findings
+	// recorded on this task (a task that passes the pre-commit scan more
+	// than once accumulates the full count of each pass).
+	SecurityFindingCount int `json:"security_finding_count,omitempty"`
+
 	// SnapshotSkipped — files the session's staging commit (or the attempt
 	// snapshot pass) REFUSED to stage, each with the staging guard's reason
 	// (never-stage, ignored, outside-plan, outside-root, size, ignore-dir,

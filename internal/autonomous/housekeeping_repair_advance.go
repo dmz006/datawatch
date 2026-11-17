@@ -128,19 +128,26 @@ func (*advanceRepair) Group() string { return RepairGroupAdvanceJudge }
 
 func (r *advanceRepair) Detect(ctx context.Context) []RepairFinding {
 	var out []RepairFinding
+	// one read, one finding per Automaton at most, and the wording comes
+	// from one check of the state, never mixing finished and not-finished
+	// in the same finding.
 	for _, a := range r.ops.Automata(ctx) {
 		if !a.Running || a.MergeState != MergeStateNone {
 			continue
 		}
-		if len(a.TaskStatuses) == 0 {
+		total := len(a.TaskStatuses)
+		if total == 0 {
 			continue
 		}
-		f := RepairFinding{Subject: advanceSubject(a),
-			Summary: fmt.Sprintf("Automaton %q is running but every task is finished", a.Title)}
+		f := RepairFinding{Subject: advanceSubject(a)}
 		if n := nonTerminalCount(a); n > 0 {
-			f.Unsafe, f.UnsafeReason = true, fmt.Sprintf("%d task(s) are not finished, so advancing could lose work", n)
+			f.Summary = fmt.Sprintf("Automaton %q is running with %d of %d tasks not finished", a.Title, n, total)
+			f.Unsafe = true
+			f.UnsafeReason = fmt.Sprintf("%d of %d tasks are not finished, so advancing could lose work", n, total)
 		} else if a.LiveExecutor {
 			continue // a live run still holds it; not stuck
+		} else {
+			f.Summary = fmt.Sprintf("Automaton %q is stuck: it is running and all of its tasks are finished, but it is not advancing", a.Title)
 		}
 		out = append(out, f)
 	}
@@ -191,15 +198,22 @@ func (r *judgeRepair) Detect(ctx context.Context) []RepairFinding {
 		if a.HasRepairTask && !a.RepairMade && !r.madeOnce(subject) {
 			continue // someone already made a repair task; it is theirs to finish
 		}
-		f := RepairFinding{Subject: subject,
-			Summary: fmt.Sprintf("Automaton %q is blocked by the rules review and has no repair task", a.Title)}
-		switch {
-		case a.RepairMade || r.madeOnce(subject):
-			f.Unsafe, f.UnsafeReason = true, "the repair task was already made once for this review, so a second one would be needed"
-		case nonTerminalCount(a) > 0:
-			f.Unsafe, f.UnsafeReason = true, fmt.Sprintf("%d task(s) are not finished, so a repair could lose work", nonTerminalCount(a))
-		case !hasRealFindings(a.Findings):
-			f.Unsafe, f.UnsafeReason = true, "the review recorded no findings, so there is nothing real to repair from"
+		// one check of the state, one finding, wording that matches it.
+		f := RepairFinding{Subject: subject}
+		if a.RepairMade || r.madeOnce(subject) {
+			f.Summary = fmt.Sprintf("Automaton %q has its one repair task already made from the rules review", a.Title)
+			f.Unsafe = true
+			f.UnsafeReason = "the repair task was already made once for this review, so it will not be made again; finish or cancel that task"
+		} else if n := nonTerminalCount(a); n > 0 {
+			f.Summary = fmt.Sprintf("Automaton %q is blocked by the rules review with %d of %d tasks not finished", a.Title, n, len(a.TaskStatuses))
+			f.Unsafe = true
+			f.UnsafeReason = fmt.Sprintf("%d of %d tasks are not finished, so a repair could lose work", n, len(a.TaskStatuses))
+		} else if !hasRealFindings(a.Findings) {
+			f.Summary = fmt.Sprintf("Automaton %q is blocked by the rules review, which recorded no findings", a.Title)
+			f.Unsafe = true
+			f.UnsafeReason = "the review recorded no findings, so there is nothing real to repair from"
+		} else {
+			f.Summary = fmt.Sprintf("Automaton %q is blocked by the rules review and has no repair task", a.Title)
 		}
 		out = append(out, f)
 	}
