@@ -2909,6 +2909,52 @@ or only for the security scanners and Go, and whether it should join the merge
 helper. Reference:
 [howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
 
+### Whole-tree local-environment leak check
+
+`scripts/check-no-local-leaks.sh` enforces the `AGENT.md` rule "No
+local-environment leaks in git" across the whole tracked tree at once: a
+value tied to one operator's machine — a private or internal IP address, an
+absolute home-directory path, a personal email address, or a machine-specific
+token the operator lists in the local patterns file — must not land in a
+tracked file. It is development tooling for the repository, not a daemon
+feature: the daemon never runs it, it has no setting in `config.yaml` or
+Settings, and it has no REST, MCP, CLI, chat or web app surface.
+
+It scans four classes — `address` (private/internal/link-local IPv4, ULA and
+tailnet IPv6, MagicDNS hostnames), `home` (absolute home paths for any user),
+`email` (anything not on `scripts/leak-check.allowed-emails`) and `local`
+(fixed strings from the gitignored `.leak-patterns.local` at the repository
+root, seeded with `make leak-patterns-init`). The generic patterns are
+configuration under `scripts/` and are written self-clean so the pattern file
+never matches itself. In a git work tree the tracked files are scanned; binary
+files and paths in `scripts/leak-check.exclude` are skipped. An absent or
+empty `.leak-patterns.local` prints `local patterns: skipped` and carries on —
+never an error.
+
+The report is CI-safe by design: one line per finding, `path:line: class`,
+then a per-class count summary, and nothing else — the matched text is never
+printed, so the output is safe in CI logs or a commit message. Exit `0` clean,
+`1` findings, `2` usage or configuration error. Run it with `make check-leaks`
+or `bash scripts/check-no-local-leaks.sh [root]`.
+
+It is wired into three gates: the pre-commit chain
+(`hooks/pre-commit-leak-check`, the middle step of the
+`hooks/pre-commit-docs-sync` chain; the commit is refused on any finding and
+there is no escape hatch), `make lint` (via `check-leaks`), and
+`scripts/release-smoke.sh` before a release is cut (skippable only with the
+operator-owned `DW_SKIP_LOCAL_LEAKS_CHECK=1`). A finding is fixed by replacing
+the value with a placeholder, moving it to operator config or an environment
+variable, or scrubbing peer/node names with `scripts/scrub-peer-names.sh`
+(dry-run emits `path: N` counts only, never the names). Commit messages, issue
+and PR comment text are outside the tree and are not scanned; the narrower
+last-commit diff check covers that surface.
+
+Operator review still needed: keep `.leak-patterns.local` seeded on every
+machine that builds or commits the repository — until it exists the `local`
+class is silently inactive there — and keep the pre-commit chain installed so
+the gate is not only `make lint`. Reference:
+[howto/local-env-leak-check.md](howto/local-env-leak-check.md).
+
 ---
 
 ## 8. Web UI Features
