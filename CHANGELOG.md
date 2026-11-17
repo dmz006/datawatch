@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
+
+### Changed
+
+- Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi.
+
 ## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
 
 ### Changed
