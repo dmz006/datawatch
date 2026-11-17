@@ -17,7 +17,19 @@ cmd/datawatch/main.go
 internal/server/api.go
 internal/mcp/autonomous.go
 internal/server/web/app.js
-.datawatch/verify/security-scan-extensions-config.sh"
+internal/session/manager.go
+internal/session/manager_precommit_scan_test.go
+internal/autonomous/security_precommit.go
+internal/autonomous/models.go
+internal/autonomous/security_precommit_test.go
+docs/config-reference.yaml
+docs/api/autonomous.md
+internal/server/web/docs/config-reference.yaml
+internal/server/web/docs/api/autonomous.md
+.datawatch/verify/security-scan-extensions-config.sh
+.datawatch/verify/security-scan-precommit-wire.sh
+.datawatch/verify/security-scan-docs.sh
+.datawatch/verify/security-scan-wire-final-gate.sh"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in

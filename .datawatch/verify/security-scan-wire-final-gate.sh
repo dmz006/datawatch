@@ -22,7 +22,6 @@ internal/session/manager_precommit_scan_test.go
 internal/autonomous/security_precommit.go
 internal/autonomous/models.go
 internal/autonomous/security_precommit_test.go
-cmd/datawatch/main.go
 docs/config-reference.yaml
 docs/api/autonomous.md
 internal/server/web/docs/config-reference.yaml

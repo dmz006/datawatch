@@ -11,11 +11,25 @@ has() { grep -Eq -- "$2" "$1" 2>/dev/null || bad "$1 lacks: $2"; }
 BASE="$(git rev-parse HEAD)" # this run's starting point: the branch already carries the dependency tasks (the security-scan setting and its wiring) merged before this docs task
 CH="$(mktemp)"; trap 'rm -f "$CH"' EXIT
 { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > "$CH"
-allowed="docs/config-reference.yaml
+allowed="internal/config/config.go
+internal/autonomous/manager.go
+cmd/datawatch/main.go
+internal/server/api.go
+internal/mcp/autonomous.go
+internal/server/web/app.js
+internal/session/manager.go
+internal/session/manager_precommit_scan_test.go
+internal/autonomous/security_precommit.go
+internal/autonomous/models.go
+internal/autonomous/security_precommit_test.go
+docs/config-reference.yaml
 docs/api/autonomous.md
 internal/server/web/docs/config-reference.yaml
 internal/server/web/docs/api/autonomous.md
-.datawatch/verify/security-scan-docs.sh"
+.datawatch/verify/security-scan-extensions-config.sh
+.datawatch/verify/security-scan-precommit-wire.sh
+.datawatch/verify/security-scan-docs.sh
+.datawatch/verify/security-scan-wire-final-gate.sh"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
