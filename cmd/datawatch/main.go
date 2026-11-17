@@ -12596,7 +12596,7 @@ func runConfigGet(cfg *config.Config, key string) error {
 	if cfg.Server.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // daemonClient: trusts the daemon's own cert when -u targets its TLS port (defaultClient would die on x509)
 	if err != nil {
 		return fmt.Errorf("daemon not reachable on port %d: %w", cfg.Server.Port, err)
 	}
@@ -12654,7 +12654,7 @@ func putConfig(url, token, body string) error {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient().Do(req) // daemonClient: daemon-cert trust for -u TLS targets (see runConfigGet)
 	if err != nil {
 		return fmt.Errorf("daemon not reachable: %w", err)
 	}

@@ -541,9 +541,11 @@ rm_sandbox_down() {
 #   - pi-agent/       the pi config directory the daemon's launches read
 #                     (PI_CODING_AGENT_DIR): a provider table naming the "ollama" provider
 #   - node-stub.py    a loopback listener on each node's address that answers the model
-#                     residency check (GET /api/ps) the daemon makes before it starts a
-#                     worker on a node of a multi-node entry. Without it the check fails
-#                     and the worker fails over or fails. It serves nothing else.
+#                     residency check (GET /api/tags — ProbeNodeModels for ollama-kind
+#                     nodes — plus /api/ps) the placement gate makes before it admits a
+#                     worker on a node of a multi-node entry. Without it the node
+#                     reports no served models and the worker waits for placement
+#                     approval. It serves nothing else.
 # The daemon gets the fake pi directory first on its PATH and PI_CODING_AGENT_DIR through
 # RM_DAEMON_ENV, so a real pi on the host can never be reached.
 
@@ -579,7 +581,11 @@ model = sys.argv[1]
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.rstrip("/") == "/api/ps":
+        # The placement gate reads the node's served models through the same
+        # probe the node-models endpoint uses: GET /api/tags for an ollama-kind
+        # node (ProbeNodeModels in internal/server/compute.go). Both paths
+        # answer, so /api/ps keeps working for any older reader too.
+        if self.path.rstrip("/") in ("/api/ps", "/api/tags"):
             code, body = 200, {"models": [{"name": model, "model": model}]}
         else:
             code, body = 404, {}
