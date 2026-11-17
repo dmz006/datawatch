@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [claude-code, model, sonnet, haiku, opus, fable, daemon default, worker, verifier, judge, planner, decompose, mechanical, premium, explicit model policy]
+  topics: [claude-code, model, sonnet, haiku, opus, fable, daemon default, worker, verifier, judge, planner, decompose, mechanical, premium, explicit model policy, refusal, session record, restart]
 exec_steps:
   - tool: autonomous_config_get
     description: Read the global planning, execution and verification backend/model keys that sit at the bottom of the model resolution chain
@@ -18,13 +18,16 @@ autonomous worker, verifier, guardrail judge or planner could spend that
 premium model without anyone having named it. The explicit-model policy
 removes that case: every autonomous launch path resolves its Claude Code
 model **explicitly**, so the model that runs is always one the daemon can
-name.
+name — and a direct start that still arrives with no model is **refused
+outright** instead of being allowed to run on whatever the operator's
+account picks, so the model a session ran on is always one the daemon can
+name and record.
 
 The policy is fixed daemon behavior. There is **no setting** to turn it on or
 off and no key that changes the default models; it applies after the whole
 existing resolution chain has run.
 
-## The three rules
+## The rules
 
 1. **A model the operator named always passes through unchanged** — whatever
    level named it: a task, story, PRD or Automaton LLM, an Automation or
@@ -38,6 +41,10 @@ existing resolution chain has run.
    model, never with the backend's built-in default.
 3. **Every other backend is untouched.** `pi`, `pi-prompt` and `ollama` resolve
    exactly as before (those backends still refuse to start without a model).
+4. **A start on `claude-code` that still arrives with no model is refused,
+   never defaulted.** The daemon will not fall back to the operator's
+   account default — or upgrade the model on its own — so it rejects the
+   launch up front instead of letting one run under an unrecorded model.
 
 ## The four launch paths
 
@@ -63,6 +70,36 @@ guardrail is judged rather than skipped, and the model it runs on is still an
 explicit one. A judge pin that names a model the backend cannot serve is
 still a loud failure, exactly as before.
 
+## A direct start with no model named is refused
+
+The four paths above are the *autonomous* launch paths, and on them a model-
+less `claude-code` entry resolves to the daemon default (`sonnet`, or `haiku`
+for a mechanical task). A **direct** start — the CLI `session new`, a chat
+`new:` command, a REST `POST /api/sessions/start`, an MCP `session_start`, or
+a start from the PWA — names no model when the operator gave none, and the
+policy covers that case with a refusal instead of a guess:
+
+- **Refused before anything exists.** A `claude-code` start with no explicit
+  model is rejected up front: no tracker, no session record and no tmux pane
+  are created, and the backend's CLI is never run under the operator's
+  account default. The error says so in plain terms and points at the fix:
+  name a model (e.g. `"sonnet"` or `"haiku"`) and try again.
+- **The fix is to name the model.** An alias from the daemon default set or a
+  full registry name, given where the surface takes one (the LLM entry / model
+  field of the start request, or the backend's model flag). A model named this
+  way is exactly the rule-1 case: it passes through unchanged.
+- **The backend never invents a model.** The `claude-code` backend passes
+  `--model` to the CLI only when a model was set; with none set it would
+  launch under the account default — the case the refusal exists to block.
+- **The record stays honest.** When a model is named, the persisted session
+  record carries **exactly** the value the backend passes to the CLI as
+  `--model` — what you see in the session record is what the CLI ran with.
+- **A restart keeps the same model.** The backend is a shared object whose
+  model field another session may have overwritten, so on restart the daemon
+  re-injects the model the session's record carries before relaunching. A
+  restarted `claude-code` session keeps passing exactly that `--model` value,
+  never the account default.
+
 ## What does not change
 
 - **Premium models are still opt-in.** `sonnet` and `haiku` are never premium.
@@ -73,14 +110,20 @@ still a loud failure, exactly as before.
   still empty.
 - **The validators are unchanged.** A model-less first-attempt entry for
   `pi`, `pi-prompt` or `ollama` is still refused; a model-less `claude-code`
-  entry was always accepted and now simply resolves to the daemon default at
-  launch.
+  *configuration entry* was always accepted and, on the autonomous paths, now
+  simply resolves to the daemon default at launch. The refusal above applies
+  to a *direct start* that still reaches the launch with no model, not to
+  configuration entries.
 - **Child inheritance and task-routing rules are unchanged.** A child of a
   Sonnet or Haiku parent is still never put on Opus or Fable by inheritance,
   and a routing row still needs `allow_premium_model` to name one.
 
 ## Reading it back
 
+- **Session record.** The `Model` field of the persisted session record is the
+  value the backend passed to the CLI as `--model` for that launch — for a
+  `claude-code` session it is always the model that ran, and a restart
+  relaunches with that same recorded model.
 - **Worker.** The task's LLM and its attempt records name the worker backend
   and model that ran. A launch that took the daemon default ran on `sonnet`
   (or `haiku` for a mechanical task), visible on the attempt the way any
@@ -104,3 +147,5 @@ still a loud failure, exactly as before.
 - [Autonomous planning](autonomous-planning.md) and
   [Planning routing](automata-planning-routing.md) — the planner's backend
   and model.
+- [Merge pipeline](merge-pipeline.md) — the merge-conflict model, whose
+  unset default is the non-Opus daemon default (`sonnet`).
