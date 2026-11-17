@@ -181,6 +181,17 @@ type DecomposeLintMatch struct {
 	// that does not exist yet is skipped. Absent (false) = do not
 	// check.
 	VerificationScriptArtefactFilesAllowed bool `yaml:"verification_script_artefact_files_allowed,omitempty" json:"verification_script_artefact_files_allowed,omitempty"`
+	// VerificationScriptFinalGateArtefactAllowed asserts the task's
+	// verification script (and followed helpers) enforces the whole
+	// changed-file set against a finite list (a git diff --name-only,
+	// status --porcelain or ls-files listing) while exempting the
+	// generated-artefact directories, but carries no FINAL_GATE /
+	// DW_FINAL_GATE sentinel to skip the check when the final gate
+	// re-runs the script on the cumulative tree (where earlier
+	// tasks' files are present). A script with no whole-listing
+	// assertion never matches, and a script that does not exist yet is
+	// skipped. Absent (false) = do not check.
+	VerificationScriptFinalGateArtefactAllowed bool `yaml:"verification_script_final_gate_artefact_allowed,omitempty" json:"verification_script_final_gate_artefact_allowed,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

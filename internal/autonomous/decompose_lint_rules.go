@@ -34,8 +34,8 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Fourteen rules, in the order findings should surface them: the ten
-// block-severity rules (tasks that cross a hard boundary, plus the four
+// Fifteen rules, in the order findings should surface them: the eleven
+// block-severity rules (tasks that cross a hard boundary, plus the five
 // verification-script stability rules that follow read_only_unverifiable)
 // first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
@@ -121,6 +121,14 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "verification script does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton: the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail - exclude docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and CHANGELOG.md from the unexpected-files computation (rule artefact_files_allowed)",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptArtefactFilesAllowed: true,
+			},
+		},
+		{
+			ID:       "final_gate_artefact_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree: check only the files this task adds, or skip the file-set check when the final gate re-runs the script (rule final_gate_artefact_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptFinalGateArtefactAllowed: true,
 			},
 		},
 		{
