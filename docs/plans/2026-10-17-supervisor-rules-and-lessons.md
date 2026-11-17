@@ -46,8 +46,10 @@ open questions 17 to 20) is where these rules become mechanical.
   release manager. A completed, validated PRD is merged, pushed (fast-forward, Section A
   checks pass) and tagged (patch or minor) without asking; only the 10.0 tag is the
   operator's. Never end a tick on "do you want me to merge/push/tag?". If a residual risk
-  remains (for example other flaky tests), ship the fix that is ready, file a follow-up fix
-  PRD for the rest, and report both. A question to the operator is allowed only for a
+  remains (a registry row, a defect still to repair), ship the fix that is ready, file a
+  follow-up fix PRD for the rest, and report both. A test that failed on one run and passed
+  on the rerun is one of those defects: file it and fix it at the root (section 11), it is
+  not listed as residual and deferred. A question to the operator is allowed only for a
   design choice or after the loop rule; a build or release question is neither.
 - **Resets.** Reset a blocked task once after its cause is fixed, then run. If it fails
   again with the same error, that is the loop rule above.
@@ -322,6 +324,19 @@ requirement (open question 19).
   later" in a tick prompt does not count. Every tick ends with a defect sweep: list
   anything odd seen (failed task causes, stuck sessions, wrong models, silent drops,
   oversized replies, side effects of a restart) and confirm each has a row and a PRD.
+- **A failing test is a defect (operator, 2026-11-12).** A test that fails once and passes
+  on the rerun is never an acceptable outcome, and rule text never lists such tests as
+  acceptable or treats a passing rerun as the repair. The supervisor re-runs the single
+  test in isolation to read the failure, files the defect — a registry row naming the
+  test, the commit and the failure message — and fixes the root cause: the race, the
+  unbounded wait, the shared resource or the timing assumption. It is not fixed by retry,
+  by a longer sleep, by loading the machine up before the run, or by excluding the test.
+  A passing rerun proves the failure is load- or timing-dependent; it does not remove it.
+  The merge shadow already records such a gate as intermittent and files the defect (the
+  intermittent-defect record on the Housekeeping repairs card), so the failure is never
+  hidden behind a green merge. Tests must be deterministic: never a CPU burner, stress
+  loop or heavy parallel load inside a test; `scripts/check-no-load-patterns.sh`
+  enforces this in CI.
 - **Lane fill (lesson, 2026-10-18).** Every tick lists each lane (the two GPU lanes and the
   Claude lane) and what it is running. An idle lane with eligible queued work is a defect
   of the tick, not a quiet state: start the next item on it in the same tick, or write down
