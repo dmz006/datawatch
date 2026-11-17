@@ -20,7 +20,10 @@ const snapshotAddChunk = 1000
 // modified tracked files, staged files, and untracked files that .gitignore
 // does not exclude. Rename detection is off, so a moved file contributes both
 // its old path (deleted) and its new path (added). Output is NUL-separated, so
-// names with spaces, quotes or non-ASCII bytes arrive unquoted.
+// names with spaces, quotes or non-ASCII bytes arrive unquoted. The session
+// launcher's two root tooling files (isLauncherToolingFile) are never
+// candidates: they are artifacts the session launcher drops into the working
+// directory at session start, not the worker's output.
 func snapshotCandidates(ctx context.Context, top string) ([]string, error) {
 	queries := [][]string{
 		{"diff", "--name-only", "-z", "--no-renames", "HEAD"},
@@ -35,7 +38,7 @@ func snapshotCandidates(ctx context.Context, top string) ([]string, error) {
 			return nil, err
 		}
 		for _, f := range splitNUL(out) {
-			if !seen[f] {
+			if !seen[f] && !isLauncherToolingFile(f) {
 				seen[f] = true
 				candidates = append(candidates, f)
 			}

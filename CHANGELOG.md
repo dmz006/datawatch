@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
+
+### Changed
+
+- Stop the read-only task check from counting launcher files as tree changes.
+
 ## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
 
 ### Changed

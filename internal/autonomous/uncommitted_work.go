@@ -199,13 +199,17 @@ const (
 
 // isDaemonToolingFile reports whether f is a new file the daemon itself wrote
 // into the project directory for a session: the per-session MCP discovery file
-// and the skills it injects. They are never the task's work. Only an untracked
-// file counts, so a project that tracks .mcp.json still sees a change to it.
+// and the skills it injects, plus the two root launcher files the session
+// launcher writes when it starts (see launcherToolingFiles). They are never
+// the task's work. Only an untracked file counts, so a project that tracks one
+// of these files still sees a change to it.
 func isDaemonToolingFile(f UncommittedFile) bool {
 	if f.Status != "??" {
 		return false
 	}
-	return f.Path == daemonMCPConfigFile || strings.HasPrefix(f.Path, daemonSkillsDir)
+	return f.Path == daemonMCPConfigFile ||
+		strings.HasPrefix(f.Path, daemonSkillsDir) ||
+		isLauncherToolingFile(f.Path)
 }
 
 // isIgnoreFileName reports whether p is one of the ignore files the daemon

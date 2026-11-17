@@ -115,19 +115,24 @@ func filterDaemonOnlyPorcelain(ctx context.Context, dir string, porcelain string
 }
 
 // ignoreDaemonOnlyPorcelainLine judges one line of `git status --porcelain`
-// ("XY path"). Only an unstaged modification of a tracked file (" M") is a
-// candidate: the daemon writes its marked blocks into the working copy and
-// never stages. Every other record — staged, deleted, untracked, renamed, or
-// a quoted/unparseable path — is kept, and a " M" line is dropped only when
-// daemonSectionsOnlyChange positively establishes it as daemon-only. Fails
-// closed: any doubt keeps the line.
+// ("XY path"). Two records may be dropped: an untracked file ("??") that is
+// one of the launcher's own root files (isLauncherToolingFile), and an
+// unstaged modification of a tracked file (" M") that differs from HEAD only
+// by the daemon's marked blocks (daemonSectionsOnlyChange). Every other
+// record — other untracked paths, staged, deleted, renamed, or a
+// quoted/unparseable path — is kept. Fails closed: any doubt keeps the line.
 func ignoreDaemonOnlyPorcelainLine(ctx context.Context, dir, line string, run driftGitRunner) bool {
-	if len(line) < 4 || line[2] != ' ' || line[:2] != " M" {
+	if len(line) < 4 || line[2] != ' ' {
 		return false
 	}
-	p := line[3:]
-	if p == "" || p[0] == '"' {
+	if p := line[3:]; p == "" || p[0] == '"' {
 		return false // quoted paths carry git's C-style escapes; do not interpret them here
 	}
-	return daemonSectionsOnlyChange(ctx, dir, p, run)
+	if line[:2] == "??" {
+		return isLauncherToolingFile(line[3:])
+	}
+	if line[:2] != " M" {
+		return false
+	}
+	return daemonSectionsOnlyChange(ctx, dir, line[3:], run)
 }
