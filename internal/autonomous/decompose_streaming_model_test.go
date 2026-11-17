@@ -76,9 +76,11 @@ func TestDecomposeStreaming_ForeignGlobalModelNotUsedForClaudeCode(t *testing.T)
 	}
 
 	// An Ollama-tagged global model must not reach a claude-code planning
-	// session: it stalls on an "unknown model" prompt. Empty = backend default.
-	if capturedModel != "" {
-		t.Errorf("DecomposeStreaming used model %q for claude-code, want empty (backend default; global %q is foreign)", capturedModel, globalModel)
+	// session: it stalls on an "unknown model" prompt. With no model operator-
+	// named anywhere, the explicit-model policy (model_policy.go) passes the
+	// daemon default so the session never runs on the account's built-in model.
+	if capturedModel != DefaultClaudeModel {
+		t.Errorf("capturedModel = %q, want the daemon default %q (global was %q; claude-code must not get an Ollama tag)", capturedModel, DefaultClaudeModel, globalModel)
 	}
 }
 
