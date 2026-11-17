@@ -95,8 +95,8 @@ What the runner does in local mode (`scripts/e2e-pwa.sh`):
 
 If `TEST_HTTP` + `TEST_TLS` + `TEST_TOKEN` are all set, the already-running
 daemon at those origins is used instead (external-daemon mode): nothing is
-started, and `EVIDENCE_DIR` defaults to `/tmp/dw-e2e-pwa-evidence` in that
-mode.
+started, and `EVIDENCE_DIR` falls back to `/tmp/dw-e2e-pwa-evidence` there
+(no per-run dir is created in this mode, so its evidence persists).
 
 **Two origins** (the story runs the same flood scenario against both):
 
@@ -109,7 +109,7 @@ mode.
   `navigator.serviceWorker.controller` is asserted to be set **before**
   request counting begins. If (B) is infeasible on the host *and* scenario
   (A) passed, the story exits 2 (SKIP, with a reason in `result.txt` and
-  `SKIP-REASON.txt`) — never a silent pass. A failure in (A) always exits 1.
+  `SKIP-REASON.txt.txt`) — never a silent pass. A failure in (A) always exits 1.
 
 Pass criteria per origin: `GET /api/schedules` requests stay ≤ 5 (constant,
 vs. the 20+ seeded sessions — `TS797_SESSION_COUNT` raises the seed count,
@@ -118,16 +118,22 @@ not the cap) across a WS disconnect/reconnect burst, zero
 `/api/stats` still succeed afterwards. Seeded sessions are always deleted and
 killed in the story's finally block.
 
-**Evidence** — under `$EVIDENCE_DIR/schedule-flood/` (in local mode the
-default `EVIDENCE_DIR` is the per-run dir's `evidence/`, kept on a non-passing
-run; set `EVIDENCE_DIR` to keep it after a pass too; in external-daemon mode
-the default is `/tmp/dw-e2e-pwa-evidence/`): `ts797-A-untrusted-tls.png` /
-`ts797-B-trusted-tls.png` screenshots; `verdict.txt.txt` with the verdict and
-per-scenario request counts; `failure-A.txt.txt` / `failure-B.txt.txt` on
-failure; `SKIP-REASON.txt.txt` and `result.txt` on a (B) skip; and
-`trusted-origin.txt.txt` plus `trusted-tls/` (the generated CA, cert, key and
-SPKI) when (B) was generated. (The doubled `.txt.txt`: the story hands
-lib.mjs's `saveLog(name)` names that already end in `.txt`.)
+**Evidence** — under `$EVIDENCE_DIR/schedule-flood/` — the runner controls
+`$EVIDENCE_DIR`: `scripts/e2e-pwa.sh` resets any inherited `EVIDENCE_DIR` (it
+sets `EVIDENCE_DIR=""` before choosing the mode's default), so the
+environment value does not redirect a run — local mode always writes to the
+per-run dir's `evidence/` (removed on a pass, kept on a fail or skip),
+external-daemon mode to `/tmp/dw-e2e-pwa-evidence` (persisted); a
+`EVIDENCE_DIR` you set is honored only when invoking the story directly
+(`node schedule-flood.mjs` with the daemon's `TEST_*` env, lib.mjs default
+`/tmp/dw-pwa-evidence`) — `ts797-A-untrusted-tls.png` / `ts797-B-trusted-tls.png` screenshots;
+`verdict.txt.txt` with the verdict and per-scenario request counts;
+`failure-A.txt.txt` / `failure-B.txt.txt` on failure; `SKIP-REASON.txt.txt` and
+`result.txt` on a (B) skip; and `trusted-origin.txt` plus `trusted-tls/` (the
+generated CA, cert, key and SPKI) when (B) was generated. (The doubled
+`.txt.txt`: lib.mjs's `saveLog(name)` appends its own `.txt`, and the story
+already hands it names ending in `.txt` — `result.txt` and
+`trusted-origin.txt` are written with a single `.txt`.)
 
 **`make test-e2e-pwa` is the docker-compose route, not the local one:** it
 starts the `datawatch` + `playwright` services

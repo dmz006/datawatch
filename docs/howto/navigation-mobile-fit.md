@@ -85,10 +85,15 @@ The gate writes two files into the run's evidence folder:
 
 In local mode the evidence folder is `dw-e2e-pwa-XXXXXX/evidence/` inside `${TMPDIR:-/tmp}`. The runner removes the whole `dw-e2e-pwa-XXXXXX` folder when the run passes, so the report is gone after a pass. When the run fails, the runner keeps the folder and prints its path, with the daemon log.
 
-In local mode the default evidence dir is the run dir's `evidence/` subfolder — a
-`EVIDENCE_DIR` you set is honored (the run dir is only the default). Since the run
-dir itself is removed on a pass, pointing `EVIDENCE_DIR` at a durable location is
-how you keep the report of a passing run.
+`EVIDENCE_DIR` set in your environment does not redirect a run through the
+runner: `scripts/e2e-pwa.sh` resets it (it sets `EVIDENCE_DIR=""` before
+choosing the mode's default). Local mode therefore always writes the report
+to the run dir's `evidence/` subfolder — removed with the run dir on a pass,
+kept on a fail or skip — and external-daemon runs write to
+`/tmp/dw-e2e-pwa-evidence`, which persists. A directly invoked story (a daemon
+you started yourself plus `node scripts/test-stories/pwa/shared-nav-mobile-fit.mjs`)
+honors the inherited `EVIDENCE_DIR` (lib.mjs default
+`/tmp/dw-pwa-evidence`) — that is how to keep the report of a passing run.
 
 ## Release smoke
 
