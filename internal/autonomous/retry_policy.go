@@ -28,11 +28,9 @@ func (m *Manager) resolveRetryPolicy(prd *PRD, category string) int {
 	if v, ok := prd.RetryPolicy[category]; ok {
 		return v
 	}
-	if prd.RetryProfile != "" {
-		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok {
-			if v, ok := p.Budgets[category]; ok {
-				return v
-			}
+	if p, ok := m.prdRetryProfile(prd.RetryProfile); ok {
+		if v, ok := p.Budgets[category]; ok {
+			return v
 		}
 	}
 	// Project/ Automaton tier: a category named in the higher tier's retry
@@ -60,10 +58,8 @@ func (m *Manager) resolveRetryCeiling(prd *PRD) int {
 	if prd.RetryCeilingTotal > 0 {
 		return prd.RetryCeilingTotal
 	}
-	if prd.RetryProfile != "" {
-		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.CeilingTotal > 0 {
-			return p.CeilingTotal
-		}
+	if p, ok := m.prdRetryProfile(prd.RetryProfile); ok && p.CeilingTotal > 0 {
+		return p.CeilingTotal
 	}
 	// Project/ Automaton tier (a set value, including -1 = unlimited, wins
 	// before the daemon's).
@@ -86,10 +82,8 @@ func (m *Manager) resolveRetryCeiling(prd *PRD) int {
 // own decision that a profile, not a loose PRD field, controls
 // escalation behavior) — only the profile and global tiers apply.
 func (m *Manager) resolveInfraEscalateAfter(prd *PRD) int {
-	if prd.RetryProfile != "" {
-		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.InfraRetryEscalateAfter > 0 {
-			return p.InfraRetryEscalateAfter
-		}
+	if p, ok := m.prdRetryProfile(prd.RetryProfile); ok && p.InfraRetryEscalateAfter > 0 {
+		return p.InfraRetryEscalateAfter
 	}
 	// Project/ Automaton tier (above the daemon's, below the Automaton's
 	// own profile).
@@ -113,10 +107,8 @@ func (m *Manager) resolveContentAutoFixEnabled(prd *PRD) bool {
 	if prd.ContentAutoFixEnabled != nil {
 		return *prd.ContentAutoFixEnabled
 	}
-	if prd.RetryProfile != "" {
-		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.ContentAutoFixEnabled != nil {
-			return *p.ContentAutoFixEnabled
-		}
+	if p, ok := m.prdRetryProfile(prd.RetryProfile); ok && p.ContentAutoFixEnabled != nil {
+		return *p.ContentAutoFixEnabled
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -130,10 +122,8 @@ func (m *Manager) resolveAutoFixSkipApproval(prd *PRD) bool {
 	if prd.AutoFixSkipApproval != nil {
 		return *prd.AutoFixSkipApproval
 	}
-	if prd.RetryProfile != "" {
-		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.AutoFixSkipApproval != nil {
-			return *p.AutoFixSkipApproval
-		}
+	if p, ok := m.prdRetryProfile(prd.RetryProfile); ok && p.AutoFixSkipApproval != nil {
+		return *p.AutoFixSkipApproval
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
