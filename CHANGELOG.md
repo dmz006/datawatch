@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Claude Code session started without a model could run on the backend's built-in default** — a premium (Opus-class) model on some installs, spent without anyone having named it. Every autonomous launch path now resolves its Claude Code model explicitly: a model named at any level (task, story, PRD, Automaton, Automation, global, first-attempt pair, ladder, burn-guard route, planner rule or judge pin) passes through unchanged, premium included; an empty one on the `claude-code` backend resolves to the daemon default — `sonnet` for workers on normal tasks and for verifiers, guardrail judges and planners, `haiku` for workers on the mechanical task types. A guardrail judge on the claude-code backend with no model named anywhere now starts on `sonnet` instead of being blocked with a no-guardrail-model verdict. No new setting; other backends are unchanged. See [howto/explicit-model-policy.md](docs/howto/explicit-model-policy.md).
+
 ## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
 
 ### Changed
