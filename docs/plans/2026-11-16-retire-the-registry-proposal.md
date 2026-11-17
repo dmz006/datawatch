@@ -1,7 +1,9 @@
 # Retire the file registry: plans, backlog and status as datawatch records
 
 - Date: 2026-11-16
-Confirmed: no
+Confirmed: yes
+
+Confirmed by the operator on 2026-11-17, answer `Confirm` to question `q-18e8d6b7c20b6a7f2d85` (stored in datawatch). The three open questions below are still open for the operator; step 3 (repository cleanup) waits until the operator says when.
 
 This is a proposal only. Nothing below is decided except what is quoted; no implementation Automaton is drafted until the line above reads `Confirmed: yes`. No code, setting, document or file changes with it — only this file, plus the embedded copy `make sync-docs` produces from it. Scope: propose retiring the file-based plans registry (`docs/plans/README.md`) and the findings ledgers as the primary sources of truth, in favor of datawatch's own constructs — the project, plans (including release plans and themes), Automations and Automata — with `README.md` kept as a configurable, off-by-default export, and the file system kept as a read-only archive.
 
@@ -11,7 +13,7 @@ This is a proposal only. Nothing below is decided except what is quoted; no impl
 - 2026-11-16: "We're supposed to be using the actual constructs of our project plan Automations and automata we don't have the registry that was supposed to be a file system construct. When is that being removed? I thought we had filed that like yesterday or day before."
 - 2026-11-16: "What about historical, want everything from 9.0"
 
-The design that this proposal completes is [plans, backlog and status inside datawatch](2026-11-10-plans-and-backlog-in-datawatch.md), which quotes the 2026-11-10 direction ("we should have an option to be able to have them export to a repo so people can keep track of the status if we want") and whose step 5 already reads "Optional export to a repository, off by default". Its step 3 (the one-time import of the registry rows and findings into records) has been built: `internal/planrecords/import.go` reads the registry rows and the findings files into records and is idempotent. This proposal is the later part the directions above point at: stop looking at the file registry, and retire the two record kinds that only mirror a file.
+The design that this proposal completes is [plans, backlog and status inside datawatch](historical-plans/2026-11-10-plans-and-backlog-in-datawatch.md), which quotes the 2026-11-10 direction ("we should have an option to be able to have them export to a repo so people can keep track of the status if we want") and whose step 5 already reads "Optional export to a repository, off by default". Its step 3 (the one-time import of the registry rows and findings into records) has been built: `internal/planrecords/import.go` reads the registry rows and the findings files into records and is idempotent. This proposal is the later part the directions above point at: stop looking at the file registry, and retire the two record kinds that only mirror a file.
 
 ## 1. Target model
 
