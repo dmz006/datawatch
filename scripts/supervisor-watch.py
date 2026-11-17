@@ -533,6 +533,12 @@ def main(argv=None):
     if len(ab) == 2 and ab[1] != "0":
         findings.append("MAIN is %s commit(s) ahead of origin: push pending" % ab[1])
 
+    # The local daemon is updated with every release (standing rule): flag a daemon behind main.
+    main_ver = re.search(r'Version\s*=\s*"([0-9.]+)"', sh("git -C %s show HEAD:internal/server/api.go" % BASE))
+    health = get_json("https://localhost:8443/api/health", insecure=True) or {}
+    if main_ver and health.get("version") and health["version"] != main_ver.group(1):
+        findings.append("DEPLOY daemon runs %s but main is %s: run supervisor-scratch/sv/deploy.sh (standing rule: update the local daemon with every release)" % (health["version"], main_ver.group(1)))
+
     # CI on main and tags
     ci = sh("gh run list --limit 20 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
     # The Release run takes about an hour and is pushed out of the 20 newest runs by the others, so
