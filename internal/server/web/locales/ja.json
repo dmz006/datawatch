@@ -3127,6 +3127,7 @@
   "lane_fill_action_idle": "待機",
   "lane_fill_alerts_heading": "レーン待機アラート",
   "lane_fill_no_alerts": "レーン待機アラートはありません",
+  "lane_fill_eligibility_operator_hold": "オペレーターが保留中",
   "lane_fill_eligibility_stale": "Stale",
   "lane_fill_eligibility_held": "Held",
   "lane_fill_eligibility_sequenced_after_unshipped": "Sequenced after unshipped work",

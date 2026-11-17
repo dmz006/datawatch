@@ -3127,6 +3127,7 @@
   "lane_fill_action_idle": "inactivo",
   "lane_fill_alerts_heading": "Alertas de carriles inactivos",
   "lane_fill_no_alerts": "No hay alertas de carriles inactivos",
+  "lane_fill_eligibility_operator_hold": "En pausa por el operador",
   "lane_fill_eligibility_stale": "Stale",
   "lane_fill_eligibility_held": "Held",
   "lane_fill_eligibility_sequenced_after_unshipped": "Sequenced after unshipped work",

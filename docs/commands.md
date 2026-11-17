@@ -1512,7 +1512,7 @@ Comm channels for lane fill: `autonomous lane-fill [limit]` replies with the sam
 the lane counts line, the per-kind modes line when a kind's mode differs from the base mode, the queued
 eligible counts, then the newest five decisions (`limit` is how many decisions are read). A decision that
 refused an Automaton shows its reason code in brackets in front of the reason text, for example
-`[held] ...`; the codes are `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`,
+`[held] ...`; the codes are `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`,
 `proposal_missing`, `main_carries_work`, `worktree_invalid` and `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment). And
 `autonomous set-lane-preference <prd-id> <gpu|claude|any>` sets the lane an Automaton may take.
 

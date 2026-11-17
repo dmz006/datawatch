@@ -286,7 +286,7 @@ absent on a decision that is not a refusal.
 | MCP | `autonomous_lane_fill_status`: the same object |
 | CLI | `datawatch autonomous lane-fill`: a decision line reads `blocked <id>: [stale] <sentence>`, the code in brackets |
 | Comm channel | `autonomous lane-fill [limit]`: the same lines, newest five decisions |
-| PWA | The **Lane fill** card: each refused Automaton carries a chip with the reason in plain words. Settings → General → Autonomous has the rows for the seven keys. |
+| PWA | The **Lane fill** card shows the mode, the lanes and their states, the queued work, the evidence and the idle alerts; the decisions (with each refusal's reason) are in the **Events** sub-tab of Automation Resources. Settings → General → Autonomous has the Lane fill fields. |
 | Audit | A change of a lane kind's mode writes a `lane_fill_mode` entry (kind, old mode, new mode). |
 
 ### The lane counts rule
