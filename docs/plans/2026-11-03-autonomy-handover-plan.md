@@ -607,3 +607,9 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Exit criterion: read the session list filtered by `backend:` and `project:` tags; if either axis is noisy or wrong, turn that one back off. Review date: 2026-11-19.
 - Next in order: git secret scan (shadow).
 - Note: the how-to says the first setting form is `autonomous.tags.placement.<axis>.enabled`; `autonomous.tags.placement.axes.<axis>.enabled` is refused as an unknown tag setting, though the config read returns the axes under an `axes` object. The read and write key shapes differ; if that surprises a second operator it is a documentation or API gap to file.
+
+## 2026-11-17 04:50 — default quality gates turned back off: they stall throughput
+
+- `autonomous.default_quality_gates.enabled` went back to false. With the gate on (turned on at 00:24 in warn-only mode), every task sat in verifying while the gate ran `go test`: one run for the touched packages plus the smoke set (which includes the whole autonomous and server packages) and one `go test ./...`; the autonomous package alone reaches its ten-minute test limit, the host load sat near 10, and every gate ended `quality_gate_invalid` (timed out, killed), which only warns. The cost was paid on every task and nothing was learned, which is the case 5a names for turning a feature back off.
+- The failure is filed as an Automaton in Automation `e8e71305` (a configured wall-clock budget, a smoke set whose packages fit it, one gate run per Automaton, yield to workers under load, and a faster autonomous test suite). The gate comes back on when that ships. Review date: when the Automaton merges.
+- Quote on turning a feature back off only when it blocks throughput: the 5a rule of the supervisor rules, from the operator's 2026-11-16 direction ("We want bugs to show up. We want to turn them on and get things to break so we can fix them.").
