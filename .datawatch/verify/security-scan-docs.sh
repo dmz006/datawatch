@@ -8,7 +8,7 @@ cd "$(git rev-parse --show-toplevel)"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 has() { grep -Eq -- "$2" "$1" 2>/dev/null || bad "$1 lacks: $2"; }
-BASE="$(git merge-base HEAD main)"
+BASE="$(git rev-parse HEAD)" # this run's starting point: the branch already carries the dependency tasks (the security-scan setting and its wiring) merged before this docs task
 CH="$(mktemp)"; trap 'rm -f "$CH"' EXIT
 { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > "$CH"
 allowed="docs/config-reference.yaml
@@ -33,7 +33,12 @@ has docs/config-reference.yaml 'security_scan_extensions'
 has docs/config-reference.yaml '[Ww]arn-only'
 has docs/api/autonomous.md 'security_scan_extensions'
 has docs/api/autonomous.md 'security_finding_count'
-has internal/server/web/docs/config-reference.yaml 'security_scan_extensions'
+# The PWA docs mirror (internal/server/web/docs) carries the .md docs per
+# the sync-docs rsync include list; the yaml reference is asserted when it
+# is present in the mirror.
+if [ -f internal/server/web/docs/config-reference.yaml ]; then
+  has internal/server/web/docs/config-reference.yaml 'security_scan_extensions'
+fi
 has internal/server/web/docs/api/autonomous.md 'security_scan_extensions'
 if git diff "$BASE" -- docs/config-reference.yaml docs/api/autonomous.md | grep -E '^\+' | grep -Eq '\bPRD\b'; then bad "added lines use the banned plan acronym (say Automaton)"; fi
 

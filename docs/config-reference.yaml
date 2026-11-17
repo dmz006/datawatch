@@ -3855,9 +3855,18 @@ autonomous:
   # is pruned. Unset or 0 reads the default of 30 days; negative is a config
   # error.
   reaped_branch_backup_days: 30
-  # Run the nightwire-port security pattern scan over modified files
-  # before marking a task complete.
+  # Run the security pattern scan over the task's worktree right before
+  # the completion commit. Warn-only: findings are recorded on the task
+  # (up to 20, full text) plus a cumulative counter
+  # (security_findings / security_finding_count, cumulative over all passes),
+  # one decision-log entry
+  # of kind security_scan_findings is appended, and the scan never fails
+  # the task or the commit.
   security_scan: true
+  # File extensions the security scan covers. Unset or an empty list
+  # reads the built-in defaults (.py, .pyw); a non-empty list scans
+  # exactly those extensions and no others.
+  security_scan_extensions: []
   # Snapshot and automatic-staging paths (the refs/datawatch/attempts
   # attempt snapshots and the other automatic commits) must never stage
   # candidates whose repo-relative path matches these patterns, matched
