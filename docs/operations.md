@@ -5340,7 +5340,11 @@ dependent whose only failure was that dependency — whether the dependency's
 failure was an infrastructure one or a content or scope one — in the same
 step. A manual `reset_task` on such dependents is only for dependents that
 failed for their own reasons, or that still wait on another dependency that
-is failed, cancelled, blocked or held.
+is failed, cancelled, blocked or held. While the Automaton is itself
+`held` (for example the root parked for its infrastructure-retry review),
+this requeue is deferred until the Automaton is running again and the
+dependency is no longer failed; the hold is resolved by reviewing the root,
+never by resetting the dependent.
 
 ### Recipe: a failure caused only by a final gate or a small formatting check
 

@@ -172,6 +172,13 @@ whether the dependency's own failure was an infrastructure one or a content
 or scope one. A dependency that is reset back to a state where it can still
 complete releases its dependents with it.
 
+One caveat to review: while the Automaton itself is `held` — for example
+the root task is parked for its infrastructure-retry review — the executor
+defers this requeue, and the dependent returns to `pending` in the step the
+Automaton is running again and the dependency it failed behind is no longer
+failed, cancelled, blocked or held. Reviewing that hold is still the
+operator's job; the dependent never is.
+
 Manual `reset_task` remains the right tool for a dependent that failed for
 its own reasons — its own content, its own file scope — or that still waits
 on another dependency that is failed, cancelled, blocked or held. You never
