@@ -1,4 +1,6 @@
-# Promotion findings ledger
+# Promotion findings ledger (archive)
+
+Superseded 2026-11-16 21:10: these eleven findings are now daemon finding records (`datawatch plan-record list findings`), each linked to the Automaton filed for it, and new findings are created there. This file stays as the archive of the first evening.
 
 Started 2026-11-16 20:55. Operator, quoted: "You're finding bugs as you go. Keep track of those so you can file the PRDs to get those bugs fixed for like things missing like the definitions or if you're not finding how to set things up or there's anything else missing or there's a bug, remember to file those as you go."
 
