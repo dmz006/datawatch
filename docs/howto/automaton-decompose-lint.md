@@ -704,6 +704,19 @@ path), not to search the tree for the fragment.
 
 The gate mechanics are in [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check) (the `unresolved_file` finding) and [the plan-coverage findings filters](plan-coverage-filters.md).
 
+> **Operator review:** there is no new rule id and no new setting to wire: the
+> bullet is fixed text in both planning prompts, and a severed name is not
+> caught by the spec lint at all — the plan-coverage gate is the only thing
+> that reports it. Still for you to confirm: (1) drafts planned before the
+> rule shipped (and any plan a model still writes by display form) can carry a
+> severed name — if one sits blocked on a missing-file finding whose "file" is
+> a fragment of a real path, the fix is to put the full path back into the
+> task's spec and files list, or to acknowledge the finding on the usual path;
+> (2) because the guard is a prompt rule, a plan that names a file by display
+> form passes the spec lint clean and fails only at the coverage gate, so the
+> finding you act on is a plan-coverage `unresolved_file`, not a decompose-lint
+> one.
+
 ## 6a. Planning failures: what you see, what the daemon fixes, what it asks
 
 The full walk-through, with the spec check on every surface and troubleshooting, is in [automata-planning-failures.md](automata-planning-failures.md).
