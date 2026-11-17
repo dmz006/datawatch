@@ -98,7 +98,10 @@ decompose output, the advisory tree lock, the session discovery file
 (an untracked file only, so a project that tracks `.mcp.json` still sees a change
 to it), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
-other change to the file is counted), and anything the daemon's staging guard
+other change to the file is counted — and the ignore file is read only when
+its path is demonstrably inside the worktree, so an ignore-file path that
+escapes it, or that a symlink chain resolves outside it, is not counted as a
+daemon change), and anything the daemon's staging guard
 refuses to commit. Three more kinds of file never enter the list:
 
 - **Ignored, untracked files.** A file the repository's own ignore rules

@@ -198,6 +198,9 @@ type candidateProc struct {
 	uid     string
 	user    string
 	cmdline string
+	// namesPID is true when the cmdline names the daemon's own pid as a
+	// whole token: direct evidence, stronger than a unit-name match.
+	namesPID bool
 }
 
 func procScanCause() Cause {
@@ -248,10 +251,26 @@ func scanCandidates(ownPID int) []candidateProc {
 			continue
 		}
 		uid, user := procIdentity(pid)
-		out = append(out, candidateProc{pid: pid, uid: uid, user: user, cmdline: cmdline})
+		namesPID := hasPIDToken(strings.Fields(cmdline), ownPIDStr)
+		out = append(out, candidateProc{pid: pid, uid: uid, user: user, cmdline: cmdline, namesPID: namesPID})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
+	rankCandidates(out)
 	return out
+}
+
+// rankCandidates orders candidates so the most specific evidence comes
+// first: processes that name the daemon's own pid (for example
+// `kill <pid>`) rank above processes that only name the datawatch unit
+// (for example a `systemctl stop datawatch-other` for an unrelated unit
+// whose name merely contains the word). Within each group lower pids
+// come first, so the order is deterministic.
+func rankCandidates(c []candidateProc) {
+	sort.SliceStable(c, func(i, j int) bool {
+		if c[i].namesPID != c[j].namesPID {
+			return c[i].namesPID
+		}
+		return c[i].pid < c[j].pid
+	})
 }
 
 // hasPIDToken reports whether any field names the pid as a whole token:

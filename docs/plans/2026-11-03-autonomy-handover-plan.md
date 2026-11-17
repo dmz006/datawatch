@@ -482,3 +482,80 @@ Operator, quoted: "Why would you cancel something final,  was it canceled or fin
 - Stale unlanded work: yes. Each of the 49 on the board is trial-merged in a throwaway tree; the clean ones land through the supervisor's chain (which also produces the comparison data the daemon needs) and only real conflicts come to the operator.
 - Pack workflow graphs: added as research first, `docs/plans/2026-11-16-pack-workflow-graph-research.md`: display only, then editable, tied to the pack design (72bc0001); recommendation is to keep datawatch's own graph schema and use LangGraph as an interchange target, not as a second runtime.
 - The `test/` folder in the main checkout is a root-owned 82-byte lockfile left over from 2026-10-20; it is ignored locally and does not need to be removed, but `sudo rm -rf` would clear it.
+
+## 2026-11-16 20:50 — operator: features must ship running; promotion is the supervisor's job
+
+Operator, quoted: "The entire purpose of the local daemon is for us to do this development. We need to have features enabled by default, otherwise we would not have asked for them to be developed. They're features we need. So we can do the automations, we can get DataWatch tested and debugged. We want bugs to show up. We want to turn them on and get things to break so we can fix them. That's the purpose of this. This is what your function is. I've asked for these things to be built. You build and ship them actually running so we can actually use them. That's one of our plans is to start using DataWatch to manage this. You are supervised to shadow the change so we can see if things are not working. What will it take to get things back on track?"
+
+Why it lapsed: the 2026-11-15 rule (turn shipped modes on, at each hourly tick) lived only in memory, not in the tick procedure, so context resets dropped it. The shipped event wake was never switched on, and the daemon supervisor watch had no comparison record, so its agreement never started.
+
+Done 2026-11-16 20:50:
+- `supervisor_loop.wake.enabled` set to true (defaults: 11 event kinds, 30 second coalescing, 20 minute fallback).
+- `autonomous.automation.supervisor_watch.script_output_path` set, and `scripts/supervisor-watch.py --record` runs every 2 minutes from a user systemd timer (`sv-watch-record`, no model call), so the one-day agreement count can start.
+- Step 5a (promotion review) added to the hourly tick in the supervisor rules doc, with this quote.
+
+Next, one per tick, in this order, each read, compared, turned on and checked: the decision gate and the held-question mode (both shadow, read the decision log first), planning routing (its example rows name a premium model, so read the rows before turning it on), default quality gates, post-ship hooks, the scan fix loop and rules grader, scope breadth, plan review mode, tag placement by backend and project, the git secret scan (shadow), the observer pull. Then the five script checks the daemon watch lacks, and retiring the cron watch after one agreed day.
+
+## 2026-11-16 21:20 — operator: the registry was never meant to stay in datawatch; track through plans, Automations and Automata
+
+Operator, quoted: "And why do we still have the registry in data watch that was not supposed to be in data watch We're supposed to be using the actual constructs of our project plan Automations and automata we don't have the registry that was supposed to be a file system construct. When is that being removed? I thought we had filed that like yesterday or day before". Earlier the same evening: "Why are you tracking things primarily in the files? Are we not using the data watch plans, automation, Autonomo, and such properly? ... How are we going to work on getting actual management through the data watch constructs and off of the file system?"
+
+Facts found: the 2026-11-14 decision (quoted in this file) already said "no separate registry in datawatch" and left "the migration and cleanup design" open; no Automaton or Automation was ever filed for it, so nothing removes the registry records (500 registry rows, 87 findings before today). The registry and finding records shipped on 2026-11-12 as step one of an earlier design that the 2026-11-14 decision supersedes. The only related Automation (`448f8825`, draft) extends the release registry. In the daemon there are 77 Automata (23 tagged, 23 in an Automation), 144 Automations (mostly drafts), 2 plans for the datawatch project, and the two Automations below hold none of the work I filed today.
+
+What I did wrong, and reverted: at 21:05 I imported 23 more records (registry rows 541 to 560 and 3 findings), turned `autonomous.plan_records.write_through` on, created 11 finding records and told the tick procedure to use records. At 21:15 I turned write-through back off and rewrote the tick step. The 23 and 11 records cannot be deleted (records are never deleted); the retirement Automaton converts them.
+
+Done 2026-11-16 21:20:
+- Automaton `da770001` (priority 85, draft), a proposal-only Automaton that writes `docs/plans/2026-11-16-retire-the-registry-proposal.md`: the target model, the conversion of every record by count, the README as a configurable export, the retirement steps in order, how a backlog Automation is shown (a question for the operator, no task decides it) and the conditions before each step. Implementation Automata wait for its Confirmed line.
+- Automation `ae659210` (draft) holds that proposal. Automation `e8e71305` (draft) groups the twelve findings Automata of today.
+- The tick step 5a-f now says: findings and backlog are Automata attached to Automations; no README rows, no registry or finding records, write-through off.
+
+Not decided by me: the date. The proposal has to be planned (it queues behind the two node engines) and confirmed first.
+
+## 2026-11-16 21:05 — operator: history from 9.0 is in scope; plan the retirement proposal on Claude; fix the cause before Claude comes back
+
+Operator, quoted: "What about historical, want everything from 9.0 and yes lift for this is 9 but we need to fix this before it comes back". Read as: (1) everything from 9.0 to now moves into datawatch before any cleanup, so the history is part of the retirement proposal; (2) lift Claude for this planning; (3) fix the cause of the high burn and the Opus launches before Claude is generally open again.
+
+Done:
+- The proposal Automaton was replaced by `9df40001` (priority 85) with an added requirement: an inventory of everything since 9.0 by kind (registry rows, findings, plan and design documents, shipped releases, parity issues, archived and finished Automata, quoted operator decisions, reports), the datawatch construct that holds each, and how the result is checked against the files so nothing is dropped. It sits in Automation `ae659210` (the cancelled first version `da770001` remains as an inert first link of that draft Automation, which cannot be edited until activated).
+- Planning ran on Claude with an explicit Sonnet model for this one Automaton only: the global planning backend and model were set to claude-code and sonnet, the plan started at 21:02:07, and pi planning was restored at 21:02:10 by script as soon as the planner session started. The session record and its transcript show claude-sonnet-5-5, never Opus. Planning is not blocked by the usage back-off, so the back-off on task dispatch stays set until 02:00.
+- The Opus-launch fix `12480001` (a Claude launch with no model runs the account default, which is Opus) was raised to priority 95; it is the first thing to land before the back-off comes off.
+
+Still to settle before Claude is generally open again: the explicit-model fix landing, the disagreement between the daemon burn guard (projects the week end, graded steps) and the supervisor cron guard (pace line, on or off), and the cost of the supervisor session itself (cadence cut to 30 minutes at 20:45).
+
+## 2026-11-16 21:10 — operator: "fix this" means retire the registry and bring the 9.0 to 10.0 history into datawatch
+
+Operator, quoted: "When I said fix this before it can come back, this is the stuff we are working on right now The registry thing it needs to be fixed and removed so it doesn't become an issue and we can start actually using data watch is Managing our project and yes get the historical records from 9 until all of our stuff for 10 properly in there". My earlier reading (the Opus launches and the burn) was wrong: "it" is the registry.
+
+Facts from the previews (nothing written by them):
+- The plans migration had already been applied: 917 plans and links exist. The Release 10.0 and Release 11.0 plans exist. Release 10.0 holds the 9.0 to 10.0 Automata in seven themes.
+- The plans migration preview would create 21 more plans, all from registry rows that name no Automaton, including shipped rows, with titles taken from the status column, and it reports 30 conflicts. Filed as Automaton `bcf30001` (priority 80); it must land before registry rows are converted.
+- Registry rows: 549 in the file, 500+ as records. 224 are shipped rows naming a 9.x release: 161 name an Automaton (their history is in the daemon through it) and 63 name none (their history is only in the row). 325 are decisions, open items, plans, findings and process notes. Outside the daemon: 159 files in docs/plans, 177 parity drafts, 260 historical plan files, 21 reports. The changelog runs 638 versions from 9.0.0 (2026-10-09) to the latest.
+
+Done 2026-11-16 21:10:
+- Release migration applied from its exact preview: 10 Automata attached to Release 10.0. All 19 unplaced Automata (the 10 plus the 11 findings Automata filed today, and the proposal) placed in themes; Release 10.0 now holds 382 items (core automation 139, release tooling 88, sessions 80, security 29, web app 28, docs and research 12, mobile 6) with 1 left unplaced from earlier. The 7 conflicts (items another release plan already holds) were left alone.
+- The retirement proposal `9df40001` (planned on Claude Sonnet, approved, running on pi with all tasks pinned to the node model) inventories the history from 9.0 by kind and writes the proposal; `bcf30001` joined Automation `ae659210`.
+
+Next, in order: the proposal and inventory land; the operator answers the one display question (how a backlog Automation shows on the Projects page); implementation Automata for the conversion of the 63 history-only shipped rows and the 325 other rows, the README export, stopping the post-ship hook from writing registry rows, removing the registry and finding record kinds from every surface, cleaning docs/plans, and retiring the tidy scripts and registry checks.
+
+## 2026-11-16 21:26 — promotion: held-question mode shadow to on
+
+- Hourly tick promoted `autonomous.questions.held_mode` from `shadow` to `on` (CLI-equivalent `config_set`, accepted). Shadow evidence: three entries (38b69678, fea73c82, f6a38c29, all `blocked`, recommended option `hold`, logged 2026-11-01), consistent with the blocked list the supervisor watch shows now.
+- Authority (operator, 2026-11-16 and the 5a rule, quoted): "We want bugs to show up. We want to turn them on and get things to break so we can fix them."
+- Check on the next poll: open held questions appear for blocked Automata. A poll about a minute after the switch still showed no open questions, so the next tick re-reads the report; if it stays empty with nine blocked Automata, file a defect.
+- Next in order: decision gate mode (`autonomous.questions.decision_gate_mode`, shadow).
+- Filed same tick into Automation e8e71305: d0600001 (lane fill proposal gate reads docs/plans/README.md and gates proposal-writing Automata) and 69cc0001 (lane fill counts a merge-wait or backed-off Automaton as occupying a lane).
+
+## 2026-11-16 22:50 — promotion: decision gate mode shadow to on; merge chain blocked by the leak check
+
+- `autonomous.questions.decision_gate_mode` went from `shadow` to `on` at the 22:17 tick. Shadow could not compare: no open decisions and no `decision_gate_shadow` entries on the running Automata, so `on` changes nothing until a decision opens and then holds only the task that names it. Turn it back off only if it blocks throughput.
+- Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
+- Held-question mode, an hour after it went on, still raises no questions with nine Automata blocked: defect filed as an Automaton in Automation `e8e71305`.
+- The merge chain for the temp-folder Automaton aborted at the release-smoke gate. Cause: `make check-leaks` fails on main (19 local-class hits and one home-path hit, the home-path hit fixed in 2438acc). The 19 are filed as one Automaton in the same Automation; every merge is blocked until it ships, so it is the first thing to land.
+
+## 2026-11-16 23:25 — promotion: planning routing off to shadow, with Sonnet-only rules
+
+- `autonomous.planning_routing` went from off to `enabled=true, shadow=true` with two rules, `security-sonnet` and `design-sonnet`: planners `claude-code/sonnet`, then `pi-prompt/ollama/qwen3.8-64k:27b`. The shipped example rows name an Opus model, which is not authorized (Sonnet and Haiku only), so they were not copied. Shadow records the routed choice and calls no model, so it costs no Claude usage and the planner is unchanged.
+- Authority (operator, 2026-11-16, quoted): "You are supposed to shadow the change so we can see if things are not working."
+- Exit criterion: when the scorecard (`planning-routing scorecard --window 7d`) shows at least ten recorded would-route decisions with the matches the rules intend, decide whether to turn routing on; turning it on is the one step in this feature that can spend Claude usage, so it waits for the Claude back-off to end and for the pace line. Review date: 2026-11-19.
+- Next in order: default quality gates.
+- The registry-retirement proposal Automaton finished its eight tasks after a launcher-file workaround and is waiting for its rules review. Its implementation Automata wait for a `Confirmed: yes` line from the operator.

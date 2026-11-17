@@ -100,9 +100,11 @@ test('focus reads once with focus=<id>, the range is first task to last task', a
   assert.match(cap.panel, /Focus: Arc one/);
   // The label prints the range the page uses (first task minus the margin to last
   // task plus the margin), not a hand-picked instant — ago(31) can be the previous
-  // calendar day from r.start depending on time zone and time of day.
-  const dateRe = ts => new Date(ts).toLocaleDateString().replace(/[/.]/g, '\\$&');
-  assert.match(bodyHtml(sb), new RegExp('First task ' + dateRe(r.start) + ' – last task ' + dateRe(r.end)));
+  // calendar day from r.start depending on time zone and time of day. The page
+  // renders the dates verbatim, so the label carries this exact fragment.
+  const dateText = ts => new Date(ts).toLocaleDateString();
+  const rangeFragment = 'First task ' + dateText(r.start) + ' – last task ' + dateText(r.end);
+  assert.ok(bodyHtml(sb).includes(rangeFragment), 'the label carries the first-to-last task range');
   assert.ok(tl.every(c => c.method === 'GET'), 'a read');
   assert.equal(calls.filter(c => c.method !== 'GET').length, 0, 'no write route');
 });
