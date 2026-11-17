@@ -93,7 +93,18 @@ gate's finding — and it does not block the plan. When the rerun does not pass,
 the first failure stands, with the rerun's status noted in the detail. A test
 that fails and then passes is a real intermittent failure (a race, an unbounded
 wait, a shared resource or a timing assumption), never "load": the gate names
-it, and the operator still decides what to fix.
+it, the daemon files a defect record against it — the test name, the failure
+message, the first lines of the failing output and the date, one record per
+test name and commit (repeated runs at the same commit do not add records) —
+and raises one alert titled with the test name. The record appears on every
+surface that lists defects: the Housekeeping repairs card, REST, MCP, CLI and
+comm ([the Housekeeping repairs howto](automaton-housekeeping-repairs.md)).
+Fix it at the root — the race, the unbounded wait, the shared resource or the
+timing assumption — in the test or the code it exercises: a passing rerun is
+not a fix, and it is never repaired by a retry, a longer sleep, loading the
+machine up before the run, or excluding the test. How to prove the fix (the
+repeated run under the race detector) is in
+[testing.md](../testing.md#proving-a-flaky-test-fix).
 
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
