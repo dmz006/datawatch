@@ -66,7 +66,13 @@ What the target does (`scripts/e2e-pwa.sh`):
 
 1. Picks free 127.0.0.1 ports, generates an isolated config from
    `testdata/datawatch.yaml`, starts the daemon (same mechanism as
-   `scripts/run-tests.sh`) and waits for `/api/health`.
+   `scripts/run-tests.sh`) and waits for `/api/health`. The config is
+   written by `e2e_pwa_write_config` in `scripts/e2e-pwa-config.sh`, which
+   also sets `server.allowed_project_roots` to the parent of the run's temp
+   folder (`${TMPDIR:-/tmp}`). Stories such as `schedule-flood` seed sessions
+   under that temp folder, and without this project root the daemon's
+   project-root guard refuses them. `tests/test-e2e-pwa-config.sh` (run by
+   `make test`) checks that the generated config carries the temp root.
 2. `npm ci` in `scripts/test-stories/pwa` (falls back to `npm install` without
    a lockfile).
 3. Runs `node schedule-flood.mjs` with `TEST_HTTP`, `TEST_TLS`, `TEST_TOKEN`
