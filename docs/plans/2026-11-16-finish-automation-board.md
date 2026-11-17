@@ -1,6 +1,6 @@
 # Finish-automation board
 
-Generated 2026-11-16 19:21 from the daemon's own data (merge state and the Automata list) by `python3 scripts/automation-board.py`. It is the one place that lists everything still unfinished; the supervisor regenerates it at each full tick.
+Generated 2026-11-16 20:18 from the daemon's own data (merge state and the Automata list) by `python3 scripts/automation-board.py`. It is the one place that lists everything still unfinished; the supervisor regenerates it at each full tick.
 
 ## Rules that keep it organized
 
@@ -9,7 +9,7 @@ Generated 2026-11-16 19:21 from the daemon's own data (merge state and the Autom
 3. Every merge goes through the chain scripts and is recorded shipped only when its branch is on main.
 4. The board is regenerated at each hourly tick and any change is committed with the registry row.
 
-## A. Finished work with commits that never reached main (47)
+## A. Finished work with commits that never reached main (46)
 
 State `pending` = commits ahead of main, not merged. `needs_look` = diverged or odd, a person must look. The recommended action is the default; keep and drop need the operator's reason.
 
@@ -36,7 +36,6 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | pending | 20 | `41050001` | Core automation stability 3: planner avoids foreseeable task and check | yes | merge through the chain |
 | pending | 20 | `8b7a0001` | Core automation stability 1: automatic gate repair | yes | merge through the chain |
 | pending | 18 | `6e980001` | Automata Resources, Progress and costs, Housekeeping in datawatch styl | yes | merge through the chain |
-| pending | 18 | `87620001` | Make the full release smoke pass on main | no | merge through the chain |
 | pending | 16 | `4e190001` | Deflake round five: await question raise notifications before temp dir | yes | merge through the chain |
 | pending | 16 | `70900001` | Configuration parity audit and CI gate | no | merge through the chain |
 | pending | 16 | `71660001` | Plan status roll-up and plan rename/edit | yes | merge through the chain |
@@ -63,7 +62,7 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | needs_look | 4 | `f56e0001` | Close the documentation gaps for the shipped lifecycle-event notificat | yes | review the diff, then merge or drop |
 | needs_look | 2 | `dc6c597b` | Ship v9.1.9: autonomous task session-name prefix closeout | yes | review the diff, then merge or drop |
 
-## B. Failed or blocked with work left (11)
+## B. Failed or blocked with work left (10)
 
 | Id | Status | Tasks left | Title | Why |
 |---|---|---:|---|---|
@@ -72,14 +71,13 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | `9a1a8666` | blocked | 16 | [eval] open-model-matrix 20261015-r7 |  |
 | `3be9c0e5` | blocked | 16 | [eval] open-model-matrix 20261015-r10 |  |
 | `d5060001` | blocked | 7 | Make the internal/autonomous race-detector run pass | task 1ff40003 needs operator review |
-| `87620001` | failed | 6 | Make the full release smoke pass on main |  |
 | `70900001` | blocked | 4 | Configuration parity audit and CI gate |  |
 | `049f4713` | blocked | 3 | BL433 — PWA performance audit under load (design/audit pass) |  |
 | `f6a38c29` | blocked | 2 | BL422 — Claude model/effort tiering eval for dev-Automaton tas | last activity was 575902 seconds ago (159h58m22s), older tha |
 | `fea73c82` | blocked | 1 | BL437 — Recurring, hardware-aware LLM model/effort evaluation  | last activity was 570131 seconds ago (158h22m11s), older tha |
 | `9f8f0001` | blocked | 0 | Move Automata configuration into Settings and replace the usag | guardrail rules-review returned block (text-only judge) - ju |
 
-## C. Waiting for review, approval or planning (17)
+## C. Waiting for review, approval or planning (18)
 
 | Id | Status | Tasks | Title |
 |---|---|---:|---|
@@ -88,10 +86,11 @@ State `pending` = commits ahead of main, not merged. `needs_look` = diverged or 
 | `d1130001` | running | 15 | Free orphaned pi-pool slots held by judges and verifiers |
 | `3b170001` | needs_review | 9 | Research: pack workflow graphs — grounded answers, first step, |
 | `316c41e1` | needs_review | 8 | Register the individual-builder harness research and its enhan |
-| `3e500001` | running | 7 |  |
+| `87620001` | running | 7 | Make the full release smoke pass on main |
 | `2fbf0001` | needs_review | 7 | Authentication and multi-user design proposal |
 | `36729dd7` | needs_review | 7 | Register the openrig.dev adoption research as a held item |
 | `2c9a27e2` | needs_review | 7 | Personal agents with personality and decision-making (held pla |
+| `3e500001` | running | 3 |  |
 | `ff540001` | needs_review | 0 | Fix the shutdowncause child process scan flake in the full tes |
 | `a7f20001` | needs_review | 0 | Fix open high and critical CodeQL alerts |
 | `f31d0001` | draft | 0 | Fix the shadows: plan size and version, changelog source, stor |
