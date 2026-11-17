@@ -65,10 +65,10 @@ func PairingWarnings(cfg Config, decomposeRefs map[string][]string) []string {
 // that is named.
 func planningPairingWarning(cfg Config, decomposeBackend string, prdIDs []string, plannedModel string) string {
 	var effect string
-	switch {
-	case plannedModel == DefaultClaudeModel:
+	switch plannedModel {
+	case DefaultClaudeModel:
 		effect = fmt.Sprintf("so that model will not be used for that decompose (the daemon default %q is passed instead).", DefaultClaudeModel)
-	case plannedModel == "":
+	case "":
 		effect = "so no model will be passed to that session."
 	default:
 		effect = fmt.Sprintf("so that model will not be used for that decompose (%q is passed instead).", plannedModel)
