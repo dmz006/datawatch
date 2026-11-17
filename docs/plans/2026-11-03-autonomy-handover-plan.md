@@ -551,3 +551,11 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
 - Held-question mode, an hour after it went on, still raises no questions with nine Automata blocked: defect filed as an Automaton in Automation `e8e71305`.
 - The merge chain for the temp-folder Automaton aborted at the release-smoke gate. Cause: `make check-leaks` fails on main (19 local-class hits and one home-path hit, the home-path hit fixed in 2438acc). The 19 are filed as one Automaton in the same Automation; every merge is blocked until it ships, so it is the first thing to land.
+
+## 2026-11-16 23:25 — promotion: planning routing off to shadow, with Sonnet-only rules
+
+- `autonomous.planning_routing` went from off to `enabled=true, shadow=true` with two rules, `security-sonnet` and `design-sonnet`: planners `claude-code/sonnet`, then `pi-prompt/ollama/qwen3.8-64k:27b`. The shipped example rows name an Opus model, which is not authorized (Sonnet and Haiku only), so they were not copied. Shadow records the routed choice and calls no model, so it costs no Claude usage and the planner is unchanged.
+- Authority (operator, 2026-11-16, quoted): "You are supposed to shadow the change so we can see if things are not working."
+- Exit criterion: when the scorecard (`planning-routing scorecard --window 7d`) shows at least ten recorded would-route decisions with the matches the rules intend, decide whether to turn routing on; turning it on is the one step in this feature that can spend Claude usage, so it waits for the Claude back-off to end and for the pace line. Review date: 2026-11-19.
+- Next in order: default quality gates.
+- The registry-retirement proposal Automaton finished its eight tasks after a launcher-file workaround and is waiting for its rules review. Its implementation Automata wait for a `Confirmed: yes` line from the operator.
