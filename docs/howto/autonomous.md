@@ -113,9 +113,13 @@ committed work — follow this staging discipline:
    - **the two launcher files** — `worker-mcp.json` and
      `worker-starting-context.md`, the artifacts the session launcher
      drops into the working directory at session start (reason
-     `launcher`). Only the exact names at the repository root match: a
-     same-named file in a subfolder, or a launcher-named rule file you
-     track, still runs the guard.
+     `launcher`). Only the exact names at the repository root match, so
+     a same-named file in a subfolder runs the other checks as usual —
+     but unlike the uncommitted-work and read-only checks, this skip is
+     by name: a root `worker-mcp.json` or `worker-starting-context.md`
+     that the repository tracks is refused here too, with the same
+     reason, so if a task genuinely needs a file with that exact name it
+     must give it a different name.
    - **a root rule file whose only change is the daemon's sections** — an
      `AGENT.md` or `CLAUDE.md` whose only difference from HEAD is the
      daemon's own appended sections (reason `daemon-sections`). The same
