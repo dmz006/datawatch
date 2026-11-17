@@ -45,9 +45,44 @@ func cleanupDiskText(c *CleanupDiskCheck) string {
 		if c.Alert {
 			line += " (alert)"
 		}
+		if c.Threshold > 0 {
+			line = fmt.Sprintf("%s (threshold %d%%)", line, c.Threshold)
+		}
 		return line
 	}
+	if c.Threshold > 0 {
+		return fmt.Sprintf("%s (no reading, threshold %d%%)", c.Path, c.Threshold)
+	}
 	return c.Path + " (no reading)"
+}
+
+// humanSize renders a byte count the way a disk alert should say it:
+// whole bytes under a KiB, whole units at ten or more, one decimal
+// below. The alert prefixes it with "about", so the rounding is part
+// of the wording, not an error.
+func humanSize(n int64) string {
+	if n < 0 {
+		n = 0
+	}
+	const unit = 1024
+	f := float64(n)
+	name := "B"
+	for _, u := range []string{"KiB", "MiB", "GiB", "TiB", "PiB"} {
+		if f < unit {
+			break
+		}
+		f /= 1024
+		name = u
+	}
+	switch name {
+	case "B":
+		return fmt.Sprintf("%d B", n)
+	default:
+		if f >= 10 {
+			return fmt.Sprintf("%d %s", int64(f), name)
+		}
+		return fmt.Sprintf("%.1f %s", f, name)
+	}
 }
 
 var cleanupReasonText = map[string]string{
@@ -119,6 +154,12 @@ func RenderCleanupStatus(st CleanupStatus) string {
 		}
 		if st.TempDisk != nil {
 			b.WriteString("  temp dir disk: " + cleanupDiskText(st.TempDisk) + "\n")
+		}
+	}
+	if len(st.BiggestTempFolders) > 0 {
+		b.WriteString("  biggest folders in the temp folder (measured when that disk was over its threshold):\n")
+		for _, f := range st.BiggestTempFolders {
+			fmt.Fprintf(&b, "    %s — about %s — %s\n", f.Path, humanSize(f.Size), folderLivenessText(f))
 		}
 	}
 	if st.DiskAlert {
