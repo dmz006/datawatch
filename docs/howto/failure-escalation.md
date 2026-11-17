@@ -196,7 +196,11 @@ One shared validator covers every surface that accepts these keys. It
 refuses an unknown kind, a `first_attempt` entry for `pi`, `pi-prompt` or
 `ollama` without a model (those backends refuse to start without one), and a
 `first_attempt_escalate_after_failures` outside 0 to 20 — each refusal names
-the key.
+the key. A model-less `claude-code` entry is accepted: at launch, a
+claude-code attempt that resolved to no model starts on the daemon default
+model (`sonnet`, or `haiku` for a mechanical task type) instead of the
+backend's built-in default. See
+[Explicit model policy](explicit-model-policy.md).
 
 The pair is daemon-wide; there is no per-Automaton or per-task map. For one
 task that needs a specific worker, pin at the task, story, PRD or Automaton

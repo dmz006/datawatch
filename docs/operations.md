@@ -394,6 +394,8 @@ The `--config` flag works with all session subcommands:
 datawatch session list --config /path/to/config.yaml
 ```
 
+**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
+
 ### Command Library
 
 ```bash
@@ -973,7 +975,7 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
-**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. A model-less `claude-code` entry is accepted: at launch, an attempt that resolves to no model on that backend starts on the daemon default model (`sonnet`, or `haiku` for a mechanical task type) instead of the backend's built-in default, and this same explicit-model rule applies to verifiers, guardrail judges (an unconfigured claude-code judge now starts on `sonnet` instead of being blocked) and planners — see [howto/explicit-model-policy.md](howto/explicit-model-policy.md). The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
 
 | Method | How |
 |--------|-----|
@@ -2909,6 +2911,52 @@ or only for the security scanners and Go, and whether it should join the merge
 helper. Reference:
 [howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
 
+### Whole-tree local-environment leak check
+
+`scripts/check-no-local-leaks.sh` enforces the `AGENT.md` rule "No
+local-environment leaks in git" across the whole tracked tree at once: a
+value tied to one operator's machine — a private or internal IP address, an
+absolute home-directory path, a personal email address, or a machine-specific
+token the operator lists in the local patterns file — must not land in a
+tracked file. It is development tooling for the repository, not a daemon
+feature: the daemon never runs it, it has no setting in `config.yaml` or
+Settings, and it has no REST, MCP, CLI, chat or web app surface.
+
+It scans four classes — `address` (private/internal/link-local IPv4, ULA and
+tailnet IPv6, MagicDNS hostnames), `home` (absolute home paths for any user),
+`email` (anything not on `scripts/leak-check.allowed-emails`) and `local`
+(fixed strings from the gitignored `.leak-patterns.local` at the repository
+root, seeded with `make leak-patterns-init`). The generic patterns are
+configuration under `scripts/` and are written self-clean so the pattern file
+never matches itself. In a git work tree the tracked files are scanned; binary
+files and paths in `scripts/leak-check.exclude` are skipped. An absent or
+empty `.leak-patterns.local` prints `local patterns: skipped` and carries on —
+never an error.
+
+The report is CI-safe by design: one line per finding, `path:line: class`,
+then a per-class count summary, and nothing else — the matched text is never
+printed, so the output is safe in CI logs or a commit message. Exit `0` clean,
+`1` findings, `2` usage or configuration error. Run it with `make check-leaks`
+or `bash scripts/check-no-local-leaks.sh [root]`.
+
+It is wired into three gates: the pre-commit chain
+(`hooks/pre-commit-leak-check`, the middle step of the
+`hooks/pre-commit-docs-sync` chain; the commit is refused on any finding and
+there is no escape hatch), `make lint` (via `check-leaks`), and
+`scripts/release-smoke.sh` before a release is cut (skippable only with the
+operator-owned `DW_SKIP_LOCAL_LEAKS_CHECK=1`). A finding is fixed by replacing
+the value with a placeholder, moving it to operator config or an environment
+variable, or scrubbing peer/node names with `scripts/scrub-peer-names.sh`
+(dry-run emits `path: N` counts only, never the names). Commit messages, issue
+and PR comment text are outside the tree and are not scanned; the narrower
+last-commit diff check covers that surface.
+
+Operator review still needed: keep `.leak-patterns.local` seeded on every
+machine that builds or commits the repository — until it exists the `local`
+class is silently inactive there — and keep the pre-commit chain installed so
+the gate is not only `make lint`. Reference:
+[howto/local-env-leak-check.md](howto/local-env-leak-check.md).
+
 ---
 
 ## 8. Web UI Features
@@ -3910,6 +3958,30 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 `backend_state.json` is automatically deleted when a session completes, fails, or is killed.
 
 ---
+
+## Claude model defaults
+
+Every Claude Code command datawatch launches carries an explicit model —
+there is no fall-through to the operator's Claude account default and no
+silent upgrade. When no launch layer names a model, the daemon names one:
+
+- **`sonnet`** — the daemon default for a worker, verifier, judge, or
+  planner launch whose model is empty after every resolution layer.
+- **`haiku`** — the daemon's model for autonomous mechanical work: docs,
+  changelogs, parity-issue drafts, bounded load steps, version notes, locale
+  strings, and formatting cleanup.
+
+An Opus-class model runs only when the operator explicitly names one at the
+session, task, story, PRD, automation, or config-line level (see [Autonomous
+PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
+planner pairs). A Claude Code launch whose model is still empty after every
+layer is refused up front — before any tracker, session record, or tmux pane
+is created — with the reason `claude-code launch refused: no explicit model
+set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try
+again. The session record holds exactly the value passed to the CLI as
+`--model`, so you can verify what ran from the session list, PWA, or REST.
+See the [Claude model defaults how-to](howto/claude-model-defaults.md) and
+the [explicit-model policy](howto/explicit-model-policy.md).
 
 ## Autonomous PRD LLM Configuration
 
@@ -8230,7 +8302,7 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 
 ## Task-type routing table
 
-Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards.
+Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards. Whichever level wins the chain, a `claude-code` backend that ends up with no model starts on the daemon default model (`sonnet`; `haiku` for the mechanical task types) rather than the backend's built-in default — [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 | Surface | Access |
 |---|---|

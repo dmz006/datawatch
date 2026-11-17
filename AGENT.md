@@ -1112,8 +1112,12 @@ test fixtures, and Go source comments alike.
 
 **The check.** `scripts/check-no-local-leaks.sh` scans the whole
 tree once and fails on any finding. It runs as `make check-leaks`, is
-wired into `make lint`, and is run by `scripts/release-smoke.sh` before a
-release is cut. It covers four classes:
+wired into `make lint`, is run by `scripts/release-smoke.sh` before a
+release is cut, and gates every commit through
+`hooks/pre-commit-leak-check` (installed per the sibling hooks/ pattern),
+which runs the same whole-tree check in the pre-commit chain — the local
+class is active when `.leak-patterns.local` is present, and findings
+surface as the same `path:line: class` report. It covers four classes:
 
 1. **private and tailnet addresses** — private / internal /
    link-local IPv4, unique-local and tailnet IPv6, and MagicDNS
