@@ -2519,7 +2519,7 @@ autonomous:
   task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
-  security_scan:          true        # warn-only security scan of the task's worktree right before the completion commit: findings recorded on the task (security_findings, max 20 entries, full text) plus the cumulative security_finding_count and one decision-log entry (security_scan_findings); never fails the task or the commit
+  security_scan:          true        # warn-only security scan of the task's worktree right before the completion commit: findings recorded on the task (security_findings, max 20 entries, full text) plus the security_finding_count counter (cumulative over all passes) and one decision-log entry (security_scan_findings); never fails the task or the commit
   security_scan_extensions: []        # file extensions the security scan covers; unset or an empty list = built-in defaults (.py, .pyw); a non-empty list scans exactly those; in the autonomous settings GET response; the autonomous config PUT accepts a list for it
   snapshot_never_stage:   []          # never-stage patterns for the automatic snapshot commits; unset reads the built-in list (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp); an explicit [] protects nothing (see "Snapshot never-stage list")
   verifier_policy:                    # which backend runs a verification (see "Verifier policy")

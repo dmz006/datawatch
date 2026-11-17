@@ -3858,7 +3858,8 @@ autonomous:
   # Run the security pattern scan over the task's worktree right before
   # the completion commit. Warn-only: findings are recorded on the task
   # (up to 20, full text) plus a cumulative counter
-  # (security_findings / security_finding_count), one decision-log entry
+  # (security_findings / security_finding_count, cumulative over all passes),
+  # one decision-log entry
   # of kind security_scan_findings is appended, and the scan never fails
   # the task or the commit.
   security_scan: true
