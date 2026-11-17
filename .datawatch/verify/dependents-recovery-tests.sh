@@ -7,9 +7,13 @@ fi
 cd "$(git rev-parse --show-toplevel)"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
-BASE="$(git merge-base HEAD main)"
+# The PRD worktree already carries the implementation task's commits on the
+# branch while main lags behind, so a diff against the merge-base would
+# include that task's files too. This task's footprint is what it leaves
+# relative to the worktree's own history: staged + unstaged + new untracked
+# files.
 CH="$(mktemp)"; trap 'rm -f "$CH"' EXIT
-{ git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > "$CH"
+{ git diff --name-only; git diff --name-only --cached; git ls-files --others --exclude-standard; } | sort -u > "$CH"
 allowed="internal/autonomous/dependents_recovery_test.go
 internal/autonomous/infra_retry_dependents_test.go
 .datawatch/verify/dependents-recovery-tests.sh"
