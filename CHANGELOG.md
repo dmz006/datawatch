@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
+
+### Changed
+
+- Requeue dependents whose only failure was a dependency-failed error once the dependency co.
+
 ## v9.182.12 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
 
 ### Changed
