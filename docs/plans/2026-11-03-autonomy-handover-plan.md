@@ -599,3 +599,11 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Exit criterion: after the next five decomposes, read the review warnings on those Automata; if they are useful and not noise, set `block`. Review date: 2026-11-20.
 - Gap noted: `plan_review_backend` and `plan_review_model` are not described in the definitions or a how-to; they are covered by the filed documentation Automaton for the scan and review settings only if the docs pass reaches them, so a note was added to the memory of this tick.
 - Next in order: tag placement axes.
+
+## 2026-11-17 04:30 — promotion: tag placement axes backend and project on
+
+- The how-to says every one of the ten placement axes is on by default, but the live config had `backend` and `project` off. Both were set on (`autonomous.tags.placement.backend.enabled`, `autonomous.tags.placement.project.enabled`); all ten axes now read on, matching the how-to. A tag sweep applies them to existing records when the change is saved.
+- Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
+- Exit criterion: read the session list filtered by `backend:` and `project:` tags; if either axis is noisy or wrong, turn that one back off. Review date: 2026-11-19.
+- Next in order: git secret scan (shadow).
+- Note: the how-to says the first setting form is `autonomous.tags.placement.<axis>.enabled`; `autonomous.tags.placement.axes.<axis>.enabled` is refused as an unknown tag setting, though the config read returns the axes under an `axes` object. The read and write key shapes differ; if that surprises a second operator it is a documentation or API gap to file.
