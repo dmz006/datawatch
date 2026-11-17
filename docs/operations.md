@@ -4266,6 +4266,10 @@ in the panel, but Approve is enabled and the PRD moves on — the coverage gap i
 informational. In `block` mode the same report locks Approve: the panel shows
 the failing surface and an **Acknowledge** control instead of letting Approve
 through. `off` behaves like `warn` but the report is purely for the record.
+Lane fill honours the same lock: a `needs_review` Automaton whose stored
+record fails in `block` mode without a covering acknowledgment is refused the
+ready slot as `plan_coverage_blocked` — it is not started and left stuck at the
+gate, and lane fill never acknowledges on the operator's behalf.
 
 **Acknowledging a failing report (the `block`-mode override).** To unblock
 Approve without fixing the plan, an operator acknowledges the *exact* failing
@@ -6786,7 +6790,7 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 | Comm channel | `autonomous lane-fill [limit]` | `configure autonomous.lane_fill.mode=on` | `autonomous set-lane-preference <prd-id> gpu\|claude\|any` |
 | PWA | Automata tab, Automation sub-tab, the **Lane fill** card (reloads every 5 seconds) | Settings → General → Autonomous, the Lane fill fields | Automaton settings form, **Lane preference** select |
 
-**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks eight rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `operator_hold` (an operator put the Automaton on hold; release it to clear), `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks nine rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `operator_hold` (an operator put the Automaton on hold; release it to clear), `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment; lane fill never acknowledges on the operator's behalf — see the [plan requirement coverage gate](#plan-requirement-coverage-gate-autonomousplan_coverage_check) above). A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane counts.** With `lane_counts_from_caps` on, the number of lanes of a type follows the LLM concurrency caps, the same ones the capacity pools use: a Claude backend capped at one session gets one Claude lane however high `claude_lanes` is. The configured count is kept when an enabled entry on that backend is unlimited, when no enabled entry runs that backend, or when the configured count is `0`. The status `lane_counts` object shows `configured`, `effective` and `source` (`llm_caps` or `config`); the CLI prints `Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`. Raise the cap on the LLM entry to get more lanes.
 
@@ -6800,7 +6804,7 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 
 **What lane fill never does.** It never merges finished work. It never judges design or difficulty. It never holds GPU work because of Claude usage limits, since GPU lanes cost no Claude usage and the planner does not read usage or budget. It never starts an Automaton that is held (a `HOLD` line, "do not run", "sequenced last", or "sequenced after" an unfinished Automaton). It adds no second start path: every start in `on` mode goes through the normal admission, approval and quality-gate rules.
 
-**Known gaps before `on`.** The plan's open questions are still open: whether `on` mode may approve a review-pending Automaton through the approve call (the shipped code does, subject to the plan-coverage and plan-review gates), whether an Automaton on a backend other than the GPU or Claude backend counts toward lane occupancy, and the default Claude lane count and alert minutes. Answer them before switching to `on`.
+**Known gaps before `on`.** The plan's open questions are still open: whether `on` mode may approve a review-pending Automaton through the approve call (the shipped code does for the ones the gates let through; a review-pending Automaton the coverage gate blocks is refused as `plan_coverage_blocked` instead of being started and left stuck), whether an Automaton on a backend other than the GPU or Claude backend counts toward lane occupancy, and the default Claude lane count and alert minutes. Answer them before switching to `on`.
 
 ---
 
