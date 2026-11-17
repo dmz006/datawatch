@@ -85,7 +85,10 @@ The gate writes two files into the run's evidence folder:
 
 In local mode the evidence folder is `dw-e2e-pwa-XXXXXX/evidence/` inside `${TMPDIR:-/tmp}`. The runner removes the whole `dw-e2e-pwa-XXXXXX` folder when the run passes, so the report is gone after a pass. When the run fails, the runner keeps the folder and prints its path, with the daemon log.
 
-Setting `EVIDENCE_DIR` does not move the report in local mode: the runner resets it. To keep the report of a passing run, copy the two files out while the run is still going.
+In local mode the default evidence dir is the run dir's `evidence/` subfolder — a
+`EVIDENCE_DIR` you set is honored (the run dir is only the default). Since the run
+dir itself is removed on a pass, pointing `EVIDENCE_DIR` at a durable location is
+how you keep the report of a passing run.
 
 ## Release smoke
 
