@@ -544,3 +544,10 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Check on the next poll: open held questions appear for blocked Automata. A poll about a minute after the switch still showed no open questions, so the next tick re-reads the report; if it stays empty with nine blocked Automata, file a defect.
 - Next in order: decision gate mode (`autonomous.questions.decision_gate_mode`, shadow).
 - Filed same tick into Automation e8e71305: d0600001 (lane fill proposal gate reads docs/plans/README.md and gates proposal-writing Automata) and 69cc0001 (lane fill counts a merge-wait or backed-off Automaton as occupying a lane).
+
+## 2026-11-16 22:50 — promotion: decision gate mode shadow to on; merge chain blocked by the leak check
+
+- `autonomous.questions.decision_gate_mode` went from `shadow` to `on` at the 22:17 tick. Shadow could not compare: no open decisions and no `decision_gate_shadow` entries on the running Automata, so `on` changes nothing until a decision opens and then holds only the task that names it. Turn it back off only if it blocks throughput.
+- Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
+- Held-question mode, an hour after it went on, still raises no questions with nine Automata blocked: defect filed as an Automaton in Automation `e8e71305`.
+- The merge chain for the temp-folder Automaton aborted at the release-smoke gate. Cause: `make check-leaks` fails on main (19 local-class hits and one home-path hit, the home-path hit fixed in 2438acc). The 19 are filed as one Automaton in the same Automation; every merge is blocked until it ships, so it is the first thing to land.
