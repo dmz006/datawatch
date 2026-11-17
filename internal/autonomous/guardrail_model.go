@@ -17,7 +17,10 @@
 // paired with a pi-family one. When no tier resolves, the typed error
 // ErrNoGuardrailModel is returned and the caller records a loud,
 // non-retried infra-category block verdict (NoGuardrailModelVerdict)
-// instead of ever launching a judge.
+// instead of ever launching a judge — except on the claude-code backend,
+// where a completely unconfigured judge still gets an explicit model:
+// the daemon default sonnet (the explicit-model policy in
+// model_policy.go), never the backend's built-in default.
 package autonomous
 
 import (
@@ -50,8 +53,11 @@ var ErrNoGuardrailModel = errors.New("no guardrail judge model configured: none 
 // session-routed judge that rejects it) and only the explicit PRD/task
 // pins (tiers 1–2) may resolve. claude-code non-regression: on the
 // claude-code backend a bare Claude alias is accepted (tier 1/2), the
-// global pi tiers never apply, and nothing configured anywhere yields
-// ErrNoGuardrailModel — never a backend default.
+// global pi tiers never apply, and a tier that named a model the backend
+// cannot serve still fails loudly. A completely unconfigured
+// claude-code judge — no model named at any level — resolves to the
+// daemon default sonnet (the explicit-model policy in model_policy.go):
+// an explicit model, never the backend's built-in default.
 //
 // Every accepted tier's candidate is paired with the resolved guardrail
 // backend (the backend parameter) via validateModelForBackend — the
@@ -120,6 +126,15 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 		return model, nil
 	}
 	if claudeCode {
+		// Explicit-model policy (model_policy.go): a claude-code judge
+		// with no model named anywhere resolves to the daemon default —
+		// sonnet. Judging is not mechanical work, so the mechanical haiku
+		// row never applies; and the model is explicit, so the judge never
+		// launches on the backend's built-in default. A named pin the
+		// backend cannot serve was a loud failure above and stays one.
+		if strings.TrimSpace(prdModel) == "" && strings.TrimSpace(taskModel) == "" {
+			return DefaultClaudeModel, nil
+		}
 		for _, tier := range []struct {
 			label string
 			model string
@@ -152,6 +167,13 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 //
 // pinned is true only when the backend came from an explicit task or PRD
 // override; the cfg.VerificationBackend default fallback is not a pin.
+//
+// A claude-code judge backend with no model named anywhere resolves to
+// the daemon default sonnet (ResolveGuardrailModel, the explicit-model
+// policy in model_policy.go) instead of the typed failure — a judge is
+// always launched with an explicit model, never on the backend's
+// built-in default. A named pin the backend cannot serve still fails
+// loudly.
 func resolveUnitGuardrailModelLocked(cfg Config, t *Task, prd *PRD) (backend, model string, pinned bool, err error) {
 	if t == nil {
 		t = &Task{}

@@ -1005,7 +1005,7 @@ paths:
         `autonomous.parallel.read_only_tasks` (true|false, default true; tasks flagged read_only skip the tree lock),
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
-        `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_conflict_model` (string, default empty = the non-Opus daemon default ("sonnet"); a model the operator names, an Opus model included, is used as written; the model that resolves a merge conflict),
         `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
@@ -3890,11 +3890,17 @@ paths:
         failed counts, the bytes freed, the last error, and the split between
         this daemon's own Automata and the rest. `worktree_disk` and
         `temp_disk` (when present) are the disk readings behind the two passes;
-        a pass that has not run has no reading.
-        `disk_alert_percent` is the threshold in effect
+        a pass that has not run has no reading. Each reading carries its own
+        `threshold`: the worktree disk is checked against
+        `disk_alert_percent`, the temp-folder disk against the lower of that
+        value and a fixed 80. `disk_alert_percent` is the threshold in effect
         (`autonomous.automation.disk_alert_percent`), `disk_alert` whether the
         rate-limited alert is currently due, and `last_disk_alert_at` the last
-        time it fired (null until then). The status is read from the in-memory
+        time it fired (null until then). While the temp-folder disk is at or
+        above its threshold the status also carries `biggest_temp_folders` (top
+        five folders directly in the temp folder with path, size, held and
+        liveness_known); the alert body names them the same way. The status is
+        read from the in-memory
         watch kept by the coordination loop, so a read never scans the disk again.
         Read-only; only GET is served, and a federated peer needs the autonomous
         read capability.
@@ -5988,7 +5994,7 @@ paths:
                       disk_alert_percent:
                         type: integer
                         default: 85
-                        description: "Whole percent 1-100; the disk-usage threshold at or above which the rate-limited cleanup disk alert fires (autonomous.automation.disk_alert_percent)."
+                        description: "Whole percent 1-100; the disk-usage threshold at or above which the rate-limited cleanup disk alert fires (autonomous.automation.disk_alert_percent). The temp-folder disk always checks against the lower of this value and the fixed 80."
                       uncommitted_work_policy:
                         type: string
                         enum: [hold, warn, off]
@@ -6170,7 +6176,7 @@ paths:
                       description: "Whole number >= 1; a pass removes at most this many entries (autonomous.automation.cleanup_max_removals_per_pass). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
                     disk_alert_percent:
                       type: integer
-                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). A fractional or out-of-range value rejects the PUT with 400."
+                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). The temp-folder disk always checks against the lower of this value and the fixed 80. A fractional or out-of-range value rejects the PUT with 400."
                     uncommitted_work_policy:
                       type: string
                       enum: [hold, warn, off]
@@ -12235,8 +12241,8 @@ components:
         blocker: {type: string}
         eligibility_reason:
           type: string
-          enum: [stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid]
-          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work) or worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository)"
+          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}
@@ -12544,9 +12550,22 @@ components:
         temp_disk:
           allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
           description: The disk reading behind the daemon temp-file sweep; absent until it runs
-        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85)"}
+        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85; the temp-folder disk checks against the lower of this and the fixed 80)"}
         disk_alert: {type: boolean, description: "True while the rate-limited disk alert is due"}
         last_disk_alert_at: {type: string, nullable: true, format: date-time, description: When the rate-limited alert last fired; null until it does}
+        biggest_temp_folders:
+          type: array
+          description: "Present only while the temp-folder disk is at or above its threshold (measured on that check; absent until such a check, cleared once the disk drops back below): the top five folders directly in the temp folder"
+          items: {$ref: "#/components/schemas/TempFolderInfo"}
+    TempFolderInfo:
+      type: object
+      description: One folder in the biggest-temp-folders report, as the disk alert and the cleanup status name it (the alert body says "held by a running process (an open handle into it)", "no running process holds it", or "could not tell whether a running process holds it — treat it as held")
+      required: [path, size]
+      properties:
+        path: {type: string, description: The folder's path, directly under the temp folder}
+        size: {type: integer, description: Approximate size in bytes}
+        held: {type: boolean, description: True when a live process holds it (an open handle into it, or a working directory inside it)}
+        liveness_known: {type: boolean, description: False when the platform could not prove liveness (no readable /proc); the folder is then treated as held and reported as held}
     UncommittedWorkStatus:
       type: object
       description: |-
@@ -12809,7 +12828,8 @@ components:
       properties:
         path: {type: string, description: The path the usage was measured for}
         percent: {type: integer, description: Disk usage used percent}
-        alert: {type: boolean, description: "True when the reading is at or above the threshold"}
+        alert: {type: boolean, description: "True when the reading is at or above its threshold"}
+        threshold: {type: integer, description: "The percent threshold this reading was checked against (the worktree disk uses disk_alert_percent; the temp-folder disk always uses the lower of that value and the fixed 80)"}
     TriageList:
       type: object
       description: |-

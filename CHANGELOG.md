@@ -5,6 +5,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
+
+### Changed
+
+- Stop the read-only task check from counting launcher files as tree changes.
+
+## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
+
+### Changed
+
+- Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e.
+
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.7 — 3e500001
+
+### Changed
+
+- 3e500001.
+
+## v9.182.6 — 12480001
+
+### Changed
+
+- 12480001.
+
+## v9.182.5 — a46d0001
+
+### Changed
+
+- a46d0001.
+
+## v9.182.4 — Pack workflow graphs: research note with grounded answers
+
+### Changed
+
+- Pack workflow graphs: research note with grounded answers.
+
 ## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
 
 ### Changed

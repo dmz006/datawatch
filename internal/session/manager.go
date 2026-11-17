@@ -2510,6 +2510,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Claude Code explicit-model backstop: a claude-code launch must name an
+	// explicit model. datawatch refuses to fall back to the operator's
+	// account default — or to upgrade the model on its own — so a
+	// claude-code launch with no model set is refused up front (before any
+	// tracker, session record, or tmux pane is created) instead of running
+	// under whatever the account picks. When a model is named, the persisted
+	// session record carries exactly the value the backend passes to the CLI
+	// as --model.
+	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" {
+		if opt == nil || opt.Model == "" {
+			return nil, fmt.Errorf("claude-code launch refused: no explicit model set — datawatch will not fall back to the account default or upgrade the model on its own; name a model (e.g. \"sonnet\" or \"haiku\") and try again")
+		}
+	}
+
 	sess := &Session{
 		ID:            id,
 		FullID:        fullID,
@@ -4683,6 +4697,17 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			if se, ok := backendObj.(interface{ SetWebSearchEngine(string) }); ok {
 				se.SetWebSearchEngine(m.cfg.WebSearch.Engine)
 			}
+		}
+	}
+
+	// Claude Code: re-inject the persisted model on restart. The backend is a
+	// shared singleton whose model field may already have been overwritten by
+	// another session; the explicit-model backstop guarantees a claude-code
+	// record carries the model its launch used, so the relaunch keeps passing
+	// exactly that --model value (never the account default).
+	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" && sess.Model != "" {
+		if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
+			sm.SetModel(sess.Model)
 		}
 	}
 

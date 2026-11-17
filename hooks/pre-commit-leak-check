@@ -1,0 +1,20 @@
+#!/bin/sh
+# pre-commit hook: refuse the commit if the tree still carries a value tied
+# to one operator's machine — the AGENT.md "No local-environment leaks in
+# git" rule. It blocks the commit on any finding in the address, home,
+# email or local classes.
+#
+# It runs the whole-tree check, scripts/check-no-local-leaks.sh, from the
+# worktree root and lets the checker's exit code and report be the hook's:
+# one `path:line: class` line per finding (the report never contains the
+# matched text), then a per-class count summary; exit 0 clean, 1 findings,
+# 2 configuration error. There is no escape hatch and no extra output.
+#
+# Install:
+#   ln -s -f ../../hooks/pre-commit-leak-check .git/hooks/pre-commit-leak-check
+#
+# Or call it from your existing pre-commit chain.
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 2
+cd "$ROOT"
+exec bash scripts/check-no-local-leaks.sh .

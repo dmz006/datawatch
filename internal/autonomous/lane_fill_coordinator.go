@@ -715,6 +715,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			AllTasksDone:         r.tasks > 0 && r.tasks == r.tasksDone,
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
+			CoverageGateBlocked:  c.m.planCoverageGateBlocks(r.id),
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {

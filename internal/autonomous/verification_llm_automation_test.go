@@ -25,8 +25,8 @@ func TestResolveVerificationLLMAutomationTier(t *testing.T) {
 			VerificationLLM{Backend: "ollama", Model: "qwen-global", Effort: "low", Source: VerifierSourceGlobal}},
 		{"Automation beats global", &Automation{VerificationBackend: "claude-code", VerificationModel: "opus", VerificationEffort: EffortHigh},
 			VerificationLLM{Backend: "claude-code", Model: "opus", Effort: "high", Source: VerifierSourceAutomation}},
-		{"Automation backend without model leaves model empty", &Automation{VerificationBackend: "claude-code"},
-			VerificationLLM{Backend: "claude-code", Model: "", Effort: "low", Source: VerifierSourceAutomation}},
+		{"Automation backend without model resolves to the daemon default", &Automation{VerificationBackend: "claude-code"},
+			VerificationLLM{Backend: "claude-code", Model: DefaultClaudeModel, Effort: "low", Source: VerifierSourceAutomation}},
 		{"Automation model only keeps global backend", &Automation{VerificationModel: "opus"},
 			VerificationLLM{Backend: "ollama", Model: "opus", Effort: "low", Source: VerifierSourceGlobal}},
 	}

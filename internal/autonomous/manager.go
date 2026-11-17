@@ -7651,6 +7651,7 @@ func (m *Manager) run(ctx context.Context) {
 	// start cannot fail because of a cleanup.
 	m.CleanupWorktreesPass()
 	m.SweepDaemonTempPass()
+	m.SweepCacheFoldersPass()
 	// One-shot migration re-run as an idempotent no-op thereafter: strip the
 	// platform context block (owned by the daemon, re-appended at delivery)
 	// from the rules files of the stored Automations' project directories.
