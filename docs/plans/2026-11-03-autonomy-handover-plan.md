@@ -219,7 +219,7 @@ Pack question 6 (first acceptance of the pre-seeded community registry). Options
 
 Operator: "We need to modulator even the supervisor, skills and eventually other models seem essential" (read as: make the supervisor modular; skills, and eventually other models, are essential). Scope and shape are open; first question asked of the operator is whether to draft a design Automaton or fold it into the packs work.
 
-Operator, on how to take it forward: "A, but it should be designed to fit into the packs". Design proposal: docs/plans/2026-11-10-supervisor-as-skills-design.md (open questions listed there, asked one at a time).
+Operator, on how to take it forward: "A, but it should be designed to fit into the packs". Design proposal: docs/plans/historical-plans/2026-11-10-supervisor-as-skills-design.md (open questions listed there, asked one at a time).
 
 ### Reporting data store (operator, 2026-11-10)
 
@@ -229,7 +229,7 @@ Operator on how reports and dashboards read this data: "Let's go with A. I like 
 
 ### Plans and backlog primary in datawatch (operator, 2026-11-10)
 
-Operator (pasted text, as heard): backlog, plans and status should run inside datawatch with an optional export to a repo, a migration plan is needed, and skills for synchronizing the files drop to a low-priority background helper until the migration is done. Design proposal and open questions: docs/plans/2026-11-10-plans-and-backlog-in-datawatch.md. Deprioritised: the plans folder auto-tidy Automaton, the daily tidy Automation, the scheduler Automaton for it, and file-sync skills.
+Operator (pasted text, as heard): backlog, plans and status should run inside datawatch with an optional export to a repo, a migration plan is needed, and skills for synchronizing the files drop to a low-priority background helper until the migration is done. Design proposal and open questions: docs/plans/historical-plans/2026-11-10-plans-and-backlog-in-datawatch.md. Deprioritised: the plans folder auto-tidy Automaton, the daily tidy Automation, the scheduler Automaton for it, and file-sync skills.
 
 ### Standard-tasks pack authored in the community registry (operator, 2026-11-10)
 
