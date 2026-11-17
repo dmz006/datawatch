@@ -559,3 +559,11 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Exit criterion: when the scorecard (`planning-routing scorecard --window 7d`) shows at least ten recorded would-route decisions with the matches the rules intend, decide whether to turn routing on; turning it on is the one step in this feature that can spend Claude usage, so it waits for the Claude back-off to end and for the pace line. Review date: 2026-11-19.
 - Next in order: default quality gates.
 - The registry-retirement proposal Automaton finished its eight tasks after a launcher-file workaround and is waiting for its rules review. Its implementation Automata wait for a `Confirmed: yes` line from the operator.
+
+## 2026-11-17 00:25 — promotion: default quality gates off to warn-only
+
+- `autonomous.default_quality_gates` went from disabled to `enabled=true`, `test_command: go test ./...`, `scope: touched-plus-smoke`, `block_on_regression: false`. Gates now run on new Automata and a regression only warns, which is the shadow step for this feature. The final gate task of an Automaton still runs the full suite, as the how-to states.
+- Authority (operator, 2026-11-16, quoted): "We want bugs to show up. We want to turn them on and get things to break so we can fix them."
+- Exit criterion: after seven days with the recorded gate outcomes read on the Automata, set `block_on_regression` to true if no regression was a false alarm; if the scoped runs cost too much CPU while the CPU-burner Automaton is open, drop back to `scope: full` only for the affected kind, not off. Review date: 2026-11-24.
+- Next in order: post-ship hooks.
+- Found: the daemon marks an Automaton Completed after its own completion steps even when its branch was never merged, so the temp-folder Automaton reads Completed while its branch is still outside main. Its merge rerun waits on the leak-check fix; the gap is filed as an Automaton in Automation `e8e71305`.
