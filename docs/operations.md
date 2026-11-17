@@ -1223,18 +1223,38 @@ given) is not: it merely ends the task's work, the blocked Automaton keeps
 its hold, and a cancellation made while other tasks of the Automaton are
 still open also leaves the hold in place.
 
-**The launcher's own files.** The worker-session launcher writes its own
-files into the project root when it starts a worker session —
-`worker-mcp.json` and `worker-starting-context.md` — and appends its marked
-sections to `AGENT.md` (or the project's `CLAUDE.md`).
-worker-mcp.json, worker-starting-context.md, and the launcher-appended
-sections of AGENT.md are the daemon's own and are excluded from the task's
-read-only check, its attempt snapshot, and its pre-merge cleanup. So a
-read-only task in a directory that also hosts worker-launcher sessions needs
-no `.git/info/exclude` or `.gitignore` entry for them: the launcher's own
-dirt does not fail the read-only tree check, hold the task, or survive its
-cleanup. The launcher files themselves are documented in the
-worker-session-profiles prose above.
+**The launcher's own files.** When the worker-session launcher starts a
+session it writes its own files into the project root — `worker-mcp.json`
+and `worker-starting-context.md` — and appends its marked sections to
+`AGENT.md` (or the project's `CLAUDE.md`) while the session runs. They are
+launcher artifacts, not the task's work:
+
+- **The read-only check never counts them.** An untracked root copy of
+  `worker-mcp.json` or `worker-starting-context.md` does not fail the
+  read-only tree check or hold the task, and the launcher's own files are
+  not treated as evidence that a read-only task failed to produce its
+  declared report. A read-only task in a directory that also hosts
+  worker-launcher sessions needs no `.git/info/exclude` or `.gitignore`
+  entry for them, and there is no opt-out to add one. The match is the
+  exact name at the repository root, though: a launcher-named file you
+  track, or a same-named file in a subfolder, is still a change the task
+  made.
+- **The snapshot and the staging skip them.** The attempt snapshot and the
+  automatic-commit staging skip both root names by name, whether or not
+  the repository tracks them (skip reason `launcher`).
+- **Before the branch merges, the daemon settles them.** A rules file
+  whose committed diff is only the daemon's marked sections is restored to
+  the base content (a real edit in the same file is stripped around and
+  kept), and a committed root launcher file is removed only when the merge
+  target has no such file at all — a launcher-named file that belongs to
+  the target state, or a same-named file in a subfolder, is kept.
+
+The launcher files themselves — their shape, their modes, and where the
+launcher writes them — are documented in the
+[worker-session-profiles guide](howto/worker-session-profiles.md); the
+checks and cleanups that act on them are documented in the
+[uncommitted-work check guide](howto/automaton-uncommitted-work.md) and the
+[parallel-tasks guide](howto/automaton-parallel-tasks.md).
 
 
 ### Model routing
