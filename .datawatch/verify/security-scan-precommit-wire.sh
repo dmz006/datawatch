@@ -10,7 +10,11 @@ bad() { echo "FAIL: $*"; fail=1; }
 has() { grep -Eq -- "$2" "$1" 2>/dev/null || bad "$1 lacks: $2"; }
 BASE="$(git merge-base HEAD main)"
 CH="$(mktemp)"; trap 'rm -f "$CH"' EXIT
-{ git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > "$CH"
+# This task's footprint is the working tree (modified + untracked), not
+# the whole branch diff: the branch already carries the merged
+# a3960002 dependency (config/API/MCP/web surfaces of the scan setting)
+# and those files are not touched here.
+git status --porcelain --untracked-files=all | sed -n 's|^... \(.*\)$|\1|p' | sort -u > "$CH"
 allowed="internal/session/manager.go
 internal/session/manager_precommit_scan_test.go
 internal/autonomous/security_precommit.go
@@ -32,7 +36,11 @@ gofmt_touched() {
 
 has internal/session/manager.go 'SetPreCommitScan'
 grep -n 'commitOnCompletion' internal/session/manager.go | head -1 >/dev/null || bad "commitOnCompletion missing"
-awk '/func .*commitOnCompletion/,/^}/' internal/session/manager.go | grep -q 'reCommitScan' || bad "commitOnCompletion does not call the pre-commit scan"
+# note: no `grep -q` here — under pipefail, -q's early pipe close makes
+# awk die of SIGPIPE (exit 141) and the pipeline reports failure.
+if ! awk '/func .*commitOnCompletion/,/^}/' internal/session/manager.go | grep -- 'reCommitScan' > /dev/null; then
+  bad "commitOnCompletion does not call the pre-commit scan"
+fi
 has cmd/datawatch/main.go 'SetPreCommitScan'
 has internal/autonomous/security_precommit.go 'func RunPreCommitSecurityScan'
 has internal/autonomous/models.go 'SecurityFindingCount'

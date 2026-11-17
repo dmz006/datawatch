@@ -6963,6 +6963,43 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// BL24 — warn-only pre-commit security scan over the task's
+			// worktree, fired by the session manager exactly once, after
+			// every commit guard, immediately before the completion commit
+			// is authorized. The config is read through the live pointer at
+			// call time (effectiveAutonomousConfig: the Manager's live
+			// Config() snapshot when attached, else the boot-time literal)
+			// so a runtime config set takes effect on the next scan without
+			// a restart. Findings land on the task via
+			// RecordTaskSecurityFindings (status untouched). This path is
+			// warn-only end to end: the hook never returns an error, a
+			// panicking hook is recovered by the session manager, and the
+			// commit always proceeds.
+			mgr.SetPreCommitScan(func(sess *session.Session) {
+				if sess == nil || sess.ProjectDir == "" {
+					return
+				}
+				if sess.PRDID == "" {
+					return // only autonomous PRD task sessions are scanned
+				}
+				acfg := effectiveAutonomousConfig(autonomousMgrRef, amgrCfg)
+				if !acfg.SecurityScan {
+					return
+				}
+				findings := autonomouspkg.RunPreCommitSecurityScan(true, sess.ProjectDir, acfg.SecurityScanExtensions)
+				if len(findings) == 0 {
+					return
+				}
+				for _, f := range findings {
+					fmt.Printf("[security-scan] %s: %s\n", sess.FullID, f)
+				}
+				if prdID, taskID := amgr.FindTaskBySessionID(sess.FullID); prdID != "" && taskID != "" {
+					if rerr := amgr.RecordTaskSecurityFindings(prdID, taskID, findings); rerr != nil {
+						fmt.Printf("[warn] [security-scan] %s: record on %s/%s: %v\n", sess.FullID, prdID, taskID, rerr)
+					}
+				}
+				fmt.Printf("[security-scan] %s: %d findings in %s (warn-only: the completion commit proceeded)\n", sess.FullID, len(findings), sess.ProjectDir)
+			})
 			// merge_pipeline — the merge-shadow comparison after a ship reads
 			// version files and the registry file from it.
 			amgr.SetMergePipelineConfig(cfg.Autonomous.MergePipeline)
