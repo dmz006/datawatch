@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.11 — Keep full file paths in decomposed task specs (no names cut at a space or a length limit)
+
+### Changed
+
+- Keep full file paths in decomposed task specs (no names cut at a space or a length limit).
+
 ## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
 
 ### Changed
