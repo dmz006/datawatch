@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
 ## v9.182.7 — 3e500001
 
 ### Changed
