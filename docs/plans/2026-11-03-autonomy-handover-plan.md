@@ -576,3 +576,9 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Exit criterion: after the next three merges, read the merge run records for the two `post_ship_hook` steps; if `notify` fails for want of a wired notifier, wire it or drop that hook. Review date: 2026-11-20.
 - Next in order: scan fix loop and rules grader.
 - Blockers carried: both protected-path questions (the leak-check Automaton and the CPU-burner Automaton) wait for the operator, and the leak-check one holds every merge.
+
+## 2026-11-17 01:58 — operator: approve the leak-check protected-path change
+
+- Question `q-18e8bf0b4799d6626fd5` (the leak-check Automaton's task that adds the pre-commit leak gate and extends one clause of AGENT.md) was answered with option `approve`. The operator's words, quoted: "approve the leak check one".
+- Effect: the task keeps its AGENT.md change and completes; the approval covers only that path for that task. The Automaton resumes, and once it ships the temp-folder Automaton's merge is rerun.
+- Still open for the operator: the protected-path question on the CPU-burner Automaton (`q-18e8bec6014f92d1c49c`) and the registry proposal's `Confirmed: yes`.
