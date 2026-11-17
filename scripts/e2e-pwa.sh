@@ -104,16 +104,10 @@ else
 
   TMPL="$REPO_DIR/testdata/datawatch.yaml"
   [[ -f "$TMPL" ]] || fail "config template not found: $TMPL"
-  sed \
-    -e "s|data_dir: /data|data_dir: $RUN_DIR/data|g" \
-    -e "s|default_project_dir: /data/projects|default_project_dir: $RUN_DIR/data/projects|g" \
-    -e "s|port: 8080|port: $TEST_PORT|g" \
-    -e "s|tls_port: 8443|tls_port: $TEST_TLS_PORT|g" \
-    -e "s|sse_port: 9090|sse_port: $TEST_MCP_PORT|g" \
-    -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
-    -e "s|token: \"\"|token: \"${TOKEN}\"|g" \
-    -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
-    "$TMPL" > "$RUN_DIR/config.yaml"
+  # shellcheck disable=SC1091  # sourceable helper lives next to this script
+  . "$SCRIPT_DIR/e2e-pwa-config.sh"
+  e2e_pwa_write_config "$TMPL" "$RUN_DIR/config.yaml" \
+    "$RUN_DIR" "$TEST_PORT" "$TEST_TLS_PORT" "$TEST_MCP_PORT" "$TOKEN"
 
   BINARY="${TEST_BINARY:-}"
   [[ -z "$BINARY" && -x "$REPO_DIR/bin/datawatch" ]] && BINARY="$REPO_DIR/bin/datawatch"
