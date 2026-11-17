@@ -582,3 +582,11 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Question `q-18e8bf0b4799d6626fd5` (the leak-check Automaton's task that adds the pre-commit leak gate and extends one clause of AGENT.md) was answered with option `approve`. The operator's words, quoted: "approve the leak check one".
 - Effect: the task keeps its AGENT.md change and completes; the approval covers only that path for that task. The Automaton resumes, and once it ships the temp-folder Automaton's merge is rerun.
 - Still open for the operator: the protected-path question on the CPU-burner Automaton (`q-18e8bec6014f92d1c49c`) and the registry proposal's `Confirmed: yes`.
+
+## 2026-11-17 02:30 — promotion review: scan fix loop has no reader
+
+- The next feature in order, the scan fix loop (`autonomous.scan.fix_loop_enabled`, `fix_loop_max_retries`), was read before turning it on. A search of the Go sources outside tests finds no code that reads either value, and neither key is documented, so switching it on would start nothing. It stays unchanged and the gap is filed as an Automaton in Automation `e8e71305`.
+- The rules review itself is already running (its verdicts are on every Automaton); the scan block (`sast`, `secrets`, `deps`) is already on with `fail_on_severity: error`.
+- Next in order: scope breadth.
+- Planning routing shadow now has its first record (`rule=unclassified`, planner pi-prompt), so the shadow path produces data; the exit review stays on 2026-11-19.
+- The operator approval of the leak-check protected-path question is recorded in the 01:58 entry above; that Automaton's final gate failed on an over-strict planned-file-set check (generated artefact folders), was fixed in its gate script and is running again.
