@@ -29,6 +29,10 @@ failing, the uncommitted-work check never lists it, and it stays local — it
 never ships with the branch. A tracked file is always staged. See
 [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).
 
+## Launcher tooling file
+
+One of the two files the session launcher writes at the working directory root when it starts a worker session: `worker-mcp.json` (the session's own MCP config) and `worker-starting-context.md` (its starting-context block). They are launcher artifacts, not the task's work: the uncommitted-work check, a read-only task's dirty check, the attempt snapshot and the automatic-commit staging never count the untracked root copies (a launcher-named file you track, or a same-named file in a subfolder, still counts), and before a task branch merges the daemon removes a committed copy only when the merge target has none. See [datawatch-definitions.md](datawatch-definitions.md#uncommitted-work-check) and [howto/worker-session-profiles.md](howto/worker-session-profiles.md#the-shape-of-the-start).
+
 ## Open high/critical alerts gate
 
 The blocking job of the CodeQL workflow (named `Open high/critical alerts`): it fails the run when the repository has **open** high or critical alerts for that ref. Alerts already dismissed in code scanning do not count; the reason for each dismissal is recorded in `security/accepted-risks.yml`, which the gate itself never reads. It runs on pushes to `main` and pull requests that touch code, dependency, workflow or script paths, plus the weekly schedule and manual runs — a docs-only push starts no run. A fix lands as "fixed on main, closure pending the gate run": the gate's next analysis after the fix confirms it, and a red gate whose log says `Rate limited` is a wait-and-retry, not a finding. See [CodeQL local scan](howto/codeql-local-scan.md#what-it-is-and-why) for the local pre-push run, and [operations.md](operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run) for the fixed batch and the operator review items still owed.
