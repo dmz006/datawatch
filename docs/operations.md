@@ -394,6 +394,8 @@ The `--config` flag works with all session subcommands:
 datawatch session list --config /path/to/config.yaml
 ```
 
+**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
+
 ### Command Library
 
 ```bash
@@ -973,7 +975,7 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
-**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. A model-less `claude-code` entry is accepted: at launch, an attempt that resolves to no model on that backend starts on the daemon default model (`sonnet`, or `haiku` for a mechanical task type) instead of the backend's built-in default, and this same explicit-model rule applies to verifiers, guardrail judges (an unconfigured claude-code judge now starts on `sonnet` instead of being blocked) and planners — see [howto/explicit-model-policy.md](howto/explicit-model-policy.md). The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
 
 | Method | How |
 |--------|-----|
@@ -3956,6 +3958,30 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 `backend_state.json` is automatically deleted when a session completes, fails, or is killed.
 
 ---
+
+## Claude model defaults
+
+Every Claude Code command datawatch launches carries an explicit model —
+there is no fall-through to the operator's Claude account default and no
+silent upgrade. When no launch layer names a model, the daemon names one:
+
+- **`sonnet`** — the daemon default for a worker, verifier, judge, or
+  planner launch whose model is empty after every resolution layer.
+- **`haiku`** — the daemon's model for autonomous mechanical work: docs,
+  changelogs, parity-issue drafts, bounded load steps, version notes, locale
+  strings, and formatting cleanup.
+
+An Opus-class model runs only when the operator explicitly names one at the
+session, task, story, PRD, automation, or config-line level (see [Autonomous
+PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
+planner pairs). A Claude Code launch whose model is still empty after every
+layer is refused up front — before any tracker, session record, or tmux pane
+is created — with the reason `claude-code launch refused: no explicit model
+set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try
+again. The session record holds exactly the value passed to the CLI as
+`--model`, so you can verify what ran from the session list, PWA, or REST.
+See the [Claude model defaults how-to](howto/claude-model-defaults.md) and
+the [explicit-model policy](howto/explicit-model-policy.md).
 
 ## Autonomous PRD LLM Configuration
 
@@ -8272,7 +8298,7 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 
 ## Task-type routing table
 
-Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards.
+Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards. Whichever level wins the chain, a `claude-code` backend that ends up with no model starts on the daemon default model (`sonnet`; `haiku` for the mechanical task types) rather than the backend's built-in default — [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 | Surface | Access |
 |---|---|

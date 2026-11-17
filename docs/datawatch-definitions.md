@@ -58,6 +58,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Sessions list](#sessions-list)
   - [Session lineage — parent-child tracking](#session-lineage--parent-child-tracking)
   - [Session AI summarizer](#session-ai-summarizer)
+  - [Claude model defaults](#claude-model-defaults)
+  - [explicit model](#explicit-model)
+  - [Mechanical work](#mechanical-work)
   - [Message submission (paste wait and Enter retry)](#message-submission-paste-wait-and-enter-retry)
   - [Inside a session — terminal area](#inside-a-session--terminal-area)
   - [Inside a session — channel tab](#inside-a-session--channel-tab)
@@ -549,6 +552,20 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 **See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md)
 
 ---
+
+### Claude model defaults
+
+The daemon's own model choices for Claude Code launches when no operator layer names a model: **`sonnet`** for any worker, verifier, judge, or planner launch whose model is otherwise empty, and **`haiku`** for autonomous mechanical work (docs, changelogs, parity-issue drafts, bounded load steps, version notes, locale strings, formatting cleanup). These are datawatch defaults, never the operator's Claude account default, and the daemon never silently upgrades to a more expensive model. See the [Claude model defaults how-to](howto/claude-model-defaults.md) and [explicit model](#explicit-model).
+
+**Where it shows up:** the model field in session records, worker attempt records, the judge's decision log, and the planner's record — all naming exactly the value passed to the CLI as `--model`; see the [Claude model defaults how-to](howto/claude-model-defaults.md) and the [operations entry](operations.md#claude-model-defaults).
+
+### explicit model
+
+A model explicitly named by the operator — at the session, task, story, PRD, automation, or config-line level — as opposed to a daemon default. An explicit model always wins over the daemon default and is never substituted: the session record holds exactly the value the CLI received as `--model`. A Claude Code launch whose model is empty after every layer is refused up front rather than started (see [Claude model defaults](#claude-model-defaults)); naming an Opus-class model is only possible this way. See the [explicit-model policy](howto/explicit-model-policy.md) how-to.
+
+### Mechanical work
+
+The volume tasks the daemon runs inside an Automaton as part of its own standard work — **documentation sets, changelog entries, parity-issue drafts, bounded load steps, version notes, locale strings, formatting cleanup, and test runs** — which run on the cheaper `haiku` default instead of the usual `sonnet`, keeping cheap work fast and the premium model reserved for substantive work. See [Claude model defaults](#claude-model-defaults).
 
 ### Claude Code interstitial prompts
 
@@ -1813,7 +1830,7 @@ its open questions await operator review.
 
 **Failure escalation policy** — the rule for a task that keeps failing. After each failed attempt the next attempt can run on the next worker on a ladder (for example a local model, then a stronger Claude model that reads the earlier failure reports). After a set number of failed attempts (default 3, settable to 4 or more) the task is held for operator review instead of being marked failed. Attempt cost sits alongside it: the per-kind **first-attempt worker** below keeps the cheap kinds' first attempts on a cheaper worker, so a failed task's worst case is cheap starts plus the strong ones rather than up to three full cold starts, and a first-try success is unchanged if you set no pair. It is set once for the whole daemon, and an Automaton or a single task can override it. Each setting resolves on its own, task first, then Automaton, then the daemon default. A failure no other attempt can fix is held on its own before the limit is reached — see **No-retry hold** below. Turn it off to get the old behaviour: retry up to the auto-fix retry count, then mark the task failed, and the no-retry check does not run at all. See [howto/failure-escalation](howto/failure-escalation.md).
 
-**First-attempt worker (attempt cost)** — the cheap tier in front of worker choice: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on, so the strong worker only starts once the task has actually failed. `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is the failure count after which the pair stops applying and the normal resolution — including the failure-escalation ladder — takes over; a task, story, PRD or Automaton pin, or a burn-guard route, always beats the pair. Daemon-wide only. Each recorded attempt carries its reason: \"first attempt for &lt;kind&gt; tasks\", \"escalated after N failures\", \"escalation ladder step\", \"operator pinned\" or \"default choice\", shown on the review entry of a held task. One shared validator refuses an unknown kind, a model-less entry for `pi`, `pi-prompt` or `ollama`, and out-of-range numbers, naming the key. See [howto/failure-escalation](howto/failure-escalation.md) → Choosing the first-attempt worker.
+**First-attempt worker (attempt cost)** — the cheap tier in front of worker choice: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on, so the strong worker only starts once the task has actually failed. `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is the failure count after which the pair stops applying and the normal resolution — including the failure-escalation ladder — takes over; a task, story, PRD or Automaton pin, or a burn-guard route, always beats the pair. Daemon-wide only. Each recorded attempt carries its reason: \"first attempt for &lt;kind&gt; tasks\", \"escalated after N failures\", \"escalation ladder step\", \"operator pinned\" or \"default choice\", shown on the review entry of a held task. One shared validator refuses an unknown kind, a model-less entry for `pi`, `pi-prompt` or `ollama`, and out-of-range numbers, naming the key; a model-less `claude-code` entry is accepted, and an attempt that resolves to no model starts on the daemon default model, `sonnet` (or `haiku` for a mechanical task type), not the backend's built-in default (the **explicit model policy** below). See [howto/failure-escalation](howto/failure-escalation.md) → Choosing the first-attempt worker.
 
 **Retry resume (attempt cost)** — the piece that keeps a failed attempt's retry from costing another full cold start. When a task's attempt failed verification (stalls, start and infra failures never set one up), the worker's session is still open and the attempt's backend can resume — today only `claude-code`, `autonomous.retry_resume_max_context_tokens` is above 0 (0 = fresh every time), and the session's context is at or under that cap (an unknown size passes), the next attempt resumes that session: it spawns nothing, keeps the attempt's worktree, and receives one line — a retry marker plus the same failure summary a fresh retry's prompt would carry, capped at 4,000 characters. A missing send path, or a failed send, falls back to a fresh session. The decision is `decideRetryResume` (`internal/autonomous/retry_resume_decision.go`), wired into the retry path by `tryRetryResume` (`internal/autonomous/retry_resume_flow.go`). Every attempt record after the first carries `resumed` and `resume_reason` (e.g. `resumed previous session`, `resume disabled by setting; starting a fresh attempt`, `context above the limit; starting a fresh attempt`), and a held task's review entry shows those for the last attempt as `last_resumed` / `last_resume_reason`. The failure flow itself — attempt order, `max_failures`, the ladder, the hold and the alert — is unchanged; only the cost of the attempt is lower. See [howto/failure-escalation](howto/failure-escalation.md) → Retry resume: continuing the previous session.
 
@@ -2765,7 +2782,7 @@ Where a project's pipeline comes from, and what happens when that source is bad.
 
 ### Merge conflict model
 
-**Merge conflict model** (`autonomous.merge_pipeline.conflict_model`, a built-in default model name) — the LLM registry entry that proposes a conflict resolution. An unset key uses the default name; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
+**Merge conflict model** (`autonomous.merge_pipeline.conflict_model`; an unset key reads the non-Opus daemon default name, `sonnet`) — the LLM registry entry that proposes a conflict resolution. A model the operator names, an Opus model included, is used as written; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
 
 ### Merge conflict mode
 
@@ -3234,7 +3251,7 @@ When an Automaton completes it records how well its tasks ran in parallel. `tota
 
 **Merge conflict policy** (`autonomous.parallel.merge_conflict_policy`) — what happens when a task branch does not merge cleanly. `additive_then_model` (the default) keeps both sides when the two changes only add lines, and asks the merge conflict model to resolve anything else. `block` holds the task at once. `triage` raises the conflict as a question for the operator.
 
-**Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.
+**Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written.
 
 **Merge retry interval** (`autonomous.parallel.merge_retry_seconds`, default `60`) — how many seconds the daemon waits before it tries again to merge a task branch whose merge is still `pending`. While an earlier merge is pending, the next task is held. `0` turns the timed retry off.
 
@@ -3259,6 +3276,10 @@ A **task type** is the class a task is sorted into so the task-routing table can
 ### Task routing table
 
 The **task routing table** is the set of rows, kept in named profiles, that maps each task type to the worker LLM and verification LLM a newly created task starts with. It is off by default and is read when a task is created, by the planner and by the add-task path. An LLM set on the task, its story or its Automaton always wins over a row. How-to: [howto/automata-task-routing.md](howto/automata-task-routing.md).
+
+### Explicit model policy
+
+The **explicit model policy** is the daemon rule that a `claude-code` autonomous session never starts on the backend's built-in default model (which on some installs is a premium, Opus-class model the daemon neither knows nor records). After the normal resolution chain (task, story, PRD, Automaton, Automation, global, first-attempt pair, ladder, burn-guard route, planner rule or judge pin) has run, a `claude-code` backend with no model resolves to the daemon default: `sonnet` for the worker on a normal task, `haiku` on a mechanical task type (the eight routing-table mechanical types, worker only), and `sonnet` for verifiers, guardrail judges and planners — judging and planning are never mechanical work. A model named at any level, premium included, always passes through unchanged, and every other backend resolves exactly as before. It is fixed behavior with no setting; a guardrail judge on the claude-code backend that names no model at all now starts on `sonnet` instead of being blocked with a no-guardrail-model verdict, and a pin the backend cannot serve still fails loudly. A **direct** start (CLI, chat, REST, MCP or the PWA) on the claude-code backend that still arrives with no model is **refused before anything is created** — no tracker, no session record, no tmux pane, no run under the operator's account default; the daemon will not fall back to the account default or upgrade the model on its own. When a model is named, the persisted session record carries exactly the value the backend passes to the CLI as `--model`, and a restart re-injects that recorded model before relaunching, so a relaunched session keeps the same `--model` rather than the account default. How-to: [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 ### Task routing profile
 

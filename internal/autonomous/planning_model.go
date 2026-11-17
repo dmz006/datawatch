@@ -3,9 +3,11 @@ package autonomous
 import "strings"
 
 // resolvePlannedModel picks the model string passed to a decompose/planning
-// session for the resolved planning backend. It returns "" when no model
-// pairs with that backend, so the session backend uses its own default.
-//
+// session for the resolved planning backend. For a claude-code session with
+// no operator-named model it returns the daemon default (model_policy.go),
+// so the planner CLI never falls back to the account's built-in model.
+// For any other backend it returns "" when no model pairs, so the session
+// backend uses its own default.
 // Precedence, most specific wins:
 //  1. prdDecompositionModel — an explicit PRD-level planning pairing always wins.
 //  2. globalPlanningModel — only when it is paired with backend: the global
@@ -18,10 +20,14 @@ import "strings"
 //     pi-family backend (the BL418 class) and a provider-qualified name on
 //     claude-code. Lets a pi-family decompose session still get a model when
 //     only autonomous.verification_model is configured.
-//  5. "" — let the backend pick its default. Callers resolving for a
-//     pi-family backend must then fail loudly (pinned_model.go /
-//     RequirePinnedModel) — pi and pi-prompt never run on a built-in
-//     default since v9.10.19.
+//  5. the daemon default — for a claude-code backend, when tiers 1-4 named
+//     no model, DefaultClaudeModel ("sonnet") is passed so the session
+//     never runs on the CLI's account default (often a premium model).
+//     Planning is not mechanical work, so the haiku row never applies.
+//     Any other backend still gets "" — let the backend pick its default,
+//     and callers resolving for a pi-family backend then fail loudly
+//     (pinned_model.go / RequirePinnedModel): pi and pi-prompt never run
+//     on a built-in default since v9.10.19.
 //
 // The pairing rule is decided by the backend the PRD or config names: the
 // model must be one that backend can serve. pi-family backends serve
@@ -41,6 +47,14 @@ func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, g
 	}
 	if globalVerificationModel != "" && validateModelForBackend(backend, globalVerificationModel) == nil {
 		return globalVerificationModel
+	}
+	// Explicit-model policy (model_policy.go): none of tiers 1–4 named a
+	// model, and the session runs on claude-code — either the decompose
+	// backend or the PRD's own backend when no planning row named one.
+	// Pass the daemon default instead of letting the CLI fall back to the
+	// account's built-in model.
+	if backend == claudeCodeBackendName || prdBackend == claudeCodeBackendName {
+		return DefaultClaudeModel
 	}
 	return ""
 }

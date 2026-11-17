@@ -3523,6 +3523,19 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 		// the target backend's default).
 		backend, model, source = to, "", ExecutorSourceBurnGuard
 	}
+	// Explicit-model policy (model_policy.go): a claude-code worker session is
+	// started with an explicit model. After the precedence above (task ->
+	// story -> Automaton -> Automation -> global, including the burn-guard
+	// reroute) selects the backend, a claude-code backend with an empty model
+	// resolves to sonnet for a regular task and to haiku for a mechanical
+	// task type (classified with the package's ClassifyTask). A non-empty
+	// model named at any level — including a premium Opus/Fable one — was
+	// carried through by the precedence and passes through unchanged. Other
+	// backends are untouched.
+	if backend == claudeCodeBackendName && strings.TrimSpace(model) == "" {
+		taskType, _ := ClassifyTask(t, story)
+		model, _ = ResolveClaudeModel(model, taskType)
+	}
 	return backend, model, source
 }
 
