@@ -3861,11 +3861,18 @@ autonomous:
   # (security_findings / security_finding_count, cumulative over all passes),
   # one decision-log entry
   # of kind security_scan_findings is appended, and the scan never fails
-  # the task or the commit.
+  # the task or the commit. Set it to false to skip the scan. The key is
+  # read live at commit time, so a config set from any surface (REST
+  # PUT /api/config, MCP autonomous_config_set, the CLI
+  # datawatch config set autonomous.security_scan=…, the comm
+  # configure verb, or the PWA's "Run security scan before commit" toggle)
+  # reaches the next completion commit with no daemon restart.
   security_scan: true
   # File extensions the security scan covers. Unset or an empty list
-  # reads the built-in defaults (.py, .pyw); a non-empty list scans
-  # exactly those extensions and no others.
+  # reads the built-in defaults (.py, .pyw) — an explicit [] round-trips
+  # and reads the same as unset; a non-empty list scans
+  # exactly those extensions and no others. Read live at scan time, like
+  # the switch above.
   security_scan_extensions: []
   # Snapshot and automatic-staging paths (the refs/datawatch/attempts
   # attempt snapshots and the other automatic commits) must never stage
