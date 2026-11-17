@@ -53,7 +53,7 @@ The target runs `scripts/e2e-pwa.sh group:shared-nav`. That script does the foll
 
 1. Picks free loopback ports and writes a daemon config from `testdata/datawatch.yaml`, with the token `dw-e2e-pwa-token` (unless `TEST_TOKEN` is set).
 2. Starts the daemon from `bin/datawatch` in the foreground and waits up to 60 seconds for `/api/health`.
-3. Runs `npm ci` in `scripts/test-stories/pwa`. This replaces the tracked symlink `scripts/test-stories/pwa/node_modules` with a real directory, and `git status` then shows the symlink as a deleted file. Restore it after the run with `git checkout -- scripts/test-stories/pwa/node_modules`, and do not commit the deletion.
+3. Installs the story's dependencies when `scripts/test-stories/pwa/node_modules` is missing: `npm ci --no-audit --no-fund` there (falling back to `npm install --no-audit --no-fund` when `package-lock.json` is absent). The runners either do this install, or skip the PWA story with a hint to run `npm ci` in that directory. `scripts/test-stories/pwa/node_modules` is a machine-local, git-ignored install artifact — the root `.gitignore` and `scripts/test-stories/pwa/.gitignore` both ignore it as a file, as a symlink and as a directory — so the install leaves no trace in `git status`. Never commit or track the folder, and never (re-)create a symlink at that path with an absolute host target: the whole-tree check `scripts/check-no-absolute-symlink-targets.sh` (wired into `make lint`) fails CI for any tracked symlink whose target is absolute.
 4. Runs `run-all.mjs --group shared-nav`, which runs `shared-nav-mobile-fit.mjs`. That file runs the probe `shared-nav-mobile-fit-probe.mjs` in gate mode.
 5. Stops the daemon.
 
