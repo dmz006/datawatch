@@ -536,3 +536,11 @@ Done 2026-11-16 21:10:
 - The retirement proposal `9df40001` (planned on Claude Sonnet, approved, running on pi with all tasks pinned to the node model) inventories the history from 9.0 by kind and writes the proposal; `bcf30001` joined Automation `ae659210`.
 
 Next, in order: the proposal and inventory land; the operator answers the one display question (how a backlog Automation shows on the Projects page); implementation Automata for the conversion of the 63 history-only shipped rows and the 325 other rows, the README export, stopping the post-ship hook from writing registry rows, removing the registry and finding record kinds from every surface, cleaning docs/plans, and retiring the tidy scripts and registry checks.
+
+## 2026-11-16 21:26 — promotion: held-question mode shadow to on
+
+- Hourly tick promoted `autonomous.questions.held_mode` from `shadow` to `on` (CLI-equivalent `config_set`, accepted). Shadow evidence: three entries (38b69678, fea73c82, f6a38c29, all `blocked`, recommended option `hold`, logged 2026-11-01), consistent with the blocked list the supervisor watch shows now.
+- Authority (operator, 2026-11-16 and the 5a rule, quoted): "We want bugs to show up. We want to turn them on and get things to break so we can fix them."
+- Check on the next poll: open held questions appear for blocked Automata. A poll about a minute after the switch still showed no open questions, so the next tick re-reads the report; if it stays empty with nine blocked Automata, file a defect.
+- Next in order: decision gate mode (`autonomous.questions.decision_gate_mode`, shadow).
+- Filed same tick into Automation e8e71305: d0600001 (lane fill proposal gate reads docs/plans/README.md and gates proposal-writing Automata) and 69cc0001 (lane fill counts a merge-wait or backed-off Automaton as occupying a lane).
