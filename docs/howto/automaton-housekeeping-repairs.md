@@ -49,8 +49,16 @@ means Automata are off on that daemon, not a bug. The housekeeping action
 routes (unlanded-work keep, archive-branch and delete-worktree, the
 uncommitted-work diff and commit, and fix-permissions) also work on the live
 daemon: the wrapper the daemon wires into the server carries every method their
-gate needs. They are refused only while Automata are off or when a federated
-peer lacks the autonomous capability; see
+gate needs (the build proves it), so the list read answers an empty list, never
+an error. A call is refused at the gate while Automata are off (**503**),
+without the autonomous capability (**403**), or with the wrong method
+(**405**); an action that passes the gate still fails with its own answers —
+**400** for incomplete input (a delete without `confirm: true`, no base
+repository, an empty commit message), **404** for a branch not in the current
+unlanded list, **409** for the action's own failure (a delete whose bundle
+backup fails removes nothing). An answer of **503** `Housekeeping actions
+unavailable` on any of them comes from an old daemon build, not a setting —
+upgrade the daemon. See
 [Automaton worktree cleanup](automaton-worktree-cleanup.md#these-routes-work-on-the-live-daemon).
 
 **Reading the repairs.** One read-only view shows, per group, the mode in
