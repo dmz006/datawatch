@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.3 — A test that fails and then passes is a defect, not a documented one-off
+
+### Changed
+
+- The supervisor rules, and the CI and runner-check wording in the operating rules, no longer allow a failing test or gate to be documented away as a passing one-off: a test that fails once and passes on the rerun is filed and fixed at its root, and a rule that lists tests a rerun would clear is treated as a rule defect.
+
 ## v9.182.2 — Fix open high and critical CodeQL alerts
 
 ### Changed

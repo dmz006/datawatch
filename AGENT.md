@@ -941,8 +941,10 @@ gh run list --limit 20 --json status,conclusion,name,databaseId,createdAt | \
 # failed run record so the runner list stays clean:
 #   gh run delete <id>
 # NEVER delete a failure without investigating first — failures are signal,
-# not noise. Only delete after the root cause is understood + fixed (or
-# documented as known-environmental, e.g. ZAP scan flake).
+# not noise. Only delete after the root cause is understood + fixed. A job or
+# test that failed once and passed on rerun is a defect (a race, an unbounded
+# wait, a shared resource or a timing assumption): file it and fix it at the
+# root. A passing rerun is not a fix and is never documented away.
 ```
 
 ### CI / GH-runner check rule (added BL255 v6.7.0)
@@ -953,7 +955,7 @@ The release tag commonly triggers `.github/workflows/containers.yaml` (and simil
 
 1. **List recent runs:** `gh run list --limit 20`
 2. **For any failure:** `gh run view <id> --log-failed` to read the failure
-3. **Fix the underlying cause** in code / config / dependency / runner setup, OR document it as a known-environmental flake (rare) in the workflow file's header comment
+3. **Fix the underlying cause** in code / config / dependency / runner setup. A test or gate that failed once and passed on rerun is a defect (a race, an unbounded wait, a shared resource or a timing assumption): file it and fix it at the root — a passing rerun is not a fix, and it is never documented away in the workflow comment
 4. **Delete the failed run:** `gh run delete <id>` — keeps the run list clean and lets the next failure stand out
 5. **If a fix shipped:** trigger a re-run via `gh run rerun <new-id>` or push the next patch
 
