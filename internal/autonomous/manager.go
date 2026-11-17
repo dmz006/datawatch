@@ -528,6 +528,10 @@ type Config struct {
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
 	SecurityScan         bool `json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers; unset or empty = the scanner's built-in defaults (.py, .pyw),
+	// non-empty = exactly those extensions.
+	SecurityScanExtensions []string `json:"security_scan_extensions"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRD knobs. MaxRecursionDepth
 	// caps the parent→child PRD chain length (default 5; 0 disables
