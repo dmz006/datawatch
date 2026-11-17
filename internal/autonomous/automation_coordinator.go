@@ -978,7 +978,6 @@ func (c *Coordinator) triagePass() {
 	// counted in the result.
 	c.m.SweepCacheFoldersPass()
 
-
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)
 	}
