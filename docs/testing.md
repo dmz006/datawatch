@@ -79,6 +79,18 @@ Tests must not burn CPU or generate stress. `scripts/check-no-load-patterns.sh` 
 
 The check is part of the local pre-tag run on the build host, not a CI step. Run it with `make check-no-load-patterns` (it also runs its fixture test, `scripts/check-no-load-patterns_test.sh`); `make lint` depends on it, so a normal `make lint` before pushing a tag covers it.
 
+## Proving a flaky-test fix
+
+A test that failed once and passed on the rerun is a real intermittent failure — a race, an unbounded wait, a shared resource or a timing assumption — never "load": a passing rerun proves the failure is intermittent, it does not remove it. It is never fixed by a retry, a longer sleep, loading the machine up before the run, or excluding the test; fix the root cause in the test or the code it exercises.
+
+A fix is not proven by one green run: rerun the failing test alone, with the race detector on and a repeated count of 200,
+
+```sh
+go test ./internal/session/ -race -count=200 -run TestName
+```
+
+and the proof is zero failures and zero race reports across all 200 runs. The test gate that records `intermittent` (failed first, passed on rerun) has already filed the defect record against the test and commit and raised an alert named for the test, so the failure is never hidden behind a green merge — see [the intermittent test gate](howto/merge-shadow.md#the-plans-checks-and-gates) and [the Housekeeping repairs howto](howto/automaton-housekeeping-repairs.md). And the test itself never starts CPU burners, stress loops or heavy parallel load; [No load patterns in tests](#no-load-patterns-in-tests) is what enforces that.
+
 ## Temp directory hygiene for tests
 
 Tests share one operating-system temp directory, and a suite that leaves its scratch
