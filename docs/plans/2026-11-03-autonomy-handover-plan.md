@@ -590,3 +590,12 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Next in order: scope breadth.
 - Planning routing shadow now has its first record (`rule=unclassified`, planner pi-prompt), so the shadow path produces data; the exit review stays on 2026-11-19.
 - The operator approval of the leak-check protected-path question is recorded in the 01:58 entry above; that Automaton's final gate failed on an over-strict planned-file-set check (generated artefact folders), was fixed in its gate script and is running again.
+
+## 2026-11-17 03:30 — promotion: plan review mode off to warn; scope breadth waits on classify mode
+
+- Scope breadth (`autonomous.scope_breadth_enabled`) was read first. It only acts for a judge in classify mode, and every LLM verifies in the default generate mode; switching an LLM's verification mode is a registry change that is the operator's. It stays off with that written as its exit criterion: turn it on when the operator moves one judge model to classify mode. Review date: 2026-11-24.
+- Plan review mode (`autonomous.plan_review_mode`) went from empty (off) to `warn`, with `plan_review_backend: pi-prompt` and `plan_review_model: ollama/qwen3.8-64k:27b`, so the plan-quality review runs on the local model and costs no Claude usage. In `warn` a poor plan is named and still proceeds.
+- Authority (operator, 2026-11-16, quoted): "We want bugs to show up. We want to turn them on and get things to break so we can fix them."
+- Exit criterion: after the next five decomposes, read the review warnings on those Automata; if they are useful and not noise, set `block`. Review date: 2026-11-20.
+- Gap noted: `plan_review_backend` and `plan_review_model` are not described in the definitions or a how-to; they are covered by the filed documentation Automaton for the scan and review settings only if the docs pass reaches them, so a note was added to the memory of this tick.
+- Next in order: tag placement axes.
