@@ -4292,6 +4292,15 @@ paths:
   component, e.g. `executor.go`) passes when a file with that base name exists
   *anywhere* under the project tree — it does not need to sit at a specific
   directory.
+- **A file name is one piece, up to the first space.** Names are extracted
+  from the spec and the plan as single tokens, so a path broken across a line
+  or written as a truncated fragment (`docs/plans/2026-11-16-re`) is read as a
+  name of its own. A fragment is a different name from the full path: the
+  file-list matching is by exact name, so declaring the full path elsewhere in
+  the plan does not satisfy it, and unless something creates the fragment as
+  written it is still reported. This is why both planning prompts carry the
+  fixed full-file-path rule (see
+  [the decompose-lint how-to](howto/automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too)).
 - **Prose is not a file.** Tokens without a known file extension, dotted code
   identifiers (`json.Unmarshal`, `GuardrailVerdict.Issues`) and
   slash-separated prose lists (`absent/null/empty`, `task/story/PRD`) are not
@@ -7442,7 +7451,12 @@ of that category.
   your hand: the alert is raised and no question is asked.
 - **The planner's prompt carries a forbidden-pattern list** (fixed release
   number, tracker id, system path, private address, worktree path) after
-  the decompose guidance; it is not configurable.
+  the decompose guidance; it is not configurable. Both planning prompts
+  also carry the fixed **full-file-path rule** — every file named in a
+  task title, spec or files list is written as its full repo-relative
+  path, in one piece, with no ellipsis, abbreviation, truncation or prose
+  wrapping — because the structural check extracts file names up to the
+  first space and a severed name is reported as a missing file.
 - **The daemon can re-plan a stuck draft by itself.** The `autonomous.housekeeping_repairs.planning` group (default `report`) does what the reword question's fix answer does, for a draft with no stories whose non-retryable failure the daemon can reword; in `report` it only records it. See *Housekeeping repairs: planning* above.
 - Nothing here touches, kills or signals a session. The retry budget is the existing `retry_policy`; the planning repair group is the only setting for the daemon's own re-plan.
 

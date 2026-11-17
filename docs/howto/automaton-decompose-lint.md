@@ -658,6 +658,39 @@ the decompose checks report:
 | `private-address` | a private address | "the target host" or a configured host name |
 | `worktree-path` | a worktree path | a repo-relative path |
 
+### The full-file-path rule is always enforced too
+
+Beside the forbidden-pattern list, **both planning prompts** the
+decomposer uses carry one fixed `Rules` bullet about how file names are
+written: every file named anywhere in a task title, spec or files list
+must be written exactly as its **real repo-relative path — the full path
+in one piece**, with no space inside the name, no ellipsis, no
+abbreviation, no truncation; a long hyphenated file name is spelled out
+completely. A display form of a path — a severed name such as
+`docs/plans/2026-11-16-re`, or a report path written as prose — is a
+defect. The bullet is fixed text the way the forbidden-pattern list is:
+`decompose_guidance` does not replace it.
+
+It exists for the plan-coverage structural check. That check extracts
+file-name tokens from the spec and the plan, and a token **stops at the
+first space**: a path broken across a line or written as a truncated
+fragment is read as a name of its own. A fragment is a *different name*
+from the full path the plan's tasks declare — the file-list matching is
+by exact name — and a name that exists neither in the tree nor in an
+earlier task's `files_generated` is reported as a missing file. In
+`block` mode that then locks Approve on noise, and the worker who later
+looks the file up meets a path the plan never wrote out completely.
+
+Note the shape of the guard: it is a prompt rule on the planner, **not a
+decompose-lint rule** — no rule id fires on a severed name. The backstop
+is the reporting gate itself: a severed name still fails the coverage
+report, and you see it as a missing-file finding on a fragment that is
+not a real file. When you do, the fix is to put the full path back into
+the task's spec and files list (or acknowledge the finding on the usual
+path), not to search the tree for the fragment.
+
+The gate mechanics are in [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check) (the `unresolved_file` finding) and [the plan-coverage findings filters](plan-coverage-filters.md).
+
 ## 6a. Planning failures: what you see, what the daemon fixes, what it asks
 
 The full walk-through, with the spec check on every surface and troubleshooting, is in [automata-planning-failures.md](automata-planning-failures.md).
