@@ -557,7 +557,7 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 
 The daemon's own model choices for Claude Code launches when no operator layer names a model: **`sonnet`** for any worker, verifier, judge, or planner launch whose model is otherwise empty, and **`haiku`** for autonomous mechanical work (docs, changelogs, parity-issue drafts, bounded load steps, version notes, locale strings, formatting cleanup). These are datawatch defaults, never the operator's Claude account default, and the daemon never silently upgrades to a more expensive model. See the [Claude model defaults how-to](howto/claude-model-defaults.md) and [explicit model](#explicit-model).
 
-**Where it shows up:** the model field in session records, worker attempt records, the judge's decision log, and the planner's record — all naming exactly the value passed to the CLI as `--model`; the [Claude model defaults how-to](howto/claude-model-defaults.md) and [operations](operations.md#claude-model-defaults).
+**Where it shows up:** the model field in session records, worker attempt records, the judge's decision log, and the planner's record — all naming exactly the value passed to the CLI as `--model`; see the [Claude model defaults how-to](howto/claude-model-defaults.md) and the [operations entry](operations.md#claude-model-defaults).
 
 ### explicit model
 
