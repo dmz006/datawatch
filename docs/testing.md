@@ -410,6 +410,13 @@ two checkers plus a set of regression tests.
   every exit path. All of them run under `go test ./tests/ci/` (and therefore
   `go test ./...`) with the multiplexer environment variables removed, and every
   daemon they start is ended by its recorded pid before the test finishes.
+  Because the suite also runs on a shared host, every fixture daemon and driver
+  tree starts in its own process group (`SysProcAttr{Setpgid: true}`) so a
+  group-scoped signal aimed at a recorded pid can never reach the test binary,
+  and the suite's `TestMain` tolerates one stray external SIGTERM — logged with
+  the process lineage (`pid`/`pgid`/`ppid`/ppid cmdline) — while a second one
+  still stops the run (see the [daemon cleanup suite SIGTERM flake](#daemon-cleanup-suite-sigterm-flake-2026-11-16)
+  note).
 
 ### Verified
 
@@ -2633,4 +2640,52 @@ A run on a running sandbox daemon (a real task moved between pools, and a restar
 | **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go test -race -count=1 -v -run 'TestPeerDown' ./internal/autonomous/`; stress the recovering test with `go test -race -count=10 -run 'TestPeerDownRecovers' ./internal/autonomous/`; and run the placement tests that use the fake advisor, `go test -race -count=1 -run 'TestPlacementAskDedupesAcrossAttempts\|TestPlacementPinsTaskNode\|TestPlacementTaskPinIsRespected' ./internal/autonomous/`. |
 | **Expected** | All `TestPeerDown*` subtests pass under the race detector with no data race report; `TestPeerDownRecovers` passes every repeat run; the three placement tests pass under `-race`. |
 | **Actual** | All six subtests of `TestPeerDownDoesNotBlockLocalDelivery` and `TestPeerDownRecovers` passed under `-race` (`ok`, `TestPeerDownRecovers` at 0.02s); `TestPeerDownRecovers` passed 10 of 10 under `-race -count=10`; the three placement tests passed under `-race` (`ok`). Note: a *full* package run at `-race` still fails, in a different test — `TestPlanningRequeue_Table` reads the planner pair through `plannerPairFor` (`planning_requeue.go:86`) unlocked while `Manager.SetPRDLLM` writes it (`manager.go:6743`) — a production-side race tracked by the sibling story "Make the `internal/autonomous` race detector run pass" (d5060001), not by this flake's fix; the targeted runs above do not trip it. |
+| **Result** | PASS |
+
+## Lifecycle overflow drop-count flake (2026-11-16)
+
+### BUG: the overflow test asserted a dispatcher-wide counter that moved with every other subscriber's scheduling
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestLifecycle_QueueOverflowDropsNotBlocks` asserted the dispatcher-wide `droppedTotal` — the sum of drops over *all* subscribers — so the total moved with the scheduling of every other live subscriber (including the Manager's built-in `lifeHistory` recorder, which is always a concurrent subscriber and may drop its own burst events when its goroutine lags); in the runs that failed, the count the assertion depended on had been dropped by the recorder, which is exactly the regression the global-counter design could never have pinned. Fix (test-side, `internal/autonomous/lifecycle_event_test.go`): `TestLifecycle_DropCountsArePerSubscriber` pins the regression with per-subscriber counters — two dedicated subscribers parked at *different* queue occupancy (A holds one event with its queue holding one more, B has consumed two with an empty queue), a burst of `2×queue + extra` events is emitted, and both `dropped` counters are asserted exactly, while the third, uncontrolled concurrent subscriber (lifeHistory) is allowed to drop freely. The now-dead dispatcher-wide `droppedTotal` helper was removed from `internal/autonomous/lifecycle_event.go`; the per-subscriber accounting (`dropped` / `droppedEvents`), the 256-slot queue and the never-block guarantee are unchanged, and no setting, command, surface or product behavior changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go test -count=1 -v -run '^TestLifecycle_DropCountsArePerSubscriber$' ./internal/autonomous/`, then the stress repeat `go test -count=10 -run '^TestLifecycle_DropCountsArePerSubscriber$' ./internal/autonomous/`. |
+| **Expected** | Each parked subscriber's drop counter reads back exactly its own drops (A: queue + extra + 1, B: queue + extra) while lifeHistory drops unrestricted, and the test passes every repeat run. |
+| **Actual** | Targeted run PASS on 2026-11-16 (`ok github.com/dmz006/datawatch/internal/autonomous`), both parked subscribers at their exact counts; the `-count=10` repeat all passed. |
+| **Result** | PASS |
+
+## Daemon cleanup suite SIGTERM flake (2026-11-16)
+
+### BUG: a stray group SIGTERM from another session on the shared host killed the daemon-cleanup package run
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestLeftoverDaemonGuardListening` died once exactly this way (`signal: terminated` on the test binary mid-run). The suite runs on a shared host where daemon cleanup from other datawatch sessions group-signals the pids it recorded at launch; when one of those pids was freed and later reused as a process-group id, the signal landed on the running test binary and killed the whole package run. Fix (test-side only, `tests/ci/daemon_cleanup_test.go`): (1) every fixture daemon — the fake daemon and the python listening daemon — and the bash driver trees now start with `SysProcAttr{Setpgid: true}`, so each tree is its own process-group leader and no group-scoped signal aimed at a recorded pid can reach the test binary (this also makes the daemon library's "a daemon is its own process group" assumption hold for these tests); (2) a `TestMain` tolerates one stray external SIGTERM — it is logged to stderr with the process lineage (`pid`/`pgid`/`ppid`/ppid cmdline) for attribution and the run continues to finish — while a second SIGTERM is treated as a genuine stop request and terminates the run, so a deliberate kill still works. No production cleanup behavior, rule or surface changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go vet ./tests/ci/`, then the targeted suite `go test -count=1 -run 'TestDaemonCleanupHelper\|TestLeftoverDaemonGuard\|TestLeftoverDaemonGuardListening\|TestDaemonCleanupAudit\|TestRepoDaemonScriptsPassAudit' ./tests/ci/`. |
+| **Expected** | vet is clean and all five tests pass; a stray external SIGTERM during the run is logged with the lineage and survived, while a second one still stops the run. |
+| **Actual** | All five tests passed on 2026-11-16 (`ok github.com/dmz006/datawatch/tests/ci 66.7s`). The fix commit additionally records the shared-host reproduction: a stray SIGTERM during the run was logged and survived with all subtests passing, a second SIGTERM stopped the run, `go vet` was clean, `tests/ci` + `internal/shutdowncause` passed 20 repeats, and the repo's verify scripts ran 100×/200× green. |
+| **Result** | PASS |
+
+## PWA notify-events test sleep flake (2026-11-16)
+
+### BUG: fixed wall-clock `sleep(25)` waits raced the fetch-stub event-loop chain
+
+| Field | Details |
+|-------|---------|
+| **Description** | `internal/server/web/app-notify-events.test.js` awaited fixed `sleep(25)`s after triggering the PRD settings modal mount and the save toasts, on the assumption that the sandbox's `flushAsync()` (setImmediate phases) reliably interleaved with app.js's `setTimeout(0)`-based fetch-stub chain (the sandbox's own timers are no-ops). Under parallel test load the 25 ms window could elapse before those host timer phases had run, and "modal element should be appended" fired early — the historical flake. Fix (test-side only): the fixed sleeps were replaced by an event-driven `until(predicate, what, deadline)` helper that yields to the event loop until the *exact* sandbox-observable condition the test then asserts holds (the modal appended, the success/error toast present), bounded by a 4 s deadline so a real regression fails fast with a precise reason. `app.js`, the `testutil_browser_stub.js` fixture and every notified/product surface are unchanged. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `node --test internal/server/web/app-notify-events.test.js`, and a five-repeat loop of the same command. |
+| **Expected** | 17/17 tests pass, including the modal-mount and toast assertions, in every run. |
+| **Actual** | One pass: 17 pass / 0 fail (353 ms); five further repeat runs all passed (2026-11-16). |
+| **Result** | PASS |
+
+## Signal child procscan test lifetime flake (2026-10-31)
+
+### BUG: the child could exit before the parent's procscan attribution check, and failures were unreadable
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestSignalChildProcScan` (`internal/shutdowncause/signal_child_test.go`, unix) re-executes the test binary as a child, which sends the parent SIGTERM by PID; the parent then attributes the signal, and on the `/proc` fallback path it checks the test's child pid and cmdline among the procscan candidates. The child's old lifetime was `time.Sleep(3 * time.Second)` after the kill — under load it could exit before the parent ran that attribution check (and could outlive a hung run as an orphan), so the procscan assertion raced the child's lifetime. Fix (test-side only, `internal/shutdowncause/signal_child_test.go`): the child now stays alive while the parent holds its stdin pipe open — it blocks on `io.Copy(io.Discard, os.Stdin)`, which returns on the EOF the parent's cleanup produces when it closes the pipe, so the child cannot exit between sending SIGTERM and the procscan check and can never outlive a hung run — bounded by a 120-second safety cap; the wait for the SIGTERM grew from 5 to 30 seconds with the child's pid and expected cmdline in the failure; and every procscan-path failure now renders the candidates in a stable `pid=N cmdline="..."` form plus the captured cause, source, sender pid and cmdline (previously `%+v` of the candidates alone). No production behavior changed — the signal-capture, `Capture`, `CandidatesFor` and startup-line product paths are untouched, and no setting, command, surface or read surface changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go vet ./internal/shutdowncause/`, then the targeted repeat `go test -count=5 -run '^TestSignalChildProcScan$' ./internal/shutdowncause/`. |
+| **Expected** | vet is clean and the test passes every repeat run: the SIGTERM arrives within 30 seconds, the capture reports `terminated`, and on the procscan path the child pid with the test binary in its cmdline is among the candidates while every failing message names the candidates, the cause and its source. |
+| **Actual** | `go test -count=5 -run '^TestSignalChildProcScan$' ./internal/shutdowncause/` was `ok` (0.09s) on 2026-11-16; `go vet ./internal/shutdowncause/` clean. |
 | **Result** | PASS |
