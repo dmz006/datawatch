@@ -313,6 +313,28 @@ run_pwa_story() {
     return
   fi
 
+  # PWA story dependencies: node_modules is a git-ignored local artifact the
+  # runner may create. Same install precedence as scripts/e2e-pwa.sh (npm ci
+  # with a lockfile, npm install without). If we cannot provide node_modules
+  # here, deps_missing marks the environmental gap so the failure path below
+  # degrades to a skip instead of a hard fail (Node's resolver already walks
+  # up to any ancestor node_modules, so we never special-case the location).
+  local deps_missing=0
+  local npm_cmd=""
+  if [[ -f "$pwa_dir/package-lock.json" ]]; then
+    npm_cmd="npm ci --no-audit --no-fund --loglevel=error"
+  else
+    npm_cmd="npm install --no-audit --no-fund --loglevel=error"
+  fi
+  if [[ ! -d "$pwa_dir/node_modules" ]]; then
+    if ! command -v npm 2>/dev/null; then
+      deps_missing=1
+    elif ! (cd "$pwa_dir" && env -u TMUX -u TMUX_TMPDIR $npm_cmd); then # shellcheck disable=SC2086 # intentional: split the fixed npm command word-by-word
+      deps_missing=1
+    fi
+    [[ ! -d "$pwa_dir/node_modules" ]] && deps_missing=1
+  fi
+
   mkdir -p "${EVIDENCE_DIR:-/tmp}/${story_id}"
   # Default TEST_TLS_CA to this daemon's own self-signed cert when the caller
   # did not set one and the file exists (data_dir = $TEST_DATA).
@@ -337,6 +359,10 @@ run_pwa_story() {
     local skip_reason
     skip_reason=$(cat "${EVIDENCE_DIR:-/tmp}/${story_id}/result.txt" 2>/dev/null || echo "precondition not met")
     skip "PWA story skipped: $skip_reason"
+  elif [[ $deps_missing -eq 1 && $pwa_rc -ne 0 ]]; then
+    # Environmental gap (no runtime dependencies for this story), not a
+    # story-specific failure: keep the runner's skip semantics.
+    skip "PWA dependencies not installed for $story_id — run: (cd scripts/test-stories/pwa && npm ci)"
   else
     ko "PWA visual test failed (see ${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log)"
   fi
