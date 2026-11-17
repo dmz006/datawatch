@@ -495,3 +495,18 @@ Done 2026-11-16 20:50:
 - Step 5a (promotion review) added to the hourly tick in the supervisor rules doc, with this quote.
 
 Next, one per tick, in this order, each read, compared, turned on and checked: the decision gate and the held-question mode (both shadow, read the decision log first), planning routing (its example rows name a premium model, so read the rows before turning it on), default quality gates, post-ship hooks, the scan fix loop and rules grader, scope breadth, plan review mode, tag placement by backend and project, the git secret scan (shadow), the observer pull. Then the five script checks the daemon watch lacks, and retiring the cron watch after one agreed day.
+
+## 2026-11-16 21:20 — operator: the registry was never meant to stay in datawatch; track through plans, Automations and Automata
+
+Operator, quoted: "And why do we still have the registry in data watch that was not supposed to be in data watch We're supposed to be using the actual constructs of our project plan Automations and automata we don't have the registry that was supposed to be a file system construct. When is that being removed? I thought we had filed that like yesterday or day before". Earlier the same evening: "Why are you tracking things primarily in the files? Are we not using the data watch plans, automation, Autonomo, and such properly? ... How are we going to work on getting actual management through the data watch constructs and off of the file system?"
+
+Facts found: the 2026-11-14 decision (quoted in this file) already said "no separate registry in datawatch" and left "the migration and cleanup design" open; no Automaton or Automation was ever filed for it, so nothing removes the registry records (500 registry rows, 87 findings before today). The registry and finding records shipped on 2026-11-12 as step one of an earlier design that the 2026-11-14 decision supersedes. The only related Automation (`448f8825`, draft) extends the release registry. In the daemon there are 77 Automata (23 tagged, 23 in an Automation), 144 Automations (mostly drafts), 2 plans for the datawatch project, and the two Automations below hold none of the work I filed today.
+
+What I did wrong, and reverted: at 21:05 I imported 23 more records (registry rows 541 to 560 and 3 findings), turned `autonomous.plan_records.write_through` on, created 11 finding records and told the tick procedure to use records. At 21:15 I turned write-through back off and rewrote the tick step. The 23 and 11 records cannot be deleted (records are never deleted); the retirement Automaton converts them.
+
+Done 2026-11-16 21:20:
+- Automaton `da770001` (priority 85, draft), a proposal-only Automaton that writes `docs/plans/2026-11-16-retire-the-registry-proposal.md`: the target model, the conversion of every record by count, the README as a configurable export, the retirement steps in order, how a backlog Automation is shown (a question for the operator, no task decides it) and the conditions before each step. Implementation Automata wait for its Confirmed line.
+- Automation `ae659210` (draft) holds that proposal. Automation `e8e71305` (draft) groups the twelve findings Automata of today.
+- The tick step 5a-f now says: findings and backlog are Automata attached to Automations; no README rows, no registry or finding records, write-through off.
+
+Not decided by me: the date. The proposal has to be planned (it queues behind the two node engines) and confirmed first.
