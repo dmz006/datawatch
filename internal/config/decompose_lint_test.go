@@ -239,6 +239,12 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 				Match:    DecomposeLintMatch{AllOf: []DecomposeLintMatch{{ReadOnly: boolPtr(true)}}},
 				Message:  "read-only tasks must not list source files",
 			},
+			{
+				ID:       "artefact_exempt",
+				Severity: "block",
+				Match:    DecomposeLintMatch{VerificationScriptArtefactFilesAllowed: true},
+				Message:  "file-set checks must exempt the generated artefacts",
+			},
 		},
 	}
 	cfg.Autonomous.TaskTemplates = TaskTemplatesConfig{
@@ -277,8 +283,8 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	if dl.MaxRetries != 0 {
 		t.Fatalf("max_retries after Save/Load = %d, want 0 (an explicit 0 must round-trip)", dl.MaxRetries)
 	}
-	if len(dl.Rules) != 2 {
-		t.Fatalf("rules after Save/Load = %d entries, want 2", len(dl.Rules))
+	if len(dl.Rules) != 3 {
+		t.Fatalf("rules after Save/Load = %d entries, want 3", len(dl.Rules))
 	}
 	if dl.Rules[0].ID != "require.verification" || dl.Rules[0].Severity != "block" || dl.Rules[0].Message != "task must declare a verification script" {
 		t.Fatalf("rule[0] after Save/Load = %+v", dl.Rules[0])
@@ -288,6 +294,9 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got := dl.Rules[1].Match.AllOf[0].ReadOnly; got == nil || *got != true {
 		t.Fatalf("rule[1].match.all_of[0].read_only after Save/Load = %v, want true", got)
+	}
+	if !dl.Rules[2].Match.VerificationScriptArtefactFilesAllowed {
+		t.Fatalf("rule[2].match.verification_script_artefact_files_allowed after Save/Load = %+v, want true", dl.Rules[2].Match)
 	}
 	if dl.Rules[0].Match.SpecRegex != `^\s*implement` || dl.Rules[0].Match.FilesRegex != `\.(go|md)$` {
 		t.Fatalf("rule[0] regexes after Save/Load = %+v", dl.Rules[0].Match)

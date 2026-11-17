@@ -169,6 +169,18 @@ type DecomposeLintMatch struct {
 	// or how-to coverage but does not run `make sync-docs`. A script
 	// that does not exist yet is skipped. Absent (false) = do not check.
 	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+
+	// VerificationScriptArtefactFilesAllowed asserts the task's
+	// verification script (and followed helpers) performs a changed-
+	// file-set check (a git diff --name-only, status --porcelain or
+	// ls-files listing compared against a finite allowed list, or an
+	// assert-no-unexpected-files pattern) without exempting the
+	// artefact paths the daemon writes per Automaton (docs/plans/drafts,
+	// docs/plans/parity-issues, docs/plans/reports, CHANGELOG). A
+	// script with no file-set check at all never matches, and a script
+	// that does not exist yet is skipped. Absent (false) = do not
+	// check.
+	VerificationScriptArtefactFilesAllowed bool `yaml:"verification_script_artefact_files_allowed,omitempty" json:"verification_script_artefact_files_allowed,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

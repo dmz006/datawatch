@@ -34,8 +34,8 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Thirteen rules, in the order findings should surface them: the nine
-// block-severity rules (tasks that cross a hard boundary, plus the three
+// Fourteen rules, in the order findings should surface them: the ten
+// block-severity rules (tasks that cross a hard boundary, plus the four
 // verification-script stability rules that follow read_only_unverifiable)
 // first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
@@ -113,6 +113,14 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "verify_script_docs_without_sync: the task's verification script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`, so it fails on a stale embedded copy; run `make sync-docs` first (directly or via a sourced helper).",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptDocsWithoutSync: true,
+			},
+		},
+		{
+			ID:       "artefact_files_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton: the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail - exclude docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and CHANGELOG.md from the unexpected-files computation (rule artefact_files_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptArtefactFilesAllowed: true,
 			},
 		},
 		{
