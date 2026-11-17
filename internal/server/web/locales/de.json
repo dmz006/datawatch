@@ -3127,6 +3127,7 @@
   "lane_fill_action_idle": "Leerlauf",
   "lane_fill_alerts_heading": "Leerlauf-Lane-Warnungen",
   "lane_fill_no_alerts": "Keine Leerlauf-Lane-Warnungen",
+  "lane_fill_eligibility_operator_hold": "Vom Operator angehalten",
   "lane_fill_eligibility_stale": "Stale",
   "lane_fill_eligibility_held": "Held",
   "lane_fill_eligibility_sequenced_after_unshipped": "Sequenced after unshipped work",
