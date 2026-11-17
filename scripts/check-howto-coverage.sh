@@ -27,6 +27,7 @@ LLM_ONLY=(
     federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
     container-image-refresh  # operator/maintainer reference for a CI workflow; no MCP-callable steps
     ci-code-scanning-upload  # CI maintainer reference with no MCP-callable steps
+    local-env-leak-check  # repository development check run from make and the pre-commit hook; not a daemon feature, no MCP-callable steps
     discussion-scopes   # conceptual reference for WAL-backed discussion memory model; operator steps via memory_* MCP tools
     testing-against-a-running-daemon  # dev/CI reference for shell-script env vars (DW_BASE, TEST_BASE); no MCP-callable steps
     automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc

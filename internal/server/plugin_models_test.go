@@ -149,7 +149,7 @@ func decodeReport(t *testing.T, rr *httptest.ResponseRecorder) plugins.ModelUseR
 func TestPluginModels_Report(t *testing.T) {
 	report := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{
-			Name: "johnnyjohnny",
+			Name: "remotenode",
 			Loaded: []plugins.LoadedModel{
 				{Name: "qwen3:1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20, ContextTokens: 32768},
 			},
@@ -171,7 +171,7 @@ func TestPluginModels_Report(t *testing.T) {
 		t.Fatalf("models = %+v, want 1 row", got.Models)
 	}
 	e := got.Models[0]
-	if e.Model != "qwen3:1.7b" || e.Node != "johnnyjohnny" || e.HeldBytes != 1024<<20 || e.Calls != 1234 {
+	if e.Model != "qwen3:1.7b" || e.Node != "remotenode" || e.HeldBytes != 1024<<20 || e.Calls != 1234 {
 		t.Errorf("entry = %+v", e)
 	}
 	has := map[string]bool{}
@@ -190,7 +190,7 @@ func TestPluginModels_Report(t *testing.T) {
 func TestPluginModels_UndocumentedCounts(t *testing.T) {
 	report := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{
-			Name:   "johnnyjohnny",
+			Name:   "remotenode",
 			Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 256 << 20}},
 		}},
 		Service: plugins.ServiceUsage{Documented: false},
@@ -220,11 +220,11 @@ func TestPluginModels_UndocumentedCounts(t *testing.T) {
 // not by requests to the endpoint.
 func TestPluginModels_NodeUnreachable(t *testing.T) {
 	bad := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
-		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Error: "connection refused"}},
+		Nodes: []plugins.ModelNode{{Name: "remotenode", Error: "connection refused"}},
 	}, plugins.ModelUseThresholds{})
 
 	good := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
-		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 1 << 20}}}},
+		Nodes: []plugins.ModelNode{{Name: "remotenode", Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 1 << 20}}}},
 	}, plugins.ModelUseThresholds{})
 
 	rec, cap := newModelUseRecorder(t)
@@ -246,7 +246,7 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 	}
 	got := decodeReport(t, rr)
 	joined := strings.Join(got.Notes, " ")
-	if !strings.Contains(joined, "johnnyjohnny") || !strings.Contains(joined, "did not answer") {
+	if !strings.Contains(joined, "remotenode") || !strings.Contains(joined, "did not answer") {
 		t.Errorf("notes do not name the node that did not answer: %q", joined)
 	}
 
