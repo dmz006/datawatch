@@ -510,3 +510,14 @@ Done 2026-11-16 21:20:
 - The tick step 5a-f now says: findings and backlog are Automata attached to Automations; no README rows, no registry or finding records, write-through off.
 
 Not decided by me: the date. The proposal has to be planned (it queues behind the two node engines) and confirmed first.
+
+## 2026-11-16 21:05 — operator: history from 9.0 is in scope; plan the retirement proposal on Claude; fix the cause before Claude comes back
+
+Operator, quoted: "What about historical, want everything from 9.0 and yes lift for this is 9 but we need to fix this before it comes back". Read as: (1) everything from 9.0 to now moves into datawatch before any cleanup, so the history is part of the retirement proposal; (2) lift Claude for this planning; (3) fix the cause of the high burn and the Opus launches before Claude is generally open again.
+
+Done:
+- The proposal Automaton was replaced by `9df40001` (priority 85) with an added requirement: an inventory of everything since 9.0 by kind (registry rows, findings, plan and design documents, shipped releases, parity issues, archived and finished Automata, quoted operator decisions, reports), the datawatch construct that holds each, and how the result is checked against the files so nothing is dropped. It sits in Automation `ae659210` (the cancelled first version `da770001` remains as an inert first link of that draft Automation, which cannot be edited until activated).
+- Planning ran on Claude with an explicit Sonnet model for this one Automaton only: the global planning backend and model were set to claude-code and sonnet, the plan started at 21:02:07, and pi planning was restored at 21:02:10 by script as soon as the planner session started. The session record and its transcript show claude-sonnet-5-5, never Opus. Planning is not blocked by the usage back-off, so the back-off on task dispatch stays set until 02:00.
+- The Opus-launch fix `12480001` (a Claude launch with no model runs the account default, which is Opus) was raised to priority 95; it is the first thing to land before the back-off comes off.
+
+Still to settle before Claude is generally open again: the explicit-model fix landing, the disagreement between the daemon burn guard (projects the week end, graded steps) and the supervisor cron guard (pace line, on or off), and the cost of the supervisor session itself (cadence cut to 30 minutes at 20:45).
