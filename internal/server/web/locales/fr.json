@@ -3134,6 +3134,7 @@
   "lane_fill_eligibility_proposal_missing": "Proposal missing",
   "lane_fill_eligibility_main_carries_work": "Main already carries the work",
   "lane_fill_eligibility_worktree_invalid": "Worktree invalid",
+  "lane_fill_eligibility_plan_coverage_blocked": "La couverture du plan bloque l'approbation",
   "lane_fill_lane_counts": "Lane counts: %1$s",
   "lane_fill_lane_counts_part": "%1$s %2$s (configured %3$s, source: %4$s)",
   "lane_fill_lane_counts_source_caps": "LLM caps",

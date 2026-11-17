@@ -268,6 +268,13 @@ there), the answer is "unknown" and **never** refuses. The base-branch check
 looks at a few Automata per poll, newest first, and remembers each answer until
 the default branch moves, so a long queue never stalls a poll.
 
+A refused candidate appears as a single `blocked` decision (a re-poll of the
+same candidate folds into that entry's `repeat_count` instead of adding a new
+one), and the lane takes the next eligible ready Automaton or the only draft
+instead, so the refusal is never retried against the same candidate. Clear the
+refusal and the Automaton becomes eligible again on a later poll; it does not
+queue up behind a chain of its own refusals.
+
 ### Where to read the reasons
 
 A refusal is a `blocked` decision. Its code is `eligibility_reason`; the key is
