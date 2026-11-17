@@ -4745,14 +4745,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
-			ResumeMaxAgeSeconds:   acfgIn.ResumeMaxAgeSeconds,
-			StaleTaskSeconds:      acfgIn.StaleTaskSeconds,
-			TaskMaxAttemptSeconds: acfgIn.TaskMaxAttemptSeconds,
-			TaskNoProgressSeconds: acfgIn.TaskNoProgressSeconds,
-			StuckRunningSeconds:   acfgIn.StuckRunningSeconds,
-			AutoFixRetries:        acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes:  acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:          acfgIn.SecurityScan,
+			ResumeMaxAgeSeconds:    acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:       acfgIn.StaleTaskSeconds,
+			TaskMaxAttemptSeconds:  acfgIn.TaskMaxAttemptSeconds,
+			TaskNoProgressSeconds:  acfgIn.TaskNoProgressSeconds,
+			StuckRunningSeconds:    acfgIn.StuckRunningSeconds,
+			AutoFixRetries:         acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes:   acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:           acfgIn.SecurityScan,
+			SecurityScanExtensions: acfgIn.SecurityScanExtensions,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
