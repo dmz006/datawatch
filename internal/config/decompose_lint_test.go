@@ -245,6 +245,12 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 				Match:    DecomposeLintMatch{VerificationScriptArtefactFilesAllowed: true},
 				Message:  "file-set checks must exempt the generated artefacts",
 			},
+			{
+				ID:       "final_gate_cumulative",
+				Severity: "block",
+				Match:    DecomposeLintMatch{VerificationScriptFinalGateArtefactAllowed: true},
+				Message:  "whole file-set checks need a final-gate sentinel or task-only scoping",
+			},
 		},
 	}
 	cfg.Autonomous.TaskTemplates = TaskTemplatesConfig{
@@ -283,8 +289,8 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	if dl.MaxRetries != 0 {
 		t.Fatalf("max_retries after Save/Load = %d, want 0 (an explicit 0 must round-trip)", dl.MaxRetries)
 	}
-	if len(dl.Rules) != 3 {
-		t.Fatalf("rules after Save/Load = %d entries, want 3", len(dl.Rules))
+	if len(dl.Rules) != 4 {
+		t.Fatalf("rules after Save/Load = %d entries, want 4", len(dl.Rules))
 	}
 	if dl.Rules[0].ID != "require.verification" || dl.Rules[0].Severity != "block" || dl.Rules[0].Message != "task must declare a verification script" {
 		t.Fatalf("rule[0] after Save/Load = %+v", dl.Rules[0])
@@ -297,6 +303,9 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	}
 	if !dl.Rules[2].Match.VerificationScriptArtefactFilesAllowed {
 		t.Fatalf("rule[2].match.verification_script_artefact_files_allowed after Save/Load = %+v, want true", dl.Rules[2].Match)
+	}
+	if dl.Rules[3].ID != "final_gate_cumulative" || !dl.Rules[3].Match.VerificationScriptFinalGateArtefactAllowed {
+		t.Fatalf("rule[3].match.verification_script_final_gate_artefact_allowed after Save/Load = %+v, want true", dl.Rules[3].Match)
 	}
 	if dl.Rules[0].Match.SpecRegex != `^\s*implement` || dl.Rules[0].Match.FilesRegex != `\.(go|md)$` {
 		t.Fatalf("rule[0] regexes after Save/Load = %+v", dl.Rules[0].Match)

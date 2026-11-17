@@ -90,26 +90,27 @@ func normSeverity(s string) string { return strings.ToLower(strings.TrimSpace(s)
 // one member match and all_of every member. Empty conditions are
 // absent and never restrict.
 type compiledMatch struct {
-	spec          *regexp.Regexp
-	title         *regexp.Regexp
-	files         *regexp.Regexp
-	readOnly      *bool
-	verifEmpty    bool
-	reportEmpt    bool
-	unexecScript  bool
-	reasonEmpty   bool
-	taskFilesOnly bool
-	docsNoSync    bool
-	artefactFiles bool
-	kind          string
-	anyOf         []compiledMatch
-	allOf         []compiledMatch
+	spec              *regexp.Regexp
+	title             *regexp.Regexp
+	files             *regexp.Regexp
+	readOnly          *bool
+	verifEmpty        bool
+	reportEmpt        bool
+	unexecScript      bool
+	reasonEmpty       bool
+	taskFilesOnly     bool
+	docsNoSync        bool
+	artefactFiles     bool
+	finalGateArtefact bool
+	kind              string
+	anyOf             []compiledMatch
+	allOf             []compiledMatch
 }
 
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles {
+	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateArtefact {
 		return true
 	}
 	for i := range m.anyOf {
@@ -162,6 +163,11 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.artefactFiles {
 		if _, ok := verifyScriptArtefactFilesAllowed(dir, t); !ok {
+			return false
+		}
+	}
+	if m.finalGateArtefact {
+		if _, ok := verifyScriptFinalGateArtefactAllowed(dir, t); !ok {
 			return false
 		}
 	}
@@ -239,7 +245,8 @@ func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, err
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
 		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFilesAllowed,
-		kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		finalGateArtefact: m.VerificationScriptFinalGateArtefactAllowed,
+		kind:              strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -500,6 +507,9 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.artefactFiles {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (changed-file-set check without the generated-artefact exemptions)")
+	}
+	if m.finalGateArtefact {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (whole changed-file-set check with no FINAL_GATE sentinel)")
 	}
 	if len(parts) == 0 {
 		return ""
