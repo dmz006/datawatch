@@ -27,7 +27,15 @@ internal/server/unlanded_work_real_wrapper_test.go
 docs/howto/automaton-housekeeping-repairs.md
 docs/howto/automaton-worktree-cleanup.md
 internal/server/web/docs/howto/automaton-housekeeping-repairs.md
-internal/server/web/docs/howto/automaton-worktree-cleanup.md"
+internal/server/web/docs/howto/automaton-worktree-cleanup.md
+docs/README.md
+docs/api-mcp-mapping.md
+docs/cursor-mcp.md
+docs/datawatch-definitions.md
+docs/howto/README.md
+docs/howto/automation-lane-fill.md
+docs/implementation.md
+docs/operations.md"
 
 fail=0
 while IFS= read -r f; do
