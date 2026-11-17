@@ -567,3 +567,12 @@ Next, in order: the proposal and inventory land; the operator answers the one di
 - Exit criterion: after seven days with the recorded gate outcomes read on the Automata, set `block_on_regression` to true if no regression was a false alarm; if the scoped runs cost too much CPU while the CPU-burner Automaton is open, drop back to `scope: full` only for the affected kind, not off. Review date: 2026-11-24.
 - Next in order: post-ship hooks.
 - Found: the daemon marks an Automaton Completed after its own completion steps even when its branch was never merged, so the temp-folder Automaton reads Completed while its branch is still outside main. Its merge rerun waits on the leak-check fix; the gap is filed as an Automaton in Automation `e8e71305`.
+
+## 2026-11-17 01:25 — promotion: post-ship hooks off to on, two built-ins
+
+- `autonomous.merge_pipeline.post_ship` went from off to `enabled=true` with two hooks, `mark_completed` and `notify` (message "Shipped {project} v{version}"). `mark_completed` records the landing and marks the shipped Automaton Completed after a real merge; `notify` sends the ship through the alert channel.
+- Not enabled, on purpose: `parity_issue` (it would open an issue in the companion repository for every merge, not only PWA-changing ones, so it stays with the merge helper), `tag` (releases are tagged by CI) and `registry_row` (the registry is being retired).
+- Authority (operator, 2026-11-16, quoted): "You build and ship them actually running so we can actually use them."
+- Exit criterion: after the next three merges, read the merge run records for the two `post_ship_hook` steps; if `notify` fails for want of a wired notifier, wire it or drop that hook. Review date: 2026-11-20.
+- Next in order: scan fix loop and rules grader.
+- Blockers carried: both protected-path questions (the leak-check Automaton and the CPU-burner Automaton) wait for the operator, and the leak-check one holds every merge.
