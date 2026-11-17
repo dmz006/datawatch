@@ -58,6 +58,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Sessions list](#sessions-list)
   - [Session lineage — parent-child tracking](#session-lineage--parent-child-tracking)
   - [Session AI summarizer](#session-ai-summarizer)
+  - [Claude model defaults](#claude-model-defaults)
+  - [explicit model](#explicit-model)
+  - [Mechanical work](#mechanical-work)
   - [Message submission (paste wait and Enter retry)](#message-submission-paste-wait-and-enter-retry)
   - [Inside a session — terminal area](#inside-a-session--terminal-area)
   - [Inside a session — channel tab](#inside-a-session--channel-tab)
@@ -549,6 +552,20 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 **See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md)
 
 ---
+
+### Claude model defaults
+
+The daemon's own model choices for Claude Code launches when no operator layer names a model: **`sonnet`** for any worker, verifier, judge, or planner launch whose model is otherwise empty, and **`haiku`** for autonomous mechanical work (docs, changelogs, parity-issue drafts, bounded load steps, version notes, locale strings, formatting cleanup). These are datawatch defaults, never the operator's Claude account default, and the daemon never silently upgrades to a more expensive model. See the [Claude model defaults how-to](howto/claude-model-defaults.md) and [explicit model](#explicit-model).
+
+**Where it shows up:** the model field in session records, worker attempt records, the judge's decision log, and the planner's record — all naming exactly the value passed to the CLI as `--model`; the [Claude model defaults how-to](howto/claude-model-defaults.md) and [operations](operations.md#claude-model-defaults).
+
+### explicit model
+
+A model explicitly named by the operator — at the session, task, story, PRD, automation, or config-line level — as opposed to a daemon default. An explicit model always wins over the daemon default and is never substituted: the session record holds exactly the value the CLI received as `--model`. A Claude Code launch whose model is empty after every layer is refused up front rather than started (see [Claude model defaults](#claude-model-defaults)); naming an Opus-class model is only possible this way. See the [explicit-model policy](howto/explicit-model-policy.md) how-to.
+
+### Mechanical work
+
+The volume tasks the daemon runs inside an Automaton as part of its own standard work — **documentation sets, changelog entries, parity-issue drafts, bounded load steps, version notes, locale strings, formatting cleanup, and test runs** — which run on the cheaper `haiku` default instead of the usual `sonnet`, keeping cheap work fast and the premium model reserved for substantive work. See [Claude model defaults](#claude-model-defaults).
 
 ### Claude Code interstitial prompts
 

@@ -3913,6 +3913,30 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 
 ---
 
+## Claude model defaults
+
+Every Claude Code command datawatch launches carries an explicit model —
+there is no fall-through to the operator's Claude account default and no
+silent upgrade. When no launch layer names a model, the daemon names one:
+
+- **`sonnet`** — the daemon default for a worker, verifier, judge, or
+  planner launch whose model is empty after every resolution layer.
+- **`haiku`** — the daemon's model for autonomous mechanical work: docs,
+  changelogs, parity-issue drafts, bounded load steps, version notes, locale
+  strings, and formatting cleanup.
+
+An Opus-class model runs only when the operator explicitly names one at the
+session, task, story, PRD, automation, or config-line level (see [Autonomous
+PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
+planner pairs). A Claude Code launch whose model is still empty after every
+layer is refused up front — before any tracker, session record, or tmux pane
+is created — with the reason `claude-code launch refused: no explicit model
+set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try
+again. The session record holds exactly the value passed to the CLI as
+`--model`, so you can verify what ran from the session list, PWA, or REST.
+See the [Claude model defaults how-to](howto/claude-model-defaults.md) and
+the [explicit-model policy](howto/explicit-model-policy.md).
+
 ## Autonomous PRD LLM Configuration
 
 Autonomous PRDs use two separate backends:
