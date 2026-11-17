@@ -198,6 +198,11 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 			return p
 		}
 	}
+	if m.invokesUnknownFlag {
+		if p, _, ok := verifyScriptInvokesUnknownFlag(dir, t); ok {
+			return p
+		}
+	}
 	for _, sub := range m.anyOf {
 		if p := verifyScriptFindingPath(&sub, dir, t); p != "" {
 			return p

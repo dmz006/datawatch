@@ -192,6 +192,15 @@ type DecomposeLintMatch struct {
 	// assertion never matches, and a script that does not exist yet is
 	// skipped. Absent (false) = do not check.
 	VerificationScriptFinalGateArtefactAllowed bool `yaml:"verification_script_final_gate_artefact_allowed,omitempty" json:"verification_script_final_gate_artefact_allowed,omitempty"`
+	// VerificationScriptInvokesUnknownFlag asserts the task's
+	// verification script (and followed helpers) invokes a PATH-
+	// resolvable command with a long flag that the command's own help
+	// output does not list as a whole option — the script is validated
+	// against the real binary before it is accepted. A script that does
+	// not exist yet, a command that does not resolve on PATH, and a
+	// probe that fails or prints nothing are skipped (never
+	// guess). Absent (false) = do not check.
+	VerificationScriptInvokesUnknownFlag bool `yaml:"verification_script_invokes_unknown_flag,omitempty" json:"verification_script_invokes_unknown_flag,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`
