@@ -1223,6 +1223,19 @@ given) is not: it merely ends the task's work, the blocked Automaton keeps
 its hold, and a cancellation made while other tasks of the Automaton are
 still open also leaves the hold in place.
 
+**The launcher's own files.** The worker-session launcher writes its own
+files into the project root when it starts a worker session —
+`worker-mcp.json` and `worker-starting-context.md` — and appends its marked
+sections to `AGENT.md` (or the project's `CLAUDE.md`).
+worker-mcp.json, worker-starting-context.md, and the launcher-appended
+sections of AGENT.md are the daemon's own and are excluded from the task's
+read-only check, its attempt snapshot, and its pre-merge cleanup. So a
+read-only task in a directory that also hosts worker-launcher sessions needs
+no `.git/info/exclude` or `.gitignore` entry for them: the launcher's own
+dirt does not fail the read-only tree check, hold the task, or survive its
+cleanup. The launcher files themselves are documented in the
+worker-session-profiles prose above.
+
 
 ### Model routing
 
