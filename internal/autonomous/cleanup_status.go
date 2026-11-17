@@ -691,7 +691,7 @@ func (r *cleanupStatusRecorder) biggestTempFolders(dir string) []TempFolderInfo 
 // entry contributes nothing rather than failing the report.
 func directorySize(path string) int64 {
 	var total int64
-	filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d == nil {
 			return nil
 		}
