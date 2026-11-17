@@ -5,7 +5,7 @@
 #
 # Starts two sandbox daemons on their own free TLS test ports (never the
 # production daemon or the operator config), registers the second as the
-# federated peer "ralfthewise", and drives the first in a real browser. From
+# federated peer "sandboxpeer", and drives the first in a real browser. From
 # each control that can select a server it checks that state.activeServer, the
 # toast, the server header line, the About page and every Settings tab show the
 # peer, that selecting the peer again changes nothing, and that the explicit

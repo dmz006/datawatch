@@ -7,7 +7,7 @@
 // each with its own temporary data directory, its own free ports (HTTP, TLS,
 // MCP, DNS, ...) and a distinct config hostname. The first is the primary the
 // browser opens over TLS; the second is registered on the primary as the
-// federated peer named "ralfthewise" (its config hostname is "ralfthewise" too,
+// federated peer named "sandboxpeer" (its config hostname is "sandboxpeer" too,
 // so the peer's name and hostname are the same string). TMUX / TMUX_TMPDIR are
 // removed from the daemons' environment. The production daemon and the
 // operator's config are never touched; both daemons and both data directories
@@ -35,7 +35,7 @@ import {
   saveJson,
 } from './perf-lib.mjs';
 
-const PEER = 'ralfthewise';
+const PEER = 'sandboxpeer';
 const LOCAL_HOST = 'ts846-primary-host';
 const SETTINGS_TABS = ['general', 'plugins', 'comms', 'compute', 'automata', 'about'];
 
