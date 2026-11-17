@@ -44,9 +44,14 @@ first sees a finding.
 The repairs the daemon builds for the pass, and the settings that switch them
 on, are described group by group below, together with exactly what they do,
 what they never do, and how to undo them. A live daemon answers the routes
-listed under **Reading the repairs**; a 503 there (`autonomous disabled` or
-`housekeeping repairs unavailable`) means autonomous is off on that daemon or
-the daemon predates this build, not a bug.
+listed under **Reading the repairs**; a **503** `autonomous disabled` there
+means Automata are off on that daemon, not a bug. The housekeeping action
+routes (unlanded-work keep, archive-branch and delete-worktree, the
+uncommitted-work diff and commit, and fix-permissions) also work on the live
+daemon: the wrapper the daemon wires into the server carries every method their
+gate needs. They are refused only while Automata are off or when a federated
+peer lacks the autonomous capability; see
+[Automaton worktree cleanup](automaton-worktree-cleanup.md#these-routes-work-on-the-live-daemon).
 
 **Reading the repairs.** One read-only view shows, per group, the mode in
 effect, what a report-mode pass would do (`would`), what an on-mode pass did
@@ -124,11 +129,20 @@ The advance and judge repairs refuse, as an unsafe finding (recorded as skipped,
 one alert), when a task is not finished, when the judge repair was already made
 once, or when the review recorded no findings. They each read the Automata once
 per pass and make at most one finding per Automaton, worded from a single check
-of its state, so a finding never mixes a finished task with a not-finished one:
-the only safe advance finding is an Automaton that is running with every task
-finished and not advancing, and an unsafe advance finding says how many of how
-many tasks are not finished. Their undo hints: the advance moved
-on by the normal completion step, so pause or cancel the Automaton from the
+of its state, so a finding never says both that every task finished and that
+some are not finished. Each read gives one finding per stuck Automaton, never the same
+Automaton listed several times. An advance finding has one of two shapes:
+
+| Shape | Finding text | Safe | What the pass does |
+|---|---|---|---|
+| Stuck but finished | `Automaton "<title>" is stuck: it is running and all of its tasks are finished, but it is not advancing` | Yes | After the grace, in `on`, advances it by the normal completion step |
+| Unfinished tasks | `Automaton "<title>" is running with N of M tasks not finished` | No | Records it as skipped, with the reason `N of M tasks are not finished, so advancing could lose work`; never advances it |
+
+A running Automaton whose tasks are all finished but which a live run still
+holds is not a finding at all. See **What a skipped unsafe finding means**
+below for how to act on the unsafe shape.
+
+Their undo hints: the advance moved on by the normal completion step, so pause or cancel the Automaton from the
 Automata page to stop it; for the judge repair, cancel the repair task from the
 Automaton's task list (it is recorded and will not be made again); the merge
 report changed nothing.
@@ -349,6 +363,34 @@ Whatever the mode of any group, a repair never:
 
 Kinds that are not in a group (`MERGE READY`, `SILENT`, `TMUX`, `NODE`, `MODEL`,
 `MAIN`, `DAEMON`, `CI STUCK`, `CI RED`) are reported in every mode.
+
+## What a skipped unsafe finding means
+
+A `skipped_unsafe` entry is a finding the pass saw and chose not to repair,
+because repairing it could lose or overwrite work. Nothing was changed. The
+entry carries the finding text and the reason, and one warning alert is raised
+for that subject until it stops being found; the alert is not repeated each
+pass. It is the same in `report` and `on`: turning a group to `on` never makes
+an unsafe finding repairable.
+
+How to act on one, by its reason:
+
+- **`N of M tasks are not finished, so advancing could lose work`** (advance).
+  The Automaton is running but some tasks have not finished. Open it from the
+  Automata page and look at those tasks: if they are still running or queued,
+  wait; if they are stuck, reset or cancel them yourself. Once every task is
+  finished, the next read reports it as stuck but finished, and the pass can
+  advance it.
+- **`N of M tasks are not finished, so a repair could lose work`** (judge
+  repair). Same remedy: finish, reset or cancel the open tasks first.
+- **`the repair task was already made once for this review`**. Finish or cancel
+  that repair task; the pass will not make a second one.
+- **`the review recorded no findings`**. There is nothing real to repair from.
+  Read the rules review verdict and decide by hand whether to run the review
+  again or override it.
+
+For any other group, the reason on the entry names what made it unsafe; fix
+that condition by hand, and the finding clears on a later read.
 
 ## Reading what a repair did
 

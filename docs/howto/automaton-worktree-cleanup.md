@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, older-daemon 503]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
@@ -492,11 +492,10 @@ permissions** button. The button posts the affected paths to
 `POST /api/autonomous/cleanup/fix-permissions`. A problem that is `hidden` is not
 shown. The PWA button and that REST route are the surfaces; there is no CLI verb,
 MCP tool or comm verb for the fix. This route is one of the seven housekeeping
-routes discussed in **A live daemon answers these routes (the old 503)** below:
-with Automata enabled it is always served on the current daemon, and a daemon
-older than that fix answers it **503** `Housekeeping actions unavailable` — a
-button that answers that 503 is not a failed fix; the daemon is only older than
-the fix.
+routes described in **These routes work on the live daemon** below: with
+Automata enabled the live daemon serves it, and it is refused only while
+Automata are off (**503** `autonomous disabled`) or when a federated peer's
+token lacks the autonomous write capability (**403**).
 
 ## Unlanded branches (finished work that never reached the default branch)
 
@@ -585,35 +584,37 @@ returns the branch, the bundle path and the worktree path it removed. Know what 
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
-### A live daemon answers these routes (the old 503)
+### These routes work on the live daemon
 
-The routes on this list — the unlanded list and its three actions, plus the
-uncommitted-work diff and commit, and the fix-permissions route above — pass
-through one gate in the server. A live daemon hands the server a wrapper around
-the worker manager, and the wrapper once did not carry any of these methods,
-so the gate failed on every one of these routes and answered **503**
-`Housekeeping actions unavailable`. For the card, that read as an empty or
-hidden **Unlanded work** card — not a per-action refusal, and not an empty
-list with its usual empty state.
+The routes on this list pass through one gate in the server:
 
-That failure is fixed. The wrapper now forwards all seven methods to the
-worker manager, and the server records the gate's requirement at compile time
-against the real wrapper's type, so a build cannot ship a wrapper that lost a
-method and fail the gate at request time anymore. On a daemon with that build,
-with Automata enabled, every route on this list is always answered — an empty
-list still reads empty (no base repository, or nothing unlanded) and never as
-an error — and the only 503 these routes answer is `autonomous disabled`
-while Automata are off. A **503** `Housekeeping actions unavailable` from any
-of them now means the daemon is older than the fix.
+| Route | Method | Federated peer needs |
+|---|---|---|
+| `/api/autonomous/unlanded-work` | GET | autonomous read |
+| `/api/autonomous/unlanded-work/keep` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/archive-branch` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/delete-worktree` | POST | autonomous write |
+| `/api/autonomous/uncommitted-work/diff` | GET | autonomous read |
+| `/api/autonomous/uncommitted-work/commit` | POST | autonomous write |
+| `/api/autonomous/cleanup/fix-permissions` | POST | autonomous write |
 
-**Operator review.** On a daemon running a build older than the fix, the
-empty or hidden **Unlanded work** card is ambiguous: it can mean "nothing is
-unlanded" or "the list itself answered 503". Before relying on the card, check
-the route directly — `GET /api/autonomous/unlanded-work` — and after the
-daemon has moved to a build with the fix, treat the empty list as the truth.
-The same check covers the fix-permissions button: while the daemon predates
-the fix, a button that answers `Housekeeping actions unavailable` did not
-fail the fix and is safe to retry once the daemon is moved.
+The daemon hands the server a wrapper around the worker manager, and that
+wrapper carries every method the gate needs, so all seven routes answer on the
+live daemon. The server checks this when it is built, against the exact wrapper
+the daemon wires in, so a build whose wrapper lost one of these methods does not
+compile. An empty list still reads empty (no base repository, or nothing
+unlanded) and is never an error.
+
+What you can still see when an action cannot run:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **503** `autonomous disabled` | Automata are off on this daemon | Turn Automata on (`autonomous.enabled`), then retry |
+| **403** `session token lacks capability: ...` | A federated peer called the route without the autonomous read (GET) or write (POST) capability | Grant that capability to the peer, or run the action on the daemon itself |
+| **405** `method not allowed` | The route was called with the wrong method | Use the method in the table above |
+
+No other refusal comes from the gate; any other error is the action's own (for
+example a branch that no longer exists) and its message says what failed.
 
 ### Daily pending-branch alert
 
@@ -670,10 +671,10 @@ worktree, or merge it.
 safe-to-delete report is still undecided; the operator must confirm that. If the
 force-delete of a worktree is not wanted when it hides uncommitted work, the
 debate over Delete worktree is not yet settled; review that action before using
-it. On a daemon older than the live-wrapper fix, confirm these routes no longer
-answer **503** `Housekeeping actions unavailable` before trusting an empty
-**Unlanded work** card (**A live daemon answers these routes (the old 503)**
-above). The
+it. An empty **Unlanded work** card means nothing is unlanded, or no base
+repository is set; to tell the two apart, read
+`GET /api/autonomous/unlanded-work` directly (**These routes work on the live
+daemon** above). The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 
