@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The task branch's pre-merge cleanup now also drops the two root launcher files (the per-session MCP config and the starting context document) when a branch committed them but the target state has none — a launcher-named file that belongs to the target state, and a same-named file in a subfolder, are both kept.
+
 ## v9.182.7 — 3e500001
 
 ### Changed
