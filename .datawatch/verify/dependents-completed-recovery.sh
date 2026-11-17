@@ -11,9 +11,27 @@ BASE="$(git merge-base HEAD main)"
 CH="$(mktemp)"; trap 'rm -f "$CH"' EXIT
 { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > "$CH"
 allowed="internal/autonomous/dependency_recovery.go
+internal/autonomous/dependency_recovery_test.go
 internal/autonomous/executor.go
 internal/autonomous/infra_retry_dependents.go
-.datawatch/verify/dependents-completed-recovery.sh"
+internal/autonomous/infra_retry_dependents_test.go
+internal/autonomous/dependents_recovery_test.go
+internal/autonomous/api.go
+internal/autonomous/manager.go
+docs/howto/autonomous-recovery.md
+docs/howto/infrastructure-retry.md
+docs/datawatch-definitions.md
+docs/howto/README.md
+docs/operations.md
+internal/server/web/docs/howto/autonomous-recovery.md
+internal/server/web/docs/howto/infrastructure-retry.md
+internal/server/web/docs/datawatch-definitions.md
+internal/server/web/docs/howto/README.md
+internal/server/web/docs/operations.md
+.datawatch/verify/dependents-completed-recovery.sh
+.datawatch/verify/dependents-recovery-tests.sh
+.datawatch/verify/dependents-docs-set.sh
+.datawatch/verify/dependents-recovery-final-gate.sh"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
