@@ -47,7 +47,7 @@ So the data model for a workflow graph is already datawatch's own. LangGraph wou
 
 These are grounded in the repository's own docs; every file named below is cited where it is read from.
 
-### Q1
+### Q1 Which packs define a workflow
 
 Which packs define a workflow: Automaton template packs, not standard task packs, and not a hypothetical bundle pack.
 
@@ -57,7 +57,7 @@ The "bundle pack" option is not in the repository yet. The row for the archived 
 
 Recommendation for the operator: a pack carries a workflow graph when it is a pack of Automaton templates. A pack that also holds standard tasks keeps them as a list on the side, since they cannot be graph nodes; if the operator wants one object that bundles both, that object is the draft's bundle entry, and the workflow field on it describes the templates it contains. This keeps the answer inside what already exists and leaves the draft's open question — the pack format — to be decided by whatever work picks the draft up, as this note's Recommendation already asks.
 
-### Q2
+### Q2 What a bundle pack is
 
 What a bundle pack is: a workflow whose nodes are packs, not a pack of packs.
 
@@ -67,7 +67,7 @@ A "pack of packs" would need a node kind that is a collection of work rather tha
 
 Two follow-ups that fall out for step 1 (display only): the graph to display is the bundle's — templates as nodes, outcome edges as the links — and the display can reuse the Automation pipeline strip, which already draws chains, forks, joins and the live branches (`docs/howto/automation-chains.md` section 7). Because the draft has the pack format as an open design question (`docs/plans/2026-11-14-archived-unmerged-automata-inventory.md`), this definition is offered as the answer to that question, not as a settled fact.
 
-### Q3
+### Q3 How LangGraph concepts map to ours
 
 How LangGraph's concepts map to this system, mapping by mapping:
 
@@ -79,7 +79,7 @@ How LangGraph's concepts map to this system, mapping by mapping:
 
 The consequence for the interchange step: an export to a LangGraph-compatible description would name the templates (or Automata) as nodes, the three outcome edges plus the decision notes as conditional edges, the review and held states as interrupt points, and the persisted Automation record as the checkpoint — which is the same content the operator sees in the strip, already in this system's own vocabulary.
 
-### Q4
+### Q4 What display only shows
 
 What "display only" shows: the planned graph of the pack — and the live state of a run when one exists, but that live view already exists elsewhere and the display step should not rebuild it.
 
@@ -87,7 +87,7 @@ Step 1 of the proposed steps says each pack shows its workflow "as a read-only g
 
 So the answer is: display only shows the planned graph. When the pack's workflow has been turned into a live Automation for a run, the same strip already marks the branches that are live right now and owns the controls on them, and the pack's display links there instead of drawing a second live view. The one thing the display step genuinely adds is the read-only graph of the pack itself, read from its manifest; everything live is delegated to the surfaces that already render it.
 
-### Q5
+### Q5 What an operator may change
 
 What the operator may change, and what must stay fixed: the operator may add, remove, reorder and rewire the work steps of a pack's workflow, exactly along the shape of the existing edit controls; the gates never move.
 
@@ -97,7 +97,7 @@ The fixed set is history and gates. "A member that has already completed, been b
 
 So: the operator edits the order, membership, edges and stage labels of the work steps; the final gate — the completion review and the held-state stops that feed it — stays fixed on every Automaton. And because every control call is checked against the record's version, a stale one refused with a conflict, with the actor and reason recorded in the audit trail (`docs/howto/automation-chains.md`, section 6), the editable step inherits its own "change recorded" requirement from machinery that already exists.
 
-### Q6
+### Q6 Versions, trust rules and a changed workflow
 
 An edited workflow is a local override on a pinned pack version — not a new pack version, and not a fork.
 
@@ -105,7 +105,7 @@ Three precedents in the repository decide it. First, the direction of the interc
 
 So the interaction is: a pack version is the trusted, published definition the draft will give the operator — immutable once published, and the object the trust rules will reason about; an edited workflow is the operator's local state layered on one pinned version, version-checked and audit-trailed like any Automation edit, visible to the operator and exportable, but written back to nothing; and a fork is a separate published pack, which does not exist until the pack draft defines pack publishing at all. The display and editable steps stay entirely inside the override and never pretend to modify the pack itself.
 
-### Q7
+### Q7 Run in LangGraph or only read there
 
 The exported description only needs to be read in LangGraph — it does not need to run there.
 
