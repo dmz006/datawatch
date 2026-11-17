@@ -3231,7 +3231,7 @@ When an Automaton completes it records how well its tasks ran in parallel. `tota
 
 **Merge conflict policy** (`autonomous.parallel.merge_conflict_policy`) — what happens when a task branch does not merge cleanly. `additive_then_model` (the default) keeps both sides when the two changes only add lines, and asks the merge conflict model to resolve anything else. `block` holds the task at once. `triage` raises the conflict as a question for the operator.
 
-**Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.
+**Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written.
 
 **Merge retry interval** (`autonomous.parallel.merge_retry_seconds`, default `60`) — how many seconds the daemon waits before it tries again to merge a task branch whose merge is still `pending`. While an earlier merge is pending, the next task is held. `0` turns the timed retry off.
 

@@ -56,11 +56,16 @@ func TestEffectiveMergeConflictPolicy(t *testing.T) {
 }
 
 func TestEffectiveMergeConflictModel(t *testing.T) {
-	if got := EffectiveMergeConflictModel(config.AutonomousParallelConfig{}); got != "" {
-		t.Fatalf("unset: got %q", got)
+	if got := EffectiveMergeConflictModel(config.AutonomousParallelConfig{}); got != config.MergePipelineDefaultConflictModel {
+		t.Fatalf("unset: got %q, want the daemon default %q", got, config.MergePipelineDefaultConflictModel)
 	}
 	if got := EffectiveMergeConflictModel(config.AutonomousParallelConfig{MergeConflictModel: " m1 "}); got != "m1" {
 		t.Fatalf("got %q", got)
+	}
+	// An operator-named model — a premium one included — passes through as written.
+	opus := "claude-opus-5-5"
+	if got := EffectiveMergeConflictModel(config.AutonomousParallelConfig{MergeConflictModel: opus}); got != opus {
+		t.Fatalf("operator model: got %q, want %q", got, opus)
 	}
 }
 
