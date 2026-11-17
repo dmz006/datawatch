@@ -1,6 +1,10 @@
 # Pack workflow graphs: research first, display only, then editing
 
-Status: research. No code is planned until the operator accepts this note. Raised by the operator on 2026-11-16.
+- Date: 2026-11-16 (raised by the operator). Answers written 2026-11-17.
+- Version at the time of research: v9.182.3. Shipped version: n/a — research only, nothing shipped yet.
+- Status: research — the note is answered (step 0 below) and sits at the operator's acceptance gate; no code is planned until the operator accepts it.
+- Scope: documentation only. This note and the repository docs it cites; no code, no configuration, no shipped behavior changes.
+- Operator review: the four open design questions in the final section are operator decisions and block the editable step onward; everything else is gated on the operator accepting this note.
 
 ## The ask
 
@@ -26,12 +30,12 @@ So the data model for a workflow graph is already datawatch's own. LangGraph wou
 
 ## Proposed steps
 
-| Step | What the operator gets | Reuses |
-|---|---|---|
-| 0. Research | This note answered and accepted | existing docs only |
-| 1. Display only | Each pack shows its workflow as a read-only graph in the app | the Automation pipeline strip; the pack's manifest |
-| 2. Editable | The operator can change a pack's workflow: add, remove or reorder steps and edit edges, with the pack version pinned and a change recorded | Automation insert, remove and edge controls; pack trust rules |
-| 3. Interchange | Export and import of a pack workflow as a LangGraph-compatible description | the import-graph pattern |
+| Step | What the operator gets | Reuses | Status |
+|---|---|---|---|
+| 0. Research | This note answered and accepted | existing docs only | Done — the note is answered and cited to its sources; acceptance rests with the operator |
+| 1. Display only | Each pack shows its workflow as a read-only graph in the app | the Automation pipeline strip; the pack's manifest | Planned — ships on its own after acceptance |
+| 2. Editable | The operator can change a pack's workflow: add, remove or reorder steps and edit edges, with the pack version pinned and a change recorded | Automation insert, remove and edge controls; pack trust rules | Planned — blocked on the trust rules the pack draft leaves open |
+| 3. Interchange | Export and import of a pack workflow as a LangGraph-compatible description | the import-graph pattern | Planned — the later step from the table, read-only by the Q7 answer |
 
 ## Questions the research must answer
 
@@ -135,3 +139,22 @@ Tie this to the pack design (`72bc0001`) rather than to a new Automaton: the pac
 ## Not in scope
 
 No change to how Automations run, no new execution engine, and no dependency on a Python runtime.
+
+## Docs impact
+
+This is a research note, so it changes no behavior and updates no howto, operations or glossary entry: the docs it cites — `docs/howto/automation-chains.md`, `docs/howto/automata-orchestrator.md`, `docs/howto/automata-standard-tasks.md`, `docs/howto/automaton-held-state-questions.md`, `docs/howto/automata-completion-review-autofix.md`, the `datawatch automation` section of `docs/commands.md`, `docs/plans/2026-10-14-automation-orchestration-design.md` and `docs/plans/2026-11-14-archived-unmerged-automata-inventory.md` — all existed and described shipped behavior at the time this note was written, and every cited path and section (including the pipeline strip in section 7 of the chains how-to) was checked against the tree. When a step from the table actually ships, each one writes its own howto, configuration and glossary entries and its locale/app-issue wiring through the general documentation checklist; none of that belongs in this research note.
+
+## Parity surface
+
+Research only: the note touches no surface, and every entry in the full parity surface set is an intentional exclusion:
+
+| Surface | Status | Excluded because |
+|---|---|---|
+| REST | Excluded | The note changes nothing to serve; the export/import endpoints would arrive with step 3 and carry their own plan section and `fedCap` review at that time. |
+| MCP | Excluded | No LLM-facing tool is consulted by the research; the display and editing surfaces are operator-facing and stay on the operator surfaces, as the existing Automation controls do. |
+| CLI | Excluded | No command is added, renamed or rescoped by the note; the `import-graph` precedent it builds on is unchanged. |
+| Comm channel | Excluded | No comm verb changes; the `automation` verbs cited are read as they already ship. |
+| YAML/config | Excluded | The research adds no setting; the pack format — where any setting would live — is the archived draft's open design question, not this note's. |
+| PWA | Excluded | The step-1 read-only graph view is a future PWA change tracked in the step table above, with its own locale and app-issue wiring when it ships; the note renders nothing today. |
+| Android | Excluded, tracked from step 1 | No Android code lives in this repository; from the moment a pack workflow view ships, the Mobile-Parity Rule tracks it in `datawatch-app`. Not applicable to this research note. |
+| iPhone | Excluded, tracked from step 1 | Same as Android: the Compose-Multiplatform app is the single mobile target, tracked per the Mobile-Parity Rule when step 1 ships. Not applicable to this research note. |
