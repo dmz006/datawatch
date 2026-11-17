@@ -2182,6 +2182,12 @@ Response:
 - **`internal/server/autonomous.go`** — `memory-report` route + `handlePRDMemoryReport`
 - **`internal/mcp/memory_scopes.go`** — all four new MCP tools
 
+## Claude model defaults (explicit-model policy)
+
+- **Behaviour:** every launched claude-code command carries an explicit model — `--model` is always passed, so there is no fall-through to the Claude account default and no daemon-initiated upgrade to a more expensive model. When a launch site does not name a model, the daemon names one itself: `sonnet` (`DefaultClaudeModel`) for worker/verifier/judge/planner launches, `haiku` (`MechanicalClaudeModel`) for autonomous mechanical task types (docs, changelog, parity-issue draft, bounded load step, version note, locale strings, formatting cleanup, tests — `mechanicalTaskTypes`). An Opus-class model runs only when an operator-level layer (session, task, story, PRD, automation, config line, judge pin, planner field) names one.
+- **Refusal backstop:** `internal/session/manager.go`, `Start` — a claude-code launch with `opt.Model == ""` is refused up front (before tracker, session record, or tmux pane) with the error `claude-code launch refused: no explicit model set …`; the persisted session record carries exactly the value passed to the CLI as `--model` (`Model` in `internal/session/store.go`), and a restart re-injects it (`SetModel`) instead of re-resolving.
+- **Sources:** `internal/autonomous/model_policy.go` (`DefaultClaudeModel`, `MechanicalClaudeModel`, `mechanicalTaskTypes`), `internal/autonomous/guardrail_model.go`; operators: `docs/howto/claude-model-defaults.md`, `docs/howto/explicit-model-policy.md`, `docs/operations.md` § Claude model defaults.
+
 ## Session idle timeout (autonomous.session_idle_timeout_seconds)
 
 - **Field:** `autonomous.session_idle_timeout_seconds`, default `900` (15 minutes). Bounds one autonomous worker or verifier session that sits in `waiting_input` or `idle` with no live child process.
