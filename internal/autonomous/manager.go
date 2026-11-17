@@ -4723,8 +4723,9 @@ func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart boo
 	}
 	// The task is back in play, so the dependents failed behind it for an
 	// infrastructure reason return to pending with it, whether the operator
-	// reset it or retried it after review.
-	if len(m.recoverInfraDependents(out)) > 0 {
+	// reset it or retried it after review — and so do the dependents failed
+	// behind it for any other reason.
+	if len(m.recoverInfraDependents(out))+len(m.recoverDependencyDependents(out)) > 0 {
 		out, _ = m.store.GetPRD(prdID)
 	}
 	return out, nil

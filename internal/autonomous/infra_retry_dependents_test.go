@@ -397,10 +397,15 @@ func TestInfraRetry_DependentsNotResetWhileDependencyFailed(t *testing.T) {
 	}
 }
 
-func TestInfraRetry_DependentsRecoverDisabledByConfig(t *testing.T) {
+// The infrastructure link keeps reading autonomous.infra_retry.retry_dependents —
+// with the key off it records nothing — but the dependents' recovery itself no
+// longer does: the children failed behind a dependency and nothing else, so
+// they return to pending even with the key off, through the unconditional path
+// that names the dependency it failed behind.
+func TestDependencyRecovery_UnconditionalWithRetryDependentsOff(t *testing.T) {
 	r := newDepRig(t, 0, nil, failedWith(infraRootReason()))
-	// The dependents were marked while the key was on; turning it off stops
-	// the recovery.
+	// The dependents were marked while the key was on; turning it off stops the
+	// infrastructure link from recording, nothing else.
 	off := false
 	r.m.mu.Lock()
 	r.m.cfg.InfraRetry.RetryDependents = &off
@@ -409,15 +414,15 @@ func TestInfraRetry_DependentsRecoverDisabledByConfig(t *testing.T) {
 		t.Fatalf("ResetTask: %v", err)
 	}
 	if got := r.m.recoverInfraDependents(r.prd(t)); len(got) != 0 {
-		t.Errorf("recovered %v, want nothing with retry_dependents off", got)
+		t.Errorf("recovered %v, want nothing from the infrastructure link with retry_dependents off", got)
 	}
 	for _, id := range []string{depChildID, depGrandID} {
-		if tk := r.task(t, id); tk.Status != TaskFailed {
-			t.Errorf("task %s status = %q, want failed", id, tk.Status)
+		if tk := r.task(t, id); tk.Status != TaskPending {
+			t.Errorf("task %s status = %q, want pending — the recovery is unconditional", id, tk.Status)
 		}
 	}
 	if got := r.recoveredDecisions(t); len(got) != 0 {
-		t.Errorf("decisions = %d, want none", len(got))
+		t.Errorf("infrastructure decisions = %d, want none", len(got))
 	}
 }
 

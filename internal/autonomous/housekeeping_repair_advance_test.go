@@ -123,6 +123,63 @@ func TestAdvanceRefusesNonTerminalTask(t *testing.T) {
 	}
 }
 
+func TestHousekeepingAdvanceWordingConsistent(t *testing.T) {
+	ctx := context.Background()
+
+	// One of three tasks not finished: one unsafe finding whose summary and
+	// reason both say so and neither claims every task is finished.
+	ops := &fakeAdvanceOps{autos: []AdvanceAutomaton{{
+		ID: "inc", Title: "Thing", Running: true,
+		TaskStatuses: []TaskStatus{TaskCompleted, TaskQueued, TaskInProgress},
+	}}}
+	h := newAdvHarness(config.HousekeepingModeReport, ops)
+	recs := h.r.Run(ctx)
+	var rec *RepairRecord
+	for _, r := range recs {
+		if r.Subject == "Automaton inc" {
+			rec = &r
+			break
+		}
+	}
+	if rec == nil {
+		t.Fatalf("no finding for the Automaton: %v", recs)
+	}
+	if rec.Kind != RepairSkippedUnsafe {
+		t.Fatalf("kind = %s", rec.Kind)
+	}
+	text := rec.Found + " " + rec.Done
+	if !strings.Contains(text, "2 of 3") {
+		t.Fatalf("not-finished count missing from %q", text)
+	}
+	for _, contradict := range []string{"every task is finished", "all of its tasks are finished", "all tasks are finished"} {
+		if strings.Contains(text, contradict) {
+			t.Fatalf("finding claims finished while two tasks are not: %q", text)
+		}
+	}
+	if len(ops.advanced) != 0 {
+		t.Fatal("an unsafe finding was acted on")
+	}
+
+	// All tasks finished and stuck: a repairable finding whose wording says
+	// finished and never claims any task is not finished.
+	ops2 := &fakeAdvanceOps{autos: []AdvanceAutomaton{{
+		ID: "fin", Title: "Thing", Running: true,
+		TaskStatuses: []TaskStatus{TaskCompleted, TaskFailed},
+	}}}
+	h2 := newAdvHarness(config.HousekeepingModeReport, ops2)
+	recs2 := h2.r.Run(ctx)
+	if len(recs2) != 1 || recs2[0].Kind != RepairWould {
+		t.Fatalf("recs=%v", recs2)
+	}
+	text2 := recs2[0].Found + " " + recs2[0].Done
+	if !strings.Contains(text2, "finished") {
+		t.Fatalf("finding does not say finished: %q", text2)
+	}
+	if strings.Contains(text2, "not finished") {
+		t.Fatalf("finished finding claims tasks not finished: %q", text2)
+	}
+}
+
 func TestAdvanceSkipsLiveExecutor(t *testing.T) {
 	a := runningDone()
 	a.LiveExecutor = true

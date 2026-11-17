@@ -178,9 +178,21 @@ go back to pending on their own. You do not reset them one by one:
 - One `infra_dependents_recovered` decision records each root and the tasks that
   were reset.
 
-A dependency that was cancelled, or that failed on its content or scope, marks
-nothing: its dependents fail as they always did. Turn the whole behaviour off
-with `autonomous.infra_retry.retry_dependents: false`.
+The general rule is wider than this infrastructure chain: a dependent whose
+only failure is that its dependency failed — even one whose dependency was
+cancelled, or that failed on its content or scope — does not need a manual
+`reset_task` at all. Once that dependency later completes, the executor
+requeues the dependent in the same step, for every failure class of the
+dependency, and one `dependents_recovered` decision records each root and the
+tasks that were requeued. Only a dependent that failed for its own reasons,
+or that still waits on another dependency that is failed, cancelled, blocked
+or held, is left for a manual `reset_task`.
+
+`autonomous.infra_retry.retry_dependents: false` turns off the
+infrastructure-specific side of this behaviour: the marking of dependents
+behind an infrastructure failure, and their recovery as the root recovers.
+The general requeue of dependents that failed only behind their dependency
+still applies.
 
 ## Configuration
 

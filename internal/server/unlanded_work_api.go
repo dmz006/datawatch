@@ -37,6 +37,12 @@ type unlandedWorkOps interface {
 	FixPermissions(paths []string) (int, error)
 }
 
+// Compile-time proof: the exact object cmd/datawatch wires into the server
+// (*autonomous.API, the wrapper around *Manager) satisfies the gate. If the
+// wrapper ever loses one of these methods this package fails to build instead
+// of the live routes silently answering 503 at runtime.
+var _ unlandedWorkOps = (*autonomous.API)(nil)
+
 // housekeepingGate checks the method, that Automata are enabled, the
 // federation capability and the Manager surface. It returns nil when the
 // request was answered.
