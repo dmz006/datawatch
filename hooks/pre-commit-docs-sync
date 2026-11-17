@@ -8,4 +8,5 @@
 # Or copy into your existing pre-commit chain.
 
 ./scripts/check-docs-sync.sh || exit $?
+bash hooks/pre-commit-leak-check || exit $?
 exec bash ./scripts/check-no-unscoped-tmux.sh

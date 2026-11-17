@@ -3,7 +3,7 @@
 Date: 2026-11-04 · Branch: `automaton/b2220001--tasks-write-the-final-gate-report-703b0015` (tree at commit `d2221e2e5`)
 
 **Sandbox daemon: `datawatch v9.51.0`** (`GET /api/health` read `"version":"9.51.0"`), built from this worktree with
-`go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/`. Host: `johnnyjohnny`, Linux 7.0.0-34-generic. It ran from its own config and
+`go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/`. Host: the local node, Linux 7.0.0-34-generic. It ran from its own config and
 data directory under `.datawatch/live-check/` (git-ignored, deleted at the end). The production daemon, its
 service unit and its ports were never touched.
 
