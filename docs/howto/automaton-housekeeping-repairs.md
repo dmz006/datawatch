@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers, planning, planning failure, housekeeping actions unavailable, live daemon 503]
+  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers, planning, planning failure, live daemon housekeeping routes]
 exec_steps:
   - tool: supervisor_watch_list
     description: Read the supervisor watch findings, open first - the kinds in this table are the finding kinds you see there
@@ -108,10 +108,10 @@ if needed and cancel the retried task to stop it.
 The `advance_judge` group also has three repairs for finished and review-blocked
 Automata, run in `on` and only reported in `report`:
 
-- **Advance.** An Automaton that is running with every task finished (done or
-  cancelled) is moved to its next state by the normal completion step, once the
-  grace has passed. It is left alone while a live run still holds it, and it is
-  refused as unsafe while any task is unfinished.
+- **Advance.** An Automaton that is running with every task finished (done,
+  failed or cancelled) is moved to its next state by the normal completion step,
+  once the grace has passed. It is left alone while a live run still holds it,
+  and it is refused as unsafe while any task is unfinished.
 - **Judge repair.** An Automaton blocked by the rules review with no repair task
   yet gets one repair task, made once from the review's real findings (a task
   carrying the findings is added to the last story, then reset with a plain
