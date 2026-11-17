@@ -161,6 +161,26 @@ keeps an Automaton in `running`.
   depending on the removed one. A running, queued or waiting task is refused
   with an error naming its state.
 
+## Dependents that failed behind a dependency need no manual reset
+
+When a dependency fails or is cancelled, the executor fails the tasks that
+depend on it, with the error naming that dependency. A dependent whose only
+failure is that one — with no content or scope fault of its own — no longer
+needs a manual `reset_task`: the moment the dependency it failed behind
+reaches `completed`, the executor requeues the dependent in the same step,
+whether the dependency's own failure was an infrastructure one or a content
+or scope one. A dependency that is reset back to a state where it can still
+complete releases its dependents with it.
+
+Manual `reset_task` remains the right tool for a dependent that failed for
+its own reasons — its own content, its own file scope — or that still waits
+on another dependency that is failed, cancelled, blocked or held. You never
+have to walk a failed chain and reset every dependent one by one.
+
+The executor records a `dependents_recovered` decision for the requeue. The
+infrastructure-flavoured marking that sits on top of this rule is in
+[infrastructure-retry.md](infrastructure-retry.md#dependents-that-failed-behind-it-recover-on-their-own).
+
 ## Repairing a failed Automaton in place
 
 Cancelling a failed Automaton to fix it is no longer needed, and it used to

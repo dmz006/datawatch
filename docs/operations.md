@@ -1013,7 +1013,7 @@ The rule is implemented and tested in the code, and the launcher's application o
 
 A task that fails because the machinery around it failed, not because of its own work, is retried on a back-off schedule and the failure is not counted against the task. Four failure classes qualify: `spawn_error` (the worker could not be started), `storage_write` (the device is full, the quota is used up or the file system is read-only), `session_killed_before_delivery` (the worker session ended before the task reached it) and `daemon_restart` (the daemon restarted while the task ran). A session that never started keeps its own start budget and is never classified here, and a throttle from the model provider is never retried by this feature. By default a task gets 3 tries with delays of 1, 5 and 9 minutes (15 minutes in all). While it waits, the task shows `infrastructure retry n of max at <time> (<class>)`, and the retry is recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton.
 
-When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`). A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
+When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked with the chain's root and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`); the general rule is wider — any dependent that failed only behind its dependency is requeued by the executor in the same step that the dependency reaches `completed`, whether that failure was an infrastructure one or a content or scope one, so dependents are never reset by hand when a retried dependency completes. A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
 
 | Method | How |
 |--------|-----|
@@ -5333,6 +5333,14 @@ A running or completed Automaton still refuses these edits.
 Automaton moves the Automaton back to `running`. A task added while the
 Automaton was failed does not start by itself: it runs once a reset has
 reopened the Automaton.
+
+**Dependents that failed behind a recovering dependency need no manual
+reset.** When a task reaches `completed`, the executor requeues every
+dependent whose only failure was that dependency — whether the dependency's
+failure was an infrastructure one or a content or scope one — in the same
+step. A manual `reset_task` on such dependents is only for dependents that
+failed for their own reasons, or that still wait on another dependency that
+is failed, cancelled, blocked or held.
 
 ### Recipe: a failure caused only by a final gate or a small formatting check
 
