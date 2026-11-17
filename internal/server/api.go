@@ -6882,6 +6882,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
 			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
@@ -10944,6 +10945,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		case "autonomous.security_scan_extensions":
+			// File extensions the security scan covers (e.g. ".py").
+			// Same dual-form handling as snapshot_never_stage above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// and the PWA badge input send CSV). Entries are trimmed and
+			// blank ones dropped; an empty result leaves the scanner's
+			// built-in defaults (.py, .pyw) in effect.
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, e := range arr {
+					if t := strings.TrimSpace(e); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SecurityScanExtensions = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SecurityScanExtensions = splitCSV(s)
+			}
 		case "autonomous.per_story_approval":
 			// Phase 3 (v5.26.61) — toggles the per-story approval gate.
 			// When set to true, PRD-level approval transitions stories
