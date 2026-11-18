@@ -19,7 +19,10 @@ import (
 )
 
 // uncommittedCauseMaxRunes caps the commit error carried in a hold reason.
-const uncommittedCauseMaxRunes = 300
+// The error text ends with the command output and carries the exit status
+// before it, so the cap is large enough that both survive for a realistic
+// git failure message; the cap only guards a pathological output size.
+const uncommittedCauseMaxRunes = 1000
 
 // SetTaskCommit replaces the function the executor uses to commit a task's
 // leftover files. Nil restores DefaultTaskCommit. Tests inject a fake.
@@ -126,7 +129,7 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	if len(paths) > 0 {
 		// Classified before the commit so a deletion the commit itself
 		// records is not mistaken for a path that was already gone.
-		_, _, skipped := classifyTaskCommitPaths(ctx, dir, paths)
+		_, _, _, skipped := classifyTaskCommitPaths(ctx, dir, paths)
 		skippedNote = skippedMissingPathsNote(skipped)
 		sha, cerr := m.taskCommitFn()(ctx, dir, paths, uncommittedTaskCommitMessage(prd, t))
 		if cerr != nil {

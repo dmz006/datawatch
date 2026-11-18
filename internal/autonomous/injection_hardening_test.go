@@ -146,7 +146,7 @@ func TestClassifyTaskCommitPathsRejectsSymlinkEscape(t *testing.T) {
 	}
 	symlinkTo(t, repo, "sneaky.txt", outside)
 
-	add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), repo, []string{"sneaky.txt"})
+	add, pathspec, _, skipped := classifyTaskCommitPaths(context.Background(), repo, []string{"sneaky.txt"})
 	if len(add) != 0 || len(pathspec) != 0 || len(skipped) != 1 || skipped[0] != "sneaky.txt" {
 		t.Fatalf("add=%v pathspec=%v skipped=%v", add, pathspec, skipped)
 	}
@@ -156,7 +156,7 @@ func TestClassifyTaskCommitPathsRejectsSymlinkEscape(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "inbase.txt"), []byte("y"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	add, pathspec, _ = classifyTaskCommitPaths(context.Background(), repo, []string{"inbase.txt"})
+	add, pathspec, _, _ = classifyTaskCommitPaths(context.Background(), repo, []string{"inbase.txt"})
 	if len(add) != 1 || add[0] != "inbase.txt" || len(pathspec) != 1 {
 		t.Fatalf("in-base file: add=%v pathspec=%v", add, pathspec)
 	}
