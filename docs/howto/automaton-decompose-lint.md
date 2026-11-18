@@ -197,7 +197,7 @@ They use seven match predicates (below): `verification_script_task_files_only`,
 `verification_script_docs_without_sync`, `verification_script_artefact_files_allowed`,
 `verification_script_final_gate_artefact_allowed`,
 `verification_script_invokes_unknown_flag` and
-`verification_script_spec_unanchored` (the last five read the
+`verification_script_spec_unanchored` (all six read the
 script's content), plus `verification_script_reason_empty` with
 `kind: final_gate`. A script that does not exist yet is
 skipped by the content-reading ones. The full authoring guide, with the fix for each rule
@@ -554,10 +554,12 @@ writes keep passing after earlier tasks land. A generated script must:
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose
-lint enforces the same three rules on what comes back — see
-`verify_script_task_files_only`, `verify_script_docs_without_sync` and
-`final_gate_without_script` in the rule table above. All three block; the
-two script-content rules read the script file from the project directory and
+lint enforces the same contract on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+`artefact_files_allowed`, `final_gate_artefact_allowed`,
+`script_invokes_known_flag`, `check_matches_spec_text` and
+`final_gate_without_script` in the rule table above. All seven block; the
+six script-content rules read the script file from the project directory and
 are skipped when it does not exist yet.
 
 **Correcting a script after decompose.** When a finding names a task's
