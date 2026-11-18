@@ -7111,20 +7111,22 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 
 | Surface | Read the state | Notes |
 |---|---|---|
-| REST | `GET /api/autonomous/supervisor-watch` | body: `mode`, `last_poll_at`, `findings` (open first, then most recently seen first), `comparison`; no parameters; 405 for any other method, 503 while the autonomous engine is disabled |
+| REST | `GET /api/autonomous/supervisor-watch` | body: `mode`, `last_poll_at`, `findings` (open first, then most recently seen first), `comparison`, `priority_bands` (the per-band wait stats below); no parameters; 405 for any other method, 503 while the autonomous engine is disabled |
 | MCP | `supervisor_watch_list` (read-only, no arguments) | same body as the GET route; an argument is refused |
-| CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), then the comparison summary |
+| CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), one line per prioritization band that waits something (waiting count, oldest wait, stalled count), then the comparison summary; `--json` prints the body untouched |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | the same lines as the CLI; no arguments |
-| PWA | Automation view → Inbox sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+| PWA | Automation view → Inbox sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, one line per prioritization band that waits something, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+
+Per-band wait stats ride on the same read: the waiting Automata grouped into three fixed prioritization bands — **high** (80 or more), **medium** (50 through 79) and **low** (below 50) — each with how many of its Automata are waiting, the band's oldest wait in whole minutes and how many of the band's waiters also satisfy the watch's priority-stall rule. The bands are fixed, and a band with no waiting is omitted (an empty list means no waiting in any band).
 
 ### Supervisor watch monitoring
 
 | Where | What |
 |---|---|
-| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days`, `priority_bands` (the same per-band wait lines) |
 | MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
-| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days` on the WS stats broadcast |
-| Web UI | Settings → Monitor → **Supervisor watch** |
+| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days`, and `supervisor_watch_priority_bands` (the per-band wait lines) on the WS stats broadcast |
+| Web UI | Settings → Monitor → **Supervisor watch** | mode, open findings, would-alert, alerted, last poll age, days of full agreement, and one line per prioritization band that waits something — live over the stats broadcast. |
 | Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
 
 **The triage note is written in shadow too.** The one thing shadow writes beyond the watch's own records is the triage-record note for an Automaton-scoped finding; it is text on a record the daemon already keeps, changes no state and raises no alert. `mode: off` stops it.
