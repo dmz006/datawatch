@@ -459,8 +459,8 @@ func TestSupervisorWatchWorkPriorityStall(t *testing.T) {
 			wantText: SupervisorWatchPriorityStallText("stalled-1", 90, 45, 30, 80),
 		},
 		{
-			name: "at the floor raises",
-			prd:  workTestQueuePRD("at-floor", PRDApproved, 80, long),
+			name:     "at the floor raises",
+			prd:      workTestQueuePRD("at-floor", PRDApproved, 80, long),
 			wantKind: SupervisorWatchPriorityStall,
 		},
 		{
@@ -631,8 +631,8 @@ func TestSupervisorWatchWorkBacklogTiebreaks(t *testing.T) {
 
 	queue := []*PRD{
 		workTestQueuePRD("id-a", PRDApproved, 70, t1),
-		workTestQueuePRD("id-b", PRDApproved, 70, t2), // same prio, newer
-		workTestQueuePRD("id-c", PRDApproved, 70, t1), // tie with id-a -> id order
+		workTestQueuePRD("id-b", PRDApproved, 70, t2),          // same prio, newer
+		workTestQueuePRD("id-c", PRDApproved, 70, t1),          // tie with id-a -> id order
 		workTestQueuePRD("id-d", PRDApproved, 70, time.Time{}), // no created -> oldest
 	}
 	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)

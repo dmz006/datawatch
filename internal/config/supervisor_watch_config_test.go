@@ -226,12 +226,10 @@ func TestSupervisorWatchPriorityStallValidation(t *testing.T) {
 	if w.PriorityFloor != nil {
 		t.Errorf("unset priority_floor = %v, want nil (unset)", *w.PriorityFloor)
 	}
-	if got, want := w.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes;
-		got != want {
+	if got, want := w.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes; got != want {
 		t.Errorf("unset stall: effective = %d, want the %d default", got, want)
 	}
-	if got, want := w.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor;
-		got != want {
+	if got, want := w.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor; got != want {
 		t.Errorf("unset floor: effective = %d, want the %d default", got, want)
 	}
 }

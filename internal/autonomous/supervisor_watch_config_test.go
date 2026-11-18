@@ -260,12 +260,10 @@ func TestSupervisorWatchConfigPriorityStallKnobs(t *testing.T) {
 		t.Fatalf("zero config: the two new keys must be unset (nil), got (%v %v)",
 			unset.StallThresholdMinutes, unset.PriorityFloor)
 	}
-	if got, want := unset.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes;
-		got != want {
+	if got, want := unset.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes; got != want {
 		t.Errorf("unset stall_threshold_minutes: Effective = %d, want the %d default", got, want)
 	}
-	if got, want := unset.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor;
-		got != want {
+	if got, want := unset.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor; got != want {
 		t.Errorf("unset priority_floor: Effective = %d, want the %d default", got, want)
 	}
 
