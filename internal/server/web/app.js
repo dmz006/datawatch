@@ -25912,6 +25912,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
     { key: 'usage.burn_guard.retry_limit_claude', label: 'Burn guard Claude retry limit', labelKey: 'settings_usage_burn_guard_retry_limit_claude', type: 'number', placeholder: '2', min: 0, max: 20, step: 1, default: '2' },
+    { key: 'usage.burn_guard.mode', label: 'Burn guard pace_line mode (off, shadow, on; unset defaults to shadow)', labelKey: 'settings_usage_burn_guard_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'usage.burn_guard.week_tolerance', label: 'Burn guard pace_line week tolerance (whole number, 0 to 10, default 2)', labelKey: 'settings_usage_burn_guard_week_tolerance', type: 'number', placeholder: '2', min: 0, max: 10, step: 1, default: '2' },
+    { key: 'usage.burn_guard.points_to_week_factor', label: 'Burn guard pace_line points-to-week factor (1 to 10, default 1.3)', labelKey: 'settings_usage_burn_guard_points_to_week_factor', type: 'number', placeholder: '1.3', min: 1, max: 10, step: 0.1, default: '1.3' },
+    { key: 'usage.burn_guard.window_percent_per_point', label: 'Burn guard pace_line window percent per point (1 to 25, default 4)', labelKey: 'settings_usage_burn_guard_window_pp', type: 'number', placeholder: '4', min: 1, max: 25, step: 0.5, default: '4' },
+    { key: 'usage.burn_guard.window_stop_percent', label: 'Burn guard pace_line window stop percent (50 to 95, default 85)', labelKey: 'settings_usage_burn_guard_window_stop', type: 'number', placeholder: '85', min: 50, max: 95, step: 1, default: '85' },
+    { key: 'usage.burn_guard.reading_freshness_minutes', label: 'Burn guard pace_line reading freshness (minutes, 1 to 1440, default 60)', labelKey: 'settings_usage_burn_guard_reading_freshness', type: 'number', placeholder: '60', min: 1, max: 1440, step: 1, default: '60' },
   ]},
   { id: 'classifier', section: 'Classifier', docs: 'howto/classification-verdicts.md', fields: [
     { key: 'classifier.timeout_seconds', label: "Classifier call timeout", labelKey: 'settings_classifier_timeout_seconds', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
