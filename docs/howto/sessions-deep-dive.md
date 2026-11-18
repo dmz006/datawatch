@@ -251,6 +251,25 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    or re-zooming the browser re-fits the terminal to the new height with
    no refresh.
 
+   **On a phone-width screen** the tag chips and the Scheduled list no
+   longer sit open above the terminal. Each collapses to one summary
+   button: **Tags (N)** shows how many tags the session has, and
+   **Scheduled (N) · next <time>** shows how many schedules are pending
+   and when the earliest one runs. Tap a button (or focus it and press
+   Enter or Space) to open the full chip row or the schedule list (with
+   each entry's cancel control) in place, and tap again to close it; the
+   button's tooltip reads **Show all** or **Show less**. Both summaries
+   are real buttons that expose their open or closed state
+   (`aria-expanded`), so they work from the keyboard and with a screen
+   reader. Both start closed, and the vertical space they free goes to
+   the terminal above the input bar. Whether each is open is kept only
+   in the page's memory, per session: it survives switching tabs or
+   sessions, resets on a reload, and uses no browser storage key and no
+   setting. A session with no tags, or none scheduled, shows nothing.
+   On a wider screen nothing changes: the full chip rows and one row per
+   scheduled job, each with its cancel control, show as before, and the
+   stop, history and notes controls keep their positions.
+
    It opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session

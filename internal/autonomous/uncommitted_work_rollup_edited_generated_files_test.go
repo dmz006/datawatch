@@ -77,9 +77,9 @@ func TestUncommittedRollupGeneratedFilesIgnoredEditedOrUnverifiedCountsAsWork(t 
 	fakeHash := strings.Repeat("e", 64) + "\n"
 
 	cases := []struct {
-		name    string
-		mutate  func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string)
-		onDisk  func(doc, sidecar string) []string
+		name   string
+		mutate func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string)
+		onDisk func(doc, sidecar string) []string
 	}{
 		{
 			name: "marker removed",
@@ -97,13 +97,17 @@ func TestUncommittedRollupGeneratedFilesIgnoredEditedOrUnverifiedCountsAsWork(t 
 			onDisk: func(doc, sidecar string) []string { return []string{doc, sidecar} },
 		},
 		{
-			name:   "edited marker inserted after the marker",
-			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) { mutateGatePath(t, r, doc, []byte(editedDoc)) },
+			name: "edited marker inserted after the marker",
+			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) {
+				mutateGatePath(t, r, doc, []byte(editedDoc))
+			},
 			onDisk: func(doc, sidecar string) []string { return []string{doc, sidecar} },
 		},
 		{
-			name:   "body line changed, marker kept",
-			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) { mutateGatePath(t, r, doc, []byte(genartifacts.Marker+"\nA changed line no one generated.\n")) },
+			name: "body line changed, marker kept",
+			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) {
+				mutateGatePath(t, r, doc, []byte(genartifacts.Marker+"\nA changed line no one generated.\n"))
+			},
 			onDisk: func(doc, sidecar string) []string { return []string{doc, sidecar} },
 		},
 		{
@@ -115,8 +119,10 @@ func TestUncommittedRollupGeneratedFilesIgnoredEditedOrUnverifiedCountsAsWork(t 
 			onDisk: func(doc, sidecar string) []string { return []string{doc} },
 		},
 		{
-			name:   "sidecar overwritten with a different hash",
-			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) { mutateGatePath(t, r, sidecar, []byte(fakeHash)) },
+			name: "sidecar overwritten with a different hash",
+			mutate: func(t *testing.T, r *uncommittedRollupRig, doc, sidecar string) {
+				mutateGatePath(t, r, sidecar, []byte(fakeHash))
+			},
 			onDisk: func(doc, sidecar string) []string { return []string{doc, sidecar} },
 		},
 		{

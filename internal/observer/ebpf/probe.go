@@ -55,8 +55,8 @@ type NetProbe interface {
 type noopProbe struct{ reason string }
 
 func (n *noopProbe) Read() []ProcessNet { return nil }
-func (n *noopProbe) Loaded() bool        { return false }
-func (n *noopProbe) Close() error        { return nil }
+func (n *noopProbe) Loaded() bool       { return false }
+func (n *noopProbe) Close() error       { return nil }
 
 // Reason returns the human-readable explanation for noop mode.
 // Surfaced as observer.host.ebpf.message so operators see why

@@ -277,8 +277,8 @@ func ReportResult(ctx context.Context, env BootstrapEnv, resultToken string, res
 // the worker's memory client can configure itself without parsing
 // the BootstrapResponse twice:
 //
-//   DATAWATCH_MEMORY_MODE       — shared | sync-back | ephemeral
-//   DATAWATCH_MEMORY_NAMESPACE  — per-Project-Profile bucket name
+//	DATAWATCH_MEMORY_MODE       — shared | sync-back | ephemeral
+//	DATAWATCH_MEMORY_NAMESPACE  — per-Project-Profile bucket name
 func ApplyBootstrapEnv(resp *BootstrapResponse) {
 	if resp == nil {
 		return
@@ -337,7 +337,7 @@ func fetchSecretFrom(ctx context.Context, baseURL, token, name string) (string, 
 	req.Header.Set("Authorization", "Bearer "+token)
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- dev/local parent; same trust model as bootstrap
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   10 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: tlsCfg},
 	}
 	resp, err := client.Do(req)

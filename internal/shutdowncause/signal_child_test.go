@@ -134,6 +134,10 @@ func TestSignalChildProcScan(t *testing.T) {
 		t.Fatalf("waited 30s for SIGTERM from child pid %d, cmdline %q", cmd.Process.Pid, childCmdline)
 	}
 
+	// Scope the procscan to this test's descendants so unrelated host
+	// processes can never be picked up as the sender.
+	scopeProcScanToDescendants(t, myPID)
+
 	c := Capture(sig)
 
 	if c.Signal != syscall.SIGTERM.String() {

@@ -23,14 +23,16 @@ type workerProfileStatus struct {
 	Profiles []string `json:"profiles"`
 	// RoleDefaults maps each worker role to the built-in profile it starts with.
 	RoleDefaults map[string]string `json:"role_defaults"`
-	// KindDefaults maps each task kind to the built-in profile it starts with.
+	// KindDefaults maps each task kind and session kind to the built-in
+	// profile it starts with.
 	KindDefaults map[string]string `json:"kind_defaults"`
 	// Startup is the worker_startup block of the latest stats snapshot, as
 	// the stats block reports it. Both maps are always present.
 	Startup json.RawMessage `json:"startup"`
-	// InForce lists the profile each worker role and task kind starts with,
-	// built by workerprofile.InForce from the live daemon values (roles first,
-	// then kinds). It is always present, never null.
+	// InForce lists the profile each worker role, task kind and session kind
+	// starts with, built by workerprofile.InForce from the live daemon values
+	// (roles first, then kinds, then session kinds). It is always present,
+	// never null.
 	InForce []inForceRow `json:"in_force"`
 }
 
@@ -57,7 +59,7 @@ type autonomousWorkerProfiles struct {
 
 func (s *Server) toolWorkerProfileStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("worker_profile_status",
-		mcpsdk.WithDescription("Read-only worker profile status: the built-in profile names (minimal, digest, full, datawatch-tools), the built-in default profile for each role and task kind, and the latest average start-up token size per profile and per role from the stats block (worker_startup). The in_force field lists, for each role and task kind, the profile it starts with now (scope, key, profile, tier and reason), built from the live config. Configure profiles with config_set on autonomous.worker_profiles, autonomous.worker_profile_defaults and autonomous.worker_profile; read them with get_config section=autonomous."),
+		mcpsdk.WithDescription("Read-only worker profile status: the built-in profile names (minimal, digest, full, datawatch-tools), the built-in default profile for each role, task kind and session kind, and the latest average start-up token size per profile and per role from the stats block (worker_startup). The in_force field lists, for each role, task kind and session kind, the profile it starts with now (scope, key, profile, tier and reason), built from the live config. Configure profiles with config_set on autonomous.worker_profiles, autonomous.worker_profile_defaults and autonomous.worker_profile; read them with get_config section=autonomous."),
 	)
 }
 
@@ -85,7 +87,8 @@ func (s *Server) handleWorkerProfileStatus(_ context.Context, _ mcpsdk.CallToolR
 }
 
 // fetchInForce reads the autonomous worker profile settings from the daemon's
-// config and resolves the profile in force for each role and task kind with
+// config and resolves the profile in force for each role, task kind and
+// session kind with
 // workerprofile.InForce. It never returns a nil slice.
 func (s *Server) fetchInForce() ([]inForceRow, error) {
 	if s.webPort <= 0 {
