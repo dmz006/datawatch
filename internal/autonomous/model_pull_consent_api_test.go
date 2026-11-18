@@ -42,7 +42,7 @@ func TestSetConfigModelPullConsent(t *testing.T) {
 
 	t.Run("a malformed consent is rejected before merge", func(t *testing.T) {
 		cases := []struct {
-			name string
+			name  string
 			block any
 		}{
 			{"empty model name", map[string]any{"models": []any{map[string]any{"name": "  ", "allowed": true}}}},

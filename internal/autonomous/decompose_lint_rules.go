@@ -116,6 +116,22 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "artefact_files_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "artefact_files_allowed: the task's verification script flags unexpected changed files but does not exempt the daemon-generated artefact folders docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and the file CHANGELOG.md, so it fails when the daemon writes them; exclude those paths from the changed-file set (or check only the files the task adds).",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptArtefactFiles: true,
+			},
+		},
+		{
+			ID:       "final_gate_artefact_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "final_gate_artefact_allowed: the task's verification script asserts the whole changed-file set against a finite allow-list with no guard for the final gate rerunning it on the cumulative tree, where every earlier task's files appear; guard the set check (skip it on an env-var or argument the final gate sets) or check only the files this task adds.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptFinalGateRerun: true,
+			},
+		},
+		{
 			ID:       "final_gate_without_script",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "final_gate_without_script: a final_gate task declares no verification script, no verification_script_reason and no usable report path; the end-to-end gate must be verifiable, so give it a script, a report path under .datawatch/reports/, or state why it has none.",

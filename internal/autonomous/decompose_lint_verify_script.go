@@ -137,6 +137,16 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 			return p
 		}
 	}
+	if m.artefactFiles {
+		if p, ok := verifyScriptArtefactFiles(dir, t); ok {
+			return p
+		}
+	}
+	if m.finalGateRerun {
+		if p, ok := verifyScriptFinalGateRerun(dir, t); ok {
+			return p
+		}
+	}
 	for _, sub := range m.anyOf {
 		if p := verifyScriptFindingPath(&sub, dir, t); p != "" {
 			return p
@@ -148,4 +158,49 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 		}
 	}
 	return strings.TrimSpace(t.VerificationScript)
+}
+
+var (
+	// verifyUnexpectedRe: the script flags files outside an allow-list.
+	verifyUnexpectedRe = regexp.MustCompile(`(?i)unexpected|not\s+allowed|outside\s+(?:the\s+)?(?:allow|task)|grep\s+-[a-z]*v|\bcomm\s+-[0-9]+|\bextra\s+files?|disallowed`)
+	// verifyAllowListRe: a finite allow-list the changed set is held to.
+	verifyAllowListRe = regexp.MustCompile(`(?i)allow(?:ed)?[_ -]?(?:list|files?)?\s*=|\ballowed\b|case\s+"?\$[^\n]*\bin\b`)
+	// verifyArtefactExempt: every daemon-generated artefact path exempted.
+	verifyArtefactExempt = []string{"docs/plans/drafts/", "docs/plans/parity-issues/", "docs/plans/reports/", "CHANGELOG.md"}
+	// verifyFinalGateGuardRe: an env-var or argument guard that skips the
+	// set check, or a check limited to files the task adds.
+	verifyFinalGateGuardRe = regexp.MustCompile(`(?i)\$\{?(?:\d|@|#|[A-Z_]*FINAL[A-Z_]*|DATAWATCH_[A-Z_]+|SKIP_[A-Z_]+)\}?|--final|--diff-filter=[A-Za-z]*A|ls-files\s+(?:-\w+\s+)*(?:--others|-o)\b`)
+)
+
+// scriptAssertsChangedSet reports whether content computes a changed-file
+// set and flags files outside it.
+func scriptAssertsChangedSet(content string) bool {
+	return verifyFileCheckRe.MatchString(content) && verifyUnexpectedRe.MatchString(content)
+}
+
+// verifyScriptArtefactFiles returns the script path when the script flags
+// unexpected changed files without exempting the daemon-generated
+// artefact folders and CHANGELOG.md.
+func verifyScriptArtefactFiles(dir string, t Task) (string, bool) {
+	path, content, ok := verifyScriptContent(dir, t)
+	if !ok || !scriptAssertsChangedSet(content) {
+		return "", false
+	}
+	for _, p := range verifyArtefactExempt {
+		if !strings.Contains(content, p) {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+// verifyScriptFinalGateRerun returns the script path when the script holds
+// the whole changed set to a finite allow-list with no guard for the final
+// gate rerunning it on the cumulative tree.
+func verifyScriptFinalGateRerun(dir string, t Task) (string, bool) {
+	path, content, ok := verifyScriptContent(dir, t)
+	if !ok || !scriptAssertsChangedSet(content) || !verifyAllowListRe.MatchString(content) || verifyFinalGateGuardRe.MatchString(content) {
+		return "", false
+	}
+	return path, true
 }
