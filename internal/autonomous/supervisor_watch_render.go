@@ -62,6 +62,10 @@ func RenderSupervisorWatch(w io.Writer, body *SupervisorWatchStatus) {
 		_, _ = fmt.Fprintf(w, "Automata: %d blocked, %d waiting for review\n",
 			body.BlockedAutomata, body.WaitingForReviewAutomata)
 	}
+	for _, b := range body.PriorityBands {
+		_, _ = fmt.Fprintf(w, "priority band %s: %d waiting (oldest %d min, %d stalled)\n",
+			b.Band, b.Waiting, b.OldestWaitingMinutes, b.Stalled)
+	}
 	_, _ = io.WriteString(w, renderHeldGroupLines(body.Held))
 
 	cmp := body.Comparison

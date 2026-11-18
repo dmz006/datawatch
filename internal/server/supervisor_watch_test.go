@@ -199,6 +199,101 @@ func TestSupervisorWatchRESTPopulated(t *testing.T) {
 	}
 }
 
+// TestSupervisorWatchRESTPriorityBands — the per-band wait stats ride in
+// the status payload: the rows come back in high, medium, low order with
+// their band, range, waiting count, oldest wait and stalled share intact,
+// and a view where no band waits anything reads an empty list (never
+// null) so a caller always gets a list.
+func TestSupervisorWatchRESTPriorityBands(t *testing.T) {
+	spy := &supervisorWatchSpy{view: autonomous.SupervisorWatchStatus{
+		Mode:     autonomous.SupervisorWatchModeShadow,
+		Findings: []*autonomous.SupervisorWatchFinding{},
+		Comparison: autonomous.SupervisorWatchComparisonView{
+			OnlyWatch:  []string{},
+			OnlyScript: []string{},
+		},
+		PriorityBands: []autonomous.SupervisorWatchPriorityBand{
+			{Band: "high", PriorityFrom: 80, PriorityTo: 100, Waiting: 2, OldestWaitingMinutes: 41, Stalled: 1},
+			{Band: "medium", PriorityFrom: 50, PriorityTo: 79, Waiting: 1, OldestWaitingMinutes: 22, Stalled: 0},
+			{Band: "low", PriorityFrom: 0, PriorityTo: 49, Waiting: 3, OldestWaitingMinutes: 5, Stalled: 0},
+		},
+	}}
+	s := &Server{autonomousMgr: spy}
+	rec := supervisorWatchGET(t, s)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		PriorityBands []struct {
+			Band                 string `json:"band"`
+			PriorityFrom         int    `json:"priority_from"`
+			PriorityTo           int    `json:"priority_to"`
+			Waiting              int    `json:"waiting"`
+			OldestWaitingMinutes int    `json:"oldest_waiting_minutes"`
+			Stalled              int    `json:"stalled"`
+		} `json:"priority_bands"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v: %s", err, rec.Body)
+	}
+	if len(body.PriorityBands) != 3 {
+		t.Fatalf("priority_bands = %+v, want all three bands", body.PriorityBands)
+	}
+	high, medium, low := body.PriorityBands[0], body.PriorityBands[1], body.PriorityBands[2]
+	if high.Band != "high" || medium.Band != "medium" || low.Band != "low" {
+		t.Errorf("band order = %q, %q, %q, want high, medium, low", high.Band, medium.Band, low.Band)
+	}
+	if high.PriorityFrom != 80 || high.PriorityTo != 100 || high.Waiting != 2 || high.OldestWaitingMinutes != 41 || high.Stalled != 1 {
+		t.Errorf("high row = %+v, want 80..100 / 2 waiting / 41 min / 1 stalled", high)
+	}
+	if medium.PriorityFrom != 50 || medium.PriorityTo != 79 || medium.Waiting != 1 || medium.OldestWaitingMinutes != 22 {
+		t.Errorf("medium row = %+v, want 50..79 / 1 waiting / 22 min", medium)
+	}
+	if low.PriorityFrom != 0 || low.PriorityTo != 49 || low.Waiting != 3 || low.OldestWaitingMinutes != 5 || low.Stalled != 0 {
+		t.Errorf("low row = %+v, want 0..49 / 3 waiting / 5 min / 0 stalled", low)
+	}
+
+	// a view with no band waiting anything reads an empty list, never
+	// null — the read surface always gets a list
+	emptySpy := &supervisorWatchSpy{view: autonomous.SupervisorWatchStatus{
+		Mode:          autonomous.SupervisorWatchModeShadow,
+		Findings:      []*autonomous.SupervisorWatchFinding{},
+		PriorityBands: []autonomous.SupervisorWatchPriorityBand{},
+		Comparison:    autonomous.SupervisorWatchComparisonView{OnlyWatch: []string{}, OnlyScript: []string{}},
+	}}
+	rec = supervisorWatchGET(t, &Server{autonomousMgr: emptySpy})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("empty GET: want 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"priority_bands":[]`) {
+		t.Errorf("empty view must carry an empty band list, not null: %s", rec.Body)
+	}
+
+	// and the stats GET carries the same rows — both read endpoints
+	// serve the band stats, not only one of them
+	statsSpy := &supervisorWatchStatsSpy{stats: autonomous.SupervisorWatchStats{
+		Mode: "shadow",
+		PriorityBands: []autonomous.SupervisorWatchPriorityBand{
+			{Band: "high", PriorityFrom: 80, PriorityTo: 100, Waiting: 2, OldestWaitingMinutes: 41, Stalled: 1},
+			{Band: "low", PriorityFrom: 0, PriorityTo: 49, Waiting: 1, OldestWaitingMinutes: 5, Stalled: 0},
+		},
+	}}
+	rec = supervisorWatchStatsGET(&Server{autonomousMgr: statsSpy}, context.Background())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats GET: want 200, got %d", rec.Code)
+	}
+	for _, want := range []string{
+		`"priority_bands":[`,
+		`{"band":"high","priority_from":80,"priority_to":100,"waiting":2,"oldest_waiting_minutes":41,"stalled":1}`,
+		`{"band":"low","priority_from":0,"priority_to":49,"waiting":1,"oldest_waiting_minutes":5,"stalled":0}`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("stats body lost %s: %s", want, rec.Body)
+		}
+	}
+}
+
 // TestSupervisorWatchRESTModeInPayload — the mode in effect rides in the
 // payload, shadow and on both, and is what the payload says.
 func TestSupervisorWatchRESTModeInPayload(t *testing.T) {
