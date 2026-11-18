@@ -42,6 +42,13 @@ const (
 	// means a HOLD line or a similar phrase in the spec. Nothing starts a held
 	// Automaton until the operator releases the hold.
 	LaneFillReasonOperatorHold = "operator_hold"
+	// LaneFillReasonPlanCoverageBlocked: a needs_review candidate whose
+	// stored plan coverage record fails in block mode without a covering
+	// acknowledgment — the plan coverage gate refuses approval; lane fill
+	// never acknowledges on the operator's behalf, the remedy is an explicit
+	// AcknowledgePlanCoverage with a non-empty note, or a re-decompose with a
+	// covering plan.
+	LaneFillReasonPlanCoverageBlocked = "plan_coverage_blocked"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -293,7 +300,11 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 //  4. main_carries_work: the base branch already carries the work (only when
 //     check_main_carries is on);
 //  5. worktree_invalid: a recorded worktree that is missing, has no .git
-//     entry or is not registered (only when require_worktree is on).
+//     entry or is not registered (only when require_worktree is on);
+//  6. plan_coverage_blocked: a needs_review candidate whose stored
+//     plan coverage record fails the Approve gate in block mode with no
+//     covering acknowledgment (the coverage gate blocks approval; lane fill
+//     never acknowledges on the operator's behalf).
 //
 // Work that is not queued (running, finished, cancelled) is never refused.
 func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) (code, text string) {
@@ -328,6 +339,9 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 		if code, text := laneFillWorktreeRefusal(c); code != "" {
 			return code, text
 		}
+	}
+	if c.CoverageGateBlocked && NormalizePRDStatus(c.Status) == PRDNeedsReview {
+		return LaneFillReasonPlanCoverageBlocked, "the plan coverage gate blocks approval (stored record failing in block mode, no covering acknowledgment); remedy is to re-decompose with a covering plan or to acknowledge exactly this failure surface"
 	}
 	return "", ""
 }

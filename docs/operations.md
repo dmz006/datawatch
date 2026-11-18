@@ -202,6 +202,8 @@ The systemctl restart path is not changed; the policy only decides whether and w
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
+**Stop-sender attribution and its test.** At startup the daemon prints the previous run's stop cause (`previous shutdown: signal <name> from <command> <pid> at <time>`). When the kernel does not report the sender, the sender is found by scanning the process table. The test for that scan (`TestSignalChildProcScan`, in `internal/shutdowncause`) is hermetic: it scans only its own child processes, so an unrelated host process with a matching command line, such as a service-stop command on a shared machine, can no longer be picked as the sender and fail the test. If the test fails with a sender that is not its own child, treat it as a real attribution defect. Do not retry it and do not blame load. How to run it: see [Running the process-scan tests](howto/testing-against-a-running-daemon.md#running-the-process-scan-tests).
+
 #### Processes a session leaves behind
 
 When any worker session ends (finished, cancelled, failed or killed), the daemon looks for processes the worker started and left running (test runs, servers, helper scripts) and ends them. This is automatic; there is no setting to turn it on.
@@ -393,6 +395,8 @@ The `--config` flag works with all session subcommands:
 ```bash
 datawatch session list --config /path/to/config.yaml
 ```
+
+**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 ### Command Library
 
@@ -973,7 +977,7 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
-**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
+**Failure escalation and held tasks.** A failing task moves to the next worker on its ladder after each failed attempt. After `max_failures` failed attempts (default 3) it is held in `review_needed` for operator review instead of failing outright; `enabled: false` restores the retry-then-fail behaviour. A failure that no other attempt can fix is held without the rest of the budget: when the verifier fails the task because no files changed and the task writes nothing (read-only, or no planned files), when the task's verification script is missing from the worktree, or when the same failure summary (case and surrounding whitespace apart) has already failed twice. With the policy on, that failure records the attempt carrying the operator-readable reason (`no_retry_reason` on the attempt and on the held-task entry of the Automaton status view; `FailureReason` source `no-retry-hold`), holds the task in `review_needed` at once with no further attempt, and raises one error-level alert titled *Automaton task needs review (no retry)* that names the Automaton, the task, the reason, the last worker and the ways to act: change the task so it can be verified (give it files to write, a verification script, or a changeable spec), or cancel it. It resolves through the same `resolve_task_review` actions as a retry-limit hold, and with `enabled: false` the check does not run at all — every failure takes the ordinary retry, then fail path. Each field resolves task override, then Automaton override, then the daemon default (`autonomous.failure_escalation.{enabled,max_failures,steps}`). A failed task's worst case is now several cheap starts plus the strong ones, not up to three full cold starts (a task session's median starting context is around 85,000 tokens, of which the MCP tool definitions are about 36,000), and the attempt order, the `review_needed` hold and its report are unchanged. Attempt cost is set in the same block, daemon-wide only: `autonomous.first_attempt` maps a task kind (`implementation`, `docs`, `note`, `final_gate`) to the backend and model that kind's first attempts run on (unset kinds keep the normal resolution), `autonomous.first_attempt_escalate_after_failures` (default 1, range 0–20) is how many failures before the pair stops applying, and `autonomous.retry_resume_max_context_tokens` (default 150000, range 0–2000000) caps how much prior context a retry may resume (0 = every retry is a fresh session). When a task's attempt failed verification and its worker session is still open — `claude-code` is the only backend that can resume — the next attempt can resume that session and receive one line (a retry marker plus the failure summary, capped at 4,000 characters) instead of a fresh session with the full retry prompt; each attempt record after the first states whether it resumed and why, and a held task's review entry shows the last attempt's values (`last_resumed`, `last_resume_reason`). One shared validator refuses an unknown kind, a model-less entry for a backend that needs one, and out-of-range numbers, naming the key each time. A model-less `claude-code` entry is accepted: at launch, an attempt that resolves to no model on that backend starts on the daemon default model (`sonnet`, or `haiku` for a mechanical task type) instead of the backend's built-in default, and this same explicit-model rule applies to verifiers, guardrail judges (an unconfigured claude-code judge now starts on `sonnet` instead of being blocked) and planners — see [howto/explicit-model-policy.md](howto/explicit-model-policy.md). The operator guide is [howto/failure-escalation.md](howto/failure-escalation.md).
 
 | Method | How |
 |--------|-----|
@@ -990,20 +994,20 @@ All three keys can be read and set through the autonomous config on REST, MCP (`
 
 ### Worker session profiles
 
-Worker, verifier and judge sessions **start small**: each starts with a starting context and a tool set **chosen for the job it is about to do**, from a **profile** — which [MCP servers](mcp.md) the session can use (none, the datawatch server only, or a named list), which tools it gets (all, or an allow-list), whether skills are on, the level of starting context (minimal, digest or full — the task's spec and constraints, the project's rules at that level, the daemon's own platform context), and the model and effort the session runs on. Four built-in profiles ship (`minimal`, `digest`, `full`, `datawatch-tools`), and every role and task kind ships a default — the **planner on `full`** (its own start is unchanged), the **worker, the verifier and implementation, docs and final-gate tasks on `digest`**, and the **judge and `note`-kind tasks on `minimal`** — so every job gets the smallest that works, with `full` one setting away on the task, the Automaton, the project or daemon-wide.
+Worker, verifier and judge sessions **start small**: each starts with a starting context and a tool set **chosen for the job it is about to do**, from a **profile** — which [MCP servers](mcp.md) the session can use (none, the datawatch server only, or a named list), which tools it gets (all, or an allow-list), whether skills are on, the level of starting context (minimal, digest or full — the task's spec and constraints, the project's rules at that level, the daemon's own platform context), and the model and effort the session runs on. Four built-in profiles ship (`minimal`, `digest`, `full`, `datawatch-tools`), and every role, task kind and session kind ships a default — the **planner (role and session kind) on `full`**, the **worker, the verifier and implementation, docs and final-gate tasks, and the operator_interactive sessions on `digest`**, the **supervisor session on `datawatch-tools`**, and the **judge and `note`-kind tasks, and the scheduled_command, one_shot and review sessions on `minimal`** — so every job gets the smallest that works, with `full` one setting away on the task, the Automaton, the project or daemon-wide.
 
 **In the code, tested:** the profiles and their fields, the default table, the config keys with their refusals on set, the `worker_profile` field on a task and an Automaton, the planner's spec-line marker, the resolution rule itself (by name, task → Automaton → project → daemon → kind → role, including the unknown-name fallback and its recorded decision), the deterministic starting-context builder (fixed section order — role, profile, constraints, rules digest at `digest` and above, full rules at `full`, task last — byte-identical for the same role and profile, written as `worker-starting-context.md` and appended to the launch's prompt), the per-session MCP config writer (`worker-mcp.json` in the session's working directory: mode `0600`, atomic, deterministic bytes; a `list` entry missing from the daemon's own configuration fails and names every missing one before anything is written), the profile's application in the Claude Code launcher (that one launch gets the pinned MCP config, the tool allow-list, the skills switch and the starting context; a launch with no profile is byte-identical to before), and the "not applied" record (one outcome per field on the session's start record — mcp, tools, skills, context, model, effort, in that order — each field a backend cannot honour marked with the reason "backend cannot honour this field", while the session still gets everything its task needs). **Not wired yet: at the Automaton's own session launches.** They do not call the rule or pass a profile to the start — worker, verifier and judge sessions still start with the full harness — and nothing at launch consumes the daemon-wide `autonomous.worker_profile` name, the role and kind defaults under `autonomous.worker_profile_defaults` (validated on set; the resolution uses your values where you have set them once the start work wires the launches), or the fallback's recorded decision. The attempt record already carries the profile name the worker started under and the size of its starting context (an attempt under no named profile carries both empty and records no size; today that size is the estimate from the generated context, source `estimated`, and `reported` when a runner reports it), read from the [cost report](howto/cost-report.md), the `worker_startup` stats block and the usage advice line. Once that wiring lands: a retry, a ladder hop and a verifier on the same role-profile launch under the same resolved profile and share the deterministic prefix the model provider's prompt cache reuses. A session you start yourself is exactly as before — this is worker, verifier and judge sessions only — and what a task finishes is unchanged. The baseline this change works against, measured by the operator on 2026-11-08: a task session starts at a median of about **85,000 tokens** of context (13 turns median, 8,000 output tokens), a bare `claude -p` in a task-like folder is about **64,000 by default and 28,000 with the MCP servers off**, so the MCP tool definitions are about **36,000 tokens, roughly 56%, of every session start**.
 
 | Method | How |
 |--------|-----|
 | **YAML** | the profile block under `autonomous.` in `~/.datawatch/config.yaml`: `worker_profiles` (the profiles you define, keyed by name), `worker_profile_defaults` for `role` and `kind`, and `worker_profile` (the daemon-wide name) |
-| **Web UI** | the **Worker session profiles** group in Settings: the daemon-wide name (empty clears it), a select per role and per task kind, and the user profiles as one JSON object (empty clears them) — each field saved when it changes, refused with its reason if invalid; the row per role and task kind with the profile in force, its fields and the tier — task / Automaton / project / daemon — that set them lands with the sessions' start work |
+| **Web UI** | the **Worker session profiles** group in Settings: the daemon-wide name (empty clears it), a select per role, task kind and session kind, and the user profiles as one JSON object (empty clears them) — each field saved when it changes, refused with its reason if invalid; the New Session form's **Worker profile** select — built-ins plus your profiles, or Auto — names the profile a specific start should take and posts it to `POST /api/sessions/start` as `worker_profile_name`; the row per role, task kind and session kind with the profile in force, its fields and the tier — task / Automaton / project / daemon — that set them lands with the sessions' start work |
 | **REST API** | `PUT /api/config` with the `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile` keys, read back on `GET /api/config`; `POST /api/autonomous/prds/{id}/set_worker_profile` sets one Automaton's profile name (a name neither built in nor in `autonomous.worker_profiles` is refused, empty clears the override) |
 | **Comm channel** | `configure autonomous.worker_profiles=<json>`, `configure autonomous.worker_profile_defaults=<json>` and `configure autonomous.worker_profile=<name>`; `configure help` and `configure list` name the three keys, and a bare key answers with its one-line help; the profile-in-force read lands with the sessions' start work |
-| **CLI** | `datawatch config set` on `worker_profile`, `worker_profiles`, `worker_profile_defaults.role` and `worker_profile_defaults.kind`, read back with `datawatch config get` on the same keys — checked against a local copy of the config before anything is sent, and any other `worker_profile*` key is refused as unknown; the profile-in-force reads per role and task kind land with the sessions' start work |
+| **CLI** | `datawatch config set` on `worker_profile`, `worker_profiles`, `worker_profile_defaults.role` and `worker_profile_defaults.kind` (`kind` takes task-kind and session-kind keys), read back with `datawatch config get` on the same keys — checked against a local copy of the config before anything is sent, and any other `worker_profile*` key is refused as unknown; the profile-in-force reads per role, task kind and session kind land with the sessions' start work |
 | **MCP** | `config_set` with the three keys; `get_config section=autonomous` reads them as set; `worker_profile_status` reports the built-in names, the built-in role and kind defaults and the latest start-up averages; `autonomous_prd_set_worker_profile` sets one Automaton's profile; the profile in force with its tier lands with the sessions' start work |
 
-Resolution is **by profile name, in this order** — the first name that is set wins: **task → Automaton → project → daemon-wide** (the `autonomous.worker_profile` setting, if you set one) → the **task-kind default** → the **role default** (the `role` and `kind` keys of `autonomous.worker_profile_defaults` when you have set them, the built-in defaults otherwise); a tier that is set but empty is just unset, and a profile you define once is used by every role, task kind or task that names it. A profile name the daemon does not know is refused on set, naming the valid ones; the one place the rule itself handles a name — a name set on a task or an Automaton that is not present when the rule runs — applies the role's default and records the decision (requested, applied, reason).
+Resolution is **by profile name, in this order** — the first name that is set wins: **task → Automaton → project → daemon-wide** (the `autonomous.worker_profile` setting, if you set one) → the **kind default (task kind or session kind)** → the **role default** (the `role` and `kind` keys of `autonomous.worker_profile_defaults` when you have set them, the built-in defaults otherwise); a tier that is set but empty is just unset, and a profile you define once is used by every role, task kind, session kind or task that names it. A session you start resolves the same rule at its own layer: a name for that start (the New Session form's **Worker profile** select, or `worker_profile_name` on `POST /api/sessions/start`) → the daemon-wide name → the session-kind default. A profile name the daemon does not know is refused on set, naming the valid ones; the one place the rule itself handles a name — a name set on a task or an Automaton that is not present when the rule runs — applies the role's default and records the decision (requested, applied, reason).
 
 The rule is implemented and tested in the code, and the launcher's application of a profile is too (the pinned `worker-mcp.json`, the tool allow-list, the skills switch, the deterministic starting context, and the per-field "not applied" record); the set and the read of the settings are wired on all six surfaces above, each running the same refusals on set. **What the sessions' own start work still lands is the Automaton's own launches calling the rule and passing the resolved profile to the start**: worker, verifier and judge sessions still start with the full harness, and a launch resolves this way once that work is in. The `worker_profile: <name>` line the planner writes into a task's spec sets the name on the **task's own field** (a value already on that field is never overridden by a spec line); because the task tier outranks the ones below it, that line **does** override a profile the Automaton, the project or the daemon-wide setting carries, for that one task only — the Automaton and its other tasks keep their profiles. The set-side keys are config plumbing that exists today and can be set now. The six surfaces above are the ones a datawatch user sets and reads this on, right beside every other autonomous setting; the per-surface tool names and their read-backs in the table, the read-back of the profile in force per role and per task kind with the tier (task / Automaton / project / daemon) that set it, and the field values of the four built-ins as they apply on your backends are operator-review items on first sight (a role under-equipped on your fleet gets a `worker_profile: <name>` spec line on one task now, or a change to `autonomous.worker_profile_defaults` for the rest once the start work lands). Re-measure the starting context on your own fleet against the 85,000-token baseline before you price anything. The operator guide is [howto/worker-session-profiles.md](howto/worker-session-profiles.md), and the reference is in [config-reference.yaml](config-reference.yaml) (the `autonomous.` block) and [implementation.md](implementation.md) (the profile-settings section).
 
@@ -1011,7 +1015,7 @@ The rule is implemented and tested in the code, and the launcher's application o
 
 A task that fails because the machinery around it failed, not because of its own work, is retried on a back-off schedule and the failure is not counted against the task. Four failure classes qualify: `spawn_error` (the worker could not be started), `storage_write` (the device is full, the quota is used up or the file system is read-only), `session_killed_before_delivery` (the worker session ended before the task reached it) and `daemon_restart` (the daemon restarted while the task ran). A session that never started keeps its own start budget and is never classified here, and a throttle from the model provider is never retried by this feature. By default a task gets 3 tries with delays of 1, 5 and 9 minutes (15 minutes in all). While it waits, the task shows `infrastructure retry n of max at <time> (<class>)`, and the retry is recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton.
 
-When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`). A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
+When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked with the chain's root and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`); the general rule is wider — any dependent that failed only behind its dependency is requeued by the executor in the same step that the dependency reaches `completed`, whether that failure was an infrastructure one or a content or scope one, so dependents are never reset by hand when a retried dependency completes. A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
 
 | Method | How |
 |--------|-----|
@@ -1221,6 +1225,39 @@ given) is not: it merely ends the task's work, the blocked Automaton keeps
 its hold, and a cancellation made while other tasks of the Automaton are
 still open also leaves the hold in place.
 
+**The launcher's own files.** When the worker-session launcher starts a
+session it writes its own files into the project root — `worker-mcp.json`
+and `worker-starting-context.md` — and appends its marked sections to
+`AGENT.md` (or the project's `CLAUDE.md`) while the session runs. They are
+launcher artifacts, not the task's work:
+
+- **The read-only check never counts them.** An untracked root copy of
+  `worker-mcp.json` or `worker-starting-context.md` does not fail the
+  read-only tree check or hold the task, and the launcher's own files are
+  not treated as evidence that a read-only task failed to produce its
+  declared report. A read-only task in a directory that also hosts
+  worker-launcher sessions needs no `.git/info/exclude` or `.gitignore`
+  entry for them, and there is no opt-out to add one. The match is the
+  exact name at the repository root, though: a launcher-named file you
+  track, or a same-named file in a subfolder, is still a change the task
+  made.
+- **The snapshot and the staging skip them.** The attempt snapshot and the
+  automatic-commit staging skip both root names by name, whether or not
+  the repository tracks them (skip reason `launcher`).
+- **Before the branch merges, the daemon settles them.** A rules file
+  whose committed diff is only the daemon's marked sections is restored to
+  the base content (a real edit in the same file is stripped around and
+  kept), and a committed root launcher file is removed only when the merge
+  target has no such file at all — a launcher-named file that belongs to
+  the target state, or a same-named file in a subfolder, is kept.
+
+The launcher files themselves — their shape, their modes, and where the
+launcher writes them — are documented in the
+[worker-session-profiles guide](howto/worker-session-profiles.md); the
+checks and cleanups that act on them are documented in the
+[uncommitted-work check guide](howto/automaton-uncommitted-work.md) and the
+[parallel-tasks guide](howto/automaton-parallel-tasks.md).
+
 
 ### Model routing
 
@@ -1264,7 +1301,7 @@ A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel
 
 ### Generated artefacts
 
-The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
+The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. When the record carries a ledger-backed cost summary, the gate report gains a `Cost` section: the sessions, the token and tool-call counts, the span of time, and — when one exists — the API-equivalent estimate with its label, plus the ledger's window and unknown-spend notes. Generated artefacts never carry machine-specific names: the session ids are printed bare (the `<host>-` or `<host>:` prefix stripped, the segment after the last separator kept) and the ledger notes are scrubbed (the local hostname replaced by `host`, absolute paths reduced to their final element). **Still to review (operator):** reports written before that stripping — on disk, on a branch or in git history — may still carry the private hostname; regenerating now writes the bare form, but a file a person edited is never overwritten and committed history keeps what was written. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
 
 ---
 
@@ -1335,7 +1372,7 @@ The model-pull consent gate decides which models may be downloaded — both the 
 
 Everything else is refused, and the refusal names what to set (`autonomous.model_pull_consent.models` or `autonomous.model_pull_consent.publishers`). A listed entry with `allowed: false` is an explicit refusal and its `note` travels with the refusal, for example `refused: model "big-model-65b" is denied by operator — too large for the pool`. Matching is case-insensitive and ignores the `:tag` suffix: a listed `gpt-oss` matches a pull of `gpt-oss:20b`. The policy is read at pull time, so changes apply without a restart.
 
-**Pulls and node certificates.** Consent decides what may be pulled; it does not decide how the node is trusted. A pull to an `https://` node does not check the node's certificate unless that node has `verify_tls` on. With it on, a certificate that does not verify against the system roots fails the pull with an error naming the node and the problem, and the node's `tls_ca_file` and `tls_cert_fingerprint` are not used for pulls. Review which nodes have it on before relying on it, and see [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+**Pulls and node certificates.** Consent decides what may be pulled; it does not decide how the node is trusted. A pull to an `https://` node always checks the node's certificate: it must verify against the system roots, plus the node's `tls_ca_file` when set, and match its `tls_cert_fingerprint` when pinned. There is no per-node off switch for pull verification — `verify_tls` is kept for configuration compatibility and `tls_insecure_skip_verify` (probes only) never applies to a pull. For a node whose certificate the system does not trust, set `tls_ca_file` or `tls_cert_fingerprint` on the node; see [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
 
 **The set is complete.** Every write surface *replaces* the stored policy, it does not append: read what you have, compose the whole new list, write it back.
 
@@ -2846,6 +2883,150 @@ protected paths decision, a run that could not start, or an updated Automaton
 waiting for review). See
 [howto/automation-dependency-update.md](howto/automation-dependency-update.md).
 
+### Build-host toolchain freshness check
+
+`scripts/check-toolchain.sh` compares the development tools installed on the
+machine that builds datawatch with the newest stable release: Go, `gosec`,
+`govulncheck`, `gitleaks`, `golangci-lint`, `trivy` and `goreleaser`. It is
+development tooling for the build host, not a daemon feature: the daemon never
+runs it, it has no setting in `config.yaml` or Settings, and it has no REST,
+MCP, CLI, chat or web app surface. It is separate from the weekly dependency
+update above, which updates the repository's dependencies and never touches the
+tools on the build host.
+
+Run it by hand: `make check-toolchain` (or `bash scripts/check-toolchain.sh`). The tool list is
+`toolchain.yaml` at the repository root (name, version command, a `sed`
+expression that reads the version, and where the newest version comes from:
+the go.dev download feed, the latest GitHub release, or the Go module proxy).
+The Go target is the `go` directive of `go.mod`, read each time, so the check
+follows the repository's Go line.
+
+It is read-only: it runs only each tool's version command, makes HTTPS reads
+(`go.dev`, `api.github.com`, `proxy.golang.org`; an optional `GITHUB_TOKEN` is
+sent to `api.github.com` only) and writes nothing outside a temporary folder it
+removes on exit. It prints a table of tool, installed version, newest version
+and status, then one `note:` line on standard error per source it could not
+read.
+
+| Status | Meaning |
+|---|---|
+| `CURRENT` | Installed equals the newest, or is newer. |
+| `PATCH-BEHIND` | A tool other than Go, same major and minor, older patch. Informational. |
+| `BEHIND` | A tool other than Go, a minor or major behind. |
+| `GO-BEHIND` | Go is older than the newest stable patch of the `go.mod` line. |
+| `MISSING` | The tool is not on `PATH`. Reported, never fatal. |
+| `UNREACHABLE` | The newest or the installed version could not be read or parsed. |
+
+Exit code `1` when Go is `GO-BEHIND` or any tool is `BEHIND`; `0` in every
+other case, including `UNREACHABLE` and `MISSING`. A network error never makes
+the check fail, so an offline host looks clean: read the table, not only the
+exit code. `BEHIND` covers every listed tool, not only the security scanners,
+and one minor behind counts for a `0.x` tool such as `trivy`.
+
+A tool built from source without version stamping (it prints `Version: dev` or
+`version is set by build process`) cannot be compared and shows `UNREACHABLE`
+with a note naming its version command. Rebuild it from a tagged release with
+its version stamped, or install a release binary.
+
+`scripts/check-toolchain_test.sh` tests it without the network or the real
+tools: a `TOOLCHAIN_FIXTURE_DIR` folder supplies the newest versions, fake tool
+scripts on a private `PATH` supply the installed ones, and the six scenarios
+(Go one patch behind, all current, sources unreachable, a tool missing, a minor
+behind, a patch behind) each assert the printed row and the exit code. Run it
+with `bash scripts/check-toolchain_test.sh` after editing the script or
+`toolchain.yaml`.
+
+`make check-toolchain` runs the same script and belongs to the local pre-tag
+run; `make build`, `make lint`, the merge gates and CI do not call it, so
+nothing enforces it until someone runs it. Run it daily from cron, a systemd
+timer or a `datawatch schedule spawn` schedule, and update Go as described in
+[howto/build-host-toolchain.md](howto/build-host-toolchain.md).
+Operator review still needed: whether `BEHIND` should fail for every listed tool
+or only for the security scanners and Go, and whether it should join the merge
+helper. Reference:
+[howto/toolchain-freshness-check.md](howto/toolchain-freshness-check.md).
+
+### Whole-tree local-environment leak check
+
+`scripts/check-no-local-leaks.sh` enforces the `AGENT.md` rule "No
+local-environment leaks in git" across the whole tracked tree at once: a
+value tied to one operator's machine — a private or internal IP address, an
+absolute home-directory path, a personal email address, or a machine-specific
+token the operator lists in the local patterns file — must not land in a
+tracked file. It is development tooling for the repository, not a daemon
+feature: the daemon never runs it, it has no setting in `config.yaml` or
+Settings, and it has no REST, MCP, CLI, chat or web app surface.
+
+It scans four classes — `address` (private/internal/link-local IPv4, ULA and
+tailnet IPv6, MagicDNS hostnames), `home` (absolute home paths for any user),
+`email` (anything not on `scripts/leak-check.allowed-emails`) and `local`
+(fixed strings from the gitignored `.leak-patterns.local` at the repository
+root, seeded with `make leak-patterns-init`). The generic patterns are
+configuration under `scripts/` and are written self-clean so the pattern file
+never matches itself. In a git work tree the tracked files are scanned; binary
+files and paths in `scripts/leak-check.exclude` are skipped. An absent or
+empty `.leak-patterns.local` prints `local patterns: skipped` and carries on —
+never an error.
+
+The report is CI-safe by design: one line per finding, `path:line: class`,
+then a per-class count summary, and nothing else — the matched text is never
+printed, so the output is safe in CI logs or a commit message. Exit `0` clean,
+`1` findings, `2` usage or configuration error. Run it with `make check-leaks`
+or `bash scripts/check-no-local-leaks.sh [root]`; `make check-leaks` also runs the generated reports folder scan (`make check-generated-reports-leaks`), which scans every tracked and untracked report under `docs/plans/reports` with the same classes — the untracked surface the tree check cannot see — and the report generators already strip the host prefix from session ids they render (details in the reference).
+
+It is wired into three gates: the pre-commit chain
+(`hooks/pre-commit-leak-check`, the middle step of the
+`hooks/pre-commit-docs-sync` chain; the commit is refused on any finding and
+there is no escape hatch), `make lint` (via `check-leaks`), and
+`scripts/release-smoke.sh` before a release is cut (skippable only with the
+operator-owned `DW_SKIP_LOCAL_LEAKS_CHECK=1`). A finding is fixed by replacing
+the value with a placeholder, moving it to operator config or an environment
+variable, or scrubbing peer/node names with `scripts/scrub-peer-names.sh`
+(dry-run emits `path: N` counts only, never the names). Commit messages, issue
+and PR comment text are outside the tree and are not scanned; the narrower
+last-commit diff check covers that surface.
+
+Operator review still needed: keep `.leak-patterns.local` seeded on every
+machine that builds or commits the repository — until it exists the `local`
+class is silently inactive there — and keep the pre-commit chain installed so
+the gate is not only `make lint`. The generated reports folder scan runs only
+as part of `make check-leaks`/`make lint`: the pre-commit hook and the
+release smoke run the whole-tree check alone, so run `make lint` (or
+`make check-generated-reports-leaks`) before publishing or citing a generated
+report, and discard stale reports under `docs/plans/reports` rather than
+letting them accumulate. Reference:
+[howto/local-env-leak-check.md](howto/local-env-leak-check.md).
+
+### gofmt format check
+
+`scripts/check-gofmt.sh` audits the Go tree before it is formatted, not after.
+
+- **What it checks.** `gofmt -l cmd internal` lists the Go files under `cmd/`
+  and `internal/` that are not gofmt-formatted. Files with a `Code generated`
+  header (first five lines) and anything under a `testdata/` or `vendor/`
+  path are excluded from the report.
+- **Outcome.** Any remaining offender is listed with its fix command
+  (`gofmt -w <file>`) and the script exits 1. A clean tree prints OK and
+  exits 0. `gofmt` missing from `PATH` is a FAIL telling the operator to
+  install the Go toolchain.
+- **Read-only.** The script never writes or formats; fixing is separate
+  (`gofmt -w <file>`, or `make fmt` for the whole tree).
+- **Where it runs.** As the `check-gofmt` target in the `Makefile`, and as
+  one of the checks in the `lint` target (after `check-plans-links` and the
+  other `check-*` guards, before `golangci-lint run`). `make help` lists it
+  among the local pre-tag checks that run on the build host before a tag is
+  pushed. As a CI step: the `test + lint` job in `.github/workflows/ci.yaml`
+  runs `bash scripts/check-gofmt.sh` on every push to `main` and every pull
+  request. It is not part of `make test` (no test script in `tests/` covers
+  it yet).
+- **Not configurable.** The audited trees (`cmd`, `internal`) and the
+  exclusions are fixed in the script, not in a daemon setting. No REST, MCP,
+  CLI, chat or PWA surface exists for it.
+
+**Operator review:** the check only audits `cmd/` and `internal/`;
+extend the `gofmt -l` argument list if new top-level trees appear. See
+[howto/gofmt-check.md](howto/gofmt-check.md).
+
 ---
 
 ## 8. Web UI Features
@@ -3404,7 +3585,7 @@ See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup
 3. **The Automata tab's Automation sub-tab.** The re-render path covers it in this tree, but confirm it live if you rely on it — it was the point least confirmed in the operator's 2026-11-08 report.
 4. **Unreachable remote.** If a tab shows an error or no data after a dropdown change, the remote itself is the first thing to suspect — the dropdown marks a down peer with a "(unreachable)" suffix (still selectable) and the federated error panel offers a "Back to <local hostname>" button rather than leaving the previous server's data behind. While a remote is the active server, one-tap returns to local are available: the clickable 🌐 <name> indicator on the Sessions toolbar (it appears while the remote is active and clicking it returns to local; it sits on the Tree/History line below the one-line toolbar, which is behind the header's 🔍 search-&-filters toggle — turn it on if the line is not visible; it is the `.server-indicator` chip in `renderSessionsView`, pinned in `internal/server/web/app-select-server-controls.test.js`) and the **Back to <local hostname>** button on that server's row in Settings → Comms → Remote Servers.
 5. **The remembered dropdown choice.** This is also client-side PWA behaviour, not a daemon contract (save on every real selection and the boot restore in `internal/server/web/app.js` — `_serverChoiceSave` / `_serverChoiceSettleBoot`, pinned in `internal/server/web/app-header-server-dropdown.test.js` and `internal/server/web/app-server-choice-persist.test.js`), and no live verification had been run for it as of this writing. On the build in use, on a two-host setup: pick a federated host, reload the page, and confirm the tab opens on that host (not **All servers**, not **This server**) with one fetch round of boot traffic against it — no second refresh round; pick **All servers** and repeat; then remove or disable the peer while its choice is saved and confirm the PWA starts on **All servers** and does not keep re-offering the stale peer on the next reload. In a browser profile with local storage blocked, confirm the choice still follows you page-to-page within the visit but does not survive a reload.
-6. **Mobile parity for the remembered choice.** The PWA now persists the header choice per browser (the local-storage key `dw_server_choice`), where the Android and iOS clients do not yet; per this project's Mobile-Parity Rule an operator-visible PWA change needs a `datawatch-app` issue or comment — none is referenced in the tree as of this writing, so the operator should file or comment it before the mobile clients ship the dropdown themselves.
+6. **Mobile parity for the remembered choice.** The PWA now persists the header choice per browser (the local-storage key `dw_server_choice`), where the Android and iOS clients do not yet; per this project's Mobile-Parity Rule an operator-visible PWA change needs a `datawatch-app` issue or comment — tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482) ("Remember the header server dropdown choice"), which already carries the mobile acceptance criteria: remember the chosen server entry (All, this server, or a peer name) across app restarts, restore it before the first data load, fall back to All when the saved peer is no longer in the server list, no new strings and no locale change. If a fix or follow-up to that behaviour ships in datawatch (e.g. the settle-bound fix below), comment #482 with the version, what changed, and the refreshed acceptance criteria before release; the mobile clients must not ship the dropdown from memory of the PWA before #482 is closed.
 
 ### Configure via Chat Commands
 
@@ -3848,6 +4029,30 @@ When the daemon restarts, running sessions in tmux survive but in-memory backend
 
 ---
 
+## Claude model defaults
+
+Every Claude Code command datawatch launches carries an explicit model —
+there is no fall-through to the operator's Claude account default and no
+silent upgrade. When no launch layer names a model, the daemon names one:
+
+- **`sonnet`** — the daemon default for a worker, verifier, judge, or
+  planner launch whose model is empty after every resolution layer.
+- **`haiku`** — the daemon's model for autonomous mechanical work: docs,
+  changelogs, parity-issue drafts, bounded load steps, version notes, locale
+  strings, and formatting cleanup.
+
+An Opus-class model runs only when the operator explicitly names one at the
+session, task, story, PRD, automation, or config-line level (see [Autonomous
+PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
+planner pairs). A Claude Code launch whose model is still empty after every
+layer is refused up front — before any tracker, session record, or tmux pane
+is created — with the reason `claude-code launch refused: no explicit model
+set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try
+again. The session record holds exactly the value passed to the CLI as
+`--model`, so you can verify what ran from the session list, PWA, or REST.
+See the [Claude model defaults how-to](howto/claude-model-defaults.md) and
+the [explicit-model policy](howto/explicit-model-policy.md).
+
 ## Autonomous PRD LLM Configuration
 
 Autonomous PRDs use two separate backends:
@@ -4124,6 +4329,15 @@ paths:
   component, e.g. `executor.go`) passes when a file with that base name exists
   *anywhere* under the project tree — it does not need to sit at a specific
   directory.
+- **A file name is one piece, up to the first space.** Names are extracted
+  from the spec and the plan as single tokens, so a path broken across a line
+  or written as a truncated fragment (`docs/plans/2026-11-16-re`) is read as a
+  name of its own. A fragment is a different name from the full path: the
+  file-list matching is by exact name, so declaring the full path elsewhere in
+  the plan does not satisfy it, and unless something creates the fragment as
+  written it is still reported. This is why both planning prompts carry the
+  fixed full-file-path rule (see
+  [the decompose-lint how-to](howto/automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too)).
 - **Prose is not a file.** Tokens without a known file extension, dotted code
   identifiers (`json.Unmarshal`, `GuardrailVerdict.Issues`) and
   slash-separated prose lists (`absent/null/empty`, `task/story/PRD`) are not
@@ -4203,6 +4417,10 @@ in the panel, but Approve is enabled and the PRD moves on — the coverage gap i
 informational. In `block` mode the same report locks Approve: the panel shows
 the failing surface and an **Acknowledge** control instead of letting Approve
 through. `off` behaves like `warn` but the report is purely for the record.
+Lane fill honours the same lock: a `needs_review` Automaton whose stored
+record fails in `block` mode without a covering acknowledgment is refused the
+ready slot as `plan_coverage_blocked` — it is not started and left stuck at the
+gate, and lane fill never acknowledges on the operator's behalf.
 
 **Acknowledging a failing report (the `block`-mode override).** To unblock
 Approve without fixing the plan, an operator acknowledges the *exact* failing
@@ -5123,7 +5341,7 @@ Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
 `PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
 that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
 
-**How the checks run git.** The file drift check and this check run git read-only (`diff`, `log`) with `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a program that a project's own git configuration names (a file-system monitor, a hooks directory or an external diff program) is never started by the check. A project folder that is empty, relative or starts with a dash is refused (`invalid git directory`) and git is not run; that task gets no finding from the check. There is no setting for this and the modes above are unchanged. Operator review: a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git).
+**How the checks run git.** The file drift check and this check run git read-only (`diff`, `log`) with `-c core.fsmonitor=false`, `-c core.hooksPath=` and `--no-optional-locks`, and `git diff` also gets `--no-ext-diff`, so a program that a project's own git configuration names (a file-system monitor, a hooks directory or an external diff program) is never started by the check. A project folder that is empty, contains a NUL byte, is relative, starts with a dash or is not an existing directory is refused (`invalid git directory`) and git is not run; that task gets no finding from the check. There is no setting for this and the modes above are unchanged. Operator review: a project that relied on a custom `core.fsmonitor` or diff program to change what the check sees now gets plain git state. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git).
 
 ### Reading and writing it
 
@@ -5161,6 +5379,18 @@ A running or completed Automaton still refuses these edits.
 Automaton moves the Automaton back to `running`. A task added while the
 Automaton was failed does not start by itself: it runs once a reset has
 reopened the Automaton.
+
+**Dependents that failed behind a recovering dependency need no manual
+reset.** When a task reaches `completed`, the executor requeues every
+dependent whose only failure was that dependency — whether the dependency's
+failure was an infrastructure one or a content or scope one — in the same
+step. A manual `reset_task` on such dependents is only for dependents that
+failed for their own reasons, or that still wait on another dependency that
+is failed, cancelled, blocked or held. While the Automaton is itself
+`held` (for example the root parked for its infrastructure-retry review),
+this requeue is deferred until the Automaton is running again and the
+dependency is no longer failed; the hold is resolved by reviewing the root,
+never by resetting the dependent.
 
 ### Recipe: a failure caused only by a final gate or a small formatting check
 
@@ -5595,7 +5825,8 @@ commit.
      elsewhere in the same tree are never swept in. If the session has
      no write scope, only the files changed during that run are staged,
      and a log warning names them. The protection rules, the
-     `autonomous.snapshot_never_stage` patterns and the task's
+     `autonomous.snapshot_never_stage` patterns (including the launcher-file
+     and daemon-section exclusions) and the task's
      `skipped_snapshot_paths` skip record are documented in
      [howto/autonomous.md](howto/autonomous.md).
 
@@ -6723,7 +6954,9 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 | Comm channel | `autonomous lane-fill [limit]` | `configure autonomous.lane_fill.mode=on` | `autonomous set-lane-preference <prd-id> gpu\|claude\|any` |
 | PWA | Automata tab, Automation sub-tab, the **Lane fill** card (reloads every 5 seconds) | Settings → General → Autonomous, the Lane fill fields | Automaton settings form, **Lane preference** select |
 
-**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks eight rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `operator_hold` (an operator put the Automaton on hold; release it to clear), `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks nine rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `operator_hold` (an operator put the Automaton on hold; release it to clear), `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment; lane fill refuses it up front, takes the next eligible Automaton instead, and never acknowledges on the operator's behalf — the only remedies are a re-decompose with a plan that covers the spec or an explicit acknowledgment of exactly that failing surface (`AcknowledgePlanCoverage`); see the [plan requirement coverage gate](#plan-requirement-coverage-gate-autonomousplan_coverage_check) above). A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it and the lane's own idle alert does not fire either: a lane whose whole waiting queue is refused shows the `blocked <id>: <reason>` line as its newest decision and keeps no idle alert — that is the refusal rules working (for example, a lane left idle by a single
+`plan_coverage_blocked` Automaton), not a stuck lane; a lane that also has an
+eligible Automaton still starts it on the next poll. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane counts.** With `lane_counts_from_caps` on, the number of lanes of a type follows the LLM concurrency caps, the same ones the capacity pools use: a Claude backend capped at one session gets one Claude lane however high `claude_lanes` is. The configured count is kept when an enabled entry on that backend is unlimited, when no enabled entry runs that backend, or when the configured count is `0`. The status `lane_counts` object shows `configured`, `effective` and `source` (`llm_caps` or `config`); the CLI prints `Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`. Raise the cap on the LLM entry to get more lanes.
 
@@ -6737,7 +6970,7 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 
 **What lane fill never does.** It never merges finished work. It never judges design or difficulty. It never holds GPU work because of Claude usage limits, since GPU lanes cost no Claude usage and the planner does not read usage or budget. It never starts an Automaton that is held (a `HOLD` line, "do not run", "sequenced last", or "sequenced after" an unfinished Automaton). It adds no second start path: every start in `on` mode goes through the normal admission, approval and quality-gate rules.
 
-**Known gaps before `on`.** The plan's open questions are still open: whether `on` mode may approve a review-pending Automaton through the approve call (the shipped code does, subject to the plan-coverage and plan-review gates), whether an Automaton on a backend other than the GPU or Claude backend counts toward lane occupancy, and the default Claude lane count and alert minutes. Answer them before switching to `on`.
+**Known gaps before `on`.** The plan's open questions are still open: whether `on` mode may approve a review-pending Automaton through the approve call (the shipped code does for the ones the gates let through; a review-pending Automaton the coverage gate blocks is refused as `plan_coverage_blocked` instead of being started and left stuck), whether an Automaton on a backend other than the GPU or Claude backend counts toward lane occupancy, and the default Claude lane count and alert minutes. Answer them before switching to `on`.
 
 ---
 
@@ -6902,19 +7135,19 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 
 ### Housekeeping repairs: task chain
 
-The `autonomous.housekeeping_repairs.task_chain` group (default `report`) has three repairs for stuck task chains: a task that failed only because a dependency failed is reset once the dependency is done (plain reset, never force); a final gate that failed on a stale gitignored docs mirror runs `make sync-docs` in the Automaton worktree and is retried once; a leaked marker or stray file that blocks a finish is removed with `git clean -f` only when it is untracked and inside the Automaton worktree, then the task is retried once. Each refuses, records a skipped entry and raises one alert when the cause is ambiguous, a second retry would be needed, or the file is tracked. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+The `autonomous.housekeeping_repairs.task_chain` group (default `report`) has three repairs for stuck task chains: a task that failed only because a dependency failed is reset once the dependency is done (plain reset, never force); a final gate that failed on a stale gitignored docs mirror runs `make sync-docs` in the Automaton worktree and is retried once; a leaked marker or stray file that blocks a finish is removed with `git clean -f` only when it is untracked and inside the Automaton worktree, then the task is retried once. Each refuses, records a skipped entry and raises one alert when the cause is ambiguous, a second retry would be needed, or the file is tracked. The daemon runs the three repairs on the supervisor loop's schedule; the group defaults to `report`, so each records what it would do and changes nothing until the mode is `on`. The group setting is accepted from the config file and on every config set path (`config set` on the CLI, `PUT /api/config`, MCP `config_set`, the comm `configure` verb and Settings in the web UI). Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ### Housekeeping repairs: advance and judge
 
-The `autonomous.housekeeping_repairs.advance_judge` group (default `report`) has three repairs for finished and review-blocked Automata: a running Automaton with every task finished is advanced to its next state by the normal completion step once the grace has passed (skipped while a live run holds it); an Automaton blocked by the rules review with no repair task gets one repair task made once from the review's real findings (add a task carrying them, then a plain reset) and the fact is recorded so it is never made again; an Automaton waiting to merge or ready to merge is only reported. Each refuses, records a skipped entry and raises one alert when a task is not finished, the judge repair was already made once, or the review recorded no findings. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+The `autonomous.housekeeping_repairs.advance_judge` group (default `report`) has three repairs for finished and review-blocked Automata: a running Automaton with every task finished is advanced to its next state by the normal completion step once the grace has passed (skipped while a live run holds it); an Automaton blocked by the rules review with no repair task gets one repair task made once from the review's real findings (add a task carrying them, then a plain reset) and the fact is recorded so it is never made again; an Automaton waiting to merge or ready to merge is only reported. Each refuses, records a skipped entry and raises one alert when a task is not finished, the judge repair was already made once, or the review recorded no findings. The daemon runs the pass, and each of the three makes at most one finding per Automaton from a single check of its state (finished tasks, a task in a final failed state, and the judge flag never mix in one finding). The group defaults to `report`, so each records what it would do and changes nothing until the mode is `on`. The group setting is accepted from the config file and on every config set path (`config set` on the CLI, `PUT /api/config`, MCP `config_set`, the comm `configure` verb and Settings in the web UI). Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ### Housekeeping repairs: lane fill
 
-The `autonomous.housekeeping_repairs.lane_fill` group (default `report`) has a lane fill repair: a lane that is idle while eligible work waits gets the next eligible Automaton started through the normal run path once the grace has passed. It never changes a model or backend, and never starts a held Automaton (an operator hold, see [howto/automaton-hold.md](howto/automaton-hold.md)). It refuses, records a skipped entry and raises one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` it records what it would start and starts nothing. The daemon does not start the repair pass yet, so nothing acts today and the group setting is read from the config file only. To undo a start, pause or cancel the started Automaton from the Automata page. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+The `autonomous.housekeeping_repairs.lane_fill` group (default `report`) has a lane fill repair: a lane that is idle while eligible work waits gets the next eligible Automaton started through the normal run path once the grace has passed. It never changes a model or backend, and never starts a held Automaton (an operator hold, see [howto/automaton-hold.md](howto/automaton-hold.md)). It refuses, records a skipped entry and raises one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` it records what it would start and starts nothing. The repair is written and tested; the daemon does not build it yet, so turning the group to `on` runs the group's lane-count correction but does not start any Automaton. The group setting is accepted from the config file and on every config set path (`config set` on the CLI, `PUT /api/config`, MCP `config_set`, the comm `configure` verb and Settings in the web UI). To undo a start, pause or cancel the started Automaton from the Automata page. Never merges, ships, ends a session, or changes a model. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md) and [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 ### Housekeeping repairs: leftovers
 
-The `autonomous.housekeeping_repairs.leftovers` group (default `report`) also has three release repairs for what a finished Automaton leaves behind: its capacity lease, its worktree and its tmux name. Each acts on one leftover and only when the safe-to-delete check passes: the Automaton is finished, holds no uncommitted work, has no unlanded commits and has no live session; the facts are read again just before the release. When any fails or the check cannot be answered, the repair refuses, records a skipped entry and raises one alert. It can only release one lease, remove one worktree or release one tmux name, and never kills, ends or signals a session, merges, ships, changes a model or backend, or touches a security workflow. The repairs are written and tested, but nothing in the daemon builds or starts them yet, so nothing acts today. Before turning the group to `on`, confirm you accept the worktree removal; the group also holds the disk cleanup sweep. To undo, start the Automaton again from the Automata page (a lease is taken again and a worktree recreated); a released tmux name is free to reuse. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+The `autonomous.housekeeping_repairs.leftovers` group (default `report`) also has three release repairs for what a finished Automaton leaves behind: its capacity lease, its worktree and its tmux name. Each acts on one leftover and only when the safe-to-delete check passes: the Automaton is finished, holds no uncommitted work, has no unlanded commits and has no live session; the facts are read again just before the release. When any fails or the check cannot be answered, the repair refuses, records a skipped entry and raises one alert. It can only release one lease, remove one worktree or release one tmux name, and never kills, ends or signals a session, merges, ships, changes a model or backend, or touches a security workflow. The repairs are written and tested; the daemon does not build them yet, so turning the group to `on` runs the group's disk cleanup sweep but not the release repairs. Before turning the group to `on`, confirm you accept the worktree removal; the group also holds the disk cleanup sweep. To undo, start the Automaton again from the Automata page (a lease is taken again and a worktree recreated); a released tmux name is free to reuse. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ### Housekeeping repairs: planning
 
@@ -6922,7 +7155,7 @@ The `autonomous.housekeeping_repairs.planning` group (default `report`) has a pl
 
 ### Housekeeping repairs: reading the view
 
-Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. The daemon does not run the repair pass yet, so expect empty lists today. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
+Read what the repairs would do and did with `GET /api/autonomous/housekeeping-repairs` (MCP `housekeeping_repairs`, CLI `datawatch autonomous housekeeping-repairs [--json]`, chat `autonomous housekeeping-repairs`, or the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds). Per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) it shows the mode in effect (`off`, `report` or `on`), `would` (what a report-mode pass would do), `did` (what an on-mode pass did), `failed` and `skipped_unsafe`; each entry says what was found, what was done and how to undo it. The view is read-only: it repairs nothing, raises no alert and changes no mode (change a mode with config set, key `autonomous.housekeeping_repairs.<group>`). A federated peer needs the autonomous read capability. With the default `report` modes the pass records `would` entries as it sees findings; a group in `on` repairs and records `did`, `failed` and `skipped_unsafe` entries. See [howto/automaton-housekeeping-repairs.md](howto/automaton-housekeeping-repairs.md).
 
 ## Triage records (failed and blocked Automata)
 
@@ -7065,17 +7298,19 @@ Both reads are GET-only (any other method is 405), answer 503 while Automata are
 
 An Automaton that runs in worktree mode works on its own branch (`automaton/<id>`) in its own worktree under the worktree base repository (`autonomous.worktree_base_repo`), and its worker sessions leave scratch files in the daemon's temporary directory. The cleanup removes what a finished Automaton no longer needs, and only what it is certain it can lose nothing by removing, and watches the disks involved. It is not tied to one repository: it reads the worktree base repository from the config, takes the branch an Automaton's work must be on from that Automaton's own base branch or, failing that, from the default branch the remote records for the repository (`origin/HEAD`), and works for a project whose default branch is `master`, `trunk` or any other name. The operator guide is [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
 
-**Two passes.** The **worktrees** pass removes a finished (completed or cancelled) Automaton's work branch and worktree when it ends and again on the coordinator's periodic sweep. The **temp files** pass removes the scratch files and directories the daemon's own worker sessions created in the temporary directory, when the session ends and again on a periodic sweep. The removal at the end of the Automaton or session is the **owner** path; the sweep is the **net**. The status keeps the two apart so you can see whether the net finds real work.
+**Two passes, and a third net.** The **worktrees** pass removes a finished (completed or cancelled) Automaton's work branch and worktree when it ends and again on the coordinator's periodic sweep. The **temp files** pass removes the scratch files and directories the daemon's own worker sessions created in the temporary directory, when the session ends and again on a periodic sweep. The removal at the end of the Automaton or session is the **owner** path; the sweep is the **net**. The status keeps the two apart so you can see whether the net finds real work. The third — the **cache folders sweep** — has no owner path and no row in the status: it runs once at daemon start and on every coordinator poll beside the temp sweep, and removes stale `go-build` and Trivy scan-cache folders that sit directly in the temporary directory (the temp sweep does not cover them — they carry no `datawatch-` prefix and the daemon never recorded creating them — and nothing else removes them), so they stop accumulating until builds and tests start failing.
 
 **The safety criteria (worktrees).** An entry is removed only if all of these hold, each re-checked at removal time: the Automaton is completed or cancelled in the store now; no live session or live lease uses the worktree; the worktree has no uncommitted changes; every commit on the branch is on the base branch (and if the base branch cannot be worked out, nothing is removed); the branch is at least `cleanup_retention_hours` old (an unknown age counts as young; the release an Automaton makes when it completes or is cancelled skips only this age check, because the age counts from that moment); and it is neither the main checkout nor the base branch. Only branches in the `automaton/` namespace are considered. Removal is `git worktree remove` without `--force` then `git branch -d`, never `-D`; a refusal leaves the entry in place and records the error. Every removal is written to the Automaton's triage record and the audit log.
 
 **The safety criteria (temp files).** A path is removed only if its name starts with `datawatch-` and sits inside the temporary directory, the daemon recorded creating that exact path for a session, that session is known not to be alive, and it ended at least `cleanup_retention_hours` ago. Unrecorded prefixed names are skipped as foreign, an unknown session counts as alive, symbolic links are never followed or removed, and the record of created paths is in memory, so scratch from an earlier daemon process is left alone.
 
+**The safety criteria (cache folders).** A folder directly under the temporary directory is removed only if all of these hold: its name is a Go build cache folder (`go-build`, or `go-build` followed by digits) or a Trivy scan-cache folder (a `trivy*` name containing `scan-cache` or `scan_cache`); it is a directory, not a file or symlink (a symlink entry is skipped and never followed; entries in subfolders are outside the pass); it is at least **60 minutes** old by last modification (a fixed retention, not `cleanup_retention_hours`; an unreadable age is not removable); and no live process holds it — no open handle into it and no live process with its working directory inside it. The last check is the **liveness probe**: on Linux it walks `/proc` for every live process; on a platform without `/proc`, or when `/proc` cannot be read, liveness is unknown and unknown is treated as held, so the folder is kept — in practice the sweep is a no-op on hosts without a readable `/proc`, even in `on` mode. The same `cleanup_mode` applies (`off` does nothing, not even a scan); `cleanup_max_removals_per_pass` does not cap this pass. Each pass logs one summary line (`cache-folder-sweep`) and writes the audit event `autonomous_cache_folder_sweep` with the folder count and bytes freed; a failed removal is left in place and recorded. The pre-tag run's own Trivy scan does not rely on this net: it runs against a **throwaway, isolated scan-cache** directory (`mktemp -d`, exported as `TRIVY_CACHE_DIR`) that traps on `EXIT`, `INT` and `TERM` remove on every exit path — a passing scan, a failing scan, an interrupted run — so it leaves no folder behind for the sweep to find (see the Pre-tag run section below).
+
 **The modes.** `autonomous.automation.cleanup_mode`:
 
 | Value | What it does |
 |---|---|
-| `off` | No cleanup git command is run and the temporary directory is not scanned. The disk check still runs. |
+| `off` | No cleanup git command is run and the temporary directory is not scanned — no cache-folder pass either. The disk check still runs. |
 | `report` (default) | Every check runs and each pass records what it would remove; nothing is removed. An unset key and any unrecognized value read as `report`. |
 | `on` | The passes remove what passes every check, at most `cleanup_max_removals_per_pass` per pass. |
 
@@ -7084,11 +7319,15 @@ An Automaton that runs in worktree mode works on its own branch (`automaton/<id>
 | `autonomous.automation.cleanup_mode` | Whether the cleanup is off, reports only or removes | `report` | `off`, `report`, `on` (anything else is refused on every write surface) |
 | `autonomous.automation.cleanup_retention_hours` | How long finished work must have sat before it can be removed | 24 | whole number ≥ 1 |
 | `autonomous.automation.cleanup_max_removals_per_pass` | The most entries one pass removes; the rest wait for the next pass and count as would-remove | 10 | whole number ≥ 1 |
-| `autonomous.automation.disk_alert_percent` | Disk usage percent that raises the disk alert | 85 | whole number 1–100 |
+| `autonomous.automation.disk_alert_percent` | Disk usage percent on the worktree disk that raises the disk alert | 85 | whole number 1–100 |
+
+One threshold is fixed, not a key: the temp-folder disk always alerts at **80%** or lower, whichever is lower of `disk_alert_percent` and 80 (at the default 85 the effective temp-disk threshold is 80), while the worktree disk keeps the value you set.
 
 Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT /api/config` or `PUT /api/autonomous/config`, comm `configure autonomous.automation.cleanup_mode=on`, the MCP tool `config_set`, or the PWA Settings fields. They are read live; a change applies on the next poll with no restart.
 
-**The disk alert.** The daemon reads the usage of the disk holding the worktree base repository and of the disk holding the daemon's temporary directory on start and on every coordinator poll, in every mode including `off`. While either is at or above `disk_alert_percent` it raises one warning alert, at most once an hour, that names the disk and its usage. The time of the last alert is kept across restarts. The alert never removes anything. A disk that cannot be measured has no reading and cannot alert.
+**The disk alert.** The daemon reads the usage of the disk holding the worktree base repository and of the disk holding the daemon's temporary directory on start and on every coordinator poll, in every mode including `off`. The worktree disk is checked against `disk_alert_percent`; the temp disk against the lower of that value and the fixed 80. While either is at or above its own threshold the daemon raises one warning alert, at most once an hour, naming every over-threshold disk with its usage; while the temp disk is the one over, the alert body also lists the **biggest folders directly in the temp folder** (top five), each with its approximate size and whether a live process holds it — which is what points you at the stale `go-build` / Trivy scan-cache folders while you decide what to keep. The time of the last alert is kept across restarts. The alert never removes anything, and its wording says so. A disk that cannot be measured has no reading and cannot alert.
+
+**The no-space gate reason (temporary folder full).** The same full-temp condition speaks in one place outside the cleanup: the Automaton's final gate, which the daemon runs as the **script gate**. When a gate check exits non-zero and its captured output says the storage it wrote to ran out — `no space left on device`, `ENOSPC` or `disk quota exceeded`, in any casing — the task's failure reason reads **temporary folder full**, not the exit code. The daemon's infra-retry classifier matches that exact text and maps it to the `storage_write` class (the device is full, the quota is used up, or the file system is read-only), so the task takes the infra-retry path — a back-off schedule, recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton — instead of being counted against it as a failed test: a no-space failure at the gate is treated as an **infrastructure storage shortage**, not a content or test failure, and the retry is not counted against the task. A gate killed by a signal, a gate that never ran and a gate that hit its deadline keep their own reasons, so only a real no-space exit reads this way. When a daemon restart leaves a finished gate result to consume, the same reason comes out of the stored result, so the classification does not change across the restart. The reason itself removes nothing; it is only the label on the failure and the route into the retry path.
 
 **Status.** One read on every surface:
 
@@ -7101,11 +7340,11 @@ Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT
 | PWA | **Cleanup** card under the event stream on the Automata Events sub-tab, refreshed every 30 seconds |
 | Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
-The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings, `disk_alert_percent`, `disk_alert` and `last_disk_alert_at`. The full field documentation is in `docs/api/openapi.yaml`.
+The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings (each with its own `threshold` and `alert` flag), `disk_alert_percent`, `disk_alert`, `last_disk_alert_at`, and — while the temp disk is at or above its threshold — `biggest_temp_folders` (top five folders directly in the temp folder with `path`, `size`, `held`, `liveness_known`; absent otherwise). The full field documentation is in `docs/api/openapi.yaml`.
 
 **Moving from report to on.** Run in `report` until a few finished Automata have gone through; read `would_remove` and `skipped` and the safe-to-delete report above to confirm the pass would remove only what you are happy to lose; keep the per-pass limit small for the first `on` passes; then set the mode to `on`. Nothing removed comes back, so the checks come first.
 
-**What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never uses `--force` or `-D`, never follows a symbolic link, and never touches anything in `off` mode.
+**What the cleanup never does.** It never removes a branch with commits that are not on the base branch, a worktree with uncommitted changes, anything belonging to a running or unfinished Automaton, a branch outside `automaton/`, or a path outside the daemon's own scratch files. It never removes a cache folder whose age it cannot read or whose liveness it cannot prove (without a readable `/proc`, that is all of them). It never uses `--force` or `-D`, never follows a symbolic link, and the disk alert never removes anything in any mode. In `off` mode nothing is removed and nothing is scanned; only the disk reading and its alert still run.
 
 **The landing record gates archive.** Every Automaton record that carries a work branch carries a **landing record** (`landing` on the record) with the state `pending` (set by the daemon when the branch is created), `landed` (set by the `mark_completed` post-ship hook when the branch ships, naming the merge commit), `kept` or `dropped` (an operator decision with an actor and a reason; refused when the branch is already `landed`). While the landing is still `pending`, **Archiving the Automaton is refused on every surface**, the branch named in the error: merge it, or record keep or drop for its landing. Records without a landing (no branch, or a record that predates the landing record and was never migrated) archive as before, and a one-time **landing migration** (`MigrateLanding`) backfills a `pending` record for every archived Automaton whose branch git cannot prove merged on the default branch — idempotent, no status or decision changed, and it skips rather than guesses when the default branch is unknown. The record rides on every Automaton read, and keep/drop are on every operator surface: `POST /api/autonomous/prds/{id}/landing/keep|drop` (REST), `datawatch autonomous prd-landing-keep|drop <id> --reason <text>` (CLI), `autonomous_landing_keep`/`autonomous_landing_drop` (MCP), `autonomous landing keep|drop <id> <reason…>` (chat), and the Keep/Drop buttons in the landing block of the Automaton's Overview sub-tab (PWA). The migration has no operator command: the daemon runs it once at start, in the background (`StartLandingMigration`): it logs the count it marked, raises one operator alert (*Archived Automata with unlanded branches*) when that count is above zero, and writes a done marker (`landing_migration.done` in the autonomous data directory) after a pass with no errors so it never runs again; a pass that hit an error, such as an unknown default branch, is retried at the next start. The full walkthrough is in [howto/landing-record.md](howto/landing-record.md) and [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md) ("The landing record").
 
@@ -7119,11 +7358,15 @@ The read is GET-only (any other method is 405), answers 503 while Automata are d
 
 An Automaton that commits its own work (it has git settings and either a worktree branch or declared write directories) used to be able to mark a task complete while the task's files sat uncommitted in the worktree. A merge of the branch then shipped without them. The uncommitted-work check looks at the worktree at two moments and, when it finds uncommitted work, commits what belongs to the task, or holds and asks. It is not tied to one repository: it runs `git status` in the Automaton's own worktree and works for any project. An Automaton that does not commit is not checked. The operator guide is [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
 
-**The two checks.** The **per-task** check runs after a task has passed verification and the quality gate and before it is marked complete. It reads `git status` (untracked files included), drops the daemon's own scratch files and anything the staging guard refuses to commit, narrows the list by the scope, and stages and commits the files the task declared (its planned and generated files, and anything under its write directories) by name with the message `task(<short id>): <title>`, never with `-A` or `.` and never skipping commit hooks. A declared path that git ignores (`git check-ignore`) and that is not in the index (`git ls-files --cached` is empty for it), such as a file under `.datawatch/`, is left out of the commit instead of failing it and holding the Automaton; a tracked path is always staged whatever its ignore status, and when git cannot answer the ignore query nothing is left out, so the real git error surfaces. The list of uncommitted files the hold, the question and the before-finished check are built from is filtered before any hold is considered: files the repository's own ignore rules ignore and that are not in the index are dropped (kept when git cannot answer, the conservative side), a tracked file whose only difference from HEAD is the daemon's own marked sections — session guardrails header, memory, RTK, cross-session and platform context — is dropped, and a newly created file whose whole content is those sections is dropped too; a file that also carries a real edit is counted. A task whose only dirt is such files completes without a hold and opens no question. It then looks again; if the commit failed or files remain, the policy decides. Files outside the task's declared files are listed and never committed by this check. The **before-finished** check runs once in the roll-up, when every task is done: it reads the whole worktree (the scope does not apply), commits nothing, and under `hold` stops the Automaton from reaching `completed`, so it is never listed as merge ready. It no longer counts an unedited generated artefact the daemon itself wrote — an artefact (gate report, changelog draft, parity draft, tracker rows or registry row) that still carries its marker line, has no `<!-- edited -->` line, and whose body still matches the hash the daemon recorded in its sidecar when it last wrote it — together with its sidecar file — so an Automaton whose only dirt is what the daemon generated completes and is merge-ready as usual, while an artefact a person edited counts and holds exactly like any other file; the per-task check is unchanged. It needs a local worktree (a work branch, a project directory and no cluster profile). If git cannot read the status, either check is skipped.
+**The two checks.** The **per-task** check runs after a task has passed verification and the quality gate and before it is marked complete. It reads `git status` (untracked files included), drops the daemon's own scratch files — the two untracked root launcher files `worker-mcp.json` and `worker-starting-context.md` among them — and anything the staging guard refuses to commit, narrows the list by the scope, and stages and commits the files the task declared (its planned and generated files, and anything under its write directories) by name with the message `task(<short id>): <title>`, never with `-A` or `.` and never skipping commit hooks. A declared path that git ignores (`git check-ignore`) and that is not in the index (`git ls-files --cached` is empty for it), such as a file under `.datawatch/`, is left out of the commit instead of failing it and holding the Automaton; a tracked path is always staged whatever its ignore status, and when git cannot answer the ignore query nothing is left out, so the real git error surfaces. The list of uncommitted files the hold, the question and the before-finished check are built from is filtered before any hold is considered: files the repository's own ignore rules ignore and that are not in the index are dropped (kept when git cannot answer, the conservative side), a tracked file whose only difference from HEAD is the daemon's own marked sections — session guardrails header, memory, RTK, cross-session and platform context — is dropped, and a newly created file whose whole content is those sections is dropped too; a file that also carries a real edit is counted. A task whose only dirt is such files completes without a hold and opens no question. It then looks again; if the commit failed or files remain, the policy decides. Files outside the task's declared files are listed and never committed by this check. The **before-finished** check runs once in the roll-up, when every task is done: it reads the whole worktree (the scope does not apply), commits nothing, and under `hold` stops the Automaton from reaching `completed`, so it is never listed as merge ready. It no longer counts an unedited generated artefact the daemon itself wrote — an artefact (gate report, changelog draft, parity draft, tracker rows or registry row) that still carries its marker line, has no `<!-- edited -->` line, and whose body still matches the hash the daemon recorded in its sidecar when it last wrote it — together with its sidecar file — so an Automaton whose only dirt is what the daemon generated completes and is merge-ready as usual, while an artefact a person edited counts and holds exactly like any other file; the per-task check is unchanged. It needs a local worktree (a work branch, a project directory and no cluster profile). If git cannot read the status, either check is skipped.
 
 **The completion marker file.** A worker writes `DATAWATCH_COMPLETE` at the root of its worktree to say it is done. The daemon treats that file, `CHECKPOINT.md` and the advisory tree lock as its own marker files, not work. New worktrees exclude `/DATAWATCH_COMPLETE` through the worktree's `info/exclude` (the repository `.gitignore` lists it too); both checks skip the marker files whatever git reports and add a sentence naming the skipped files to the question text and blocked reason; and just before the finished check the daemon deletes the one regular file `DATAWATCH_COMPLETE` at the root of a finished Automaton's worktree (a directory, a link or a same-named file in a subfolder is left alone). A worktree holding only a marker is not held; a marker plus a real file is held for the real file only. At daemon start the daemon also answers every older open `uncommitted_work` question whose files are all marker files with the `ignore` option, as actor `autonomous`, and records an `uncommitted_work_resolved` decision; `ignore` touches no file and only clears the hold, and a question listing any real file is left for the operator. No new setting, endpoint, CLI command, comm verb or MCP tool is involved, so there is nothing to configure for this behavior.
 
 **Ignored files and injected sections — what to review.** Leaving git-ignored, untracked declared files (such as reports under `.datawatch/reports/`) out of the task commit, and leaving ignored files and daemon-injected-only rules files (such as an `AGENT.md` whose only change is the daemon's marked sections) out of the uncommitted-work list, adds no setting, endpoint, CLI command, comm verb or MCP tool; it applies to the next task that finishes. Operator review: an Automaton held *before* this change for exactly such a file keeps its open `uncommitted_work` question — the start-up sweep answers only marker-file questions — so check the **Automata uncommitted work** card and answer those with `ignore` (or `retry`). A report under `.datawatch/` stays local and is never shipped with the branch; if a report must ship, write it outside the ignored folder.
+
+**Launcher artifacts — what to review.** The two files the session launcher drops into a working directory root at session start — `worker-mcp.json` (the session's own, deterministic MCP config) and `worker-starting-context.md` (its deterministic starting-context block) — are launcher artifacts, not a task's work: they are the daemon's own and are excluded from the task's read-only check (the uncommitted-work lists and that dirty check count only the untracked root copies — a tracked root file that carries a launcher name, and a same-named file in a subfolder, are still treated as changes; the match is the exact name at the repository root), and the attempt snapshot and the automatic-commit staging skip both root names by name, whether or not the repository tracks them (skip reason `launcher`). No new setting; it applies to the next task that finishes. Operator review: a task branch that committed one of these files under an earlier version has already merged it, and landed history is never rewritten — if you see `worker-mcp.json` or `worker-starting-context.md` on a merged branch or in a release, review it or remove it yourself; and note the corner above — if your repository itself tracks a root `worker-mcp.json` or `worker-starting-context.md`, the checks still count changes to it as the task's work, but the automatic-commit staging and the attempt snapshot will never stage it (a task that needs that exact path must be given a different name). Neither file replaces anything you configure: a session's profile and MCP mode come from the [worker session profiles](howto/worker-session-profiles.md), and the launcher's own config artifact is the `worker-mcp.json` it writes per session.
+
+**Pre-merge cleanup: daemon sections and launcher files.** Before a task branch is merged into the Automaton's work branch, the daemon settles the daemon-side files on it: a rules file (the root `AGENT.md` or `CLAUDE.md`) whose only difference from the base commit is the daemon's marked sections is restored to the base content — or, when it carries a real edit too, the marked sections are stripped and the edit kept; and a launcher file committed at the branch's root is removed **only when the merge target has none of that file** (present at the branch tip, absent at the base commit). It goes through the branch's ordinary `git add` / `git rm` / `git commit` path, so the branch advances by one plain cleanup commit (`Strip daemon sections from <file> before merge`, `Remove launcher files <names> before merge`) and a branch with nothing of the sort is not advanced at all. A rules or launcher file with uncommitted changes beyond what the cleanup would touch is an error and the merge does not run. The howto is [howto/automaton-parallel-tasks.md](howto/automaton-parallel-tasks.md) (*Before a task branch merges*).
 
 **The policy and the scope.**
 
@@ -7184,7 +7427,7 @@ The audit details carry the Automaton id, the task id when there is one, the fil
 
 ## Checks and ship steps (what runs around an Automaton and after a release)
 
-The daemon runs four report-only checks around an Automaton's work — the pre-start verifier, the plan rules, the after-done checklist and the registry check — and, when a release is finished, three ship steps: push, tag and CI watch. Every one has a mode, `off`, `shadow` (record only) or `on` (the default), and a project can override the global values. Findings and outcomes are recorded on the Automaton's triage record and read back, newest first, from the two status reads. Neither read changes anything. The operator guide is [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md); the terms are defined in [datawatch-definitions.md](datawatch-definitions.md#checks).
+The daemon runs four report-only checks around an Automaton's work — the pre-start verifier, the plan rules, the after-done checklist and the registry check — and, when a release is finished, three ship steps: push, tag and CI watch. Every one has a mode, `off`, `shadow` (record only) or `on` (the default), and a project can override the global values. Findings and outcomes are recorded on the Automaton's triage record and read back, newest first, from the two status reads. Neither read changes anything. The operator guide is [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md); the terms are defined in [datawatch-definitions.md](datawatch-definitions.md#checks). The pre-start verifier does not refuse a task only for a missing verification script when the spec accounts for it: a verbatim block is written to the script path first, and a spec that tells the worker to create the script lets the task start, with the post-task verification failing it if the file was never written. Both leave a decision on the Automaton (`verifier_materialize`, `verifier_prestart_task_created`); see [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#a-script-that-does-not-exist-yet).
 
 **The five access methods.**
 
@@ -7257,7 +7500,12 @@ of that category.
   your hand: the alert is raised and no question is asked.
 - **The planner's prompt carries a forbidden-pattern list** (fixed release
   number, tracker id, system path, private address, worktree path) after
-  the decompose guidance; it is not configurable.
+  the decompose guidance; it is not configurable. Both planning prompts
+  also carry the fixed **full-file-path rule** — every file named in a
+  task title, spec or files list is written as its full repo-relative
+  path, in one piece, with no ellipsis, abbreviation, truncation or prose
+  wrapping — because the structural check extracts file names up to the
+  first space and a severed name is reported as a missing file.
 - **The daemon can re-plan a stuck draft by itself.** The `autonomous.housekeeping_repairs.planning` group (default `report`) does what the reword question's fix answer does, for a draft with no stories whose non-retryable failure the daemon can reword; in `report` it only records it. See *Housekeeping repairs: planning* above.
 - Nothing here touches, kills or signals a session. The retry budget is the existing `retry_policy`; the planning repair group is the only setting for the daemon's own re-plan.
 
@@ -8163,7 +8411,7 @@ Planning routing chooses the planner for each Automaton decompose by rule. It is
 
 ## Task-type routing table
 
-Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards.
+Task routing picks the worker and verification LLM for each task by its type (documentation, locale strings, code and so on) when the planner decomposes an Automaton or a task is added. It is off by default. The most specific LLM choice always wins: a task LLM set by an operator, then a story LLM, then an Automaton LLM, then the table, then the global default. A task edited by hand, a started task and a task with a live session are never rewritten, and applying never touches a session. Switching the active profile affects only tasks created afterwards. Whichever level wins the chain, a `claude-code` backend that ends up with no model starts on the daemon default model (`sonnet`; `haiku` for the mechanical task types) rather than the backend's built-in default — [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 | Surface | Access |
 |---|---|
@@ -8251,6 +8499,17 @@ Building a path into the discussion folder goes through one helper, `discussionF
 3. **Rename legacy folders if any.** Discussion folders created before the ID rule that use other characters remain on disk but are unreachable through the API; list existing IDs (`GET /api/memory/discussion`) and rename any that do not pass the rule.
 
 Note: `/api/push/<topic>` is not a discussion route. It does not apply this rule; it only rejects an empty topic or one containing a slash.
+
+## Open code scanning alerts: fixed on main, closure pending the gate run
+
+The eleven open high or critical code scanning alerts on main — the path and command injection findings in `internal/autonomous` (the file-drift checker's git calls, the daemon-section and daemon-ignore file reads, and the cleanup status paths), the model-pull certificate finding in `internal/compute` (alert 848), and the allocation-size findings in the plans release API's themes layout — plus the PWA-side findings: the project section card title tag strip in `internal/server/web/app.js` became a fixed-point strip that leaves no live tag-shaped span (alert 849), the Compute node and LLM edit form field values and the **Browse marketplace** button handler render escaped so a quote- or angle-bracket-carrying value is displayed as text, not live markup (alert 850), and two PWA test lines the scanner had flagged (the Projects Focus date-range assertion and the Settings task-routing row-select assertions) were rewritten without the flagged patterns. The gate run on the next push still reported twelve alerts open on the same spots: the engine's data-flow check only accepts a fix when the guard sits on the flagged path itself, and the first pass's guards there were shared helpers and caller-side pre-checks upstream of the flagged functions. The second pass inlines the guard into those functions — `defaultDriftGitRunner` in `file_drift.go` (the project-folder shape checks and the hardened options run in the runner, before git is started), `isDaemonIgnoreChange` and `classifyTaskCommitPaths` in `uncommitted_work.go`, `daemonSectionsOnlyChange` and `daemonSectionsOnlyUntracked` in `daemon_sections_status.go` (the file to read must resolve inside the resolved project folder plus the separator), and `FixCleanupPermissions` in `cleanup_status.go` (the containment prefix check on the cleaned path before `os.Lstat`) — closes the last `app.js` spot (the compute node kind migration dialog's reselect handler now escapes the node name with `escJsAttr`), and rewrites four more flagged test lines in `app-task-routing.test.js`, `app-plan-records.test.js`, `app-automata-phone-strips.test.js` and in `app-codeql-dom.test.js`'s own decode and assertion helpers to plain-text checks that still assert the exact rendered markup. For affected operators the behavior is unchanged: valid paths, folders and names act exactly as before, and invalid ones are rejected exactly as before. `internal/server/web/app-codeql-dom.test.js` pins the `app.js` fixes.
+
+**Operator review still owed:**
+
+1. **Confirm the alert gate is green.** Code-scanning engines report a fix on the next analysis, not immediately: check the next "Open high/critical alerts" gate run on main and confirm none of either pass's findings — the twelve still reported open after the first pass, the PWA `app.js` batch (alerts 849 and 850), or any of the rewritten test lines — still appears as an open high or critical finding. Until that run is confirmed green, nothing in this repository should be read as claiming them closed; if the gate still reports one open — or never ran after these commits — record it here and do not promote the changelog entry with the alerts claimed closed. Distinguish a red run caused by the code from one caused by the gate itself: the gate cannot yet tell an open alert from a failed analysis, and a manual dispatch does not re-analyze (filed in the [promotion findings ledger](plans/2026-11-16-promotion-findings.md)); rule out a failed analysis first — aborted analysis jobs, or a rate limit whose reset is past the wait budget (the `wait-analyses` and `open-alerts` steps' rate-limit rule, see *Rate-limit reset out of reach* in [datawatch-definitions.md](datawatch-definitions.md#rate-limit-reset-out-of-reach)) — before concluding the fix is missing.
+2. **Name the trust on every `https://` node before its next pull.** Model pulls now always verify the node's certificate. A node with a self-signed or private-CA certificate fails its pulls until `tls_ca_file` or `tls_cert_fingerprint` is set on it — `verify_tls` and `tls_insecure_skip_verify` no longer apply to a pull. List your nodes (`datawatch compute nodes` or the PWA Compute tab) and set the trust; the pull error names the fix: `node <name>: certificate verification failed: ...; trust the certificate with tls_ca_file or tls_cert_fingerprint`. See [howto/compute-nodes.md](howto/compute-nodes.md#verify-the-certificate-on-model-pulls).
+
+Run the same checks before a push with [CodeQL local scan](howto/codeql-local-scan.md) instead of waiting for the gate; if an alert is dismissed in code scanning rather than fixed, follow the workflow contract and record the dismissal's reason in the accepted-risks registry (`security/accepted-risks.yml`) — the gate itself never reads that file: it only fails on alerts the code-scanning API still reports as open, high or critical.
 
 ## Observer peer silence alert (`observer.peers.silent_alert_minutes`)
 
@@ -8395,6 +8654,7 @@ On a phone (600 px or less) the **Automata → Projects** page must not scroll s
 
 - **Record.** Every run, pass or fail, appends `<sha> <iso-date> steps=<n> result=<pass|fail> seconds=<total>` to `.datawatch/pre-tag-record` (override with `PRE_TAG_RECORD_FILE`). The file is git-ignored. A dry run (`PRE_TAG_DRY_RUN=1`) writes nothing.
 - **Missing tools.** A step whose tool is absent prints `SKIP [step]: <tool> not found` and does not fail the run. Install `golangci-lint`, `govulncheck`, `gosec`, `gitleaks`, `goreleaser`, `docker` and `python3` on the build host or those gates are not checked.
+- **Agent-base image and Trivy scan.** The `docker-agent-base` step runs only when a Dockerfile, the containers workflow or `security/accepted-risks.yml` differs from the last tag (always, when no tag exists); otherwise it prints its own `SKIP` line and passes. When it runs, it builds the agent-base image from `docker/dockerfiles/Dockerfile.agent-base`, and if `trivy` is installed it scans the image (`--severity HIGH,CRITICAL`, honoring `.trivyignore`, a finding fails the step). Before the scan the script creates a **throwaway, isolated scan cache** directory under the operator's temp space — `mktemp -d`, never a fixed shared path — and exports it as `TRIVY_CACHE_DIR`; traps on `EXIT`, `INT` and `TERM` remove that directory on every exit path (normal finish, a failing scan, or Ctrl-C / SIGINT / SIGTERM), so the scan neither reuses a shared cache nor leaves a folder behind in the temp directory. The cache is fresh on each run, so the scan re-fetches what it needs instead of reusing a warmed shared cache — that is the trade-off for leaving nothing behind. If `trivy` is not on PATH the scan is skipped with a message and the step still passes; no cache directory is created. This self-cleanup is independent of the daemon's [Automaton worktree cleanup](#automaton-worktree-cleanup-finished-work-branches-worktrees-and-daemon-temp-files) cache-folder sweep, which remains the net that removes stray `go-build` and Trivy scan-cache folders in the temp directory.
 - **Slow steps.** `slow-opt-in` runs `make test-tmp-guard`, `make test-cross-build` (all five release targets build), the perf rollup check and the busy-loop checks. Each is niced, limited to a quarter of the CPUs (at least one), killed after `PRE_TAG_SLOW_TIMEOUT` seconds (default 21600) and killed if the script is interrupted.
 - **Test daemons.** `go test` runs with `TMUX` and `TMUX_TMPDIR` removed; the runner starts no daemon of its own.
 - **Tests.** `tests/test-pre-tag.sh` runs in `make test`.

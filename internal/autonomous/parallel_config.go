@@ -53,8 +53,12 @@ func EffectiveMergeRetrySeconds(c config.AutonomousParallelConfig) int {
 }
 
 // EffectiveMergeConflictModel returns the model that resolves merge
-// conflicts. Empty means the strongest configured planning model; the
-// caller resolves that.
+// conflicts: the operator's value when set (a premium model included, passed
+// through as written), else the non-Opus daemon default
+// (config.MergePipelineDefaultConflictModel).
 func EffectiveMergeConflictModel(c config.AutonomousParallelConfig) string {
-	return strings.TrimSpace(c.MergeConflictModel)
+	if m := strings.TrimSpace(c.MergeConflictModel); m != "" {
+		return m
+	}
+	return config.MergePipelineDefaultConflictModel
 }

@@ -3138,11 +3138,26 @@ function _projectsSectionToggleState(card, collapsed) {
     if (chev) chev.textContent = collapsed ? '▸' : '▾';
   }
 }
+// _stripTagsStable removes tag-shaped spans from a string by repeating the
+// strip until none remain (a fixed-point sanitizer). CodeQL's
+// js/incomplete-multi-character-sanitization (alert 849) flags a single
+// pass of the multi-character pattern /<[^>]*>/ as an incomplete sanitizer;
+// the fixed-point form is the rule's accepted shape. The two forms are
+// behavior-identical for this pattern (one left-to-right pass already
+// leaves no surviving '<' with a surviving '>' after it -- verified by
+// exhaustive string comparison, zero differences), so operator-visible
+// output does not change; the loop makes the stability contract explicit
+// instead of relying on single-pass match semantics.
+function _stripTagsStable(s) {
+  let out = String(s === null || s === undefined ? '' : s);
+  while (/<[^>]*>/.test(out)) out = out.replace(/<[^>]*>/g, '');
+  return out;
+}
 // _projectsSectionCard wraps a section in a card with a title row, a collapse
 // toggle and a body. titleHtml is already escaped; titleText is its plain form.
 function _projectsSectionCard(id, titleHtml, innerHtml, titleText) {
   const collapsed = _projectsSectionCollapsed(id);
-  const plain = titleText === undefined ? String(titleHtml).replace(/<[^>]*>/g, '') : titleText;
+  const plain = titleText === undefined ? _stripTagsStable(titleHtml) : titleText;
   const label = t(collapsed ? 'projects_section_expand' : 'projects_section_collapse', [plain]);
   return `<div class="project-section-card${collapsed ? ' collapsed' : ''}" id="projectSection-${id}" data-section="${id}" data-title="${escHtml(plain)}">` +
     `<div class="project-section-header"><span class="project-section-title">${titleHtml}</span>` +
@@ -12618,20 +12633,8 @@ function _loadSessionSchedules(sessionId, force) {
         el.style.display = 'none';
         return;
       }
-      el.style.display = 'block';
-      const rows = items.map(sc => {
-        const when = _fmtScheduleTime(sc.run_at);
-        const extras = [];
-        if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
-        if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
-        const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
-        return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
-          <span style="color:var(--text2);">${escHtml(when)}</span>
-          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
-          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
-        </div>`;
-      }).join('');
-      el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
+      _schedLastItems.set(sessionId, items);
+      _renderSessionSchedules(sessionId);
     })
     .catch(() => { el.style.display = 'none'; })
     .finally(() => {
@@ -12644,6 +12647,40 @@ function _loadSessionSchedules(sessionId, force) {
         _loadSessionSchedules(sessionId, true);
       }
     });
+}
+
+// Last pending schedule list per session so a rollup toggle repaints without a refetch.
+const _schedLastItems = new Map();
+
+function _renderSessionSchedules(sessionId) {
+  const el = document.getElementById('sessionSchedules');
+  const items = _schedLastItems.get(sessionId);
+  if (!el || !items || items.length === 0) { if (el) el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const rows = items.map(sc => {
+    const when = _fmtScheduleTime(sc.run_at);
+    const extras = [];
+    if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
+    if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
+    const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
+    return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
+          <span style="color:var(--text2);">${escHtml(when)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
+        </div>`;
+  }).join('');
+  const head = _stx('session_detail_scheduled_summary', 'Scheduled');
+  if (!_sessionsPhoneWidth()) {
+    el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">${escHtml(head)} (${items.length})</div>${rows}`;
+    return;
+  }
+  const open = _sessionDetailRollupOpen(sessionId, 'scheduled');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = `${head} (${items.length}) · ${_stx('session_detail_next_run', 'Next run')} ${_fmtScheduleTime(items[0].run_at)}`;
+  const idArg = escHtml(encodeURIComponent(String(sessionId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-scheduled-rollup" onclick="_sessionDetailRollupToggle('${idArg}','scheduled')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? rows : ''}`;
 }
 
 function showScheduleInputPopup(sessionId) {
@@ -15237,6 +15274,18 @@ function renderNewSessionView() {
             <option value="">Language (LSP): none</option>
           </select>
         </div>
+        <!-- Worker profile: the worker session profile this session starts
+             with (its MCP servers, tools, skills, context, model, effort).
+             The option list mirrors the settings group (built-ins plus the
+             user profiles); empty = the daemon resolves it (daemon-wide
+             profile, then the session-kind default). -->
+        <div class="form-group" id="sessWorkerProfileRow">
+          <label for="sessWorkerProfile">${t('new_session_worker_profile_label')||'Worker profile'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for the daemon default)</span></label>
+          <select id="sessWorkerProfile" class="form-select">
+            <option value="">${t('new_session_worker_profile_auto')||'Auto (daemon rules: daemon-wide profile, then session-kind default)'}</option>
+          </select>
+          <div style="color:var(--text2);font-size:11px;margin-top:4px;" title="${escHtml(t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings > Worker session profiles.')}">${t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort.'}</div>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
@@ -15321,6 +15370,10 @@ function renderNewSessionView() {
   // (mirrors the New PRD modal). Async — defaults to __dir__ until
   // the daemon's profile lists land.
   populateSessionProjectClusterDropdowns();
+  // Worker profile dropdown: built-ins plus the user profiles from
+  // autonomous.worker_profiles. Async — defaults to "Auto" until the
+  // daemon's config lands.
+  populateSessionWorkerProfileDropdown();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -15688,6 +15741,25 @@ function populateSessionProjectClusterDropdowns() {
 }
 window.populateSessionProjectClusterDropdowns = populateSessionProjectClusterDropdowns;
 
+// Worker profile dropdown for the New Session form: lists the built-in
+// profile names (minimal, digest, full, datawatch-tools) and the user
+// profiles from autonomous.worker_profiles, with a leading blank entry
+// (the "Auto" choice). Reads the same config the Settings group writes, so
+// any name the daemon would accept is an option and nothing else.
+function populateSessionWorkerProfileDropdown() {
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const sel = document.getElementById('sessWorkerProfile');
+      if (!sel) return;
+      const autoLabel = t('new_session_worker_profile_auto') || 'Auto';
+      const names = workerProfileNames(cfg, true);
+      sel.innerHTML = names.map(n => `<option value="${escHtml(n)}">${n === '' ? escHtml(autoLabel) : escHtml(n)}</option>`).join('');
+    })
+    .catch(() => {}); // keep the Auto-only default if the config is unreachable
+}
+window.populateSessionWorkerProfileDropdown = populateSessionWorkerProfileDropdown;
+
 // Show/hide helper toggled by the unified Profile dropdown's
 // onchange. Mirrors _prdNewProfileChanged but operates on the
 // New Session modal's element ids.
@@ -15701,7 +15773,10 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
-  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  // A project-profile spawn goes through /api/agents, not the session start,
+  // so its rows are hidden there (the worker-profile row too).
+  const workerProfileRow = document.getElementById('sessWorkerProfileRow');
+  if (workerProfileRow) workerProfileRow.style.display = usingProfile ? 'none' : '';
   const tagsRow = document.getElementById('sessTagsRow');
   if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
@@ -16003,6 +16078,11 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
+    // Worker profile for this launch: a built-in or user profile name
+    // (claude-code only; the daemon resolves it against workerprofile
+    // rules). Empty = the daemon's own resolution (daemon-wide profile,
+    // then the session-kind default) applies.
+    worker_profile_name: document.getElementById('sessWorkerProfile')?.value || '',
     // v5.27.5 — claude-code per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
@@ -18221,7 +18301,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
       <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
-      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escJsAttr(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
     </tr>
   `).join('');
   overlay.innerHTML = `
@@ -18881,27 +18961,27 @@ function buildComputeNodeForm(n) {
         <input id="fe_hw_arch" class="form-input" placeholder="Arch" value="${escHtml(hw.arch||'')}" />
         <input id="fe_hw_gpu_vendor" class="form-input" placeholder="GPU vendor" value="${escHtml(hw.gpu_vendor||'')}" />
         <input id="fe_hw_gpu_model" class="form-input" placeholder="GPU model" value="${escHtml(hw.gpu_model||'')}" />
-        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${hw.gpu_count||''}" />
-        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${hw.memory_gb||''}" />
-        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${hw.cpu_cores||''}" />
+        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${escHtml(hw.gpu_count||'')}" />
+        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${escHtml(hw.memory_gb||'')}" />
+        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${escHtml(hw.cpu_cores||'')}" />
       </div>
     </div>
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
-    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
+    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${escHtml(cap.max_concurrent_models||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
-    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
+    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${escHtml(n.max_concurrent_sessions||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
-    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
+    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${escHtml(n.session_slots||'')}" />
     <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
          as typed, so the three fields round-trip through the collector. -->
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
-    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${n.verifier_slots == null ? '' : n.verifier_slots}" />
+    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${escHtml(n.verifier_slots == null ? '' : n.verifier_slots)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_min_free_mem_mb')||'Verifier min free memory, MB (empty = default, 0 = off)')}</label>
-    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb}" />
+    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_context_mb')||'Verifier context, MB (0 = no suggestion)')}</label>
-    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${n.verifier_context_mb == null ? '' : n.verifier_context_mb}" />
+    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_context_mb == null ? '' : n.verifier_context_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
-    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
+    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${escHtml(n.scheduling_priority||50)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_compute_tags', (n.tags||[]).join(', '), { freeform: true, placeholder: 'gpu, high-memory…' })}
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
@@ -18911,7 +18991,11 @@ function buildComputeNodeForm(n) {
     <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
       <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
         <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+        <!-- CodeQL js/xss-through-dom (alert 850): n.name is operator
+             textarea input embedded as a single-quoted JS literal inside the
+             inline handler; escHtml alone is defeated by the HTML attribute
+             decode step, so use escJsAttr (BL394 §3h). -->
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
       </div>
       <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
     </div>
@@ -19262,9 +19346,9 @@ function buildLLMForm(l) {
     <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="${l.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', l.api_key_ref_prefix ? ' — '+l.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" />
     ${l.api_key_ref_present ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref_hint')||'Leave blank to keep the current key. Type a new value to replace it.')}</div>` : ''}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
-    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
+    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${escHtml(l.timeout_seconds||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
+    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${escHtml(l.max_inflight||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
@@ -19518,11 +19602,11 @@ window._renderLLMEditPanel = function(existing) {
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
-        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
+        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${escHtml(existing.timeout_seconds||'')}" placeholder="0" />
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
+        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${escHtml(existing.max_inflight||'')}" placeholder="0" />
         <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
       </div>
       <div class="wizard-field">
@@ -19549,11 +19633,11 @@ window._renderLLMEditPanel = function(existing) {
         <div style="display:flex;gap:6px;">
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_cols')||'Console width (cols)')}</label>
-            <input id="llmEditCols" type="number" min="0" class="form-input" value="${existing.console_cols||''}" placeholder="120" />
+            <input id="llmEditCols" type="number" min="0" class="form-input" value="${escHtml(existing.console_cols||'')}" placeholder="120" />
           </div>
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_rows')||'Console height (rows)')}</label>
-            <input id="llmEditRows" type="number" min="0" class="form-input" value="${existing.console_rows||''}" placeholder="40" />
+            <input id="llmEditRows" type="number" min="0" class="form-input" value="${escHtml(existing.console_rows||'')}" placeholder="40" />
           </div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -20040,12 +20124,12 @@ window.openComputeAddPanel = function(existingNode, prefill) {
             <input id="computeNewTLSSkip" type="checkbox" onchange="computeTLSModeChanged()" ${initTLSSkip ? 'checked' : ''} ${!initTLSSkip && (initTLSCA || initTLSFP) ? 'disabled' : ''} />
             ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
           </label>
-          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for the probes of this node (model pulls still verify it). Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
             <input id="computeNewVerifyTLS" type="checkbox" ${initVerifyTLS ? 'checked' : ''} />
-            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls')}${defsLink('compute_verify_tls')}
+            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls (always on; kept for compatibility)')}${defsLink('compute_verify_tls')}
           </label>
-          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.')}</div>
+          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'Kept for configuration compatibility. Model pulls to this node always verify its certificate against the system roots, plus any tls_ca_file or tls_cert_fingerprint set on the node.')}</div>
         </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
@@ -20072,7 +20156,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_port')||'Port')}</label>
-                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${initDN.port||''}" />
+                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${escHtml(initDN.port||'')}" />
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_container_name')||'Container name (optional)')}</label>
@@ -20115,7 +20199,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_timeout')||'Timeout (seconds)')}</label>
-                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${initDP.timeout_seconds||''}" />
+                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${escHtml(initDP.timeout_seconds||'')}" />
               </div>
             </div>
           </div>
@@ -20133,16 +20217,16 @@ window.openComputeAddPanel = function(existingNode, prefill) {
           <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" value="${escHtml(hw.arch||'')}" />
           <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" value="${escHtml(hw.gpu_vendor||'')}" />
           <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" value="${escHtml(hw.gpu_model||'')}" />
-          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${hw.gpu_count||''}" oninput="computeRecomputeMax()" />
+          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${escHtml(hw.gpu_count||'')}" oninput="computeRecomputeMax()" />
           <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" value="${cap.gpu_mem_gb && hw.gpu_count ? Math.round(cap.gpu_mem_gb / Math.max(1, hw.gpu_count)) : ''}" oninput="computeRecomputeMax()" />
-          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${hw.memory_gb||''}" />
-          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${hw.cpu_cores||''}" />
+          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${escHtml(hw.memory_gb||'')}" />
+          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${escHtml(hw.cpu_cores||'')}" />
         </div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
         <div style="display:flex;gap:6px;align-items:center;">
-          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${cap.max_concurrent_models||''}" />
+          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${escHtml(cap.max_concurrent_models||'')}" />
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
       </div>
@@ -20159,7 +20243,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
           <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
         </div>
         <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
@@ -25835,6 +25919,9 @@ const GENERAL_CONFIG_FIELDS = [
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+    // File extensions the security scan covers. Empty = the scanner's
+    // built-in defaults (.py, .pyw); non-empty = exactly those extensions.
+    { key: 'autonomous.security_scan_extensions', label: 'Security scan extensions (default .py, .pyw)', type: 'text', placeholder: '.py, .pyw', csv: true },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },
@@ -27323,11 +27410,13 @@ function loadGeneralConfig() {
             };
             const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
             const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            const _wpdSessionKinds = WORKER_PROFILE_SESSION_KINDS.map(k => _wpdSelect('kind', k)).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
-              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:4px;">
                 <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
-                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">task kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">session kind</div>${_wpdSessionKinds}</div>
               </div>
               ${_settingsHelpTextHTML(f)}
             </div>`;
@@ -28963,6 +29052,7 @@ window.saveTracingBackendsSetting = saveTracingBackendsSetting;
 const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
 const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
 const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+const WORKER_PROFILE_SESSION_KINDS = ['supervisor', 'operator_interactive', 'scheduled_command', 'planner', 'one_shot', 'review'];
 
 // workerProfileNames lists the built-in profile names followed by the user
 // profiles from autonomous.worker_profiles, each name once. withBlank puts an
@@ -30930,23 +31020,29 @@ function _serverChoiceSettleBoot() {
   }
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (name) => {
+    let timeoutId = null;
+    // finish(name, saveAll) commits the choice. The fallback save only runs
+    // through this guard — once a validated restore has settled, the pending
+    // settle timeout must not be able to overwrite the saved value (or a
+    // choice the user made in the meantime) with 'all'.
+    const finish = (name, saveAll) => {
       if (settled) return;
       settled = true;
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (saveAll) _serverChoiceSave('all'); // stale or unvalidatable: persist the fallback
       state.activeServer = name;
       resolve(name);
     };
     _onServerListReady(() => {
       if (_pickerServers().some(s => s.name === choice)) {
-        finish(choice); // validated: the saved peer is still listed and enabled
+        finish(choice, false); // validated: the saved peer is still listed and enabled
       } else {
-        _serverChoiceSave('all'); // stale: peer removed or disabled
-        finish('all');
+        finish('all', true); // stale: peer removed or disabled
       }
     });
     // The list never arrived (the local daemon's /api/servers is down or
     // slow): do not hold boot open — an unvalidatable choice is All.
-    setTimeout(() => { _serverChoiceSave('all'); finish('all'); }, _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
+    timeoutId = setTimeout(() => finish('all', true), _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
   });
 }
 
@@ -61746,10 +61842,38 @@ function _sessionFind(fullId) {
 function _renderSessionDetailTagRow(sess) {
   const el = document.getElementById('sessionDetailTagRow');
   if (!el || !sess) return;
-  const chips = _sessionTagChipsHTML(sess);
-  el.innerHTML = chips || '';
-  el.style.display = chips ? 'flex' : 'none';
+  const list = _sessionTagChipList(sess);
+  const chips = list.join('');
+  if (!chips) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  if (!_sessionsPhoneWidth()) { el.innerHTML = chips; el.style.display = 'flex'; return; }
+  const fullId = sess.full_id || sess.id;
+  const open = _sessionDetailRollupOpen(fullId, 'tags');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = _stx('session_detail_tags_summary', 'Tags') + ' (' + list.length + ')';
+  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-tags-rollup" onclick="_sessionDetailRollupToggle('${idArg}','tags')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? '<div class="session-detail-rollup-body" style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">' + chips + '</div>' : ''}`;
+  el.style.display = 'flex';
 }
+
+// Phone-width rollup state: in memory only, per session full id and section.
+function _sessionDetailRollupOpen(fullId, kind) {
+  const b = state._sessionDetailRollup && state._sessionDetailRollup[fullId];
+  return !!(b && b[kind]);
+}
+
+function _sessionDetailRollupToggle(idEnc, kind) {
+  let id = '';
+  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
+  if (!id) return;
+  if (!state._sessionDetailRollup) state._sessionDetailRollup = {};
+  const b = state._sessionDetailRollup[id] || (state._sessionDetailRollup[id] = {});
+  b[kind] = !b[kind];
+  if (kind === 'tags') _renderSessionDetailTagRow(_sessionFind(id));
+  else _renderSessionSchedules(id);
+}
+window._sessionDetailRollupToggle = _sessionDetailRollupToggle;
 
 window.openSessionTagsModal = function(fullId) {
   _tagsLoad().then(() => {

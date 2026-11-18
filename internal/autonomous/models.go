@@ -97,7 +97,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill | completed_migration | hold | hold_extend | hold_release | hold_expired
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill | completed_migration | verifier_materialize | hold | hold_extend | hold_release | hold_expired
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -1579,6 +1579,18 @@ type Task struct {
 	FilesPlanned   []string `json:"files,omitempty"`
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
+
+	// SecurityFindings — human-readable findings (file:line: detail) from
+	// the daemon's warn-only pre-commit security scan over the task's
+	// worktree, recorded on the task right before its completion commit
+	// by Manager.RecordTaskSecurityFindings. Only the first 20 are stored;
+	// the full volume is on SecurityFindingCount. Warn-only: findings
+	// never change the task's status, and never fail, block or requeue it.
+	SecurityFindings []string `json:"security_findings,omitempty"`
+	// SecurityFindingCount — cumulative number of security-scan findings
+	// recorded on this task (a task that passes the pre-commit scan more
+	// than once accumulates the full count of each pass).
+	SecurityFindingCount int `json:"security_finding_count,omitempty"`
 
 	// SnapshotSkipped — files the session's staging commit (or the attempt
 	// snapshot pass) REFUSED to stage, each with the staging guard's reason

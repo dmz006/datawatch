@@ -145,6 +145,28 @@ for f in docker/dockerfiles/Dockerfile.agent-base .github/workflows/containers.y
   ( cd "$R" && git checkout -q -- "$f" )
 done
 
+# 9b. trivy scan: isolated mktemp cache dir, removed on success AND on a failing scan
+( cd "$R" && git tag -d v1.0.0 >/dev/null 2>&1; true )   # no tag -> build+scan always runs
+stub trivy "echo trivy-cache \"\${TRIVY_CACHE_DIR:-unset}\" >> \"$LOG\"; exit 0"
+dab >/dev/null
+cdir="$(sed -n 's/^trivy-cache //p' "$LOG" | head -n1)"
+check "trivy run used isolated TRIVY_CACHE_DIR" '[ -n "$cdir" ] && [ "$cdir" != unset ]'
+tmpbase="${TMPDIR:-/tmp}"
+if [[ "$cdir" == "$tmpbase"/* || "$cdir" == /tmp/* ]]; then ok "trivy cache dir is under operator temp space"; else bad "trivy cache dir is under operator temp space (got: ${cdir:-unset})"; fi
+check "trivy cache dir is not a fixed shared path" '[ -n "$cdir" ] && ! echo "$cdir" | grep -qE "cache/(trivy|scan)$"'
+check "trivy cache dir removed on success" '[ -n "$cdir" ] && [ ! -e "$cdir" ]'
+
+# failing scan: the trap must still remove the cache dir and the step must fail
+stub trivy "echo trivy-cache \"\${TRIVY_CACHE_DIR:-unset}\" >> \"$LOG\"; exit 1"
+o="$(dab)"; rc=$?
+cdir2="$(sed -n 's/^trivy-cache //p' "$LOG" | head -n1)"
+check "failing trivy scan fails the step" '[ "$rc" -ne 0 ] && echo "$o" | grep -q "^\[docker-agent-base\] FAIL"'
+check "trap removed cache dir when scan failed" '[ -n "$cdir2" ] && [ ! -e "$cdir2" ]'
+
+# trivy absent: scan skipped, other step behaviour unchanged
+rm -f "$BIN/trivy"
+o="$(dab)"
+check "trivy absent: scan skipped with message" 'echo "$o" | grep -qx "SKIP \[docker-agent-base\] trivy scan: trivy not found"'
 
 # 4. .gitignore covers the record
 check "record is git-ignored" '(cd "$ROOT" && git check-ignore -q .datawatch/pre-tag-record)'

@@ -1005,7 +1005,7 @@ paths:
         `autonomous.parallel.read_only_tasks` (true|false, default true; tasks flagged read_only skip the tree lock),
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
-        `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_conflict_model` (string, default empty = the non-Opus daemon default ("sonnet"); a model the operator names, an Opus model included, is used as written; the model that resolves a merge conflict),
         `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
@@ -4878,7 +4878,7 @@ paths:
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
-                verify_tls: {type: boolean, description: When true, model pulls to this node verify its https certificate against the system roots. Default false. Update replaces the whole node so omitting it means false.}
+                verify_tls: {type: boolean, description: Kept for configuration compatibility. Model pulls to this node always verify its https certificate against the system roots (plus tls_ca_file or tls_cert_fingerprint when set); there is no per-node off switch.}
       responses:
         "200":
           description: The updated node record
@@ -13172,8 +13172,8 @@ components:
         blocker: {type: string}
         eligibility_reason:
           type: string
-          enum: [stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid]
-          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work) or worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository)"
+          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}
@@ -14771,6 +14771,17 @@ components:
           type: string
           description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
           example: "3ab70001"
+        worker_profile_name:
+          type: string
+          description: |
+            Name of the worker session profile this launch should take: one of the built-ins
+            (`minimal`, `digest`, `datawatch-tools`, `full`) or a profile you defined in
+            `autonomous.worker_profiles`. A name the daemon does not know never starts a
+            half-applied session: that launch falls back to the full harness and the session
+            record carries the reason. Omit (or send empty) to leave the choice to the daemon's rules —
+            the daemon-wide `autonomous.worker_profile` and then the session-kind default.
+            Claude Code only; ignored by other backends.
+          example: "digest"
         task:
           type: string
           description: Task description passed to the LLM

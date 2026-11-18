@@ -491,6 +491,13 @@ type Manager struct {
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
+
+	// preCommitScan is the warn-only pre-commit hook (e.g. the autonomous
+	// pre-commit security scan). It fires exactly once on the completion-
+	// commit path, after every guard, immediately before the commit is
+	// authorized. A panicking hook is logged and the commit still proceeds;
+	// the return value is ignored by design. nil = the hook is off.
+	preCommitScan func(sess *Session)
 	// onSessionReap ends the processes proven to belong to a session once the
 	// session is over. It runs from every end path (EndSession, which also
 	// serves kill, cancel and delete, and the terminal-state transition that
@@ -1209,6 +1216,15 @@ func (m *Manager) SetOnSessionReap(fn func(*Session)) {
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetPreCommitScan wires the warn-only pre-commit hook into
+// commitOnCompletion: it fires exactly once for a session that passed
+// every guard, immediately before the commit is authorized. A panicking
+// hook is logged and the commit proceeds; the hook can never fail, block
+// or delay the commit. Pass nil to detach.
+func (m *Manager) SetPreCommitScan(fn func(*Session)) {
+	m.preCommitScan = fn
 }
 
 // SetTraceIngestor wires the trace ingestor into the session lifecycle: it
@@ -2507,6 +2523,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		if opt.ResumeID != "" {
 			resumeID = opt.ResumeID
+		}
+	}
+
+	// Claude Code explicit-model backstop: a claude-code launch must name an
+	// explicit model. datawatch refuses to fall back to the operator's
+	// account default — or to upgrade the model on its own — so a
+	// claude-code launch with no model set is refused up front (before any
+	// tracker, session record, or tmux pane is created) instead of running
+	// under whatever the account picks. When a model is named, the persisted
+	// session record carries exactly the value the backend passes to the CLI
+	// as --model.
+	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" {
+		if opt == nil || opt.Model == "" {
+			return nil, fmt.Errorf("claude-code launch refused: no explicit model set — datawatch will not fall back to the account default or upgrade the model on its own; name a model (e.g. \"sonnet\" or \"haiku\") and try again")
 		}
 	}
 
@@ -4686,6 +4716,17 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		}
 	}
 
+	// Claude Code: re-inject the persisted model on restart. The backend is a
+	// shared singleton whose model field may already have been overwritten by
+	// another session; the explicit-model backstop guarantees a claude-code
+	// record carries the model its launch used, so the relaunch keeps passing
+	// exactly that --model value (never the account default).
+	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" && sess.Model != "" {
+		if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
+			sm.SetModel(sess.Model)
+		}
+	}
+
 	// Launch with resume support — pass the datawatch session ID as resumeID.
 	// Backends that support full resumption (e.g. claude-code) can derive their
 	// own session ID from this; backends that don't (e.g. opencode TUI) ignore it.
@@ -5093,6 +5134,22 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 			fmt.Printf("[warn] one-shot %s not committed: %v\n", current.ID, err)
 			return
 		}
+	}
+
+	// Warn-only pre-commit hook (e.g. the autonomous security scan): fires
+	// exactly once, after every guard above, immediately before the commit
+	// is authorized. A panicking hook is logged and the commit still
+	// proceeds; the hook's return value is ignored by design — this path
+	// can never fail, block or delay the task's completion commit.
+	if m.preCommitScan != nil {
+		func(s *Session) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("[warn] preCommitScan hook panicked: %v (commit proceeding)\n", r)
+				}
+			}()
+			m.preCommitScan(s)
+		}(current)
 	}
 
 	// Validation passed (or, for a PRD task, the verifier already passed):

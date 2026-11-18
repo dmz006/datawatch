@@ -27,6 +27,7 @@ LLM_ONLY=(
     federation-cbac     # conceptual reference for CBAC model; federation CRUD steps are in federated-observer howto
     container-image-refresh  # operator/maintainer reference for a CI workflow; no MCP-callable steps
     ci-code-scanning-upload  # CI maintainer reference with no MCP-callable steps
+    local-env-leak-check  # repository development check run from make and the pre-commit hook; not a daemon feature, no MCP-callable steps
     discussion-scopes   # conceptual reference for WAL-backed discussion memory model; operator steps via memory_* MCP tools
     testing-against-a-running-daemon  # dev/CI reference for shell-script env vars (DW_BASE, TEST_BASE); no MCP-callable steps
     automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc
@@ -36,9 +37,12 @@ LLM_ONLY=(
     merge-shadow  # conceptual reference for merge shadow behaviour; no MCP-callable steps
     navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
     codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
+    gofmt-check  # shell-script/Makefile reference (scripts/check-gofmt.sh, make check-gofmt); no MCP-callable steps
     automata-events  # conceptual reference for the Events tab; no MCP-callable steps
     merge-shadow  # conceptual reference for merge shadow mode; no MCP-callable steps
     restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed
+    toolchain-freshness-check  # shell-script reference for scripts/check-toolchain.sh (build hosts); no MCP-callable steps
+    build-host-toolchain  # shell-script workflow for build hosts (make check-toolchain, daily run, Go update); no MCP-callable steps
     worker-session-profiles  # worker session profiles: spec-complete; the settings surfaces (exact key, tool and settings-card names) are still pending, so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when the profile config lands
     automaton-hold  # operator hold: PWA-only for now (no REST/CLI/MCP/comm surface yet), so there is no stable MCP read to assert — revisit and move to TOOL_VERIFIED when a hold surface lands
 )

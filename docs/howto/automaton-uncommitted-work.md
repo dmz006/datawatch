@@ -96,9 +96,15 @@ The daemon's own scratch files are never counted: the worker completion marker
 decompose output, the advisory tree lock, the session discovery file
 `.mcp.json` and the skills under `.datawatch/skills/` when the daemon wrote them
 (an untracked file only, so a project that tracks `.mcp.json` still sees a change
-to it), the lines the daemon itself adds to an ignore file (a change to
+to it), the two launcher files the session drops into the working directory,
+`worker-mcp.json` and `worker-starting-context.md` (untracked root copies only:
+a tracked launcher-named root file is still a change, and so is a same-named
+file in a subfolder), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
-other change to the file is counted), and anything the daemon's staging guard
+other change to the file is counted — and the ignore file is read only when
+its path is demonstrably inside the worktree, so an ignore-file path that
+escapes it, or that a symlink chain resolves outside it, is not counted as a
+daemon change), and anything the daemon's staging guard
 refuses to commit. Three more kinds of file never enter the list:
 
 - **Ignored, untracked files.** A file the repository's own ignore rules

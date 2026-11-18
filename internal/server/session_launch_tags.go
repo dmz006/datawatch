@@ -33,6 +33,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/workerprofile"
 )
 
 // launchLocalNode is the node name a session that ran locally and stored no
@@ -175,4 +176,63 @@ func launchLaneForBackend(backend string) string {
 	default:
 		return ""
 	}
+}
+
+// sessionKindForLaunch maps the start request's launch facts to the session
+// kind whose workerprofile default applies. Empty = no session-kind default.
+func sessionKindForLaunch(role, launchKind string, oneShot bool) string {
+	switch strings.TrimSpace(role) {
+	case "supervisor":
+		return workerprofile.KindSupervisor
+	case "planner":
+		return workerprofile.KindPlanner
+	}
+	if strings.TrimSpace(launchKind) == "review" {
+		return workerprofile.KindReview
+	}
+	if oneShot {
+		return workerprofile.KindOneShot
+	}
+	return ""
+}
+
+// resolveStartWorkerProfile picks the worker profile a started session takes.
+// A named profile (worker_profile_name) wins; an unknown name returns no
+// profile and a reason, so the session starts with the full harness and the
+// reason lands on the session record. With no name, the daemon-wide profile
+// and then the session-kind default apply. No kind and no name = no profile.
+func resolveStartWorkerProfile(cfg *config.Config, name, kind string) (*workerprofile.WorkerProfile, string) {
+	var users map[string]workerprofile.WorkerProfile
+	var kindDefaults map[string]string
+	var global string
+	if cfg != nil {
+		users = cfg.Autonomous.WorkerProfiles
+		kindDefaults = cfg.Autonomous.WorkerProfileDefaults.Kind
+		global = cfg.Autonomous.WorkerProfile
+	}
+	lookup := func(n string) (workerprofile.WorkerProfile, bool) {
+		if p, ok := workerprofile.Builtin(n); ok {
+			return p, true
+		}
+		p, ok := users[n]
+		return p, ok
+	}
+	name = strings.TrimSpace(name)
+	if name != "" {
+		p, ok := lookup(name)
+		if !ok {
+			return nil, fmt.Sprintf("unknown worker profile %q; full harness applied", name)
+		}
+		return &p, ""
+	}
+	if kind == "" {
+		return nil, ""
+	}
+	p, d := workerprofile.Resolve(workerprofile.ResolveInput{
+		Kind: kind, GlobalName: global, KindDefaults: kindDefaults, Lookup: lookup,
+	})
+	if workerprofile.Layer(d.Layer) == workerprofile.LayerRole || p.Name == "" {
+		return nil, ""
+	}
+	return &p, ""
 }

@@ -1103,8 +1103,9 @@ type ComputeNodeYAML struct {
 	// node usage probes and the supervisor watch probe. Default false =
 	// verify. Cannot be combined with TLSCAFile or TLSCertFingerprint.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
-	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
-	// against the system roots. Default false.
+	// VerifyTLS used to switch model-pull certificate verification on.
+	// Pulls now always verify, so the field is kept for configuration
+	// compatibility and no longer changes behavior.
 	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
 	// system roots when the node serves a certificate from a private CA.
@@ -3694,6 +3695,13 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers (e.g. ".py"). Unset (nil) or an explicitly empty list means
+	// the scanner's built-in defaults (.py, .pyw); a non-empty list scans
+	// exactly those extensions and no others. The scan is warn-only. No
+	// `omitempty`, deliberately, same JSON round-trip reason as
+	// SnapshotNeverStage below.
+	SecurityScanExtensions []string `yaml:"security_scan_extensions" json:"security_scan_extensions"`
 	// SnapshotNeverStage lists path patterns the autonomous snapshot and
 	// automatic-staging paths (the refs/datawatch/attempts attempt snapshots
 	// and the other automatic commits) must never stage: an entry ending in
@@ -3930,10 +3938,12 @@ type AutonomousConfig struct {
 	// skills, context, model, effort). A value's name, when set, must match
 	// its key. Empty (default) = no user profiles; built-ins still apply.
 	//
-	// worker_profile_defaults: the profile each role and task kind starts
-	// with when no profile is named. role keys: planner, worker, verifier,
-	// judge. kind keys: implementation, docs, note, final_gate. Values are
-	// built-in or user profile names. Empty (default) = built-in defaults.
+	// worker_profile_defaults: the profile each role, task kind and session
+	// kind starts with when no profile is named. role keys: planner, worker,
+	// verifier, judge. kind keys: implementation, docs, note, final_gate (task
+	// kinds) and supervisor, operator_interactive, scheduled_command, planner,
+	// one_shot, review (session kinds). Values are built-in or user profile
+	// names. Empty (default) = built-in defaults.
 	//
 	// worker_profile: the global-layer profile name, used when no task,
 	// automaton or project names one. Empty = the role default.
@@ -8997,21 +9007,25 @@ func validateGateScope(v string) error {
 	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
 }
 
-// WorkerProfileDefaultsConfig maps a worker role or a task kind to the name of
-// the worker profile it starts with when no profile is named at a more
-// specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
+// WorkerProfileDefaultsConfig maps a worker role, task kind or session kind to
+// the name of the worker profile it starts with when no profile is named at a
+// more specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
 type WorkerProfileDefaultsConfig struct {
 	// Role maps planner, worker, verifier or judge to a profile name.
 	Role map[string]string `yaml:"role" json:"role"`
-	// Kind maps implementation, docs, note or final_gate to a profile name.
+	// Kind maps a task kind (implementation, docs, note, final_gate) or a
+	// session kind (supervisor, operator_interactive, scheduled_command,
+	// planner, one_shot, review) to a profile name.
 	Kind map[string]string `yaml:"kind" json:"kind"`
 }
 
 // workerProfileRoleKeys lists the role keys worker_profile_defaults.role accepts.
 var workerProfileRoleKeys = []string{"planner", "worker", "verifier", "judge"}
 
-// workerProfileKindKeys lists the task-kind keys worker_profile_defaults.kind accepts.
-var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate"}
+// workerProfileKindKeys lists the kind keys worker_profile_defaults.kind
+// accepts: the task kinds and the session kinds (workerprofile.Kind*) the
+// daemon resolves at launch.
+var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate", "supervisor", "operator_interactive", "scheduled_command", "planner", "one_shot", "review"}
 
 // ValidateWorkerProfileConfig checks the worker session profile settings in
 // cfg.Autonomous and returns the first problem found, or nil. It refuses:
@@ -9019,8 +9033,8 @@ var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_ga
 //   - a user profile that workerprofile.Validate rejects;
 //   - a worker_profile_defaults value, or the worker_profile global name, that
 //     names no built-in and no user-defined profile;
-//   - an unknown role key in worker_profile_defaults.role, or an unknown task
-//     kind key in worker_profile_defaults.kind.
+//   - an unknown role key in worker_profile_defaults.role, or an unknown
+//     task- or session-kind key in worker_profile_defaults.kind.
 //
 // The config load paths call it, and every write surface that changes these
 // settings should call it before it persists them. Keys are checked in sorted
@@ -9454,7 +9468,8 @@ type AutonomousParallelConfig struct {
 	// means the default (see autonomous.EffectiveMergeConflictPolicy).
 	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
 	// MergeConflictModel: model that resolves a merge conflict. Empty
-	// means the strongest configured planning model.
+	// reads the non-Opus daemon default (config.MergePipelineDefaultConflictModel);
+	// an operator-named model, an Opus model included, is used as written.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
 	// MergeRetrySeconds: whole seconds between timed merge retry passes.
 	// Pointer so an explicit 0 (timer off) survives; nil means the default

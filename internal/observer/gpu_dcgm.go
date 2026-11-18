@@ -145,8 +145,8 @@ func (d *DCGMScraper) scrape(ctx context.Context) {
 //
 // Example lines we parse:
 //
-//   DCGM_FI_PROF_PROCESS_USAGE{gpu="0",pid="12345"} 73.2
-//   DCGM_FI_DEV_FB_USED{gpu="0",pid="12345"} 8192
+//	DCGM_FI_PROF_PROCESS_USAGE{gpu="0",pid="12345"} 73.2
+//	DCGM_FI_DEV_FB_USED{gpu="0",pid="12345"} 8192
 func parseDCGMMetrics(body io.Reader) (map[int]DCGMProcessGPU, error) {
 	out := map[int]DCGMProcessGPU{}
 	sc := bufio.NewScanner(body)
@@ -229,4 +229,3 @@ func labelValue(labels, key string) string {
 	}
 	return ""
 }
-

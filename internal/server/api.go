@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.180.2"
+var Version = "9.182.23"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -5087,6 +5087,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// this one launch (claude-code only; ignored by other backends).
 		// Absent = the plain, non-profile launch.
 		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
+		// WorkerProfileName names a profile (built-in or user-defined) for
+		// this launch, for every session kind. Unknown = full harness, with
+		// the reason recorded on the session record.
+		WorkerProfileName string `json:"worker_profile_name,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5528,10 +5532,19 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var profileFallbackReason string
+	if req.WorkerProfile == nil || req.WorkerProfile.Name == "" {
+		kind := sessionKindForLaunch(req.LaunchRole, req.LaunchKind, req.OneShot)
+		if p, reason := resolveStartWorkerProfile(s.cfg, req.WorkerProfileName, kind); p != nil {
+			req.WorkerProfile = p
+		} else if reason != "" {
+			profileFallbackReason = reason
+		}
+	}
 	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
 
 	opts := &session.StartOptions{
 		LaunchFn:              workerProfileLaunchFn,
+		WorkerProfile:         startWorkerProfileValue(req.WorkerProfile),
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
@@ -5643,7 +5656,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
-			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
+			jsonError(w, http.StatusServiceUnavailable, capacityRefusalMessage(aerr, resolvedLLMRef, req.Model, resolvedComputeNodeRef, waitSecs))
 			return
 		}
 		capacityHolder = holder
@@ -5675,7 +5688,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The launch ran inside Start, so the fallback reason (if any) is already set.
-	sess.ProfileFallbackReason = profileFallbackReason
+	if profileFallbackReason != "" {
+		sess.ProfileFallbackReason = profileFallbackReason
+	}
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
@@ -6727,7 +6742,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
 			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
 			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
-			// in_force: the profile each worker role and task kind starts with,
+			// in_force: the profile each worker role, task kind and session kind
+			// starts with,
 			// from the live values (read-only; see workerProfileInForceForDisplay).
 			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
 			// Host load check: effective mode, multiple and minutes.
@@ -6882,6 +6898,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
 			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
@@ -10944,6 +10961,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		case "autonomous.security_scan_extensions":
+			// File extensions the security scan covers (e.g. ".py").
+			// Same dual-form handling as snapshot_never_stage above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// and the PWA badge input send CSV). Entries are trimmed and
+			// blank ones dropped; an empty result leaves the scanner's
+			// built-in defaults (.py, .pyw) in effect.
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, e := range arr {
+					if t := strings.TrimSpace(e); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SecurityScanExtensions = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SecurityScanExtensions = splitCSV(s)
+			}
 		case "autonomous.per_story_approval":
 			// Phase 3 (v5.26.61) — toggles the per-story approval gate.
 			// When set to true, PRD-level approval transitions stories

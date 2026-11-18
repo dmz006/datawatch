@@ -8189,3 +8189,19 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
 }
+
+/* Phone-width rollup summaries on the session detail page. */
+.session-detail-tags-rollup,
+.session-detail-scheduled-rollup {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  padding: 6px 10px;
+  min-height: 32px;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}

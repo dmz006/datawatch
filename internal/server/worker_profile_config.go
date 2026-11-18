@@ -130,7 +130,7 @@ func validateWorkerProfileName(cfg *config.Config, name string) error {
 }
 
 // workerProfileInForceForDisplay renders the in_force read for GET /api/config:
-// one entry per worker role and task kind, built from workerprofile.InForce
+// one entry per worker role, task kind and session kind, built from workerprofile.InForce
 // over the live daemon values (the role and kind defaults, the global profile
 // name, and the built-in plus user-defined profile lookup used at launch). Each
 // entry carries the scope, key, applied profile (empty when none), tier and

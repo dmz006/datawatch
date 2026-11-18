@@ -153,9 +153,9 @@ func TestDaemonTaskConfigAPI_ModeDottedKeyRoundTrip(t *testing.T) {
 // whole PUT with the shared load-time rule's message and stores nothing.
 func TestDaemonTaskConfigAPI_ModeRefuses(t *testing.T) {
 	rows := []struct {
-		name  string
-		body  map[string]any
-		msg   string // the rejection must name this
+		name string
+		body map[string]any
+		msg  string // the rejection must name this
 	}{
 		{"unknown mode object",
 			map[string]any{"autonomous.task_templates.mode": map[string]any{"final_gate": "banana"}},
