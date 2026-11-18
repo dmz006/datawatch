@@ -124,8 +124,10 @@ func PruneTrialWorktrees(ctx context.Context, git MergeGitRunner, repo, scratchD
 	return removed, nil
 }
 
-// liveAutomatonWorktrees lists the worktree paths recorded on Automata that
-// have not reached a terminal state.
+// liveAutomatonWorktrees lists every worktree path recorded on any Automaton
+// task, regardless of state. Treating all recorded worktrees as live is
+// deliberately conservative: the sweep never removes a worktree an Automaton
+// still references.
 func (m *Manager) liveAutomatonWorktrees() (paths, repos []string) {
 	seen := map[string]bool{}
 	for _, prd := range m.store.ListPRDs() {
