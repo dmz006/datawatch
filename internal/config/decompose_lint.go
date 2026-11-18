@@ -181,6 +181,15 @@ type DecomposeLintMatch struct {
 	// that does not exist yet is skipped. Absent (false) = do not
 	// check.
 	VerificationScriptArtefactFilesAllowed bool `yaml:"verification_script_artefact_files_allowed,omitempty" json:"verification_script_artefact_files_allowed,omitempty"`
+	// VerificationScriptSpecUnanchored asserts the task's verification
+	// script (and followed helpers) checks a markdown heading (a quoted
+	// string of one to six # followed by a space, or the same heading with
+	// the # stripped) or the exact gate output format "Final answer" /
+	// "Verification summary" that the task's own spec does not name
+	// verbatim — anchoring the assertion to what the task's own spec
+	// actually asks for. A script that does not exist yet is skipped.
+	// Absent (false) = do not check.
+	VerificationScriptSpecUnanchored bool `yaml:"verification_script_spec_unanchored,omitempty" json:"verification_script_spec_unanchored,omitempty"`
 	// VerificationScriptFinalGateArtefactAllowed asserts the task's
 	// verification script (and followed helpers) enforces the whole
 	// changed-file set against a finite list (a git diff --name-only,

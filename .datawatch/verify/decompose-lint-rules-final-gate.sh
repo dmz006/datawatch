@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-ALLOWED_RE='^(internal/config/decompose_lint\.go|internal/config/decompose_lint_test\.go|internal/autonomous/decompose_lint\.go|internal/autonomous/decompose_lint_test\.go|internal/autonomous/decompose_lint_rules\.go|internal/autonomous/decompose_lint_text\.go|internal/autonomous/decompose_lint_verify_script\.go|internal/autonomous/decompose_lint_unexecutable\.go|internal/autonomous/decompose_lint_artefact_test\.go|internal/autonomous/decompose_lint_cumulative_test\.go|internal/autonomous/decompose_lint_script_help\.go|internal/autonomous/decompose_lint_script_help_test\.go|internal/autonomous/decompose_lint_spec_text\.go|internal/autonomous/decompose_lint_spec_text_test\.go|\.datawatch/verify/(lint-artefact-rule|lint-cumulative-rerun-rule|lint-script-flag-rule|lint-spec-heading-rule|lint-rules-howto|decompose-lint-rules-final-gate)\.sh|docs/howto/automaton-decompose-lint\.md|internal/server/web/docs/.*|docs/plans/drafts/.*|docs/plans/parity-issues/.*|docs/plans/reports/.*|CHANGELOG\.md|\.datawatch/reports/final_gate_decompose_lint_rules\.txt)$'
+ALLOWED_RE='^(internal/config/decompose_lint\.go|internal/config/decompose_lint_test\.go|internal/autonomous/decompose_lint\.go|internal/autonomous/decompose_lint_test\.go|internal/autonomous/decompose_lint_rules\.go|internal/autonomous/decompose_lint_text\.go|internal/autonomous/decompose_lint_verify_script\.go|internal/autonomous/decompose_lint_unexecutable\.go|internal/autonomous/decompose_lint_artefact_test\.go|internal/autonomous/decompose_lint_cumulative_test\.go|internal/autonomous/decompose_lint_script_help\.go|internal/autonomous/decompose_lint_script_help_test\.go|internal/autonomous/decompose_lint_spec_text\.go|internal/autonomous/decompose_lint_spec_text_test\.go|internal/autonomous/decompose_guidance_test\.go|internal/autonomous/rules_context_test\.go|docs/howto/README\.md|\.datawatch/verify/(lint-artefact-rule|lint-cumulative-rerun-rule|lint-script-flag-rule|lint-spec-heading-rule|lint-rules-howto|decompose-lint-rules-final-gate)\.sh|docs/howto/automaton-decompose-lint\.md|internal/server/web/docs/.*|docs/plans/drafts/.*|docs/plans/parity-issues/.*|docs/plans/reports/.*|CHANGELOG\.md|\.datawatch/reports/final_gate_decompose_lint_rules\.txt)$'
 
 BASE=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null || git rev-parse HEAD)
 CHANGED=$({ git diff --name-only "${BASE}" 2>/dev/null; git ls-files --others --exclude-standard; } | sort -u)
@@ -49,8 +49,10 @@ for FOR_ID in artefact_files_allowed final_gate_artefact_allowed script_invokes_
 done
 echo 'ok: howto documents all four rules on source and embedded surfaces'
 
-go test ./scripts/ -run 'HowtoCoverage' -count=1
-go test ./internal/server/web/... -run 'DocsIndex' -count=1
+# The howto coverage gate is the shell script (there is no Go package in scripts/):
+bash scripts/check-howto-coverage.sh
+# The docs-index gate lives in internal/docsindex (internal/server/web holds JS assets):
+go test ./internal/docsindex/ -count=1
 echo 'ok: howto coverage and docs-index surfaces still pass'
 
 echo 'Verification summary: cumulative file set, gofmt, build, config tests, four rule fake-test sets, decompose-lint regression set, howto source and embedded copy, howto coverage and docs index all passed'
