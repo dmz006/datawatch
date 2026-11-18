@@ -111,7 +111,9 @@ refuses to commit. Three more kinds of file never enter the list:
 - **Ignored, untracked files.** A file the repository's own ignore rules
   ignore and that the repository does not track is dropped by the check
   itself, whatever `git status` reports, so it is never the reason for a hold
-  and never appears in the question. A tracked file is still counted even when
+  and never appears in the question — with the one exception above: a file the
+  task itself listed is not dropped, it is force-staged and committed. A
+  tracked file is still counted even when
   it matches an ignore rule, and if git cannot answer the ignore question the
   file is counted anyway — the error goes the way of holding you, not of
   letting the task go.
@@ -126,15 +128,22 @@ refuses to commit. Three more kinds of file never enter the list:
 
 The last two rules mean the check does not see a rules file whose content is
 only the daemon's injected sections, on the per-task list and on the
-before-finished list alike. And if you keep notes or evidence under a
-git-ignored path such as `.datawatch/` and wanted the check to hold a task
-that touched them, note that git-ignored, untracked files are outside the
-check's view: they would need to be tracked to be held on.
-
-Do not confuse this list with the generated artefacts —
+before-finished list alike. Do not confuse this list with the generated artefacts —
 the small documents the daemon renders for your work when the Automaton
 finishes: at the finished check they count unless the daemon is the only one
 who wrote them (below).
+
+**Git-ignored files the task itself listed.** If a path the task listed is
+one the repository's ignore rules ignore and is not already in the index
+(for example a file a worker created under a git-ignored folder such as
+`.datawatch/`), the per-task check does not leave it behind: it stages exactly
+those listed paths with force — `git add -f -- <path>` for each one — and
+commits them together with the rest of the task's declared files. The force
+staging applies only to the exact listed path: it never stages the containing
+folder, never runs a blanket add, and never touches a git-ignored path the
+task did not list. Detection of other git-ignored, untracked files is
+unchanged: a git-ignored file the task did not list still stays outside both
+the commit and the hold listing.
 
 ### The completion marker file
 
@@ -278,7 +287,11 @@ work, and committing it would put it on the branch without anyone looking.
 
 A hold raises one question per hold, labelled `uncommitted_work`. It names the
 Automaton, the task, the cause and the files (at most the first 20, with a
-count of the rest), and marks the ones outside the declared files. Its options:
+count of the rest), and marks the ones outside the declared files. If the
+hold's cause is that staging or committing failed, the cause — and therefore
+the question text that carries it — also carries the failed git command's
+output and exit status, so you can see which git command failed and why. Its
+options:
 
 | Option | Meaning |
 |---|---|
@@ -367,7 +380,7 @@ nothing is held), one entry per held task or Automaton:
 | `kind` | `task` or `worktree` |
 | `files` | The uncommitted files |
 | `outside_scope` | The subset outside the task's declared files |
-| `reason` | Why it is held: the commit failed, or files were still uncommitted |
+| `reason` | Why it is held: the commit failed — with the failed git command's output and exit status — or files were still uncommitted |
 | `question_id` | The question waiting for your answer |
 | `held_at` | When the hold was placed |
 
