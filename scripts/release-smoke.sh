@@ -282,9 +282,13 @@ YAML
     # fall back to whatever stale datawatch is on PATH (an older binary
     # lacks the checked behaviour and the CLI's sandbox-cert trust).
     echo "Building datawatch from this tree for the smoke daemon..."
-    (cd "$REPO_DIR" && go build -o "$TEST_WORK_DIR/datawatch" ./cmd/datawatch/) \
-      && _DW_BIN="$TEST_WORK_DIR/datawatch" \
-      || echo "warn: build failed; falling back to datawatch on PATH" >&2
+    if ! (cd "$REPO_DIR" && go build -o "$TEST_WORK_DIR/datawatch" ./cmd/datawatch/); then
+      echo "ERROR: go build failed and no datawatch binary exists in the tree;" >&2
+      echo "       refusing to fall back to a stale binary on PATH (it reproduces" >&2
+      echo "       TLS/profile-tier failures against the smoke daemon). Set DATAWATCH_BIN=<path> to override." >&2
+      exit 1
+    fi
+    _DW_BIN="$TEST_WORK_DIR/datawatch"
   fi
   if [[ -z "$_DW_BIN" ]]; then
     [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
