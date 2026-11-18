@@ -27,6 +27,8 @@ var burnGuardKeys = []string{
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude",
 	"ask_on_change", "max_projection_gap_points",
+	"mode", "week_tolerance", "points_to_week_factor",
+	"window_percent_per_point", "window_stop_percent", "reading_freshness_minutes",
 }
 
 func burnGuardPatchBool(key string, v interface{}) (bool, error) {
@@ -101,6 +103,12 @@ func validateBurnGuardValue(key string, v interface{}) error {
 	case "ladder":
 		_, err := burnGuardPatchLadder(v)
 		return err
+	case "mode":
+		m, ok := v.(string)
+		if !ok || !config.IsBurnGuardMode(m) {
+			return fmt.Errorf("usage.burn_guard.mode: must be one of %s", strings.Join(config.BurnGuardModes(), ", "))
+		}
+		return nil
 	}
 	f, err := burnGuardPatchNumber(key, v)
 	if err != nil {
@@ -124,6 +132,26 @@ func validateBurnGuardValue(key string, v interface{}) error {
 	case "retry_limit_claude":
 		if f != math.Trunc(f) || f < 0 || f > config.BurnGuardRetryLimitClaudeMax {
 			return fmt.Errorf("usage.burn_guard.retry_limit_claude: must be a whole number from 0 to %d", config.BurnGuardRetryLimitClaudeMax)
+		}
+	case "week_tolerance":
+		if f != math.Trunc(f) || f < 0 || f > config.BurnGuardWeekToleranceMax {
+			return fmt.Errorf("usage.burn_guard.week_tolerance: must be a whole number from 0 to %d", config.BurnGuardWeekToleranceMax)
+		}
+	case "points_to_week_factor":
+		if f < config.BurnGuardPointsToWeekFactorMin || f > config.BurnGuardPointsToWeekFactorMax {
+			return fmt.Errorf("usage.burn_guard.points_to_week_factor: must be from %g to %g", config.BurnGuardPointsToWeekFactorMin, config.BurnGuardPointsToWeekFactorMax)
+		}
+	case "window_percent_per_point":
+		if f < config.BurnGuardWindowPercentPerPointMin || f > config.BurnGuardWindowPercentPerPointMax {
+			return fmt.Errorf("usage.burn_guard.window_percent_per_point: must be from %g to %g", config.BurnGuardWindowPercentPerPointMin, config.BurnGuardWindowPercentPerPointMax)
+		}
+	case "window_stop_percent":
+		if f < config.BurnGuardWindowStopPercentMin || f > config.BurnGuardWindowStopPercentMax {
+			return fmt.Errorf("usage.burn_guard.window_stop_percent: must be from %g to %g", config.BurnGuardWindowStopPercentMin, config.BurnGuardWindowStopPercentMax)
+		}
+	case "reading_freshness_minutes":
+		if f != math.Trunc(f) || f < 1 || f > config.BurnGuardReadingFreshnessMinutesMax {
+			return fmt.Errorf("usage.burn_guard.reading_freshness_minutes: must be a whole number from 1 to %d", config.BurnGuardReadingFreshnessMinutesMax)
 		}
 	}
 	return nil
@@ -188,6 +216,20 @@ func applyBurnGuardPatchKey(c *config.BurnGuardConfig, fullKey string, v interfa
 	case "retry_limit_claude":
 		f, _ := burnGuardPatchNumber(key, v)
 		c.RetryLimitClaude = int(f)
+	case "mode":
+		c.PaceLineMode, _ = v.(string)
+	case "week_tolerance":
+		f, _ := burnGuardPatchNumber(key, v)
+		c.PaceLineWeekTolerance = int(f)
+	case "points_to_week_factor":
+		c.PaceLinePointsToWeekFactor, _ = burnGuardPatchNumber(key, v)
+	case "window_percent_per_point":
+		c.PaceLineWindowPercentPerPoint, _ = burnGuardPatchNumber(key, v)
+	case "window_stop_percent":
+		c.PaceLineWindowStopPercent, _ = burnGuardPatchNumber(key, v)
+	case "reading_freshness_minutes":
+		f, _ := burnGuardPatchNumber(key, v)
+		c.PaceLineReadingFreshnessMinutes = int(f)
 	}
 }
 

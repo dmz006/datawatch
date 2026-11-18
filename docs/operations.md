@@ -775,6 +775,8 @@ that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or t
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
+The **pace_line policy** for the weekly and the window usage sits beside the ladder in the same block: `mode` (`off`, `shadow`, `on`; an unset mode reads `shadow` — shadow first, then on), `week_tolerance` (default 2, whole number 0 to 10; how many points the week reading may run over the pace line and still be ok), `points_to_week_factor` (default 1.3, 1 to 10; one point of ledger burn counts as this many points of the weekly allowance), `window_percent_per_point` (default 4, 1 to 25; one point burned is this percent of the current window), `window_stop_percent` (default 85, 50 to 95; a window is over at this percent used) and `reading_freshness_minutes` (default 60, whole number 1 to 1440; a reading older than this is stale and the guard asks for a fresh one). The window anchors are fixed behavior, not a setting: windows end at 02:00, 07:00 and 12:00, then every 5 hours. All six keys are readable and writable on the same surfaces as the rest of the block, and one invalid value rejects the whole change, leaving the stored settings unchanged. As of this change the settings are in place on every surface and the guard's own behavior is unchanged until the pace_line policy runs; the default mode `shadow` computes and records the decision without touching anything. See [the policy's full description](howto/burn-guard.md#the-pace_line-policy-the-weekly-and-window-guard).
+
 | Method | How |
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
@@ -2414,6 +2416,32 @@ To enable the service worker, use a certificate the browser trusts:
 
 Then hard-reload the page (or run `forcePWAUpdate()` in the browser console)
 and the service worker registers normally.
+
+### PWA updates on a datawatch release
+
+An installed PWA picks up a new datawatch release without manual cache
+clearing:
+
+- The service worker is registered at **`/sw.js?v=<release>`** — a distinct
+  worker URL per release — and its cache name is derived from the same
+  version, so each release owns its own cache. If the page registers before
+  it has learned the release number, it registers bare and adopts the
+  versioned URL as soon as the version is known.
+- When a new release is installed, the new worker activates, purges the
+  older caches and takes over the open tabs: the page reloads **at most once
+  per upgrade**, and only when you are not mid-thing (typing in an input,
+  the terminal focused, an unsent draft, or still active within the last 30
+  seconds).
+- If you are mid-thing the reload is deferred: an "Update available — tap to
+  reload" banner appears at the bottom of the page and reloads as soon as
+  you go idle. Tap the banner's **Reload** button to apply it immediately.
+- The manual escape hatch for a stuck cache is still `forcePWAUpdate()` in
+  the browser console (unregisters the service worker, drops its caches and
+  reloads with bypass).
+- On origins where the service worker cannot register (for example a
+  self-signed certificate the browser does not trust — see the section
+  above), the PWA behaves as a plain web app and a normal reload is
+  enough.
 
 ---
 
@@ -4860,7 +4888,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. A stale or malformed saved value (left over from an older version or hand-edited local storage) never breaks the page: each saved Sessions setting is validated when read, and an unrecognized value is dropped and the default applies, so no site-data reset is needed. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per

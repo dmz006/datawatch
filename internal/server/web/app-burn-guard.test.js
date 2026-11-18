@@ -193,3 +193,32 @@ test('the settings field for the max projection gap is a number from 0 to 100 wi
   assert.ok(line.includes("labelKey: 'settings_usage_burn_guard_max_projection_gap'"));
   assert.ok(vm.runInContext("_i18n.bundle.settings_usage_burn_guard_max_projection_gap", s));
 });
+
+test('the pace_line policy settings are all in the settings panel with locale keys', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  const expect = [
+    ["key: 'usage.burn_guard.mode'", "type: 'select'", "labelKey: 'settings_usage_burn_guard_mode'"],
+    ["key: 'usage.burn_guard.week_tolerance'", "type: 'number'", "min: 0", "max: 10", "labelKey: 'settings_usage_burn_guard_week_tolerance'"],
+    ["key: 'usage.burn_guard.points_to_week_factor'", "type: 'number'", "min: 1", "max: 10", "labelKey: 'settings_usage_burn_guard_points_to_week_factor'"],
+    ["key: 'usage.burn_guard.window_percent_per_point'", "type: 'number'", "min: 1", "max: 25", "labelKey: 'settings_usage_burn_guard_window_pp'"],
+    ["key: 'usage.burn_guard.window_stop_percent'", "type: 'number'", "min: 50", "max: 95", "labelKey: 'settings_usage_burn_guard_window_stop'"],
+    ["key: 'usage.burn_guard.reading_freshness_minutes'", "type: 'number'", "min: 1", "max: 1440", "labelKey: 'settings_usage_burn_guard_reading_freshness'"],
+  ];
+  for (const [key, ...rest] of expect) {
+    const line = src.split('\n').find(l => l.includes(key));
+    assert.ok(line, 'settings field present: ' + key);
+    for (const frag of rest) {
+      assert.ok(line.includes(frag), key + ' needs ' + JSON.stringify(frag));
+    }
+  }
+});
+
+test('the pace_line settings labels exist in all five locales', () => {
+  const keys = ['settings_usage_burn_guard_mode', 'settings_usage_burn_guard_week_tolerance', 'settings_usage_burn_guard_points_to_week_factor', 'settings_usage_burn_guard_window_pp', 'settings_usage_burn_guard_window_stop', 'settings_usage_burn_guard_reading_freshness'];
+  for (const lang of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', lang + '.json'), 'utf8'));
+    for (const k of keys) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0, lang + ' needs ' + k);
+    }
+  }
+});
