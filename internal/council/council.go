@@ -58,22 +58,22 @@ type Persona struct {
 
 // Round is one round of debate; each persona's response is captured.
 type Round struct {
-	Index     int                `json:"index"`
-	Responses map[string]string  `json:"responses"` // persona name → response
+	Index     int               `json:"index"`
+	Responses map[string]string `json:"responses"` // persona name → response
 }
 
 // Run is one council execution.
 type Run struct {
-	ID           string    `json:"id"`
-	Proposal     string    `json:"proposal"`
-	Personas     []string  `json:"personas"`
-	Mode         Mode      `json:"mode"`
-	Rounds       []Round   `json:"rounds"`
-	Consensus    string    `json:"consensus,omitempty"`
-	Dissent      string    `json:"dissent,omitempty"`
-	StartedAt    time.Time `json:"started_at"`
-	FinishedAt   time.Time `json:"finished_at"`
-	Cancelled    bool      `json:"cancelled,omitempty"` // v7.0.0 S3
+	ID         string    `json:"id"`
+	Proposal   string    `json:"proposal"`
+	Personas   []string  `json:"personas"`
+	Mode       Mode      `json:"mode"`
+	Rounds     []Round   `json:"rounds"`
+	Consensus  string    `json:"consensus,omitempty"`
+	Dissent    string    `json:"dissent,omitempty"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	Cancelled  bool      `json:"cancelled,omitempty"` // v7.0.0 S3
 }
 
 // DefaultPersonas returns the 12 built-in PAI-style personas.
@@ -133,9 +133,9 @@ func DefaultPersonas() []Persona {
 // accommodate the requested parallelism, Run auto-serializes with a
 // banner per ASK 27.
 type Orchestrator struct {
-	mu        sync.Mutex
-	dataDir   string
-	personas  map[string]Persona
+	mu       sync.Mutex
+	dataDir  string
+	personas map[string]Persona
 
 	// v7.0.0 S3 — wired by daemon at startup. nil = honest 503.
 	InferenceFn InferenceFn
@@ -243,15 +243,16 @@ type CapacityAdmitFn func(ctx context.Context, backend, model, holder, prdID str
 // SSE writer.
 //
 // Event types emitted by Council per BL295 ASK 28 + § 4.4:
-//   run_started        | {run_id, mode, personas, max_parallel}
-//   round_started      | {run_id, round}
-//   persona_responding | {run_id, round, persona}
-//   persona_response   | {run_id, round, persona, text, used_node}
-//   persona_error      | {run_id, round, persona, error}
-//   round_completed    | {run_id, round}
-//   synthesis_started  | {run_id}
-//   run_completed      | {run_id, consensus, dissent, finished_at}
-//   run_cancelled      | {run_id, finished_at}
+//
+//	run_started        | {run_id, mode, personas, max_parallel}
+//	round_started      | {run_id, round}
+//	persona_responding | {run_id, round, persona}
+//	persona_response   | {run_id, round, persona, text, used_node}
+//	persona_error      | {run_id, round, persona, error}
+//	round_completed    | {run_id, round}
+//	synthesis_started  | {run_id}
+//	run_completed      | {run_id, consensus, dissent, finished_at}
+//	run_cancelled      | {run_id, finished_at}
 type EventFn func(runID, eventType string, payload map[string]any)
 
 // ErrNoInference is returned by Run when no InferenceFn is wired —

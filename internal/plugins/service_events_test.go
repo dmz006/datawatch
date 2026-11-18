@@ -25,9 +25,9 @@ type recordedAudit struct {
 }
 
 type eventSinks struct {
-	mu      sync.Mutex
-	alerts  []recordedAlert
-	audits  []recordedAudit
+	mu     sync.Mutex
+	alerts []recordedAlert
+	audits []recordedAudit
 }
 
 func (s *eventSinks) addAlert(a recordedAlert) {

@@ -33,26 +33,6 @@ var driftGitExec = func(ctx context.Context, argv []string) (string, error) {
 	return string(out), err
 }
 
-// hardenedDriftGitArgs is the single place the hardening options are
-// defined: no fsmonitor, no hooks, no optional locks, then -C dir, the
-// subcommand and its arguments. diff also gets --no-ext-diff.
-func hardenedDriftGitArgs(dir string, args []string) []string {
-	out := []string{
-		"-c", "core.fsmonitor=false",
-		"-c", "core.hooksPath=",
-		"--no-optional-locks",
-		"-C", dir,
-	}
-	if len(args) == 0 {
-		return out
-	}
-	out = append(out, args[0])
-	if args[0] == "diff" {
-		out = append(out, "--no-ext-diff")
-	}
-	return append(out, args[1:]...)
-}
-
 // validDriftDir reports whether dir is safe to pass to git -C, checked
 // before any argument containing it is built and before git is executed:
 // non-empty, no NUL byte, absolute, not starting with a dash (git would
@@ -85,10 +65,42 @@ func safeRevisionArg(s string) bool {
 // defaultDriftGitRunner shells out to git with hardened options and -C dir.
 // Read-only subcommands only (diff, log) — this file never mutates the repo.
 func defaultDriftGitRunner(ctx context.Context, dir string, args ...string) (string, error) {
-	if !validDriftDir(dir) {
+	// Inline guard: every check runs here, before anything is built from dir.
+	if dir == "" || strings.ContainsRune(dir, 0) || strings.HasPrefix(dir, "-") {
 		return "", fmt.Errorf("invalid git directory %q", dir)
 	}
-	return driftGitExec(ctx, hardenedDriftGitArgs(dir, args))
+	cleanDir := filepath.Clean(dir)
+	if !filepath.IsAbs(cleanDir) {
+		return "", fmt.Errorf("invalid git directory %q: not absolute", dir)
+	}
+	st, statErr := os.Stat(cleanDir)
+	if statErr != nil || !st.IsDir() {
+		return "", fmt.Errorf("invalid git directory %q: not an existing directory", dir)
+	}
+	if len(args) == 0 {
+		return "", fmt.Errorf("no git subcommand")
+	}
+	for _, a := range args {
+		if strings.ContainsRune(a, 0) {
+			return "", fmt.Errorf("invalid git argument: contains NUL")
+		}
+	}
+	if args[0] == "" || strings.HasPrefix(args[0], "-") {
+		return "", fmt.Errorf("invalid git subcommand %q", args[0])
+	}
+	// Argument list from fixed strings plus the checked values only.
+	argv := []string{
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=",
+		"--no-optional-locks",
+		"-C", cleanDir,
+		args[0],
+	}
+	if args[0] == "diff" {
+		argv = append(argv, "--no-ext-diff")
+	}
+	argv = append(argv, args[1:]...)
+	return driftGitExec(ctx, argv)
 }
 
 // CapturePreTaskDirtyFiles returns the sorted, de-duplicated set of
@@ -117,7 +129,7 @@ func CapturePreTaskDirtyFiles(ctx context.Context, dir string, run driftGitRunne
 // touched by any commit in preSHA..HEAD in dir (git log --name-only).
 // An empty preSHA yields nil, nil.
 func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRunner) ([]string, error) {
-	if !safeRevisionArg(preSHA) {
+	if preSHA == "" || strings.ContainsRune(preSHA, 0) || strings.HasPrefix(preSHA, "-") || strings.HasPrefix(preSHA, "/") || strings.ContainsRune(dir, 0) {
 		return nil, nil
 	}
 	if run == nil {
@@ -137,7 +149,7 @@ func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRu
 // 0, so a binary edit still has an entry. An empty preSHA, or no changed
 // files, yields nil, nil.
 func CommittedLineStatsSince(ctx context.Context, dir, preSHA string, run driftGitRunner) (map[string]int, error) {
-	if !safeRevisionArg(preSHA) {
+	if preSHA == "" || strings.ContainsRune(preSHA, 0) || strings.HasPrefix(preSHA, "-") || strings.HasPrefix(preSHA, "/") || strings.ContainsRune(dir, 0) {
 		return nil, nil
 	}
 	if run == nil {
@@ -400,7 +412,7 @@ func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
 func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) (blocked bool) {
 	// Worktree mode runs each task in an isolated tree (see
 	// ensureWorktreeIfConfigured) — nothing pre-dirty to protect.
-	// BL447: PreTaskSHA was captured in the task's resolved dir, so the
+	// PreTaskSHA was captured in the task's resolved dir, so the
 	// committed-files walk must run there too.
 	taskDir := m.resolveTaskProjectDir(prd, t)
 	if prd.Git.Branch != "" || taskDir == "" || t.PreTaskSHA == "" {

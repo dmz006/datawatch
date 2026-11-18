@@ -37,6 +37,7 @@ LLM_ONLY=(
     merge-shadow  # conceptual reference for merge shadow behaviour; no MCP-callable steps
     navigation-mobile-fit  # test-only page: the phone-width check run by make test-e2e-shared-nav; no MCP-callable steps
     codeql-local-scan  # shell-script workflow (scripts/codeql-local.sh); no MCP-callable steps
+    gofmt-check  # shell-script/Makefile reference (scripts/check-gofmt.sh, make check-gofmt); no MCP-callable steps
     automata-events  # conceptual reference for the Events tab; no MCP-callable steps
     merge-shadow  # conceptual reference for merge shadow mode; no MCP-callable steps
     restart-with-work-running  # conceptual reference for the planning restart values; the setting is set through config-set / configure, which take the value directly, so no exec_steps are needed

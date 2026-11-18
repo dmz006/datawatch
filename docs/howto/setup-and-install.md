@@ -242,7 +242,13 @@ pointer once published). On first launch, paste the same bearer token
 ### (Optional) Install as PWA
 
 Browser menu → Install Datawatch. Adds it to your launcher; runs in
-its own window.
+its own window. The installed copy upgrades itself on each datawatch
+release (its own cache per release, old caches deleted, one automatic
+reload). If a button ever stops responding after a release, the manual
+fix is the **Reset browser state** button in Settings → About — it
+clears this app's saved settings and caches and reloads, and never
+touches sessions, Automata or server data — see [the Sessions
+troubleshooting section](sessions-tiles-and-grouping.md#when-the-tiles-compact-and-list-buttons-do-nothing-reset-browser-state).
 
 ### YAML
 

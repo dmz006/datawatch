@@ -10588,7 +10588,7 @@ paths:
       operationId: burnGuardConfigGet
       tags: [Singletons]
       responses:
-        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude, max_projection_gap_points"}
+        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude, max_projection_gap_points, mode, week_tolerance, points_to_week_factor, window_percent_per_point, window_stop_percent, reading_freshness_minutes"}
         "401": {$ref: "#/components/responses/Unauthorized"}
     put:
       summary: Change burn guard settings; one invalid value rejects the whole body and nothing is stored

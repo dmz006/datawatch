@@ -4360,13 +4360,20 @@ autonomous:
   # Worker session profiles: what a worker, verifier or judge session starts
   # with (MCP servers, tools, skills, project context, model, effort). Built-in
   # names: minimal, digest, full, datawatch-tools; a user profile may not reuse
-  # them. Sessions you start yourself always start with the full harness.
+  # them. Sessions you start yourself resolve at their own layer: a profile
+  # named on the start (worker_profile_name) wins, then the daemon-wide name,
+  # then the kind's row for a start with launch facts (launch_role=supervisor
+  # or launch_role=planner, launch_kind=review, or one-shot mode); a plain
+  # start with no name and no launch facts starts with the full harness,
+  # unchanged.
   #   worker_profiles: map of profile name to a profile. Profile fields are
   #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
   #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
   #     minimal|digest|full, model, effort. Default empty.
   #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
-  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     name. worker_profile_defaults.kind: task kind
+  #     (implementation|docs|note|final_gate) or session kind (supervisor,
+  #     operator_interactive, scheduled_command, planner, one_shot, review)
   #     -> profile name. Empty value = no default. Default empty.
   #   worker_profile: global profile name; empty = the role default.
   #   Launch behaviour: each launch resolves its profile by name, task ->
@@ -4382,11 +4389,12 @@ autonomous:
   #     profile and apply it to the session start (its MCP config, tools,
   #     skills and starting context). Verifier and judge launches resolve it
   #     when they start their one-shot session.
-  #   Read the profile in force per role and task kind on GET /api/config
-  #     (autonomous.in_force), MCP worker_profile_status, datawatch config get,
-  #     the comm channel configure key, or the web settings group.
+  #   Read the profile in force per role, task kind and session kind on
+  #     GET /api/config (autonomous.in_force), MCP worker_profile_status,
+  #     datawatch config get, the comm channel configure key, or the web
+  #     settings group.
   #   Refused at load: a built-in name reused, an invalid profile, a value
-  #   naming an unknown profile, an unknown role or kind key.
+  #   naming an unknown profile, an unknown role key or task-/session-kind key.
   worker_profiles: {}
   #   reviewer:
   #     mcp: {mode: list, servers: [github]}
@@ -4562,8 +4570,8 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # eight rules: six block, two warn; the pack is the floor, your rules
-    # the ceiling over it). Empty (below) = the built-in pack, unmodified.
+    # seventeen rules: thirteen block, four warn; the pack is the floor, your
+    # rules the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
     # anything else is a config error). A rule's message is required on an
@@ -4576,7 +4584,17 @@ autonomous:
     # verification_script_reason_empty, verification_script_task_files_only
     # (script compares only against the task's own files, never the merge
     # base), verification_script_docs_without_sync (script checks docs
-    # without make sync-docs), kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
+    # without make sync-docs),
+    # verification_script_artefact_files_allowed (script's changed-file-set
+    # check does not exempt the daemon's per-Automaton generated artefacts),
+    # verification_script_final_gate_artefact_allowed (script asserts the
+    # whole changed-file set against a finite list with no guard for the
+    # final gate re-running it),
+    # verification_script_invokes_unknown_flag (script invokes a long flag
+    # the command's own help does not list),
+    # verification_script_spec_unanchored (script asserts a heading or gate
+    # phrase the task spec does not name),
+    # kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.
@@ -5240,6 +5258,29 @@ usage:
       final_gate: low
     # Most retries of one task on Claude. 0 to 20, default 2.
     retry_limit_claude: 2
+    # The pace_line policy for the weekly and the window usage, beside the
+    # ladder. mode: off never fires; shadow (the default — an unset mode
+    # reads shadow; shadow first, then on) computes and records the decision
+    # without touching anything; on backs the claude-code backend off until
+    # the estimate is back inside the line and the window. As of this change
+    # the settings are in place on every surface and the guard's own behavior
+    # is unchanged until the pace_line policy runs.
+    mode: shadow
+    # How many points the week reading may run over the pace line and still
+    # be ok. Whole number 0 to 10, default 2.
+    week_tolerance: 2
+    # One point of ledger burn counts as this many points of the weekly
+    # allowance. 1 to 10, default 1.3.
+    points_to_week_factor: 1.3
+    # One point burned is this percent of the current window. 1 to 25,
+    # default 4. The window anchors (windows ending at 02:00, 07:00 and
+    # 12:00, then every 5 hours) are fixed behavior, not a setting.
+    window_percent_per_point: 4
+    # A window is over at this percent used. 50 to 95, default 85.
+    window_stop_percent: 85
+    # A reading older than this is stale and the guard asks for a fresh one.
+    # Whole number 1 to 1440, default 60.
+    reading_freshness_minutes: 60
   # Billing profiles: per-provider pricing model. Open map keyed by provider
   # (claude-code, openai, gemini, or any other operator-chosen key). A
   # provider with no profile reads the assumed default (api_metered, unit

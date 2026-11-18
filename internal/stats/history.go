@@ -23,7 +23,7 @@ type Sessionish interface {
 
 // DayBucket aggregates sessions for a single calendar day in UTC.
 type DayBucket struct {
-	Date         string  `json:"date"`            // YYYY-MM-DD
+	Date         string  `json:"date"` // YYYY-MM-DD
 	SessionCount int     `json:"session_count"`
 	Completed    int     `json:"completed"`
 	Failed       int     `json:"failed"`

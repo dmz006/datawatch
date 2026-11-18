@@ -1422,7 +1422,7 @@ returns
 
 ### `worker_profile_status`
 
-Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`) and task kind (`implementation`, `docs`, `note`, `final_gate`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role and task kind (`scope`, `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
+Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`), each task kind (`implementation`, `docs`, `note`, `final_gate`) and each session kind (`supervisor`, `operator_interactive`, `scheduled_command`, `planner`, `one_shot`, `review`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role, task kind and session kind (thirteen in total; `scope` `role`, `kind` or `session_kind`, plus `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
 
 Configure profiles with `config_set` on `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile`; read them back with `get_config section=autonomous`. A refused value changes nothing.
 
@@ -3065,7 +3065,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 | `burn_guard_status` | none | State, `rung`, `applied`, last projection (with `line` and `margin`), last decision, coefficients, last error, counters |
 | `burn_guard_run` | none | Evaluates now; the `decision` and the refreshed `status`. An error when the guard is not running |
 | `burn_guard_config_get` | none | The `usage.burn_guard` settings |
-| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20), `ask_on_change`, `max_projection_gap_points` (0–100; 0 never compares the guard with the usage advice; default 25) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
+| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20), `ask_on_change`, `max_projection_gap_points` (0–100; 0 never compares the guard with the usage advice; default 25), `mode` (`off`, `shadow`, `on`; unset reads `shadow`), `week_tolerance` (0–10, default 2), `points_to_week_factor` (1–10, default 1.3), `window_percent_per_point` (1–25, default 4), `window_stop_percent` (50–95, default 85), `reading_freshness_minutes` (1–1440, default 60) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
 
 ```
 burn_guard_status()

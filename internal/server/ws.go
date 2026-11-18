@@ -159,10 +159,10 @@ type client struct {
 	// the connection read loop keeps reading (see handleWS in api.go).
 	inputMux     sync.Mutex
 	inputCond    *sync.Cond
-	inputQueue   chan inputJob     // nil until the first enqueue
-	inputPending map[string]int    // per-session jobs enqueued but not yet completed
-	inputClosed  bool              // set by stopInputWorker; enqueues after this are dropped
-	inputDone    chan struct{}     // closed when the worker has drained the queue and exited
+	inputQueue   chan inputJob  // nil until the first enqueue
+	inputPending map[string]int // per-session jobs enqueued but not yet completed
+	inputClosed  bool           // set by stopInputWorker; enqueues after this are dropped
+	inputDone    chan struct{}  // closed when the worker has drained the queue and exited
 	// sessionList / sessionView are the modes negotiated by hello (see
 	// ws_session_stream.go). "" means the client never chose: sessionList
 	// then follows server.ws_session_list_default, sessionView is "full".
