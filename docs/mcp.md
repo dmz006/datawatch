@@ -1344,8 +1344,10 @@ Start a new AI coding session.
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
 | `image_paths` | string[] | No | Local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and prepended to the task as `[image: ...]`. Requires `vision.enabled: true`. |
 
-**Example response:**
+**Example call and response:**
 ```
+start_session(task="fix the flaky test", llm="claude-code", model="sonnet", effort="normal", name="flaky-fix")
+
 Session started.
 ID:      a3f2
 Task:    write unit tests for the auth package
@@ -1688,7 +1690,7 @@ Sent to parent session pp01.
 **Usage pattern for sub-agents:**
 ```
 # At spawn time, parent passes its own session ID:
-start_session(task="...", caller_session_id="host-abc123")
+start_session(task="...", caller_session_id="host-abc123", model="sonnet")
 
 # When the sub-agent finishes, it calls:
 reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")
