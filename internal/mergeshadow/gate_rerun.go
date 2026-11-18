@@ -40,7 +40,7 @@ type RerunOptions struct {
 // in Detail. A gate that does not fail on the first run is not rerun.
 func RunGateWithRerun(ctx context.Context, dir, name string, timeout time.Duration, opts RerunOptions) GateResult {
 	first := runGate(ctx, dir, name, timeout, opts.FirstRunEnv, opts.DataDir)
-	if first.Status != GateFail {
+	if first.Status != GateFail || name != rerunGateName {
 		return first
 	}
 	if opts.BeforeRerun != nil {

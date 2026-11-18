@@ -266,3 +266,50 @@ func TestGateDetailCarriesLoadSensitiveFinding(t *testing.T) {
 		t.Errorf("gateDetail(fail) = %q, want the detail unchanged", got)
 	}
 }
+
+// flakeOutput is go test -json output of one failing test.
+const flakeOutput = `{"Action":"output","Package":"p","Test":"TestFlaky","Output":"    flaky_test.go:9: race\\n"}
+{"Action":"fail","Package":"p","Test":"TestFlaky"}`
+
+func TestLoadSensitiveGateCountsAsPassWithFlakeNamed(t *testing.T) {
+	d := t.TempDir()
+	if err := os.WriteFile(filepath.Join(d, "flake.json"), []byte(flakeOutput+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recipe := "if [ -e ran ]; then echo ok; else touch ran; cat flake.json; exit 1; fi"
+	mk := "test:\n\t@" + recipe + "\n"
+	if err := os.WriteFile(filepath.Join(d, "Makefile"), []byte(mk), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := RunGateWithRerun(context.Background(), d, rerunGateName, 30*time.Second, RerunOptions{})
+	if res.Status != GateLoadSensitive {
+		t.Fatalf("status = %q, detail %q", res.Status, res.Detail)
+	}
+	g := toGates([]GateResult{res})[0]
+	if !GateStatusCountsAsPass(g.Status) {
+		t.Errorf("status %q does not count as pass", g.Status)
+	}
+	if !strings.Contains(g.Detail, "TestFlaky") || !strings.Contains(g.Detail, "passed when rerun alone") {
+		t.Errorf("detail %q lacks the flake name or rerun text", g.Detail)
+	}
+	if f := findingsFor(nil, nil, []Gate{g}, ""); len(f) != 0 {
+		t.Errorf("blocking findings %v for a load_sensitive gate", f)
+	}
+}
+
+func TestBuildAndLintFailuresAreNeverRerun(t *testing.T) {
+	for _, name := range []string{"build", "lint"} {
+		d := t.TempDir()
+		count := filepath.Join(d, "count")
+		mk := name + ":\n\t@echo x >> '" + count + "'; exit 1\n"
+		if err := os.WriteFile(filepath.Join(d, "Makefile"), []byte(mk), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		called := false
+		res := RunGateWithRerun(context.Background(), d, name, 30*time.Second, RerunOptions{BeforeRerun: func() { called = true }})
+		b, _ := os.ReadFile(count)
+		if res.Status == GateLoadSensitive || called || strings.Count(string(b), "x") != 1 {
+			t.Errorf("%s: status %q rerun=%v runs=%d", name, res.Status, called, strings.Count(string(b), "x"))
+		}
+	}
+}
