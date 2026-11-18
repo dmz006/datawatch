@@ -34,7 +34,7 @@ func putMergeShadow(t *testing.T, s *Server, key string, value interface{}) {
 	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]interface{}{key: value})
 }
 
-// TestMergeShadowConfigPutGetRoundTrip is the acceptance: each of the three
+// TestMergeShadowConfigPutGetRoundTrip is the acceptance: each of the four
 // autonomous.merge_shadow.* keys round-trips through PUT /api/config and back
 // out through GET /api/config.
 func TestMergeShadowConfigPutGetRoundTrip(t *testing.T) {
@@ -47,6 +47,7 @@ func TestMergeShadowConfigPutGetRoundTrip(t *testing.T) {
 		{"autonomous.merge_shadow.enabled", false},
 		{"autonomous.merge_shadow.gate_timeout", "45m"},
 		{"autonomous.merge_shadow.plan_keep", 7},
+		{"autonomous.merge_shadow.agreement_streak", 3},
 	}
 	for _, c := range cases {
 		putMergeShadow(t, s, c.key, c.value)
@@ -64,6 +65,10 @@ func TestMergeShadowConfigPutGetRoundTrip(t *testing.T) {
 			if surface["plan_keep"] != float64(7) {
 				t.Errorf("%s round trip: plan_keep = %v, want 7", c.key, surface["plan_keep"])
 			}
+		case 3:
+			if surface["agreement_streak"] != float64(3) {
+				t.Errorf("%s round trip: agreement_streak = %v, want 3", c.key, surface["agreement_streak"])
+			}
 		default:
 			t.Fatalf("test case table: unhandled value %v", c.value)
 		}
@@ -80,18 +85,22 @@ func TestMergeShadowConfigPutGetRoundTrip(t *testing.T) {
 	if ms.PlanKeep == nil || *ms.PlanKeep != 7 {
 		t.Errorf("stored MergeShadow.PlanKeep = %v, want pointer to 7", ms.PlanKeep)
 	}
+	if ms.AgreementStreak == nil || *ms.AgreementStreak != 3 {
+		t.Errorf("stored MergeShadow.AgreementStreak = %v, want pointer to 3", ms.AgreementStreak)
+	}
 }
 
 // TestMergeShadowConfigDefaults is the GET side before any PUT: the block is
 // there and reads the defaults (enabled on, 20-minute gate timeout, 200 plans
-// kept per project).
+// kept per project, agreement-streak threshold 5).
 func TestMergeShadowConfigDefaults(t *testing.T) {
 	s, _, _ := newActivateServer(t, false)
 	surface := mergeShadowSurface(t, s)
 	want := map[string]interface{}{
-		"enabled":      true,
-		"gate_timeout": config.DefaultMergeShadowGateTimeout.String(),
-		"plan_keep":    float64(config.DefaultMergeShadowPlanKeep),
+		"enabled":          true,
+		"gate_timeout":     config.DefaultMergeShadowGateTimeout.String(),
+		"plan_keep":        float64(config.DefaultMergeShadowPlanKeep),
+		"agreement_streak": float64(config.DefaultMergeShadowAgreementStreak),
 	}
 	for k, v := range want {
 		if surface[k] != v {
@@ -101,9 +110,9 @@ func TestMergeShadowConfigDefaults(t *testing.T) {
 }
 
 // TestMergeShadowConfigRejectsBadValues is the validation: an unparseable or
-// non-positive gate_timeout, a non-positive or non-whole plan_keep, a
-// non-boolean enabled and an unknown field each reject the PUT, and none of
-// them displaces the earlier good values.
+// non-positive gate_timeout, a non-positive or non-whole plan_keep or
+// agreement_streak, a non-boolean enabled and an unknown field each reject
+// the PUT, and none of them displaces the earlier good values.
 func TestMergeShadowConfigRejectsBadValues(t *testing.T) {
 	s, _, _ := newActivateServer(t, false)
 
@@ -118,6 +127,9 @@ func TestMergeShadowConfigRejectsBadValues(t *testing.T) {
 		{"autonomous.merge_shadow.plan_keep", 0},
 		{"autonomous.merge_shadow.plan_keep", -3},
 		{"autonomous.merge_shadow.plan_keep", 2.5},
+		{"autonomous.merge_shadow.agreement_streak", 0},
+		{"autonomous.merge_shadow.agreement_streak", -1},
+		{"autonomous.merge_shadow.agreement_streak", 2.5},
 		{"autonomous.merge_shadow.enabled", "on"},
 		{"autonomous.merge_shadow.enabled", 1},
 		{"autonomous.merge_shadow.release_mode", "shadow"},
@@ -138,6 +150,9 @@ func TestMergeShadowConfigRejectsBadValues(t *testing.T) {
 	}
 	if ms.PlanKeep == nil || *ms.PlanKeep != 11 {
 		t.Errorf("plan_keep after refusals = %v, want the earlier 11", ms.PlanKeep)
+	}
+	if ms.AgreementStreak != nil {
+		t.Errorf("agreement_streak after refusals = %v, want unapplied (nil)", *ms.AgreementStreak)
 	}
 	surface := mergeShadowSurface(t, s)
 	if got := surface["gate_timeout"]; got != "30m0s" {

@@ -19,6 +19,13 @@ const (
 	mergeShadowNoComparisonLine = "no merge shadow comparison exists yet"
 )
 
+type mergeShadowStreak struct {
+	Length    int  `json:"length"`
+	Total     int  `json:"total"`
+	Threshold int  `json:"threshold"`
+	Met       bool `json:"met"`
+}
+
 type mergeShadowCLIView struct {
 	Projects []struct {
 		Project     string `json:"project"`
@@ -39,6 +46,7 @@ type mergeShadowCLIView struct {
 			Matched   int `json:"matched"`
 			Different int `json:"different"`
 		} `json:"counts"`
+		Streak *mergeShadowStreak `json:"streak"`
 	} `json:"projects"`
 }
 
@@ -60,7 +68,8 @@ func newAutonomousMergeShadowCmd() *cobra.Command {
 		Short: "Show merge shadow comparison counts and per-Automaton differences",
 		Long: `The merge shadow compares the merge the daemon planned with what landed.
 
-  status               Matched and different counts per release size
+  status               Matched and different counts per release size, plus each
+                       project's agreement streak against its threshold
   compare <automaton>  The differences found for one Automaton
 `,
 	}
@@ -71,7 +80,7 @@ func newAutonomousMergeShadowCmd() *cobra.Command {
 func newMergeShadowStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Print matched and different counts per release size",
+		Short: "Print matched and different counts per release size and the agreement streaks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			v, err := fetchMergeShadow()
@@ -94,6 +103,20 @@ func newMergeShadowStatusCmd() *cobra.Command {
 			}
 			for _, sz := range []string{"patch", "minor", "major", "none"} {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: matched %d, different %d\n", sz, matched[sz], different[sz])
+			}
+			// One line per project carrying an agreement streak: the run of
+			// most-recent merges with no major difference, how many merges it is
+			// measured over, and whether it meets the operator's threshold.
+			for _, p := range v.Projects {
+				if p.Streak == nil {
+					continue
+				}
+				word := "not met"
+				if p.Streak.Met {
+					word = "met"
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s: agreement streak %d of %d (%s, %d compared)\n",
+					p.Project, p.Streak.Length, p.Streak.Threshold, word, p.Streak.Total)
 			}
 			return nil
 		},

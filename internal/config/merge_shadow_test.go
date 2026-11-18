@@ -12,7 +12,7 @@ import (
 // the constant block in merge_shadow.go and to this test.
 func TestMergeShadowDefaults(t *testing.T) {
 	if DefaultMergeShadowEnabled != true || DefaultMergeShadowGateTimeout != 20*time.Minute ||
-		DefaultMergeShadowPlanKeep != 200 {
+		DefaultMergeShadowPlanKeep != 200 || DefaultMergeShadowAgreementStreak != 5 {
 		t.Fatalf("a merge_shadow default changed; update docs/config-reference.yaml and implementation.md with it")
 	}
 
@@ -26,11 +26,14 @@ func TestMergeShadowDefaults(t *testing.T) {
 	if got := zero.EffectivePlanKeep(); got != 200 {
 		t.Errorf("absent plan_keep: got %d, want 200", got)
 	}
+	if got := zero.EffectiveAgreementStreak(); got != 5 {
+		t.Errorf("absent agreement_streak: got %d, want 5", got)
+	}
 
 	// The zero value of the whole autonomous block also gets the defaults.
 	var auto AutonomousConfig
 	if !auto.MergeShadow.EffectiveEnabled() || auto.MergeShadow.EffectiveGateTimeout() != 20*time.Minute ||
-		auto.MergeShadow.EffectivePlanKeep() != 200 {
+		auto.MergeShadow.EffectivePlanKeep() != 200 || auto.MergeShadow.EffectiveAgreementStreak() != 5 {
 		t.Errorf("autonomous zero value does not carry merge_shadow defaults")
 	}
 }
@@ -39,7 +42,8 @@ func TestMergeShadowExplicitValuesOverrideDefaults(t *testing.T) {
 	off := false
 	gate := "90s"
 	keep := 5
-	m := MergeShadowConfig{Enabled: &off, GateTimeout: &gate, PlanKeep: &keep}
+	streak := 2
+	m := MergeShadowConfig{Enabled: &off, GateTimeout: &gate, PlanKeep: &keep, AgreementStreak: &streak}
 	if m.EffectiveEnabled() {
 		t.Errorf("explicit enabled=false read as on")
 	}
@@ -48,6 +52,9 @@ func TestMergeShadowExplicitValuesOverrideDefaults(t *testing.T) {
 	}
 	if got := m.EffectivePlanKeep(); got != 5 {
 		t.Errorf("plan_keep 5: got %d", got)
+	}
+	if got := m.EffectiveAgreementStreak(); got != 2 {
+		t.Errorf("agreement_streak 2: got %d", got)
 	}
 }
 
@@ -64,6 +71,13 @@ func TestMergeShadowInvalidValuesFallBackToDefaults(t *testing.T) {
 		m := MergeShadowConfig{PlanKeep: &keep}
 		if got := m.EffectivePlanKeep(); got != 200 {
 			t.Errorf("plan_keep %d: got %d, want default 200", k, got)
+		}
+	}
+	for _, s := range []int{0, -1} {
+		streak := s
+		m := MergeShadowConfig{AgreementStreak: &streak}
+		if got := m.EffectiveAgreementStreak(); got != 5 {
+			t.Errorf("agreement_streak %d: got %d, want default 5", s, got)
 		}
 	}
 }
@@ -97,13 +111,14 @@ func TestMergeShadowYAMLRoundTrip(t *testing.T) {
 }
 
 func TestMergeShadowYAMLParsesDocumentedKeys(t *testing.T) {
-	src := []byte("autonomous:\n  merge_shadow:\n    enabled: false\n    gate_timeout: 90s\n    plan_keep: 12\n")
+	src := []byte("autonomous:\n  merge_shadow:\n    enabled: false\n    gate_timeout: 90s\n    plan_keep: 12\n    agreement_streak: 8\n")
 	var cfg Config
 	if err := yaml.Unmarshal(src, &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	ms := cfg.Autonomous.MergeShadow
-	if ms.EffectiveEnabled() || ms.EffectiveGateTimeout() != 90*time.Second || ms.EffectivePlanKeep() != 12 {
+	if ms.EffectiveEnabled() || ms.EffectiveGateTimeout() != 90*time.Second || ms.EffectivePlanKeep() != 12 ||
+		ms.EffectiveAgreementStreak() != 8 {
 		t.Errorf("documented keys not read: %+v", ms)
 	}
 }
