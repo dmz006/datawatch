@@ -154,6 +154,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"unexecutable_verification_script",
 				"names_tracker_id",
 				"unbounded_load_step",
+				"fixed_calendar_date_in_test",
 			},
 		},
 	}
