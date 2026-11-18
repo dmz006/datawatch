@@ -21,7 +21,7 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs fourteen checks. Twelve of them are checks the supervisor script
+call**, it runs sixteen checks. Fourteen of them are checks the supervisor script
 (`scripts/supervisor-watch.py`) runs by hand today; two
 (`worktree_not_registered` and `verify_script_not_executable`) are new in the
 watch, and the script has several checks of its own the watch does not have yet
@@ -74,6 +74,8 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `main_checkout_dirty` | The main checkout has modified tracked files, so any Automaton ship will abort until they are committed. Untracked files do not count. Not checked while `main_checkout` is empty. | The main checkout path |
 | `ci_red` | A CI run is red. This is read from the repo CI watch's records — see [automation-repo-ci-watch.md](automation-repo-ci-watch.md) — and nothing new is fetched from the CI service. | The CI run id |
 | `ci_stuck` | A CI run has been in progress abnormally long (the repo CI watch has marked it hung). The Automata release pipeline is stalled until it is done. | The CI run id |
+| `priority_stall` | A high-priority Automaton has been waiting in the queue for more than the stall threshold without a lane picking it up. The line names the Automaton, its priority, how long it has been waiting, the `stall_threshold_minutes` and the `priority_floor`. Only Automata at or above the floor are named, only once the age is past the threshold, and a holding or an already-reported state is not a stall. | The Automaton id |
+| `backlog` | The queue of Automata that need attention, in one finding: the Automata still waiting to be picked up and the failed or blocked Automata that still have work left, ordered highest priority first and, within a priority, oldest first; it names up to sixteen Automata and then the `+k more` tail. This is one finding about the queue, not one per Automaton. | The fixed subject `backlog` |
 
 **When a check cannot tell, it says nothing.** A probe that fails, a node that
 cannot be reached, a tool that is missing or a path that cannot be read gives
@@ -254,6 +256,8 @@ CI and the main checkout belong to no Automaton and write no triage note.
 | `autonomous.automation.supervisor_watch.mode` | `shadow` (unset reads `shadow`) | `off` (the pass does nothing and records nothing new), `shadow` (everything runs and is recorded, would-alert is marked, nothing is raised and nothing is acted on) or `on` (the alert is raised, once per episode). Case-insensitive; any other value is refused. |
 | `autonomous.automation.supervisor_watch.alert_minutes` | `30` | How long a finding may stay open before the one alert for that episode. `0` turns the alert off; negative is refused. |
 | `autonomous.automation.supervisor_watch.silent_minutes` | `60` | How long an Automaton with a task in progress may show no activity before `worktree_silent`. `0` is legal; negative is refused. |
+| `autonomous.automation.supervisor_watch.stall_threshold_minutes` | `30` | How long a queued Automaton at or above the priority floor may wait before a `priority_stall` finding names it. The age must be strictly past the threshold, so `0` is legal (named as soon as the waiting age is positive); negative is refused. |
+| `autonomous.automation.supervisor_watch.priority_floor` | `80` | The priority at or above which a queued Automaton is high enough for a `priority_stall` finding. Below the floor a queue is a `backlog`, not a stall. `0` is legal (every queued Automaton is above it); negative is refused. |
 | `autonomous.automation.supervisor_watch.poll_seconds` | `60` (unset or `0` reads `60`) | The poll interval the script record's freshness is judged against: a record older than three times this is "unavailable", not a disagreement. The coordinator runs the pass at most once a minute. Below 60 is refused; nothing is ever rounded up for you. |
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`. Empty means no comparison is made. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point (restart count and active-since time of the terminal-session service) that `tmux_restart` compares against. Empty means no starting point is configured and that check reports nothing. |
@@ -264,7 +268,7 @@ Every key is read live: a change takes effect on the next pass with no restart. 
 value is refused on every write path — an unknown mode, a negative minute
 threshold, a `poll_seconds` below 60, a non-text path or model name — and nothing
 is written. Until `working_model` is set, the `model_not_resident` check stays off
-and the other thirteen are unaffected.
+and the other fifteen are unaffected.
 
 ## The stuck-running message
 
