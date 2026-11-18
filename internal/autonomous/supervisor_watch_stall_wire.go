@@ -86,3 +86,20 @@ func (m *Manager) supervisorWatchStallScan(src LaneFillDecisionSource, prds []*P
 	m.mu.Unlock()
 	d.Scan(prds, cfg, now)
 }
+
+// PriorityStalls returns the current priority stalls for the read surfaces.
+// It builds a throwaway detector with no wake sink, so a read never emits an
+// event, never touches the persistent per-blocker dedup and never mutates an
+// Automaton.
+func (m *Manager) PriorityStalls(now time.Time) []PriorityStall {
+	if m == nil {
+		return []PriorityStall{}
+	}
+	cfg := m.Config().Automation.SupervisorWatch
+	d := NewStallDetector(supervisorWatchStallSource{m: m}, nil)
+	out := d.Scan(m.supervisorWatchPRDs(), cfg, now)
+	if out == nil {
+		out = []PriorityStall{}
+	}
+	return out
+}
