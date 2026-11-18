@@ -175,11 +175,14 @@ func TestMergeShadowHookEnabledStoresPlanAndLeavesBranchAlone(t *testing.T) {
 	if plan.Applied {
 		t.Error("stored plan marked applied")
 	}
-	if plan.PlannedVersion != "v1.3.0" || plan.ReleaseSize != mergeshadow.ReleaseSizeMinor {
-		t.Errorf("planned %q size %q, want v1.3.0 minor", plan.PlannedVersion, plan.ReleaseSize)
+	if plan.PlannedVersion != "1.3.0" || plan.ReleaseSize != mergeshadow.ReleaseSizeMinor {
+		t.Errorf("planned %q size %q, want 1.3.0 minor (feature's built-in size over base 1.2.0)", plan.PlannedVersion, plan.ReleaseSize)
 	}
 	if plan.ChangelogSource != "t-changelog" {
 		t.Errorf("changelog source %q, want the changelog task", plan.ChangelogSource)
+	}
+	if len(plan.Findings) != 0 {
+		t.Errorf("findings %+v, want none: the entry names 1.3.0, which the plan names", plan.Findings)
 	}
 	if got := strings.TrimSpace(shadowGit(t, repo, "rev-parse", "main")); got != mainBefore {
 		t.Errorf("main moved: %s -> %s", mainBefore, got)
@@ -192,6 +195,77 @@ func TestMergeShadowHookEnabledStoresPlanAndLeavesBranchAlone(t *testing.T) {
 	}
 	if strings.Contains(shadowGit(t, repo, "worktree", "list"), "merge-shadow") {
 		t.Error("trial worktree left registered in the project")
+	}
+}
+
+// TestMergeShadowHookExplicitReleaseSizeDrivesPlan verifies the size is
+// resolved out of the Automaton's settings: an explicit size on the
+// Automaton wins over the built-in for its kind, the planned version is
+// base plus that size, and a changelog entry that names another version is
+// a blocking finding.
+func TestMergeShadowHookExplicitReleaseSizeDrivesPlan(t *testing.T) {
+	repo := shadowRepo(t)
+	calls := stubShadowGates(t)
+
+	m := shadowManager(t)
+	prd := finishedShadowPRD(repo)
+	prd.ReleaseSize = "patch" // wins over feature's built-in minor
+	done := m.startMergeShadow(prd)
+	if done == nil {
+		t.Fatal("no run started")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Minute):
+		t.Fatal("shadow run did not finish")
+	}
+	if *calls != 1 {
+		t.Errorf("gates ran %d times, want 1", *calls)
+	}
+	plan, err := mergeshadow.Load(m.dataDir, "p-shadow")
+	if err != nil {
+		t.Fatalf("plan not stored: %v", err)
+	}
+	if plan.ReleaseSize != mergeshadow.ReleaseSizePatch {
+		t.Errorf("size %q, want the explicit patch", plan.ReleaseSize)
+	}
+	if plan.PlannedVersion != "1.2.1" {
+		t.Errorf("planned %q, want 1.2.1 (base 1.2.0 patched)", plan.PlannedVersion)
+	}
+	if len(plan.Findings) != 1 || plan.Findings[0].Code != "changelog_version_mismatch" || !plan.Findings[0].Blocking {
+		t.Errorf("findings %+v, want one blocking changelog_version_mismatch (entry names v1.3.0, plan names 1.2.1)", plan.Findings)
+	}
+}
+
+// TestMergeShadowHookNoneSizePlansNoVersion verifies a size that plans no
+// version keeps the plan in its unreleased state, whatever the changelog
+// entry says.
+func TestMergeShadowHookNoneSizePlansNoVersion(t *testing.T) {
+	repo := shadowRepo(t)
+	stubShadowGates(t)
+
+	m := shadowManager(t)
+	prd := finishedShadowPRD(repo)
+	prd.ReleaseSize = "none" // explicit none wins over feature's built-in minor
+	done := m.startMergeShadow(prd)
+	if done == nil {
+		t.Fatal("no run started")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Minute):
+		t.Fatal("shadow run did not finish")
+	}
+	plan, err := mergeshadow.Load(m.dataDir, "p-shadow")
+	if err != nil {
+		t.Fatalf("plan not stored: %v", err)
+	}
+	if plan.ReleaseSize != mergeshadow.ReleaseSizeNone || plan.PlannedVersion != "" || plan.ReadmeLine != "" {
+		t.Errorf("size %q planned %q readme %q, want the unreleased state",
+			plan.ReleaseSize, plan.PlannedVersion, plan.ReadmeLine)
+	}
+	if len(plan.Findings) != 0 {
+		t.Errorf("findings %+v, want none: with no planned version the entry is not finding material", plan.Findings)
 	}
 }
 

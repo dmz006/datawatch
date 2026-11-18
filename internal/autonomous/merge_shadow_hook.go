@@ -112,6 +112,7 @@ func (m *Manager) mergeShadowInput(prd *PRD, cfg config.MergeShadowConfig) (merg
 	if prd.Git.Branch == "" || prd.ProjectDir == "" {
 		return mergeshadow.Input{}, false
 	}
+	pipeline := m.mergePipelineConfig()
 	return mergeshadow.Input{
 		AutomatonID:    prd.ID,
 		Project:        ProjectKey(prd),
@@ -119,11 +120,30 @@ func (m *Manager) mergeShadowInput(prd *PRD, cfg config.MergeShadowConfig) (merg
 		Branch:         prd.Git.Branch,
 		BaseRef:        prd.Git.BaseBranch,
 		DataDir:        m.dataDir,
-		Pipeline:       m.mergePipelineConfig(),
+		Pipeline:       pipeline,
+		ReleaseSize:    mergeShadowReleaseSize(prd, pipeline),
 		ChangeRecord:   m.mergeShadowChangeRecord(prd.ID),
 		ChangelogTasks: m.mergeShadowChangelogTasks(prd),
 		GateTimeout:    cfg.EffectiveGateTimeout(),
 	}, true
+}
+
+// mergeShadowReleaseSize resolves the release size the shadow merge plan
+// proposes, out of the merge pipeline's layered settings: the size recorded
+// on the Automaton, then the size of its kind, then the built-in default.
+// It is a pure function of the Automaton record and the pipeline settings:
+// the size is never computed from the diff, and a major never comes out of a
+// kind.
+func mergeShadowReleaseSize(prd *PRD, pipeline config.MergePipelineConfig) mergeshadow.ReleaseSize {
+	if prd == nil {
+		return mergeshadow.ReleaseSizeNone
+	}
+	resolved := ResolveReleaseSize(ReleaseSizeInput{
+		ReleaseSize: prd.ReleaseSize,
+		Kind:        EffectiveKind(prd, nil),
+		KindMap:     pipeline.EffectiveReleaseSizeMap(ProjectKey(prd)),
+	})
+	return mergeshadow.ReleaseSize(resolved.Size)
 }
 
 // mergeShadowChangeRecord returns the Automaton's merged change record, or,

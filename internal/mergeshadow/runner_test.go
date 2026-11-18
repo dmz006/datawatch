@@ -82,6 +82,9 @@ func runnerInput(t *testing.T, repo, branch string) Input {
 		BaseRef:     "main",
 		DataDir:     t.TempDir(),
 		Pipeline:    config.MergePipelineConfig{VersionFiles: []string{"version.go"}},
+		// minor over the base 1.2.0 plans 1.3.0, which the input's
+		// changelog entry names.
+		ReleaseSize: ReleaseSizeMinor,
 		ChangelogTasks: []ChangelogTask{{
 			ID:     "t9",
 			Kind:   ChangelogTaskKind,
@@ -117,15 +120,15 @@ func TestRunnerCleanMergeStoresPlanWithoutApplying(t *testing.T) {
 		t.Errorf("identity fields: %+v", plan)
 	}
 	if plan.ReleaseSize != ReleaseSizeMinor {
-		t.Errorf("release size %q, want minor (1.2.0 to v1.3.0)", plan.ReleaseSize)
+		t.Errorf("release size %q, want minor, the input's size", plan.ReleaseSize)
 	}
-	if plan.PlannedVersion != "v1.3.0" || plan.ChangelogSource != "t9" {
+	if plan.PlannedVersion != "1.3.0" || plan.ChangelogSource != "t9" {
 		t.Errorf("planned %q source %q", plan.PlannedVersion, plan.ChangelogSource)
 	}
 	if plan.ChangelogHeading != "## [v1.3.0] - 2026-11-09" || !strings.Contains(plan.ChangelogBody, "- thing") {
 		t.Errorf("changelog heading %q body %q", plan.ChangelogHeading, plan.ChangelogBody)
 	}
-	if !strings.Contains(plan.ReadmeLine, "v1.3.0") || !strings.Contains(plan.ReadmeLine, "2026-11-09") {
+	if !strings.Contains(plan.ReadmeLine, "1.3.0") || !strings.Contains(plan.ReadmeLine, "2026-11-09") {
 		t.Errorf("readme line %q", plan.ReadmeLine)
 	}
 	if plan.Conflicts == nil || len(plan.Conflicts) != 0 {
@@ -147,7 +150,7 @@ func TestRunnerCleanMergeStoresPlanWithoutApplying(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stored plan: %v", err)
 	}
-	if stored.Applied || stored.PlannedVersion != "v1.3.0" {
+	if stored.Applied || stored.PlannedVersion != "1.3.0" {
 		t.Errorf("stored plan %+v", stored)
 	}
 
@@ -166,6 +169,7 @@ func TestRunnerConflictsClassifiedAndGatesSkipped(t *testing.T) {
 	repo := runnerConflictRepo(t)
 	in := runnerInput(t, repo, "work")
 	in.ChangelogTasks = nil // no entry: the changelog must stay empty, not invented
+	in.ChangeRecord = &changerecord.ChangeRecord{AutomatonID: "a1", Packages: []string{"main"}}
 	calls := 0
 
 	plan, err := Runner{Gates: fakeGates(t, GatePass, &calls), Now: fixedClock()}.Run(context.Background(), in)
@@ -196,8 +200,8 @@ func TestRunnerConflictsClassifiedAndGatesSkipped(t *testing.T) {
 	if plan.ChangelogSource != ChangelogSourceMissing || plan.ChangelogHeading != "" || plan.ChangelogBody != "" {
 		t.Errorf("changelog %q %q %q, want missing and empty", plan.ChangelogSource, plan.ChangelogHeading, plan.ChangelogBody)
 	}
-	if plan.PlannedVersion != "" || plan.ReleaseSize != ReleaseSizeNone || plan.ReadmeLine != "" {
-		t.Errorf("planned %q size %q readme %q, want none", plan.PlannedVersion, plan.ReleaseSize, plan.ReadmeLine)
+	if plan.PlannedVersion != "1.3.0" || plan.ReleaseSize != ReleaseSizeMinor || !strings.Contains(plan.ReadmeLine, "1.3.0") {
+		t.Errorf("planned %q size %q readme %q, want 1.3.0 minor from the input size", plan.PlannedVersion, plan.ReleaseSize, plan.ReadmeLine)
 	}
 	codes := map[string]int{}
 	for _, f := range plan.Findings {
@@ -347,26 +351,70 @@ func TestTrialMergeWithPropagatesCallbackError(t *testing.T) {
 	}
 }
 
-func TestReleaseSizeBetween(t *testing.T) {
-	cases := []struct {
-		from, to string
-		want     ReleaseSize
-	}{
-		{"1.2.0", "1.3.0", ReleaseSizeMinor},
-		{"1.2.0", "v1.3.0", ReleaseSizeMinor},
-		{"v1.2.0", "v2.0.0", ReleaseSizeMajor},
-		{"1.2.0", "1.2.1", ReleaseSizePatch},
-		{"1.2.0", "1.2.0", ReleaseSizeNone},
-		{"1.2.1", "1.2.0", ReleaseSizeNone},
-		{"", "1.2.0", ReleaseSizeNone},
-		{"1.2.0", "", ReleaseSizeNone},
-		{"1.2", "1.3.0", ReleaseSizeNone},
-		{"1.x.0", "1.3.0", ReleaseSizeNone},
+func TestRunnerNoneSizeKeepsUnreleasedState(t *testing.T) {
+	repo := runnerRepo(t)
+	in := runnerInput(t, repo, "work")
+	in.ReleaseSize = ReleaseSizeNone
+	calls := 0
+
+	plan, err := Runner{Gates: fakeGates(t, GatePass, &calls), Now: fixedClock()}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
 	}
-	for _, c := range cases {
-		if got := releaseSizeBetween(c.from, c.to); got != c.want {
-			t.Errorf("releaseSizeBetween(%q, %q) = %q, want %q", c.from, c.to, got, c.want)
-		}
+	if calls != 1 {
+		t.Errorf("gate runner called %d times, want 1", calls)
+	}
+	if plan.ReleaseSize != ReleaseSizeNone || plan.PlannedVersion != "" || plan.ReadmeLine != "" {
+		t.Errorf("size %q planned %q readme %q, want the unreleased state",
+			plan.ReleaseSize, plan.PlannedVersion, plan.ReadmeLine)
+	}
+	if len(plan.Findings) != 0 {
+		t.Errorf("findings %+v, want none: with no planned version the changelog entry is not finding material", plan.Findings)
+	}
+}
+
+func TestRunnerChangelogNotNamingPlannedVersionIsAFinding(t *testing.T) {
+	repo := runnerRepo(t)
+	in := runnerInput(t, repo, "work") // minor over 1.2.0 plans 1.3.0
+	in.ChangelogTasks = []ChangelogTask{{
+		ID:     "t9",
+		Kind:   ChangelogTaskKind,
+		Output: "## [v1.9.9] - 2026-11-09\n\n### Added\n- thing\n",
+	}}
+
+	plan, err := Runner{Gates: fakeGates(t, GatePass, new(int)), Now: fixedClock()}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if plan.PlannedVersion != "1.3.0" {
+		t.Errorf("planned %q, want 1.3.0", plan.PlannedVersion)
+	}
+	if len(plan.Findings) != 1 {
+		t.Fatalf("findings %+v, want one", plan.Findings)
+	}
+	f := plan.Findings[0]
+	if f.Code != "changelog_version_mismatch" || !f.Blocking {
+		t.Errorf("finding %+v, want blocking changelog_version_mismatch", f)
+	}
+	if !strings.Contains(f.Message, "v1.9.9") || !strings.Contains(f.Message, "1.3.0") {
+		t.Errorf("finding message %q names neither heading nor planned version", f.Message)
+	}
+}
+
+func TestRunnerNonSemverBaseVersionIsAnError(t *testing.T) {
+	repo := runnerRepo(t)
+	git(t, repo, "checkout", "-q", "main")
+	write(t, repo, "version.go", "package main\n\nvar Version = \"1.2\"\n") // holds no plain X.Y.Z
+	git(t, repo, "commit", "-q", "-am", "non-semver base version")
+	git(t, repo, "checkout", "-q", "work")
+
+	in := runnerInput(t, repo, "work") // minor asks for a bump
+	_, err := Runner{Gates: fakeGates(t, GatePass, new(int)), Now: fixedClock()}.Run(context.Background(), in)
+	if err == nil {
+		t.Fatal("a base version that is not plain semver: no error, want a refused bump")
+	}
+	if _, lerr := Load(in.DataDir, "a1"); lerr == nil {
+		t.Error("a refused bump stored a plan")
 	}
 }
 

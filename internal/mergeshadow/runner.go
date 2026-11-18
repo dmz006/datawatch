@@ -45,6 +45,12 @@ type Input struct {
 	DataDir string
 	// Pipeline is the merge pipeline settings: version files and registry file.
 	Pipeline config.MergePipelineConfig
+	// ReleaseSize is the size this Automaton's release is planned at, resolved
+	// by the caller out of its settings and the project's: the size recorded
+	// on the Automaton, then the size of its kind, then the built-in
+	// default. none or an unrecognized value plans no version, so the plan
+	// keeps its unreleased state.
+	ReleaseSize ReleaseSize
 	// ChangeRecord is the Automaton's change record, nil when it has none.
 	ChangeRecord *changerecord.ChangeRecord
 	// ChangelogTasks are the Automaton's tasks, carrying their output, so the
@@ -78,14 +84,18 @@ type Runner struct {
 //  2. classify each conflicted path by file class;
 //  3. run the gates in that worktree, unless the merge has conflicts, in
 //     which case every gate is recorded as skipped;
-//  4. take the changelog entry from the entry task;
-//  5. derive the README line, registry row and parity-issue flag, and the
-//     release size (the planned version against the base ref's version);
+//  4. take the changelog entry from the entry task; when a version is
+//     planned, the entry must name it, otherwise that is a finding;
+//  5. take the release size from the input, and when it is not none derive
+//     the planned version from the base ref's current version (the version
+//     planner) and from it the README line, registry row and parity-issue
+//     flag;
 //  6. write the plan with Applied false.
 //
 // A failed trial merge is not an error: the plan is still written, with a
-// blocking finding. Nothing is applied to the repository. A cancelled context
-// and a failure to read the base ref or write the plan are errors.
+// blocking finding. Nothing is applied to the repository. A cancelled
+// context, a base version that is not plain semver when a bump is planned,
+// and a failure to write the plan are errors.
 func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	if err := in.validate(); err != nil {
 		return nil, err
@@ -159,28 +169,39 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		}
 	}
 
-	// Step 4: the changelog entry.
+	// Step 4: the changelog entry, taken from the entry task.
 	entry := ReadChangelogEntry(in.ChangelogTasks)
 	plan.ChangelogSource = entry.Source
 	plan.ChangelogHeading = entry.Heading
 	plan.ChangelogBody = entry.Body
-	planned := versionFromHeading(entry.Heading)
-	plan.PlannedVersion = planned
 
-	// Step 5: the release size and the derived lines.
-	plan.ReleaseSize = ReleaseSizeNone
-	if planned != "" {
+	// Step 5: the release size and the derived lines. The size is the one
+	// resolved for the Automaton. When it plans no version, the plan keeps
+	// its unreleased state: no planned version and no README line. Otherwise
+	// the planned version is the base ref's current version bumped by that
+	// size, computed by the version planner; a base that holds no plain X.Y.Z
+	// version refuses the bump, so nothing is guessed.
+	size := in.ReleaseSize
+	if !size.Valid() {
+		size = ReleaseSizeNone
+	}
+	plan.ReleaseSize = size
+	planned := ""
+	if size != ReleaseSizeNone {
 		landed, err := ReadLanded(ctx, in.RepoPath, base, LandedQuery{
 			Project:     in.Project,
 			AutomatonID: in.AutomatonID,
-			Version:     planned,
 			Pipeline:    in.Pipeline,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("mergeshadow: read base version: %w", err)
 		}
-		plan.ReleaseSize = releaseSizeBetween(landedVersion(landed, in.Pipeline, in.Project), planned)
+		if planned, err = PlanVersion(landedVersion(landed, in.Pipeline, in.Project), size); err != nil {
+			return nil, err
+		}
 	}
+	plan.PlannedVersion = planned
+
 	d, err := Derive(in.ChangeRecord, planned, now.Format(dateLayout), "")
 	if err != nil {
 		return nil, err
@@ -194,7 +215,7 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	// Step 6: the record itself.
 	plan.Conflicts = conflicts
 	plan.Gates = gateList
-	plan.Findings = append(taskFindings, findingsFor(trialErr, conflicts, gateList, entry.Source)...)
+	plan.Findings = append(taskFindings, findingsFor(trialErr, conflicts, gateList, entry, planned)...)
 	if err := Save(in.DataDir, in.AutomatonID, plan); err != nil {
 		return nil, err
 	}
@@ -261,8 +282,10 @@ func skippedGates(reason string) []Gate {
 
 // findingsFor lists the blocking problems of a plan: a trial merge that did
 // not complete, each unresolved conflict, each gate that failed or timed out,
-// and a missing changelog entry.
-func findingsFor(trialErr error, conflicts []Conflict, gates []Gate, changelogSource string) []Finding {
+// and, when a version was planned, a changelog entry that is missing or that
+// does not name the planned version. Without a planned version the changelog
+// entry is not finding material: there is no version for it to name.
+func findingsFor(trialErr error, conflicts []Conflict, gates []Gate, entry ChangelogEntry, planned string) []Finding {
 	var out []Finding
 	if trialErr != nil {
 		out = append(out, Finding{Code: "trial_merge_failed", Message: trialErr.Error(), Blocking: true})
@@ -277,8 +300,12 @@ func findingsFor(trialErr error, conflicts []Conflict, gates []Gate, changelogSo
 			out = append(out, Finding{Code: "gate_" + g.Status, Message: g.Name + ": " + g.Detail, Blocking: true})
 		}
 	}
-	if changelogSource == ChangelogSourceMissing {
-		out = append(out, Finding{Code: "changelog_missing", Message: "no task produced a usable changelog entry", Blocking: true})
+	if planned != "" {
+		if entry.Source == ChangelogSourceMissing {
+			out = append(out, Finding{Code: "changelog_missing", Message: "no task produced a usable changelog entry", Blocking: true})
+		} else if !headingNamesVersion(entry.Heading, planned) {
+			out = append(out, Finding{Code: "changelog_version_mismatch", Message: "changelog heading " + entry.Heading + " does not name the planned version " + planned, Blocking: true})
+		}
 	}
 	return out
 }
@@ -304,25 +331,14 @@ func versionFromHeading(heading string) string {
 	return m[1]
 }
 
-// releaseSizeBetween names the size of the step from the base version to the
-// planned one. Anything that is not a plain X.Y.Z version on both sides, or a
-// planned version that is not above the base, is none: nothing is inferred.
-func releaseSizeBetween(from, to string) ReleaseSize {
-	fv, ok1 := parseSemver(from)
-	tv, ok2 := parseSemver(to)
-	if !ok1 || !ok2 {
-		return ReleaseSizeNone
-	}
-	switch {
-	case !semverAbove(tv, fv):
-		return ReleaseSizeNone
-	case tv[0] > fv[0]:
-		return ReleaseSizeMajor
-	case tv[1] > fv[1]:
-		return ReleaseSizeMinor
-	default:
-		return ReleaseSizePatch
-	}
+// headingNamesVersion reports whether the changelog heading names version:
+// the version the heading holds must parse to the same X.Y.Z as version, so
+// a "v" prefix does not matter, anything unparsable on either side is a
+// mismatch, and nothing is inferred beyond what both sides say.
+func headingNamesVersion(heading, version string) bool {
+	got, okGot := parseSemver(versionFromHeading(heading))
+	want, okWant := parseSemver(version)
+	return okGot && okWant && got == want
 }
 
 // parseSemver reads "X.Y.Z" or "vX.Y.Z" into its three numbers.
@@ -340,16 +356,6 @@ func parseSemver(v string) ([3]int, bool) {
 		out[i] = n
 	}
 	return out, true
-}
-
-// semverAbove reports whether a is a higher version than b.
-func semverAbove(a, b [3]int) bool {
-	for i := range a {
-		if a[i] != b[i] {
-			return a[i] > b[i]
-		}
-	}
-	return false
 }
 
 // gateDetail is the Detail recorded on the plan's Gate. A load_sensitive gate
