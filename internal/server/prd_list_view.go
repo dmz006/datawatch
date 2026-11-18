@@ -426,7 +426,7 @@ func (s *Server) writePRDListEverything(w http.ResponseWriter) {
 // the whole query, and the settings the rows are folded with.
 func (s *Server) prdListIndexETag(idx prdSummaryIndex, r *http.Request, f *prdListFilter) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "rev=%d\nq=%s\nship=%t\n", idx.SummaryIndexRevision(), r.URL.Query().Encode(), f.shipEnabled)
+	_, _ = fmt.Fprintf(h, "rev=%d\nq=%s\nship=%t\n", idx.SummaryIndexRevision(), r.URL.Query().Encode(), f.shipEnabled)
 	aliases := s.projectAliasMap()
 	keys := make([]string, 0, len(aliases))
 	for k := range aliases {
@@ -434,10 +434,10 @@ func (s *Server) prdListIndexETag(idx prdSummaryIndex, r *http.Request, f *prdLi
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(h, "alias %s=%s\n", k, aliases[k])
+		_, _ = fmt.Fprintf(h, "alias %s=%s\n", k, aliases[k])
 	}
 	set := idx.NotifyEffectiveForEntry(autonomous.SummaryEntry{})
-	fmt.Fprintf(h, "notify=%s\n", strings.Join(set.Events, ","))
+	_, _ = fmt.Fprintf(h, "notify=%s\n", strings.Join(set.Events, ","))
 	return `"` + hex.EncodeToString(h.Sum(nil))[:32] + `"`
 }
 
