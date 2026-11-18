@@ -2997,6 +2997,36 @@ report, and discard stale reports under `docs/plans/reports` rather than
 letting them accumulate. Reference:
 [howto/local-env-leak-check.md](howto/local-env-leak-check.md).
 
+### gofmt format check
+
+`scripts/check-gofmt.sh` audits the Go tree before it is formatted, not after.
+
+- **What it checks.** `gofmt -l cmd internal` lists the Go files under `cmd/`
+  and `internal/` that are not gofmt-formatted. Files with a `Code generated`
+  header (first five lines) and anything under a `testdata/` or `vendor/`
+  path are excluded from the report.
+- **Outcome.** Any remaining offender is listed with its fix command
+  (`gofmt -w <file>`) and the script exits 1. A clean tree prints OK and
+  exits 0. `gofmt` missing from `PATH` is a FAIL telling the operator to
+  install the Go toolchain.
+- **Read-only.** The script never writes or formats; fixing is separate
+  (`gofmt -w <file>`, or `make fmt` for the whole tree).
+- **Where it runs.** As the `check-gofmt` target in the `Makefile`, and as
+  one of the checks in the `lint` target (after `check-plans-links` and the
+  other `check-*` guards, before `golangci-lint run`). `make help` lists it
+  among the local pre-tag checks that run on the build host before a tag is
+  pushed. As a CI step: the `test + lint` job in `.github/workflows/ci.yaml`
+  runs `bash scripts/check-gofmt.sh` on every push to `main` and every pull
+  request. It is not part of `make test` (no test script in `tests/` covers
+  it yet).
+- **Not configurable.** The audited trees (`cmd`, `internal`) and the
+  exclusions are fixed in the script, not in a daemon setting. No REST, MCP,
+  CLI, chat or PWA surface exists for it.
+
+**Operator review:** the check only audits `cmd/` and `internal/`;
+extend the `gofmt -l` argument list if new top-level trees appear. See
+[howto/gofmt-check.md](howto/gofmt-check.md).
+
 ---
 
 ## 8. Web UI Features

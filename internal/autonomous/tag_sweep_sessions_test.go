@@ -235,7 +235,7 @@ func TestTagSweepStore_ArchivedSessionsSwept(t *testing.T) {
 				"node:node-2",
 				"backend:pi",
 			},
-			Tags:           []string{"mine"},
+			Tags: []string{"mine"},
 		},
 	}
 	st := NewSessionTagSweepStore(m, src)

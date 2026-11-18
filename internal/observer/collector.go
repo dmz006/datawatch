@@ -32,9 +32,9 @@ type ClusterNodesFn func() []ClusterNode
 // Collector is the default in-process collector. Holds the last
 // snapshot; Latest() is O(1).
 type Collector struct {
-	cfg           Config
-	shape         string
-	startUnix     int64
+	cfg       Config
+	shape     string
+	startUnix int64
 
 	sessCounts    SessionCountsFn
 	backendHealth BackendHealthFn
@@ -293,9 +293,9 @@ func (c *Collector) collect() *StatsResponse {
 			Cores: runtimeNumCPU(),
 			Load1: l1, Load5: l5, Load15: l15,
 		},
-		Mem:  mem,
-		Disk: disks,
-		Net:  Net{}, // Shape C populates per-process; host-level rate TBD
+		Mem:      mem,
+		Disk:     disks,
+		Net:      Net{}, // Shape C populates per-process; host-level rate TBD
 		Sessions: sessions,
 		Backends: backends,
 		Processes: Processes{

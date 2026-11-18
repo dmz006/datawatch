@@ -5,10 +5,10 @@ package config
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"os"
 )
 
 func TestPluginServices_EffectiveDefaultsFromZero(t *testing.T) {
@@ -38,11 +38,11 @@ func TestPluginServices_EffectiveDefaultsFromZero(t *testing.T) {
 
 func TestPluginServices_EffectiveHonoursStoredValues(t *testing.T) {
 	s := PluginServicesConfig{
-		HealthIntervalSeconds:          90,
-		BacklogGrowthPulls:             5,
-		NodeLoadRatio:                  2.5,
-		SmallModelMaxParamsBillions:    7,
-		SmallModelContextTokens:        16384,
+		HealthIntervalSeconds:       90,
+		BacklogGrowthPulls:          5,
+		NodeLoadRatio:               2.5,
+		SmallModelMaxParamsBillions: 7,
+		SmallModelContextTokens:     16384,
 		PerService: map[string]PluginServiceOverride{
 			"mcp":    {LifecycleMode: PluginServiceLifecycleAttachOnly},
 			"ollama": {LifecycleMode: PluginServiceLifecycleManaged},

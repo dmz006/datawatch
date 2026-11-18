@@ -13,12 +13,12 @@ import (
 // and returns one fixed (verdict, error) pair, so a test can assert both
 // the judgment's effect and whether the judge was asked at all.
 type rejudgeJudge struct {
-	calls        int
-	v            GuardrailVerdict
-	err          error
-	lastBackend  string
-	lastPinned   bool
-	lastRejudge  bool // the invocation's Rejudge mark (launch-kind tag for the judge one-shot)
+	calls       int
+	v           GuardrailVerdict
+	err         error
+	lastBackend string
+	lastPinned  bool
+	lastRejudge bool // the invocation's Rejudge mark (launch-kind tag for the judge one-shot)
 }
 
 func (r *rejudgeJudge) fn(_ context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
@@ -28,6 +28,7 @@ func (r *rejudgeJudge) fn(_ context.Context, inv GuardrailInvocation) (Guardrail
 	r.lastRejudge = inv.Rejudge
 	return r.v, r.err
 }
+
 // newRejudgePassJudge / newRejudgeBlockJudge build the fixed verdict the
 // fake returns, following newRecordedVerdictJudge's pattern: the verdict
 // carries a judge session id and a JudgeOutputPath pointing at a real
