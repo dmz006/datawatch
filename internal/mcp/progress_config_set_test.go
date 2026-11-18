@@ -40,3 +40,25 @@ func TestProgressConfigMCPSetForwardsEveryKeyToConfigEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestArchiveConfigMCPSetForwardsKeysToConfigEndpoint(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"archive_retention_days": 0,
+		"archive_enabled":        false,
+	})); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+	if got, ok := rec.body["autonomous.archive.retention_days"]; !ok || got != float64(0) {
+		t.Errorf("retention_days = %v (present=%v)", got, ok)
+	}
+	if got, ok := rec.body["autonomous.archive.enabled"]; !ok || got != false {
+		t.Errorf("enabled = %v (present=%v)", got, ok)
+	}
+	names := configSetArgNames()
+	for _, k := range []string{"archive_retention_days", "archive_enabled"} {
+		if !strings.Contains(names, k) {
+			t.Errorf("autonomous_config_set does not declare %s", k)
+		}
+	}
+}

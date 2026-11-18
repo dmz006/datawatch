@@ -1,6 +1,9 @@
 package autonomous
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func swTmuxKinds(fs []SupervisorWatchFinding) int {
 	n := 0
@@ -21,17 +24,17 @@ func TestSupervisorWatchTmuxBaselinePersistsAcrossPolls(t *testing.T) {
 	m.SetSupervisorWatchProbe(probe)
 	cfg := DefaultSupervisorWatchConfig()
 
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 0 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 0 {
 		t.Fatalf("first poll raised %d tmux_restart findings, want 0 (first sight stores the baseline)", got)
 	}
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 0 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 0 {
 		t.Fatalf("unchanged second poll raised %d, want 0", got)
 	}
 	probe.restartCount = 4
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 1 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 1 {
 		t.Fatalf("poll after a restart raised %d, want 1", got)
 	}
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 0 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 0 {
 		t.Fatalf("poll after the restart was seen raised %d, want 0 (baseline moved on)", got)
 	}
 }
@@ -45,22 +48,22 @@ func TestSupervisorWatchTmuxBaselineConfigSeedsAndReseeds(t *testing.T) {
 	cfg := DefaultSupervisorWatchConfig()
 
 	cfg.TmuxRestartBaseline = "2" + supervisorWatchBaselineSep + "stamp-1"
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 1 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 1 {
 		t.Fatalf("poll against a different configured baseline raised %d, want 1", got)
 	}
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 0 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 0 {
 		t.Fatalf("configured baseline raised again on the next poll (%d), want 0", got)
 	}
 	cfg.TmuxRestartBaseline = "9" + supervisorWatchBaselineSep + "stamp-1"
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 1 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 1 {
 		t.Fatalf("a new configured baseline raised %d, want 1", got)
 	}
 	cfg.TmuxRestartBaseline = ""
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 0 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 0 {
 		t.Fatalf("clearing the configured baseline raised %d, want 0", got)
 	}
 	probe.restartCount = 5
-	if got := swTmuxKinds(m.supervisorWatchRawFindings(cfg, nil)); got != 1 {
+	if got := swTmuxKinds(m.supervisorWatchRawFindings(time.Now(), cfg, nil)); got != 1 {
 		t.Fatalf("restart after clearing raised %d, want 1", got)
 	}
 }

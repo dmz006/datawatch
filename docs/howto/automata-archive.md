@@ -1,0 +1,151 @@
+---
+docs:
+  index: true
+  topics: [automata, archive, retention, retention window, backup, dry run, decision log, session history, task transcripts, performance, autonomous]
+exec_steps:
+  - tool: autonomous_archive
+    description: Dry run. Report which finished Automata would be archived and the bytes before and after. Writes nothing
+    args: {dry_run: true}
+    read_only: true
+  - tool: autonomous_prd_archive
+    description: Read the archive of one archived Automaton, one request for one file. An Automaton that is not archived answers not found
+    args: {id: a1b2c3d4}
+    read_only: true
+---
+
+# How-to: archive finished Automata
+
+A finished Automaton keeps a lot it no longer needs at hand: its decision log,
+the session history of every task, the task transcripts (the raw judge and
+verifier text) and long task errors.
+The **archive** moves those parts out of the Automaton's live record into one
+file of their own, so the daemon reads and holds far less for every Automaton
+that is done. This page explains what is moved, what stays, how to read an
+archive, how to run the archive yourself (dry run first, then apply), the backup
+it takes, and the two settings that control it.
+
+No data is deleted. The live record and the archive file together hold
+everything the original held.
+
+## What moves and what stays
+
+| Moved to the archive file | Stays in the live record (the store) |
+|---|---|
+| The decision log | The summary: title, status, type, backend, priority, tags, links and timestamps |
+| The session history of each task | The counts: stories, tasks and status counts, cost totals |
+| The task transcripts: the raw judge and verifier text of every verdict and verification | The ids: the Automaton's, every story's and every task's |
+| Long task errors (over 1 KiB) and the generated memory report | The statuses and the short fields of every story and task, plus an `archive` marker that names the archive file |
+
+Because the live record keeps the summary, counts, ids and statuses, the lists,
+the counts, the cost and the History read exactly as they did before. The
+Automata list and the Projects roll-up come from the
+[summary index](../datawatch-definitions.md#summary-index) and never needed the moved parts.
+Opening an archived Automaton on the Automata tab is as quick as any other row;
+the archive file is read only when you ask for it.
+
+## When an Automaton is archived
+
+An Automaton is archived when all of these hold:
+
+- Its status is **completed**, **shipped** or **cancelled**.
+- It was last updated longer ago than the **retention window**,
+  `autonomous.archive.retention_days`.
+- It is not skipped. An Automaton with a running task, an open session, or a
+  completed record whose work branch is not merged is skipped and never forced.
+  It is picked up on a later run once it qualifies.
+
+A cancelled Automaton also waits for its own short grace period before it
+becomes eligible; see [operations.md](../operations.md) for
+`autonomous.archive_grace_minutes`.
+
+## Run the archive: dry run first, then apply
+
+Always look before you move anything.
+
+1. **Dry run.** It reports which Automata would be archived and the bytes before
+   and after, and writes nothing. The dry run is the default.
+
+   ```bash
+   datawatch autonomous archive --dry-run
+   ```
+
+   The same report is available as `POST /api/autonomous/archive` with
+   `{"dry_run": true}` (or no body), the MCP tool `autonomous_archive`, and the
+   chat command `autonomous archive`.
+
+2. **Apply.** When the report lists what you expect, run it for real.
+
+   ```bash
+   datawatch autonomous archive --apply
+   ```
+
+   The same through `POST /api/autonomous/archive` with `{"dry_run": false}`,
+   and the MCP tool `autonomous_archive` with `dry_run` set to `false`.
+
+`--dry-run` and `--apply` cannot be combined. A second apply finds nothing more
+to do, so running it again is safe.
+
+### The verified backup
+
+An apply run first copies every record it is about to touch, the record file and
+its side files, to `<data dir>/autonomous/archive-backups/<time>/`. It checks
+each copy by size and SHA-256. If one copy does not verify, the run stops before
+it changes anything. Only then does it archive one Automaton at a time, checking
+each archive file before it rewrites the live record, so an interrupt leaves
+every record at its old or its new state and never half way. Backups are kept;
+delete them yourself once you are satisfied.
+
+## Read an archive
+
+Reading an archive returns what was moved out of one Automaton and touches no
+other record.
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/prds/{id}/archive` |
+| CLI | `datawatch autonomous archive --id <id>` |
+| MCP | `autonomous_prd_archive` with `id` |
+
+An Automaton that is not archived answers **not found** (404). `--id` reads one
+archive and takes neither `--dry-run` nor `--apply`.
+
+The archive file itself is `<data dir>/autonomous/archive/<id>.json`. You do not
+need to open it by hand.
+
+## The settings
+
+| Key | Default | What it does |
+|---|---|---|
+| `autonomous.archive.enabled` | `true` | Lets the daemon archive finished Automata on its own, at low frequency and never while an Automaton write is in progress. Set it to `false` and only `datawatch autonomous archive --apply` archives. |
+| `autonomous.archive.retention_days` | `30` (a value of `0` means 30) | How many days old a finished Automaton must be before it is archived. A negative number is refused. |
+
+Both change live, with no restart:
+
+```bash
+datawatch config set autonomous.archive.retention_days 60
+datawatch config set autonomous.archive.enabled false
+```
+
+They are also settable from the web app (Settings, General, Autonomous), from
+`PUT /api/config`, from the MCP `config_set` tool and from chat with
+`configure`. The full table is in [operations.md](../operations.md) (search
+"Archive settings").
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| The dry run lists nothing | No finished Automaton is older than the retention window, or the ones that are old are skipped (running task, open session, unmerged branch). Lower `autonomous.archive.retention_days` or finish the work first |
+| An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is a cancelled one still inside its grace period |
+| `--id` answers "automaton is not archived" | That Automaton has not been archived. Run the dry run to see whether it qualifies |
+| The apply run stops with a backup error | One backup copy did not verify by size and SHA-256. Nothing was changed. Check free disk space and run it again |
+| The daemon does not archive by itself | `autonomous.archive.enabled` is `false`. Set it to `true`, or apply by hand |
+
+## Where to go next
+
+- [automata-tab-loading.md](automata-tab-loading.md): how the Automata tab loads
+  summaries first and why an archived row opens as fast as any other.
+- [projects-tab.md](projects-tab.md): the Projects page, whose roll-up and
+  History read the summary the archive keeps unchanged.
+- [operations.md](../operations.md): the archive settings table and what the
+  archive does, in the operator guide.

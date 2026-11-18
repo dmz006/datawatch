@@ -364,6 +364,9 @@ datawatch session new "build a REST API in Go"
 # Start with a name, explicit directory, and backend
 datawatch session new --name "api work" --dir ~/projects/api --backend aider "build a REST API"
 
+# Name the model (and optionally effort) for a claude-code session
+datawatch session new --model sonnet --effort normal "build a REST API"
+
 # Show recent output from a session
 datawatch session status a3f2
 
@@ -396,7 +399,7 @@ The `--config` flag works with all session subcommands:
 datawatch session list --config /path/to/config.yaml
 ```
 
-**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
+**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). A direct start with no model of its own resolves one first: the request's model, then the LLM row's model, then the global autonomous planning model when its backend is `claude-code`; the refusal fires only when all are empty, and its message lists every place a model can be named. Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 ### Command Library
 
@@ -771,6 +774,8 @@ not through the config keys. The guard acts on the `claude-code` backend only wh
 that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
+
+The **pace_line policy** for the weekly and the window usage sits beside the ladder in the same block: `mode` (`off`, `shadow`, `on`; an unset mode reads `shadow` — shadow first, then on), `week_tolerance` (default 2, whole number 0 to 10; how many points the week reading may run over the pace line and still be ok), `points_to_week_factor` (default 1.3, 1 to 10; one point of ledger burn counts as this many points of the weekly allowance), `window_percent_per_point` (default 4, 1 to 25; one point burned is this percent of the current window), `window_stop_percent` (default 85, 50 to 95; a window is over at this percent used) and `reading_freshness_minutes` (default 60, whole number 1 to 1440; a reading older than this is stale and the guard asks for a fresh one). The window anchors are fixed behavior, not a setting: windows end at 02:00, 07:00 and 12:00, then every 5 hours. All six keys are readable and writable on the same surfaces as the rest of the block, and one invalid value rejects the whole change, leaving the stored settings unchanged. As of this change the settings are in place on every surface and the guard's own behavior is unchanged until the pace_line policy runs; the default mode `shadow` computes and records the decision without touching anything. See [the policy's full description](howto/burn-guard.md#the-pace_line-policy-the-weekly-and-window-guard).
 
 | Method | How |
 |--------|-----|
@@ -1479,7 +1484,30 @@ Each key is reachable through all five configuration methods (MCP agents use `co
 | `autonomous.progress.since` | `since: "2026-09-01"` | `datawatch config set autonomous.progress.since 2026-09-01` | *Progress start date* | `PUT /api/config` `{"autonomous.progress.since": "2026-09-01"}` | `configure autonomous.progress.since=2026-09-01` |
 | `autonomous.progress.snapshot_retention_days` | `snapshot_retention_days: 90` | `datawatch config set autonomous.progress.snapshot_retention_days 90` | *Progress snapshot retention* | `PUT /api/config` `{"autonomous.progress.snapshot_retention_days": 90}` | `configure autonomous.progress.snapshot_retention_days=90` |
 
-**Project timeline.** The per-project read of when each plan, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one plan's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled — a shipped Automaton reads completed whatever its record says) and `release`; an Automaton row spans its first task start to its last task end (the `end` is empty while it runs), and an Automaton with no started task is read from its created time to its completion time. A task row carries `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automata's own records, so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. The Focus view's "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — not the exact first and last task dates, so each can read up to a day off. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
+**Archive settings.** `autonomous.archive.retention_days` (default `0` = 30) is how many days old a completed, shipped or cancelled Automaton must be before it is archived; a negative number is rejected (HTTP 400, or an error on load). `autonomous.archive.enabled` (default `true`) lets the daemon archive on its own; `false` means only the explicit migration command archives. Both are changed live and reachable everywhere:
+
+| Key | YAML (`autonomous.archive:` block) | CLI | Web UI (Settings → General → Autonomous) | REST | Chat |
+|---|---|---|---|---|---|
+| `autonomous.archive.retention_days` | `retention_days: 30` | `datawatch config set autonomous.archive.retention_days 30` | *Archive retention* | `PUT /api/config` `{"autonomous.archive.retention_days": 30}` | `configure autonomous.archive.retention_days=30` |
+| `autonomous.archive.enabled` | `enabled: true` | `datawatch config set autonomous.archive.enabled true` | *Archive finished Automata automatically* | `PUT /api/config` `{"autonomous.archive.enabled": true}` | `configure autonomous.archive.enabled=true` |
+
+MCP agents use `config_set` with the same keys, or the `archive_retention_days` and `archive_enabled` arguments of `autonomous_config_set`.
+
+**What the archive does.** A finished Automaton (completed, shipped or cancelled, with its last update older than the retention) is otherwise read in full at every start. The archive moves its bulky parts into one file, `<data dir>/autonomous/archive/<id>.json`: the decision log, every task's session history, long task errors, the generated memory report and the raw judge text. The live record keeps its identity, status, timestamps, counts, shipped state, tags, links, and every story and task with its id, title, status and short fields, plus an `archive` marker. Counts, list rows, cost and the summary index read the same as before. No data is deleted: the live record and the archive file together hold everything the original held, and restoring puts it back byte for byte.
+
+An Automaton with a running task, an open session, or a completed record whose branch is not merged is skipped, never forced. The daemon archives on its own at low frequency when `autonomous.archive.enabled` is true, and never while an Automaton write is in progress; it only reads and rewrites record files and never touches a session.
+
+| Surface | How |
+|---|---|
+| Dry-run report (nothing written) | `datawatch autonomous archive` (or `--dry-run`), `POST /api/autonomous/archive`, MCP `autonomous_archive`, chat `autonomous archive` |
+| Archive now | `datawatch autonomous archive --apply`, `POST /api/autonomous/archive` with `{"dry_run": false}`, MCP `autonomous_archive` with `dry_run=false` |
+| Read one archive | `datawatch autonomous archive --id <id>`, `GET /api/autonomous/prds/{id}/archive`, MCP `autonomous_prd_archive` |
+
+An apply run first copies every touched record (the record file and its side files) to `<data dir>/autonomous/archive-backups/<time>/` and checks each copy by size and SHA-256; if one copy does not verify it stops before changing anything. It then archives one Automaton at a time, checking each archive before rewriting the live record, so an interrupt leaves every record at its old or new generation. A second run finds nothing more to do. Backups are kept; delete them yourself once you are satisfied.
+
+**Project roll-up and read speed.** The project roll-up (`GET /api/projects/{name}/rollup`, MCP `project_rollup`, `datawatch projects show`), the project timeline, History and the progress counts are read from an in-memory summary of each Automaton kept by the store, not from copies of the full records, so a read does not slow down as Automata gain spec and task text. The summary is rebuilt from the store on start and kept current on every write. The finished roll-up is cached per project, window and store revision, with the project configuration and the Automation list part of the key: a repeat read does no work, and a write to any Automaton, a project change or an Automation change rebuilds it on the next read (concurrent first reads of one key share one build). Points are worked out once per store revision, and the read-only merge proof is remembered per work branch, so a read runs no git for an Automaton whose proof is known. It adds no configuration key, no stored state and no endpoint, needs no restart, and the response shape is unchanged; `generated_at` is the build time. See [howto/projects-tab.md](howto/projects-tab.md#4-read-the-roll-up).
+
+**Project timeline.** The per-project read of when each plan, Automaton and task started and finished (`GET /api/projects/{name}/timeline`, MCP `project_timeline`, `datawatch projects timeline`, chat `project timeline`) is a pure read: no configuration key, no state, nothing stored, so nothing to change live and nothing that needs a restart. It needs autonomous enabled (503 otherwise) and, for a federated peer, the autonomous read capability. It returns one level per call, paged with `limit` (1 to 200, default 50) and `cursor`, so a large project is read in small pages; `focus` returns one plan's Automata and tasks in one unpaged reply. Each row also carries its `start`, `end`, `status` (completed, running, waiting, blocked, failed or cancelled) and `release`; task rows carry `depends_on`, and Automata-level and `focus` replies carry `edges`, the chain between Automata. The status, spans, dependency order and edges are worked out on each read from the Automaton summary (see *Project roll-up and read speed*), so nothing is stored and no setting changes them. The web app's Projects Gantt and Focus view draw it; the expanded rows are remembered per browser in local storage (`cs_projects_gantt_expanded_<project>`) and so is the dependency-edge choice (`cs_projects_gantt_edges`: `on`, `all` or `off`), nothing daemon-side. See [howto/projects-tab.md](howto/projects-tab.md#the-project-timeline).
 
 **Timeline chart.** The interval chart of the Automata (the Gantt-style view across all projects — every task as a bar with its start and end, blocked and waiting intervals, the today marker and the projected finish) is a pure read: no configuration key, no state, nothing stored when it is read, and therefore nothing to change live and nothing that needs a restart. It needs autonomous enabled (the route answers 503 when autonomous is off) and, for a federated peer, the autonomous read capability. Every surface — `GET /api/autonomous/timeline`, MCP `autonomous_timeline`, `datawatch autonomous timeline` (with `--json` for the raw body), and the `timeline` comm channel command — decodes the exact same object, so the surfaces can never disagree. See [howto/automata-timeline.md](howto/automata-timeline.md).
 
@@ -2411,6 +2439,32 @@ To enable the service worker, use a certificate the browser trusts:
 
 Then hard-reload the page (or run `forcePWAUpdate()` in the browser console)
 and the service worker registers normally.
+
+### PWA updates on a datawatch release
+
+An installed PWA picks up a new datawatch release without manual cache
+clearing:
+
+- The service worker is registered at **`/sw.js?v=<release>`** — a distinct
+  worker URL per release — and its cache name is derived from the same
+  version, so each release owns its own cache. If the page registers before
+  it has learned the release number, it registers bare and adopts the
+  versioned URL as soon as the version is known.
+- When a new release is installed, the new worker activates, purges the
+  older caches and takes over the open tabs: the page reloads **at most once
+  per upgrade**, and only when you are not mid-thing (typing in an input,
+  the terminal focused, an unsent draft, or still active within the last 30
+  seconds).
+- If you are mid-thing the reload is deferred: an "Update available — tap to
+  reload" banner appears at the bottom of the page and reloads as soon as
+  you go idle. Tap the banner's **Reload** button to apply it immediately.
+- The manual escape hatch for a stuck cache is still `forcePWAUpdate()` in
+  the browser console (unregisters the service worker, drops its caches and
+  reloads with bypass).
+- On origins where the service worker cannot register (for example a
+  self-signed certificate the browser does not trust — see the section
+  above), the PWA behaves as a plain web app and a normal reload is
+  enough.
 
 ---
 
@@ -4044,7 +4098,8 @@ silent upgrade. When no launch layer names a model, the daemon names one:
 An Opus-class model runs only when the operator explicitly names one at the
 session, task, story, PRD, automation, or config-line level (see [Autonomous
 PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
-planner pairs). A Claude Code launch whose model is still empty after every
+planner pairs). A direct Claude Code start first falls back from the request's
+model to the LLM row's model, then the global planning model. A launch whose model is still empty after every
 layer is refused up front — before any tracker, session record, or tmux pane
 is created — with the reason `claude-code launch refused: no explicit model
 set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try
@@ -4856,7 +4911,7 @@ are not in `GET /api/config`. To reset them, clear the site data for the PWA
 (keys `dw_list_mode_<scope>`, `dw_list_group_<scope>`, `dw_list_collapsed_<scope>`).
 See [howto/automata-tags.md](howto/automata-tags.md#display-mode-and-group-by-automata-and-automation-lists).
 
-The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
+The Sessions page follows the same rule (`cs_sessions_view_mode`, `cs_sessions_saved_views`, the lineage-tree flag `cs_session_tree_view`, the **Status** chip set under `cs_session_state_chips` and the **Backend** chip set under `cs_session_backend_sel`; a single status pick stored by an older build under `cs_session_state_chip` is read in as that one chip; `cs_sessions_collapsed_groups` for folded groups): no daemon setting. A stale or malformed saved value (left over from an older version or hand-edited local storage) never breaks the page: each saved Sessions setting is validated when read, and an unrecognized value is dropped and the default applies, so no site-data reset is needed. With no grouping, a saved tree flag applies to **List** only and choosing any mode in the view-mode select clears it, so Tiles and Compact never look like List; if a device still shows list rows in those modes, hard-reload the PWA onto the current build, and clear `cs_session_tree_view` in the site data only as a last resort. Grouped by **node** or **Automaton**, it makes one extra read-only call to `/api/sessions/aggregated` to place federation peers' sessions under their own node; if peers look missing there, check the peer connection (`datawatch federation peer list`) rather than a setting. See [howto/sessions-tiles-and-grouping.md](howto/sessions-tiles-and-grouping.md#the-node-axis-in-the-web-ui).
 
 The Automata list has two views. The **attention view** shows the Automata that
 need an operator now; the **tag browser** shows the tag tree, with a count per
@@ -7082,13 +7137,17 @@ A rising `escalated` or `error` count, or a `last_run_age_seconds` far above the
 
 ## Supervisor watch (`autonomous.automation.supervisor_watch`)
 
-The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs fourteen checks — twelve that the script also runs, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has and the comparison therefore shows as *only the watch* — and keeps one finding per kind and subject. The script also checks things the watch does not yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin); see [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md) for the differences to expect in the comparison. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
+The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs sixteen checks — twelve that the script also runs, `priority_stall` and `backlog`, which both the script and the watch now report, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has and the comparison therefore shows as *only the watch* — and keeps one finding per kind and subject. The script also checks things the watch does not yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin); see [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md) for the differences to expect in the comparison. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red`, `ci_stuck`, `priority_stall` and `backlog`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
+
+**A priority stall line.** A `priority_stall` line — in an alert or in any read — means a priority-eligible Automaton (at or above `priority_floor`) has waited past `stall_threshold_minutes` for a lane to take it, and the watch is only reporting it; it never acts on its own. The decision is yours: clear a lane for it, adjust the floor or threshold, or leave the queue as it is if the wait is deliberate. Shadow mode behaves the same for this kind as for every other kind: the finding is marked *would alert* once it has been open for `alert_minutes`, and no alert is raised. The per-priority-band wait stats — how many Automata wait in each of the three fixed bands, the band's oldest wait and how many of its waiters have stalled — ride on the same reads: the `priority_bands` key in the REST list and stats bodies, a line in the CLI and comm verb, the rows on the PWA inbox and monitor cards.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.automation.supervisor_watch.mode` | `shadow` (unset or empty reads `shadow`) | `off` (the pass does nothing), `shadow` (everything runs and is recorded, a finding open for the alert time is marked would-alert, no alert is raised) or `on` (the alert is raised, once per episode). |
 | `autonomous.automation.supervisor_watch.alert_minutes` | `30` | How long a finding may stay open before its one alert; `0` turns the alert off; negative is refused. |
 | `autonomous.automation.supervisor_watch.silent_minutes` | `60` | How long an Automaton with a task in progress may show no activity before `worktree_silent`; negative is refused. |
+| `autonomous.automation.supervisor_watch.stall_threshold_minutes` | `30` | How long a queued Automaton at or above the priority floor may wait before a `priority_stall`; `0` is legal; negative is refused. |
+| `autonomous.automation.supervisor_watch.priority_floor` | `80` | The priority at or above which a queued Automaton counts for `priority_stall`; `0` is legal (every queued Automaton qualifies); negative is refused. |
 | `autonomous.automation.supervisor_watch.poll_seconds` | `60` (unset or `0` reads `60`) | The interval the script record's freshness is judged against (stale at three times this); below 60 is refused (minimum 60). |
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`; empty means no comparison. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point `tmux_restart` compares against; empty means that check reports nothing. |
@@ -7109,20 +7168,22 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 
 | Surface | Read the state | Notes |
 |---|---|---|
-| REST | `GET /api/autonomous/supervisor-watch` | body: `mode`, `last_poll_at`, `findings` (open first, then most recently seen first), `comparison`; no parameters; 405 for any other method, 503 while the autonomous engine is disabled |
+| REST | `GET /api/autonomous/supervisor-watch` | body: `mode`, `last_poll_at`, `findings` (open first, then most recently seen first), `comparison`, `priority_bands` (the per-band wait stats below); no parameters; 405 for any other method, 503 while the autonomous engine is disabled |
 | MCP | `supervisor_watch_list` (read-only, no arguments) | same body as the GET route; an argument is refused |
-| CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), then the comparison summary |
+| CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), one line per prioritization band that waits something (waiting count, oldest wait, stalled count), then the comparison summary; `--json` prints the body untouched |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | the same lines as the CLI; no arguments |
-| PWA | Automation view → Inbox sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+| PWA | Automation view → Inbox sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, one line per prioritization band that waits something, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+
+Per-band wait stats ride on the same read: the waiting Automata grouped into three fixed prioritization bands — **high** (80 or more), **medium** (50 through 79) and **low** (below 50) — each with how many of its Automata are waiting, the band's oldest wait in whole minutes and how many of the band's waiters also satisfy the watch's priority-stall rule. The bands are fixed, and a band with no waiting is omitted (an empty list means no waiting in any band).
 
 ### Supervisor watch monitoring
 
 | Where | What |
 |---|---|
-| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open` (includes the next two), `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days`, `priority_bands` (the same per-band wait lines) |
 | MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
-| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days` on the WS stats broadcast |
-| Web UI | Settings → Monitor → **Supervisor watch** |
+| Stats snapshot | `supervisor_watch_mode`, `supervisor_watch_findings_open`, `supervisor_watch_findings_would_alert`, `supervisor_watch_findings_alerted`, `supervisor_watch_last_poll_age_seconds`, `supervisor_watch_agreed_days`, and `supervisor_watch_priority_bands` (the per-band wait lines) on the WS stats broadcast |
+| Web UI | Settings → Monitor → **Supervisor watch** | mode, open findings, would-alert, alerted, last poll age, days of full agreement, and one line per prioritization band that waits something — live over the stats broadcast. |
 | Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
 
 **The triage note is written in shadow too.** The one thing shadow writes beyond the watch's own records is the triage-record note for an Automaton-scoped finding; it is text on a record the daemon already keeps, changes no state and raises no alert. `mode: off` stops it.

@@ -11,7 +11,7 @@ import (
 )
 
 // TestShippedCLI_PrdListQuery: --status / --shipped compose the PRD list
-// query. Neither flag = the full list (full=1); shipped=true|false narrows
+// query. Neither flag = the summary list (no full key); shipped=true|false narrows
 // to the shipped / unshipped side; status may carry the shipped bucket; the
 // two AND. A shipped value that is neither true nor false is refused before
 // any daemon call.
@@ -22,7 +22,7 @@ func TestShippedCLI_PrdListQuery(t *testing.T) {
 		shipped string
 		want    string
 	}{
-		{"neither set is the full list", "", "", "full=1"},
+		{"neither set is the summary list (no full flag)", "", "", ""},
 		{"shipped true narrows to shipped", "", "true", "shipped=true"},
 		{"shipped false narrows to unshipped", "", "false", "shipped=false"},
 		{"shipped all is the daemon default view (no query)", "", "all", ""},

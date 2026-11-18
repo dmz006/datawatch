@@ -75,7 +75,7 @@ still a loud failure, exactly as before.
 The four paths above are the *autonomous* launch paths, and on them a model-
 less `claude-code` entry resolves to the daemon default (`sonnet`, or `haiku`
 for a mechanical task). A **direct** start — the CLI `session new`, a chat
-`new:` command, a REST `POST /api/sessions/start`, an MCP `session_start`, or
+`new:` command, a REST `POST /api/sessions/start`, an MCP `start_session`, or
 a start from the PWA — names no model when the operator gave none, and the
 policy covers that case with a refusal instead of a guess:
 
@@ -83,7 +83,32 @@ policy covers that case with a refusal instead of a guess:
   model is rejected up front: no tracker, no session record and no tmux pane
   are created, and the backend's CLI is never run under the operator's
   account default. The error says so in plain terms and points at the fix:
-  name a model (e.g. `"sonnet"` or `"haiku"`) and try again.
+  name a model (e.g. `"sonnet"` or `"haiku"`) and try again. The message
+  lists every place a model can be named: the `datawatch session new --model
+  <name>` flag, the `model` field of `POST /api/sessions/start`, the MCP
+  `start_session` `model` argument, the chat `new: model=<name>` token, and the
+  LLM row (`datawatch llm models add <llm> --model <name>`).
+- **A direct start resolves a model before it is refused.** When the start
+  request names no model, the daemon looks for one in this order and uses the
+  first that is set: (1) the model on the request itself; (2) the model of the
+  resolved LLM row (the row's `model`, else the first model it lists); (3) the
+  daemon's global autonomous planning model, when the planning backend is
+  `claude-code` (or unset). Only when all three are empty is the start
+  refused. The chain applies only to `claude-code` starts; every other backend
+  is untouched. A model found by (2) or (3) is recorded on the session exactly
+  as if the operator had named it.
+- **Every direct surface can name the model.** CLI: `datawatch session new --model <name> [--effort quick|normal|thorough]`; MCP: `start_session` with `model`, `effort` and `name`; chat: `new: model=<name>: <task>` (an empty `model=` gets a reply asking for a value); REST: the `model` field of `POST /api/sessions/start`. The CLI and MCP arguments are sent as the same fields REST takes, so all four reach the same fallback chain.
+### How an operator names a model for a direct start
+
+| Surface | How to name the model |
+|---|---|
+| CLI | `datawatch session new --model <name> [--effort quick\|normal\|thorough] "<task>"` |
+| MCP arguments | `start_session` with `model`, `effort` and `name` arguments |
+| Command text (chat) | `new: model=<name>: <task>` |
+| REST | the `model` field of `POST /api/sessions/start` |
+| PWA | the model field of the New Session form |
+| LLM row | `datawatch llm models add <llm> --model <name>` |
+
 - **The fix is to name the model.** An alias from the daemon default set or a
   full registry name, given where the surface takes one (the LLM entry / model
   field of the start request, or the backend's model flag). A model named this

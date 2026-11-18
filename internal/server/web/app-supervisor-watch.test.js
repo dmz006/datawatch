@@ -151,7 +151,7 @@ test('supervisor watch — the supervisor_watch config keys sit in GENERAL_CONFI
   const section = fields.find(s => s.id === 'autonomous');
   assert.ok(section, 'autonomous section must exist in GENERAL_CONFIG_FIELDS');
   const byKey = new Map(section.fields.map(f => [f.key, f]));
-  const keys = ['mode', 'alert_minutes', 'silent_minutes', 'poll_seconds',
+  const keys = ['mode', 'alert_minutes', 'silent_minutes', 'stall_threshold_minutes', 'priority_floor', 'poll_seconds',
     'script_output_path', 'tmux_restart_baseline', 'main_checkout', 'working_model'];
   for (const k of keys) {
     const full = 'autonomous.automation.supervisor_watch.' + k;
@@ -159,6 +159,8 @@ test('supervisor watch — the supervisor_watch config keys sit in GENERAL_CONFI
     assert.equal(byKey.get(full).labelKey, 'settings_supervisor_watch_' + k);
   }
   assert.equal(byKey.get('autonomous.automation.supervisor_watch.mode').default, 'shadow');
+  assert.equal(byKey.get('autonomous.automation.supervisor_watch.stall_threshold_minutes').default, '30');
+  assert.equal(byKey.get('autonomous.automation.supervisor_watch.priority_floor').default, '80');
 });
 
 test('supervisor watch — every supervisor_watch key app.js uses is in all five bundles, worded Automaton, never PRD', () => {
@@ -171,11 +173,27 @@ test('supervisor watch — every supervisor_watch key app.js uses is in all five
   for (const mode of ['off', 'shadow', 'on']) used.add('supervisor_watch_mode_' + mode);
   assert.ok(used.size >= 25, 'expected the full set of supervisor_watch keys, got ' + used.size);
   const en = readBundle('en');
+  // The two newest labels ship natively translated: every bundle defines
+  // them, but the non-English ones must NOT simply carry the English text
+  // (unlike the older labels above, which still do).
+  const translatedKeys = new Set([
+    'settings_supervisor_watch_stall_threshold_minutes',
+    'settings_supervisor_watch_priority_floor',
+  ]);
+  for (const k of translatedKeys) {
+    assert.ok(used.has(k), 'the five-bundle assertion must cover ' + k);
+  }
   for (const lang of LOCALES) {
     const b = readBundle(lang);
     for (const k of used) {
       assert.ok(typeof b[k] === 'string' && b[k].length > 0, `${lang}.json must define ${k}`);
-      assert.equal(b[k], en[k], `${lang}.json ${k} carries the English text`);
+      if (translatedKeys.has(k)) {
+        if (lang !== 'en') {
+          assert.notEqual(b[k], en[k], `${lang}.json ${k} must be a native translation, not the English text`);
+        }
+      } else {
+        assert.equal(b[k], en[k], `${lang}.json ${k} carries the English text`);
+      }
       assert.doesNotMatch(b[k], /\bPRDs?\b/, `${lang}.json ${k} must not say PRD`);
     }
   }

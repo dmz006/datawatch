@@ -21,8 +21,9 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs fourteen checks. Twelve of them are checks the supervisor script
-(`scripts/supervisor-watch.py`) runs by hand today; two
+call**, it runs sixteen checks — one per finding kind, the
+sixteen (16) finding kinds this howto lists. Fourteen of them are checks the
+supervisor script (`scripts/supervisor-watch.py`) runs by hand today; two
 (`worktree_not_registered` and `verify_script_not_executable`) are new in the
 watch, and the script has several checks of its own the watch does not have yet
 — see "Where the watch and the script differ" below. Each thing it finds is kept
@@ -53,8 +54,9 @@ reloads a model. It reads, it records, it tells you.
 
 ## What the watch reports
 
-The finding kinds are a fixed vocabulary; the names below are exactly what you
-see in the `kind` field on every surface. The **subject** is the stable id the
+The finding kinds are a fixed vocabulary of the sixteen (16) kinds in the
+table below; the names there are exactly what you see in the `kind` field on
+every surface. The **subject** is the stable id the
 finding is about. A kind plus a subject is one finding, so the same problem on
 the same subject is one record that is refreshed, not a new one every poll.
 
@@ -74,6 +76,8 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `main_checkout_dirty` | The main checkout has modified tracked files, so any Automaton ship will abort until they are committed. Untracked files do not count. Not checked while `main_checkout` is empty. | The main checkout path |
 | `ci_red` | A CI run is red. This is read from the repo CI watch's records — see [automation-repo-ci-watch.md](automation-repo-ci-watch.md) — and nothing new is fetched from the CI service. | The CI run id |
 | `ci_stuck` | A CI run has been in progress abnormally long (the repo CI watch has marked it hung). The Automata release pipeline is stalled until it is done. | The CI run id |
+| `priority_stall` | A high-priority Automaton has been waiting in the queue for more than the stall threshold without a lane picking it up. The line names the Automaton, its priority, how long it has been waiting, the `stall_threshold_minutes` and the `priority_floor`. Only Automata at or above the floor are named, only once the age is past the threshold, and a holding or an already-reported state is not a stall. | The Automaton id |
+| `backlog` | The queue of Automata that need attention, in one finding: the Automata still waiting to be picked up and the failed or blocked Automata that still have work left, ordered highest priority first and, within a priority, oldest first; it names up to sixteen Automata and then the `+k more` tail. This is one finding about the queue, not one per Automaton. | The fixed subject `backlog` |
 
 **When a check cannot tell, it says nothing.** A probe that fails, a node that
 cannot be reached, a tool that is missing or a path that cannot be read gives
@@ -94,6 +98,28 @@ Every surface words a finding's standing the same way:
 | `would alert` | Shadow mode only: the finding has been open for the alert time and shadow marked it alert-due **without raising an alert**. This is the line you compare. |
 | `alerted` | `on` mode only: the alert for this episode was raised. |
 | `resolved` | The check stopped reporting it. |
+
+## Per-band wait stats
+
+The queue findings are per-Automaton, which is right for triage but hard to
+read as a trend. The read surfaces therefore also carry **per-band wait
+stats**: the waiting Automata grouped into three fixed bands by priority,
+
+| Band | Priority range |
+|---|---|
+| `high` | 80 or more |
+| `medium` | 50 through 79 |
+| `low` | below 50 |
+
+Each band row carries the band's name and range, how many of its Automata are
+in one of the waiting statuses (`waiting`), the band's oldest wait in whole
+minutes (`oldest_waiting_minutes`) and how many of the band's waiters also
+satisfy the watch's priority-stall rule (`stalled`) — the same rule a
+`priority_stall` finding names one-by-one. The bands are fixed; they cannot be
+reconfigured. Bands appear in `high`, `medium`, `low` order, and a band that
+waits nothing is omitted, so an empty list means no Automaton is waiting in
+any band. The stats are derived from the same waiting set the findings use, in
+the same pass; they change nothing and raise no alert.
 
 ## Shadow mode first — and how to compare it with the script
 
@@ -187,11 +213,11 @@ an alert.
 
 | Surface | Read the state | Notes |
 |---|---|---|
-| REST | `GET /api/autonomous/supervisor-watch` | Body: `mode`, `last_poll_at`, `findings`, `comparison`. Takes no parameters; any other method is a 405; 503 while the autonomous engine is disabled. A federated peer needs the autonomous read capability. |
+| REST | `GET /api/autonomous/supervisor-watch` | Body: `mode`, `last_poll_at`, `findings`, `comparison`, `priority_bands` (see Per-band wait stats). Takes no parameters; any other method is a 405; 503 while the autonomous engine is disabled. A federated peer needs the autonomous read capability. |
 | MCP | `supervisor_watch_list` (read-only) | The same body as the GET route. Takes no arguments; any argument is refused rather than ignored. |
-| CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line) and the comparison summary; `--json` prints the body untouched. |
+| CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line), one line per band that waits something, and the comparison summary; `--json` prints the body untouched. |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | The same lines as the CLI, in the same order. The read takes no arguments. |
-| PWA | Automation view → Inbox sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
+| PWA | Automation view → Inbox sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), one line per band that waits something, and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
 
 ### Monitoring
 
@@ -200,9 +226,9 @@ you can graph or alert on them without reading the whole finding list:
 
 | Where | What |
 |---|---|
-| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days`, `priority_bands` (the same band rows) |
 | MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
-| Web UI | Settings → Monitor → the **Supervisor watch** card (mode, open findings, would alert, alerted, last poll age, days of full agreement), live over the stats broadcast |
+| Web UI | Settings → Monitor → the **Supervisor watch** card (mode, open findings, would alert, alerted, last poll age, days of full agreement, and one row per band that waits something), live over the stats broadcast |
 | Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state="open"|"would_alert"|"alerted"}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
 | Comm channel | `autonomous supervisor-watch` already answers the status question from chat; there is no separate stats verb |
 
@@ -254,6 +280,8 @@ CI and the main checkout belong to no Automaton and write no triage note.
 | `autonomous.automation.supervisor_watch.mode` | `shadow` (unset reads `shadow`) | `off` (the pass does nothing and records nothing new), `shadow` (everything runs and is recorded, would-alert is marked, nothing is raised and nothing is acted on) or `on` (the alert is raised, once per episode). Case-insensitive; any other value is refused. |
 | `autonomous.automation.supervisor_watch.alert_minutes` | `30` | How long a finding may stay open before the one alert for that episode. `0` turns the alert off; negative is refused. |
 | `autonomous.automation.supervisor_watch.silent_minutes` | `60` | How long an Automaton with a task in progress may show no activity before `worktree_silent`. `0` is legal; negative is refused. |
+| `autonomous.automation.supervisor_watch.stall_threshold_minutes` | `30` | How long a queued Automaton at or above the priority floor may wait before a `priority_stall` finding names it. The age must be strictly past the threshold, so `0` is legal (named as soon as the waiting age is positive); negative is refused. |
+| `autonomous.automation.supervisor_watch.priority_floor` | `80` | The priority at or above which a queued Automaton is high enough for a `priority_stall` finding. Below the floor a queue is a `backlog`, not a stall. `0` is legal (every queued Automaton is above it); negative is refused. |
 | `autonomous.automation.supervisor_watch.poll_seconds` | `60` (unset or `0` reads `60`) | The poll interval the script record's freshness is judged against: a record older than three times this is "unavailable", not a disagreement. The coordinator runs the pass at most once a minute. Below 60 is refused; nothing is ever rounded up for you. |
 | `autonomous.automation.supervisor_watch.script_output_path` | empty | The file the supervisor script writes with `--record`. Empty means no comparison is made. |
 | `autonomous.automation.supervisor_watch.tmux_restart_baseline` | empty | The starting point (restart count and active-since time of the terminal-session service) that `tmux_restart` compares against. Empty means no starting point is configured and that check reports nothing. |
@@ -264,7 +292,7 @@ Every key is read live: a change takes effect on the next pass with no restart. 
 value is refused on every write path — an unknown mode, a negative minute
 threshold, a `poll_seconds` below 60, a non-text path or model name — and nothing
 is written. Until `working_model` is set, the `model_not_resident` check stays off
-and the other thirteen are unaffected.
+and the other fifteen are unaffected.
 
 ## The stuck-running message
 
