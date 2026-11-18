@@ -135,18 +135,21 @@ Decompose lint reads each task's script from the project directory and names
 the finding with **the script path and the rule id**, for example
 `verify_script_task_files_only: .datawatch/verify/<name>.sh …`. A script that
 does not exist yet (or is a command string, or lies outside the project) is
-skipped by the five rules below; the warn rule
+skipped by the six rules below that read the script (all except
+`final_gate_without_script`); the warn rule
 `unexecutable_verification_script` keeps covering it.
 
 | Rule id | Severity | What it means | How to fix it |
 |---|---|---|---|
 | `verify_script_task_files_only` | block | The script compares only against the task's own files (a literal list equal to them, or a file-listing diff of HEAD, the tree or `main`) and never against the merge base. | Compare against `git merge-base HEAD main` — directly, or through a sourced helper — and compare the result with the cumulative allowed list. |
 | `verify_script_docs_without_sync` | block | The script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`. | Add `make sync-docs` as the script's first step, or source a helper that runs it. |
+| `artefact_files_allowed` | block | The script flags changed files the task did not plan, without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md` from its changed-file set. | Exempt those paths from the "unexpected files" check — they are written by the standard tasks, not by the task being verified. |
+| `final_gate_artefact_allowed` | block | A `final_gate` script asserts the changed-file set against a finite allow-list with no guard for the gate rerunning it on the cumulative tree, where every earlier task's files (and the standard tasks' artefacts) show up. | Add a guard the lint recognizes — an env var (`DATAWATCH_*`, `SKIP_*` or a `FINAL*` variable), a `--final` argument, or a check limited to files the task adds (`git diff --diff-filter=A` or `git ls-files --others`) — or drop the whole-set assertion. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 | `verify_script_unknown_flag` | block | The script passes a long flag to a command (or one of its subcommands) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted. | Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked. |
 | `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec. | State the exact heading or the exact format being checked, word for word, in the task spec. |
 
-All five are `block`-severity: in `enforce` mode they feed the planner a retry
+All seven are `block`-severity: in `enforce` mode they feed the planner a retry
 with the findings as guidance; in `shadow` mode they are recorded on the
 Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)

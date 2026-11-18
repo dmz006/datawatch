@@ -543,11 +543,15 @@ writes keep passing after earlier tasks land. A generated script must:
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose
-lint enforces the same three rules on what comes back — see
-`verify_script_task_files_only`, `verify_script_docs_without_sync` and
-`final_gate_without_script` in the rule table above. All three block; the
-two script-content rules read the script file from the project directory and
-are skipped when it does not exist yet.
+lint enforces the seven stability rules on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+`artefact_files_allowed`, `final_gate_artefact_allowed`,
+`final_gate_without_script`, `verify_script_unknown_flag` and
+`verify_script_text_not_in_spec` in the rule table above. All seven block; the
+six script-content rules read the script file from the project directory
+(one level into a sourced helper) and are skipped when it does not exist
+yet — the full authoring guide and the fix for each rule is
+[Write verification scripts that stay stable](automaton-verification-scripts.md).
 
 **Correcting a script after decompose.** When a finding names a task's
 verification script (`no_verification_script`, `unexecutable_verification_script`,
