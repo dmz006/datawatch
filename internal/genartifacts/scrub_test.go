@@ -22,7 +22,7 @@ func TestScrubNote(t *testing.T) {
 	cases := map[string]string{
 		"no paths here":             "no paths here",
 		"see /a/b/c.txt now":        "see c.txt now",
-		`quoted "/home/u/x/y.log"`:  `quoted "y.log"`,
+		`quoted "/home/<user>/x/y.log"`:  `quoted "y.log"`,
 		"embedded (/var/tmp/z) end": "embedded (z) end",
 		"a/b relative stays":        "a/b relative stays",
 	}
