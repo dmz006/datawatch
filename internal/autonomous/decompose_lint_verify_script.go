@@ -1,10 +1,12 @@
 // decompose_lint_verify_script.go — the script-content checks behind the
-// verify_script_task_files_only and verify_script_docs_without_sync
-// decompose-lint rules, and the task-kind / reason-empty predicates of
-// final_gate_without_script. A verification script is read from the
-// project directory; a script that does not exist yet (or is a command
-// string, or lies outside the directory) is skipped here — the
-// unexecutable_verification_script rule keeps covering it.
+// verify_script_task_files_only, verify_script_docs_without_sync,
+// artefact_files_allowed and final_gate_artefact_allowed decompose-lint
+// rules, plus the task-kind /
+// reason-empty predicates of final_gate_without_script. A verification
+// script is read from the project directory; a script that does not
+// exist yet (or is a command string, or lies outside the directory) is
+// skipped here — the unexecutable_verification_script rule keeps covering
+// it.
 package autonomous
 
 import (
@@ -28,6 +30,15 @@ var (
 	verifyDocsRe = regexp.MustCompile(`check-docs-sync|check-howto-coverage|internal/server/web/docs|docs/howto`)
 	// verifySyncDocsRe: the docs sync is run.
 	verifySyncDocsRe = regexp.MustCompile(`\bmake\b[^\n]*\bsync-docs\b`)
+	// verifyArtefactVocabRe: one of the generated artefacts the daemon
+	// writes per Automaton (changelog draft, parity draft, gate report);
+	// a changed-file-set check that names any of these exempts them.
+	verifyArtefactVocabRe = regexp.MustCompile(`docs/plans/drafts|docs/plans/parity-issues|docs/plans/reports|CHANGELOG`)
+	// verifyFinalGateSentinelRe: the FINAL_GATE / DW_FINAL_GATE sentinel
+	// (an environment variable or argument) a whole-file-set check may
+	// key an early return on, so the final gate re-runs the script on
+	// the cumulative tree with the check skipped.
+	verifyFinalGateSentinelRe = regexp.MustCompile(`\b(?:DW_)?FINAL_GATE\b`)
 )
 
 // verifyScriptContent returns the repo-relative script path and its text
@@ -117,6 +128,46 @@ func verifyScriptDocsWithoutSync(dir string, t Task) (string, bool) {
 	return path, true
 }
 
+// verifyScriptArtefactFilesAllowed returns the script path when the
+// script does a changed-file-set check (a git diff/status/ls-files
+// listing of the tree) without exempting any of the generated artefacts
+// (docs/plans/drafts, docs/plans/parity-issues, docs/plans/reports or
+// CHANGELOG) the daemon writes per Automaton: the final gate re-runs
+// the script on the cumulative tree where those files are present, so
+// an unexempted file-set check can only fail there. A script with no
+// file-set check never matches, and an unreadable script is skipped —
+// as with the other script-content rules.
+func verifyScriptArtefactFilesAllowed(dir string, t Task) (string, bool) {
+	path, content, ok := verifyScriptContent(dir, t)
+	if !ok || !verifyFileCheckRe.MatchString(content) || verifyArtefactVocabRe.MatchString(content) {
+		return "", false
+	}
+	return path, true
+}
+
+// verifyScriptFinalGateArtefactAllowed returns the script path when the
+// script enforces the whole changed-file set against a finite list (a
+// git diff/status/ls-files listing) and exempts the generated artefacts
+// (docs/plans/drafts, docs/plans/parity-issues, docs/plans/reports or
+// CHANGELOG), but carries no FINAL_GATE / DW_FINAL_GATE sentinel to
+// skip the check when the final gate re-runs the script on the
+// cumulative tree: earlier tasks' files are present there, so a finite
+// list can only fail at the gate. The generated-artefact half is
+// covered by artefact_files_allowed, so a script lacking those
+// exemptions never matches here. A script with no whole-listing
+// assertion never matches, and an unreadable script is skipped — as
+// with the other script-content rules.
+func verifyScriptFinalGateArtefactAllowed(dir string, t Task) (string, bool) {
+	path, content, ok := verifyScriptContent(dir, t)
+	if !ok || !verifyFileCheckRe.MatchString(content) || !verifyArtefactVocabRe.MatchString(content) {
+		return "", false
+	}
+	if verifyFinalGateSentinelRe.MatchString(content) {
+		return "", false
+	}
+	return path, true
+}
+
 // taskHasVerificationReason reports whether the task states why it has no
 // verification script.
 func taskHasVerificationReason(t Task) bool {
@@ -134,6 +185,26 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 	}
 	if m.docsNoSync {
 		if p, ok := verifyScriptDocsWithoutSync(dir, t); ok {
+			return p
+		}
+	}
+	if m.artefactFiles {
+		if p, ok := verifyScriptArtefactFilesAllowed(dir, t); ok {
+			return p
+		}
+	}
+	if m.finalGateArtefact {
+		if p, ok := verifyScriptFinalGateArtefactAllowed(dir, t); ok {
+			return p
+		}
+	}
+	if m.invokesUnknownFlag {
+		if p, _, ok := verifyScriptInvokesUnknownFlag(dir, t); ok {
+			return p
+		}
+	}
+	if m.specUnanchored {
+		if _, p, ok := verifyScriptSpecUnanchored(dir, t); ok {
 			return p
 		}
 	}
