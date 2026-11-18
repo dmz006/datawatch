@@ -40474,8 +40474,15 @@ function gitHostsCardHtml(st) {
   const row = (k, v) => `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(k)}</span><span>${escHtml(v)}</span></div>`;
   const ops = (s.operations && typeof s.operations === 'object') ? s.operations : {};
   const kinds = Object.keys(ops).sort();
+  const opLabels = {
+    push: t('git_hosts_op_push'),
+    pull_request: t('git_hosts_op_pull_request'),
+    merge: t('git_hosts_op_merge'),
+    tag: t('git_hosts_op_tag'),
+    ci_read: t('git_hosts_op_ci_read'),
+  };
   const opRows = kinds.length
-    ? kinds.map(k => row('  ' + (t('git_hosts_op_' + k) || k), ops[k])).join('')
+    ? kinds.map(k => row('  ' + (opLabels[k] || k), ops[k])).join('')
     : `<div style="color:var(--text2);">${escHtml(t('git_hosts_no_ops'))}</div>`;
   const last = s.last_success_at && !String(s.last_success_at).startsWith('0001-')
     ? timeAgo(s.last_success_at) : t('git_hosts_never');
