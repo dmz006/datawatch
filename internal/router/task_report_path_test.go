@@ -10,11 +10,11 @@ const routerTestReportPath = ".datawatch/reports/gate.md"
 
 func TestTakeTaskTokensParsesReportPath(t *testing.T) {
 	cases := []struct {
-		in           []string
-		wantRest     []string
-		wantRO       string // "", "true", "false"
-		wantRP       string
-		wantErr      bool
+		in       []string
+		wantRest []string
+		wantRO   string // "", "true", "false"
+		wantRP   string
+		wantErr  bool
 	}{
 		{
 			[]string{"read_only=true", "report_path=" + routerTestReportPath, "new", "spec"},

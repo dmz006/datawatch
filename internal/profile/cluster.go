@@ -47,10 +47,10 @@ type ClusterProfile struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 
-	Kind        ClusterKind `json:"kind"`              // docker | k8s | cf
-	Context     string      `json:"context,omitempty"` // kubectl context name
-	Endpoint    string      `json:"endpoint,omitempty"` // explicit override for the API endpoint
-	Namespace   string      `json:"namespace,omitempty"` // k8s namespace (default "default")
+	Kind      ClusterKind `json:"kind"`                // docker | k8s | cf
+	Context   string      `json:"context,omitempty"`   // kubectl context name
+	Endpoint  string      `json:"endpoint,omitempty"`  // explicit override for the API endpoint
+	Namespace string      `json:"namespace,omitempty"` // k8s namespace (default "default")
 
 	// ImageRegistry overrides the global default REGISTRY from .env.build.
 	// Format: host/project (e.g. ghcr.io/your-org/datawatch,
@@ -101,8 +101,8 @@ type ClusterProfile struct {
 // spawned worker for this cluster (BL114). One of NFS / HostPath /
 // PVC must be set; ReadOnly defaults to false.
 type SharedVolume struct {
-	Name      string         `json:"name"`              // logical handle (mount name)
-	MountPath string         `json:"mount_path"`        // path inside the container
+	Name      string         `json:"name"`       // logical handle (mount name)
+	MountPath string         `json:"mount_path"` // path inside the container
 	ReadOnly  bool           `json:"read_only,omitempty"`
 	NFS       *NFSVolumeSpec `json:"nfs,omitempty"`
 	HostPath  string         `json:"host_path,omitempty"` // docker-only convenience
@@ -157,10 +157,10 @@ type Resources struct {
 type CredsRefProvider string
 
 const (
-	CredsFile    CredsRefProvider = "file"
-	CredsEnvVar  CredsRefProvider = "env"
-	CredsK8s     CredsRefProvider = "k8s-secret" // stub — sprint 8
-	CredsVault   CredsRefProvider = "vault"       // stub — sprint 8
+	CredsFile   CredsRefProvider = "file"
+	CredsEnvVar CredsRefProvider = "env"
+	CredsK8s    CredsRefProvider = "k8s-secret" // stub — sprint 8
+	CredsVault  CredsRefProvider = "vault"      // stub — sprint 8
 )
 
 // CredsRef points at a credential bundle. The concrete resolution
@@ -372,10 +372,10 @@ func (s *ClusterStore) Delete(name string) error {
 }
 
 // Smoke validates + does cheap reachability checks:
-//   * profile loads + validates
-//   * advisory warnings for stubbed features (CF kind, vault/k8s creds)
-//   * F10 S4.5 — driver CLI is on PATH (docker / kubectl)
-//   * F10 S4.5 — for k8s: kubectl can reach the configured context
+//   - profile loads + validates
+//   - advisory warnings for stubbed features (CF kind, vault/k8s creds)
+//   - F10 S4.5 — driver CLI is on PATH (docker / kubectl)
+//   - F10 S4.5 — for k8s: kubectl can reach the configured context
 //
 // Deep probes (actually creating a Pod) are deliberately out of the
 // default smoke — they take ~30s+ and need a working cluster. The

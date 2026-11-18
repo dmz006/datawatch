@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.182.16 (2026-11-18).** Verification script materialization before first task start. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.182.21 (2026-11-18).** Format all Go files with gofmt. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
@@ -350,7 +350,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
 | Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
 | Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |
-| CI + release | [docs/howto/ci-code-scanning-upload.md](docs/howto/ci-code-scanning-upload.md) · [docs/howto/container-image-refresh.md](docs/howto/container-image-refresh.md) · [docs/howto/toolchain-freshness-check.md](docs/howto/toolchain-freshness-check.md) · [docs/howto/local-env-leak-check.md](docs/howto/local-env-leak-check.md) |
+| CI + release | [docs/howto/ci-code-scanning-upload.md](docs/howto/ci-code-scanning-upload.md) · [docs/howto/gofmt-check.md](docs/howto/gofmt-check.md) · [docs/howto/container-image-refresh.md](docs/howto/container-image-refresh.md) · [docs/howto/toolchain-freshness-check.md](docs/howto/toolchain-freshness-check.md) · [docs/howto/local-env-leak-check.md](docs/howto/local-env-leak-check.md) |
 | Community | [`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community) |
 | Source attribution | [docs/plan-attribution.md](docs/plan-attribution.md) |
 

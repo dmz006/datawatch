@@ -21,7 +21,7 @@ func TestMigrateLogOnly(t *testing.T) {
 	os.MkdirAll(trackDir, 0755) //nolint:errcheck
 
 	// Write plaintext files
-	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("plaintext output\n"), 0644)   //nolint:errcheck
+	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("plaintext output\n"), 0644)  //nolint:errcheck
 	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nhello"), 0644) //nolint:errcheck
 
 	key := migrateTestKey()
@@ -67,9 +67,9 @@ func TestMigrateFull(t *testing.T) {
 	trackDir := filepath.Join(sessDir, "tracking")
 	os.MkdirAll(trackDir, 0755) //nolint:errcheck
 
-	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("secret output\n"), 0644)              //nolint:errcheck
-	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nsecret chat"), 0644)   //nolint:errcheck
-	os.WriteFile(filepath.Join(trackDir, "timeline.md"), []byte("# Timeline\n- event"), 0644)       //nolint:errcheck
+	os.WriteFile(filepath.Join(sessDir, "output.log"), []byte("secret output\n"), 0644)           //nolint:errcheck
+	os.WriteFile(filepath.Join(trackDir, "conversation.md"), []byte("# Conv\nsecret chat"), 0644) //nolint:errcheck
+	os.WriteFile(filepath.Join(trackDir, "timeline.md"), []byte("# Timeline\n- event"), 0644)     //nolint:errcheck
 
 	key := migrateTestKey()
 

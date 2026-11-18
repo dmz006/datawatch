@@ -67,12 +67,12 @@ type PhaseOutput struct {
 
 // State is the per-session algorithm record.
 type State struct {
-	SessionID string         `json:"session_id"`
-	Current   Phase          `json:"current"`
-	History   []PhaseOutput  `json:"history,omitempty"`
-	StartedAt time.Time      `json:"started_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	Aborted   bool           `json:"aborted,omitempty"`
+	SessionID string        `json:"session_id"`
+	Current   Phase         `json:"current"`
+	History   []PhaseOutput `json:"history,omitempty"`
+	StartedAt time.Time     `json:"started_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+	Aborted   bool          `json:"aborted,omitempty"`
 }
 
 // Tracker maintains in-memory state for every session running in

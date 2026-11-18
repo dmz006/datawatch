@@ -29,8 +29,8 @@ import (
 // after the TempDir is created is exactly the right order).
 
 var (
-	liveStoreMu   sync.Mutex
-	liveStoreReg  = make(map[*Store]string) // store -> creator description
+	liveStoreMu  sync.Mutex
+	liveStoreReg = make(map[*Store]string) // store -> creator description
 )
 
 func liveStoreRegister(s *Store, creator string) {

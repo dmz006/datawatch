@@ -104,10 +104,10 @@ func TestRequirementsSurfacesParity(t *testing.T) {
 // config-write cap, and the node versions read on the compute read cap.
 func TestRequirementsSurfacesCaps(t *testing.T) {
 	caps := map[string]string{
-		"automation_requirements_report":       federation.CapAutonomousRead,
-		"automation_model_pull_consent_get":    federation.CapAutonomousRead,
-		"automation_model_pull_consent_set":    federation.CapConfigWrite,
-		"compute_node_backend_versions":        federation.CapComputeRead,
+		"automation_requirements_report":    federation.CapAutonomousRead,
+		"automation_model_pull_consent_get": federation.CapAutonomousRead,
+		"automation_model_pull_consent_set": federation.CapConfigWrite,
+		"compute_node_backend_versions":     federation.CapComputeRead,
 	}
 	for tool, want := range caps {
 		got, ok := federation.RequiredCapForMCPTool(tool)

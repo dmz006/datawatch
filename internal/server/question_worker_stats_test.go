@@ -130,4 +130,3 @@ func TestQuestionStatsRouteIsNotAQuestionID(t *testing.T) {
 		t.Fatalf("GET /api/questions/stats: %d %q, want the stats body", rec.Code, rec.Body.String())
 	}
 }
-
