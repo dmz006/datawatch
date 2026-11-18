@@ -5,6 +5,65 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
+- **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
+
+## v9.182.25 — pace_line: the supervisor's weekly and window usage guard rules inside the burn guard
+
+### Changed
+
+- pace_line: the supervisor's weekly and window usage guard rules inside the burn guard.
+
+## v9.182.24 — Stale browser state cannot break the Sessions view-mode buttons
+
+### Changed
+
+- Stale browser state cannot break the Sessions view-mode buttons.
+
+## v9.182.23 — Session-kind profiles: lean starts for every session kind
+
+### Changed
+
+- Session-kind profiles: lean starts for every session kind.
+
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
+## v9.182.20 — Keep the operator host name out of generated reports
+
+### Changed
+
+- Keep the operator host name out of generated reports.
+
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
 ## v9.182.16 — Verification script materialization before first task start
 
 ### Changed

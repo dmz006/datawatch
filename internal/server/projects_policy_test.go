@@ -120,7 +120,7 @@ func TestProjectsPolicy_EffectiveDaemonTier(t *testing.T) {
 		t.Fatalf("effective status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var got struct {
-		Project string                     `json:"project"`
+		Project string `json:"project"`
 		Policy  map[string]struct {
 			Value  json.RawMessage `json:"value"`
 			Source string          `json:"source"`

@@ -715,3 +715,51 @@ func TestLaunchWithProfileFallback_NothingConfiguredArgsUnchanged(t *testing.T) 
 		})
 	}
 }
+
+// A wrapper configured on the canonical claude-code LLM row is honored
+// because the launcher runs exactly the binary it was constructed with —
+// nothing else can redirect it at launch time. That is the contract behind
+// the registry-side refusal in internal/inference (llm.go): the only row
+// whose binary the launcher will actually run is the canonical row the
+// daemon builds this backend from, so a binary saved on any other
+// claude-code row is dead config and the set/update path refuses it.
+func TestNewWrapperBinaryIsHonored(t *testing.T) {
+	argvFile := startFakeTmux(t, false)
+	wrapper := filepath.Join(t.TempDir(), "claude-lean")
+	b := New(wrapper).(*Backend)
+	if err := b.Launch(context.Background(), "", "cs-binwrap", t.TempDir(), "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch with a constructed wrapper binary: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+	if !strings.Contains(cmd, "NO_COLOR=1 "+wrapper+" ") {
+		t.Fatalf("launch command must run the configured wrapper binary, got:\n%s", cmd)
+	}
+}
+
+func TestNewEmptyBinaryPathDefaultsToClaude(t *testing.T) {
+	// The daemon relies on the empty = "claude" default when the canonical
+	// row carries no binary; the default is what every claude-code session
+	// runs, so the rule about which row may carry a binary holds.
+	argvFile := startFakeTmux(t, false)
+	b := New("").(*Backend)
+	if err := b.Launch(context.Background(), "", "cs-bindeft", t.TempDir(), "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch with the default binary: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+	if !strings.Contains(cmd, "NO_COLOR=1 claude ") {
+		t.Fatalf("default launch command must run %q, got:\n%s", "claude", cmd)
+	}
+}
+
+func TestNewWithOptionsWrapperBinaryIsHonored(t *testing.T) {
+	argvFile := startFakeTmux(t, false)
+	wrapper := filepath.Join(t.TempDir(), "claude-lean")
+	b := NewWithOptions(wrapper, true, true).(*Backend)
+	if err := b.Launch(context.Background(), "", "cs-binopt", t.TempDir(), "/nonexistent/log"); err != nil {
+		t.Fatalf("Launch with a constructed wrapper binary: %v", err)
+	}
+	cmd := recordedCmd(t, argvFile)
+	if !strings.Contains(cmd, "NO_COLOR=1 "+wrapper+" ") {
+		t.Fatalf("launch command must run the configured wrapper binary, got:\n%s", cmd)
+	}
+}

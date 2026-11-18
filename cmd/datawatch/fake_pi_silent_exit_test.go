@@ -202,8 +202,8 @@ func TestFakePiSilentExit_LogLineResetsSilenceClock(t *testing.T) {
 	// Silence accumulates with no log line visible yet (the real mtime of
 	// the log file lands before the fake clock, so it does not move the
 	// tracker): past the limit the silent exit would be flagged.
-	lineArrivingAt := start.Add(limit + 30 * time.Second)
-	if stalled, reason := tickAt(start.Add(limit + 30 * time.Second)); !stalled {
+	lineArrivingAt := start.Add(limit + 30*time.Second)
+	if stalled, reason := tickAt(start.Add(limit + 30*time.Second)); !stalled {
 		t.Fatalf("before the log line is delivered, %s of silence past the limit must stall (reason=%q)", limit+30*time.Second, reason)
 	}
 
