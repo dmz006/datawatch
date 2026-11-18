@@ -2728,15 +2728,18 @@ section above) — no new config key is introduced here.
 - **Stable generated scripts:** the planning prompt carries a shared helper
   text (`internal/autonomous/verification_script_helpers.go`): docs sync
   first, a cumulative allowed-file list, a merge-base comparison and no
-  package-wide formatter run. Three block-severity lint rules enforce it
+  package-wide formatter run. Seven block-severity lint rules enforce it
   (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
-  `final_gate_without_script`, via the `verification_script_task_files_only`,
-  `verification_script_docs_without_sync` and `verification_script_reason_empty`
-  /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
+  `artefact_files_allowed`, `final_gate_artefact_allowed`,
+  `script_invokes_known_flag`, `check_matches_spec_text`,
+  `final_gate_without_script`, via the `verification_script_*` match
+  predicates in `internal/autonomous/decompose_lint_verify_script.go`,
+  `decompose_lint_script_help.go` and `decompose_lint_spec_text.go`).
   A planner-written final gate off the last story is rejected by the plan check
   (`verification_script_coverage.go`).
-- **Still to review (operator):** the three stability rules ship at `block`
-  severity (operator decision 2026-11-12, option 2); whether `shadow` should
+- **Still to review (operator):** the seven stability rules ship at `block`
+  severity (the first three by operator decision 2026-11-12, option 2; the
+  four added 2026-11-17 ship `block` as well); whether `shadow` should
   precede `enforce`, and a live run confirming planners write stable scripts
   first try, are not settled by this tree. See
   [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).
