@@ -756,9 +756,20 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
 	defer cancel()
+	// The residue pass runs first: it releases the Automaton's task work
+	// trees, work tree and branch when nothing unmerged or hand-written
+	// would be lost, and records what it held back and why.
+	trigger := ResidueTriggerMerged
+	if prd.Status == PRDCancelled {
+		trigger = ResidueTriggerCancelled
+	}
+	residue := m.ReleaseResidueAtTerminal(prd, trigger)
 	// Task worktrees go first: the PRD branch cannot be released while
-	// they still hold it. A worktree with a live session stays.
-	m.CleanupTaskWorktrees(ctx, prd)
+	// they still hold it. A worktree with a live session stays, and so does
+	// one the residue pass held for unmerged or hand-written work.
+	if !residueHeldTaskTrees(residue) {
+		m.CleanupTaskWorktrees(ctx, prd)
+	}
 	git := NewMergeGitRunner()
 	probe := &managerWorktreeProbe{m: m, repo: repo, git: git, ctx: ctx}
 
@@ -853,6 +864,18 @@ func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 		return WorktreeCleanupResult{Mode: mode}
 	}
 
+	// Residue of every finished Automaton goes first: this releases the
+	// dirty-held entries whose only dirt is generated artefacts and the
+	// safe-listed ones, holding back unmerged and hand-written work.
+	residueRemoved, residueHeld := m.releaseResidueOfFinished(maxRemovals, retention)
+	if residueHeld > 0 {
+		log.Printf("[autonomous] worktree-cleanup: residue pass left %d entr(ies) held", residueHeld)
+	}
+	withResidue := func(r WorktreeCleanupResult) WorktreeCleanupResult {
+		r.Removed = append(residueRemoved, r.Removed...)
+		return r
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeCleanupPassTimeout)
 	defer cancel()
 	git := NewMergeGitRunner()
@@ -861,12 +884,12 @@ func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 	base := probe.defaultBase()
 	if base == "" {
 		log.Printf("[autonomous] worktree-cleanup: pass skipped, no default base branch could be resolved for %s", repo)
-		return WorktreeCleanupResult{Mode: mode}
+		return withResidue(WorktreeCleanupResult{Mode: mode})
 	}
 	report, err := SafeToDeleteReport(ctx, git, repo, base, SafeDeleteOptions{})
 	if err != nil {
 		log.Printf("[autonomous] worktree-cleanup: safe-to-delete report: %v", err)
-		return WorktreeCleanupResult{Mode: mode}
+		return withResidue(WorktreeCleanupResult{Mode: mode})
 	}
 
 	res := m.worktreeCleanupRun(WorktreeCleanupOptions{
@@ -879,6 +902,7 @@ func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 		Git:         git,
 		Probe:       probe,
 	})
+	res = withResidue(res)
 	m.worktreeOutcomeLog("pass", res)
 	return res
 }
