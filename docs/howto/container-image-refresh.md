@@ -188,6 +188,29 @@ The run log shows the Trivy table for the failing image. Options, in order:
    to the exceptions table in `docs/security-review.md`. Re-review each
    release.
 
+## Staging-scan failures on agent-base
+
+The blocking scan of the agent-base staging tag (`refresh-YYYYMMDD`) uses the
+same policy as the Release scan: `HIGH,CRITICAL`, exceptions from
+`.trivyignore`. When it failed on a finding, the fix is made on `main` in the
+story's files, not in the workflow:
+
+1. A fixed version exists: raise it in `docker/dockerfiles/Dockerfile.agent-base`
+   (the `apt-get upgrade` layer or an explicit package pin).
+2. No fix exists: add an entry to `security/accepted-risks.yml`, regenerate
+   `.trivyignore` with `python3 scripts/gen_trivyignore.py`, and let the table
+   in `docs/security-review.md` regenerate. Never hand-edit the generated
+   table or the generated `.trivyignore` block.
+
+The daily refresh rebuilds from `main`, so the next run uses the corrected
+recipe and policy; no release is needed.
+
+**Operator review:** confirm the next image-refresh run reaches promotion for
+agent-base (scan clean, `:latest` moved). Check the expiry date and the
+"traced" flag of each entry added for this fix; entries that are untraced carry
+the 30-day cap and must be renewed or removed when Debian ships a fix. See
+[Accepted exceptions](../security-review.md#accepted-exceptions-securityaccepted-risksyml--trivyignore).
+
 ## Stale-suppression auto-removal (`recheck-ignored-cves`)
 
 A second daily job rebuilds every real shipped image fresh and scans it
