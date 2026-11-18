@@ -91,6 +91,12 @@ func TestCheckMatchesSpecText(t *testing.T) {
 			want:   0,
 		},
 		{
+			name:   "a spec that names the heading text without the hashes anchors the #-prefixed check",
+			spec:   "the report must carry the Gates section",
+			script: "v/anchored.sh",
+			want:   0,
+		},
+		{
 			name:       "a sed address heading the spec never names blocks",
 			spec:       "verify the gate report",
 			script:     "v/sed_address.sh",
