@@ -83,7 +83,18 @@ func validDriftDir(dir string) bool {
 	if !filepath.IsAbs(cleaned) {
 		return false
 	}
-	st, err := os.Stat(cleaned)
+	// Resolve against a fixed root: the parent directory is opened as a
+	// root and only the final element is statted through it.
+	base := filepath.Base(cleaned)
+	if !filepath.IsLocal(base) {
+		return false
+	}
+	parent, err := os.OpenRoot(filepath.Dir(cleaned))
+	if err != nil {
+		return false
+	}
+	defer parent.Close()
+	st, err := parent.Stat(base)
 	return err == nil && st.IsDir()
 }
 
@@ -110,8 +121,7 @@ func defaultDriftGitRunner(ctx context.Context, dir string, args ...string) (str
 	if !filepath.IsAbs(cleanDir) {
 		return "", fmt.Errorf("invalid git directory %q: not absolute", dir)
 	}
-	st, statErr := os.Stat(cleanDir)
-	if statErr != nil || !st.IsDir() {
+	if !validDriftDir(cleanDir) {
 		return "", fmt.Errorf("invalid git directory %q: not an existing directory", dir)
 	}
 	if len(args) == 0 {
