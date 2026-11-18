@@ -6,6 +6,9 @@ if [ -n "${TMUX:-}" ] || [ -n "${TMUX_TMPDIR:-}" ]; then
 fi
 cd "$(git rev-parse --show-toplevel)"
 fail=0
+# The smoke daemon prefers ./datawatch; build it so the sandbox serves this tree's page, not a stale installed binary.
+bash scripts/sync-docs-to-webfs.sh >/dev/null 2>&1 || true
+go build -o datawatch ./cmd/datawatch/ || { echo "FAIL: go build"; exit 1; }
 bad() { echo "FAIL: $*"; fail=1; }
 LOG="$(mktemp)"; trap 'rm -f "$LOG"' EXIT
 rc=0
