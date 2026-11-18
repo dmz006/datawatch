@@ -1,7 +1,9 @@
 package autonomous
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -169,4 +171,73 @@ func TestStallDetectorOnlyReads(t *testing.T) {
 		t.Fatalf("Automaton mutated: %+v vs %+v", *p, before)
 	}
 	var _ LaneFillDecisionSource = src // no approve/run/acknowledge method exists on the interface
+}
+
+func TestStallWakeSettingDefaultsOn(t *testing.T) {
+	var c SupervisorWatchConfig
+	if !c.EffectiveStallWake() {
+		t.Fatal("unset stall_wake must read on")
+	}
+	off := false
+	c.StallWake = &off
+	if c.EffectiveStallWake() {
+		t.Fatal("explicit false must read off")
+	}
+	if !DefaultSupervisorWatchConfig().EffectiveStallWake() {
+		t.Fatal("default config must have the wake on")
+	}
+}
+
+func TestStallWakeDisabledSkipsSinkButReturnsStalls(t *testing.T) {
+	src := newFakeStallSource()
+	src.full["a"] = true
+	sink := &fakeWakeSink{}
+	d := NewStallDetector(src, sink)
+	off := false
+	cfg := SupervisorWatchConfig{StallWake: &off}
+	now := time.Now()
+	p := workTestQueuePRD("a", PRDApproved, 90, now.Add(-45*time.Minute))
+	if got := d.Scan([]*PRD{p}, cfg, now); len(got) != 1 {
+		t.Fatalf("want 1 stall, got %d", len(got))
+	}
+	if len(sink.events) != 0 {
+		t.Fatalf("wake off must not wake, got %d", len(sink.events))
+	}
+}
+
+func TestLifecycleWakeSinkPayload(t *testing.T) {
+	var got []LifecycleEvent
+	sink := LifecycleWakeSink{Emit: func(e LifecycleEvent) { got = append(got, e) }}
+	sink.Wake(PriorityStall{AutomatonID: "a", Priority: 90, WaitingMinutes: 45,
+		BlockerCode: StallBlockerLaneFull, BlockerText: "every lane is busy", Action: "wait for a lane or free one"})
+	if len(got) != 1 || got[0].Kind != KindPriorityStall || got[0].PRDID != "a" || got[0].NewStatus != StallBlockerLaneFull {
+		t.Fatalf("bad event: %+v", got)
+	}
+	var st PriorityStall
+	if err := json.Unmarshal([]byte(got[0].Details), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Priority != 90 || st.WaitingMinutes != 45 || st.BlockerText != "every lane is busy" || st.Action != "wait for a lane or free one" {
+		t.Fatalf("bad payload: %+v", st)
+	}
+	if !IsKnownEventKind(KindPriorityStall) {
+		t.Fatal("priority_stall must be a known kind")
+	}
+}
+
+func TestPriorityStallFindingCarriesBlockerAndAction(t *testing.T) {
+	now := time.Now()
+	src := newFakeStallSource()
+	src.full["a"] = true
+	p := workTestQueuePRD("a", PRDApproved, 90, now.Add(-45*time.Minute))
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: []*PRD{p}}, nil, nil)
+	w.Stall = src
+	got := w.CheckPriorityStall(now, SupervisorWatchConfig{})
+	if len(got) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(got))
+	}
+	want := SupervisorWatchPriorityStallText("a", 90, 45, 30, 80, "every lane is busy", "wait for a lane or free one")
+	if got[0].Text != want || !strings.Contains(want, "every lane is busy") || !strings.Contains(want, "wait for a lane or free one") {
+		t.Fatalf("text = %q, want %q", got[0].Text, want)
+	}
 }

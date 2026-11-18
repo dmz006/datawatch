@@ -71,7 +71,7 @@ func TestSupervisorWatchTextNoPRDNoTrackerID(t *testing.T) {
 // Automaton or the Automata, stays one line, and carries neither the
 // word PRD nor a tracker id.
 func TestSupervisorWatchTextNewKindsOperatorSafe(t *testing.T) {
-	stall := SupervisorWatchPriorityStallText("aut-7f3e8066", 90, 45, 30, 80)
+	stall := SupervisorWatchPriorityStallText("aut-7f3e8066", 90, 45, 30, 80, "", "")
 	backlog := SupervisorWatchBacklogText(3, []string{
 		"aut-7f3e8066(approved)",
 		"b9c8d7e6(failed, 2 left)",
