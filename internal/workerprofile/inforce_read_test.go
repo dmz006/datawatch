@@ -39,11 +39,11 @@ func TestInForceFromConfig_MatchesInForce(t *testing.T) {
 	}
 }
 
-// A body with no worker profile settings still yields one entry per role and
-// kind, and a non-JSON body is an error.
+// A body with no worker profile settings still yields one entry per role,
+// task kind and session kind, and a non-JSON body is an error.
 func TestInForceFromConfig_EmptyAndBad(t *testing.T) {
 	got, err := InForceFromConfig([]byte(`{}`))
-	if err != nil || len(got) != len(inForceRoles)+len(inForceKinds) {
+	if err != nil || len(got) != len(inForceRoles)+len(inForceKinds)+len(inForceSessionKinds) {
 		t.Fatalf("empty body: entries=%d err=%v", len(got), err)
 	}
 	if _, err := InForceFromConfig([]byte(`[`)); err == nil {

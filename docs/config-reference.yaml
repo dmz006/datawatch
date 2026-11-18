@@ -4366,7 +4366,9 @@ autonomous:
   #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
   #     minimal|digest|full, model, effort. Default empty.
   #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
-  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     name. worker_profile_defaults.kind: task kind
+  #     (implementation|docs|note|final_gate) or session kind (supervisor,
+  #     operator_interactive, scheduled_command, planner, one_shot, review)
   #     -> profile name. Empty value = no default. Default empty.
   #   worker_profile: global profile name; empty = the role default.
   #   Launch behaviour: each launch resolves its profile by name, task ->
@@ -4382,11 +4384,12 @@ autonomous:
   #     profile and apply it to the session start (its MCP config, tools,
   #     skills and starting context). Verifier and judge launches resolve it
   #     when they start their one-shot session.
-  #   Read the profile in force per role and task kind on GET /api/config
-  #     (autonomous.in_force), MCP worker_profile_status, datawatch config get,
-  #     the comm channel configure key, or the web settings group.
+  #   Read the profile in force per role, task kind and session kind on
+  #     GET /api/config (autonomous.in_force), MCP worker_profile_status,
+  #     datawatch config get, the comm channel configure key, or the web
+  #     settings group.
   #   Refused at load: a built-in name reused, an invalid profile, a value
-  #   naming an unknown profile, an unknown role or kind key.
+  #   naming an unknown profile, an unknown role key or task-/session-kind key.
   worker_profiles: {}
   #   reviewer:
   #     mcp: {mode: list, servers: [github]}
