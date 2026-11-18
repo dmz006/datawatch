@@ -94,7 +94,11 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 			if !sameSessionID(t.SessionID, s.ID) {
 				t.ComputeNode = ""
 			}
-			t.SessionID = s.ID
+			// The same session under its full id keeps the id the task already
+			// records: the session is the one the task started, not a new one.
+			if !sameSessionID(t.SessionID, s.ID) {
+				t.SessionID = s.ID
+			}
 			t.AdoptedSession = true
 			t.Status = TaskInProgress
 			t.UpdatedAt = now
