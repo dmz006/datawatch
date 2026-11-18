@@ -22,7 +22,10 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/genartifacts"
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
@@ -122,7 +125,9 @@ func (m *Manager) mergeShadowInput(prd *PRD, cfg config.MergeShadowConfig) (merg
 		Pipeline:       m.mergePipelineConfig(),
 		ChangeRecord:   m.mergeShadowChangeRecord(prd.ID),
 		ChangelogTasks: m.mergeShadowChangelogTasks(prd),
-		GateTimeout:    cfg.EffectiveGateTimeout(),
+		ChangelogDraftPath: strings.ReplaceAll(genartifacts.DefaultPaths()[genartifacts.ChangelogDraft],
+			genartifacts.IDPlaceholder, prd.ID),
+		GateTimeout: cfg.EffectiveGateTimeout(),
 	}, true
 }
 

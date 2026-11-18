@@ -50,6 +50,9 @@ type Input struct {
 	// ChangelogTasks are the Automaton's tasks, carrying their output, so the
 	// changelog entry can be read from the entry task.
 	ChangelogTasks []ChangelogTask
+	// ChangelogDraftPath is the repo-relative path of the generated
+	// changelog_draft artefact on the branch; empty skips the draft fallback.
+	ChangelogDraftPath string
 	// GateTimeout bounds each gate. Zero or less uses the config default.
 	GateTimeout time.Duration
 	// Review is the review verdict on the work branch, nil when no review was
@@ -164,6 +167,13 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 
 	// Step 4: the changelog entry.
 	entry := ReadChangelogEntry(in.ChangelogTasks)
+	if entry.Source == ChangelogSourceMissing {
+		fb, err := readBranchChangelogEntry(ctx, in.RepoPath, base, in.Branch, in.ChangelogDraftPath)
+		if err != nil {
+			return nil, err
+		}
+		entry = fb
+	}
 	plan.ChangelogSource = entry.Source
 	plan.ChangelogHeading = entry.Heading
 	plan.ChangelogBody = entry.Body
