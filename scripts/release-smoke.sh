@@ -277,6 +277,15 @@ YAML
 
   # Find the datawatch binary (prefer freshly built binary in repo root).
   _DW_BIN="${DATAWATCH_BIN:-}"
+  if [[ -z "$_DW_BIN" && ! -x "$REPO_DIR/datawatch" ]]; then
+    # No binary in the tree: build the daemon from this tree rather than
+    # fall back to whatever stale datawatch is on PATH (an older binary
+    # lacks the checked behaviour and the CLI's sandbox-cert trust).
+    echo "Building datawatch from this tree for the smoke daemon..."
+    (cd "$REPO_DIR" && go build -o "$TEST_WORK_DIR/datawatch" ./cmd/datawatch/) \
+      && _DW_BIN="$TEST_WORK_DIR/datawatch" \
+      || echo "warn: build failed; falling back to datawatch on PATH" >&2
+  fi
   if [[ -z "$_DW_BIN" ]]; then
     [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
   fi
