@@ -33,26 +33,6 @@ var driftGitExec = func(ctx context.Context, argv []string) (string, error) {
 	return string(out), err
 }
 
-// hardenedDriftGitArgs is the single place the hardening options are
-// defined: no fsmonitor, no hooks, no optional locks, then -C dir, the
-// subcommand and its arguments. diff also gets --no-ext-diff.
-func hardenedDriftGitArgs(dir string, args []string) []string {
-	out := []string{
-		"-c", "core.fsmonitor=false",
-		"-c", "core.hooksPath=",
-		"--no-optional-locks",
-		"-C", dir,
-	}
-	if len(args) == 0 {
-		return out
-	}
-	out = append(out, args[0])
-	if args[0] == "diff" {
-		out = append(out, "--no-ext-diff")
-	}
-	return append(out, args[1:]...)
-}
-
 // validDriftDir reports whether dir is safe to pass to git -C, checked
 // before any argument containing it is built and before git is executed:
 // non-empty, no NUL byte, absolute, not starting with a dash (git would
