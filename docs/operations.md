@@ -2987,7 +2987,12 @@ last-commit diff check covers that surface.
 Operator review still needed: keep `.leak-patterns.local` seeded on every
 machine that builds or commits the repository — until it exists the `local`
 class is silently inactive there — and keep the pre-commit chain installed so
-the gate is not only `make lint`. Reference:
+the gate is not only `make lint`. The generated reports folder scan runs only
+as part of `make check-leaks`/`make lint`: the pre-commit hook and the
+release smoke run the whole-tree check alone, so run `make lint` (or
+`make check-generated-reports-leaks`) before publishing or citing a generated
+report, and discard stale reports under `docs/plans/reports` rather than
+letting them accumulate. Reference:
 [howto/local-env-leak-check.md](howto/local-env-leak-check.md).
 
 ---
