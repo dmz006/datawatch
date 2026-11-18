@@ -278,3 +278,8 @@ Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. TLS is on
 **Service worker not installing**
 - Open DevTools → Application → Service Workers to check registration status
 - Clear the site cache and reload
+
+**PWA still shows the old version after a datawatch upgrade**
+- Upgrades normally apply themselves: the service worker is registered per release (`/sw.js?v=<release>`) with its own cache, the new worker purges the old caches and the page reloads at most once per upgrade. In DevTools → Application → Service Workers the registration URL should read `/sw.js?v=<release>`.
+- If you were mid-thing (typing, terminal focused, an unsent draft) the reload is deferred — wait for the "Update available — tap to reload" banner and tap **Reload**.
+- Last resort: run `forcePWAUpdate()` in the browser console (unregisters the worker, drops its caches, reloads with bypass), or clear the site data and reload.

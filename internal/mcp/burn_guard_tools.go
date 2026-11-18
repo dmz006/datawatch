@@ -46,7 +46,7 @@ func (s *Server) handleBurnGuardRun(_ context.Context, _ mcpsdk.CallToolRequest)
 
 func (s *Server) toolBurnGuardConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("burn_guard_config_get",
-		mcpsdk.WithDescription("The burn guard settings (usage.burn_guard): enabled, interval_minutes, margin_points, ladder, step_back, cache price per million tokens, refit_on_reading, effort_ceiling, retry_limit_claude, ask_on_change and max_projection_gap_points (the disagreement between the guard and the usage advice before the guard takes the lower projection)."),
+		mcpsdk.WithDescription("The burn guard settings (usage.burn_guard): enabled, interval_minutes, margin_points, ladder, step_back, cache price per million tokens, refit_on_reading, effort_ceiling, retry_limit_claude, ask_on_change, max_projection_gap_points (the disagreement between the guard and the usage advice before the guard takes the lower projection), and the pace_line policy: mode (off, shadow or on; unset defaults to shadow), week_tolerance (whole number 0 to 10, default 2), points_to_week_factor (1 to 10, default 1.3), window_percent_per_point (1 to 25, default 4), window_stop_percent (50 to 95, default 85) and reading_freshness_minutes (1 to 1440, default 60)."),
 	)
 }
 
@@ -72,6 +72,12 @@ func (s *Server) toolBurnGuardConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("retry_limit_claude", mcpsdk.Description("Most retries of one task on Claude, a whole number from 0 to 20")),
 		mcpsdk.WithBoolean("ask_on_change", mcpsdk.Description("When false (default) the guard sends one alert per change and no question; when true it keeps at most one open question")),
 		mcpsdk.WithNumber("max_projection_gap_points", mcpsdk.Description("Points of disagreement between the guard and the usage advice before the guard takes the lower projection; 0 never compares; default 25; see the burn guard how-to")),
+		mcpsdk.WithString("mode", mcpsdk.Description("The pace_line policy mode: off, shadow or on; an unset mode reads shadow. Shadow first, then on")),
+		mcpsdk.WithNumber("week_tolerance", mcpsdk.Description("Whole number from 0 to 10, default 2: how many points the week reading may run over the pace line and still be ok")),
+		mcpsdk.WithNumber("points_to_week_factor", mcpsdk.Description("Number from 1 to 10, default 1.3: one point of ledger burn counts as this many points of the weekly allowance")),
+		mcpsdk.WithNumber("window_percent_per_point", mcpsdk.Description("Number from 1 to 25, default 4: one point burned is this percent of the current window")),
+		mcpsdk.WithNumber("window_stop_percent", mcpsdk.Description("Number from 50 to 95, default 85: a window is over at this percent used")),
+		mcpsdk.WithNumber("reading_freshness_minutes", mcpsdk.Description("Whole number from 1 to 1440, default 60: a reading older than this is stale and the guard asks the operator for a fresh one")),
 	)
 }
 
@@ -80,6 +86,8 @@ var burnGuardConfigArgs = []string{
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude", "ask_on_change",
 	"max_projection_gap_points",
+	"mode", "week_tolerance", "points_to_week_factor",
+	"window_percent_per_point", "window_stop_percent", "reading_freshness_minutes",
 }
 
 func (s *Server) handleBurnGuardConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

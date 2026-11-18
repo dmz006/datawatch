@@ -167,6 +167,12 @@ var usageMoveCases = []struct {
 	{"usage.burn_guard.retry_limit_claude", 3, float64(3)},
 	{"usage.burn_guard.ask_on_change", true, true},
 	{"usage.burn_guard.max_projection_gap_points", 10, float64(10)},
+	{"usage.burn_guard.mode", "on", "on"},
+	{"usage.burn_guard.week_tolerance", 3, float64(3)},
+	{"usage.burn_guard.points_to_week_factor", 1.5, 1.5},
+	{"usage.burn_guard.window_percent_per_point", 5, float64(5)},
+	{"usage.burn_guard.window_stop_percent", 90, float64(90)},
+	{"usage.burn_guard.reading_freshness_minutes", 30, float64(30)},
 }
 
 // usageMoveRejected lists declared burn guard keys that PUT /api/config
