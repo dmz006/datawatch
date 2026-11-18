@@ -179,6 +179,24 @@ type DecomposeLintMatch struct {
 	// no guard for the final gate rerunning it on the cumulative tree.
 	// Absent (false) = do not check.
 	VerificationScriptFinalGateRerun bool `yaml:"verification_script_final_gate_rerun,omitempty" json:"verification_script_final_gate_rerun,omitempty"`
+	// VerificationScriptUnknownFlag asserts the task's verification
+	// script (read from the project directory, plus any repo-relative
+	// helper it sources, one level deep) passes a long flag to an
+	// installed command — or to one of its subcommands — whose own
+	// `--help` output does not list that flag. A command that is not
+	// installed, or whose help output cannot be read, is skipped
+	// silently; help probes are bounded by a few-second timeout. A
+	// script that does not exist yet is skipped. Absent (false) = do
+	// not check.
+	VerificationScriptUnknownFlag bool `yaml:"verification_script_unknown_flag,omitempty" json:"verification_script_unknown_flag,omitempty"`
+	// VerificationScriptTextNotInSpec asserts the task's verification
+	// script (and followed helpers) checks a markdown heading (a
+	// `# …` line, grepped or compared) or a multi-word output phrase
+	// that does not appear verbatim in the task spec; text the script
+	// generates itself (echoed or written before it is checked) is not
+	// an assertion and is not flagged. A script that does not exist yet
+	// is skipped. Absent (false) = do not check.
+	VerificationScriptTextNotInSpec bool `yaml:"verification_script_text_not_in_spec,omitempty" json:"verification_script_text_not_in_spec,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

@@ -125,8 +125,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: thirteen rules —
-the nine `block` rules first (the six boundary rules, then the three
+The built-in pack is the **floor** every run starts from: seventeen rules —
+the thirteen `block` rules first (the six boundary rules, then the seven
 verification-script stability rules), then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
@@ -142,15 +142,19 @@ and never name a particular project, repository or home directory.
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `artefact_files_allowed` | block | a verification script that flags unexpected changed files without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md`, so it fails when the daemon writes them |
+| `final_gate_artefact_allowed` | block | a final-gate verification script that asserts the whole changed-file set against a finite allow-list with no guard for the gate rerunning it on the cumulative tree, where every earlier task's files appear |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
+| `verify_script_unknown_flag` | block | a verification script that passes a long flag to a command (or subcommand) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted; commands the environment cannot find, or whose help it cannot read, are skipped |
+| `verify_script_text_not_in_spec` | block | a verification script that greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec; the spec is the contract, so an expectation stated nowhere is unverifiable |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
-### The three verification-script stability rules
+### The seven verification-script stability rules
 
-The last three `block` rules read the task's verification script from the
+The last seven `block` rules read the task's verification script from the
 project directory (and any helper it sources, one level deep) and name the
 **script path and the rule id** in the finding:
 
@@ -160,15 +164,32 @@ project directory (and any helper it sources, one level deep) and name the
 - `verify_script_docs_without_sync` — fires when the script checks docs, the
   embedded docs copy or how-to coverage without running `make sync-docs`. Fix:
   run `make sync-docs` first.
+- `artefact_files_allowed` — fires when the script flags unexpected changed
+  files without exempting the daemon-generated artefact folders and
+  `CHANGELOG.md`. Fix: exclude those paths from the changed-file set.
+- `final_gate_artefact_allowed` — fires when a final-gate script asserts the
+  whole changed-file set against a finite allow-list with no rerun guard.
+  Fix: guard the set check or check only the files this task adds.
 - `final_gate_without_script` — fires on a `final_gate` task that has no
   script, no `verification_script_reason` and no usable report path. Fix: give
   it a script, a report path, or a reason.
+- `verify_script_unknown_flag` — fires when the script passes a long flag to
+  an invoked command (or subcommand) that the command's own `--help` output
+  does not list. Fix: use only flags the installed binary accepts (check with
+  `<command> --help`), or rephrase the check. Commands the environment cannot
+  find are not checked — the rule stays out of the way rather than guessing.
+- `verify_script_text_not_in_spec` — fires when the script greps or compares
+  against a markdown heading or a multi-word output phrase that does not appear
+  verbatim in the task spec. Fix: state the exact heading or the exact format
+  being checked, word for word, in the task spec.
 
-They use three match predicates (below): `verification_script_task_files_only`,
-`verification_script_docs_without_sync` and `verification_script_reason_empty`
-(the last with `kind: final_gate`). A script that does not exist yet is
-skipped by the first two. The full authoring guide, with the fix for each rule
-and how to set a task's script or reason on every surface, is
+They use seven match predicates (below): `verification_script_task_files_only`,
+`verification_script_docs_without_sync`, `verification_script_artefact_files`,
+`verification_script_final_gate_rerun`, `verification_script_reason_empty`
+(the last with `kind: final_gate`), `verification_script_unknown_flag` and
+`verification_script_text_not_in_spec`. A script that does not exist yet is
+skipped by every rule that reads the script. The full authoring guide, with the
+fix for each rule and how to set a task's script or reason on every surface, is
 [Write verification scripts that stay stable](automaton-verification-scripts.md).
 
 ## 4. Writing your own rules — a worked example
@@ -234,6 +255,10 @@ hold for the same task. The leaves:
 | `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
 | `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `verification_script_artefact_files` | assert the script flags unexpected changed files without exempting the daemon-generated artefact folders and `CHANGELOG.md`; skipped when the script file does not exist |
+| `verification_script_final_gate_rerun` | assert the script checks the whole changed-file set against a finite allow-list with no final-gate rerun guard; skipped when the script file does not exist |
+| `verification_script_unknown_flag` | assert the script passes a long flag, to an invoked command or subcommand, the command's own `--help` output does not list; commands the environment cannot find are not checked, and unreadable help output is skipped |
+| `verification_script_text_not_in_spec` | assert the script greps or compares against a markdown heading or a multi-word output phrase that the task spec does not contain verbatim; text the script generates (echo/printf writes, comments) is not an assertion; skipped when the script file does not exist |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
