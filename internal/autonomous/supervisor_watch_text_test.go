@@ -65,6 +65,39 @@ func TestSupervisorWatchTextNoPRDNoTrackerID(t *testing.T) {
 	}
 }
 
+// TestSupervisorWatchTextNewKindsOperatorSafe: the two new kinds' own
+// check-side wording (the exact lines the checks emit, not the
+// SupervisorWatchText fallbacks the table checks above cover) names the
+// Automaton or the Automata, stays one line, and carries neither the
+// word PRD nor a tracker id.
+func TestSupervisorWatchTextNewKindsOperatorSafe(t *testing.T) {
+	stall := SupervisorWatchPriorityStallText("aut-7f3e8066", 90, 45, 30, 80)
+	backlog := SupervisorWatchBacklogText(3, []string{
+		"aut-7f3e8066(approved)",
+		"b9c8d7e6(failed, 2 left)",
+		"c1d2e3f4(draft, 1 left)",
+		"+1 more",
+	})
+	for _, line := range []string{stall, backlog} {
+		if strings.TrimSpace(line) == "" {
+			t.Fatalf("text is empty: %q", line)
+		}
+		if strings.ContainsAny(line, "\r\n") {
+			t.Fatalf("text is not a single line: %q", line)
+		}
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "automaton") && !strings.Contains(lower, "automata") {
+			t.Errorf("text must name the Automaton or Automata: %q", line)
+		}
+		if supervisorWatchPRDRe.MatchString(line) {
+			t.Errorf("text contains the word PRD: %q", line)
+		}
+		if supervisorWatchTrackerRe.MatchString(line) {
+			t.Errorf("text carries a tracker id: %q", line)
+		}
+	}
+}
+
 // TestSupervisorWatchTextUnknownKind: an unknown kind is an error, so a
 // typo can never produce a finding that reads like nothing happened.
 func TestSupervisorWatchTextUnknownKind(t *testing.T) {

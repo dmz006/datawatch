@@ -767,7 +767,181 @@ func TestSupervisorWatchPassRunsWorktreeChecks(t *testing.T) {
 	m.mu.Lock()
 	m.cfg.WorktreeBaseRepo = t.TempDir()
 	m.mu.Unlock()
-	if got := m.supervisorWatchRawFindings(SupervisorWatchConfig{}, nil); len(got) != 0 {
+	if got := m.supervisorWatchRawFindings(time.Now(), SupervisorWatchConfig{}, nil); len(got) != 0 {
 		t.Errorf("an empty tree with an unreadable repository raised %+v", got)
+	}
+}
+
+// TestSupervisorWatchPassPriorityStallRunsTheRealCheck — with no findings
+// seam, the pass's own check run includes the two queue checks: a
+// waiting Automaton past the stall threshold for its priority yields a
+// priority_stall finding, and the waiting queue yields the consolidated
+// backlog finding, both recorded by the pass.
+func TestSupervisorWatchPassPriorityStallRunsTheRealCheck(t *testing.T) {
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeShadow
+	m.mu.Unlock()
+
+	stalled := &PRD{
+		ID:        "queue-1",
+		Title:     "queue-1",
+		Status:    PRDApproved,
+		Priority:  90,
+		CreatedAt: time.Now().Add(-45 * time.Minute),
+	}
+	if err := m.Store().SavePRD(stalled); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+
+	c := NewCoordinator(m, swFakeStarter{})
+	if c == nil {
+		t.Fatal("NewCoordinator returned nil")
+	}
+	sink := &laneFillAlertSink{}
+	c.alertFn = sink.add
+
+	c.supervisorWatchPass()
+
+	st := m.supervisorWatchStore()
+	if st == nil {
+		t.Fatal("no watch store")
+	}
+	all := st.List()
+	var ps, bk *SupervisorWatchFinding
+	for _, f := range all {
+		switch {
+		case f.Kind == SupervisorWatchPriorityStall && f.Subject == "queue-1":
+			ps = f
+		case f.Kind == SupervisorWatchBacklog && f.Subject == SupervisorWatchBacklogSubject:
+			bk = f
+		}
+	}
+	if ps == nil {
+		t.Fatalf("pass did not record the priority_stall finding; got %d finding(s): %+v", len(all), all)
+	}
+	if !strings.Contains(strings.ToLower(ps.Text), "automaton") {
+		t.Errorf("priority_stall text must name the Automaton: %q", ps.Text)
+	}
+	if bk == nil {
+		t.Fatalf("pass did not record the backlog finding; got %+v", all)
+	}
+	if !strings.HasPrefix(bk.Text, "BACKLOG 1 Automata (highest priority first, then oldest): ") {
+		t.Errorf("backlog text = %q", bk.Text)
+	}
+	if got := sink.all(); len(got) != 0 {
+		t.Errorf("shadow raised %d alert(s), want 0", len(got))
+	}
+}
+
+// TestSupervisorWatchPassPriorityStall — the pass under the two queue
+// checks, against the fake coordinator: the stalled Automaton's
+// finding and the waiting queue's finding both land in the finding
+// store; shadow mode marks the alert-due findings WouldAlert without
+// raising any alert (the alert sink is never called); and once the
+// Automaton leaves the waiting set, the pass's stale-resolve closes
+// both records.
+func TestSupervisorWatchPassPriorityStall(t *testing.T) {
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeShadow
+	m.mu.Unlock()
+
+	// The finding store stamps FirstSeenAt with its own clock (the real
+	// time.Now at record), so base the fake pass clock on the wall
+	// clock: the Automaton is already past the 30-minute stall
+	// threshold (45 minutes of waiting) at the first pass, and the
+	// second pass lands past the alert threshold (30 minutes, the
+	// alert_minutes unset default) measured from FirstSeenAt.
+	base := time.Now()
+	stalled := &PRD{
+		ID:        "ps-pass-1",
+		Title:     "a high-priority waiting Automaton",
+		Status:    PRDApproved,
+		Priority:  90,
+		CreatedAt: base.Add(-45 * time.Minute),
+	}
+	if err := m.Store().SavePRD(stalled); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+
+	c := NewCoordinator(m, swFakeStarter{})
+	if c == nil {
+		t.Fatal("NewCoordinator returned nil")
+	}
+	sink := &laneFillAlertSink{}
+	c.alertFn = sink.add
+	psKey := SupervisorWatchKey(SupervisorWatchPriorityStall, "ps-pass-1")
+	bkKey := SupervisorWatchKey(SupervisorWatchBacklog, SupervisorWatchBacklogSubject)
+
+	c.now = func() time.Time { return base.Add(time.Minute) }
+	c.supervisorWatchPass() // records both findings
+
+	ps := swGet(t, m, psKey)
+	bk := swGet(t, m, bkKey)
+	if ps == nil {
+		t.Fatalf("the priority_stall finding is not in the store after the first pass: %+v", swList(t, m))
+	}
+	if bk == nil {
+		t.Fatalf("the backlog finding is not in the store after the first pass: %+v", swList(t, m))
+	}
+	if got := sink.all(); len(got) != 0 {
+		t.Fatalf("shadow raised %d alert(s) on the first pass, want 0: %+v", len(got), sink.all())
+	}
+	if ps.AlertedAt != nil || ps.WouldAlert {
+		t.Fatalf("first pass (not yet alert-due) already marked priority_stall: %+v", ps)
+	}
+
+	// Now the findings are alert-due: shadow marks the would-alert on
+	// both records and still raises nothing.
+	c.now = func() time.Time { return base.Add(31 * time.Minute) }
+	c.supervisorWatchPass()
+	ps = swGet(t, m, psKey)
+	bk = swGet(t, m, bkKey)
+	if ps == nil {
+		t.Fatalf("second pass lost the priority_stall finding: %+v", swList(t, m))
+	}
+	if bk == nil {
+		t.Fatalf("second pass lost the backlog finding: %+v", swList(t, m))
+	}
+	for _, want := range []struct {
+		label string
+		rec   *SupervisorWatchFinding
+	}{
+		{label: "priority_stall", rec: ps},
+		{label: "backlog", rec: bk},
+	} {
+		if !want.rec.WouldAlert || want.rec.WouldAlertAt.IsZero() {
+			t.Errorf("shadow did not mark the alert-due %s finding WouldAlert: %+v", want.label, want.rec)
+		}
+		if want.rec.AlertedAt != nil {
+			t.Errorf("shadow must not record AlertedAt for %s: %v", want.label, *want.rec.AlertedAt)
+		}
+		if want.rec.Resolved {
+			t.Errorf("the %s finding was resolved while still open: %+v", want.label, want.rec)
+		}
+	}
+	if got := sink.all(); len(got) != 0 {
+		t.Fatalf("shadow raised %d alert(s), want 0 (the sink is the on mode's only path): %+v", len(got), sink.all())
+	}
+
+	// The Automaton leaves the waiting set: the next pass's
+	// stale-resolve closes both records and nothing is raised.
+	stalled.Status = PRDRunning
+	if err := m.Store().SavePRD(stalled); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+	c.now = func() time.Time { return base.Add(32 * time.Minute) }
+	c.supervisorWatchPass()
+	ps = swGet(t, m, psKey)
+	bk = swGet(t, m, bkKey)
+	if ps == nil || !ps.Resolved {
+		t.Errorf("the priority_stall finding is not resolved after the Automaton leaves the waiting set: %+v", ps)
+	}
+	if bk == nil || !bk.Resolved {
+		t.Errorf("the backlog finding is not resolved after the waiting set empties: %+v", bk)
+	}
+	if got := sink.all(); len(got) != 0 {
+		t.Errorf("a resolved episode raised %d alert(s), want 0: %+v", len(got), sink.all())
 	}
 }

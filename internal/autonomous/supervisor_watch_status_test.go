@@ -22,6 +22,68 @@ func TestSupervisorWatchStatusNilManager(t *testing.T) {
 	if got.Mode != "" || got.Findings != nil || !got.LastPollAt.IsZero() {
 		t.Errorf("a nil manager reads as an empty view, got %+v", got)
 	}
+	if got.PriorityBands == nil || len(got.PriorityBands) != 0 {
+		t.Errorf("a nil manager's bands must be an empty list, not nil: %+v", got.PriorityBands)
+	}
+}
+
+// TestSupervisorWatchPriorityBands — the read view carries the per-band
+// wait stats derived from the same waiting set the priority-stall rule
+// scans: one row per band that waits an Automaton, in high (80 or more),
+// medium (50 through 79) and low (below 50) order, the oldest whole-minute
+// wait and the band's stalled share (waiting, at or above the default
+// floor of 80, strictly longer than the default 30-minute threshold).
+// A zero created instant is not yet waiting and stays out of every band,
+// and a non-waiting Automaton (running) does not count.
+func TestSupervisorWatchPriorityBands(t *testing.T) {
+	base := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	m := swNewManager(t)
+	m.now = func() time.Time { return base }
+
+	seed := func(id string, status PRDStatus, priority, ageMinutes int) {
+		t.Helper()
+		p := &PRD{ID: id, Title: id, Status: status, Priority: priority,
+			CreatedAt: base.Add(-time.Duration(ageMinutes) * time.Minute)}
+		if err := m.Store().SavePRD(p); err != nil {
+			t.Fatalf("SavePRD %s: %v", id, err)
+		}
+	}
+
+	// high: one stalled (80, 41 min) and one fresh (90, 10 min); medium
+	// (60, 50 min — past the threshold but below the floor); low (10, 5
+	// min)
+	seed("q-high-stalled", PRDApproved, 80, 41)
+	seed("q-high-fresh", PRDNeedsReview, 90, 10)
+	seed("q-medium", PRDDraft, 60, 50)
+	seed("q-low", PRDPlanning, 10, 5)
+	// neither of these is in any band: running is not a waiting status,
+	// and a zero created instant reads as not waiting yet
+	seed("q-running", PRDRunning, 95, 100)
+	zero := &PRD{ID: "q-zero", Title: "q-zero", Status: PRDApproved, Priority: 95}
+	if err := m.Store().SavePRD(zero); err != nil {
+		t.Fatal(err)
+	}
+
+	got := m.SupervisorWatchStatus()
+	if len(got.PriorityBands) != 3 {
+		t.Fatalf("PriorityBands = %+v, want one row per band that waits", got.PriorityBands)
+	}
+	want := []SupervisorWatchPriorityBand{
+		{Band: SupervisorWatchBandHigh, PriorityFrom: 80, PriorityTo: 100, Waiting: 2, OldestWaitingMinutes: 41, Stalled: 1},
+		{Band: SupervisorWatchBandMedium, PriorityFrom: 50, PriorityTo: 79, Waiting: 1, OldestWaitingMinutes: 50, Stalled: 0},
+		{Band: SupervisorWatchBandLow, PriorityFrom: 0, PriorityTo: 49, Waiting: 1, OldestWaitingMinutes: 5, Stalled: 0},
+	}
+	for i, w := range want {
+		if got.PriorityBands[i] != w {
+			t.Errorf("PriorityBands[%d] = %+v, want %+v", i, got.PriorityBands[i], w)
+		}
+	}
+
+	// a fresh manager reads an empty list, never nil
+	fresh := swNewManager(t).SupervisorWatchStatus()
+	if fresh.PriorityBands == nil || len(fresh.PriorityBands) != 0 {
+		t.Errorf("fresh manager PriorityBands = %+v, want an empty list, not nil", fresh.PriorityBands)
+	}
 }
 
 func TestSupervisorWatchStatusAssemblesTheView(t *testing.T) {
