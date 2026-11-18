@@ -102,6 +102,8 @@ type compiledMatch struct {
 	docsNoSync     bool
 	artefactFiles  bool
 	finalGateRerun bool
+	unknownFlag    bool
+	textNotInSpec  bool
 	kind           string
 	anyOf          []compiledMatch
 	allOf          []compiledMatch
@@ -110,7 +112,8 @@ type compiledMatch struct {
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateRerun {
+	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateRerun ||
+		m.unknownFlag || m.textNotInSpec {
 		return true
 	}
 	for i := range m.anyOf {
@@ -168,6 +171,16 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.finalGateRerun {
 		if _, ok := verifyScriptFinalGateRerun(dir, t); !ok {
+			return false
+		}
+	}
+	if m.unknownFlag {
+		if _, _, ok := verifyScriptUnknownFlag(dir, t); !ok {
+			return false
+		}
+	}
+	if m.textNotInSpec {
+		if _, _, ok := verifyScriptTextNotInSpec(dir, t); !ok {
 			return false
 		}
 	}
@@ -244,7 +257,9 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFiles, finalGateRerun: m.VerificationScriptFinalGateRerun, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFiles, finalGateRerun: m.VerificationScriptFinalGateRerun,
+		unknownFlag: m.VerificationScriptUnknownFlag, textNotInSpec: m.VerificationScriptTextNotInSpec,
+		kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -508,6 +523,16 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.finalGateRerun {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (asserts a finite allow-list with no final-gate rerun guard)")
+	}
+	if m.unknownFlag {
+		if _, detail, ok := verifyScriptUnknownFlag(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+detail+")")
+		}
+	}
+	if m.textNotInSpec {
+		if _, detail, ok := verifyScriptTextNotInSpec(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+detail+")")
+		}
 	}
 	if len(parts) == 0 {
 		return ""

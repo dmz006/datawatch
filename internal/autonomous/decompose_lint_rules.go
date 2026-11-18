@@ -34,10 +34,21 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Thirteen rules, in the order findings should surface them: the nine
-// block-severity rules (tasks that cross a hard boundary, plus the three
-// verification-script stability rules that follow read_only_unverifiable)
-// first, then the four warn-severity hygiene rules.
+// Seventeen rules, in the order findings should surface them: the
+// thirteen block-severity rules (tasks that cross a hard boundary,
+// plus the seven verification-script stability rules that follow
+// read_only_unverifiable) first, then the four warn-severity hygiene
+// rules.
+//
+// The two newest stability rules read the script against ground truth
+// at lint time: verify_script_unknown_flag checks each invoked
+// command's own `--help` for the long flags the script passes, and
+// verify_script_text_not_in_spec requires every checked markdown
+// heading or output phrase to appear verbatim in the task spec. Both
+// stay out of the way by design — commands the environment cannot
+// find, and help output that cannot be read, are skipped silently —
+// and, like every rule here, an operator keeps them off by listing
+// their ids in autonomous.decompose_lint.disabled_rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -143,6 +154,22 @@ func DefaultDecomposeLintRules() []Rule {
 				// built-in final-gate template relies on it), as in
 				// read_only_unverifiable.
 				ReportPathEmpty: true,
+			},
+		},
+		{
+			ID:       "verify_script_unknown_flag",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_unknown_flag: the task's verification script passes a long flag to a command the script invokes (or to one of its subcommands) that the command's own `--help` output does not list; a flag the installed binary does not have cannot be asserted. Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptUnknownFlag: true,
+			},
+		},
+		{
+			ID:       "verify_script_text_not_in_spec",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_text_not_in_spec: the task's verification script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec; the spec is the contract, so an expectation stated nowhere is unverifiable. State the exact heading or the exact format being checked, word for word, in the task spec.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptTextNotInSpec: true,
 			},
 		},
 		{
