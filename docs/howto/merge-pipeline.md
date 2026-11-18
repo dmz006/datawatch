@@ -844,14 +844,14 @@ One shadow merge plan per Automaton, describing what its merge would do:
 
 | Field | Meaning |
 |---|---|
-| Release size | `patch`, `minor`, `major` or `none`. |
-| Planned version | The version the bump step would set. Empty when there is none. |
+| Release size | `patch`, `minor`, `major` or `none` — the size the Automaton's release-size settings resolve to (an explicit size on the Automaton, then its automation, then the merge pipeline's per-kind setting, then the built-in default; see [Choose the release size](#choose-the-release-size)). |
+| Planned version | The version the bump step would set: the default branch's version bumped by the release size, derived from those two alone. Empty when the size is `none`. |
 | Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, or empty when it has none — nothing is invented. |
 | Changelog source | The task the entry came from, or `missing` when no task carries a well-formed one. |
 | README line, registry row, parity issue | The mechanical release edits the merge would make. Empty when there are none. |
 | Conflicts | Each conflicting path with its file class, the resolution and who made it. |
 | Gates | Each gate (build, lint, test) with its status — `pass`, `fail`, `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and passed when rerun alone) — how long it took and its detail. |
-| Findings | Each problem with a code — `trial_merge_failed`, `conflict_unresolved`, `gate_fail` or `gate_timeout`, `changelog_missing`, `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch`, `review_stale` — a message and whether it blocks. |
+| Findings | Each problem with a code — `trial_merge_failed`, `conflict_unresolved`, `gate_fail` or `gate_timeout`, `changelog_missing`, `changelog_version_mismatch`, `unmerged_task_branch`, `stray_root_file`, `lint_version_mismatch`, `review_stale` — a message and whether it blocks. |
 
 Before the trial merge, the plan step also checks the Automaton's own task branches and, when one is recorded, its review verdict: a task branch named after the work branch (`<branch>--tasks-…`) holding commits the work branch does not blocks the plan with `unmerged_task_branch`, and a recorded review verdict that names a commit other than the branch head (or none at all) blocks it with `review_stale` — the verdict says nothing about the work the merge would land — and when any blocks the trial merge and every gate are recorded as skipped. The gates carry their own checks: the `test` gate that fails first is rerun once alone and, when it then passes, is recorded `load_sensitive` with the failing lines kept as the finding and not blocking, and a failed `test` gate names the failing tests (from the run's `go test -json`) and the first assertion line in its detail; the `lint` gate compares the local golangci-lint with the version the trial merge's CI workflow pins and fails with `lint_version_mismatch` on a difference; each gate's process starts in its own process group (unix) and the gate's timeout kills the whole group, so a hung PWA test suite — and everything it spawned — ends with the gate and nothing survives it; the planned version is derived from the default branch's version and the release size alone, and a trial tree that already carries the bump is reported as already at planned rather than bumped again; and the gate runner can run any other make target of the project as a gate — the plans-link checker (`check-plans-links`) runs that way, and a broken plan link fails it, with the output reporting only the count of broken targets. What each check does is in [howto/merge-shadow.md](merge-shadow.md#the-plans-checks-and-gates).
 
@@ -859,7 +859,7 @@ Before the trial merge, the plan step also checks the Automaton's own task branc
 
 - It is never applied. Every stored plan has `applied` set to `false`, and the store refuses a plan marked applied — a shadow plan is a record, not a queue.
 - It touches nothing in your project. The trial merge that finds the conflicts runs in a throwaway worktree outside the project's tree, does the merge without committing it, and the scratch tree is removed on every exit path. No branch, tag or ref is created or moved, and nothing is pushed.
-- It invents nothing. The changelog text comes only from the Automaton's own changelog entry task when its output has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`.
+- It invents nothing. The changelog text comes only from the Automaton's own changelog entry task when its output has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`. An entry that does name a version the plan does not plan blocks it with `changelog_version_mismatch` — the entry is recorded as-is, not rewritten to fit.
 
 ### Where plans live
 
