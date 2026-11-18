@@ -8,7 +8,11 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -386,4 +390,41 @@ func containsTag(tags []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestSessionNewStartBodyRoleWorkerProfileName(t *testing.T) {
+	body, err := sessionNewStartBodyRole("t", "", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor", " lean ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"worker_profile_name":"lean"`) || !strings.Contains(string(body), `"launch_role":"supervisor"`) {
+		t.Fatalf("body missing fields: %s", body)
+	}
+	plain, _ := sessionNewStartBodyRole("t", "", "", "", "", "", false, "", false, false, nil, false, nil, "")
+	if strings.Contains(string(plain), "worker_profile_name") {
+		t.Fatalf("plain body carries profile name: %s", plain)
+	}
+}
+
+// TestRunSessionNewSendsWorkerProfileName drives runSessionNew end to end
+// against a fake server and asserts the profile name reaches the wire.
+func TestRunSessionNewSendsWorkerProfileName(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	port, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	cfg.Server.Port = port
+	if err := runSessionNew(cfg, "t", "", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor", "lean"); err != nil {
+		t.Fatal(err)
+	}
+	if got["worker_profile_name"] != "lean" || got["launch_role"] != "supervisor" {
+		t.Fatalf("server saw %v", got)
+	}
 }

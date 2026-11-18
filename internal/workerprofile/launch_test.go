@@ -194,3 +194,25 @@ func TestResolveForLaunchConfiguredProfileMissingIsNotApplied(t *testing.T) {
 		t.Fatalf("missing configured profile: applied = true, want false (decision %+v)", d)
 	}
 }
+
+func TestResolveForLaunchSessionKindBuiltinIsNoProfile(t *testing.T) {
+	for _, in := range []LaunchInput{
+		{Role: "worker", Kind: KindSupervisor},
+		{Role: "worker", Activity: ActivitySupervising},
+		{Role: "worker", Kind: "no_such_kind"},
+	} {
+		if _, applied, d := ResolveForLaunch(in); applied || d.Reason != noProfileReason {
+			t.Errorf("%+v: applied=%v reason=%q, want full harness", in, applied, d.Reason)
+		}
+	}
+}
+
+func TestResolveForLaunchConfiguredSessionKindApplies(t *testing.T) {
+	p, applied, d := ResolveForLaunch(LaunchInput{
+		Role: "worker", Activity: ActivitySupervising,
+		KindDefaults: map[string]string{KindSupervisor: "minimal"},
+	})
+	if !applied || p.Name != "minimal" || d.Layer != string(LayerKind) {
+		t.Errorf("got %q applied=%v layer=%q", p.Name, applied, d.Layer)
+	}
+}

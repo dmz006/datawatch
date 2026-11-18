@@ -34,7 +34,7 @@ var workerProfileConfigureEntries = []workerProfileConfigureEntry{
 	},
 	{
 		"autonomous.worker_profile_defaults",
-		"JSON object {\"role\": {...}, \"kind\": {...}} mapping a role or kind to a profile name; see " + workerProfileHowtoPath,
+		"JSON object {\"role\": {...}, \"kind\": {...}} mapping a role, task kind or session kind to a profile name; see " + workerProfileHowtoPath,
 	},
 	{
 		"autonomous.worker_profile",

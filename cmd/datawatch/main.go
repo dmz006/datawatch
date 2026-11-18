@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.22"
+var Version = "9.182.23"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -12484,7 +12484,7 @@ func newConfigSetCmd() *cobra.Command {
 			"(manual, milestone or never; default manual). A project with its own value keeps it.\n\n" +
 			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
 			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
-			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"and worker_profile_defaults.kind (each a JSON object of role, task kind or session kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
 			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
@@ -12998,7 +12998,8 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			launchRole, _ := cmd.Flags().GetString("launch-role")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+			profileName, _ := cmd.Flags().GetString("worker-profile-name")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -13013,6 +13014,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
+	newCmd.Flags().String("worker-profile-name", "", "worker profile name (built-in or user-defined) applied at launch for any session kind; unknown = full harness, reason recorded (sent as worker_profile_name)")
 	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
@@ -13718,16 +13720,25 @@ func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
 // sessionNewStartBodyRole is sessionNewStartBodyPriority plus the optional
 // launch_role placement fact (worker|verifier|planner|judge|supervisor),
 // sent only when one was given; the server validates it.
-func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) ([]byte, error) {
+func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName ...string) ([]byte, error) {
 	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
-	if err != nil || strings.TrimSpace(launchRole) == "" {
+	pn := ""
+	if len(profileName) > 0 {
+		pn = strings.TrimSpace(profileName[0])
+	}
+	if err != nil || (strings.TrimSpace(launchRole) == "" && pn == "") {
 		return body, err
 	}
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}
-	m["launch_role"] = strings.TrimSpace(launchRole)
+	if r := strings.TrimSpace(launchRole); r != "" {
+		m["launch_role"] = r
+	}
+	if pn != "" {
+		m["worker_profile_name"] = pn
+	}
 	return json.Marshal(m)
 }
 
@@ -13757,9 +13768,9 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
 	if err != nil {
 		return err
 	}

@@ -15274,6 +15274,18 @@ function renderNewSessionView() {
             <option value="">Language (LSP): none</option>
           </select>
         </div>
+        <!-- Worker profile: the worker session profile this session starts
+             with (its MCP servers, tools, skills, context, model, effort).
+             The option list mirrors the settings group (built-ins plus the
+             user profiles); empty = the daemon resolves it (daemon-wide
+             profile, then the session-kind default). -->
+        <div class="form-group" id="sessWorkerProfileRow">
+          <label for="sessWorkerProfile">${t('new_session_worker_profile_label')||'Worker profile'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for the daemon default)</span></label>
+          <select id="sessWorkerProfile" class="form-select">
+            <option value="">${t('new_session_worker_profile_auto')||'Auto (daemon rules: daemon-wide profile, then session-kind default)'}</option>
+          </select>
+          <div style="color:var(--text2);font-size:11px;margin-top:4px;" title="${escHtml(t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings > Worker session profiles.')}">${t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort.'}</div>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
@@ -15358,6 +15370,10 @@ function renderNewSessionView() {
   // (mirrors the New PRD modal). Async — defaults to __dir__ until
   // the daemon's profile lists land.
   populateSessionProjectClusterDropdowns();
+  // Worker profile dropdown: built-ins plus the user profiles from
+  // autonomous.worker_profiles. Async — defaults to "Auto" until the
+  // daemon's config lands.
+  populateSessionWorkerProfileDropdown();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -15725,6 +15741,25 @@ function populateSessionProjectClusterDropdowns() {
 }
 window.populateSessionProjectClusterDropdowns = populateSessionProjectClusterDropdowns;
 
+// Worker profile dropdown for the New Session form: lists the built-in
+// profile names (minimal, digest, full, datawatch-tools) and the user
+// profiles from autonomous.worker_profiles, with a leading blank entry
+// (the "Auto" choice). Reads the same config the Settings group writes, so
+// any name the daemon would accept is an option and nothing else.
+function populateSessionWorkerProfileDropdown() {
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const sel = document.getElementById('sessWorkerProfile');
+      if (!sel) return;
+      const autoLabel = t('new_session_worker_profile_auto') || 'Auto';
+      const names = workerProfileNames(cfg, true);
+      sel.innerHTML = names.map(n => `<option value="${escHtml(n)}">${n === '' ? escHtml(autoLabel) : escHtml(n)}</option>`).join('');
+    })
+    .catch(() => {}); // keep the Auto-only default if the config is unreachable
+}
+window.populateSessionWorkerProfileDropdown = populateSessionWorkerProfileDropdown;
+
 // Show/hide helper toggled by the unified Profile dropdown's
 // onchange. Mirrors _prdNewProfileChanged but operates on the
 // New Session modal's element ids.
@@ -15738,7 +15773,10 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
-  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  // A project-profile spawn goes through /api/agents, not the session start,
+  // so its rows are hidden there (the worker-profile row too).
+  const workerProfileRow = document.getElementById('sessWorkerProfileRow');
+  if (workerProfileRow) workerProfileRow.style.display = usingProfile ? 'none' : '';
   const tagsRow = document.getElementById('sessTagsRow');
   if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
@@ -16040,6 +16078,11 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
+    // Worker profile for this launch: a built-in or user profile name
+    // (claude-code only; the daemon resolves it against workerprofile
+    // rules). Empty = the daemon's own resolution (daemon-wide profile,
+    // then the session-kind default) applies.
+    worker_profile_name: document.getElementById('sessWorkerProfile')?.value || '',
     // v5.27.5 — claude-code per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
@@ -27373,11 +27416,13 @@ function loadGeneralConfig() {
             };
             const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
             const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            const _wpdSessionKinds = WORKER_PROFILE_SESSION_KINDS.map(k => _wpdSelect('kind', k)).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
-              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:4px;">
                 <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
-                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">task kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">session kind</div>${_wpdSessionKinds}</div>
               </div>
               ${_settingsHelpTextHTML(f)}
             </div>`;
@@ -29013,6 +29058,7 @@ window.saveTracingBackendsSetting = saveTracingBackendsSetting;
 const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
 const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
 const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+const WORKER_PROFILE_SESSION_KINDS = ['supervisor', 'operator_interactive', 'scheduled_command', 'planner', 'one_shot', 'review'];
 
 // workerProfileNames lists the built-in profile names followed by the user
 // profiles from autonomous.worker_profiles, each name once. withBlank puts an

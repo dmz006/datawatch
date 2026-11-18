@@ -1422,7 +1422,7 @@ returns
 
 ### `worker_profile_status`
 
-Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`) and task kind (`implementation`, `docs`, `note`, `final_gate`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role and task kind (`scope`, `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
+Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`), each task kind (`implementation`, `docs`, `note`, `final_gate`) and each session kind (`supervisor`, `operator_interactive`, `scheduled_command`, `planner`, `one_shot`, `review`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role, task kind and session kind (thirteen in total; `scope` `role`, `kind` or `session_kind`, plus `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
 
 Configure profiles with `config_set` on `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile`; read them back with `get_config section=autonomous`. A refused value changes nothing.
 

@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -661,4 +663,23 @@ func rateWaiterResetsAt(reason string, pools []capacity.PoolStatus) *time.Time {
 		}
 	}
 	return nil
+}
+
+// capacityRefusalMessage is the operator-facing text for a refused interactive
+// start admission. A bare "context deadline exceeded" says nothing, so the
+// message names the backend (llm), model, node and the wait timeout that
+// applied, followed by the ledger's own reason when it gave one.
+func capacityRefusalMessage(err error, llmRef, model, node string, waitSecs int) string {
+	or := func(v string) string {
+		if v == "" {
+			return "(none)"
+		}
+		return v
+	}
+	cause := err.Error()
+	if errors.Is(err, context.DeadlineExceeded) {
+		cause = "interactive start waited " + strconv.Itoa(waitSecs) + "s (session.capacity_wait_seconds) for a free slot and gave up: " + cause
+	}
+	return "capacity: " + cause + " [llm=" + or(llmRef) + " model=" + or(model) +
+		" node=" + or(node) + " wait_timeout=" + strconv.Itoa(waitSecs) + "s]"
 }
