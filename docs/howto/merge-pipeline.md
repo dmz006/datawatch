@@ -853,8 +853,8 @@ One shadow merge plan per Automaton, describing what its merge would do:
 |---|---|
 | Release size | `patch`, `minor`, `major` or `none` — the size the Automaton's release-size settings resolve to (an explicit size on the Automaton, then its automation, then the merge pipeline's per-kind setting, then the built-in default; see [Choose the release size](#choose-the-release-size)). |
 | Planned version | The version the bump step would set: the default branch's version bumped by the release size, derived from those two alone. Empty when the size is `none`. |
-| Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, or empty when it has none — nothing is invented. |
-| Changelog source | The task the entry came from, or `missing` when no task carries a well-formed one. |
+| Changelog heading and body | The entry drawn from the Automaton's changelog draft file when that file holds a well-formed entry, else from its own changelog entry task, or empty when neither does — nothing is invented. |
+| Changelog source | The draft file the entry came from, the task the entry came from, or `missing` when neither the draft file nor a task carries a well-formed one. |
 | README line, registry row, parity issue | The mechanical release edits the merge would make. Empty when there are none. |
 | Conflicts | Each conflicting path with its file class, the resolution and who made it. |
 | Gates | Each gate (build, lint, test) with its status — `pass`, `fail`, `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and passed when rerun alone) — how long it took and its detail. |
@@ -866,7 +866,7 @@ Before the trial merge, the plan step also checks the Automaton's own task branc
 
 - It is never applied. Every stored plan has `applied` set to `false`, and the store refuses a plan marked applied — a shadow plan is a record, not a queue.
 - It touches nothing in your project. The trial merge that finds the conflicts runs in a throwaway worktree outside the project's tree, does the merge without committing it, and the scratch tree is removed on every exit path. No branch, tag or ref is created or moved, and nothing is pushed.
-- It invents nothing. The changelog text comes only from the Automaton's own changelog entry task when its output has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`. An entry that does name a version the plan does not plan blocks it with `changelog_version_mismatch` — the entry is recorded as-is, not rewritten to fit.
+- It invents nothing. The changelog text comes only from the Automaton's own changelog draft file, else from its changelog entry task, when that text has the exact shape `## [version] - YYYY-MM-DD` with a non-empty body. Without one, the plan carries empty heading and body and the source `missing`. An entry that does name a version the plan does not plan blocks it with `changelog_version_mismatch` — the entry is recorded as-is, not rewritten to fit.
 
 ### Where plans live
 

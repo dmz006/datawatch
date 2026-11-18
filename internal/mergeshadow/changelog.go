@@ -14,17 +14,26 @@ import (
 const ChangelogTaskKind = "defect_changelog"
 
 // ChangelogTask is the part of one Automaton task the changelog reader needs.
-// Output is the text the task produced; the reader takes the changelog text
-// from it and from nothing else.
+// Output is the text the task produced.
 type ChangelogTask struct {
 	ID     string
 	Kind   string
 	Output string
 }
 
-// ChangelogEntry is the changelog text read from the entry task. Source is the
-// entry task id, or ChangelogSourceMissing when no usable entry was found. In
-// that case Heading and Body are empty: nothing is invented.
+// ChangelogDraft is the Automaton's tracked changelog draft file: Path is the
+// file's tracked path relative to the project root and Content its text, ""
+// when the file is absent. The reader takes precedence for it over any task
+// output.
+type ChangelogDraft struct {
+	Path    string
+	Content string
+}
+
+// ChangelogEntry is the changelog text the plan used. Source is the draft
+// file path when the entry came from the file, the entry task id when it came
+// from the task, or ChangelogSourceMissing when no usable entry was found.
+// In the missing case Heading and Body are empty: nothing is invented.
 type ChangelogEntry struct {
 	Source  string
 	Heading string
@@ -35,15 +44,25 @@ type ChangelogEntry struct {
 // a version and date: "## [<version>] - <YYYY-MM-DD>".
 var changelogHeadingRe = regexp.MustCompile(`^## \[([^\[\]\s]+)\] - (\d{4}-\d{2}-\d{2})$`)
 
-// ReadChangelogEntry returns the changelog entry produced by the first task
-// that carries the changelog marker and whose output holds a well-formed entry.
-// A task with no marker, no output, a malformed heading or an empty body is
-// skipped. When no task yields an entry, the result has Source set to
-// ChangelogSourceMissing and an empty Heading and Body.
+// ReadChangelogEntry returns the changelog entry the plan should use. The
+// draft file wins: when it holds a well-formed entry (the same rules the task
+// output has, parseChangelogEntry), the heading and body come from the file
+// and the Source is the file's path. When the file is absent or does not
+// parse, the entry comes from the first task that carries the changelog
+// marker and whose output holds a well-formed entry, and the Source is that
+// task id. A task with no marker, no output, a malformed heading or an empty
+// body is skipped. When neither yields an entry, the result has Source set
+// to ChangelogSourceMissing and an empty Heading and Body.
 //
 // The heading is kept as written. The body is every line after the heading up
 // to the next "## " line, with only leading and trailing blank lines removed.
-func ReadChangelogEntry(tasks []ChangelogTask) ChangelogEntry {
+func ReadChangelogEntry(draft ChangelogDraft, tasks []ChangelogTask) ChangelogEntry {
+	if draft.Path != "" && draft.Content != "" {
+		heading, body, ok := parseChangelogEntry(draft.Content)
+		if ok {
+			return ChangelogEntry{Source: draft.Path, Heading: heading, Body: body}
+		}
+	}
 	for _, t := range tasks {
 		if t.Kind != ChangelogTaskKind || t.ID == "" {
 			continue

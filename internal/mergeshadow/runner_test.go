@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 )
 
 // runnerRepo builds a repository whose main has a version file, a changelog,
@@ -348,6 +349,59 @@ func TestTrialMergeWithPropagatesCallbackError(t *testing.T) {
 		func(string, []string) error { return boom })
 	if !errors.Is(err, boom) {
 		t.Fatalf("err %v, want the callback error", err)
+	}
+}
+
+func TestRunnerChangelogDraftFileBeatsTaskOutput(t *testing.T) {
+	repo := runnerRepo(t)
+	// The draft file sits at the tracked path of the changelog draft kind
+	// for this Automaton's id, as the generated-artefact templates define it.
+	wantPath := genartifacts.TrackedPath(genartifacts.ChangelogDraft,
+		&changerecord.ChangeRecord{AutomatonID: "a1"}, genartifacts.Options{})
+	if wantPath != "docs/plans/drafts/a1-changelog.md" {
+		t.Fatalf("templates moved the draft path to %q; update this test", wantPath)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "docs", "plans", "drafts"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	write(t, repo, wantPath, "## [v1.3.0] - 2026-11-09\n\n### Added\n\n- from the draft file\n")
+	in := runnerInput(t, repo, "work")
+
+	plan, err := Runner{Gates: fakeGates(t, GatePass, new(int)), Now: fixedClock()}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if plan.ChangelogSource != wantPath {
+		t.Errorf("source %q, want the draft file %q", plan.ChangelogSource, wantPath)
+	}
+	if plan.ChangelogHeading != "## [v1.3.0] - 2026-11-09" || !strings.Contains(plan.ChangelogBody, "from the draft file") {
+		t.Errorf("changelog heading %q body %q, want the file's text", plan.ChangelogHeading, plan.ChangelogBody)
+	}
+	if plan.PlannedVersion != "1.3.0" || len(plan.Findings) != 0 {
+		t.Errorf("planned %q findings %+v, want 1.3.0 and none", plan.PlannedVersion, plan.Findings)
+	}
+}
+
+func TestRunnerMalformedDraftFallsBackToTask(t *testing.T) {
+	repo := runnerRepo(t)
+	if err := os.MkdirAll(filepath.Join(repo, "docs", "plans", "drafts"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	write(t, repo, "docs/plans/drafts/a1-changelog.md", "## v1 — title\n\nBody.\n")
+	in := runnerInput(t, repo, "work")
+
+	plan, err := Runner{Gates: fakeGates(t, GatePass, new(int)), Now: fixedClock()}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if plan.ChangelogSource != "t9" {
+		t.Errorf("source %q, want the entry task t9", plan.ChangelogSource)
+	}
+	if plan.ChangelogHeading != "## [v1.3.0] - 2026-11-09" || !strings.Contains(plan.ChangelogBody, "- thing") {
+		t.Errorf("changelog heading %q body %q, want the task's text", plan.ChangelogHeading, plan.ChangelogBody)
+	}
+	if plan.PlannedVersion != "1.3.0" || len(plan.Findings) != 0 {
+		t.Errorf("planned %q findings %+v, want 1.3.0 and none", plan.PlannedVersion, plan.Findings)
 	}
 }
 
