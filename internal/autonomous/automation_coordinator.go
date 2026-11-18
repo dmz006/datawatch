@@ -927,6 +927,7 @@ func (c *Coordinator) triagePass() {
 				// work has landed on the base project. The cleanup's
 				// safety criteria still apply; an entry they hold is
 				// left with the reason recorded.
+				c.m.ReleaseResidueAtTerminal(prd, ResidueTriggerMerged)
 				c.m.ReleaseAutomatonWorktree(prd)
 				continue
 			}

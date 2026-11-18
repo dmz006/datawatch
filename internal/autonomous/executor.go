@@ -1349,6 +1349,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// session or lease, dirty work tree, retention window), and an
 	// entry they hold is left alone with the reason recorded; the
 	// coordinator's periodic cleanup pass retries later.
+	m.ReleaseResidueAtTerminal(prd, ResidueTriggerMerged)
 	m.ReleaseAutomatonWorktree(prd)
 	if err := m.store.SavePRD(prd); err != nil {
 		return err

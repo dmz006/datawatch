@@ -4359,6 +4359,7 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	// cancelled/failed/blocked PRD was for has ended. A no-op for a
 	// completed PRD (Phase 2 already removed its worktree on success)
 	// or one that never had a worktree.
+	m.ReleaseResidueAtTerminal(prd, ResidueTriggerArchived)
 	m.cleanupOrphanedWorktree(prd)
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
