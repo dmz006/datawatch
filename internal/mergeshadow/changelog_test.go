@@ -20,7 +20,7 @@ func TestReadChangelogEntry_PresentEntry(t *testing.T) {
 		{ID: "task-build", Kind: "", Output: "## [1.0.0] - 2026-01-01\n\nignored, no marker"},
 		{ID: "task-entry", Kind: ChangelogTaskKind, Output: "Preface the worker wrote.\n\n" + entryOutput},
 	}
-	got := ReadChangelogEntry(tasks)
+	got := ReadChangelogEntry(ChangelogDraft{}, tasks)
 	if got.Source != "task-entry" {
 		t.Fatalf("Source = %q, want task-entry", got.Source)
 	}
@@ -35,7 +35,7 @@ func TestReadChangelogEntry_PresentEntry(t *testing.T) {
 
 func TestReadChangelogEntry_BodyStopsAtNextVersionHeading(t *testing.T) {
 	out := "## [2.0.0] - 2026-02-02\n\nNew thing.\n\n## [1.9.0] - 2026-01-01\n\nOld thing.\n"
-	got := ReadChangelogEntry([]ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
+	got := ReadChangelogEntry(ChangelogDraft{}, []ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
 	if got.Source != "t1" || got.Heading != "## [2.0.0] - 2026-02-02" || got.Body != "New thing." {
 		t.Fatalf("got %+v", got)
 	}
@@ -43,7 +43,7 @@ func TestReadChangelogEntry_BodyStopsAtNextVersionHeading(t *testing.T) {
 
 func TestReadChangelogEntry_CRLFOutput(t *testing.T) {
 	out := "## [3.1.0] - 2026-03-03\r\n\r\nFirst.\r\nSecond.\r\n"
-	got := ReadChangelogEntry([]ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
+	got := ReadChangelogEntry(ChangelogDraft{}, []ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
 	if got.Source != "t1" || got.Heading != "## [3.1.0] - 2026-03-03" || got.Body != "First.\nSecond." {
 		t.Fatalf("got %+v", got)
 	}
@@ -58,7 +58,7 @@ func TestReadChangelogEntry_AbsentTask(t *testing.T) {
 	}
 	for name, tasks := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := ReadChangelogEntry(tasks)
+			got := ReadChangelogEntry(ChangelogDraft{}, tasks)
 			if got.Source != ChangelogSourceMissing || got.Heading != "" || got.Body != "" {
 				t.Fatalf("got %+v, want missing with empty heading and body", got)
 			}
@@ -80,7 +80,7 @@ func TestReadChangelogEntry_MalformedEntry(t *testing.T) {
 	}
 	for name, out := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := ReadChangelogEntry([]ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
+			got := ReadChangelogEntry(ChangelogDraft{}, []ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: out}})
 			if got.Source != ChangelogSourceMissing || got.Heading != "" || got.Body != "" {
 				t.Fatalf("got %+v, want missing with empty heading and body", got)
 			}
@@ -93,9 +93,55 @@ func TestReadChangelogEntry_SkipsMalformedThenUsesValid(t *testing.T) {
 		{ID: "bad", Kind: ChangelogTaskKind, Output: "## v1 — nope\n\nbody\n"},
 		{ID: "good", Kind: ChangelogTaskKind, Output: entryOutput},
 	}
-	got := ReadChangelogEntry(tasks)
+	got := ReadChangelogEntry(ChangelogDraft{}, tasks)
 	if got.Source != "good" || got.Heading != "## [9.200.0] - 2026-11-09" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// draftPath is the tracked path of the changelog draft kind for the test
+// automaton id, as the templates define it.
+const draftPath = "docs/plans/drafts/a1-changelog.md"
+
+func TestReadChangelogEntry_DraftFileWins(t *testing.T) {
+	tasks := []ChangelogTask{{ID: "t9", Kind: ChangelogTaskKind, Output: entryOutput}}
+	draft := ChangelogDraft{Path: draftPath, Content: "## [9.201.0] - 2026-11-10\n\n### Changed\n\n- from the draft file\n"}
+	got := ReadChangelogEntry(draft, tasks)
+	if got.Source != draftPath {
+		t.Fatalf("Source = %q, want the draft file %q", got.Source, draftPath)
+	}
+	if got.Heading != "## [9.201.0] - 2026-11-10" {
+		t.Fatalf("Heading = %q, want the file's heading", got.Heading)
+	}
+	if got.Body != "### Changed\n\n- from the draft file" {
+		t.Fatalf("Body = %q, want the file's body", got.Body)
+	}
+}
+
+func TestReadChangelogEntry_DraftFallsBackToTask(t *testing.T) {
+	tasks := []ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: entryOutput}}
+	cases := map[string]ChangelogDraft{
+		"absent file":     {Path: draftPath, Content: ""},
+		"no path":         {Path: "", Content: entryOutput},
+		"malformed file":  {Path: draftPath, Content: "## v1 — title\n\nBody.\n"},
+		"heading no body": {Path: draftPath, Content: "## [9.201.0] - 2026-11-10\n\n\n"},
+	}
+	for name, draft := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := ReadChangelogEntry(draft, tasks)
+			if got.Source != "t1" || got.Heading != "## [9.200.0] - 2026-11-09" {
+				t.Fatalf("got %+v, want the task's entry with source t1", got)
+			}
+		})
+	}
+}
+
+func TestReadChangelogEntry_DraftAndTaskBothMalformedIsMissing(t *testing.T) {
+	draft := ChangelogDraft{Path: draftPath, Content: "## v1 — title\n\nBody.\n"}
+	tasks := []ChangelogTask{{ID: "t1", Kind: ChangelogTaskKind, Output: "nothing here\n"}}
+	got := ReadChangelogEntry(draft, tasks)
+	if got.Source != ChangelogSourceMissing || got.Heading != "" || got.Body != "" {
+		t.Fatalf("got %+v, want missing with empty heading and body", got)
 	}
 }
 

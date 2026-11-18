@@ -39,8 +39,10 @@ a PWA card; see "Where the shadow state is read" below.
   size on the Automaton, then its automation, then the merge pipeline's per-kind
   setting, then the built-in default (`patch`, `minor`, `major` or `none`) — the
   version the bump step would set (the default branch's version bumped by that
-  size; `none` plans no version), the changelog heading and body drawn only from
-  the Automaton's own changelog entry task (strict format, empty otherwise —
+  size; `none` plans no version), the changelog heading and body drawn from the
+  Automaton's changelog draft file when that file holds a well-formed entry, else
+  from the Automaton's own changelog entry task (strict format for both, empty
+  when neither carries one —
   nothing is invented; an entry that does not name the planned version blocks
   the plan with `changelog_version_mismatch`), the
   README line, the registry row, and the parity-issue flag.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/genartifacts"
 )
 
 // scratchDirName is the directory under the daemon data directory that holds
@@ -84,8 +86,10 @@ type Runner struct {
 //  2. classify each conflicted path by file class;
 //  3. run the gates in that worktree, unless the merge has conflicts, in
 //     which case every gate is recorded as skipped;
-//  4. take the changelog entry from the entry task; when a version is
-//     planned, the entry must name it, otherwise that is a finding;
+//  4. take the changelog entry from the Automaton's changelog draft file when
+//     it exists and holds a well-formed entry, else from the entry task; when
+//     a version is planned, the entry must name it, otherwise that is a
+//     finding;
 //  5. take the release size from the input, and when it is not none derive
 //     the planned version from the base ref's current version (the version
 //     planner) and from it the README line, registry row and parity-issue
@@ -169,8 +173,18 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		}
 	}
 
-	// Step 4: the changelog entry, taken from the entry task.
-	entry := ReadChangelogEntry(in.ChangelogTasks)
+	// Step 4: the changelog entry, taken from the Automaton's changelog draft
+	// file when it exists and parses, else from the entry task. The draft
+	// file path is the tracked path of the changelog_draft kind from the
+	// generated-artefact templates, so the directory is not spelled here a
+	// second time.
+	draftPath := genartifacts.TrackedPath(genartifacts.ChangelogDraft,
+		&changerecord.ChangeRecord{AutomatonID: in.AutomatonID}, genartifacts.Options{})
+	var draft ChangelogDraft
+	if b, err := os.ReadFile(filepath.Join(in.RepoPath, filepath.FromSlash(draftPath))); err == nil { // #nosec G304 -- fixed path helper under the repository
+		draft = ChangelogDraft{Path: draftPath, Content: string(b)}
+	}
+	entry := ReadChangelogEntry(draft, in.ChangelogTasks)
 	plan.ChangelogSource = entry.Source
 	plan.ChangelogHeading = entry.Heading
 	plan.ChangelogBody = entry.Body
@@ -302,7 +316,7 @@ func findingsFor(trialErr error, conflicts []Conflict, gates []Gate, entry Chang
 	}
 	if planned != "" {
 		if entry.Source == ChangelogSourceMissing {
-			out = append(out, Finding{Code: "changelog_missing", Message: "no task produced a usable changelog entry", Blocking: true})
+			out = append(out, Finding{Code: "changelog_missing", Message: "no usable changelog entry from the draft file or the entry task", Blocking: true})
 		} else if !headingNamesVersion(entry.Heading, planned) {
 			out = append(out, Finding{Code: "changelog_version_mismatch", Message: "changelog heading " + entry.Heading + " does not name the planned version " + planned, Blocking: true})
 		}
