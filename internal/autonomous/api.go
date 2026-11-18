@@ -86,6 +86,10 @@ func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 	a.spawnFn = spawn
 	a.verify = verify
 	a.M.SetStuckRunningHooks(a.refireRollup, a.executorLive)
+	// The scan-fix loop's run step needs the same executor pair (scan_fix_loop.go).
+	a.M.SetFixLoopRun(func(ctx context.Context, prdID string) error {
+		return a.M.Run(ctx, prdID, a.spawnFn, a.verify)
+	})
 	a.execWG.Add(1)
 	go func() {
 		defer a.execWG.Done()
@@ -910,6 +914,17 @@ func (a *API) DecomposeStreaming(id string, cb func(index, total int, story any)
 func (a *API) Run(id string) error {
 	_, err := a.runLocked(id, nil)
 	return err
+}
+
+// ScanFixLoop runs the scan-fix loop for one Automaton: scan; while
+// the scan still has findings at or above the fail-on severity, open a
+// corrective task for them, execute it, and re-scan — up to
+// fix_loop_max_retries attempts from the current scan config. With the
+// retries spent and the scan still failing, the Automaton is put on
+// hold and the reason names the findings that remain. The report is
+// always returned with an outcome (clean, fixed, held or error).
+func (a *API) ScanFixLoop(id string) (any, error) {
+	return a.M.RunScanFixLoop(id)
 }
 
 // prdStatus reads a PRD's status under the Manager mutex, the lock executor

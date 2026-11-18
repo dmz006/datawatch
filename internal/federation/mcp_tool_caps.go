@@ -115,6 +115,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_run":                           CapAutonomousRun,
 	"autonomous_prd_scan":                          CapAutonomousRead,
 	"autonomous_prd_scan_fix":                      CapAutonomousWrite,
+	"autonomous_prd_scan_fixloop":                  CapAutonomousRun, // scan-fix loop executes
 	"autonomous_prd_scan_results":                  CapAutonomousRead,
 	"autonomous_prd_scan_rules":                    CapAutonomousRead,
 	"autonomous_prd_set_authorized_paths":          CapAutonomousWrite,
@@ -838,7 +839,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_reject": true, "autonomous_prd_rejudge": true, "autonomous_prd_remove_story": true, "autonomous_prd_remove_task": true,
 	"autonomous_prd_repair_depends_on": true, "autonomous_prd_request_revision": true, "autonomous_prd_reset_task": true, "autonomous_prd_reset_to_draft": true,
 	"autonomous_prd_resolve_task_review": true, "autonomous_prd_resume": true, "autonomous_prd_run": true, "autonomous_prd_scan": true,
-	"autonomous_prd_scan_fix": true, "autonomous_prd_scan_results": true, "autonomous_prd_scan_rules": true, "autonomous_prd_set_continue_on_story_failure": true,
+	"autonomous_prd_scan_fix": true, "autonomous_prd_scan_fixloop": true, "autonomous_prd_scan_results": true, "autonomous_prd_scan_rules": true, "autonomous_prd_set_continue_on_story_failure": true,
 	"autonomous_prd_set_failure_escalation": true, "autonomous_prd_set_git": true, "autonomous_prd_set_guided_mode": true, "autonomous_prd_set_kind": true,
 	"autonomous_prd_set_lane_preference": true, "autonomous_prd_set_llm": true, "autonomous_prd_set_memory_harvest": true, "autonomous_prd_set_memory_seed": true,
 	"autonomous_prd_set_notify_events": true, "autonomous_prd_set_priority": true, "autonomous_prd_set_project": true, "autonomous_project_link_backfill": true, "autonomous_prd_set_quality_gates": true, "autonomous_prd_set_skills": true,
