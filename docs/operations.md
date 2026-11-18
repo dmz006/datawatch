@@ -364,6 +364,9 @@ datawatch session new "build a REST API in Go"
 # Start with a name, explicit directory, and backend
 datawatch session new --name "api work" --dir ~/projects/api --backend aider "build a REST API"
 
+# Name the model (and optionally effort) for a claude-code session
+datawatch session new --model sonnet --effort normal "build a REST API"
+
 # Show recent output from a session
 datawatch session status a3f2
 
