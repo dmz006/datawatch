@@ -20,6 +20,8 @@ const findingLines = 5
 
 // RerunOptions controls RunGateWithRerun.
 type RerunOptions struct {
+	// DataDir is the daemon data directory holding the tools folder.
+	DataDir string
 	// FirstRunEnv is extra environment for the first run only. It lets a
 	// caller mark the first run as the concurrent one. The rerun inherits
 	// the plain environment.
@@ -37,14 +39,14 @@ type RerunOptions struct {
 // not pass, the first run's failure is returned with the rerun's status noted
 // in Detail. A gate that does not fail on the first run is not rerun.
 func RunGateWithRerun(ctx context.Context, dir, name string, timeout time.Duration, opts RerunOptions) GateResult {
-	first := runGate(ctx, dir, name, timeout, opts.FirstRunEnv)
+	first := runGate(ctx, dir, name, timeout, opts.FirstRunEnv, opts.DataDir)
 	if first.Status != GateFail {
 		return first
 	}
 	if opts.BeforeRerun != nil {
 		opts.BeforeRerun()
 	}
-	rerun := runGate(ctx, dir, name, timeout, nil)
+	rerun := runGate(ctx, dir, name, timeout, nil, opts.DataDir)
 	if rerun.Status != GatePass {
 		first.Detail = joinDetail(first.Detail, "rerun alone also "+string(rerun.Status))
 		return first
