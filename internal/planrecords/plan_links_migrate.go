@@ -105,6 +105,12 @@ type MigrateItem struct {
 	LinkID   string `json:"link_id,omitempty"`
 	Order    int    `json:"order,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// HeldBy, on a conflict, names the plan or link that already holds the
+	// item, so the operator can see what stands in the way.
+	HeldBy string `json:"held_by,omitempty"`
+	// WouldChange, on a conflict, says what the migration would have done had
+	// the conflict not been there. Nothing of it was written.
+	WouldChange string `json:"would_change,omitempty"`
 	// TitleSource is "derived" or "fallback" for a plan made from a registry
 	// row: whether its title was found in the row or the row had none.
 	TitleSource string `json:"title_source,omitempty"`
@@ -145,6 +151,19 @@ func (r MigrateReport) Counts() map[string]int {
 		"needs_review":              len(r.NeedsReview),
 		"titles_derived":            r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
 	}
+}
+
+// Summary is the one-line count every preview and apply prints: created,
+// linked, already present, history without an Automaton, needs review and
+// conflicts. A preview counts what would be done; an apply what was done.
+func (r MigrateReport) Summary() string {
+	create, link := "would create", "would link"
+	if r.Applied {
+		create, link = "created", "linked"
+	}
+	return fmt.Sprintf("%s %d, %s %d, already present %d, history without an Automaton %d, needs review %d, conflicts %d",
+		create, len(r.WouldCreate), link, len(r.WouldLink), len(r.SkippedExisting),
+		len(r.HistoryWithoutAutomaton), len(r.NeedsReview), len(r.Conflicts))
 }
 
 var migrateMu sync.Mutex
@@ -273,8 +292,31 @@ func (m *migrator) add(list *[]MigrateItem, it MigrateItem) {
 	*list = append(*list, it)
 }
 
-func (m *migrator) conflict(it MigrateItem, why string) {
+// wouldChange describes what the migration meant to write for an item.
+func wouldChange(it MigrateItem) string {
+	var parts []string
+	if it.Source == migrateSourceArc || it.Source == migrateSourceRowBacklog || it.PlanID == "" {
+		parts = append(parts, fmt.Sprintf("create the plan %q", it.Title))
+	}
+	if it.LinkKind != "" && it.LinkID != "" {
+		to := fmt.Sprintf("the plan %q", it.Title)
+		if it.PlanID != "" && it.Source == migrateSourceRow {
+			to = "plan " + it.PlanID
+		}
+		parts = append(parts, fmt.Sprintf("link the %s %s to %s", it.LinkKind, it.LinkID, to))
+	}
+	if len(parts) == 0 {
+		return "change nothing"
+	}
+	return strings.Join(parts, " and ")
+}
+
+// conflict records a conflict: why it is one, the plan or link that already
+// holds the item (heldBy) and what the migration would have changed.
+func (m *migrator) conflict(it MigrateItem, why, heldBy string) {
 	it.Reason = why
+	it.HeldBy = heldBy
+	it.WouldChange = wouldChange(it)
 	m.add(&m.rep.Conflicts, it)
 }
 
@@ -312,7 +354,7 @@ func (m *migrator) arcs() {
 			LinkKind: linkAutomation, LinkID: id, Order: clampOrder(a.Priority),
 		}
 		if id == "" || !projectRe.MatchString(a.Project) {
-			m.conflict(it, "the arc has no Automation id or its project name is not valid")
+			m.conflict(it, "the arc has no Automation id or its project name is not valid", "nothing; the arc itself is not valid")
 			continue
 		}
 		if t, ok := m.holder(linkAutomation, id); ok {
@@ -328,7 +370,7 @@ func (m *migrator) arcs() {
 			continue
 		}
 		if ex, ok := m.titleTaken(a.Project, title); ok {
-			m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+			m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 			continue
 		}
 		m.createAndLink(it, Record{
@@ -474,7 +516,7 @@ func (m *migrator) rows() {
 				continue
 			}
 			if ex, ok := m.titleTaken(r.Project, title); ok {
-				m.conflict(ri, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+				m.conflict(ri, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 				continue
 			}
 			created, ok := m.createAndLinkRow(ri, r, marker, title, ref)
@@ -521,7 +563,7 @@ func (m *migrator) history(it MigrateItem, r Record, refs []foundRef, hasPlan bo
 			continue
 		}
 		if _, err := m.s.AttachRow(holder.UID, r.UID); err != nil {
-			m.conflict(ri, "cannot link the closed row: "+err.Error())
+			m.conflict(ri, "cannot link the closed row: "+err.Error(), fmt.Sprintf("plan %s %q", holder.ID, holder.Title))
 			continue
 		}
 		m.add(&m.rep.WouldLink, ri)
@@ -555,7 +597,7 @@ func rowPlanRecord(r Record, marker, title string) Record {
 
 func (m *migrator) createPlan(it MigrateItem, r Record, marker, title string) {
 	if ex, ok := m.titleTaken(r.Project, title); ok {
-		m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+		m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 		return
 	}
 	if !m.opts.Apply {
@@ -566,7 +608,7 @@ func (m *migrator) createPlan(it MigrateItem, r Record, marker, title string) {
 	rec.Actor = m.opts.Actor
 	made, err := m.s.Create(rec)
 	if err != nil {
-		m.conflict(it, "cannot create the plan: "+err.Error())
+		m.conflict(it, "cannot create the plan: "+err.Error(), "nothing; the store refused the plan")
 		return
 	}
 	m.markers[marker] = made
@@ -600,7 +642,7 @@ func (m *migrator) createAndLinkKind(it MigrateItem, rec Record, kind, id string
 	rec.Actor = m.opts.Actor
 	made, err := m.s.Create(rec)
 	if err != nil {
-		m.conflict(it, "cannot create the plan: "+err.Error())
+		m.conflict(it, "cannot create the plan: "+err.Error(), "nothing; the store refused the plan")
 		return Record{}, false
 	}
 	it.PlanID, it.Order = made.ID, made.Order
@@ -644,9 +686,9 @@ func (m *migrator) attach(it MigrateItem, planUID, kind, id string, info LinkInf
 	if err != nil {
 		var lc *ErrLinkConflict
 		if errors.As(err, &lc) {
-			m.conflict(it, err.Error())
+			m.conflict(it, err.Error(), "plan "+lc.Holder)
 		} else {
-			m.conflict(it, "cannot link: "+err.Error())
+			m.conflict(it, "cannot link: "+err.Error(), "nothing; the store refused the link")
 		}
 		return false
 	}

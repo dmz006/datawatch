@@ -702,6 +702,13 @@ Nothing here turns on by itself. These are yours to settle:
 
 ## Building plans from arcs and rows
 
+Every preview and every apply starts with one count line: created (would
+create in a preview), linked, already present, history without an Automaton,
+needs review and conflicts. For each conflict the answer also says which plan
+or record already holds the item (`held_by`) and what the migration would have
+changed (`would_change`); nothing of it is written. A second apply changes
+nothing.
+
 A plan groups work to come and links down to Automations and Automata. The
 migration builds plans from what you already have:
 
