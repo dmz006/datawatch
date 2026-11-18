@@ -55,15 +55,16 @@ function callStr(sandbox, name, ...args) {
     throw new Error(`${name}() returned ${typeof r}, expected string`);
   return r;
 }
-// htmlAttrDecode approximates a browser's single-pass HTML entity decode of
-// an attribute value (the browser never re-scans decoded output).
+// htmlAttrDecode approximates a browser's HTML entity decode of an attribute
+// value: each of the five entities escHtml emits is decoded by one plain
+// split/join sweep, in the same fixed order (a sweep only ever turns an
+// entity into plain text, so it can never re-form a new one).
 function htmlAttrDecode(s) {
-  return String(s)
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  let out = String(s);
+  for (const [ent, ch] of [['&amp;', '&'], ['&lt;', '<'], ['&gt;', '>'], ['&quot;', '"'], ['&#39;', "'"]]) {
+    out = out.split(ent).join(ch);
+  }
+  return out;
 }
 // attrRawValue returns the RAW (pre-decode) attribute body between
 // value=" and the next raw quote for input#id. If the value had not been
@@ -189,9 +190,15 @@ test('850: openOllamaMarketplace onclick is escJsAttr-escaped (decode-then-compi
   const m = /onclick="openOllamaMarketplace\('([^"]*)'\)"/.exec(html);
   assert.ok(m, 'marketplace button must be rendered for an ollama node');
   const decoded = htmlAttrDecode(m[1]);
-  assert.ok(/\\'/.test(decoded),
+  // The expected escape is a backslash immediately followed by a single
+  // quote; build that two-character needle from char codes so this test
+  // source itself carries no escape sequences.
+  const backslash = String.fromCharCode(92);
+  const quote = String.fromCharCode(39);
+  const escapedQuote = backslash + quote;
+  assert.ok(decoded.includes(escapedQuote),
     `the quote in the JS literal must be backslash-escaped (escJsAttr): ${JSON.stringify(decoded)}`);
-  assert.ok(!/[^\\]'/.test(decoded),
+  assert.ok(!decoded.split(escapedQuote).join('').includes(quote),
     `decoded JS string is still breakable (escHtml-level escaping only): ${JSON.stringify(decoded)}`);
 });
 
