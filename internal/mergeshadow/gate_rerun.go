@@ -31,11 +31,17 @@ const intermittentDetail = "intermittent: passed on rerun"
 // rerun's status noted in Detail. A gate that does not fail on the first run
 // is not rerun.
 func RunGateWithRerun(ctx context.Context, dir, name string, timeout time.Duration) GateResult {
-	first := runGate(ctx, dir, name, timeout)
+	return runGateWithRerun(ctx, dir, name, timeout, "")
+}
+
+// runGateWithRerun is RunGateWithRerun with the daemon data directory that
+// holds the tools folder.
+func runGateWithRerun(ctx context.Context, dir, name string, timeout time.Duration, dataDir string) GateResult {
+	first := runGate(ctx, dir, name, timeout, dataDir)
 	if first.Status != GateFail {
 		return first
 	}
-	rerun := runGate(ctx, dir, name, timeout)
+	rerun := runGate(ctx, dir, name, timeout, dataDir)
 	if rerun.Status != GatePass {
 		first.Detail = joinDetail(first.Detail, "rerun also "+string(rerun.Status))
 		return first
