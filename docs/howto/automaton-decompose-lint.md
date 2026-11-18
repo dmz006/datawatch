@@ -576,7 +576,9 @@ six script-content rules read the script file from the project directory
 yet — the full authoring guide and the fix for each rule is
 [Write verification scripts that stay stable](automaton-verification-scripts.md).
 
-**Correcting a script after decompose.** When a finding names a task's
+### Correcting a script after decompose
+
+When a finding names a task's
 verification script (`no_verification_script`, `unexecutable_verification_script`,
 `final_gate_without_script`, or a script-content rule), you can fix that one
 task without a re-decompose: set its script with `prd-edit-task
