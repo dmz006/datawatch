@@ -122,9 +122,13 @@ type MigrateReport struct {
 	// no Automaton. They are history, never backlog plans, so they are only
 	// listed (with their titles), in a preview and after an apply alike.
 	HistoryWithoutAutomaton []MigrateItem `json:"history_without_automaton"`
-	// TitlesDerived and TitlesFellBack count the plans made from registry
-	// rows: titles found in the row, and rows with no title that were named
-	// "(untitled row N)". A plan that already exists is counted in neither.
+	// NeedsReview lists, under the label "needs review", the open rows from
+	// which no name could be derived. No plan is created for them on apply.
+	NeedsReview []MigrateItem `json:"needs_review"`
+	// TitlesDerived counts the plans made from registry rows with a title
+	// found in the row. TitlesFellBack counts rows with none (they are listed
+	// in NeedsReview and not created). A plan that already exists is counted
+	// in neither.
 	// TitlesFromLinked counts plans titled from the Automaton or Automation
 	// the row names, because the row had no title of its own.
 	TitlesDerived    int `json:"titles_derived"`
@@ -138,6 +142,7 @@ func (r MigrateReport) Counts() map[string]int {
 		"would_create": len(r.WouldCreate), "would_link": len(r.WouldLink),
 		"skipped_existing": len(r.SkippedExisting), "conflicts": len(r.Conflicts),
 		"history_without_automaton": len(r.HistoryWithoutAutomaton),
+		"needs_review":              len(r.NeedsReview),
 		"titles_derived":            r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
 	}
 }
@@ -152,7 +157,7 @@ func Migrate(opts MigrateOptions) (MigrateReport, error) {
 	rep := MigrateReport{
 		Applied:     opts.Apply,
 		WouldCreate: []MigrateItem{}, WouldLink: []MigrateItem{},
-		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{}, HistoryWithoutAutomaton: []MigrateItem{},
+		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{}, HistoryWithoutAutomaton: []MigrateItem{}, NeedsReview: []MigrateItem{},
 	}
 	if opts.Store == nil {
 		return rep, errors.New("planrecords: migrate needs a store")
@@ -428,6 +433,13 @@ func (m *migrator) rows() {
 		}
 		if IsClosed(KindRegistryRow, r.State) {
 			m.history(it, r, refs, hasPlan, plan)
+			continue
+		}
+		if titleSource == TitleFellBack && !hasPlan {
+			it.Title = NeedsReviewLabel
+			it.Reason = NeedsReviewLabel + ": no name could be derived from the title or description; no plan is created"
+			m.rep.NeedsReview = append(m.rep.NeedsReview, it)
+			m.rep.TitlesFellBack++
 			continue
 		}
 		if len(refs) == 0 {

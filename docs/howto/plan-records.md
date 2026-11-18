@@ -747,9 +747,10 @@ the first one that reads like a name:
 - Text that is only a status note, or starts with a PRD id or a version, is not
   a title. If nothing in the row is a title but the row names an Automaton (or
   an Automation), the plan takes that one's own title, on one line, at most 100
-  characters with `Plan: ` included. Only a row with neither is named from its
-  number: `Plan: (untitled row 15)`. Rename it afterwards in the Plans browser
-  or with `datawatch plan-record update`.
+  characters with `Plan: ` included. A description gives only its first clause, and the status column is never
+  used. A row with neither a name nor a linked Automaton is listed under
+  `needs review` in the preview (`needs_review` in the result) and is not
+  created on apply; give the row a title and run the migration again.
 - The row's status is kept as the plan's status; a done row becomes a finished
   plan.
 

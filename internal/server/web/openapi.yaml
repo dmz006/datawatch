@@ -2187,8 +2187,9 @@ paths:
         federated peer. An apply is recorded in the audit log. A plan made from a row is
         titled from the row's own title text, without leading status words, on one line and
         at most 100 characters; a row with no real title takes the title of the Automaton or Automation it names, and
-        only a row with neither becomes "Plan: (untitled row N)". The counts include `titles_derived`,
-        `titles_from_linked` and `titles_fell_back` for the plans this run makes.
+        a description gives its first clause, and the status column is never used. A row with no name at all is listed
+        under `needs_review` (the label "needs review") and is not created on apply. The counts include `titles_derived`,
+        `titles_from_linked`, `titles_fell_back` and `needs_review`.
 
         `mode` `release` is a different migration: it files a project's Automata and
         Automations under two release plans, the current release and the next one

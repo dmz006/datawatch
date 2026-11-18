@@ -16,16 +16,17 @@ func TestMigratedRowTitleTable(t *testing.T) {
 		source string
 	}{
 		{"plain title", "Project-tree write lock", "", 8, "Plan: Project-tree write lock", TitleDerived},
-		{"status note shipped", "done, shipped in 9.5.92 (PRD 332c0001)", "Status: not started", 15, "Plan: (untitled row 15)", TitleFellBack},
-		{"prd led note", "PRD d1160001 (Claude); operator decisions Q1 and Q7 recorded", "", 20, "Plan: (untitled row 20)", TitleFellBack},
-		{"done with sub items", "done: 3a shipped in 9.5.85 (PRD b3ca0001), 3b shipped in 9.5.87 (PRD 412a0001)", "", 13, "Plan: (untitled row 13)", TitleFellBack},
+		{"status note shipped", "done, shipped in 9.5.92 (PRD 332c0001)", "Status: not started", 15, "", TitleFellBack},
+		{"prd led note", "PRD d1160001 (Claude); operator decisions Q1 and Q7 recorded", "", 20, "", TitleFellBack},
+		{"done with sub items", "done: 3a shipped in 9.5.85 (PRD b3ca0001), 3b shipped in 9.5.87 (PRD 412a0001)", "", 13, "", TitleFellBack},
 		{"status word then real title", "Done: Fix the retry SHA", "", 3, "Plan: Fix the retry SHA", TitleDerived},
 		{"bold status word then title", "**Failed** - tiering eval", "", 14, "Plan: tiering eval", TitleDerived},
 		{"title from description column", "shipped in 9.5.1 (PRD abcd1234)", "Description: Retry budget for infra failures\nStatus: done", 4, "Plan: Retry budget for infra failures", TitleDerived},
-		{"status column text is never a title", "done, shipped in 9.5.88 (PRD 8afa0001)", "Status: **done**, shipped\nDepends on: 12", 16, "Plan: (untitled row 16)", TitleFellBack},
-		{"version led", "9.5.4 and later", "", 9, "Plan: (untitled row 9)", TitleFellBack},
+		{"status column text is never a title", "done, shipped in 9.5.88 (PRD 8afa0001)", "Status: **done**, shipped\nDepends on: 12", 16, "", TitleFellBack},
+		{"version led", "9.5.4 and later", "", 9, "", TitleFellBack},
+		{"first clause of description", "done, shipped in 9.5.1 (PRD abcd1234)", "Description: Retry budget, with backoff; and more\nStatus: 9.5.1 done", 5, "Plan: Retry budget", TitleDerived},
 		{"two lines collapse", "Line one\n  and two", "", 2, "Plan: Line one and two", TitleDerived},
-		{"empty", "", "", 7, "Plan: (untitled row 7)", TitleFellBack},
+		{"empty", "", "", 7, "", TitleFellBack},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -45,7 +46,7 @@ func TestMigratedRowTitleLimits(t *testing.T) {
 		t.Fatalf("title %q is %d runes", got, n)
 	}
 	got, src := migratedRowTitle(Record{ID: "some-key", Title: "done"})
-	if src != TitleFellBack || got != "Plan: (untitled row some-key)" {
+	if src != TitleFellBack || got != "" {
 		t.Fatalf("no row number: %q %s", got, src)
 	}
 }
@@ -78,10 +79,13 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 	if err != nil || rep.TitlesDerived != 1 || rep.TitlesFellBack != 2 {
 		t.Fatalf("apply: %v %+v", err, rep.Counts())
 	}
-	p, ok := s.PlanOf("bbbb2222")
-	if !ok || p.Title != "Plan: (untitled row 15)" || p.State != StateOpen {
-		t.Fatalf("fallback plan = %+v %v", p, ok)
+	if p, ok := s.PlanOf("bbbb2222"); ok {
+		t.Fatalf("a row with no name must not be created: %+v", p)
 	}
+	if len(rep.NeedsReview) != 2 || rep.NeedsReview[0].Title != NeedsReviewLabel || len(prev.NeedsReview) != 2 {
+		t.Fatalf("needs review = %+v", rep.NeedsReview)
+	}
+	p, _ := s.PlanOf("aaaa1111")
 	if q, ok := s.PlanOf("aaaa1111"); !ok || q.Title != "Plan: Persisted subscriptions" || q.State != StateOpen {
 		t.Fatalf("derived plan = %+v %v", q, ok)
 	}
@@ -93,12 +97,10 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 	}
 	n := s.Len()
 	again, err := Migrate(opts)
-	if err != nil || s.Len() != n || len(again.WouldCreate) != 0 || again.TitlesDerived != 0 || again.TitlesFellBack != 0 {
+	if err != nil || s.Len() != n || len(again.WouldCreate) != 0 || again.TitlesDerived != 0 {
 		t.Fatalf("second apply: %v len %d -> %d %+v", err, n, s.Len(), again.Counts())
 	}
-	if q, _ := s.PlanOf("bbbb2222"); q.Title != "Hand renamed" {
-		t.Fatalf("plan was renamed to %q", q.Title)
-	}
+
 }
 
 func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
@@ -135,7 +137,6 @@ func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
 	want := map[string]string{
 		"b3ca0001": "Plan: Per-LLM budget with a second line",
 		"d1160001": "Plan: Webhook sink",
-		"eeee5555": "Plan: (untitled row 21)",
 		"ffff6666": "Plan: Real row title",
 	}
 	for id, w := range want {
@@ -143,13 +144,16 @@ func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
 			t.Fatalf("plan of %s = %q (%v), want %q", id, p.Title, ok, w)
 		}
 	}
+	if _, ok := s.PlanOf("eeee5555"); ok || len(rep.NeedsReview) != 1 {
+		t.Fatalf("unnamed row was created or not listed: %+v", rep.NeedsReview)
+	}
 	p, _ := s.PlanOf("332c0001")
 	if n := utf8.RuneCountInString(p.Title); n > 100 || !strings.HasPrefix(p.Title, "Plan: long long") || p.State != StateOpen {
 		t.Fatalf("long linked title = %q (%d) state %s", p.Title, n, p.State)
 	}
 	n := s.Len()
 	again, _ := Migrate(MigrateOptions{Store: s, Apply: true, Resolve: resolve})
-	if s.Len() != n || again.TitlesFromLinked != 0 || again.TitlesFellBack != 0 || len(again.WouldCreate) != 0 {
+	if s.Len() != n || again.TitlesFromLinked != 0 || len(again.WouldCreate) != 0 {
 		t.Fatalf("second apply: %+v", again.Counts())
 	}
 }
