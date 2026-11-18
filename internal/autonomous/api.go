@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,28 @@ type API struct {
 // NewAPI is a convenience constructor.
 func NewAPI(m *Manager) *API {
 	return &API{M: m, runCancels: map[string]context.CancelFunc{}}
+}
+
+// StaleTrialSweep removes merge trial worktrees left behind by a daemon that
+// stopped mid-trial. The daemon calls it once at start, before any trial can
+// run: it empties the merge shadow scratch folder and prunes the detached
+// trial worktrees registered in each Automaton's repository. A worktree of a
+// live Automaton is never removed. It returns the number removed.
+func (a *API) StaleTrialSweep(ctx context.Context) (int, error) {
+	if a == nil || a.M == nil || a.M.dataDir == "" {
+		return 0, nil
+	}
+	git := NewMergeGitRunner()
+	holders, err := SweepMergeShadowScratch(ctx, git, a.M.dataDir)
+	n := len(holders)
+	live, repos := a.M.liveAutomatonWorktrees()
+	scratch := filepath.Join(a.M.dataDir, mergeShadowScratchDir)
+	for _, repo := range repos {
+		if rm, _ := PruneTrialWorktrees(ctx, git, repo, scratch, live); len(rm) > 0 {
+			n += len(rm)
+		}
+	}
+	return n, err
 }
 
 // SetServerReadyCh wires the channel that signals when the HTTP server is

@@ -8057,6 +8057,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// wait until the server is accepting connections before spawning
 			// executor sessions (prevents "connection refused" on daemon restart).
 			aAPI.SetServerReadyCh(httpServer.ReadyCh())
+			// Remove merge trial worktrees a previous daemon left behind.
+			if n, err := aAPI.StaleTrialSweep(context.Background()); err != nil {
+				log.Printf("[autonomous] stale trial sweep: %v", err)
+			} else if n > 0 {
+				log.Printf("[autonomous] stale trial sweep: removed %d", n)
+			}
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
 			// B165 — boot-resume gate: alert the operator when a PRD is
 			// parked (stale work or removed project dir) instead of resumed.
