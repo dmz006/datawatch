@@ -150,6 +150,25 @@ Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
 for the whole rule pack.
 
+### A script that does not exist yet
+
+The warn rule `unexecutable_verification_script` reports a missing script file
+and states which of two cases applies to the Automaton task:
+
+- **The daemon will write the verbatim block.** The task spec says
+  `Write it VERBATIM to <path>` followed by a fenced script block, and `<path>`
+  is the task's verification script. The daemon writes that block to the path
+  before the task starts, so the finding is informational.
+- **The task creates it and it is checked after the task writes it.** The spec
+  tells the worker to create the script (for example `Create the script at
+  <path>`) and carries no verbatim block. The file is absent at start; the
+  verification after the task runs the written file and fails if it was never
+  written.
+
+When neither applies, the finding keeps its plain warning that the script does
+not exist: add a verbatim block, tell the worker to create the script, or list
+the script in the task's generated files.
+
 ## 6. Set a task's script or reason with the edit tools
 
 On a task that is still editable (the Automaton is in `needs_review`,
