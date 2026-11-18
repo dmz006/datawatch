@@ -38,6 +38,21 @@ const DefaultSupervisorWatchSilentMinutes = 60
 // stale at 3 times the effective interval).
 const DefaultSupervisorWatchPollSeconds = 60
 
+// DefaultSupervisorWatchStallThresholdMinutes — the
+// autonomous.automation.supervisor_watch.stall_threshold_minutes
+// default: an Automaton may make no progress this many minutes before the
+// watch records a stall finding for it. 30 minutes matches the shared
+// automation triage alert default (DefaultAutomationTriageAlertMinutes),
+// so the operator tunes one number in both places.
+const DefaultSupervisorWatchStallThresholdMinutes = 30
+
+// DefaultSupervisorWatchPriorityFloor — the
+// autonomous.automation.supervisor_watch.priority_floor default: the
+// watch acts on queueing Automata at this priority or above. 80 is the
+// high-priority band where a stuck or stalled Automaton actually blocks
+// work; lower-priority ones queue behind it.
+const DefaultSupervisorWatchPriorityFloor = 80
+
 // SupervisorWatchMinPollSeconds — the minimum configured poll interval
 // (whole seconds). An explicitly set value below it is refused on every
 // write path (mirroring the repo CI watch's poll_seconds rule).
@@ -61,6 +76,16 @@ const SupervisorWatchMinPollSeconds = 60
 //     DefaultSupervisorWatchSilentMinutes (60); an explicit 0 keeps the
 //     silence window at zero and survives a merge round trip; a negative
 //     value is refused on every write path.
+//
+//   - StallThresholdMinutes: pointer on purpose. Unset (nil) reads
+//     DefaultSupervisorWatchStallThresholdMinutes (30); an explicit 0
+//     keeps the stall window at zero and survives a merge round trip;
+//     a negative value is refused on every write path.
+//
+//   - PriorityFloor: pointer on purpose. Unset (nil) reads
+//     DefaultSupervisorWatchPriorityFloor (80); an explicit 0 keeps the
+//     floor at zero (no floor) and survives a merge round trip; a
+//     negative value is refused on every write path.
 //
 //   - PollSeconds: the configured coordinator poll interval (whole
 //     seconds) the supervisor watch pass is expected to run at and the
@@ -97,6 +122,16 @@ type SupervisorWatchConfig struct {
 	// DefaultSupervisorWatchSilentMinutes (60) default, while an
 	// explicit 0 must survive a round trip.
 	SilentMinutes *int `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+
+	// StallThresholdMinutes is a *int on purpose: an unset key (nil)
+	// reads the DefaultSupervisorWatchStallThresholdMinutes (30)
+	// default, while an explicit 0 must survive a round trip.
+	StallThresholdMinutes *int `yaml:"stall_threshold_minutes,omitempty" json:"stall_threshold_minutes,omitempty"`
+
+	// PriorityFloor is a *int on purpose: an unset key (nil) reads the
+	// DefaultSupervisorWatchPriorityFloor (80) default, while an
+	// explicit 0 (no floor) must survive a round trip.
+	PriorityFloor *int `yaml:"priority_floor,omitempty" json:"priority_floor,omitempty"`
 
 	// PollSeconds is the configured coordinator poll interval (whole
 	// seconds). 0 is unset and reads DefaultSupervisorWatchPollSeconds
@@ -153,6 +188,31 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 	return *c.SilentMinutes
 }
 
+// EffectiveStallThresholdMinutes returns the stall window in effect:
+// an unset (nil) value reads
+// DefaultSupervisorWatchStallThresholdMinutes (30), and an explicit 0
+// keeps the window at zero. Negative values are rejected on the write
+// paths, so this never has to guess for them. This accessor is the only
+// place the 30-minute default is applied.
+func (c SupervisorWatchConfig) EffectiveStallThresholdMinutes() int {
+	if c.StallThresholdMinutes == nil {
+		return DefaultSupervisorWatchStallThresholdMinutes
+	}
+	return *c.StallThresholdMinutes
+}
+
+// EffectivePriorityFloor returns the priority floor in effect: an unset
+// (nil) value reads DefaultSupervisorWatchPriorityFloor (80), and an
+// explicit 0 keeps the floor at zero (no floor). Negative values are
+// rejected on the write paths, so this never has to guess for them.
+// This accessor is the only place the 80 default is applied.
+func (c SupervisorWatchConfig) EffectivePriorityFloor() int {
+	if c.PriorityFloor == nil {
+		return DefaultSupervisorWatchPriorityFloor
+	}
+	return *c.PriorityFloor
+}
+
 // EffectivePollSeconds returns the configured coordinator poll interval
 // in effect (whole seconds): an unset (0) value reads the
 // DefaultSupervisorWatchPollSeconds (60) default, while an explicit
@@ -178,17 +238,21 @@ func (c SupervisorWatchConfig) EffectiveWorkingModel() string {
 
 // DefaultSupervisorWatchConfig returns a SupervisorWatchConfig fully
 // populated with the default every Effective* accessor applies (shadow,
-// the shared 30-minute alert default, the 60-minute silence window), so
-// callers can start from a known-correct value without remembering any
-// default.
+// the shared 30-minute alert default, the 60-minute silence window, the
+// 30-minute stall window, the 80 priority floor), so callers can start
+// from a known-correct value without remembering any default.
 func DefaultSupervisorWatchConfig() SupervisorWatchConfig {
 	alert := DefaultAutomationTriageAlertMinutes
 	silent := DefaultSupervisorWatchSilentMinutes
+	stall := DefaultSupervisorWatchStallThresholdMinutes
+	floor := DefaultSupervisorWatchPriorityFloor
 	return SupervisorWatchConfig{
-		Mode:          SupervisorWatchModeShadow,
-		AlertMinutes:  &alert,
-		SilentMinutes: &silent,
-		PollSeconds:   DefaultSupervisorWatchPollSeconds,
+		Mode:                  SupervisorWatchModeShadow,
+		AlertMinutes:          &alert,
+		SilentMinutes:         &silent,
+		StallThresholdMinutes: &stall,
+		PriorityFloor:         &floor,
+		PollSeconds:           DefaultSupervisorWatchPollSeconds,
 	}
 }
 
@@ -232,6 +296,16 @@ func ValidateSupervisorWatchConfig(c SupervisorWatchConfig) error {
 	}
 	if c.SilentMinutes != nil {
 		if err := ValidateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
+			return err
+		}
+	}
+	if c.StallThresholdMinutes != nil {
+		if err := ValidateSupervisorWatchMinutes("stall_threshold_minutes", *c.StallThresholdMinutes); err != nil {
+			return err
+		}
+	}
+	if c.PriorityFloor != nil {
+		if err := ValidateSupervisorWatchMinutes("priority_floor", *c.PriorityFloor); err != nil {
 			return err
 		}
 	}

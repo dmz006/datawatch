@@ -26689,6 +26689,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.mode', label: 'Supervisor watch mode (off, shadow or on; default shadow)', labelKey: 'settings_supervisor_watch_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.supervisor_watch.alert_minutes', label: 'Supervisor watch alert (minutes a finding stays open before one alert, 0 = off, default 30)', labelKey: 'settings_supervisor_watch_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     { key: 'autonomous.automation.supervisor_watch.silent_minutes', label: 'Supervisor watch silence window (minutes an Automaton worktree may stay silent, default 60)', labelKey: 'settings_supervisor_watch_silent_minutes', type: 'number', placeholder: '60', min: 0, step: 1, default: '60' },
+    { key: 'autonomous.automation.supervisor_watch.stall_threshold_minutes', label: 'Supervisor watch stall threshold (minutes an Automaton may stall before the watch records it, 0 = no window, default 30)', labelKey: 'settings_supervisor_watch_stall_threshold_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.supervisor_watch.priority_floor', label: 'Supervisor watch priority floor (minimum Automaton priority the watch acts on, 0 = no floor, default 80)', labelKey: 'settings_supervisor_watch_priority_floor', type: 'number', placeholder: '80', min: 0, step: 1, default: '80' },
     { key: 'autonomous.automation.supervisor_watch.poll_seconds', label: 'Supervisor watch poll interval (seconds, min 60, default 60)', labelKey: 'settings_supervisor_watch_poll_seconds', type: 'number', placeholder: '60', min: 60, step: 1, default: '60' },
     { key: 'autonomous.automation.supervisor_watch.script_output_path', label: 'Supervisor watch script record path (repository-relative path of the supervisor script record file, empty = no comparison)', labelKey: 'settings_supervisor_watch_script_output_path', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
@@ -53917,12 +53919,32 @@ function renderStatsData(el, data) {
         ['stats_supervisor_watch_poll_age', 'Last poll (s ago)', (data.supervisor_watch_last_poll_age_seconds || 0) < 0 ? '-' : (data.supervisor_watch_last_poll_age_seconds || 0)],
         ['stats_supervisor_watch_agreed_days', 'Days of full agreement', data.supervisor_watch_agreed_days || 0],
       ];
+      // Per-band wait stats: one row per band that actually waits an
+      // Automaton (its waiting count, its oldest wait in minutes, its
+      // stalled share); a band that waits nothing is left out of the card
+      // entirely, and so is the whole section when the daemon reports no
+      // band rows at all. A stalled share tints the row like the alert
+      // rows above it.
+      const swBandKeys = { high: 'stats_supervisor_watch_band_high', medium: 'stats_supervisor_watch_band_medium', low: 'stats_supervisor_watch_band_low' };
+      const swBands = Array.isArray(data.supervisor_watch_priority_bands)
+        ? data.supervisor_watch_priority_bands.filter(b => b && (b.waiting || 0) > 0)
+        : [];
+      const swBandLines = swBands.map(b => {
+        const label = t(swBandKeys[b.band] || ('stats_supervisor_watch_band_' + (b.band || '')));
+        const name = (label && label.indexOf('stats_supervisor_watch_band_') !== 0) ? label : ('Band ' + (b.band || ''));
+        const row = t('stats_supervisor_watch_band_row', [b.waiting || 0, b.oldest_waiting_minutes || 0, b.stalled || 0]);
+        const value = (row && row.indexOf('%1') === -1)
+          ? row
+          : ((b.waiting || 0) + ' waiting (oldest ' + (b.oldest_waiting_minutes || 0) + ' min, ' + (b.stalled || 0) + ' stalled)');
+        const warn = (b.stalled || 0) > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(name)}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(value)}</span></div>`;
+      }).join('');
       const swLines = swRows.map(r => {
         const warn = (r[0] === 'stats_supervisor_watch_alerted' || r[0] === 'stats_supervisor_watch_would_alert') && r[2] > 0;
         return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
-        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}${swBandLines}</div></div>`;
     }
     // Supervisor loop card: whether the loop is on, the jobs enabled, the stored
     // runs by outcome, the retries used and the age of the last run. Left out

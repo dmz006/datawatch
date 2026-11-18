@@ -10368,6 +10368,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case supervisorWatchKeyPrefix + "mode",
 			supervisorWatchKeyPrefix + "alert_minutes",
 			supervisorWatchKeyPrefix + "silent_minutes",
+			supervisorWatchKeyPrefix + "stall_threshold_minutes",
+			supervisorWatchKeyPrefix + "priority_floor",
 			supervisorWatchKeyPrefix + "poll_seconds",
 			supervisorWatchKeyPrefix + "script_output_path",
 			supervisorWatchKeyPrefix + "tmux_restart_baseline",
@@ -12258,14 +12260,16 @@ const supervisorWatchKeyPrefix = "autonomous.automation.supervisor_watch."
 // accessors — never a literal.
 func supervisorWatchSurface(c config.SupervisorWatchConfig) map[string]interface{} {
 	return map[string]interface{}{
-		"mode":                  c.EffectiveMode(),
-		"alert_minutes":         c.EffectiveAlertMinutes(),
-		"silent_minutes":        c.EffectiveSilentMinutes(),
-		"poll_seconds":          c.EffectivePollSeconds(),
-		"script_output_path":    c.ScriptOutputPath,
-		"tmux_restart_baseline": c.TmuxRestartBaseline,
-		"main_checkout":         c.MainCheckout,
-		"working_model":         strings.TrimSpace(c.WorkingModel),
+		"mode":                    c.EffectiveMode(),
+		"alert_minutes":           c.EffectiveAlertMinutes(),
+		"silent_minutes":          c.EffectiveSilentMinutes(),
+		"stall_threshold_minutes": c.EffectiveStallThresholdMinutes(),
+		"priority_floor":          c.EffectivePriorityFloor(),
+		"poll_seconds":            c.EffectivePollSeconds(),
+		"script_output_path":      c.ScriptOutputPath,
+		"tmux_restart_baseline":   c.TmuxRestartBaseline,
+		"main_checkout":           c.MainCheckout,
+		"working_model":           strings.TrimSpace(c.WorkingModel),
 	}
 }
 
@@ -12306,6 +12310,24 @@ func withSupervisorWatchClears(automation json.RawMessage, swc config.Supervisor
 		"poll_seconds":          swc.PollSeconds,
 	} {
 		b, err := json.Marshal(val)
+		if err != nil {
+			return automation
+		}
+		block[key] = b
+	}
+	// The two minute-threshold pointers are omitempty, so an explicit 0 the
+	// operator PUT was dropped from the block and the live watch kept the
+	// stale value until a restart. Writing the set value explicitly (nil
+	// stays absent, which is unset) lets the live merge apply it, a 0
+	// included.
+	for key, val := range map[string]*int{
+		"stall_threshold_minutes": swc.StallThresholdMinutes,
+		"priority_floor":          swc.PriorityFloor,
+	} {
+		if val == nil {
+			continue
+		}
+		b, err := json.Marshal(*val)
 		if err != nil {
 			return automation
 		}
@@ -12366,7 +12388,7 @@ func validateSupervisorWatchPatch(patch map[string]interface{}) error {
 				supervisorWatchKeyPrefix, config.SupervisorWatchModeOff, config.SupervisorWatchModeShadow, config.SupervisorWatchModeOn, config.SupervisorWatchModeShadow)
 		}
 	}
-	for _, field := range []string{"alert_minutes", "silent_minutes"} {
+	for _, field := range []string{"alert_minutes", "silent_minutes", "stall_threshold_minutes", "priority_floor"} {
 		if v, ok := patch[supervisorWatchKeyPrefix+field]; ok {
 			if verr := validateSupervisorWatchWhole(field, v); verr != nil {
 				return verr
@@ -12410,6 +12432,14 @@ func applySupervisorWatchValue(swc *config.SupervisorWatchConfig, field string, 
 	case "silent_minutes":
 		if n, ok := toInt(v); ok && n >= 0 {
 			swc.SilentMinutes = &n
+		}
+	case "stall_threshold_minutes":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.StallThresholdMinutes = &n
+		}
+	case "priority_floor":
+		if n, ok := toInt(v); ok && n >= 0 {
+			swc.PriorityFloor = &n
 		}
 	case "poll_seconds":
 		// 0 is unset (it reads the default), the same as on the config-load
