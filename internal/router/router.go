@@ -2084,7 +2084,11 @@ func (r *Router) handleNew(cmd Command) {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %s", r.hostname, cmd.PriorityErr))
 		return
 	}
-	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren || cmd.HasPriority) && r.webPort > 0 {
+	if cmd.ModelErr != "" {
+		r.send(fmt.Sprintf("[%s] Failed to start session: %s", r.hostname, cmd.ModelErr))
+		return
+	}
+	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren || cmd.HasPriority || cmd.Model != "") && r.webPort > 0 {
 		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
 		if cmd.ComputeNodeRef != "" {
 			body["compute_node"] = cmd.ComputeNodeRef
@@ -2106,6 +2110,9 @@ func (r *Router) handleNew(cmd Command) {
 		}
 		if cmd.HasPriority {
 			body["priority"] = cmd.Priority
+		}
+		if cmd.Model != "" {
+			body["model"] = cmd.Model
 		}
 		bodyJSON, _ := json.Marshal(body)
 		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
@@ -2143,6 +2150,9 @@ func (r *Router) handleNew(cmd Command) {
 		startOpts.KillChildren = true
 	}
 	startOpts.Priority = cmd.Priority
+	if cmd.Model != "" {
+		startOpts.Model = cmd.Model
+	}
 	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir, startOpts)
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
