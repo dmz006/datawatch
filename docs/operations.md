@@ -5377,6 +5377,12 @@ autonomous:
 
 ## Undeclared Edit Mode (`autonomous.undeclared_edit_mode`)
 
+> **Hardening note.** The checker's git runner now uses a fixed command prefix,
+> an allow-list of subcommands and a root-resolved folder check (see
+> [file-drift-guardrail.md](howto/file-drift-guardrail.md#how-the-checker-runs-git)).
+> No setting changed. Operator review: a refused subcommand shows as
+> `git subcommand ... not allowed` in the daemon log.
+
 Every direct-mode (non-worktree) autonomous task is checked after
 verification for **undeclared edits**: files the task's own worker
 committed in `<pre-task SHA>..HEAD` that were clean before the task started
