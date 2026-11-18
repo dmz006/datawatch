@@ -1,36 +1,36 @@
 # Release 10.0 remaining work, in scheduled order
 
-Generated 2026-11-18 01:24 from the running daemon (read only). Release 10.0 is 288 of 371 Automata done (78%); this file lists the 57 that still have work to do, the 0 that merged but whose review record is still open, and the Automations on the plan.
+Generated 2026-11-18 01:40 from the running daemon (read only). Release 10.0 is 288 of 360 Automata done (80%); this file lists the 45 that still have work to do, the 0 that merged but whose review record is still open, and the Automations on the plan.
 
 ## How to read this
 
 - **Order** is the order the daemon would take them: running first, then planning, then waiting for review or approval, then blocked, failed and finally drafts. Inside a group, higher priority first, then the plan position. Priority orders the capacity queue; it does not start a draft, which needs a decompose, an approval and a run first.
-- **Expected window** is a rough estimate, not a promise: the last days finished about 8 Automata a day, so an Automaton at position N in the list is expected about N / 8 days from now. Drafts need a decompose and an approval first, so add about half a day. Blocked and failed ones have no date until someone clears the blocker. New work filed later pushes everything down.
+- **Expected window** is a rough estimate, not a promise: the last days finished about 9 Automata a day, so an Automaton at position N in the list is expected about N / 9 days from now. Drafts need a decompose and an approval first, so add about half a day. Blocked and failed ones have no date until someone clears the blocker. New work filed later pushes everything down.
 - Tasks are listed under each Automaton as one line each, without the standard closing tasks (changelog, parity draft, docs set, load-step rule, version note) that every Automaton carries.
 
 ## Summary
 
 | State | Count |
 |---|---|
-| running | 4 |
-| planning | 1 |
-| needs_review | 14 |
-| blocked | 10 |
+| running | 8 |
+| planning | 5 |
+| needs_review | 5 |
+| blocked | 5 |
 | failed | 2 |
-| draft | 26 |
+| draft | 20 |
 | merged, review record open | 0 |
 
-At about 8 a day the 45 that can run without a blocker would finish in about 6 days (around 2026-11-24) if nothing new is filed. The 12 blocked or failed need a decision first.
+At about 9 a day the 38 that can run without a blocker would finish in about 5 days (around 2026-11-23) if nothing new is filed. The 7 blocked or failed need a decision first.
 
 ## In scheduled order
 
 1. **63ac0001** Session-kind profiles: lean starts for every session kind: Apply the lean session profiles to every session kind, chosen by the kind of session and by what it is doing, not only to Automaton worker, verifier and judge launches.
-   - State running, priority 100, kind feature, tasks 3 of 7 done, expected about now, today.
+   - State running, priority 100, kind feature, tasks 4 of 7 done, expected about now, today.
    - Task (completed): Extend workerprofile with session-kind defaults.
    - Task (completed): Wire a profile name through the start call for every session kind.
    - Task (completed): Fix the capacity wait failure on profile starts.
-   - Task (verifying): Make the LLM-row binary honored or refused.
-   - Task (queued): Wire profile settings and read-back on all six surfaces.
+   - Task (completed): Make the LLM-row binary honored or refused.
+   - Task (waiting_capacity): Wire profile settings and read-back on all six surfaces.
    - Task (queued): Document session-kind profiles.
    - Task (queued): Verify the session-kind profile work end-to-end.
 2. **d1130001** Free orphaned pi-pool slots held by judges and verifiers: A pi slot is held by a judge or verifier with no node lease, so one pi lane sits wasted while a node is idle.
@@ -41,7 +41,10 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (queued): Wire the periodic slot reconcile into the capacity tick with an alert line.
    - Task (queued): Document the freed-slot reconcile for operators.
    - Task (queued): Final gate for the orphan-slot reconcile.
-3. **87620001** Make the full release smoke pass on main: Fix: the full release smoke fails on main in several sections that the targeted smoke never runs.
+3. **0b6e0001** pace_line: the supervisor's weekly and window usage guard rules inside the burn guard: Run the supervisor's weekly and window usage guard inside datawatch.
+   - State running, priority 90, kind feature, tasks 0 of 1 done, expected about now, today.
+   - Task (waiting_capacity): Config core: pace_line settings, defaults, one shared validator.
+4. **87620001** Make the full release smoke pass on main: Fix: the full release smoke fails on main in several sections that the targeted smoke never runs.
    - State running, priority 80, kind bug, tasks 11 of 14 done, expected about now, today.
    - Task (completed): Fix the capacity-budget smoke failures.
    - Task (completed): Fix throwaway Automaton creation in the capacity admission, task routing and automation chain sections.
@@ -55,18 +58,47 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (completed): Fix smoke section 80: the restart matrix loses the worker session id and counter lines.
    - Task (completed): Fix smoke sections 82 and 85: profile tier source and the usage CLI TLS error.
    - Task (completed): Fix the Branch refresh smoke section: the live routes answer 501.
-   - Task (waiting_capacity): Fix the Housekeeping repairs smoke section: the group list has changed.
+   - Task (verifying): Fix the Housekeeping repairs smoke section: the group list has changed.
    - Task (queued): Fix the Task routing smoke section: dry run, throwaway save and delete fail.
-4. **d1820001** Session detail: phone-width rollup of tag chips and Scheduled list: On a phone the session detail page spends about a third of the screen above the terminal on tag chips and the Scheduled list.
+5. **964b0001** (no title): Decompose fails with a parse error when the planner writes a task verification field as a plain string.
+   - State running, priority 80, kind bug, tasks 0 of 4 done, expected about now, today.
+   - Task (waiting_capacity): Add a tolerant string-verification decode to ParsePlanning with unit tests.
+   - Task (queued): Reclassify decompose parse failures as content retries that carry the parse error back to the planner.
+   - Task (queued): Document the string verification acceptance and the content-classified parse retry in the planning-failure how-to.
+   - Task (queued): Run the final gate and fix anything it reports.
+6. **6c000001** (no title): The CLI and MCP session start cannot name a model, so the explicit-model policy refuses every Claude Code session they start.
+   - State running, priority 80, kind bug, tasks 0 of 6 done, expected about now, today.
+   - Task (waiting_capacity): Implement the LLM-row / daemon-default model fallback for direct claude-code session starts and the full-surface refusal message.
+   - Task (queued): Add --model and --effort flags to the CLI session new command.
+   - Task (queued): Add model, effort and name arguments to the MCP start_session tool.
+   - Task (queued): Add the model= start option to the chat new: command.
+   - Task (queued): Update the explicit-model how-to, the model-defaults how-to and the MCP tool docs.
+   - Task (queued): Final gate: the PRD state for session-start model naming is consistent across code, docs and PWA.
+7. **90d20001** Force-stage gitignored listed files in task auto-commit, and carry commit failure output into the hold: The automatic task commit fails when a task lists a file under the gitignored .datawatch folder, and the task then blocks with uncommitted_work.
+   - State running, priority 80, kind bug, tasks 0 of 3 done, expected about now, today.
+   - Task (waiting_capacity): Implement force-staging of ignored listed files and commit-failure output in the hold.
+   - Task (queued): Update the uncommitted-work docs for force staging and failure reporting.
+   - Task (queued): Final gate.
+8. **d1820001** Session detail: phone-width rollup of tag chips and Scheduled list: On a phone the session detail page spends about a third of the screen above the terminal on tag chips and the Scheduled list.
    - State running, priority 20, kind feature, tasks 5 of 5 done, expected about now, today.
    - Task (completed): Implement phone width Tags and Scheduled rollup in session detail.
    - Task (completed): Add rollup strings to five locale bundles and the locale guard test.
    - Task (completed): Add node test for phone width rollup and unchanged wide layout.
    - Task (completed): Update sessions deep dive docs for phone width rollup.
    - Task (completed): Final gate for the session detail phone width rollup.
-5. **88b50030** (no title): Found 2026-11-18: a decomposed Automaton at priority 100 waited for approval for hours because the supervisor watch only raises its idle-lane findings when a lane is empty, and the lanes were full.
+9. **88b50030** (no title): Found 2026-11-18: a decomposed Automaton at priority 100 waited for approval for hours because the supervisor watch only raises its idle-lane findings when a lane is empty, and the lanes were full.
    - State planning, priority 100, kind feature, tasks 0 of 0 done, expected about 2026-11-18.
-6. **a7f20001** Fix open high and critical CodeQL alerts: Fix: eleven open high or critical CodeQL alerts on main make the CodeQL workflow's alert gate fail on every push.
+10. **f31d0001** Fix the shadows: plan size and version, changelog source, stored comparison, missing-plan reasons: Fix: the shadow merge plan leaves release size, version and changelog empty and its comparison is never stored.
+   - State planning, priority 90, kind bug, tasks 0 of 0 done, expected about 2026-11-18.
+   - Blocker: parse: json: cannot unmarshal string into Go value of type autonomous.verificationResultWire (cleaned="{\n \"title\": \"Merge shadow: plan size/version/changelog from the Automaton; store the post-shi
+11. **d0ce0001** (no title): Found 2026-11-18: the repository is filling with finished Automaton branches and worktrees and the cleanup is not keeping up.
+   - State planning, priority 90, kind bug, tasks 0 of 0 done, expected about 2026-11-18.
+12. **bcf30001** (no title): Found 2026-11-16 while moving history into datawatch: the preview of the plans migration (datawatch plans migrate) says it would create 21 plans and leave 30 conflicts.
+   - State planning, priority 80, kind unset, tasks 0 of 0 done, expected about 2026-11-18.
+13. **2acf0001** (no title): Three PWA end-to-end stories fail on an isolated daemon.
+   - State planning, priority 80, kind bug, tasks 0 of 0 done, expected about 2026-11-18.
+   - Blocker: story "The PWA e2e story documentation set reflects the repaired stories and its embedded copy is in sync", task "Update docs/test-coverage.md, docs/testing-tracker.md and the testing how-to so the PW
+14. **a7f20001** Fix open high and critical CodeQL alerts: Fix: eleven open high or critical CodeQL alerts on main make the CodeQL workflow's alert gate fail on every push.
    - State needs_review, priority 99, kind bug, tasks 6 of 6 done, expected about 2026-11-18.
    - Task (completed): Fix path and command injection alerts in the autonomous package.
    - Task (completed): Fix certificate check and allocation size alerts in compute and server.
@@ -74,78 +106,37 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (completed): Rewrite the two flagged PWA tests without the flagged patterns.
    - Task (completed): Document the hardened path, command, certificate and HTML handling.
    - Task (completed): Final gate: run all touched suites and write the alert report.
-7. **0b6e0001** pace_line: the supervisor's weekly and window usage guard rules inside the burn guard: Run the supervisor's weekly and window usage guard inside datawatch.
-   - State needs_review, priority 90, kind feature, tasks 0 of 1 done, expected about 2026-11-18.
-   - Task (queued): Config core: pace_line settings, defaults, one shared validator.
-8. **9df40001** Retire the registry: proposal: Proposal-only Automaton.
+15. **9df40001** Retire the registry: proposal: Proposal-only Automaton.
    - State needs_review, priority 85, kind unset, tasks 3 of 3 done, expected about 2026-11-18.
    - Task (completed): Read and inventory the registry, findings, history and live records.
    - Task (completed): Write the retire-the-registry proposal document.
    - Task (completed): Final gate: verify the proposal end to end.
-9. **ff540001** Fix the shutdowncause child process scan flake in the full test run: Fix: TestSignalChildProcScan in internal/shutdowncause fails in the full go test run of the module but passes alone.
-   - State needs_review, priority 80, kind bug, tasks 3 of 3 done, expected about 2026-11-18.
-   - Task (completed): Investigate the flake and record the root cause.
-   - Task (completed): Fix the flake at its cause with explicit readiness signals.
-   - Task (completed): Final gate: ten full race runs of the package under suite load.
-10. **2caa0001** Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the how-to: Every housekeeping action answers 503 "Housekeeping actions unavailable" because the server holds the wrong type.
+16. **2caa0001** Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the how-to: Every housekeeping action answers 503 "Housekeeping actions unavailable" because the server holds the wrong type.
    - State needs_review, priority 80, kind bug, tasks 5 of 5 done, expected about 2026-11-18.
    - Task (completed): Add seven housekeeping forwarding methods to the autonomous API wrapper.
    - Task (completed): Prove the real API wrapper passes the server housekeeping gate and serves all seven routes.
    - Task (completed): Fix the advance_judge group: one read per Automaton, one consistent finding per subject.
    - Task (completed): Update the housekeeping how-to for the fixed routes, the once-per-Automaton report and the finding wording.
    - Task (completed): Final gate for the housekeeping fix.
-11. **e4f30001** Make the shutdowncause signal-capture process-scan test hermetic: The signal-child process-scan test in internal/shutdowncause (TestSignalChildProcScan) is not hermetic.
+17. **e4f30001** Make the shutdowncause signal-capture process-scan test hermetic: The signal-child process-scan test in internal/shutdowncause (TestSignalChildProcScan) is not hermetic.
    - State needs_review, priority 80, kind bug, tasks 4 of 4 done, expected about 2026-11-18.
    - Task (completed): Make the shutdowncause procscan read from an injectable, descendant-scoped process source.
    - Task (completed): Add a fake-process-table regression test in shutdowncause.
    - Task (completed): Write the hermetic process-scan rule into the testing how-to.
    - Task (completed): Gate the hermetic shutdowncause scan end-to-end.
-12. **964b0001** (no title): Decompose fails with a parse error when the planner writes a task verification field as a plain string.
-   - State needs_review, priority 80, kind bug, tasks 0 of 4 done, expected about 2026-11-18.
-   - Task (queued): Add a tolerant string-verification decode to ParsePlanning with unit tests.
-   - Task (queued): Reclassify decompose parse failures as content retries that carry the parse error back to the planner.
-   - Task (queued): Document the string verification acceptance and the content-classified parse retry in the planning-failure how-to.
-   - Task (queued): Run the final gate and fix anything it reports.
-13. **6c000001** (no title): The CLI and MCP session start cannot name a model, so the explicit-model policy refuses every Claude Code session they start.
-   - State needs_review, priority 80, kind bug, tasks 0 of 6 done, expected about 2026-11-19.
-   - Task (queued): Implement the LLM-row / daemon-default model fallback for direct claude-code session starts and the full-surface refusal message.
-   - Task (queued): Add --model and --effort flags to the CLI session new command.
-   - Task (queued): Add model, effort and name arguments to the MCP start_session tool.
-   - Task (queued): Add the model= start option to the chat new: command.
-   - Task (queued): Update the explicit-model how-to, the model-defaults how-to and the MCP tool docs.
-   - Task (queued): Final gate: the PRD state for session-start model naming is consistent across code, docs and PWA.
-14. **96820001** Repair the schedules-flood PWA e2e: temp-folder project root and default-view session selector: The schedule-flood PWA story fails for two reasons that predate the symlink removal.
+18. **96820001** Repair the schedules-flood PWA e2e: temp-folder project root and default-view session selector: The schedule-flood PWA story fails for two reasons that predate the symlink removal.
    - State needs_review, priority 80, kind bug, tasks 5 of 5 done, expected about 2026-11-19.
    - Task (completed): Extract the e2e config generation into a shared helper that allows the temp project root.
    - Task (completed): Add the test that the generated e2e config carries the temp root.
    - Task (completed): Fix the schedules-flood seeded-session selector to the default tile view.
    - Task (completed): Document the generated e2e config's project-root allowance.
    - Task (completed): Gate the PWA e2e repair end-to-end.
-15. **90d20001** Force-stage gitignored listed files in task auto-commit, and carry commit failure output into the hold: The automatic task commit fails when a task lists a file under the gitignored .datawatch folder, and the task then blocks with uncommitted_work.
-   - State needs_review, priority 80, kind bug, tasks 0 of 3 done, expected about 2026-11-19.
-   - Task (queued): Implement force-staging of ignored listed files and commit-failure output in the hold.
-   - Task (queued): Update the uncommitted-work docs for force staging and failure reporting.
-   - Task (queued): Final gate.
-16. **2fbf0001** Authentication and multi-user design proposal: Design the authentication and authorization layer for datawatch: multi-user, local accounts, and OAuth and OpenID Connect compatible sign-in, across the web app, REST, MCP, CLI, messaging channels and federation.
-   - State needs_review, priority 20, kind feature, tasks 0 of 2 done, expected about 2026-11-19.
-   - Task (queued): Write the authentication and multi-user design document.
-   - Task (queued): Final gate: verify the design document end to end.
-17. **2c9a27e2** Personal agents with personality and decision-making (held placeholder): BL456 — Personal agents with personality and decision-making, for a real datawatch community user.
-   - State needs_review, priority 0, kind research, tasks 0 of 1 done, expected about 2026-11-19.
-   - Task (queued): Write the held placeholder plan document.
-18. **316c41e1** Register the individual-builder harness research and its enhancement proposals: BL457 — Register completed research: individual-builder AI harness survey and datawatch enhancement proposals (PRD 8baa807b).
-   - State needs_review, priority 0, kind research, tasks 0 of 2 done, expected about 2026-11-19.
-   - Task (queued): Document the harness research proposals plan and link it from both indexes.
-   - Task (queued): Final gate: confirm the plan record and both index links.
-19. **36729dd7** Register the openrig.dev adoption research as a held item: BL458 — Register completed research: openrig.dev adoption plan for datawatch (PRD ef9dcac1).
-   - State needs_review, priority 0, kind research, tasks 0 of 1 done, expected about 2026-11-19.
-   - Task (queued): Write the openrig adoption registration document and link it from the tracker row.
-20. **d5060001** Make the internal/autonomous race-detector run pass: Fix: the full go test -race run of internal/autonomous fails with a data race and two failing tests.
+19. **d5060001** Make the internal/autonomous race-detector run pass: Fix: the full go test -race run of internal/autonomous fails with a data race and two failing tests.
    - State blocked, priority 80, kind bug, tasks 1 of 3 done, expected about no date, blocked.
    - Task (completed): Fix the data race and the two failing race-run tests in internal/autonomous.
    - Task (review_needed): Fix the same race and timing patterns elsewhere in internal/autonomous.
    - Task (queued): Run ten consecutive full race-detector runs of internal/autonomous.
-21. **70900001** Configuration parity audit and CI gate: A configuration parity audit and a CI gate.
+20. **70900001** Configuration parity audit and CI gate: A configuration parity audit and a CI gate.
    - State blocked, priority 20, kind feature, tasks 7 of 10 done, expected about no date, blocked.
    - Task (completed): Write the config key lister program.
    - Task (completed): Write the surface readers module.
@@ -157,7 +148,7 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (blocked): Wire the configuration parity audit into CI as a gate.
    - Task (queued): Document the configuration parity audit.
    - Task (queued): Run the end-to-end configuration parity gate check.
-22. **71f80001** Merge scripts in the repository with shadow pipeline comparison: Move the supervisor's merge scripts into the repository and run the daemon merge pipeline next to them in shadow, so the daemon can take over merging.
+21. **71f80001** Merge scripts in the repository with shadow pipeline comparison: Move the supervisor's merge scripts into the repository and run the daemon merge pipeline next to them in shadow, so the daemon can take over merging.
    - State blocked, priority 20, kind feature, tasks 0 of 12 done, expected about no date, blocked.
    - Task (review_needed): Investigate the supervisor merge steps and conflict rules.
    - Task (queued): Add the merge step scripts under scripts/merge.
@@ -171,7 +162,7 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (queued): Document the merge scripts, the pipeline record and the shadow comparison.
    - Task (queued): Smoke test the shadow step run in a throwaway data directory.
    - Task (queued): Run the end-to-end merge scripts and shadow final gate.
-23. **2fa30001** (no title): A symlink with an absolute home path is tracked in the repository.
+22. **2fa30001** (no title): A symlink with an absolute home path is tracked in the repository.
    - State blocked, priority 20, kind bug, tasks 4 of 6 done, expected about no date, blocked.
    - Task (completed): Remove tracked PWA node_modules symlink.
    - Task (completed): Wire runner node_modules install fallback.
@@ -179,113 +170,13 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (completed): Add absolute-symlink guard check.
    - Task (completed): Update PWA test setup docs.
    - Task (queued): Final gate: PWA test setup without tracked symlink.
-24. **049f4713** BL433 — PWA performance audit under load (design/audit pass): BL433 — PWA performance audit under load, companion to the mobile app audit (GH issue #243, filed 2026-10-14).
+23. **049f4713** BL433 — PWA performance audit under load (design/audit pass): BL433 — PWA performance audit under load, companion to the mobile app audit (GH issue #243, filed 2026-10-14).
    - State blocked, priority 0, kind unset, tasks 1 of 4 done, expected about no date, blocked.
    - Task (completed): Static code inventory of PWA polling, WS handling and rendering.
    - Task (failed): Live load measurement of the PWA via read-only proxy and Chromium.
    - Task (queued): Write the seven-check verdicts and ranked findings.
    - Task (queued): Register BL433 in the plans README roadmap queue.
-25. **38b69678** [eval] model-tiering 20261015-r1: Eval scaffold placeholder for the model-tiering eval driver.
-   - State blocked, priority 0, kind unset, tasks 17 of 52 done, expected about no date, blocked.
-   - Task (completed): [eval] analysis__opus-low__r1.
-   - Task (completed): [eval] analysis__opus-medium__r1.
-   - Task (completed): [eval] analysis__opus-high__r1.
-   - Task (completed): [eval] analysis__sonnet-low__r1.
-   - Task (completed): [eval] analysis__sonnet-medium__r1.
-   - Task (completed): [eval] analysis__sonnet-high__r1.
-   - Task (failed): [eval] analysis__haiku-low__r1.
-   - Task (failed): [eval] analysis__haiku-medium__r1.
-   - Task (failed): [eval] analysis__haiku-high__r1.
-   - Task (failed): [eval] analysis__fable-low__r1.
-   - Task (failed): [eval] analysis__fable-medium__r1.
-   - Task (failed): [eval] analysis__fable-high__r1.
-   - Task (failed): [eval] analysis__default__r1.
-   - Task (failed): [eval] scripting__opus-low__r1.
-   - Task (failed): [eval] scripting__opus-medium__r1.
-   - Task (failed): [eval] scripting__opus-high__r1.
-   - Task (failed): [eval] scripting__sonnet-low__r1.
-   - Task (failed): [eval] scripting__sonnet-medium__r1.
-   - Task (failed): [eval] scripting__sonnet-high__r1.
-   - Task (failed): [eval] scripting__haiku-low__r1.
-   - Task (failed): [eval] scripting__haiku-medium__r1.
-   - Task (failed): [eval] scripting__haiku-high__r1.
-   - Task (failed): [eval] scripting__fable-low__r1.
-   - Task (failed): [eval] scripting__fable-medium__r1.
-   - Task (failed): [eval] scripting__fable-high__r1.
-   - Task (failed): [eval] scripting__default__r1.
-   - Task (failed): [eval] docs__opus-low__r1.
-   - Task (failed): [eval] docs__opus-medium__r1.
-   - Task (failed): [eval] docs__opus-high__r1.
-   - Task (failed): [eval] docs__sonnet-low__r1.
-   - Task (failed): [eval] docs__sonnet-medium__r1.
-   - Task (failed): [eval] docs__sonnet-high__r1.
-   - Task (failed): [eval] docs__haiku-low__r1.
-   - Task (failed): [eval] docs__haiku-medium__r1.
-   - Task (failed): [eval] docs__haiku-high__r1.
-   - Task (completed): [eval] docs__fable-low__r1.
-   - Task (failed): [eval] docs__fable-medium__r1.
-   - Task (completed): [eval] docs__fable-high__r1.
-   - Task (completed): [eval] docs__default__r1.
-   - Task (completed): [eval] review__opus-low__r1.
-   - Task (completed): [eval] review__opus-medium__r1.
-   - Task (completed): [eval] review__opus-high__r1.
-   - Task (completed): [eval] review__sonnet-low__r1.
-   - Task (failed): [eval] review__sonnet-medium__r1.
-   - Task (completed): [eval] review__sonnet-high__r1.
-   - Task (failed): [eval] review__haiku-low__r1.
-   - Task (failed): [eval] review__haiku-medium__r1.
-   - Task (failed): [eval] review__haiku-high__r1.
-   - Task (completed): [eval] review__fable-low__r1.
-   - Task (completed): [eval] review__fable-medium__r1.
-   - Task (failed): [eval] review__fable-high__r1.
-   - Task (completed): [eval] review__default__r1.
-26. **3be9c0e5** [eval] open-model-matrix 20261015-r10: Eval scaffold placeholder for the open-model matrix eval driver.
-   - State blocked, priority 0, kind unset, tasks 0 of 16 done, expected about no date, blocked.
-   - Task (failed): [eval] cpu-analysis.
-   - Task (failed): [eval] cpu-scripting.
-   - Task (failed): [eval] cpu-docs.
-   - Task (failed): [eval] cpu-review.
-   - Task (failed): [eval] fast-analysis.
-   - Task (failed): [eval] fast-scripting.
-   - Task (failed): [eval] fast-docs.
-   - Task (failed): [eval] fast-review.
-   - Task (failed): [eval] mid-analysis.
-   - Task (failed): [eval] mid-scripting.
-   - Task (failed): [eval] mid-docs.
-   - Task (failed): [eval] mid-review.
-   - Task (failed): [eval] decompose-validate-analysis.
-   - Task (failed): [eval] decompose-validate-scripting.
-   - Task (blocked): [eval] decompose-validate-docs.
-   - Task (queued): [eval] decompose-validate-review.
-27. **9a1a8666** [eval] open-model-matrix 20261015-r7: Eval scaffold placeholder for the open-model matrix eval driver.
-   - State blocked, priority 0, kind unset, tasks 0 of 16 done, expected about no date, blocked.
-   - Task (failed): [eval] cpu-analysis.
-   - Task (failed): [eval] cpu-scripting.
-   - Task (failed): [eval] cpu-docs.
-   - Task (failed): [eval] cpu-review.
-   - Task (failed): [eval] fast-analysis.
-   - Task (failed): [eval] fast-scripting.
-   - Task (failed): [eval] fast-docs.
-   - Task (failed): [eval] fast-review.
-   - Task (failed): [eval] mid-analysis.
-   - Task (failed): [eval] mid-scripting.
-   - Task (failed): [eval] mid-docs.
-   - Task (failed): [eval] mid-review.
-   - Task (failed): [eval] decompose-validate-analysis.
-   - Task (failed): [eval] decompose-validate-scripting.
-   - Task (blocked): [eval] decompose-validate-docs.
-   - Task (queued): [eval] decompose-validate-review.
-28. **f6a38c29** BL422 — Claude model/effort tiering eval for dev-Automaton tasks (eval only, no policy change): BL422 — Per-task Claude model/effort tiering eval for dev-PRD cost.
-   - State blocked, priority 0, kind unset, tasks 2 of 4 done, expected about no date, blocked.
-   - Task (completed): Eval fixtures for four task types and three Claude tiers.
-   - Task (completed): Eval driver script with offline self-test.
-   - Task (failed): Execute the eval matrix on the live daemon and commit raw results.
-   - Task (failed): Write the model-tiering results doc and update tracking.
-29. **fea73c82** BL437 — Recurring, hardware-aware LLM model/effort evaluation (design pass): BL437 — Recurring, hardware-aware LLM model/effort evaluation to keep datawatch's model advice and defaults current (design pass only, no implementation).
-   - State blocked, priority 0, kind unset, tasks 1 of 2 done, expected about no date, blocked.
-   - Task (completed): Write the BL437 recurring model-eval design doc.
-   - Task (failed): Register BL437 in the docs/plans/README.md roadmap.
-30. **5c0c0001** Remove the CPU burner and fix intermittent tests at their root: Remove the CPU load test and fix the intermittent tests at their root (operator, 2026-11-12 23:50: "things are not flaky under load, this host has great capacity, if it failed it was not load, this is the 2nd or 3rd time you did...
+24. **5c0c0001** Remove the CPU burner and fix intermittent tests at their root: Remove the CPU load test and fix the intermittent tests at their root (operator, 2026-11-12 23:50: "things are not flaky under load, this host has great capacity, if it failed it was not load, this is the 2nd or 3rd time you did...
    - State failed, priority 80, kind bug, tasks 8 of 9 done, expected about no date, blocked.
    - Task (completed): Replace the burner with a deterministic fake and rename the load-sensitive status to intermittent.
    - Task (completed): Create a defect record automatically for an intermittent gate and surface it in the housekeeping view and an alert.
@@ -296,67 +187,51 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
    - Task (completed): Update the supervisor rules and merge helper prompts so a failing test is a defect.
    - Task (completed): Document the intermittent gate, the defect record and the CI check in the how-to, definitions and operations docs.
    - Task (failed): Final gate for the burner removal and the intermittent test fixes.
-31. **21030001** (no title): A task pinned to a local model can be handed to Claude on an Opus model by failure escalation.
+25. **21030001** (no title): A task pinned to a local model can be handed to Claude on an Opus model by failure escalation.
    - State failed, priority 80, kind bug, tasks 2 of 2 done, expected about no date, blocked.
    - Task (completed): Failure escalation steps: resolve unnamed claude-code model and skip backed-off backends.
    - Task (completed): Docs set: failure escalation claude-code model default and backoff skip.
-32. **f31d0001** Fix the shadows: plan size and version, changelog source, stored comparison, missing-plan reasons: Fix: the shadow merge plan leaves release size, version and changelog empty and its comparison is never stored.
-   - State draft, priority 90, kind bug, tasks 0 of 0 done, expected about 2026-11-20.
-   - Blocker: parse: json: cannot unmarshal string into Go value of type autonomous.verificationResultWire (cleaned="{\n \"title\": \"Merge shadow: plan size/version/changelog from the Automaton; store the post-shi
-33. **bcf30001** (no title): Found 2026-11-16 while moving history into datawatch: the preview of the plans migration (datawatch plans migrate) says it would create 21 plans and leave 30 conflicts.
-   - State draft, priority 80, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-34. **2acf0001** (no title): Three PWA end-to-end stories fail on an isolated daemon.
-   - State draft, priority 80, kind bug, tasks 0 of 0 done, expected about 2026-11-21.
-   - Blocker: story "The PWA e2e story documentation set reflects the repaired stories and its embedded copy is in sync", task "Update docs/test-coverage.md, docs/testing-tracker.md and the testing how-to so the PW
-35. **09c30001** (no title): Found 2026-11-16: infrastructure faults in the judge and the verifier are treated as findings against the work.
-   - State draft, priority 70, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-36. **c8f50001** (no title): Found 2026-11-16: the pi planner's replies fail to parse about one time in three, and each failure is recorded as not retryable, so the Automaton goes back to draft and needs a manual replan that waits behind the node engines...
-   - State draft, priority 70, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-37. **13cf0001** (no title): Found 2026-11-16 on an Automaton that failed its final gate and needed a corrective task added.
-   - State draft, priority 65, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-38. **08170001** (no title): Found 2026-11-16: the first CodeQL hardening round shipped and the scanner then reported twelve alerts still open (six closed), because the guards were written in shared helpers and the scanner only recognizes a check written...
-   - State draft, priority 60, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-39. **32100001** (no title): Found 2026-11-16: after a fix landed, the CodeQL check stayed red for two hours with no code cause.
-   - State draft, priority 60, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
-40. **94560001** (no title): Make the judge and verifier time limit follow the size of the review and the backend.
-   - State draft, priority 60, kind feature, tasks 0 of 0 done, expected about 2026-11-21.
-41. **e81e0001** (no title): Found 2026-11-16: final-gate and verification scripts written by workers fail for the same three reasons over and over, and each one costs a gate failure, a hand repair and a reset of the gate and its template tasks (five...
-   - State draft, priority 55, kind unset, tasks 0 of 0 done, expected about 2026-11-22.
-42. **526f0001** (no title): Found 2026-11-16: the pi pool is capped at three, but the two compute nodes serve one engine each, so only two pi workers can run at once.
-   - State draft, priority 50, kind unset, tasks 0 of 0 done, expected about 2026-11-22.
-43. **8a3e0001** (no title): Found 2026-11-16 while promoting shipped features: several settings that ship off or in shadow have no definitions entry, and some have no documentation anywhere, so an operator cannot learn what turning one on does without...
-   - State draft, priority 40, kind unset, tasks 0 of 0 done, expected about 2026-11-22.
-44. **64650001** (no title): Found 2026-11-16 while supervising through the MCP tools: some reads are unbounded.
-   - State draft, priority 40, kind unset, tasks 0 of 0 done, expected about 2026-11-22.
-45. **70ae0001** (no title): Make the Projects and Plans pages create through the shared floating button and a dialog, not inline forms, the way the Automata, Automation, Templates and Sessions views already do.
-   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-22.
-46. **929d0001** (no title): Found 2026-11-16 while repairing Automata whose final gate failed or whose verifier timed out.
-   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-22.
-47. **234e0001** (no title): The plan-requirement coverage gate extracts file names from task and story text without trimming sentence punctuation or handling digits, so it reports files that exist as unresolved.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-22.
+26. **09c30001** (no title): Found 2026-11-16: infrastructure faults in the judge and the verifier are treated as findings against the work.
+   - State draft, priority 70, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+27. **c8f50001** (no title): Found 2026-11-16: the pi planner's replies fail to parse about one time in three, and each failure is recorded as not retryable, so the Automaton goes back to draft and needs a manual replan that waits behind the node engines...
+   - State draft, priority 70, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+28. **13cf0001** (no title): Found 2026-11-16 on an Automaton that failed its final gate and needed a corrective task added.
+   - State draft, priority 65, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+29. **08170001** (no title): Found 2026-11-16: the first CodeQL hardening round shipped and the scanner then reported twelve alerts still open (six closed), because the guards were written in shared helpers and the scanner only recognizes a check written...
+   - State draft, priority 60, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+30. **32100001** (no title): Found 2026-11-16: after a fix landed, the CodeQL check stayed red for two hours with no code cause.
+   - State draft, priority 60, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+31. **94560001** (no title): Make the judge and verifier time limit follow the size of the review and the backend.
+   - State draft, priority 60, kind feature, tasks 0 of 0 done, expected about 2026-11-20.
+32. **e81e0001** (no title): Found 2026-11-16: final-gate and verification scripts written by workers fail for the same three reasons over and over, and each one costs a gate failure, a hand repair and a reset of the gate and its template tasks (five...
+   - State draft, priority 55, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+33. **526f0001** (no title): Found 2026-11-16: the pi pool is capped at three, but the two compute nodes serve one engine each, so only two pi workers can run at once.
+   - State draft, priority 50, kind unset, tasks 0 of 0 done, expected about 2026-11-20.
+34. **8a3e0001** (no title): Found 2026-11-16 while promoting shipped features: several settings that ship off or in shadow have no definitions entry, and some have no documentation anywhere, so an operator cannot learn what turning one on does without...
+   - State draft, priority 40, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
+35. **64650001** (no title): Found 2026-11-16 while supervising through the MCP tools: some reads are unbounded.
+   - State draft, priority 40, kind unset, tasks 0 of 0 done, expected about 2026-11-21.
+36. **70ae0001** (no title): Make the Projects and Plans pages create through the shared floating button and a dialog, not inline forms, the way the Automata, Automation, Templates and Sessions views already do.
+   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-21.
+37. **929d0001** (no title): Found 2026-11-16 while repairing Automata whose final gate failed or whose verifier timed out.
+   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-21.
+38. **234e0001** (no title): The plan-requirement coverage gate extracts file names from task and story text without trimming sentence punctuation or handling digits, so it reports files that exist as unresolved.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-21.
    - Blocker: task in story "" (index 0) has empty title or spec
-48. **10980001** The llm models add and remove commands work from the CLI: datawatch llm models add answers HTTP 405 and the models command set is out of step with the daemon.
+39. **10980001** The llm models add and remove commands work from the CLI: datawatch llm models add answers HTTP 405 and the models command set is out of step with the daemon.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-21.
+40. **f3540001** (no title): Choose a supervisor session for a project and an optional plan when launching a session, on every surface.
+   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-21.
+41. **cfb30001** (no title): A Claude Code session started with a task never receives the task text when Claude shows its development-channels confirmation.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-21.
+42. **6acd0001** (no title): datawatch schedule add (the CLI) writes schedule.json directly and the running daemon never loads it, so a schedule created from the CLI never fires.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-21.
+43. **674d0001** The schedule list shows fires, last fire time and result for schedules that fire: The schedule list shows no fires for schedules that do fire.
    - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-22.
-49. **f3540001** (no title): Choose a supervisor session for a project and an optional plan when launching a session, on every surface.
-   - State draft, priority 20, kind feature, tasks 0 of 0 done, expected about 2026-11-23.
-50. **cfb30001** (no title): A Claude Code session started with a task never receives the task text when Claude shows its development-channels confirmation.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-23.
-51. **6acd0001** (no title): datawatch schedule add (the CLI) writes schedule.json directly and the running daemon never loads it, so a schedule created from the CLI never fires.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-23.
-52. **674d0001** The schedule list shows fires, last fire time and result for schedules that fire: The schedule list shows no fires for schedules that do fire.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-23.
-53. **f6430001** Changelog entries cut the Automaton title off mid word: Changelog entries cut the Automaton title off mid word.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-23.
-54. **3c680001** (no title): HOLD: do not decompose or run this Automaton until the fast Projects and Automata pages Automaton (the roll-up and list performance work) is merged, because the script it wires in exists only on that branch until then.
-   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-23.
-55. **0fb4e302** Harness enhancement planning documents (eval sweep, eval DAG nodes, red-team validator): Based on the completed AI harness research in docs/plans/harness-research/, create detailed implementation PLANNING DOCUMENTS for all proposed enhancement proposals identified in enhancement-proposals.md: do not use internal BL...
-   - State draft, priority 0, kind research, tasks 0 of 0 done, expected about 2026-11-23.
-   - Blocker: session idle without completion (session=8723, backend=opencode, model=ollama/qwen3.8:27b, idle 15m0.000521533s > limit 15m0s): worker stalled
-56. **404726a8** BL460 — Implement the unaddressed recommendations from the open-LLM research (PRD a2833a5e, completed...: BL460 — Implement the unaddressed recommendations from the open-LLM research (PRD a2833a5e, completed 2026-09-30).
-   - State draft, priority 0, kind software, tasks 0 of 0 done, expected about 2026-11-23.
-57. **79890001** (no title): BL439 — Research/design: can datawatch serve as infrastructure FOR Hermes Agent (Nous Research), not just learn from it.
-   - State draft, priority 0, kind research, tasks 0 of 0 done, expected about 2026-11-24.
-   - Blocker: unresolvable depends_on entry "Research: Hermes extensibility surface and datawatch substrate facts" on task "Write: datawatch-as-Hermes-infrastructure design report (needs_review)"
+44. **f6430001** Changelog entries cut the Automaton title off mid word: Changelog entries cut the Automaton title off mid word.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-22.
+45. **3c680001** (no title): HOLD: do not decompose or run this Automaton until the fast Projects and Automata pages Automaton (the roll-up and list performance work) is merged, because the script it wires in exists only on that branch until then.
+   - State draft, priority 20, kind bug, tasks 0 of 0 done, expected about 2026-11-22.
 
 ## Merged, review record still open
 
@@ -394,7 +269,6 @@ At about 8 a day the 45 that can run without a blocker would finish in about 6 d
 - **eff5124c** Autonomous storage, paths and secrets are hardened: Stored PRD writes, path handling, git calls, secret scans and encryption are audited and hardened. (status draft)
 - **45272920** Standard task pack and task-type routing for Automata: The standard task pack, its installable packs and the task-type routing table give each Automaton task the right mode. (status draft)
 - **6cd9b654** Spend ledger and burn guard keep usage within budget: Spend is recorded per Automaton and per LLM, and the burn guard projects usage from the readings. (status draft)
-- **d817b8f7** Model and effort tiering evals stay parked for now: Model and effort tiering evals are recorded as eval-only work and stay parked rather than changing policy. (status draft)
 - **0d4828f2** Automation data model and parallel chains built from design: The Automation data model, store and parallel chains with stage gating are built from their design records. (status draft)
 - **bb357dec** Session history, traces and MCP and plugin links are reliable: Per-turn session history, trace retention, MCP connections and service plugins keep working across sessions. (status draft)
 - **2fcfda2b** Session ends and resource ceilings are recorded and bounded: Every session end is attributed and recorded, and worker and tracker processes stay within memory ceilings. (status draft)
