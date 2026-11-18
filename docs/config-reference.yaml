@@ -2559,6 +2559,22 @@ autonomous:
     since: ""
     snapshot_retention_days: 0
 
+  # Finished-Automaton archive. Settable on every channel: PUT /api/config
+  # {"autonomous.archive.<name>": <value>}, CLI `datawatch config set
+  # autonomous.archive.<name> <value>`, MCP `config_set` (or the
+  # archive_retention_days / archive_enabled arguments of
+  # autonomous_config_set), chat `configure autonomous.archive.<name>=<value>`,
+  # and Settings -> General -> Autonomous. A bad value is rejected and nothing
+  # is written.
+  # retention_days: whole number >= 0. How many days old a completed, shipped
+  #   or cancelled Automaton must be before it is archived. 0 (the default)
+  #   means 30; a negative number is rejected.
+  # enabled: true or false. true (the default) lets the daemon archive on its
+  #   own; false means only the explicit migration command archives.
+  archive:
+    retention_days: 0
+    enabled: true
+
   # Tag browser for the Automata list: the attention view and the tag tree.
   # Every key below is settable on every configuration channel: PUT /api/config {"autonomous.tags.<name>": <value>}
   # (GET /api/config shows them under autonomous.tags), CLI `datawatch config
@@ -5258,6 +5274,29 @@ usage:
       final_gate: low
     # Most retries of one task on Claude. 0 to 20, default 2.
     retry_limit_claude: 2
+    # The pace_line policy for the weekly and the window usage, beside the
+    # ladder. mode: off never fires; shadow (the default — an unset mode
+    # reads shadow; shadow first, then on) computes and records the decision
+    # without touching anything; on backs the claude-code backend off until
+    # the estimate is back inside the line and the window. As of this change
+    # the settings are in place on every surface and the guard's own behavior
+    # is unchanged until the pace_line policy runs.
+    mode: shadow
+    # How many points the week reading may run over the pace line and still
+    # be ok. Whole number 0 to 10, default 2.
+    week_tolerance: 2
+    # One point of ledger burn counts as this many points of the weekly
+    # allowance. 1 to 10, default 1.3.
+    points_to_week_factor: 1.3
+    # One point burned is this percent of the current window. 1 to 25,
+    # default 4. The window anchors (windows ending at 02:00, 07:00 and
+    # 12:00, then every 5 hours) are fixed behavior, not a setting.
+    window_percent_per_point: 4
+    # A window is over at this percent used. 50 to 95, default 85.
+    window_stop_percent: 85
+    # A reading older than this is stale and the guard asks for a fresh one.
+    # Whole number 1 to 1440, default 60.
+    reading_freshness_minutes: 60
   # Billing profiles: per-provider pricing model. Open map keyed by provider
   # (claude-code, openai, gemini, or any other operator-chosen key). A
   # provider with no profile reads the assumed default (api_metered, unit

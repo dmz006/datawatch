@@ -310,6 +310,10 @@ Compute node tools:
 
 Autonomous PRD reads and writes:
 
+- **`autonomous_prd_list`** — returns the summary list by default (one small row per Automaton, no task detail). `full=true` returns whole records; with `limit` or `cursor` that is one page of whole records, without either it is every record (heavy). `limit` and `cursor` page the list: pass a reply's `next_cursor` as the next `cursor`. `status` and `shipped` still narrow it.
+- **`autonomous_prd_tasks`** — reads one page of one Automaton's task rows. Takes `id` (required), `limit` (default 50, max 500), `cursor`, `story` and `status` (comma list). The reply is `{prd_id, tasks, total, next_cursor}`; `total` counts the matching tasks, ignoring the cursor.
+- **`autonomous_prd_archive`** — reads the archive of one finished Automaton on request: the decision log, session history and raw judge text moved out of the live record. Takes `id` (required). An Automaton that is not archived answers not found.
+- **`autonomous_archive`** — archives finished Automata. The default is a dry run (`dry_run` true or absent): it reports which Automata would be archived and the bytes before and after, and writes nothing. `dry_run=false` takes a verified backup of the touched records first, then archives one Automaton at a time. An Automaton that is in use is skipped. Needs the autonomous write capability.
 - **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
 - **`autonomous_prd_get` / `autonomous_prd_list` — `planning_failure`.** An Automaton whose last planning attempt failed carries `planning_failure {reason, category, source, phrases[], retryable, retry_counts{}, retry_budget, occurred_at}` (the rule that tripped, the exact phrases and the retries used against the budget); the key is absent when planning did not fail. See [api/autonomous.md](api/autonomous.md#planning-failure-planning_failure).
   - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
@@ -1337,13 +1341,17 @@ Start a new AI coding session.
 | `llm` | string | No | LLM registry name to use for this session (e.g. `"ollama"`, `"claude"`). Overrides daemon default. |
 | `compute_node` | string | No | ComputeNode registry name. Requires `llm` to be set. |
 | `name` | string | No | Human-readable session name (used by `send_input` name resolution). |
+| `model` | string | No | Model for a `claude-code` session (alias such as `sonnet` or a full name). Omit it and the daemon uses the LLM row's model, then the global planning model; if all are empty the start is refused under the [explicit-model policy](howto/explicit-model-policy.md). |
+| `effort` | string | No | Session effort: `quick`, `normal` or `thorough`. Omit for the default. |
 | `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
 | `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
 | `image_paths` | string[] | No | Local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and prepended to the task as `[image: ...]`. Requires `vision.enabled: true`. |
 
-**Example response:**
+**Example call and response:**
 ```
+start_session(task="fix the flaky test", llm="claude-code", model="sonnet", effort="normal", name="flaky-fix")
+
 Session started.
 ID:      a3f2
 Task:    write unit tests for the auth package
@@ -1686,7 +1694,7 @@ Sent to parent session pp01.
 **Usage pattern for sub-agents:**
 ```
 # At spawn time, parent passes its own session ID:
-start_session(task="...", caller_session_id="host-abc123")
+start_session(task="...", caller_session_id="host-abc123", model="sonnet")
 
 # When the sub-agent finishes, it calls:
 reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")
@@ -3065,7 +3073,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 | `burn_guard_status` | none | State, `rung`, `applied`, last projection (with `line` and `margin`), last decision, coefficients, last error, counters |
 | `burn_guard_run` | none | Evaluates now; the `decision` and the refreshed `status`. An error when the guard is not running |
 | `burn_guard_config_get` | none | The `usage.burn_guard` settings |
-| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20), `ask_on_change`, `max_projection_gap_points` (0–100; 0 never compares the guard with the usage advice; default 25) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
+| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20), `ask_on_change`, `max_projection_gap_points` (0–100; 0 never compares the guard with the usage advice; default 25), `mode` (`off`, `shadow`, `on`; unset reads `shadow`), `week_tolerance` (0–10, default 2), `points_to_week_factor` (1–10, default 1.3), `window_percent_per_point` (1–25, default 4), `window_stop_percent` (50–95, default 85), `reading_freshness_minutes` (1–1440, default 60) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
 
 ```
 burn_guard_status()

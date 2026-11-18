@@ -432,16 +432,16 @@ func TestRollupAndTimelineUnassignedLeaveOutReleaseHeld(t *testing.T) {
 	prds := []*autonomous.PRD{mk("p1"), mk("p2"), mk("p3")}
 	held := func(id string) bool { return id == "p2" }
 
-	roll := buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: prds, WindowDays: 7, Now: rollupNow, ReleaseHeld: held})
+	roll := buildProjectRollup(rollupInput{Project: "acme", Dir: dir, Entries: summaryOf(prds), WindowDays: 7, Now: rollupNow, ReleaseHeld: held})
 	if ids := rollupIDs(roll.Unassigned.Automata); !reflect.DeepEqual(ids, []string{"p1", "p3"}) {
 		t.Fatalf("unassigned = %v, want p1 and p3 (a release plan holds p2)", ids)
 	}
-	roll = buildProjectRollup(rollupInput{Project: "acme", Dir: dir, PRDs: prds, WindowDays: 7, Now: rollupNow})
+	roll = buildProjectRollup(rollupInput{Project: "acme", Dir: dir, Entries: summaryOf(prds), WindowDays: 7, Now: rollupNow})
 	if len(roll.Unassigned.Automata) != 3 {
 		t.Fatalf("with no release plans every Automaton is unassigned: %d", len(roll.Unassigned.Automata))
 	}
 
-	tl, terr := buildProjectTimeline(timelineInput{Project: "acme", Dir: dir, PRDs: prds, Now: timelineNow, ReleaseHeld: held})
+	tl, terr := buildProjectTimeline(timelineInput{Project: "acme", Dir: dir, Entries: summaryOf(prds), Now: timelineNow, ReleaseHeld: held})
 	if terr != nil {
 		t.Fatal(terr)
 	}
@@ -454,7 +454,7 @@ func TestRollupAndTimelineUnassignedLeaveOutReleaseHeld(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("gantt unassigned row counts %d, want 2", count)
 	}
-	tl, _ = buildProjectTimeline(timelineInput{Project: "acme", Dir: dir, PRDs: prds, Now: timelineNow})
+	tl, _ = buildProjectTimeline(timelineInput{Project: "acme", Dir: dir, Entries: summaryOf(prds), Now: timelineNow})
 	for _, row := range tl.Rows {
 		if row.Kind == timelineKindUnassigned && row.ChildrenCount != 3 {
 			t.Fatalf("with no release plans the row counts %d, want 3", row.ChildrenCount)

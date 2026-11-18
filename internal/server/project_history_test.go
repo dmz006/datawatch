@@ -85,7 +85,7 @@ func TestBuildProjectHistory_SelectsFinishedAndArchivedOnly(t *testing.T) {
 	other.ProjectDir = "/srv/elsewhere"
 	out := buildProjectHistory(historyInput{
 		Project: "acme", Dir: "/srv/acme",
-		PRDs:  []*autonomous.PRD{done, archived, running, tmpl, other},
+		Entries: summaryOf([]*autonomous.PRD{done, archived, running, tmpl, other}), Load: loaderOf([]*autonomous.PRD{done, archived, running, tmpl, other}),
 		Limit: 50, Now: historyNow,
 	})
 	ids := []string{}
@@ -108,8 +108,8 @@ func TestBuildProjectHistory_ArcHeldAutomatonCountsEvenOutsideDir(t *testing.T) 
 	p.AutomationID = "auto-9"
 	out := buildProjectHistory(historyInput{
 		Project: "acme", Dir: "/srv/acme",
-		Arcs:  []config.ProjectArc{{AutomationID: "auto-9"}},
-		PRDs:  []*autonomous.PRD{p},
+		Arcs:    []config.ProjectArc{{AutomationID: "auto-9"}},
+		Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
 		Limit: 50, Now: historyNow,
 	})
 	if out.Total != 1 || out.Items[0].AutomationID != "auto-9" {
@@ -124,8 +124,8 @@ func TestBuildProjectHistory_MembershipViaAutomationMembers(t *testing.T) {
 		Project: "acme", Dir: "/srv/acme",
 		Arcs:        []config.ProjectArc{{AutomationID: "auto-7"}},
 		Automations: []*autonomous.Automation{{ID: "auto-7", Members: []autonomous.AutomationMember{{PRDID: "m1"}}}},
-		PRDs:        []*autonomous.PRD{p},
-		Limit:       50, Now: historyNow,
+		Entries:     summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
+		Limit: 50, Now: historyNow,
 	})
 	if out.Total != 1 || out.Items[0].AutomationID != "auto-7" {
 		t.Fatalf("items = %+v", out.Items)
@@ -145,7 +145,7 @@ func TestBuildProjectHistory_MergesSnapshotsNewestFirst(t *testing.T) {
 	}
 	out := buildProjectHistory(historyInput{
 		Project: "acme", Dir: "/srv/acme",
-		PRDs: []*autonomous.PRD{p}, Snapshots: snaps, Limit: 50, Now: historyNow,
+		Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}), Snapshots: snaps, Limit: 50, Now: historyNow,
 	})
 	if out.Total != 3 {
 		t.Fatalf("total = %d, want 3 (2 daily with groups + 1 automaton)", out.Total)
@@ -169,7 +169,7 @@ func TestBuildProjectHistory_PagesWithCursor(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		prds = append(prds, historyPRD(string(rune('a'+i)), autonomous.PRDCompleted, historyNow.Add(-time.Duration(i+1)*time.Hour)))
 	}
-	in := historyInput{Project: "acme", Dir: "/srv/acme", PRDs: prds, Limit: 2, Now: historyNow}
+	in := historyInput{Project: "acme", Dir: "/srv/acme", Entries: summaryOf(prds), Load: loaderOf(prds), Limit: 2, Now: historyNow}
 
 	var seen []string
 	var cursor *historyCursor
@@ -243,7 +243,7 @@ func TestBuildProjectHistory_GanttRowsFromTimestamps(t *testing.T) {
 		{ID: "t1", Title: "first", Status: autonomous.TaskCompleted, StartedAt: &started, CompletedAt: &completed},
 		{ID: "t2", Title: "never started", Status: autonomous.TaskPending},
 	}}}
-	out := buildProjectHistory(historyInput{Project: "acme", Dir: "/srv/acme", PRDs: []*autonomous.PRD{p}, Limit: 50, Now: historyNow})
+	out := buildProjectHistory(historyInput{Project: "acme", Dir: "/srv/acme", Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}), Limit: 50, Now: historyNow})
 	if len(out.Gantt) != 3 {
 		t.Fatalf("gantt rows = %d, want 3 (automaton + 2 tasks)", len(out.Gantt))
 	}
@@ -272,7 +272,7 @@ func TestBuildProjectHistory_GanttRowsFromTimestamps(t *testing.T) {
 
 func TestBuildProjectHistory_AutomatonStartFallsBackToCreated(t *testing.T) {
 	p := historyPRD("c1", autonomous.PRDCompleted, historyNow.Add(-time.Hour))
-	out := buildProjectHistory(historyInput{Project: "acme", Dir: "/srv/acme", PRDs: []*autonomous.PRD{p}, Limit: 50, Now: historyNow})
+	out := buildProjectHistory(historyInput{Project: "acme", Dir: "/srv/acme", Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}), Limit: 50, Now: historyNow})
 	if out.Items[0].StartedAt == nil || !out.Items[0].StartedAt.Equal(p.CreatedAt) {
 		t.Errorf("started_at = %v, want CreatedAt %v", out.Items[0].StartedAt, p.CreatedAt)
 	}

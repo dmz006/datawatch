@@ -297,6 +297,91 @@ window.fetch = function(...args) {
   });
 };
 
+// ── Saved-state reads: never throw, one bad key never blocks the rest ─────
+// localStorage can be unavailable (blocked, private mode, non-browser hosts)
+// and operator-saved values can be malformed or from a release that stored
+// a different shape. _safeStored is the single entry point for reading a
+// saved value: it never throws and validates the raw string with the
+// provided reader. The reader returns the accepted value, or null to mean
+// "reject" — the key is then removed (so the bad value is not re-read), one
+// line goes to console.info, and the fallback is used. No toast, nothing
+// visible in the UI; the page just opens with the default.
+// An optional 4th argument (ls) lets callers/tests inject a specific storage
+// object instead of the ambient localStorage.
+function _sessionsLogDiscard(key) {
+  try { console.info('[sessions] saved value for ' + key + ' was unrecognized; using the default and dropping it'); } catch (_) { /* no console */ }
+}
+
+function _safeStored(key, read, fallback, ls) {
+  if (ls === undefined) {
+    try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  }
+  let raw = null;
+  let have = false;
+  try {
+    // The capability check is inside the try: a blocked storage can make even
+    // reading ``ls.getItem`` throw, and that must degrade to the fallback too.
+    if (!ls || typeof ls.getItem !== 'function') return fallback;
+    raw = ls.getItem(key);
+    have = (raw !== null && raw !== undefined);
+  } catch (_) { return fallback; }
+  if (!have) return fallback;
+  let v = fallback;
+  try { v = read(raw, ls); } catch (_) { v = null; }
+  if (v === null || v === undefined) {
+    try { if (ls && typeof ls.removeItem === 'function') ls.removeItem(key); } catch (_) { /* best effort */ }
+    _sessionsLogDiscard(key);
+    return fallback;
+  }
+  return v;
+}
+
+// Reader: a stored JSON array of non-empty strings (manual session order,
+// watched/muted lists, collapsed group keys). A single bad entry disqualifies
+// the whole value so one stray number can't corrupt the list — it is dropped
+// and the default (an empty list) is used instead.
+function _storedStrArrayRead(raw) {
+  let p = null;
+  try { p = JSON.parse(raw); } catch (_) { return null; }
+  if (!Array.isArray(p)) return null;
+  if (!p.every(x => typeof x === 'string' && x)) return null;
+  return p;
+}
+
+// One optional block inside a page render must be able to fail on its own:
+// log it and render it as absent instead of taking the whole page down with
+// it. The block's output is expected to be an HTML string.
+function _sessionsRenderGuard(label, fn) {
+  try { return (typeof fn === 'function') ? fn() : ''; } catch (err) {
+    try { console.info('[sessions] "' + label + '" block skipped: ' + ((err && err.message) || err)); } catch (_) { /* no console */ }
+    return '';
+  }
+}
+
+// Safe counterpart for writes: storing the operator's preference must never
+// throw either (storage can be blocked or full). Best-effort, silent on
+// failure — the in-memory state already carries the value for this page.
+function _storedWrite(key, value) {
+  let ls = null;
+  try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  try {
+    // Inside the try: a blocked storage can make reading ``ls.setItem`` throw.
+    if (!ls || typeof ls.setItem !== 'function') return;
+    ls.setItem(key, value);
+  } catch (_) { /* storage blocked/full: in-memory state is enough for this page */ }
+}
+
+// Chips the state filter accepts: the buckets (all/active/waiting/done) or a
+// real session state (running … killed, from the state filter; the history
+// states are included since setSessionStateChip enables those too). Anything
+// else stored under this key is a stale value we don't know about.
+const SESSIONS_STATE_CHIP_KEYS = ['all', 'active', 'waiting', 'done',
+  'running', 'waiting_input', 'stalled', 'rate_limited',
+  'complete', 'failed', 'killed', 'cancelled', 'archived'];
+
+// Saved search text cap. Above this the value is a bug, not a saved search.
+const SESSIONS_SEARCH_MAX_LEN = 500;
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -326,7 +411,7 @@ const state = {
   // v6.13.9 (BL277) — yellow popup removed; needsInputDismissed and
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
-  sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
+  sessionOrder: _safeStored('cs_session_order', _storedStrArrayRead, []), // manual ordering
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _initServerDropdown/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
@@ -348,12 +433,12 @@ const state = {
   // GH#172 D61 — watch sessions + watched-badge filter. Same client-
   // only persistence pattern as sessionOrder above (personal marker,
   // not shared/authoritative — no backend state needed).
-  watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
+  watchedSessions: new Set(_safeStored('cs_sessions_watched', _storedStrArrayRead, [])),
   sessionWatchFilter: false,
   // GH#172 D62 — swipe-to-mute + muted icon. Same client-only
   // persistence pattern; gates handleNeedsInput's Notification/toast.
-  mutedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_muted') || '[]')),
-  sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
+  mutedSessions: new Set(_safeStored('cs_sessions_muted', _storedStrArrayRead, [])),
+  sessionTreeView: _safeStored('cs_session_tree_view', (raw) => (raw === '1' || raw === '0') ? raw : null, '0') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
@@ -706,7 +791,14 @@ function _daemonVersionNoteFrame(version, serverName) {
   const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
   if (!(key in bySrv)) {
     bySrv[key] = version; // first frame from this server: record only
-    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    if (key === 'local' && !state._daemonVersion) {
+      state._daemonVersion = version;
+      // The SW may have been registered before the version was known (bare
+      // /sw.js); adopt the versioned script URL now (no-op if it already is).
+      _swAdoptDaemonVersion(version);
+      // The notice (if painted) keys off this state — keep it current.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
+    }
     return;
   }
   if (bySrv[key] === version || seen[key] === version) return;
@@ -714,6 +806,7 @@ function _daemonVersionNoteFrame(version, serverName) {
   seen[key] = version;
   _loadUiConfig();
   _onDaemonVersionChange(version);
+  try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
 }
 
 // The daemon serving this page (the primary), captured at boot from a
@@ -729,6 +822,10 @@ function _bootDaemonVersion() {
       const v = (h && typeof h.version === 'string') ? h.version : '';
       if (!v || state._daemonVersion) return; // lost the race to a local frame
       state._daemonVersion = v;
+      // registerServiceWorker may have run before the version was known and
+      // registered bare /sw.js; adopt /sw.js?v=<v> now (no-op if already
+      // versioned with this release).
+      _swAdoptDaemonVersion(v);
       const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
       bySrv[_daemonVersionKey('local')] = v;
     })
@@ -1239,7 +1336,8 @@ window._apiPath = _apiPath;
 // forbids a body on 204, so the body can never arrive and r.json() throws
 // "Failed to execute 'json' on 'Response": Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem('cs_token') || '';
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
   // Route through proxy when a specific remote server is selected
@@ -1260,10 +1358,91 @@ function apiFetch(path, opts = {}) {
       // actually proxied to a remote; a LOCAL 401/403 isn't a "this peer
       // lacks a capability" situation and keeps the original generic
       // handling.
+      // An auth reset (a local 401) drops the cached roll-ups and first pages.
+      if (r.status === 401 && !isRemote && typeof _cfDrop === 'function') _cfDrop();
       if (isRemote && (r.status === 401 || r.status === 403 || r.status === 502)) return _fedFetchError(r);
       return r.text().then(t => Promise.reject(new Error(t || r.statusText)));
     });
 }
+
+// ── Cache-first layer (Projects and Automata pages) ─────────────────────────
+// The last good roll-up of a project (per window) and the first page of the
+// Automata list are kept in memory and in localStorage, each tagged with the
+// ETag the server returned (or the body's own revision). A page opens from this
+// cache at once, marks the card "refreshing", then refetches in the background
+// with If-None-Match and repaints only the cards whose data changed. Storage is
+// a convenience: every access is wrapped, and the page renders without it.
+// The cache is dropped on a project change and on an auth reset.
+const CF_PREFIX = 'cs_cf_';
+const CF_MAX = 512 * 1024;
+const _cfMem = new Map();
+// Keys touched this session, so a drop also reaches entries a storage that
+// cannot enumerate would miss.
+const _cfKnown = new Set();
+function _cfKey(kind, name) {
+  return CF_PREFIX + (state.activeServer || 'local') + '_' + kind + (name ? '_' + name : '');
+}
+function _cfGet(key) {
+  if (_cfMem.has(key)) return _cfMem.get(key);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || !('data' in o)) return null;
+    _cfMem.set(key, o); _cfKnown.add(key);
+    return o;
+  } catch (e) { return null; }
+}
+function _cfPut(key, tag, data) {
+  const o = { tag: tag || '', data, at: Date.now() };
+  _cfMem.set(key, o); _cfKnown.add(key);
+  try {
+    const s = JSON.stringify(o);
+    if (s.length > CF_MAX) localStorage.removeItem(key); else localStorage.setItem(key, s);
+  } catch (e) { /* storage is optional */ }
+  return o;
+}
+// _cfDrop forgets every cache entry whose key starts with the prefix (all
+// entries when none is given), in memory and in storage.
+function _cfDrop(prefix) {
+  const p = prefix || CF_PREFIX;
+  Array.from(_cfMem.keys()).forEach(k => { if (k.indexOf(p) === 0) _cfMem.delete(k); });
+  const gone = [];
+  _cfKnown.forEach(k => { if (k.indexOf(p) === 0) gone.push(k); });
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(p) === 0 && gone.indexOf(k) < 0) gone.push(k);
+    }
+  } catch (e) { /* storage may not enumerate */ }
+  gone.forEach(k => { _cfKnown.delete(k); try { localStorage.removeItem(k); } catch (e) { /* storage is optional */ } });
+}
+function _cfDropProject(name) { if (name) _cfDrop(_cfKey('rollup', name + '@')); }
+// A signature of a card's data: equal signatures mean no repaint.
+function _cfSig(v) { try { return JSON.stringify(v); } catch (e) { return String(Math.random()); } }
+// _cfFetch reads a JSON route as {data, tag, unchanged}. It sends
+// If-None-Match when a tag is held for the key; a 304 answers with the held
+// data and unchanged=true. The tag is the ETag header, else the body's
+// revision field. A failure rejects with the server's text.
+function _cfFetch(path, key, o) {
+  const held = key ? _cfGet(key) : null;
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (held && held.tag) headers['If-None-Match'] = held.tag;
+  return fetch(_apiPath(path), Object.assign({}, o || {}, { headers })).then(r => {
+    if (r.status === 304 && held) return { data: held.data, tag: held.tag, unchanged: true };
+    if (!r.ok) return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+    const hdr = r.headers && typeof r.headers.get === 'function' ? (r.headers.get('ETag') || '') : '';
+    return r.json().then(data => {
+      const rev = data && typeof data === 'object' && !Array.isArray(data) && data.revision != null ? String(data.revision) : '';
+      const tag = hdr || rev;
+      return { data, tag, unchanged: !!(held && tag && held.tag === tag) };
+    });
+  });
+}
+window._cfDrop = _cfDrop;
 
 // ── listLoader: shared load-state helper for list views ─────────────────────
 // listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
@@ -1326,6 +1505,14 @@ function listLoader(opts) {
   const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
   const staleOnly = opts.ageDisplay === 'stale-only';
   const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > (staleOnly ? LIST_STALE_ONLY_MS : LIST_STALE_MS));
+  // The meta badges: cached, refreshing, stale. Shared by html() and patch hooks.
+  function metaHtml() {
+    let meta = '';
+    if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
+    if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
+    if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+    return meta.trim();
+  }
   function html() {
     let h = '';
     if (st.error) {
@@ -1338,11 +1525,7 @@ function listLoader(opts) {
         '<div class="list-skel-row"></div><div class="list-skel-row"></div><div class="list-skel-row"></div></div>';
     }
     if (st.hasData) {
-      let meta = '';
-      if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
-      if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
-      if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
-      meta = meta.trim();
+      const meta = metaHtml();
       let extra = '';
       if (typeof opts.metaExtra === 'function') {
         // A throwing or non-string metaExtra must never break the paint;
@@ -1356,8 +1539,8 @@ function listLoader(opts) {
         // the split; without metaExtra the meta row is plain, and with
         // neither meta spans nor extra the meta row is omitted entirely.
         h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div>` + body;
-      } else if (meta) {
-        h += `<div class="list-state-meta">${meta}</div>` + body;
+      } else if (meta || opts.metaId) {
+        h += `<div class="list-state-meta"${opts.metaId ? ` id="${escHtml(opts.metaId)}"` : ''}>${meta}</div>` + body;
       } else {
         h += body;
       }
@@ -1367,8 +1550,20 @@ function listLoader(opts) {
   function paint() {
     const el = target();
     if (!el || (opts.active && !opts.active())) return;
+    // A loader with a patch hook repaints only what changed once it has
+    // painted data: the hook returns true when it handled the update.
+    if (opts.patch && st.painted && st.hasData && !st.error) {
+      let handled = false;
+      try { handled = !!opts.patch(el, st.paintedData, st.data, ctl); } catch (e) { handled = false; }
+      if (handled) {
+        st.paintedData = st.data;
+        if (opts.afterPaint) opts.afterPaint(el, null, st.data);
+        return;
+      }
+    }
     const keep = opts.beforePaint ? opts.beforePaint(el) : null;
     el.innerHTML = html();
+    st.painted = st.hasData && !st.error; st.paintedData = st.data;
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
   }
   function schedule() {
@@ -1383,6 +1578,7 @@ function listLoader(opts) {
   const ctl = {
     state: st,
     html,
+    metaHtml,
     paint,
     isStale,
     load() {
@@ -3089,7 +3285,9 @@ const _PROJECTS_SECTION_KEY_PREFIX = 'cs_projects_section_collapsed_';
 // hist is the paged history of the project named by hist.name: items so far,
 // next is the cursor for the following page ('' when none), error is its load
 // failure. histBusy guards a Load more click against a second request.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false, subtab: '' };
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', rollupStatus: '', cardHtml: {}, cardShape: '', hist: null, histBusy: false, subtab: '' };
+// The roll-up window the page asks for (days; the server default).
+const _PROJECTS_ROLLUP_WINDOW = 7;
 const _PROJECTS_HISTORY_PAGE = 20;
 // _projectsLinks holds the read-only replies for the selected project (name):
 // its effective policy, its merge pipeline and its event stream. A reply for a
@@ -3200,6 +3398,39 @@ function _projectsActive() {
   return state.activeView === 'autonomous' && _automataState.tab === 'projects';
 }
 
+// ── Per-card load state ─────────────────────────────────────────────────────
+// Every card of the project page (arc cards, unassigned, without a project,
+// totals, throughput, events) is a .pc-card of its own with a state: loading
+// (a skeleton), refreshing (cache-rendered content while the background fetch
+// runs), error (its own message and a Retry) or ready. The state sits on the
+// wrapper as data-state; the content sits in the body so a refresh replaces a
+// card's body only when its markup changed. Gantt, Plan and history keep their
+// own fetches and show the same skeleton and error rows in their own blocks.
+let _pcardSink = null;
+function _pcardSkeleton(label) {
+  return `<div class="pc-skeleton" role="status" aria-label="${escHtml(label || t('loading'))}"><span class="pc-skeleton-label">${escHtml(label || t('loading'))}</span><span class="pc-skeleton-bar"></span><span class="pc-skeleton-bar short"></span></div>`;
+}
+function _pcardError(id, msg, label) {
+  return `<div class="pc-error" role="alert"><span class="pc-error-msg">${escHtml((label || t('projects_card_failed')) + ' ' + msg)}</span>` +
+    `<button type="button" class="btn-secondary pc-retry" onclick="${escHtml('projectsCardRetry(' + JSON.stringify(id) + ')')}">${escHtml(t('retry'))}</button></div>`;
+}
+// _pcard wraps one card. status is loading | refreshing | error | ready; err is
+// the failure text for the error state; inner is the ready content.
+function _pcard(id, status, inner, err, loadLabel) {
+  let body = inner;
+  if (status === 'loading') body = _pcardSkeleton(loadLabel);
+  else if (status === 'error') body = _pcardError(id, err || '');
+  if (_pcardSink) _pcardSink.push({ id, status, inner: body });
+  const eid = escHtml(id);
+  return `<div class="pc-card" id="pcard_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="pcard_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="pcard_${eid}_body">${body}</div></div>`;
+}
+// The state every roll-up card shares: one roll-up feeds them all.
+function _projectsRollupCardState(roll, rollErr) {
+  if (rollErr) return 'error';
+  if (!roll) return 'loading';
+  return _projectsState.rollupStatus === 'refreshing' ? 'refreshing' : 'ready';
+}
+
 function _projectsPaint() {
   _projectsGanttStopDrag();
   _projectsFocus = null; // painting the project page leaves the focus page
@@ -3230,7 +3461,11 @@ function _projectsPaint() {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
     const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
-    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
+    _pcardSink = [];
+    let pageHtml;
+    try { pageHtml = _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+    finally { _projectsState.cardHtml = {}; (_pcardSink || []).forEach(c => { _projectsState.cardHtml[c.id] = c.inner; }); _projectsState.cardShape = (_pcardSink && _pcardSink.shape) || ''; _pcardSink = null; }
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + pageHtml;
   }
   _tabStripsRevealAll();
 }
@@ -3821,6 +4056,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
   };
   const automataList = list => list.map(automatonHTML).join('');
+  const cardState = _projectsRollupCardState(roll, rollErr);
   const arcHTML = arc => {
     const state = arc.state || 'planned';
     const stateKey = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[state];
@@ -3835,29 +4071,33 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
+    const cid = 'arc_' + arc.automation_id;
     if (!automata.length) {
       addEmptyEvent(t('projects_event_plan_empty', [arc.automation_id]));
-      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
+      return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`);
     }
-    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
+    return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`);
   };
 
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
     addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    overviewBody = _pcard('totals', 'error', '', rollErr) + _pcard('throughput', 'error', '', rollErr);
+    arcsBody = _pcard('arcs', 'error', '', rollErr);
+    unassignedBody = _pcard('unassigned', 'error', '', rollErr);
   } else if (!roll) {
-    overviewBody = loadingLine;
-    arcsBody = loadingLine;
-    unassignedBody = loadingLine;
+    const wait = t('projects_page_loading');
+    overviewBody = _pcard('totals', 'loading', '', '', wait) + _pcard('throughput', 'loading', '', '', wait);
+    arcsBody = _pcard('arcs', 'loading', '', '', wait);
+    unassignedBody = _pcard('unassigned', 'loading', '', '', wait);
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    overviewBody = _projectRollupHTML(roll, arcs) + _projectUnattributedChipHTML();
+    overviewBody = _projectRollupHTML(roll, arcs, cardState);
     if (!arcs.length) {
       addEmptyEvent(t('projects_event_no_plans'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
+      if (showEmpty) arcsBody = _pcard('arcs', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`);
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
@@ -3871,13 +4111,13 @@ function _projectPageHTML(p, roll, rollErr, hist) {
         ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
         : '';
       const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
-      unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`;
+      unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`);
     } else {
       addEmptyEvent(t('projects_event_no_unassigned'));
-      if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+      if (showEmpty) unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`);
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`;
+    if (wp.length) unassignedBody += _pcard('without_project', cardState, `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`);
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
@@ -3890,13 +4130,14 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     eventLines.push(eventLine(t('projects_event_empty_summary', [emptyEvents.length]), 'project-event-line project-event-summary'));
   }
   const evs = eventLines.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${eventLines.join('')}</div>`)
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), _pcard('events', 'ready', `<div id="projectEvents">${eventLines.join('')}</div>`))
     : '';
   const hasEvents = eventLines.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
+  if (_pcardSink) _pcardSink.shape = active + '|' + hasEvents;
   const bodies = {
     overview: head + _projectOverviewSummaryHTML(p),
-    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + plansBrowserHTML(p) + arcsBody,
+    plans: overviewBody + plansBrowserHTML(p) + arcsBody,
     records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
@@ -4210,7 +4451,8 @@ function _projectBarHTML(done, total, label) {
 // progress bar, its cost in points, and the throughput over the window. A
 // roll-up without a total (older replies) is summed from its arcs and the
 // unassigned group.
-function _projectRollupHTML(roll, arcs) {
+function _projectRollupHTML(roll, arcs, cardState) {
+  cardState = cardState || 'ready';
   const groups = arcs.concat([roll.unassigned || {}]);
   let tot = roll.total && roll.total.tasks ? roll.total : null;
   if (!tot) {
@@ -4239,11 +4481,13 @@ function _projectRollupHTML(roll, arcs) {
     Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
+  const totalsCard = _pcard('totals', cardState, `${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${line(t('projects_rollup_points_label'), pointsVal)}`);
+  const throughputCard = _pcard('throughput', cardState, `${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>`);
   return _projectsSectionCard('progress', escHtml(t('projects_rollup_heading')), `<div class="project-rollup">
-    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
-    ${line(t('projects_rollup_points_label'), pointsVal)}
-    ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
-    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
+    ${totalsCard}
+    ${throughputCard}
   </div>`);
 }
 
@@ -4793,10 +5037,10 @@ function _projectGanttHTML(hist, bare) {
 function _projectGanttInnerHTML(g, ui) {
   ui = ui || _PROJECTS_GANTT_UI;
   if (!g || (g.loading && !g.rows.length && !g.error)) {
-    return `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="loading">${_pcardSkeleton(t('projects_gantt_loading'))}</div>`;
   }
   if (g.error && !g.rows.length) {
-    return `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + g.error)}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="error">${_pcardError('gantt', g.error, t('projects_history_failed'))}</div>`;
   }
   const now = Date.now();
   const range = _projectsGanttCurrent(g, now);
@@ -4874,15 +5118,35 @@ function _projectsGanttRepaint() {
 // an object with a rows array reads as no rows.
 function _projectsGanttBody(r) {
   const b = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+  if (Array.isArray(b.tasks) && !Array.isArray(b.rows)) return { rows: _projectsGanttTaskRows(b.tasks), next: b.next_cursor || '', edges: [] };
   return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '', edges: _projectsGanttCleanEdges(b.edges) };
 }
 
+// _projectsGanttTaskRows maps one page of GET /api/autonomous/prds/{id}/tasks
+// to Gantt task rows: a started task spans start to finish, a task still
+// running draws to now and a task that has not started has no bar.
+function _projectsGanttTaskRows(tasks) {
+  const st = { in_progress: 'running', verifying: 'running', pending: 'waiting', queued: 'waiting', waiting_capacity: 'waiting', waiting_decision: 'waiting' };
+  return (Array.isArray(tasks) ? tasks : []).filter(x => x && typeof x === 'object' && x.id).map(x => {
+    const status = st[x.status] || x.status || '';
+    const running = status === 'running';
+    const first = x.started_at || null;
+    const last = running ? null : (x.completed_at || (first ? x.updated_at : null) || null);
+    return { kind: 'task', id: x.id, title: x.title || x.id, state: status, status, first, last, start: first, end: last, running, has_children: false, children_count: 0 };
+  });
+}
+
 function _projectsGanttUrl(name, key, row, cursor) {
+  // An Automaton's tasks come from its own paged task route, never the whole record.
+  if (key && key !== _PROJECTS_GANTT_NONE_KEY && row && row.kind === 'automaton') {
+    let tq = '?limit=' + _PROJECTS_GANTT_PAGE;
+    if (cursor) tq += '&cursor=' + encodeURIComponent(cursor);
+    return '/api/autonomous/prds/' + encodeURIComponent(row.id) + '/tasks' + tq;
+  }
   let q = '?limit=' + _PROJECTS_GANTT_PAGE;
   if (!key) q += '&level=arcs';
   else if (key === _PROJECTS_GANTT_NONE_KEY) q += '&level=automata&parent=none';
   else if (row && row.kind === 'arc') q += '&level=automata&parent=' + encodeURIComponent(row.id);
-  else if (row && row.kind === 'automaton') q += '&level=tasks&automaton=' + encodeURIComponent(row.id);
   if (cursor) q += '&cursor=' + encodeURIComponent(cursor);
   return '/api/projects/' + encodeURIComponent(name) + '/timeline' + q;
 }
@@ -5582,14 +5846,22 @@ window.planRecordImportHtml = planRecordImportHtml;
 window.planRecordCreateHtml = planRecordCreateHtml;
 
 function _planRecordsSlotHtml(p) {
-  const inner = _planRecords.project === (p && p.name) ? planRecordsSectionHtml(_planRecords) : '';
-  return `<div id="planRecordsSlot">${inner}</div>`;
+  return `<div id="planRecordsSlot">${_planRecordsSlotInner(p && p.name)}</div>`;
+}
+// The Plan card has its own state: a skeleton while its first read runs and an
+// error row with Retry when it fails; the other cards never wait for it.
+function _planRecordsSlotInner(name) {
+  const st = _planRecords;
+  if (st.project !== name) return '';
+  if (st.status === 'loading') return `<div class="pc-card" data-card="plan" data-state="loading">${_pcardSkeleton(t('projects_card_plan_loading'))}</div>`;
+  if (st.status === 'error' && st.view === 'list' && !(st.recs || []).length) return `<div class="pc-card" data-card="plan" data-state="error">${_pcardError('plan', st.error || '', t('projects_card_plan_failed'))}</div>`;
+  return planRecordsSectionHtml(st);
 }
 
 function _planRecordsPaint() {
   if (!_projectsActive()) return;
   const el = document.getElementById('planRecordsSlot');
-  if (el) el.innerHTML = planRecordsSectionHtml(_planRecords);
+  if (el) el.innerHTML = _planRecordsSlotInner(_planRecords.project);
 }
 function _planRecordsPaintBody() {
   const el = document.getElementById('planRecordsBody');
@@ -7196,18 +7468,91 @@ function _projectRecordsTabHTML(p) {
   return `<div id="projectRecordsMount" data-mount="records">${recordsTabHTML(p)}</div>${_planRecordsSlotHtml(p)}`;
 }
 
+// _projectsLoadSelected starts every card's fetch at once: the roll-up, the
+// Gantt, summary, Plans, Records, history and links each settle on their own,
+// and one slow or failed fetch never holds the others back. The roll-up
+// repaints only the cards whose data changed.
 function _projectsLoadSelected() {
-  return _projectsLoadRollup().then(() => {
-    if (!_projectsActive()) return null;
-    _projectsPaint();
-    const gantt = _projectsLoadGantt();
-    const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
-    const records = _planRecordsLoad(false);
-    const recordsBrowse = _recordsTabLoad(false);
-    const plans = _plansBrowserLoadSelected();
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans, recordsBrowse]));
+  const roll = _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+  const gantt = _projectsLoadGantt();
+  const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
+  const records = _planRecordsLoad(false);
+  const recordsBrowse = _recordsTabLoad(false);
+  const plans = _plansBrowserLoadSelected();
+  const hist = _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => {
+    // History, policy and events are not roll-up cards: repaint when one is open.
+    if (_projectsActive() && ['history', 'policy', 'events'].indexOf(_projectsActiveSubtab(true)) >= 0) _projectsPaint();
   });
+  return Promise.all([roll, gantt, records, summary, plans, recordsBrowse, hist]);
 }
+
+// _projectsSeedFromCache fills the project list and the selected project's
+// roll-up from the cache so the first paint has content. The roll-up card is
+// marked refreshing until the background fetch settles. It returns true when
+// the selected project's roll-up came from the cache.
+function _projectsSeedFromCache() {
+  if (!Array.isArray(_projectsState.list)) {
+    const c = _cfGet(_cfKey('projects'));
+    if (c && Array.isArray(c.data)) _projectsState.list = c.data;
+  }
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return false;
+  if (_projectsState.rollupFor === name && _projectsState.rollup) return false;
+  const c = _cfGet(_cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW));
+  if (!c || !c.data || typeof c.data !== 'object' || Array.isArray(c.data)) return false;
+  _projectsState.rollup = c.data;
+  _projectsState.rollupFor = name;
+  _projectsState.rollupError = '';
+  _projectsState.rollupStatus = 'refreshing';
+  return true;
+}
+
+// _projectsSyncCards repaints after a background refresh. It renders the page
+// once into a sink, then updates each card's state and replaces the body of
+// only those cards whose markup changed. A change of shape (another card set,
+// another sub-tab, a new Events tab) or a card that is not on the page repaints
+// the whole page instead.
+function _projectsSyncCards() {
+  const view = typeof document !== 'undefined' ? document.getElementById('automataPanel') : null;
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const sel = _projectsState.selected;
+  const p = list && list.find(x => x.name === sel);
+  if (!view || !p || sel === _PROJECTS_OVERVIEW) { _projectsPaint(); return 0; }
+  const forSel = _projectsState.rollupFor === sel;
+  const hist = _projectsState.hist && _projectsState.hist.name === sel ? _projectsState.hist : null;
+  _pcardSink = [];
+  let cards, shape;
+  try { _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+  finally { cards = _pcardSink || []; shape = cards.shape || ''; _pcardSink = null; }
+  const prev = _projectsState.cardHtml || {};
+  const same = shape === _projectsState.cardShape && cards.length === Object.keys(prev).length && cards.every(c => c.id in prev);
+  if (!same) { _projectsPaint(); return -1; }
+  let painted = 0;
+  cards.forEach(c => {
+    const w = document.getElementById('pcard_' + c.id);
+    if (w) w.setAttribute('data-state', c.status);
+    if (prev[c.id] === c.inner) return;
+    const body = document.getElementById('pcard_' + c.id + '_body');
+    if (body) { body.innerHTML = c.inner; painted++; }
+    prev[c.id] = c.inner;
+  });
+  _projectsState.cardHtml = prev;
+  _projectsState.cardsPainted = (_projectsState.cardsPainted || 0) + painted;
+  return painted;
+}
+
+// projectsCardRetry re-runs the fetch behind one card; the other cards keep
+// what they show.
+window.projectsCardRetry = function(id) {
+  if (String(id).indexOf('prdtasks:') === 0) { prdPanelTasksRetry(String(id).slice(9)); return; }
+  if (id === 'gantt') { _projectsLoadGantt(); _projectsGanttRepaint(); return; }
+  if (id === 'plan') { _planRecordsLoad(false); return; }
+  if (id === 'history') { _projectsLoadHistory(false).then(() => { if (_projectsActive()) _projectsPaint(); }); return; }
+  _projectsState.rollupStatus = 'loading'; _projectsState.rollupError = '';
+  if (!_projectsState.rollup) { _projectsPaint(); }
+  _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+};
 
 function renderProjectsView() {
   _projectsState.selected = (() => {
@@ -7218,10 +7563,15 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
+  // First paint from the cache; the fetches below refresh it in the background.
+  _projectsSeedFromCache();
   _projectsPaint();
-  return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
-    // Paint again only while the Projects tab is still the active view.
-    if (_projectsActive()) _projectsPaint();
+  return _projectsLoad().then(() => {
+    if (!_projectsActive()) return null;
+    // With nothing cached the list has just arrived: paint the cards' skeletons
+    // now, before the roll-up and the other fetches settle.
+    if (!(_projectsState.rollup && _projectsState.rollupFor === _projectsState.selected)) _projectsPaint();
+    return _projectsLoadSelected();
   });
 }
 
@@ -7230,6 +7580,7 @@ function _projectsLoad() {
     if (!_projectsActive()) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
+    if (Array.isArray(list)) _cfPut(_cfKey('projects'), '', list);
   }).catch(err => {
     if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
@@ -7244,32 +7595,47 @@ function _projectsLoadRollup() {
   const name = _projectsState.selected;
   const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
   if (!known) return Promise.resolve();
-  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/rollup').then(r => {
+  const key = _cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW);
+  const showing = _projectsState.rollupFor === name && !!_projectsState.rollup && !_projectsState.rollupError;
+  _projectsState.rollupStatus = showing ? 'refreshing' : 'loading';
+  if (!showing) { _projectsState.rollupError = ''; }
+  return _cfFetch('/api/projects/' + encodeURIComponent(name) + '/rollup', key).then(res => {
     if (_projectsState.selected !== name) return;
+    const r = res.data;
+    if (!res.unchanged || !showing) _cfPut(key, res.tag, r);
     _projectsState.rollup = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     _projectsState.rollupFor = name;
     _projectsState.rollupError = '';
+    _projectsState.rollupStatus = 'ready';
   }).catch(err => {
     if (_projectsState.selected !== name) return;
     _projectsState.rollup = null;
     _projectsState.rollupFor = name;
     _projectsState.rollupError = (err && err.message) || String(err);
+    _projectsState.rollupStatus = 'error';
   });
 }
 
 // selectProjectsView is the picker's change handler. It remembers the choice
 // and mirrors it in the hash without adding a history entry.
 function selectProjectsView(name) {
-  _projectsState.selected = name || _PROJECTS_OVERVIEW;
+  const next = name || _PROJECTS_OVERVIEW;
+  if (next !== _projectsState.selected) {
+    // A project change drops what the page shows for the project left: its
+    // roll-up and card state, and its cached roll-up.
+    _cfDropProject(_projectsState.selected);
+    _projectsState.rollup = null; _projectsState.rollupFor = ''; _projectsState.rollupError = '';
+    _projectsState.rollupStatus = ''; _projectsState.cardHtml = {}; _projectsState.cardShape = '';
+  }
+  _projectsState.selected = next;
+  _projectsSeedFromCache();
   _projectsRememberLast(_projectsState.selected);
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   try {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
-  return _projectsLoadSelected().then(() => {
-    if (_projectsActive()) _projectsPaint();
-  });
+  return _projectsLoadSelected();
 }
 
 // Handle Android/browser back button via popstate
@@ -8274,16 +8640,17 @@ function renderSessionsView() {
   // v7.0.0-alpha.22 (multi-select) — status filter is a SET of chips:
   // every selected state counts, any unselected state is hidden. Empty
   // set = 'all'. Persists in localStorage; state.sessionStateChip is the
-  // legacy single-select reader of the same choice.
+  // legacy single-select reader of the same choice. Saved values are
+  // validated on read: a malformed set or an unknown legacy chip is dropped
+  // and the page opens on 'all'.
   if (!Array.isArray(state.sessionStateChips)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_STATE_CHIPS_KEY); } catch (_) { stored = null; }
-    const storedArr = (stored) ? JSON.parse(stored).filter(x => typeof x === 'string') : null;
+    const storedArr = _safeStored(SESSIONS_STATE_CHIPS_KEY, _storedStrArrayRead, null);
     if (storedArr) state.sessionStateChips = storedArr;
     else if (state.sessionStateChip === undefined) {
-      let legacy = null;
-      try { legacy = localStorage.getItem('cs_session_state_chip'); } catch (_) { legacy = null; }
-      state.sessionStateChip = (legacy !== null) ? legacy : 'all';
+      state.sessionStateChip = _safeStored(
+        'cs_session_state_chip',
+        (raw) => (typeof raw === 'string' && SESSIONS_STATE_CHIP_KEYS.indexOf(raw) >= 0) ? raw : null,
+        'all');
       state.sessionStateChips = (state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
     } else {
       state.sessionStateChips = (state.sessionStateChip && state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
@@ -8291,9 +8658,7 @@ function renderSessionsView() {
   }
   // Backend filter — its own multi-select set, NOT the search box text.
   if (!Array.isArray(state.sessionBackendSel)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_BACKEND_SEL_KEY); } catch (_) { stored = null; }
-    state.sessionBackendSel = (stored) ? (JSON.parse(stored) || []).filter(x => typeof x === 'string') : [];
+    state.sessionBackendSel = _safeStored(SESSIONS_BACKEND_SEL_KEY, _storedStrArrayRead, []);
   }
   const chip = _sessionStateSel();
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -8364,9 +8729,10 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    let stored = null;
-    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
-    state._filtersCollapsed = stored === null ? true : stored === '1';
+    // Only '0' and '1' are values this page writes — anything else is a
+    // stale value from another release and is forgotten (default wins).
+    state._filtersCollapsed =
+      _safeStored('cs_filters_collapsed', (raw) => (raw === '0' || raw === '1') ? raw : null, '1') === '1';
   }
   const collapsed = !!state._filtersCollapsed;
   // The search-icon toggle moved to the top header bar (next to the
@@ -8423,13 +8789,16 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
-  const sheetHtml = _sessionsSheetHTML({
+  // The filters sheet is optional chrome: if it fails to build on our end
+  // (unexpected data, a bad helper), log it and render the rest of the page
+  // without it.
+  const sheetHtml = _sessionsRenderGuard('filters sheet', () => _sessionsSheetHTML({
     groupBy: _sessionsGroupCurrent(),
     stateBadges,
     llmBadges: backendTypes.length > 1 ? backendBadges : '',
     tagPanel: tagFilterPanelHtml,
     tagHelp: tagHelpLink,
-  });
+  }));
   _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -8619,12 +8988,11 @@ function _sessionsTileModeDefault(width) {
 }
 
 function _sessionsReadStoredMode(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string' && v) ? v : null;
+  // One of list/tiles/compact. A stored value from another release (or a
+  // broken write) is unrecognized: forget it and let _sessionsViewMode apply
+  // the viewport default.
+  const read = (raw) => (typeof raw === 'string' && raw && SESSIONS_VIEW_MODES.indexOf(raw) >= 0) ? raw : null;
+  return _safeStored(SESSIONS_VIEW_MODE_KEY, read, null, lse);
 }
 
 function _sessionsStoreMode(mode, lse) {
@@ -8676,12 +9044,10 @@ function _sessionsSearchCountText(shown, total) {
 }
 
 function _sessionsSearchReadStored(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_SEARCH_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string') ? v : '';
+  // A plain string, capped: a saved value longer than SESSIONS_SEARCH_MAX_LEN
+  // is a bug, not a saved search — forget it and open with an empty box.
+  const read = (raw) => (typeof raw === 'string' && raw.length <= SESSIONS_SEARCH_MAX_LEN) ? raw : null;
+  return _safeStored(SESSIONS_SEARCH_KEY, read, '', lse);
 }
 
 function _sessionsSearchWriteStored(text, lse) {
@@ -8893,17 +9259,23 @@ function _sessionsGroupStorage() {
 function _sessionsGroupCurrent() {
   if (state.sessionGroupBy === undefined) {
     let by = null;
-    try {
-      const ls = _sessionsGroupStorage();
-      if (ls) {
-        const raw = ls.getItem(SESSIONS_GROUP_STORE_KEY);
-        if (raw) by = _sessionsGroupValidate(JSON.parse(raw));
-        else {
-          const legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY);
-          if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
-        }
+    const ls = _sessionsGroupStorage();
+    // The current shape is {axis, tagPrefix}. Its value is validated; a
+    // stored value that isn't a known axis is forgotten (default: no
+    // grouping). The legacy bare tag-prefix shape is migrated forward once.
+    if (ls) {
+      let raw = null;
+      try { raw = ls.getItem(SESSIONS_GROUP_STORE_KEY); } catch (_) { raw = null; }
+      if (raw) {
+        by = _safeStored(SESSIONS_GROUP_STORE_KEY,
+          (r) => { let p; try { p = JSON.parse(r); } catch (_) { return null; } return _sessionsGroupValidate(p); },
+          null, ls);
+      } else {
+        let legacy = null;
+        try { legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY); } catch (_) { legacy = null; }
+        if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
       }
-    } catch (_) { by = null; }
+    }
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
@@ -9215,14 +9587,16 @@ function _sessionsCollapseKey(by, key) {
 }
 
 function _sessionsCollapsedRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
-  } catch (_) { return []; }
+  // Group keys the operator collapsed (an array of strings). A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with nothing collapsed. An array keeps only its string entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(k => typeof k === 'string' && k);
+  };
+  return _safeStored(SESSIONS_COLLAPSED_KEY, read, [], storage) || [];
 }
 
 function _sessionsCollapseWrite(keys, storage) {
@@ -9558,17 +9932,18 @@ window.setSessionGroupBy = setSessionGroupBy;
 
 // ── Saved views (per device) ────────────────────────────────────────────
 function _savedViewsRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(v => v && typeof v === 'object'
+  // A list of saved views {id, name, mode, groupBy, filter}. A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with no saved views. An array keeps only well-formed entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(v => v && typeof v === 'object'
       && typeof v.id === 'string' && v.id
       && typeof v.name === 'string' && v.name.trim());
-  } catch (_) { return []; }
+  };
+  return _safeStored(SESSIONS_SAVED_VIEWS_KEY, read, [], storage) || [];
 }
 
 function _savedViewsWrite(views, storage) {
@@ -10319,7 +10694,7 @@ function _sessionsSheetHTML(parts) {
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
       <div class="sessions-sheet-body">
         ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
-        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_view_title', 'Views'), _sessionsRenderGuard('saved views', renderSessionsViewsBar) || '')}
         ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
       </div>
     </div>
@@ -10516,7 +10891,7 @@ function toggleHistory() {
 // BL348 — tree view toggle
 function toggleSessionTreeView() {
   state.sessionTreeView = !state.sessionTreeView;
-  localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
+  _storedWrite('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
   renderSessionsView();
 }
 window.toggleSessionTreeView = toggleSessionTreeView;
@@ -17649,6 +18024,20 @@ function renderSettingsView() {
                serving this page. Informational only — never the update banner,
                never touches _onDaemonVersionChange. -->
           <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Loaded-version notice + Reset browser state (2026-11-09). The
+               notice shows the release this page's assets were loaded with
+               (window.__DW_VERSION__, baked into the HTML at request time)
+               next to the daemon version (state._daemonVersion); a
+               mismatch gets its own skew wording. The button clears only
+               what this app owns in this browser — cs_/dw_ localStorage
+               keys, the sessionStorage reload markers, every Cache Storage
+               cache, every service worker — and reloads once. It is never
+               a server action: no session is ever touched. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <div id="aboutLoadedVersionNotice" style="font-size:12px;color:var(--text2);">—</div>
+            <button class="btn-secondary" style="font-size:12px;" onclick="confirmResetBrowserState()">${escHtml(t('settings_reset_browser_state') || 'Reset browser state')}</button>
+            <div style="font-size:11px;color:var(--text2);">${escHtml(t('settings_reset_browser_state_hint') || "Clears this app's saved settings and cached files in this browser, then reloads. It never touches running sessions.")}</div>
+          </div>
           <!-- Which server every About sub-section (this Version card, the
                API block, the Config Viewer block) above/below actually
                describes. The single shared "Showing:" label for the whole
@@ -18205,6 +18594,9 @@ function renderSettingsView() {
   if (aboutCanvas && window.DWSplashArt) {
     window._aboutSplashStopFn = window.DWSplashArt.startScene(aboutCanvas, { compact: true });
   }
+  // Loaded-version notice — the card just re-rendered, paint it now (both
+  // versions are usually known by the time the About tab opens).
+  if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice();
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -21221,6 +21613,9 @@ function loadVersionInfo() {
           noteEl.innerHTML = '';
         }
       }
+      // Loaded-version notice — the daemon version may just have been
+      // confirmed (or corrected for a peer); repaint if the card is up.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
     })
     .catch(e => {
       loadAboutShowingServer();
@@ -21569,17 +21964,26 @@ function _prdPanelQuery(cursor, limit) {
   if (f.status) q.push('status=' + encodeURIComponent(f.status));
   return '/api/autonomous/prds?' + q.join('&');
 }
+// The first page is cached (memory and storage) with the ETag the server
+// returned and refetched with If-None-Match; a 304 keeps the held page. A
+// refresh that asks for more than the first page is read unconditionally and
+// never replaces the cached first page. The list is always the summary form;
+// the full-records form is never requested.
 function _prdPanelFetch(url, o) {
   const key = _prdPanelFilters().status;
   if (key !== _prdPanelState.filterKey) { _prdPanelState.filterKey = key; _prdPanelState.loaded = 0; }
   const limit = Math.min(Math.max(_prdPanelState.loaded, PRD_PANEL_PAGE), PRD_PANEL_RELOAD_MAX);
+  const firstPage = limit === PRD_PANEL_PAGE;
+  const ckey = firstPage ? _cfKey('automata_first', key || 'all') : '';
   return Promise.all([
-    apiFetch(_prdPanelQuery('', limit), o),
+    _cfFetch(_prdPanelQuery('', limit), ckey, o),
     apiFetch('/api/llms', o).catch(() => null),
-  ]).then(([data, llms]) => {
+  ]).then(([res, llms]) => {
+    const data = res.data;
     if (llms) state._prdBackends = (llms.llms || []).filter(l => !l.disabled);
     const prds = (data && data.prds) || [];
     _prdPanelState.loaded = prds.length;
+    if (ckey && !res.unchanged) _cfPut(ckey, res.tag, data);
     return { prds, total: (data && data.total) || prds.length, next: (data && data.next_cursor) || '' };
   });
 }
@@ -21611,12 +22015,48 @@ function _prdPanelBodyHtml(prd, storiesHtml) {
     `<button type="button" class="btn-secondary list-state-retry" onclick="${escHtml('prdPanelLoadDetail(' + JSON.stringify(id) + ',true)')}">${escHtml(t('retry'))}</button></div>`;
   if (e && e.prd) {
     const kids = e.children ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children</summary><div id="prd-children-${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">${e.children}</div></details>` : `<div id="prd-children-${escHtml(id)}"></div>`;
-    return (e.error ? failed(e.error) : '') + storiesHtml() + kids;
+    return (e.error ? failed(e.error) : '') + storiesHtml() + _prdPanelTasksHtml(id) + kids;
   }
   if (e && e.error) return failed(e.error);
   if (e && e.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
   return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load') || 'Open to load stories and tasks')}</span>`;
 }
+// ── Automaton detail: paged tasks ───────────────────────────────────────────
+// The opened Automaton lists its tasks from GET /api/autonomous/prds/{id}/tasks,
+// one page at a time with a Load more control; a failed page shows its own error
+// with Retry and never touches the rest of the row.
+const PRD_TASKS_PAGE = 50;
+function _prdPanelTasksHtml(id) {
+  const e = _prdPanelState.detail[id];
+  const tk = e && e.tasks;
+  if (!tk) return '';
+  let h = `<div class="automaton-tasks" data-automaton-tasks="${escHtml(id)}"><div style="font-weight:600;">${escHtml(t('automaton_tasks_heading'))}</div>`;
+  h += tk.rows.map(r => `<div class="automaton-tasks-row"><code>${escHtml(r.id)}</code><span>${escHtml(r.status || '')}</span><span>${escHtml(r.title || '')}</span></div>`).join('');
+  if (tk.loading) h += _pcardSkeleton(t('automaton_tasks_loading'));
+  if (tk.error) h += _pcardError('prdtasks:' + id, tk.error, t('automaton_tasks_failed'));
+  if (tk.next && !tk.loading) h += `<button type="button" class="btn-secondary automaton-tasks-more" onclick="${escHtml('prdPanelTasksMore(' + JSON.stringify(id) + ')')}">${escHtml(t('automaton_tasks_load_more', [tk.rows.length, tk.total]))}</button>`;
+  return h + '</div>';
+}
+function _prdPanelLoadTasks(id, more) {
+  const e = _prdPanelState.detail[id];
+  if (!e) return Promise.resolve();
+  const tk = e.tasks = more && e.tasks ? e.tasks : { rows: [], next: '', total: 0, loading: false, error: '' };
+  if (tk.loading) return Promise.resolve();
+  tk.loading = true; tk.error = '';
+  _prdPanelRepaint();
+  let url = '/api/autonomous/prds/' + encodeURIComponent(id) + '/tasks?limit=' + PRD_TASKS_PAGE;
+  if (more && tk.next) url += '&cursor=' + encodeURIComponent(tk.next);
+  return apiFetch(url).then(r => {
+    const rows = (r && Array.isArray(r.tasks)) ? r.tasks : [];
+    tk.rows = (more ? tk.rows : []).concat(rows);
+    tk.next = (r && r.next_cursor) || '';
+    tk.total = (r && r.total) || tk.rows.length;
+  }).catch(err => {
+    tk.error = (err && err.message) || String(err);
+  }).then(() => { tk.loading = false; _prdPanelRepaint(); });
+}
+window.prdPanelTasksMore = function(id) { return _prdPanelLoadTasks(id, true); };
+window.prdPanelTasksRetry = function(id) { const tk = (_prdPanelState.detail[id] || {}).tasks; return _prdPanelLoadTasks(id, !!(tk && tk.rows.length)); };
 function _prdPanelRepaint() {
   const ctl = window._listLoaders && window._listLoaders.prdpanel;
   if (ctl) ctl.paint();
@@ -21640,6 +22080,7 @@ function _prdPanelLoadDetail(id, force) {
     e.error = (err && err.message) || String(err);
   }).then(() => {
     e.loading = false;
+    if (!e.error) _prdPanelLoadTasks(id, false);
     _prdPanelRepaint();
     if (e.error || !st.open.has(id) || typeof window.loadPRDChildren !== 'function') return e.prd;
     return Promise.resolve(window.loadPRDChildren(id)).then(html => { e.children = html || ''; return e.prd; });
@@ -21676,11 +22117,62 @@ function _prdPanelLoadMoreHtml(d) {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="prdPanelLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="prdPanelLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// Each Automaton row is a card of its own (.pc-card): its state is refreshing
+// while the list is cache-rendered or being refetched, and its body is replaced
+// by a refresh only when that row's markup changed.
+function _prdPanelRowState() {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const st = ctl && ctl.state;
+  return st && (st.loading || st.fromCache) ? 'refreshing' : 'ready';
+}
+function _prdPanelRowInner(p) {
+  return renderPRDRow(_prdPanelMerged(p), { panel: true });
+}
+function _prdPanelRowCard(p, status, inner) {
+  const eid = escHtml(p.id);
+  return `<div class="pc-card prd-pc" id="prdRow_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="prdRow_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="prdRow_${eid}_body">${inner}</div></div>`;
+}
 function _prdPanelRender(d) {
   const rows = _prdPanelVisible(d);
   const more = _prdPanelLoadMoreHtml(d);
+  const ps = _prdPanelState;
+  ps.paintedIds = rows.map(p => p.id);
+  ps.moreHtml = more;
+  ps.rowHtml = {};
   if (rows.length === 0) return `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>` + more;
-  return rows.map(p => renderPRDRow(_prdPanelMerged(p), { panel: true })).join('') + more;
+  const status = _prdPanelRowState();
+  return rows.map(p => {
+    const inner = _prdPanelRowInner(p);
+    ps.rowHtml[p.id] = inner;
+    return _prdPanelRowCard(p, status, inner);
+  }).join('') + more;
+}
+// _prdPanelPatch is the list loader's repaint hook: with the same rows in the
+// same order it updates the meta badges and each row's state and replaces the
+// body of only the rows whose markup changed. It returns false (full repaint)
+// when the row set, the empty state or Load more changed.
+function _prdPanelPatch(el, from, to, ctl) {
+  const ps = _prdPanelState;
+  const meta = document.getElementById('prdPanelMeta');
+  if (!meta || !ps.paintedIds) return false;
+  const rows = _prdPanelVisible(to);
+  const ids = rows.map(p => p.id);
+  if (ids.join('\u0001') !== ps.paintedIds.join('\u0001')) return false;
+  if (_prdPanelLoadMoreHtml(to) !== ps.moreHtml) return false;
+  const status = _prdPanelRowState();
+  rows.forEach(p => {
+    const w = document.getElementById('prdRow_' + p.id);
+    if (w) w.setAttribute('data-state', status);
+    const inner = _prdPanelRowInner(p);
+    if (inner === ps.rowHtml[p.id]) return;
+    const body = document.getElementById('prdRow_' + p.id + '_body');
+    if (!body) return;
+    body.innerHTML = inner;
+    ps.rowHtml[p.id] = inner;
+    ps.rowsPainted = (ps.rowsPainted || 0) + 1;
+  });
+  meta.innerHTML = ctl.metaHtml();
+  return true;
 }
 // Rows that are open need their detail; a moved revision refetches it.
 function _prdPanelAfterPaint(el, keep, d) {
@@ -21693,6 +22185,8 @@ function _prdPanelLoader() {
   if (cur) return cur;
   return listLoader({
     key: 'prdpanel', el: 'prdPanel', pollMs: PRD_PANEL_POLL_MS,
+    metaId: 'prdPanelMeta',
+    patch: _prdPanelPatch,
     fetch: _prdPanelFetch,
     active: _prdPanelActive,
     render: _prdPanelRender,
@@ -25786,6 +26280,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
     { key: 'usage.burn_guard.retry_limit_claude', label: 'Burn guard Claude retry limit', labelKey: 'settings_usage_burn_guard_retry_limit_claude', type: 'number', placeholder: '2', min: 0, max: 20, step: 1, default: '2' },
+    { key: 'usage.burn_guard.mode', label: 'Burn guard pace_line mode (off, shadow, on; unset defaults to shadow)', labelKey: 'settings_usage_burn_guard_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'usage.burn_guard.week_tolerance', label: 'Burn guard pace_line week tolerance (whole number, 0 to 10, default 2)', labelKey: 'settings_usage_burn_guard_week_tolerance', type: 'number', placeholder: '2', min: 0, max: 10, step: 1, default: '2' },
+    { key: 'usage.burn_guard.points_to_week_factor', label: 'Burn guard pace_line points-to-week factor (1 to 10, default 1.3)', labelKey: 'settings_usage_burn_guard_points_to_week_factor', type: 'number', placeholder: '1.3', min: 1, max: 10, step: 0.1, default: '1.3' },
+    { key: 'usage.burn_guard.window_percent_per_point', label: 'Burn guard pace_line window percent per point (1 to 25, default 4)', labelKey: 'settings_usage_burn_guard_window_pp', type: 'number', placeholder: '4', min: 1, max: 25, step: 0.5, default: '4' },
+    { key: 'usage.burn_guard.window_stop_percent', label: 'Burn guard pace_line window stop percent (50 to 95, default 85)', labelKey: 'settings_usage_burn_guard_window_stop', type: 'number', placeholder: '85', min: 50, max: 95, step: 1, default: '85' },
+    { key: 'usage.burn_guard.reading_freshness_minutes', label: 'Burn guard pace_line reading freshness (minutes, 1 to 1440, default 60)', labelKey: 'settings_usage_burn_guard_reading_freshness', type: 'number', placeholder: '60', min: 1, max: 1440, step: 1, default: '60' },
   ]},
   { id: 'classifier', section: 'Classifier', docs: 'howto/classification-verdicts.md', fields: [
     { key: 'classifier.timeout_seconds', label: "Classifier call timeout", labelKey: 'settings_classifier_timeout_seconds', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
@@ -26403,6 +26903,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.progress.backlog_path', label: 'Progress backlog file (relative paths resolve against the base repository, default docs/plans/README.md)', labelKey: 'settings_progress_backlog_path', type: 'text', placeholder: 'docs/plans/README.md', default: 'docs/plans/README.md' },
     { key: 'autonomous.progress.since', label: 'Progress start date (YYYY-MM-DD, empty = first record\'s creation date)', labelKey: 'settings_progress_since', type: 'text', placeholder: 'YYYY-MM-DD', default: '' },
     { key: 'autonomous.progress.snapshot_retention_days', label: 'Progress snapshot retention (days kept, 0 = 90)', labelKey: 'settings_progress_snapshot_retention_days', type: 'number', placeholder: '90', min: 0, step: 1, default: '0' },
+    // Finished-Automaton archive.
+    { key: 'autonomous.archive.enabled', label: 'Archive finished Automata automatically (default on)', labelKey: 'settings_archive_enabled', helpKey: 'settings_archive_enabled_help', type: 'toggle' },
+    { key: 'autonomous.archive.retention_days', label: 'Archive retention (days old before a finished Automaton is archived, 0 = 30)', labelKey: 'settings_archive_retention_days', helpKey: 'settings_archive_retention_days_help', type: 'number', placeholder: '30', min: 0, step: 1, default: '0' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
     // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An
@@ -31391,6 +31894,7 @@ function saveToken() {
   const token = input.value.trim();
   state.token = token;
   localStorage.setItem('cs_token', token);
+  _cfDrop();
   showToast('Token saved. Reconnecting…', 'success', 2000);
   disconnect();
   setTimeout(connect, 500);
@@ -31420,6 +31924,7 @@ window.splashSaveToken = function() {
   if (!tok) return;
   state.token = tok;
   localStorage.setItem('cs_token', tok);
+  _cfDrop();
   if (window._splashStopFn) window._splashStopFn();
   const splash = document.getElementById('splash');
   if (splash) {
@@ -32001,7 +32506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
     state._filtersCollapsed = !state._filtersCollapsed;
-    localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
+    _storedWrite('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
     if (state.activeView === 'sessions') renderSessionsView();
   });
 
@@ -33103,12 +33608,72 @@ let _swDisabledInfoShown = false;
 // an update and reload the page.
 let _swControllerChangeAttached = false;
 
+// ── Versioned SW registration + once-only upgrade reload ─────────────
+// The worker script's bytes are identical every release, so registering it
+// as bare /sw.js can mean the browser never installs a fresh copy. The page
+// therefore registers /sw.js?v=<daemon version>: each release is a distinct
+// script URL for the browser (and sw.js derives its cache name from the
+// same query string), so an upgrade is always visible. The version is
+// state._daemonVersion (recorded by _daemonVersionNoteFrame); if it has not
+// been recorded yet when registerServiceWorker runs, register bare and adopt
+// the versioned URL later (see _swAdoptDaemonVersion). Pure helper:
+function _swScriptUrl(version) {
+  if (version && typeof version === 'string') {
+    const v = version.trim();
+    if (v) return '/sw.js?v=' + encodeURIComponent(v);
+  }
+  return '/sw.js';
+}
+
+// Once-only auto-reload slot. sessionStorage survives a reload (it is
+// cleared only when the tab closes), so a tab can auto-reload for a SW
+// upgrade at most once: whatever controllerchange events fire afterwards
+// (claim re-fires, re-register, etc.) find the marker and do not reload —
+// a reload loop is impossible by construction. If the marker cannot be
+// read/written (storage blocked or unavailable), refuse the slot: an
+// unrecorded reload would be repeated forever.
+const SW_AUTO_RELOAD_MARK_KEY = 'cs_sw_autoreload_done';
+function _swTakeAutoReloadSlot(store) {
+  try {
+    if (!store) return false;
+    if (store.getItem(SW_AUTO_RELOAD_MARK_KEY) === '1') return false;
+    store.setItem(SW_AUTO_RELOAD_MARK_KEY, '1');
+    return true;
+  } catch (_) { return false; }
+}
+
+// registerServiceWorker may run before state._daemonVersion is known (it
+// fires on DOMContentLoaded; the version arrives from /api/health or the
+// first 'sessions' frame). When the local version is first recorded after a
+// bare registration, re-register with the versioned script URL so this tab's
+// worker is the current release. Re-registering is per-scope idempotent:
+// same URL is a no-op; a new URL is an ordinary SW update.
+function _swAdoptDaemonVersion(version) {
+  try {
+    if (!version) return;
+    const url = _swScriptUrl(version);
+    if (window._swRegUrl === url) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register(url).then(reg => {
+      if (!reg) return;
+      window._swReg = reg;
+      window._swRegUrl = url;
+    }).catch(() => {});
+  } catch (_) { /* SW is best-effort; never break the page */ }
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
+    // The versioned script URL keeps the browser's "has the worker file
+    // changed" check honest across releases (see _swScriptUrl above); bare
+    // /sw.js only when the release has not been recorded yet —
+    // _swAdoptDaemonVersion re-registers once it has.
+    const scriptUrl = _swScriptUrl(state._daemonVersion);
+    navigator.serviceWorker.register(scriptUrl).then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
+      window._swRegUrl = scriptUrl;
       // GATE alpha.36 (operator 2026-05-10): force an SW update check
       // on load AND every 60s. Without this the browser may sit on a
       // stale SW until next cold-start.
@@ -33168,7 +33733,11 @@ function registerServiceWorker() {
           console.log('SW controller changed — fresh assets available');
           if (_canAutoReload(_autoReloadCtx())) {
             // Real build change: a fresh SW took control of this page and
-            // the user is idle — take the page over now.
+            // the user is idle — take the page over now. Once-only: the
+            // sessionStorage slot (see _swTakeAutoReloadSlot) survives the
+            // reload, so a controllerchange re-firing on the freshly loaded
+            // page can never reload a second time.
+            if (!_swTakeAutoReloadSlot(typeof sessionStorage !== 'undefined' ? sessionStorage : null)) return;
             _reloadGuard = true;
             window.location.reload();
           } else {
@@ -33180,27 +33749,209 @@ function registerServiceWorker() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Settings → About — loaded-version notice + Reset browser state (2026-11-09)
+//
+// The notice compares two releases: the one this page's assets were loaded
+// with (window.__DW_VERSION__, stamped into the HTML at request time — see
+// index.html) and the daemon version already tracked for the update banner
+// (state._daemonVersion, see _daemonVersionNoteFrame). Same release → one
+// quiet line. Different → skew wording (informational, like the existing
+// federated-peer skew note). Unknown halves read "not recorded yet".
+function _aboutLoadedPageVersion() {
+  try {
+    const v = (typeof window !== 'undefined' && window.__DW_VERSION__) ? String(window.__DW_VERSION__).trim() : '';
+    if (!v || v.indexOf('%') !== -1) return ''; // unbaked placeholder — treat as unknown
+    return v;
+  } catch (_) { return ''; }
+}
+window._aboutLoadedPageVersion = _aboutLoadedPageVersion;
+
+function renderAboutLoadedVersionNotice() {
+  let el = null;
+  try { el = (typeof document !== 'undefined') ? document.getElementById('aboutLoadedVersionNotice') : null; } catch (_) { return; }
+  if (!el) return; // About tab not rendered — nothing to paint
+  const pageVer = _aboutLoadedPageVersion();
+  const daemonVer = (typeof state !== 'undefined' && state && state._daemonVersion) ? String(state._daemonVersion).trim() : '';
+  if (pageVer && daemonVer && pageVer !== daemonVer) {
+    el.textContent = t('about_loaded_version_skew', [pageVer, daemonVer])
+      || `This page was loaded with v${pageVer}, a different release than v${daemonVer}, the one the daemon reports. Reset browser state clears this browser's copies of the app and reloads it fresh.`;
+  } else if (pageVer && daemonVer) {
+    el.textContent = t('about_loaded_version_match', [pageVer, daemonVer])
+      || `Loaded with v${pageVer} — the daemon reports the same release, v${daemonVer}.`;
+  } else if (pageVer) {
+    el.textContent = t('about_loaded_version_daemon_unknown', [pageVer])
+      || `Loaded with v${pageVer}. The daemon version is not recorded yet.`;
+  } else {
+    el.textContent = t('about_loaded_version_pending')
+      || 'Version information appears here once the page and daemon versions are known.';
+  }
+}
+window.renderAboutLoadedVersionNotice = renderAboutLoadedVersionNotice;
+
+// Reset browser state: clears ONLY what this app owns in this browser and
+// reloads exactly once:
+//   * localStorage keys with the cs_ / dw_ prefixes (app settings, the
+//     token, splash records) — every other key in this origin's storage is
+//     left exactly as it is;
+//   * the sessionStorage reload markers (the once-only auto-reload slot and
+//     the index.html _dw_reloaded_for_<version> one-shots) — other session
+//     keys (e.g. the alert-muted flag) are left alone;
+//   * every Cache Storage cache (the app shell and data caches);
+//   * every registered service worker in this scope.
+// Deliberately a browser-state reset, not a server action: no fetch, no
+// WebSocket, no session endpoint is ever touched, so no session can be
+// affected. Every step is individually fault-tolerant and the reload is
+// ALWAYS reached exactly once — even when a cache delete or worker
+// unregistration throws. Pure over injected deps (localStorage /
+// sessionStorage / caches / serviceWorker / reload) so node:test can drive
+// it with fakes — no browser required.
+const BROWSER_STATE_STORAGE_PREFIXES = ['cs_', 'dw_'];
+// Exact keys this app owns that do not carry a cs_/dw_ prefix: the locale
+// override (setLocaleOverride, app.js — read at boot, same app only).
+const BROWSER_STATE_STORAGE_EXACT_KEYS = ['datawatch.locale'];
+const BROWSER_STATE_SESSION_MARKER_KEYS = ['cs_sw_autoreload_done'];
+const BROWSER_STATE_SESSION_MARKER_PREFIXES = ['_dw_reloaded_for_'];
+
+function _ownedStorageKeys(store, prefixes, exactKeys) {
+  const out = [];
+  const exact = exactKeys || [];
+  for (const k of exact) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    if (out.indexOf(ks) >= 0) continue;
+    for (const p of prefixes) {
+      if (ks.indexOf(p) === 0) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+function _ownedSessionMarkerKeys(store) {
+  const out = [];
+  for (const k of BROWSER_STATE_SESSION_MARKER_KEYS) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    for (const p of BROWSER_STATE_SESSION_MARKER_PREFIXES) {
+      if (ks.indexOf(p) === 0 && out.indexOf(ks) === -1) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+async function resetBrowserState(deps) {
+  deps = deps || {};
+  const prefixes = (Array.isArray(deps.keyPrefixes) && deps.keyPrefixes.length)
+    ? deps.keyPrefixes.map(String)
+    : BROWSER_STATE_STORAGE_PREFIXES;
+  const store = deps.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  const session = deps.sessionStorage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+  const cacheManager = deps.caches || (typeof caches !== 'undefined' ? caches : null);
+  const swController = deps.serviceWorker
+    || (typeof navigator !== 'undefined' && navigator && typeof navigator.serviceWorker !== 'undefined' ? navigator.serviceWorker : null);
+  const doReload = typeof deps.reload === 'function'
+    ? deps.reload
+    : (() => { try { window.location.reload(); } catch (_) { location.reload(); } });
+
+  const result = { removedStorageKeys: 0, removedSessionMarkers: 0, deletedCaches: 0, unregisteredWorkers: 0, reloaded: false };
+
+  // 1. localStorage — only the keys this app owns (cs_ / dw_ prefixes plus
+  //    the exact-key locale override); every other key stays put.
+  if (store) {
+    let keys = [];
+    try { keys = _ownedStorageKeys(store, prefixes, BROWSER_STATE_STORAGE_EXACT_KEYS); } catch (_) { keys = []; }
+    for (const k of keys) {
+      try { store.removeItem(k); result.removedStorageKeys++; } catch (_) {}
+    }
+  }
+
+  // 2. sessionStorage — only the reload markers.
+  if (session) {
+    let markers = [];
+    try { markers = _ownedSessionMarkerKeys(session); } catch (_) { markers = []; }
+    for (const k of markers) {
+      try { session.removeItem(k); result.removedSessionMarkers++; } catch (_) {}
+    }
+  }
+
+  // 3. Cache Storage — delete every cache. A failing delete must not stop
+  //    the rest: the reload below still happens, and the fresh install's
+  //    activate step sweeps stale caches as a second pass.
+  if (cacheManager && typeof cacheManager.keys === 'function') {
+    let names = [];
+    try { names = await cacheManager.keys(); } catch (_) { names = []; }
+    for (const name of (names || [])) {
+      let ok = false;
+      try { ok = await cacheManager.delete(name); } catch (_) { ok = false; }
+      if (ok) result.deletedCaches++;
+    }
+  }
+
+  // 4. Service workers — unregister every registration in this scope.
+  if (swController && typeof swController.getRegistrations === 'function') {
+    let regs = [];
+    try { regs = await swController.getRegistrations(); } catch (_) { regs = []; }
+    for (const reg of (regs || [])) {
+      let ok = false;
+      try { ok = await reg.unregister(); } catch (_) { ok = false; }
+      if (ok) result.unregisteredWorkers++;
+    }
+  }
+
+  // 5. Reload — exactly once, always reached, even when every step above
+  //    failed. A clean page from the server is the whole point of the
+  //    button; a half-reset browser would be worse than no reset at all.
+  try { doReload(); result.reloaded = true; } catch (_) { /* reload itself failed; nothing left to do */ }
+
+  return result;
+}
+window.resetBrowserState = resetBrowserState;
+
+// The About-card button. One click: pressing the button IS the
+// confirmation — no second confirm step, no dialog. Ends with the same
+// hard reload the legacy forcePWAUpdate used (full refresh splash, which
+// also bypasses the HTTP cache).
+async function confirmResetBrowserState() {
+  let reloaded = false;
+  const doReload = () => {
+    if (reloaded) return; // exactly one reload, whatever else throws
+    reloaded = true;
+    try { if (typeof window !== 'undefined' && typeof window.performFullPageRefresh === 'function') { window.performFullPageRefresh({ eyeBolt: false }); return; } } catch (_) {}
+    try { window.location.reload(); } catch (_) { location.reload(); }
+  };
+  try {
+    await resetBrowserState({ reload: doReload });
+  } catch (_) {
+    doReload();
+  }
+}
+window.confirmResetBrowserState = confirmResetBrowserState;
+
 // GATE alpha.36 (operator 2026-05-10): manual escape hatch for stuck
 // PWA caches. Unregisters every SW + drops every cache + reloads with
 // bypass. Operator can fire this from the dev console
 // (window.forcePWAUpdate()) or via the long-press refresh hint.
+// Reuses resetBrowserState (owned storage keys, reload markers, all
+// caches, all workers) and finishes with the same hard reload it always
+// used. resetBrowserState never throws and always runs its reload exactly
+// once, so the legacy try/catch-then-reload shape is preserved.
 window.forcePWAUpdate = async function() {
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-  } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
-  // Hard reload bypassing HTTP cache too.
-  // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
-  // eye keeps the deliberate gesture from reading as a broken page.
-  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
-  // hatch) — never triggered by a federated-server switch.
-  performFullPageRefresh({ eyeBolt: false });
+    await resetBrowserState({ reload: () => performFullPageRefresh({ eyeBolt: false }) });
+  } catch (e) {
+    console.warn('forcePWAUpdate cleanup error:', e);
+    performFullPageRefresh({ eyeBolt: false });
+  }
 };
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
