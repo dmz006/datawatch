@@ -252,23 +252,31 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    no refresh.
 
    **On a phone-width screen** the tag chips and the Scheduled list no
-   longer sit open above the terminal. Each collapses to one summary
-   button: **Tags (N)** shows how many tags the session has, and
-   **Scheduled (N) · next <time>** shows how many schedules are pending
-   and when the earliest one runs. Tap a button (or focus it and press
-   Enter or Space) to open the full chip row or the schedule list (with
-   each entry's cancel control) in place, and tap again to close it; the
-   button's tooltip reads **Show all** or **Show less**. Both summaries
-   are real buttons that expose their open or closed state
-   (`aria-expanded`), so they work from the keyboard and with a screen
-   reader. Both start closed, and the vertical space they free goes to
-   the terminal above the input bar. Whether each is open is kept only
-   in the page's memory, per session: it survives switching tabs or
-   sessions, resets on a reload, and uses no browser storage key and no
-   setting. A session with no tags, or none scheduled, shows nothing.
-   On a wider screen nothing changes: the full chip rows and one row per
-   scheduled job, each with its cancel control, show as before, and the
-   stop, history and notes controls keep their positions.
+   longer sit open above the terminal. Two small icon buttons sit in the
+   session header, next to the timeline and response buttons: a **tag**
+   icon and a **clock** icon. Each carries a count badge: the tag icon
+   shows how many tags the session has, the clock icon how many jobs are
+   scheduled for it. A button whose count is zero is left out, so a
+   session with no tags and nothing scheduled shows neither. Hover or
+   long-press the clock to see a tooltip with the time the earliest
+   scheduled job runs (the tag button's tooltip repeats its label, for
+   example "Tags: 3"). Tap a button (or focus it and press Enter or
+   Space) to open its list in place: the tag chips, or one row per
+   scheduled job with its cancel control. Only one list is open at a
+   time, so opening the second closes the first. The list closes when
+   you tap the same icon again, tap anywhere outside the icon and the
+   list, or press Escape. Both buttons are real buttons with an
+   accessible name ("Tags: N", "Scheduled jobs: N") that expose their
+   open or closed state (`aria-expanded`), so they work from the
+   keyboard and with a screen reader. Both start closed, and the
+   vertical space they free goes to the terminal above the input bar.
+   Which list is open is kept only in the page's memory: it resets on a
+   reload and when you open a session, and uses no browser storage key
+   and no setting. On a wider screen nothing changes: the full chip rows
+   and one row per scheduled job, each with its cancel control, show as
+   before, there are no header icons, and the stop, history and notes
+   controls keep their positions. This is a browser-side change with no
+   API, CLI, MCP or comm-channel surface.
 
    It opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only

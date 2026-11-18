@@ -608,6 +608,8 @@ The timings are fixed and there is no setting, endpoint or field for them; only 
 
 **Layout:** the session page (Tmux / Channel / Status) is a full-height, non-scrolling page: the tab content fills the space between the header and the keyboard-aware bottom of the screen, the input bar is the last element and nothing is rendered below it — no blank band under the input row, for local and peer sessions alike. The bottom nav is hidden while the page is open. The sizing is pure flex / viewport units with no fixed pixel heights, so window resize, browser zoom, the software keyboard and the iOS safe-area insets keep the page filled, and the terminal re-fits on resize without a reload.
 
+**Header icons (phone width):** on a phone-width screen the session header carries two icon buttons in place of the open tag chips and Scheduled list: a **tag** icon (badge = number of tags) and a **clock** icon (badge = number of scheduled jobs; its tooltip gives the next run time). A zero count hides the button. Tapping one opens its list in place (tag chips, or one row per job with a cancel control); only one list is open at a time, and it closes on a second tap of the icon, a tap outside, or Escape. Each is a button with an accessible name and `aria-expanded`. Open state is held in page memory only (no storage key, no setting); wide screens keep the full chip rows and per-job rows and show no header icons. Browser-side only: no API, CLI, MCP or comm surface. See [howto/sessions-deep-dive](howto/sessions-deep-dive.md).
+
 **Toolbar:**
 - `Aa ▾` font controls — A−, A+, current size, Fit-to-width.
 - `Scroll` — enter tmux scroll mode (Page Up / Page Down / ESC). Ties into tmux's own scroll-back so you see real history.
