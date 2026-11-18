@@ -13,10 +13,10 @@ import (
 // EncryptingFIFO creates a named FIFO that reads plaintext and writes
 // encrypted blocks to an output file. Used to encrypt tmux pipe-pane output.
 type EncryptingFIFO struct {
-	fifoPath   string
-	writer     *EncryptedLogWriter
-	stopCh     chan struct{}
-	doneCh     chan struct{}
+	fifoPath string
+	writer   *EncryptedLogWriter
+	stopCh   chan struct{}
+	doneCh   chan struct{}
 }
 
 // NewEncryptingFIFO creates a FIFO at fifoPath and starts a goroutine that

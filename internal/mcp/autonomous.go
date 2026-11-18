@@ -232,6 +232,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("progress_backlog_path", mcpsdk.Description("Backlog file the progress figures read (autonomous.progress.backlog_path). A relative path resolves against the Automata base repository when set, else the daemon working directory. Empty = docs/plans/README.md.")),
 		mcpsdk.WithString("progress_since", mcpsdk.Description("First day the progress figures count, as YYYY-MM-DD (autonomous.progress.since). Empty = the first record's creation date.")),
 		mcpsdk.WithNumber("progress_snapshot_retention_days", mcpsdk.Description("Days saved progress snapshots are kept (autonomous.progress.snapshot_retention_days). Whole number >= 0; 0 = 90.")),
+		mcpsdk.WithNumber("archive_retention_days", mcpsdk.Description("Days old a completed, shipped or cancelled Automaton must be before it is archived (autonomous.archive.retention_days). Whole number >= 0; 0 = 30.")),
+		mcpsdk.WithBoolean("archive_enabled", mcpsdk.Description("Whether the daemon may archive finished Automata on its own (autonomous.archive.enabled). On by default; off means only the explicit migration command archives.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("backoff_reserve_for_review", mcpsdk.Description("Review slots a backed-off backend may keep for review work while its usage back-off is active: a whole number >= 0 (0 = no slot reserve; unset reads the 1-slot default). Set with autonomous_config_set, read back in usage_backoff_status's config.reserve_for_review.")),
@@ -249,6 +251,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Content auto-fix retries per Automaton (default 1). When the completion review still blocks after these are spent, the Automaton goes to needs_review with the findings attached.")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
+		mcpsdk.WithArray("security_scan_extensions", mcpsdk.Description("File extensions the security scan covers (e.g. [\".py\"]). Unset or an empty list = the scanner's built-in defaults (.py, .pyw); a non-empty list scans exactly those extensions. The scan is warn-only."), mcpsdk.WithStringItems()),
 		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
 		mcpsdk.WithNumber("verifier_min_free_mem_mb", mcpsdk.Description("Free GPU memory (MB) a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024 default; 0 turns the check off. Negative values are refused.")),
 		mcpsdk.WithNumber("verifier_headroom_max_age_hours", mcpsdk.Description("How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours. Negative values are refused.")),
@@ -457,6 +460,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["snapshot_never_stage"]; ok {
 			body["snapshot_never_stage"] = req.GetStringSlice("snapshot_never_stage", []string{})
 		}
+		// Presence-aware like snapshot_never_stage above: an explicit [] leaves
+		// the scanner's built-in defaults (.py, .pyw) in effect, an absent key
+		// leaves the stored list untouched.
+		if _, ok := args["security_scan_extensions"]; ok {
+			body["security_scan_extensions"] = req.GetStringSlice("security_scan_extensions", []string{})
+		}
 	}
 	// Plan-coverage gate — off|warn|block mode (empty = send nothing, let
 	// the REST side keep its stored value) plus the presence-aware
@@ -648,6 +657,20 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 				allocation = map[string]any{}
 			}
 			allocation["autonomous.progress."+k] = raw
+		}
+	}
+	// The archive settings (autonomous.archive.*) ride in the same config PUT;
+	// presence-aware so an explicit 0 or false is sent.
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"retention_days", "enabled"} {
+			raw, ok := args["archive_"+k]
+			if !ok {
+				continue
+			}
+			if allocation == nil {
+				allocation = map[string]any{}
+			}
+			allocation["autonomous.archive."+k] = raw
 		}
 	}
 	// Infrastructure retry (autonomous.infra_retry.*) lives in the daemon
@@ -981,17 +1004,29 @@ func qualityGatesSmokePackages(v any) []string {
 
 func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_list",
-		mcpsdk.WithDescription("BL24 — list all PRDs, newest first. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed), with the pushed ref/sha/time (pushed) or the push reason (not_pushed). Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the full list is returned (full=1); when one is, the summary list under the in-force autonomous.shipped settings applies instead, and shipped=true matches only while enabled."),
+		mcpsdk.WithDescription("BL24 — list Automata, newest first. By default this returns the summary list: one small row per Automaton, with no task detail. Read one Automaton's tasks a page at a time with autonomous_prd_tasks. Pass full=true for whole records; with limit (or cursor) that is one page of whole records, without either it is every record, the heavy form. limit and cursor page the list: pass the next_cursor of one reply as the cursor of the next. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed) in the full form, or push_state in the summary. Narrow the list without changing any stored state: status takes comma-separated statuses matched against the displayed status (an Automaton whose work landed shows as completed), and shipped is still accepted and selects records that carry a shipped record; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the summary list under the in-force autonomous.shipped settings applies, and shipped=true matches only while enabled."),
 		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; matched against the displayed status (an Automaton whose work landed shows as completed); shipped is still accepted and selects records that carry a shipped record.")),
 		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only PRDs that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
+		mcpsdk.WithBoolean("full", mcpsdk.Description("true: return whole records instead of summaries (default false). Heavy without limit.")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Rows per page, 1 or more (daemon default when omitted).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Page cursor: the next_cursor of the previous reply.")),
 	)
 }
 func (s *Server) handleAutonomousPRDList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	shipped := strings.ToLower(strings.TrimSpace(req.GetString("shipped", "")))
 	status := strings.Trim(strings.TrimSpace(req.GetString("status", "")), ",")
 	q := url.Values{}
-	if shipped == "" && status == "" {
-		q.Set("full", "1")
+	if req.GetBool("full", false) {
+		q.Set("full", "true")
+	}
+	if n := req.GetInt("limit", 0); n != 0 {
+		if n < 1 {
+			return mcpsdk.NewToolResultError("limit must be 1 or more"), nil
+		}
+		q.Set("limit", strconv.Itoa(n))
+	}
+	if c := strings.TrimSpace(req.GetString("cursor", "")); c != "" {
+		q.Set("cursor", c)
 	}
 	if shipped != "" {
 		if shipped != "true" && shipped != "false" {
@@ -1003,6 +1038,44 @@ func (s *Server) handleAutonomousPRDList(_ context.Context, req mcpsdk.CallToolR
 		q.Set("status", status)
 	}
 	out, err := s.proxyGet("/api/autonomous/prds", q)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDTasks() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_tasks",
+		mcpsdk.WithDescription("Read one page of one Automaton's task rows (GET /api/autonomous/prds/{id}/tasks): identity, state, timing, the sessions that ran each task and a short error — no spec, history or verification text. The reply is {prd_id, tasks, total, next_cursor}; total counts the tasks that match the filters, ignoring the cursor. Pass next_cursor as cursor to read the next page. Use autonomous_prd_get with detail=full for specs and logs."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton id")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Tasks per page, 1 or more (default 50, max 500).")),
+		mcpsdk.WithString("cursor", mcpsdk.Description("Page cursor: the next_cursor of the previous reply.")),
+		mcpsdk.WithString("story", mcpsdk.Description("Only tasks of this story id.")),
+		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated task statuses to keep.")),
+	)
+}
+func (s *Server) handleAutonomousPRDTasks(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	if id == "" {
+		return mcpsdk.NewToolResultError("id is required"), nil
+	}
+	q := url.Values{}
+	if n := req.GetInt("limit", 0); n != 0 {
+		if n < 1 {
+			return mcpsdk.NewToolResultError("limit must be 1 or more"), nil
+		}
+		q.Set("limit", strconv.Itoa(n))
+	}
+	if c := strings.TrimSpace(req.GetString("cursor", "")); c != "" {
+		q.Set("cursor", c)
+	}
+	if v := strings.TrimSpace(req.GetString("story", "")); v != "" {
+		q.Set("story", v)
+	}
+	if v := strings.Trim(strings.TrimSpace(req.GetString("status", "")), ","); v != "" {
+		q.Set("status", v)
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+url.PathEscape(id)+"/tasks", q)
 	if err != nil {
 		return nil, err
 	}

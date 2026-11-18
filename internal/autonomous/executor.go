@@ -349,8 +349,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	m.loadSkillGuardrails(prd) // BL303 S2 T08
 	// A dependency that recovered since the last pass releases the dependents
-	// failed behind it, so they run in this pass.
+	// failed behind it, so they run in this pass — for every failure class of
+	// that dependency, not just infrastructure.
 	m.recoverInfraDependents(prd)
+	m.recoverDependencyDependents(prd)
 	tasks := flattenTasks(prd)
 	order, err := topoSort(tasks)
 	if err != nil {
@@ -448,6 +450,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					prd = latest
 				}
 				m.recoverInfraDependents(prd)
+				m.recoverDependencyDependents(prd)
 				var tasks []*Task
 				m.store.WithLock(func() { tasks = flattenTasks(prd) })
 				if o, err := topoSort(tasks); err != nil {
@@ -749,8 +752,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			prd = latest
 			// A dependency the operator retried releases the dependents
-			// failed behind it.
+			// failed behind it, for every failure class.
 			m.recoverInfraDependents(latest)
+			m.recoverDependencyDependents(latest)
 			// The order leaves out tasks held for review, so a task the
 			// operator has since retried is not in it. Rebuild the order from
 			// the Automaton as it stands now. A cycle keeps the old order.
@@ -843,7 +847,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		for remaining > 0 {
 			// A dependency that completed, or was retried, releases the
 			// dependents failed behind it without a new run.
-			if len(m.recoverInfraDependents(prd)) > 0 {
+			if recovered := len(m.recoverInfraDependents(prd)) + len(m.recoverDependencyDependents(prd)); recovered > 0 {
 				reviewDecisions()
 			}
 			if len(inFlight) == 0 {
@@ -2415,6 +2419,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			m.emitTaskStatus(prd, t, preDoneStatus, nil, nil)
+			// A task that failed behind this one, in a pass before it failed its
+			// dependency, is released the moment it completes — the same step the
+			// dependency completes, for every failure class.
+			m.recoverDependencyDependents(prd)
 			// Push-on-complete (per task): the task is verified and saved
 			// as TaskCompleted, so harness-push the work per the effective
 			// policy. Release the per-task tree-writers lock FIRST (the
@@ -2993,6 +3001,9 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		VerifiedAt: time.Now(),
 	}
 	m.store.WithLock(func() { t.Verification = childVerification })
+	// The parent completes by roll-up of the child: dependents that failed
+	// behind it release in the same step, for every failure class.
+	m.recoverDependencyDependents(parent)
 	return emitSaved(old)
 }
 
@@ -3058,6 +3069,22 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 	if inv.ScriptRan {
 		m.recordVerifyCeiling(t, inv.scriptLaunch)
 		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
+	}
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+				return false, "", err
+			}
+			m.store.WithLock(func() {
+				t.Verdicts = append(t.Verdicts, v)
+				t.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, "", nil
+		}
 	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
@@ -3172,6 +3199,22 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
+	if scriptPassed {
+		if msg := applyLintGate(ctx, &inv); msg != "" {
+			v := lintGateBlockVerdict(msg)
+			if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+				return false, nil, err
+			}
+			m.store.WithLock(func() {
+				s.Verdicts = append(s.Verdicts, v)
+				s.FailureReason = &FailureReason{
+					Category: "content", Detail: msg,
+					Source: "lint-gate", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
+			return true, nil, nil
+		}
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
@@ -3490,6 +3533,19 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 		// model belongs to the backend it was set for, so it is dropped (empty =
 		// the target backend's default).
 		backend, model, source = to, "", ExecutorSourceBurnGuard
+	}
+	// Explicit-model policy (model_policy.go): a claude-code worker session is
+	// started with an explicit model. After the precedence above (task ->
+	// story -> Automaton -> Automation -> global, including the burn-guard
+	// reroute) selects the backend, a claude-code backend with an empty model
+	// resolves to sonnet for a regular task and to haiku for a mechanical
+	// task type (classified with the package's ClassifyTask). A non-empty
+	// model named at any level — including a premium Opus/Fable one — was
+	// carried through by the precedence and passes through unchanged. Other
+	// backends are untouched.
+	if backend == claudeCodeBackendName && strings.TrimSpace(model) == "" {
+		taskType, _ := ClassifyTask(t, story)
+		model, _ = ResolveClaudeModel(model, taskType)
 	}
 	return backend, model, source
 }

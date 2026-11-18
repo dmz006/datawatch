@@ -54,7 +54,11 @@ automation_set_llm
 automation_set_verification_llm
 automation_skip_member
 automation_update
+autonomous_archive
 autonomous_attention_list
+autonomous_branch_reap
+autonomous_branch_reap_restore
+autonomous_branch_reap_run
 autonomous_branch_refresh_stats
 autonomous_cleanup_status
 autonomous_completed_migrate
@@ -102,6 +106,7 @@ autonomous_prd_add_story
 autonomous_prd_add_task
 autonomous_prd_approve
 autonomous_prd_approve_task
+autonomous_prd_archive
 autonomous_prd_cancel
 autonomous_prd_cancel_story
 autonomous_prd_cancel_task
@@ -172,6 +177,7 @@ autonomous_prd_set_type
 autonomous_prd_set_verification_llm
 autonomous_prd_set_verifier_policy
 autonomous_prd_set_worker_profile
+autonomous_prd_tasks
 autonomous_progress
 autonomous_progress_trend
 autonomous_project_link_backfill

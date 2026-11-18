@@ -26,11 +26,18 @@ global.self = {
   skipWaiting() {},
   clients: {},
   registration: {},
+  // Mirrors production: the page registers the worker as
+  // /sw.js?v=<release>, so the worker's own location.search carries the
+  // version. With it absent, sw.js falls back to the static name (still
+  // covered by the cacheNameFromSearch fallback tests below).
+  location: { search: '?v=7.0.0-alpha.51' },
 };
 
-const { shouldNavigateOnActivate } = require('./sw.js');
+const { shouldNavigateOnActivate, cacheNameFromSearch, STATIC_CACHE_NAME } = require('./sw.js');
 
-const CURRENT = 'datawatch-v7-0-0-alpha-51';
+// The cache name the worker under test computed from the search above —
+// in production this is exactly the running release.
+const CURRENT = cacheNameFromSearch(global.self.location.search);
 
 // ---------------- pure guard ----------------
 
@@ -149,4 +156,51 @@ test('activate: one window navigate rejecting does not abort the others or the h
   assert.equal(result.ok, true, `activate handler must swallow navigate errors: ${result.err}`);
   assert.equal(w1.attempts, 1, 'failing window was attempted');
   assert.equal(w2.attempts, 1, 'second window still navigated despite first rejecting');
+});
+
+// ---------------- cacheNameFromSearch (versioned cache name, pure) ----------------
+
+test('cacheNameFromSearch: empty/absent search falls back to the static name', () => {
+  assert.equal(STATIC_CACHE_NAME, 'datawatch-v7-0-0-alpha-51');
+  assert.equal(cacheNameFromSearch(''), STATIC_CACHE_NAME);
+  assert.equal(cacheNameFromSearch(undefined), STATIC_CACHE_NAME);
+  assert.equal(cacheNameFromSearch(null), STATIC_CACHE_NAME);
+});
+
+test('cacheNameFromSearch: the v query param becomes the cache name', () => {
+  assert.equal(cacheNameFromSearch('?v=9.119.0'), 'datawatch-9.119.0');
+  assert.equal(cacheNameFromSearch('?v=v7.0.0-alpha.51'), 'datawatch-v7.0.0-alpha.51');
+  // Other params must not affect the name.
+  assert.equal(cacheNameFromSearch('?x=1'), STATIC_CACHE_NAME);
+  assert.equal(cacheNameFromSearch('?x=1&v=2.0'), 'datawatch-2.0');
+});
+
+test('cacheNameFromSearch: two different versions give two different cache names', () => {
+  const a = cacheNameFromSearch('?v=9.119.0');
+  const b = cacheNameFromSearch('?v=9.120.0');
+  assert.notEqual(a, b);
+  assert.notEqual(a, STATIC_CACHE_NAME);
+  assert.notEqual(b, STATIC_CACHE_NAME);
+});
+
+test('cacheNameFromSearch: unsafe characters are sanitized, empty v falls back', () => {
+  assert.equal(cacheNameFromSearch('?v=a%2Fb%20c'), 'datawatch-a-b-c');
+  assert.equal(cacheNameFromSearch('?v='), STATIC_CACHE_NAME);
+  assert.equal(cacheNameFromSearch('?v=%20%20'), STATIC_CACHE_NAME);
+});
+
+// activate with versioned names from two different releases: the previous
+// release's cache is purged, the running release keeps its cache.
+test('activate: previous release cache is deleted, running release cache is kept', async () => {
+  const current = CURRENT; // worker running at ?v=7.0.0-alpha.51
+  const previous = cacheNameFromSearch('?v=6.9.9'); // the stale release's name
+  assert.notEqual(current, previous);
+  const w1 = makeWindow('https://datawatch.local/');
+  const { result, deleted, claims } = await runActivate({
+    cacheKeys: [current, previous],
+    windows: [w1],
+  });
+  assert.equal(result.ok, true, `activate handler rejected: ${result.err}`);
+  assert.deepEqual(deleted, [previous], 'only the previous release cache deleted');
+  assert.equal(claims.count, 1, 'clients.claim called once');
 });

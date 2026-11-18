@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.179.0"
+var Version = "9.182.27"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -585,6 +585,8 @@ type Server struct {
 	// progressNow is the clock the progress routes read; nil means time.Now.
 	// Tests set it to a fixed time.
 	progressNow func() time.Time
+	// rollup holds the project roll-up cache, points memo and merge proof cache.
+	rollup rollupState
 	// timelineNow is the clock the timeline route reads; nil means time.Now.
 	// Tests set it to a fixed time.
 	timelineNow func() time.Time
@@ -5087,6 +5089,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// this one launch (claude-code only; ignored by other backends).
 		// Absent = the plain, non-profile launch.
 		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
+		// WorkerProfileName names a profile (built-in or user-defined) for
+		// this launch, for every session kind. Unknown = full harness, with
+		// the reason recorded on the session record.
+		WorkerProfileName string `json:"worker_profile_name,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5528,10 +5534,19 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var profileFallbackReason string
+	if req.WorkerProfile == nil || req.WorkerProfile.Name == "" {
+		kind := sessionKindForLaunch(req.LaunchRole, req.LaunchKind, req.OneShot)
+		if p, reason := resolveStartWorkerProfile(s.cfg, req.WorkerProfileName, kind); p != nil {
+			req.WorkerProfile = p
+		} else if reason != "" {
+			profileFallbackReason = reason
+		}
+	}
 	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
 
 	opts := &session.StartOptions{
 		LaunchFn:              workerProfileLaunchFn,
+		WorkerProfile:         startWorkerProfileValue(req.WorkerProfile),
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
@@ -5574,6 +5589,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		if cl, err := s.inferenceReg.Get("claude-code"); err == nil && cl != nil && cl.PermissionMode != "" {
 			opts.PermissionMode = cl.PermissionMode
 		}
+	}
+	// Direct claude-code model chain: body model, then the resolved LLM row's
+	// model, then the daemon's global autonomous planning/execution pair.
+	// All empty leaves opts.Model empty so the manager refuses the launch.
+	if opts.Model == "" {
+		opts.Model = s.directClaudeModel(resolvedLLMRef, opts.Backend)
 	}
 	// Wire LLM registry session-backend settings into opts so the session
 	// manager uses per-named-LLM values instead of global cfg defaults.
@@ -5643,7 +5664,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
-			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
+			jsonError(w, http.StatusServiceUnavailable, capacityRefusalMessage(aerr, resolvedLLMRef, req.Model, resolvedComputeNodeRef, waitSecs))
 			return
 		}
 		capacityHolder = holder
@@ -5675,7 +5696,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The launch ran inside Start, so the fallback reason (if any) is already set.
-	sess.ProfileFallbackReason = profileFallbackReason
+	if profileFallbackReason != "" {
+		sess.ProfileFallbackReason = profileFallbackReason
+	}
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
@@ -6727,7 +6750,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
 			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
 			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
-			// in_force: the profile each worker role and task kind starts with,
+			// in_force: the profile each worker role, task kind and session kind
+			// starts with,
 			// from the live values (read-only; see workerProfileInForceForDisplay).
 			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
 			// Host load check: effective mode, multiple and minutes.
@@ -6880,7 +6904,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":         s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
+			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
@@ -7057,6 +7083,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"backlog_path":            s.cfg.Autonomous.Progress.EffectiveBacklogPath(),
 				"since":                   s.cfg.Autonomous.Progress.Since,
 				"snapshot_retention_days": s.cfg.Autonomous.Progress.SnapshotRetentionDays,
+			},
+			"archive": map[string]interface{}{
+				"enabled":        s.cfg.Autonomous.Archive.EffectiveEnabled(),
+				"retention_days": s.cfg.Autonomous.Archive.RetentionDays,
 			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
@@ -7740,6 +7770,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
+	// Archive settings: checked before anything is applied.
+	if verr := validateArchivePatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// tier -> max-inflight table: validate the whole value before anything
 	// is applied, so a bad tier key or negative limit rejects the PUT
 	// instead of being stored (same rule as the plan-coverage pair above).
@@ -8241,6 +8276,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.verifier_headroom_max_age_hours"]; ok {
 		if v, isInt := toInt(raw); !isInt || v < 0 {
 			http.Error(w, "autonomous.verifier_headroom_max_age_hours: must be a whole number >= 0 (0 or unset = default 24 hours)", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -10144,7 +10185,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
 			// Validated in handlePutConfig; stored normalized.
 			applyClassifierPatchKey(&cfg.Classifier, k, v)
-		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points":
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change", "usage.burn_guard.max_projection_gap_points", "usage.burn_guard.mode", "usage.burn_guard.week_tolerance", "usage.burn_guard.points_to_week_factor", "usage.burn_guard.window_percent_per_point", "usage.burn_guard.window_stop_percent", "usage.burn_guard.reading_freshness_minutes":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
 		case "autonomous.backoff_max_wait_minutes":
@@ -10377,6 +10418,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig; 0 = the default of 90 days.
 			if n, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err == nil {
 				cfg.Autonomous.Progress.SnapshotRetentionDays = n
+			}
+		case "autonomous.archive.retention_days":
+			// Validated in handlePutConfig; 0 = the default of 30 days.
+			if n, err := parseProgressWhole("autonomous.archive.retention_days", v); err == nil {
+				cfg.Autonomous.Archive.RetentionDays = n
+			}
+		case "autonomous.archive.enabled":
+			if b, err := parseArchiveEnabled(v); err == nil {
+				cfg.Autonomous.Archive.Enabled = &b
 			}
 		case "pin_check_seconds":
 			// Validated above in handlePutConfig; a value that fails the
@@ -10930,8 +10980,31 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
 			}
+		case "autonomous.reaped_branch_backup_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.ReapedBranchBackupDays = n
+			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		case "autonomous.security_scan_extensions":
+			// File extensions the security scan covers (e.g. ".py").
+			// Same dual-form handling as snapshot_never_stage above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// and the PWA badge input send CSV). Entries are trimmed and
+			// blank ones dropped; an empty result leaves the scanner's
+			// built-in defaults (.py, .pyw) in effect.
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, e := range arr {
+					if t := strings.TrimSpace(e); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SecurityScanExtensions = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SecurityScanExtensions = splitCSV(s)
+			}
 		case "autonomous.per_story_approval":
 			// Phase 3 (v5.26.61) — toggles the per-story approval gate.
 			// When set to true, PRD-level approval transitions stories
@@ -11779,6 +11852,39 @@ func parseProgressGapHours(v interface{}) (float64, error) {
 		return 0, errors.New(msg)
 	}
 	return f, nil
+}
+
+// parseArchiveEnabled reads autonomous.archive.enabled from a JSON bool or
+// the text true/false (the CLI and chat channel send strings).
+func parseArchiveEnabled(v interface{}) (bool, error) {
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "on", "yes":
+			return true, nil
+		case "false", "off", "no":
+			return false, nil
+		}
+	}
+	return false, errors.New("autonomous.archive.enabled: must be true or false")
+}
+
+// validateArchivePatch checks every autonomous.archive.* key present in a PUT
+// /api/config body and returns the first problem.
+func validateArchivePatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.archive.retention_days"]; ok {
+		if _, err := parseProgressWhole("autonomous.archive.retention_days", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.archive.enabled"]; ok {
+		if _, err := parseArchiveEnabled(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateProgressPatch checks every autonomous.progress.* key present in a
@@ -16075,4 +16181,44 @@ func planRecordsSurface(p config.AutonomousPlanRecordsConfig) map[string]interfa
 		"write_through":          p.EffectiveWriteThrough(),
 		"import_conflict_policy": p.EffectiveImportConflictPolicy(),
 	}
+}
+
+// directClaudeModel resolves a model for a direct (interactive) claude-code
+// start that named none: the LLM row's model (Model, else the first non-empty
+// Models entry), then the daemon's global autonomous planning model when its
+// backend is claude-code. It returns "" for any other kind or when every
+// layer is empty, so the manager's refusal still fires.
+func (s *Server) directClaudeModel(llmRef, backend string) string {
+	name := llmRef
+	if name == "" {
+		name = backend
+	}
+	var entry *inference.LLM
+	if s.inferenceReg != nil && name != "" {
+		if e, err := s.inferenceReg.Get(name); err == nil {
+			entry = e
+		}
+	}
+	isClaudeCode := backend == string(inference.KindClaudeCode) ||
+		(entry != nil && entry.Kind == inference.KindClaudeCode)
+	if !isClaudeCode {
+		return ""
+	}
+	if entry != nil && entry.Kind == inference.KindClaudeCode {
+		if entry.Model != "" {
+			return entry.Model
+		}
+		for _, m := range entry.Models {
+			if m.Model != "" {
+				return m.Model
+			}
+		}
+	}
+	if s.cfg != nil {
+		a := s.cfg.Autonomous
+		if a.PlanningModel != "" && (a.PlanningBackend == "" || a.PlanningBackend == string(inference.KindClaudeCode)) {
+			return a.PlanningModel
+		}
+	}
+	return ""
 }

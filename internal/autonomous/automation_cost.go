@@ -48,6 +48,11 @@ func (m *Manager) PRDSessionIDs(prdID string) []string {
 	for _, d := range prd.Decisions {
 		add(d.JudgeSessionID)
 	}
+	if prd.Archive != nil {
+		for _, id := range prd.Archive.JudgeSessionIDs {
+			add(id)
+		}
+	}
 	for i := range prd.Story {
 		st := &prd.Story[i]
 		addVerdicts(st.Verdicts)
@@ -66,6 +71,18 @@ func (m *Manager) PRDSessionIDs(prdID string) []string {
 		}
 	}
 	return ids
+}
+
+// DecomposeSessionIDs returns the live planning sessions linked to a PRD, or
+// nil when no lookup is wired. PRDSessionIDs appends the same list.
+func (m *Manager) DecomposeSessionIDs(prdID string) []string {
+	m.mu.Lock()
+	decompose := m.decomposeSessionsFn
+	m.mu.Unlock()
+	if decompose == nil {
+		return nil
+	}
+	return decompose(prdID)
 }
 
 // PRDCostUSD is the one shared per-PRD cost rollup: the dollars spent by every

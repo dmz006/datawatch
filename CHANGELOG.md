@@ -5,6 +5,216 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
+- **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
+
+## v9.182.27 — Fast Projects and Automata pages
+
+### Changed
+
+- Fast Projects and Automata pages.
+
+## v9.182.26 — 6c000001
+
+### Changed
+
+- 6c000001.
+
+## v9.182.25 — pace_line: the supervisor's weekly and window usage guard rules inside the burn guard
+
+### Changed
+
+- pace_line: the supervisor's weekly and window usage guard rules inside the burn guard.
+
+## v9.182.24 — Stale browser state cannot break the Sessions view-mode buttons
+
+### Changed
+
+- Stale browser state cannot break the Sessions view-mode buttons.
+
+## v9.182.23 — Session-kind profiles: lean starts for every session kind
+
+### Changed
+
+- Session-kind profiles: lean starts for every session kind.
+
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
+## v9.182.20 — Keep the operator host name out of generated reports
+
+### Changed
+
+- Keep the operator host name out of generated reports.
+
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
+## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
+
+### Changed
+
+- Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi.
+
+## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
+
+### Changed
+
+- Requeue dependents whose only failure was a dependency-failed error once the dependency co.
+
+## v9.182.12 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
+## v9.182.11 — Keep full file paths in decomposed task specs (no names cut at a space or a length limit)
+
+### Changed
+
+- Keep full file paths in decomposed task specs (no names cut at a space or a length limit).
+
+## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
+
+### Changed
+
+- Stop the read-only task check from counting launcher files as tree changes.
+
+## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
+
+### Changed
+
+- Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e.
+
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.7 — 3e500001
+
+### Changed
+
+- 3e500001.
+
+## v9.182.6 — 12480001
+
+### Changed
+
+- 12480001.
+
+## v9.182.5 — a46d0001
+
+### Changed
+
+- a46d0001.
+
+## v9.182.4 — Pack workflow graphs: research note with grounded answers
+
+### Changed
+
+- Pack workflow graphs: research note with grounded answers.
+
+## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
+
+### Changed
+
+- Fix the shutdowncause child process scan flake in the full test run.
+
+## v9.182.2 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
+
+### Changed
+
+- Fix the peer-down recovery test that fails in the full package run.
+
+## v9.182.0 — Build-host toolchain freshness check
+
+### Changed
+
+- Build-host toolchain freshness check.
+
+## v9.181.0 — Remember the header server dropdown choice per browser
+
+### Changed
+
+- Remember the header server dropdown choice per browser.
+
+## v9.180.2 — Two data races found by the race detector
+
+### Fixed
+
+- **A model pull answered with a record that its own background pull was still updating.** The compute node model pull handler registered the pull task, started the goroutine that updates it, then encoded the same record into the response. The response is now a copy taken before the goroutine starts. The race detector reported it in `TestModelPullAllowedByModelEntry` and `TestModelPullAllowedByPublisher`.
+- **The observer pull test ticker helper was not safe for the several collector workers that ask it for a ticker at once.** It now holds a lock, which removes the race and the occasional failure of `TestHandleObserverPull_FailedPeerIsStaleWithReason`.
+
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
 ## v9.179.0 — Automaton landing record
 
 ### Changed
@@ -414,7 +624,11 @@ The Projects page now decides which project an Automaton belongs to by an explic
 
 ### Changed
 
-- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting.
+- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage, key `dw_server_choice`), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting. Mobile parity for this persisted choice is tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482).
+
+### Fixed
+
+- **The remembered server choice is no longer overwritten by the settle bound once boot has settled.** The boot settle step's fallback timer (which turns an unvalidatable saved choice into **All servers** when the server list cannot be fetched in time) was never cleared when another path settled, and its callback saved **All servers** unconditionally — so a page open longer than the bound could have its validated saved choice, or a choice the operator picked in the meantime, silently overwritten with "all" in local storage. Each now-settle path (validated peer, stale fallback, the bound) commits through one guarded finish: the first to settle wins and clears the pending bound, and the "all" save only runs through that guard. New PWA tests fire the bound's callback after a validated restore and pin that the stored choice — and a choice made after boot — do not change.
 
 ## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
 

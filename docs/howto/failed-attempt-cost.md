@@ -94,6 +94,11 @@ How the choice is made:
   `autonomous_prd_set_task_llm` or on an Automaton with `autonomous_prd_set_llm`.
 - **A model is required for some backends.** `pi`, `pi-prompt` and `ollama`
   refuse to start without a model. Set the model before, or with, the backend.
+  `claude-code` is the exception: a model-less pair is accepted, and an
+  attempt that resolves to no model starts on the daemon default model
+  (`sonnet`, or `haiku` for a mechanical task type) rather than the
+  backend's built-in default. See
+  [Explicit model policy](explicit-model-policy.md).
 - **The pair is daemon-wide.** There is no per-Automaton or per-task map. For one
   task that needs a specific worker, set the worker on that task, or put a
   ladder step on it ([Failure escalation](failure-escalation.md)).

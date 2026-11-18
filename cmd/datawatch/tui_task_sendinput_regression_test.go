@@ -53,8 +53,8 @@ func TestPromptModeSessionNeverReceivesSendInput(t *testing.T) {
 	llm.Register(&promptModeStub{name: "regress-never-send"})
 
 	scenarios := []struct {
-		family      string
-		wantCalls   int
+		family    string
+		wantCalls int
 	}{
 		{"regress-never-send", 0}, // unlisted prompt-mode name: capability decides
 		{"pi-prompt", 0},
@@ -70,10 +70,10 @@ func TestPromptModeSessionNeverReceivesSendInput(t *testing.T) {
 		sc := sc
 		t.Run(sc.family, func(t *testing.T) {
 			sess := &session.Session{
-				FullID:       "test-0001",
-				State:        session.StateWaitingInput,
-				OneShot:      true,
-				Task:         "do the one-shot task",
+				FullID:        "test-0001",
+				State:         session.StateWaitingInput,
+				OneShot:       true,
+				Task:          "do the one-shot task",
 				BackendFamily: sc.family,
 			}
 

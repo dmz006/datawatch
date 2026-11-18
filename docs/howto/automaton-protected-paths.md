@@ -153,9 +153,21 @@ stripped on both sides, so a protected rules file counts as changed only when
 its content changes outside them. In the merge preflight the same rule means a
 rules-file commit that carries only daemon sections is stripped out before the
 merge, while a rules file that also carries a real edit is rewritten without
-the daemon's sections and the real edit is kept. A real edit to the rules is
+the daemon's sections and the real edit is kept. The same pre-merge cleanup
+also drops the two launcher files — `worker-mcp.json` and
+`worker-starting-context.md` — when the branch committed one at its root and
+the merge target has none of that file; a launcher-named file that belongs to
+the target state, and a same-named file in a subfolder, are both kept (see
+[Before a task branch merges](automaton-parallel-tasks.md#before-a-task-branch-merges-daemon-side-cleanup)).
+A real edit to the rules is
 still held and asked, exactly as before, and there is no new setting behind
-any of this: the same protected list and the same action apply.
+any of this: the same protected list and the same action apply. The
+daemon-section-only determination itself is made only for a path that is
+demonstrably inside the project folder — an empty, absolute or
+upward-escaping path, one with a NUL byte, or one reachable only through a
+symlink chain that leaves the folder, fails the determination, and the
+commit is graded as an ordinary change with the normal hold, warn or block
+applying.
 
 Beside those, the rules file carries one narrower, visible exception: if a
 task's only change against the base is a worker checkpoint entry, the gate

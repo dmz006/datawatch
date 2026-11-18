@@ -73,6 +73,14 @@ const (
 	KindOpenCodeAPI Kind = "opencode-api" // opencode HTTP inference API (OpenAI-compat)
 )
 
+// ClaudeCodeRowName is the canonical claude-code LLM row. The shared
+// claude-code launcher is built exactly once, at daemon start, from this
+// row's Binary (cmd/datawatch/main.go; empty = the "claude" default) and
+// runs that one binary for every claude-code session — no matter which
+// claude-code row created the session. A Binary on any other claude-code
+// row is honored by no code path, so LLM.Validate refuses to save one.
+const ClaudeCodeRowName = "claude-code"
+
 // AllKinds is the set the operator can pick from + UI dropdowns.
 //
 // Order matters: inference-first (Council/agent-spawn use these),
@@ -236,6 +244,10 @@ type LLM struct {
 
 	// Session-backend fields. Only applicable when Kind is a session-backend
 	// (claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, shell).
+	// Binary is honored only on the canonical ClaudeCodeRowName row for
+	// claude-code (the launcher runs that one binary for every claude-code
+	// session); on any other claude-code row it would launch nothing, so
+	// Validate refuses to save it.
 	Binary        string `yaml:"binary,omitempty" json:"binary,omitempty"`
 	ConsoleCols   int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
 	ConsoleRows   int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
@@ -441,6 +453,20 @@ func (l *LLM) Validate() error {
 	}
 	if !validKind(l.Kind) {
 		return fmt.Errorf("llm: unknown kind %q (allowed: %v)", l.Kind, AllKinds)
+	}
+	// claude-code: the launcher is a shared backend built once at daemon
+	// start with the canonical ClaudeCodeRowName row's binary (or the
+	// "claude" default) and runs exactly that binary for every
+	// claude-code session. A binary saved on any other claude-code row —
+	// e.g. a "claude-lean" wrapper the operator expected new sessions to
+	// start with — would be silently ignored. Refuse the dead config with
+	// the reason instead of pretending it took effect.
+	if l.Kind == KindClaudeCode {
+		l.Binary = strings.TrimSpace(l.Binary)
+		if l.Binary != "" && l.Name != ClaudeCodeRowName {
+			return fmt.Errorf("llm %q: binary %q cannot be saved on a claude-code row other than the canonical %q row: the claude-code launcher is built at daemon start with the %q row's binary (or the \"claude\" default) and runs exactly that binary for every claude-code session, so row %q would silently ignore it. Save this row without a binary, or point the canonical %q row at the wrapper binary (takes effect on daemon restart)",
+				l.Name, l.Binary, ClaudeCodeRowName, ClaudeCodeRowName, l.Name, ClaudeCodeRowName)
+		}
 	}
 	if l.TimeoutSeconds < 0 {
 		return fmt.Errorf("llm: timeout_seconds must be >= 0")

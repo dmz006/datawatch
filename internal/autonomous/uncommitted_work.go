@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -27,13 +28,15 @@ type UncommittedFile struct {
 
 // DetectUncommittedWork lists the files git sees as modified, staged, deleted,
 // renamed or untracked in dir, using git status through the read-only run
-// (nil means defaultDriftGitRunner). Ignored files never appear because git
-// status omits them. Paths are normalized, de-duplicated and sorted, and the
-// daemon's own files are dropped: scratch artifacts of the Automata runner, the
-// tooling files the daemon writes into a project directory when a session
-// starts (see isDaemonToolingFile and isDaemonIgnoreChange) and anything
-// gitguard.Default refuses to stage. An empty dir or a git error returns an
-// error so the caller can skip the check.
+// (nil means defaultDriftGitRunner). Files the repository's own ignore rules
+// ignore and that are not in the index never appear, along with the daemon's
+// own files: scratch artifacts of the Automata runner, the tooling files the
+// daemon writes into a project directory when a session starts (see
+// isDaemonToolingFile and isDaemonIgnoreChange), anything gitguard.Default
+// refuses to stage, and files whose content is only the daemon's injected
+// marked sections (see daemonSectionsOnlyChange and daemonSectionsOnlyUntracked).
+// Paths are normalized, de-duplicated and sorted, and an empty dir or a git
+// error returns an error so the caller can skip the check.
 func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) ([]UncommittedFile, error) {
 	files, _, err := DetectUncommittedWorkSkipping(ctx, dir, run)
 	return files, err
@@ -69,6 +72,19 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 		keep[p] = true
 	}
 
+	// A file the repository's own ignore rules ignore and that is not in the
+	// index cannot be part of a commit anyway, so it is never the task's work.
+	// An index check that fails keeps the entry, following the conservative
+	// pattern of classifyTaskCommitPaths.
+	ignoreSet := ignoredUntrackedPaths(ctx, dir, paths)
+	dropIgnored := map[string]bool{}
+	for p := range ignoreSet {
+		cached, cerr := run(ctx, dir, "ls-files", "--cached", "--", p)
+		if cerr == nil && strings.TrimSpace(cached) == "" {
+			dropIgnored[normalizeDriftPath(p)] = true
+		}
+	}
+
 	seen := make(map[string]bool, len(files))
 	result := make([]UncommittedFile, 0, len(files))
 	var skipped []string
@@ -81,7 +97,7 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 			}
 			continue
 		}
-		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] {
+		if !keep[f.Path] || isBookkeepingPath(f.Path) || isDaemonToolingFile(f) || seen[f.Path] || dropIgnored[f.Path] {
 			continue
 		}
 		if isIgnoreFileName(f.Path) && isDaemonIgnoreChange(ctx, dir, f.Path, run) {
@@ -90,6 +106,11 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 		// A modified tracked file whose only difference from HEAD is the
 		// daemon's own marked blocks is not the task's work.
 		if f.Status != "??" && daemonSectionsOnlyChange(ctx, dir, f.Path, run) {
+			continue
+		}
+		// A newly untracked file that holds nothing but the daemon's own
+		// marked blocks is not the task's work either.
+		if f.Status == "??" && daemonSectionsOnlyUntracked(ctx, dir, f.Path) {
 			continue
 		}
 		seen[f.Path] = true
@@ -178,13 +199,17 @@ const (
 
 // isDaemonToolingFile reports whether f is a new file the daemon itself wrote
 // into the project directory for a session: the per-session MCP discovery file
-// and the skills it injects. They are never the task's work. Only an untracked
-// file counts, so a project that tracks .mcp.json still sees a change to it.
+// and the skills it injects, plus the two root launcher files the session
+// launcher writes when it starts (see launcherToolingFiles). They are never
+// the task's work. Only an untracked file counts, so a project that tracks one
+// of these files still sees a change to it.
 func isDaemonToolingFile(f UncommittedFile) bool {
 	if f.Status != "??" {
 		return false
 	}
-	return f.Path == daemonMCPConfigFile || strings.HasPrefix(f.Path, daemonSkillsDir)
+	return f.Path == daemonMCPConfigFile ||
+		strings.HasPrefix(f.Path, daemonSkillsDir) ||
+		isLauncherToolingFile(f.Path)
 }
 
 // isIgnoreFileName reports whether p is one of the ignore files the daemon
@@ -227,18 +252,22 @@ func ignoreFileLines(text string) map[string]bool {
 // compared with an empty one. Any other change, including one the worker made,
 // is not the daemon's.
 func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
-	cleaned, ok := localRelPath(rel)
-	if !ok {
+	// Containment, checked inline on rel before any file call: reject empty,
+	// NUL-byte, absolute, '.' and any '..' escape; the cleaned local form is
+	// what is joined and read. The resolved-base check (a symlink pointing
+	// outside dir) follows in repoFileInside.
+	if rel == "" || strings.ContainsRune(rel, 0) || filepath.IsAbs(rel) {
 		return false
 	}
-	if strings.ContainsRune(cleaned, 0) {
+	relClean := filepath.Clean(filepath.FromSlash(rel))
+	if relClean == "." || !filepath.IsLocal(relClean) {
 		return false
 	}
-	checked := filepath.FromSlash(cleaned)
-	if !filepath.IsLocal(checked) {
+	curPath, err := repoFileInside(dir, filepath.ToSlash(relClean))
+	if err != nil {
 		return false
 	}
-	cur, err := os.ReadFile(filepath.Join(dir, checked)) // #nosec G304 -- checked is a lexically local path and dir is the Automaton's own project directory
+	cur, err := os.ReadFile(curPath)
 	if err != nil {
 		return false
 	}
@@ -338,7 +367,9 @@ type TaskCommitFn func(ctx context.Context, dir string, files []string, message 
 // error is returned. When nothing ends up staged it makes no commit and
 // returns the current HEAD with a nil error. A listed path that was deleted
 // is recorded as a deletion, whether or not the deletion was already staged,
-// and a path that exists nowhere (worktree, index, HEAD) is skipped.
+// and a path that exists nowhere (worktree, index, HEAD) is skipped; so is
+// a path git ignores that is not in the index, because git add would refuse
+// it.
 func DefaultTaskCommit(ctx context.Context, dir string, files []string, message string) (string, error) {
 	if dir == "" {
 		return "", errors.New("task commit: empty directory")
@@ -375,8 +406,13 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 //  1. A path that lexically escapes the repository (absolute, or starting
 //     with ".." once cleaned) or contains a NUL byte is never skipped: it goes to add and pathspec so git fails
 //     with its own error.
-//  2. A path that exists in the worktree (Lstat succeeds) goes to add and
-//     pathspec.
+//  2. A path that exists in the worktree — under dir and not reachable only
+//     through a symlink that escapes dir (the stat is containment-checked) —
+//     goes to add and pathspec, unless it is git-ignored (git check-ignore)
+//     and not in the index (`git ls-files --cached` returns nothing for it):
+//     then it is skipped and appears in neither list, because git add would
+//     refuse it. A path in the index is never skipped, whatever its ignore
+//     status.
 //  3. A path missing from the worktree but present in the index is a tracked
 //     file deleted on disk: add (git add stages the deletion) and pathspec.
 //  4. A path missing from the worktree and index but present in HEAD is a
@@ -388,13 +424,23 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 // found" result) never skips a path; it goes to add and pathspec so the real
 // git error surfaces.
 func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, skipped []string) {
+	// Which listed paths the repository's ignore rules ignore, asked of git
+	// check-ignore in chunks of 500. When git cannot answer (error, context
+	// cancel) the set is empty, so no path is dropped below and the real
+	// git error surfaces at add.
+	ignoreSet := ignoredUntrackedPaths(ctx, dir, files)
 	for _, p := range files {
-		if strings.ContainsRune(p, 0) {
+		if p == "" || strings.ContainsRune(p, 0) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
 			continue
 		}
 		clean := filepath.Clean(p)
+		if clean == "." {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
 		if filepath.IsAbs(clean) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
@@ -406,11 +452,26 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 			pathspec = append(pathspec, p)
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(dir, rel)); err == nil {
-			add = append(add, p)
-			pathspec = append(pathspec, p)
-			continue
+		if inside, ierr := repoFileInside(dir, rel); ierr == nil {
+			if _, lerr := os.Lstat(inside); lerr == nil {
+				// Git-ignored and untracked (not in the index) cannot be staged:
+				// git add refuses it. A path in the index is tracked and is kept
+				// even if it matches an ignore rule, and so is a path whose
+				// index check failed.
+				if ignoreSet[p] {
+					if cached, cerr := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p); cerr == nil && strings.TrimSpace(cached) == "" {
+						skipped = append(skipped, p)
+						continue
+					}
+				}
+				add = append(add, p)
+				pathspec = append(pathspec, p)
+				continue
+			}
 		}
+		// A path that is not stat-able under dir (missing, or reachable only
+		// through a symlink leaving dir) falls through to the index/HEAD
+		// probes below instead of being committed by its relative name.
 		out, err := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p)
 		if err != nil || strings.TrimSpace(out) != "" {
 			add = append(add, p)
@@ -430,6 +491,36 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		skipped = append(skipped, p)
 	}
 	return add, pathspec, skipped
+}
+
+// ignoredUntrackedPaths reports which of the given repo-relative paths the
+// repository's ignore rules ignore (git check-ignore), asked in chunks of 500
+// paths. git exits 0 when at least one path is ignored and 1 when none is;
+// both are normal outcomes here. Any other failure (git error, context
+// cancel) yields an empty set — a path whose ignore status cannot be
+// confirmed is kept, following the conservative pattern of ignoredSet in
+// internal/session/git.go.
+func ignoredUntrackedPaths(ctx context.Context, dir string, paths []string) map[string]bool {
+	ignored := map[string]bool{}
+	for start := 0; start < len(paths); start += 500 {
+		end := min(start+500, len(paths))
+		args := append([]string{"check-ignore", "--"}, paths[start:end]...)
+		out, err := runGitInCtx(ctx, dir, args...)
+		if err != nil {
+			// exit 0 is success and exit 1 means "none ignored"; anything
+			// else means git could not answer this chunk.
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+				continue
+			}
+		}
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				ignored[l] = true
+			}
+		}
+	}
+	return ignored
 }
 
 // taskHeadSHA returns the current HEAD commit of dir.

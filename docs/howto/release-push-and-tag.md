@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [release, push, tag, release path, ci window, automaton, audit, settings]
+  topics: [release, push, tag, release path, ci window, automaton, audit, settings, pre-tag, trivy]
 exec_params:
   - {name: project, required: true, description: "Project name whose release settings and last release you want to read"}
 exec_steps:
@@ -188,6 +188,8 @@ key. The status tool itself only reads.
 `make pre-tag` must pass on the build host before a tag is created, by an Automaton or by hand. It runs every gate in order, stops at the first failure, and replaces `go test` in the CI and release workflows, so a code failure is found on the build host and not after the tag is pushed. It appends one line per run (commit, date, step count, result and seconds) to the gitignored `.datawatch/pre-tag-record`; tag only from a commit whose last line says `result=pass`.
 
 New work must carry its unit and functional tests and the relevant smoke script before it ships. The e2e and sandbox smoke run stays the operator's major-release step; it is not a product feature and `make pre-tag` does not run it.
+
+The `docker-agent-base` step builds the agent-base image and, when Trivy is installed, scans it; Trivy findings fail the step. That scan runs on a throwaway scan cache under your temp space that the script removes on every exit path — a passing scan, a failing scan, or an interrupt — so repeated pre-tag runs do not accumulate scan-cache folders in the temp directory. The step skips itself when nothing container-related changed since the last tag, and the scan skips (the step still passes) when Trivy is not installed.
 
 Operator review: the CI and release workflows no longer run `go test`, so confirm the build host runs `make pre-tag` (script: `scripts/pre-tag.sh`, self-test: `tests/test-pre-tag.sh`) before every tag. If a tag is pushed from a commit with no `result=pass` line in `.datawatch/pre-tag-record`, nothing in CI will catch a failing test.
 

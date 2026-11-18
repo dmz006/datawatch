@@ -10,13 +10,13 @@ import (
 
 // CachedEmbedder wraps an Embedder with an in-memory LRU cache.
 type CachedEmbedder struct {
-	inner    Embedder
-	mu       sync.RWMutex
-	cache    map[string][]float32
-	order    []string // insertion order for eviction
-	maxSize  int
-	hits     atomic.Int64
-	misses   atomic.Int64
+	inner   Embedder
+	mu      sync.RWMutex
+	cache   map[string][]float32
+	order   []string // insertion order for eviction
+	maxSize int
+	hits    atomic.Int64
+	misses  atomic.Int64
 }
 
 // NewCachedEmbedder wraps an embedder with a cache. maxSize=0 defaults to 1000.
@@ -31,8 +31,8 @@ func NewCachedEmbedder(inner Embedder, maxSize int) *CachedEmbedder {
 	}
 }
 
-func (c *CachedEmbedder) Name() string       { return c.inner.Name() + " (cached)" }
-func (c *CachedEmbedder) Dimensions() int    { return c.inner.Dimensions() }
+func (c *CachedEmbedder) Name() string    { return c.inner.Name() + " (cached)" }
+func (c *CachedEmbedder) Dimensions() int { return c.inner.Dimensions() }
 
 // CacheHitRate returns the cache hit rate as a percentage.
 func (c *CachedEmbedder) CacheHitRate() float64 {

@@ -1,16 +1,29 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
 exec_steps:
   - tool: autonomous_cleanup_status
-    description: Read what both cleanup passes did last, the two disk readings and the disk alert
+    description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
     args: {}
     read_only: true
   - tool: autonomous_safe_to_delete
     description: List the Automaton work branches and worktrees that are safe to remove right now, and the ones that are held back (read-only)
     args: {}
     read_only: true
+  - tool: autonomous_branch_reap
+    description: Read the branch reaper's report — the task sub-branches a pass would reap, the ones held, and every backup ref (a report; it deletes nothing)
+    args: {}
+    read_only: true
+  - tool: autonomous_branch_reap_run
+    description: Perform one branch reap pass — each listed branch is backed up first, then deleted
+    args: {}
+    read_only: false
+  - tool: autonomous_branch_reap_restore
+    description: Recreate one reaped task sub-branch from its newest backup ref
+    args:
+      branch: "{{params.branch}}"
+    read_only: false
   - tool: get_config
     description: Read the daemon settings, including the autonomous.automation cleanup keys
     args: {}
@@ -39,6 +52,12 @@ exec_steps:
       key: autonomous.automation.disk_alert_percent
       value: "{{params.percent}}"
     read_only: false
+  - tool: config_set
+    description: Set the whole days a reaped branch's backup ref is kept before it is pruned (0 or unset = 30)
+    args:
+      key: autonomous.reaped_branch_backup_days
+      value: "{{params.days}}"
+    read_only: false
 ---
 
 # Automaton worktree cleanup
@@ -58,12 +77,13 @@ is that project's own default branch, whatever it is called.
 
 ## What it removes
 
-There are two passes. Each has its own mode, counts and last-run record.
+Three safety nets. Two of them — the worktrees pass and the temp sweep — each have their own mode, counts and last-run record. The third, the **cache folders sweep**, removes stale `go-build` and Trivy scan-cache folders directly in your temp directory; it has no row of its own in the status and you read it in the log and audit stream (**The cache folders sweep** below).
 
 | Pass | What it removes | When |
 |---|---|---|
 | **Worktrees** | A finished Automaton's work branch and its worktree | When the Automaton completes or is cancelled, and again on a periodic sweep for anything that was held back or missed |
 | **Temp files** | The scratch files and directories the daemon's own worker sessions created in the temporary directory | When the session ends, and again on a periodic sweep for anything that refused to go the first time |
+| **Cache folders** | Stale Go build cache (`go-build`) and Trivy scan-cache (`trivy-scan-cache*`) folders directly under your temp directory, at least 60 minutes old, that no live process holds | Not at all on the owner path: once at daemon start, and again on a periodic sweep beside the temp sweep — the sweep is their only cleanup |
 
 The first time something is removed is the **owner** path: the Automaton or
 session cleans up after itself the moment it ends. The periodic sweep is the
@@ -123,6 +143,63 @@ record of what the daemon created is kept in memory, scratch left behind by an
 earlier daemon process (one that crashed, or ran before a restart) is not
 attributed and is left alone; remove those by hand if you want them gone.
 
+**The cache folders sweep.** A build or scan runs under the Automaton's
+worktree, but its cache folders land in **your temp directory**, not in the
+Automaton's directory or worktree: Go's build cache folders (`go-build`) and
+Trivy's scan-cache folders (`trivy-scan-cache*`). The temp sweep does not cover
+them — the daemon never recorded creating them, and they do not carry the
+`datawatch-` prefix — and nothing on the worktree side ever does. Left alone,
+they outlive every Automaton that made them and the temp directory grows until
+builds and tests start failing. The sweep is the only thing that removes them.
+
+It runs once when the daemon starts, before the first poll, and on every
+coordinator poll beside the temp sweep, in every mode. It looks only at entries
+directly under the temp directory (a symbolic link there is counted as skipped
+and never followed; a folder inside a subfolder is outside the pass), and
+removes one only if all of these hold:
+
+1. its name is a Go build cache folder (`go-build`, or `go-build` followed by
+   digits) or a Trivy scan-cache folder (a `trivy*` name containing
+   `scan-cache` or `scan_cache`) — anything else is left and counted as
+   skipped;
+2. it is a directory, not a file or a symbolic link;
+3. it is at least **60 minutes** old by its last modification — a fixed
+   retention, not `cleanup_retention_hours` and not a setting you can change;
+   an age the sweep cannot read is not removable; and
+4. no live process holds it: no open handle into the folder, and no live
+   process with its working directory inside it.
+
+Point 4 is the **liveness probe**. On Linux the daemon walks `/proc` for every
+live process and checks its open files and working directory against the
+folder. On a platform without `/proc` — or when `/proc` cannot be read —
+liveness is **unknown**, and unknown is treated as held: the folder is kept.
+In practice the sweep is a no-op on hosts without a readable `/proc`, even in
+`on` mode; it removes nothing it cannot prove safe.
+
+The mode is the same `autonomous.automation.cleanup_mode` as the other passes:
+`off` does nothing, not even a scan; `report` lists the folders that would be
+removed and removes nothing; `on` removes. The per-pass removal limit
+caps the worktrees and temp passes, not this one. Its result — like the temp
+sweep's — always carries the number of folders removed and the bytes of space
+freed. Where you see it: one summary line in the daemon log per pass
+(`cache-folder-sweep`) with the counts, skip reasons and bytes freed, plus the
+audit event `autonomous_cache_folder_sweep`. A removal that errors is left in
+place and recorded in the pass result, like the other passes.
+
+**The scan itself is its own housekeeper.** The pre-tag run's Trivy scan (the
+`docker-agent-base` step; see the Pre-tag run section of
+`docs/operations.md`) does not wait for the sweep at all: before the scan it
+creates a **throwaway, isolated cache directory** under the operator's temp
+space — `mktemp -d`, never a fixed shared path — and exports it as
+`TRIVY_CACHE_DIR`, and traps on `EXIT`, `INT` and `TERM` remove that directory
+on **every exit path — a passing scan, a failing scan and an interrupted run
+alike** — so the scan neither reuses a warmed shared cache nor leaves a folder
+behind in the temp directory. The cache is fresh on each run, so the scan
+re-fetches what it needs; that is the trade-off for leaving nothing behind. If
+`trivy` is not on PATH the scan is skipped with a message and no cache
+directory is created. The sweep above remains the net for the stray `go-build`
+and Trivy scan-cache folders it could not remove itself.
+
 ## The three modes
 
 The mode is one key: `autonomous.automation.cleanup_mode`.
@@ -147,6 +224,12 @@ mode is read live, so a change applies on the next poll without a restart.
 
 A value that is not allowed is refused with an error and nothing is written.
 Entries past the per-pass limit are simply left for the next pass.
+
+One threshold next to these is fixed, not a setting: the disk holding the temp
+folder always alerts at **80%** or lower — the lower of `disk_alert_percent`
+and 80, with 80 as the ceiling (so at the default 85 the effective temp-disk
+threshold is 80). The worktree disk keeps whatever you have set. See **The
+disk alert**.
 
 ## Base requirements
 
@@ -181,8 +264,9 @@ the counts show what a pass found it could remove.
    is still running, reads keep serving the last successful result, so a slow
    or failing refresh never leaves the card blank or blocked, and a failed
    refresh is counted in the daemon stats.
-3. The daemon log carries one summary line per pass
-   (`worktree-cleanup` and `temp-sweep`) with the mode and the counts.
+3. The daemon log carries one summary line per
+   pass (`worktree-cleanup`, `temp-sweep` and `cache-folder-sweep`) with the
+   mode and the counts.
 
 ### Moving from report to on
 
@@ -213,20 +297,59 @@ never set is not shown; it is running on its default.
 
 ## The disk alert
 
-Alongside the two passes the daemon measures how full two disks are: the one
+Alongside the passes the daemon measures how full two disks are: the one
 holding the worktree base repository, and the one holding the daemon's
-temporary directory. When either is at or above `disk_alert_percent`, it raises
-one warning alert that names the disk and its usage and says that removing the
-Automaton worktrees and session scratch that live there would free space.
+temporary directory. Each is checked against its own threshold — the worktree
+disk against `disk_alert_percent` (default 85), the temp disk against the
+lower of that value and the fixed 80 — and when either is at or above its
+threshold the daemon raises one warning alert that names every over-threshold
+disk with its usage. When the temp disk is the one over, the alert body also
+lists the **biggest folders directly in the temp folder** — the top five —
+each with its approximate size and whether a **running process** holds it — its **ownership**, judged by the same `/proc` liveness probe the sweep uses (an open handle into it, or a process working out of it). That list
+is what points you at what is eating the space; in practice it is the stale
+`go-build` and Trivy scan-cache folders the sweep above was added for.
 
-- The alert is **rate limited**: while a disk stays above the threshold it
+- The alert is **rate limited**: while a disk stays above its threshold it
   fires at most once an hour, not once per poll. The time it last fired is kept
   across daemon restarts, so a restart does not repeat an alert.
-- The disk check runs in **every** mode, `off` included. The alert only tells
-  you to free space. It never removes anything by itself.
+- The disk check runs in **every** mode, `off` included. The alert only names
+  what is full and what is biggest on it. It never removes anything — nor does
+  its wording promise to: the cleanup paths are the ones that remove, and the
+  alert says so.
 - If a disk cannot be measured, the status says there is no reading for it and
   it cannot raise an alert; it is never shown as 0%.
 - The worktree disk reading is absent while no worktree base repository is set.
+- While the temp disk is at or above its threshold, a read of the status
+  carries the same folder report — `biggest_temp_folders`: the top five
+  folders directly in the temp folder, each with its path, approximate size
+  and its liveness (`held`, `liveness_known`). It is measured on the check
+  that found the disk over, is absent until the first such check, and clears
+  again once the disk drops back below its threshold.
+- Each disk reading also carries its own `threshold`, so a reader knows which
+  threshold that reading was checked against even though the two thresholds
+can differ.
+
+## The no-space gate reason (temporary folder full)
+
+The same full-temp condition speaks in one place outside the cleanup: the
+Automaton's final gate, which the daemon runs as the **script gate**. When a
+gate check exits non-zero and its captured output says the storage it wrote to
+ran out — `no space left on device`, `ENOSPC` or `disk quota exceeded`, in any
+casing — the task's failure reason reads **temporary folder full**, not the
+exit code. That exact text is what the daemon's infra-retry classifier matches,
+and it maps it to the `storage_write` class (the device is full, the quota is
+used up, or the file system is read-only): the task takes the infra-retry path
+— a back-off schedule, recorded on the task and as an `infra_retry` decision on
+the Automaton — instead of being counted against it as a failed test. A no-space
+failure at the gate is treated as an **infrastructure storage shortage**, not a
+content or test failure, and the retry is not counted against the task.
+
+The gate's other bad endings keep their own reasons — a gate killed by a
+signal, a gate that never ran, a gate that hit its deadline — so only a
+real no-space exit reads this way. When a daemon restart leaves a finished
+gate result to consume, the same reason comes out of the stored result, so the
+classification does not change across the restart. The reason itself removes
+nothing; it only tells you which side of the failure line the machine is on.
 
 ## Reading the status
 
@@ -258,10 +381,11 @@ and, for the whole status:
 
 | Field | Meaning |
 |---|---|
-| `worktree_disk`, `temp_disk` | Path and usage percent of each guarded disk, and whether it is over the threshold |
-| `disk_alert_percent` | The threshold in force |
-| `disk_alert` | True while either disk is at or above the threshold, as of the last check |
+| `worktree_disk`, `temp_disk` | Path and usage percent of each guarded disk, whether it is over its own threshold (`alert`), and the `threshold` that reading was checked against |
+| `disk_alert_percent` | The threshold you set, in force |
+| `disk_alert` | True while either disk is at or above its own threshold, as of the last check |
 | `last_disk_alert_at` | When the alert last actually fired; absent until it has |
+| `biggest_temp_folders` | While the temp disk is at or above its threshold: the top five folders directly in the temp folder, each as `path`, `size`, `held`, `liveness_known`. Absent until the first such reading, and cleared once the disk drops back below its threshold |
 
 Keys with no value are **absent**, not `null`.
 
@@ -283,11 +407,14 @@ daemon log are where to look.
    Automaton cleanup (disk alert threshold: 85%):
      worktrees pass: not run yet
      temp pass: not run yet
-     worktree disk: /srv/projects/app at 42%
-     temp dir disk: /tmp at 31%
+     worktree disk: /srv/projects/app at 42% (threshold 85%)
+     temp dir disk: /tmp at 31% (threshold 80%)
      disk alert: not active
    This is a status read only: the cleanup passes do the removing, not this read.
    ```
+
+   Note the two different thresholds on the two disk lines: the worktree disk
+   is checked at the 85 you set, the temp dir disk at the fixed 80.
 
 2. After a few Automata have finished, read it again. In `report` mode:
 
@@ -308,8 +435,18 @@ It never removes a branch with commits that are not on the default branch,
 never removes a worktree with uncommitted changes, never touches a running or
 unfinished Automaton, never uses `--force` or `-D`, never removes anything
 outside the `automaton/` branch namespace or the daemon's own scratch files,
-and never follows a symbolic link. In `off` it does not even run git for the
-cleanup. The disk alert never removes anything.
+and never follows a symbolic link. It never removes a cache folder whose age
+it cannot read or whose liveness it cannot prove — on platforms without a
+readable `/proc`, that is all of them — and the disk alert never removes
+anything, in any mode. The no-space gate reason (temporary folder full) is
+only a label on a gate failure plus an infra-retry path; it removes nothing,
+either. In `off` it does not even run git for the
+cleanup, and it does not scan the cache folders either. The only thing that
+still runs in `off` is the disk reading and its alert. Its status record is
+guarded the same way: the status file path is resolved once inside the data
+directory, a data directory that is not usable leaves the status recorder
+inert (it neither loads nor saves anything), and the "still there" probe on a
+failed worktree path never stats an empty, NUL-laden or `../`-climbing path.
 
 ## Skipped by reason, permission errors and the fix
 
@@ -354,7 +491,11 @@ view), inside the **Cleanup** card, a permission problem that can be fixed shows
 permissions** button. The button posts the affected paths to
 `POST /api/autonomous/cleanup/fix-permissions`. A problem that is `hidden` is not
 shown. The PWA button and that REST route are the surfaces; there is no CLI verb,
-MCP tool or comm verb for the fix.
+MCP tool or comm verb for the fix. This route is one of the seven housekeeping
+routes described in **These routes work on the live daemon** below: with
+Automata enabled the live daemon serves it, and it is refused only while
+Automata are off (**503** `autonomous disabled`) or when a federated peer's
+token lacks the autonomous write capability (**403**).
 
 ## Unlanded branches (finished work that never reached the default branch)
 
@@ -443,6 +584,52 @@ returns the branch, the bundle path and the worktree path it removed. Know what 
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
+### These routes work on the live daemon
+
+The routes on this list pass through one gate in the server:
+
+| Route | Method | Federated peer needs |
+|---|---|---|
+| `/api/autonomous/unlanded-work` | GET | autonomous read |
+| `/api/autonomous/unlanded-work/keep` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/archive-branch` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/delete-worktree` | POST | autonomous write |
+| `/api/autonomous/uncommitted-work/diff` | GET | autonomous read |
+| `/api/autonomous/uncommitted-work/commit` | POST | autonomous write |
+| `/api/autonomous/cleanup/fix-permissions` | POST | autonomous write |
+
+The daemon hands the server a wrapper around the worker manager, and that
+wrapper carries every method the gate needs, so all seven routes answer on the
+live daemon. The server checks this when it is built, against the exact wrapper
+the daemon wires in, so a build whose wrapper lost one of these methods does not
+compile. An empty list still reads empty (no base repository, or nothing
+unlanded) and is never an error.
+
+What you can still see when an action cannot run:
+
+Gate refusals — the request was rejected before the action ran, and nothing
+was touched:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **503** `autonomous disabled` | Automata are off on this daemon | Turn Automata on (`autonomous.enabled`), then retry |
+| **403** `session token lacks capability: ...` | A federated peer called the route without the autonomous read (GET) or write (POST) capability | Grant that capability to the peer, or run the action on the daemon itself |
+| **405** `method not allowed` | The route was called with the wrong method | Use the method in the table above |
+
+The action's own failures — the request passed the gate and the action ran. The message says what failed, and the same failure keeps answering the same way while the cause is not resolved:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **400** | Incomplete or invalid input: `branch is required`, `worktree is required`, `confirm is required to delete a worktree`, `no base repository is configured`, `commit message is empty`, `worktree is outside the Automaton worktree base`, `the worktree has no uncommitted files` (an invalid JSON body answers **400** too) | Send the missing field (a delete needs `confirm: true`), configure the base repository, or pick a worktree inside the worktree base that actually has uncommitted files |
+| **404** `branch is not in the unlanded list` | `keep`, `archive-branch` or `delete-worktree` was called for a branch that is not in the current unlanded list (it was archived or deleted, or was never listed) | Read the list again (`GET /api/autonomous/unlanded-work`) and act on a branch it names |
+| **409** | The action's own failure — for example the delete's bundle backup could not be written or verified (in which case nothing was removed), or the working directory refused the archive ref | Read the message for the cause, clear it, then rerun the action |
+
+One operator flag: because the current build proves at build time that the
+wrapper carries every gate method, a daemon answering **503**
+`Housekeeping actions unavailable` on any of the seven routes above is an old
+build from before the fix — upgrade the daemon binary, there is no setting
+that changes that answer.
+
 ### Daily pending-branch alert
 
 A **pending** branch is one the list marks `superseded`: later work replaced it
@@ -498,7 +685,10 @@ worktree, or merge it.
 safe-to-delete report is still undecided; the operator must confirm that. If the
 force-delete of a worktree is not wanted when it hides uncommitted work, the
 debate over Delete worktree is not yet settled; review that action before using
-it. The
+it. An empty **Unlanded work** card means nothing is unlanded, or no base
+repository is set; to tell the two apart, read
+`GET /api/autonomous/unlanded-work` directly (**These routes work on the live
+daemon** above). The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 
@@ -548,6 +738,123 @@ whose branch read-only git cannot prove merged on the default branch gets a
 | comm | `autonomous landing <id>` shows the record's line. `autonomous landing keep <id> <reason...> [actor=<who>]` and `autonomous landing drop <id> <reason...>` record the decision — both orders work (decision word before or after the id) |
 
 All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
+
+## The task sub-branch reaper (backup first, then remove)
+
+A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
+
+The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
+Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
+in the repository. The **branch reaper** removes those leftovers once the parent
+Automaton has settled (merged — its work branch's commits are all on the base —
+or dropped — its work branch is gone).
+
+**When it is safe.** The reaper works out each Automaton's **landing state** from git alone — **landed**: the work branch exists and every commit of it is already on the base branch by commit *content* (`git cherry`; a cherry-picked copy counts); **dropped**: the work branch is gone, so only the base branch can contain its work; **pending**: the work branch still carries commits not on the base (a comparison git cannot answer reads as pending, so an unknown state never loses a branch) — and skips pending Automata whole. For each settled one it looks at each task branch and removes it only when **every commit on it is contained in the Automaton's work branch or in the base branch**; even one uncontained commit keeps it (with a plain reason), a branch that is already absent is a no-op, and if git cannot compare, the branch is kept — never a guess. And if a merge is in progress (`MERGE_HEAD` in any of the Automata's working directories), the pass ends early and removes nothing, so work mid-merge is never judged against a moving base.
+
+**Backup first.** Before any removal, the reaper writes a backup ref,
+`refs/datawatch/reap-backup/<branch>/<Unix seconds>` (branch-name characters
+that would not be ref-safe become dashes, so `automaton/task-1` lands as
+`refs/datawatch/reap-backup/automaton-task-1/<timestamp>`), and only **then** removes the branch.
+That removal is `git branch -D` — the one forced delete in this area — but it is
+permitted only because the backup ref exists: if the backup ref cannot be
+written, the branch is not removed and the entry is counted. If the backup
+succeeds and the removal fails, the backup ref stands and the branch is still
+restorable. You can inspect a backup any time with
+`git for-each-ref refs/datawatch/reap-backup/`.
+
+**Restore.** A restore takes the branch name and recreates it from the
+*latest* backup ref under that name. If there is no backup ref for that name it
+returns an error — it never guesses a target.
+
+**Expiry.** Backup refs are not permanent. `autonomous.reaped_branch_backup_days`
+is the whole days a reaped branch's backup ref is kept before it is pruned:
+unset or 0 reads the default of **30** days, and a negative value is refused as
+a config error. The expiry prunes only refs inside `refs/datawatch/reap-backup/`
+whose numeric timestamp suffix is already older than the retention; a ref whose
+name has no numeric timestamp is never touched, and pruning closes the restore
+window for that branch.
+
+### Setting the retention
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.reaped_branch_backup_days` |
+| **CLI** | `datawatch config set autonomous.reaped_branch_backup_days 45` |
+| **REST** | `PUT /api/config` or `PUT /api/autonomous/config` with `{"autonomous.reaped_branch_backup_days": 45}` |
+| **Comm channel** | `configure autonomous.reaped_branch_backup_days=45` |
+| **MCP** | the `config_set` call above |
+| **Web app / PWA** | Settings → General, field labelled "Reaped Automaton branch backup kept (days; 0 or unset = 30)" |
+
+It is read live, so a change applies with no restart, and `GET /api/config`
+reports the effective days under `autonomous`.
+
+### Where to see and act
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/branch-reap` for the report: `reaped` (each with `automaton_id`, `backup_ref`, `contained_in`, `commits`, a plain `reason`), `waiting` (same shape, with the reason it was kept), `backups` (every ref under `refs/datawatch/reap-backup/`, the branch named when it matches a stored task sub-branch), `backup_days` and `computed_at`. `POST /api/autonomous/branch-reap/run` performs one pass (takes no body; a pass already in progress answers **409**). `POST /api/autonomous/branch-reap/restore` with `{"branch": "..."}` recreates one branch from its newest backup ref (a branch that was never reaped answers **404**). All three answer **503** while the base repo (`autonomous.worktree_base_repo`) is unset, and the two `POST`s need the autonomous write capability from a federated peer. |
+| CLI | `datawatch autonomous branch-reap [--json]` (report), `datawatch autonomous branch-reap-run [--json]` (pass), `datawatch autonomous branch-reap-restore <branch> [--json]` (restore). All three print the same wording the chat verbs show; `--json` prints the daemon's body untouched. |
+| MCP | `autonomous_branch_reap` (report, read-only), `autonomous_branch_reap_run` (pass) and `autonomous_branch_reap_restore` (restore; `branch` is required). Each defaults to plain wording; `format: json` returns the daemon's body untouched. |
+| Comm channel | `autonomous branch-reap` (report) and `autonomous branch-reap-restore <branch>` (restore). There is **no comm verb for the pass** — that is REST, CLI and MCP only. |
+| Web app / PWA | Automata tab → **Events** sub-tab → the **Branch reaper** card under the cleanup card (it refreshes while the sub-tab is open): "Would be reaped (N)" and "Held — would be kept (N)" with the Automaton, the containment, the commit count and the backup ref per branch, then the backup refs and the retention, and a **Restore** button per listed branch. The card has no run button. |
+| Mobile and wear | The same REST contract, documented in `docs/api/openapi.yaml`. |
+
+A CLI walkthrough of the three steps:
+
+1. `datawatch autonomous branch-reap` — the report:
+   ```
+   Branch reaper preview (the report deletes nothing yet)
+
+   Would be reaped:
+     - automaton/p1--tasks-fix-t1  (Automaton p1)  every commit of automaton/p1--tasks-fix-t1 is on main  [backup refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000]
+
+   Held (branch kept):
+     - automaton/p1--tasks-fix-t2  (Automaton p1)  3 commit(s) of automaton/p1--tasks-fix-t2 are not in main
+
+   Backup refs (retention 30 whole days when unset):
+     - refs/datawatch/reap-backup/automaton-p1--tasks-fix-t1/1784000000 -> a1b2c3d  (branch automaton/p1--tasks-fix-t1)
+   ```
+   Nothing has been backed up, deleted or restored — a report.
+2. When you are ready: `datawatch autonomous branch-reap-run` — each listed
+   branch gets its backup ref first, then `git branch -D`; the reply says
+   "Reaped (each backup ref was written before the delete)" with the ref per
+   branch. A pass already in progress answers a conflict, not a silent skip.
+3. To bring one back: `datawatch autonomous branch-reap-restore
+   automaton/p1--tasks-fix-t1` — "Branch restored from its newest backup ref"
+   with the branch, the backup ref and the commit it now points at.
+
+### How it relates to the rest of this guide
+
+- It removes **task sub-branches**, not `automaton/<id>` work branches or
+  worktrees — that is the worktrees pass's job, with its own mode, retention
+  window and per-pass limit.
+- It does **not** read the unlanded **Keep** records (`unlanded-keep.json`),
+  the project's **Branch retention** (`projects_defaults.branch_retention_days`)
+  or any of the cleanup pass's state; its safety tests are settlement, the
+  containment check and no merge in progress. A **Keep** record protects the
+  Automaton's work branch from the worktrees pass — it does not speak for the
+task sub-branches. (That a Keep record leaves task sub-branches unprotected is one of the things still to review below.)
+- It is a different feature from *Processes the worker left running* (no branch
+  removal at all) and from the **session-end** reaper, which reaps a session's
+  leftover processes.
+
+### Still needs your review
+
+- **Nothing runs a pass on a timer, and the expiry has no caller.** The
+  report, the pass and the restore are all operator-triggered (above), but no
+  schedule runs a reap pass and nothing calls the backup-ref expiry — the refs
+  accumulate until something prunes them. Review where and when the pass and
+  the expiry should run.
+- **The pass is not on the comm channel or the PWA card.** Those two surfaces
+  have the report and the restore; the pass is REST, CLI and MCP only. Review
+  whether that is the split you want.
+- **Keep-record gap.** A task sub-branch whose parent Automaton you **Keep** for
+  the record is reaped as soon as it is contained (it is still protected only
+  while the landing state is `pending`). If you rely on Keep records as your
+  "do not touch this", review whether the reaper should also honor them.
+- **Retention fit.** 30 days is the default restore window per project. Decide
+  whether it is right for your review cycles before a backup you might need is
+  pruned.
 
 ## Processes the worker left running
 

@@ -232,7 +232,11 @@ func (r *Registry) BackfillSessionDefaults() []string {
 		// channel_enabled=true but skip_permissions still false) still gets
 		// fixed. Each condition is checked separately — no combined &&.
 		if llm.Kind == KindClaudeCode && llm.AutoCreated {
-			if llm.Binary == "" {
+			// The launcher runs the canonical ClaudeCodeRowName row's binary
+			// for every claude-code session. This passes over the map
+			// directly (no Validate), so apply the same rule Validate
+			// enforces on save: only the canonical row gets a default binary.
+			if llm.Binary == "" && llm.Name == ClaudeCodeRowName {
 				llm.Binary = "claude"
 				changed = true
 			}

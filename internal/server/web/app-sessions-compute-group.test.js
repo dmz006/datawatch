@@ -28,7 +28,7 @@ function loadApp() {
 }
 
 // Three local rows: the local host is 'datawatch', but its sessions carry three
-// different compute spellings ('local', 'johnnyjohnny', 'datawatch') -- two of
+// different compute spellings ('local', 'remotenode', 'datawatch') -- two of
 // them aliases of the real name. Two rows each for two peers, tagged s.server
 // and carrying NO compute tag at all.
 function seed(sb) {
@@ -41,7 +41,7 @@ function seed(sb) {
     tags: [], system_tags: ['s.server:' + server],
   });
   const sessions = [
-    local('l1', 'local'), local('l2', 'johnnyjohnny'), local('l3', 'datawatch'),
+    local('l1', 'local'), local('l2', 'remotenode'), local('l3', 'datawatch'),
     peer('p1', 'peernode'), peer('p2', 'peernode'),
     peer('q1', 'otherpeer'),
   ];
@@ -69,7 +69,7 @@ test('the local node lists under its real name, never the word local', () => {
   const names = groupNames(sb, '');
   assert.ok(names.includes('datawatch'), 'real hostname is a chip');
   assert.ok(!names.includes('local'), 'the literal local is never a chip');
-  assert.ok(!names.includes('johnnyjohnny'), 'an alias of the real name does not split the node');
+  assert.ok(!names.includes('remotenode'), 'an alias of the real name does not split the node');
 });
 
 test('alias spellings of the local host merge into one summed entry', () => {

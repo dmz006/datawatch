@@ -1005,7 +1005,7 @@ paths:
         `autonomous.parallel.read_only_tasks` (true|false, default true; tasks flagged read_only skip the tree lock),
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
-        `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_conflict_model` (string, default empty = the non-Opus daemon default ("sonnet"); a model the operator names, an Opus model included, is used as written; the model that resolves a merge conflict),
         `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
@@ -1066,6 +1066,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -3744,6 +3746,107 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/branch-reap:
+    get:
+      summary: Branch reaper report
+      description: |
+        The read-side pass of the task sub-branch reaper. `reaped` lists the
+        task sub-branches a pass would reap (their Automaton's landing state
+        has settled and their commits are all on the base), with `commits`
+        the commits they carried, `contained_in` the branch whose content
+        covers them and `reason` the plain sentence; `backup_ref` is present
+        for any of them an earlier pass already backed up. `waiting` lists the
+        branches that would be held (still landing, a commit not contained in
+        the base, or a merge in progress). `backups` lists every backup ref
+        under refs/datawatch/reap-backup/, `branch` the task sub-branch it
+        came from when it matches a stored one, and `sha` the tip it holds.
+        `backup_days` is the retention of those refs in whole days (0 or unset
+        reads 30; autonomous.reaped_branch_backup_days). The report only
+        reads; nothing is backed up, deleted or restored. Only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousBranchReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Branch reaper report (read-side pass)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/run:
+    post:
+      summary: Run one branch reap pass
+      description: |
+        Performs one reap pass. For every Automaton whose landing state has
+        settled, each task sub-branch whose commits are all on the base is
+        backed up to refs/datawatch/reap-backup/ first and then deleted with
+        git branch -D; `waiting` lists the branches held (still landing, a
+        commit not contained in the base, or a merge in progress). Takes no
+        body (a non-empty body is refused); the report (GET
+        /api/autonomous/branch-reap) already computed what would happen.
+        Running the reaper is an operator-approved write and a federated peer
+        needs the autonomous write capability.
+      operationId: autonomousBranchReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/restore:
+    post:
+      summary: Restore one reaped branch
+      description: |
+        Recreates one branch an earlier pass reaped, from its newest backup
+        ref under refs/datawatch/reap-backup/. The body is {"branch": "..."}
+        where branch is the task sub-branch from the report; a missing or
+        empty branch is refused. A branch that was never reaped answers 404.
+        A restore is an operator-approved write and a federated peer needs the
+        autonomous write capability.
+      operationId: autonomousBranchReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The task sub-branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/protected-paths:
     get:
       summary: Automaton protected-paths status
@@ -4777,7 +4880,7 @@ paths:
                 verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
                 verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
                 verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
-                verify_tls: {type: boolean, description: When true, model pulls to this node verify its https certificate against the system roots. Default false. Update replaces the whole node so omitting it means false.}
+                verify_tls: {type: boolean, description: Kept for configuration compatibility. Model pulls to this node always verify its https certificate against the system roots (plus tls_ca_file or tls_cert_fingerprint when set); there is no per-node off switch.}
       responses:
         "200":
           description: The updated node record
@@ -13071,8 +13174,8 @@ components:
         blocker: {type: string}
         eligibility_reason:
           type: string
-          enum: [stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid]
-          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work) or worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository)"
+          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}
@@ -13335,6 +13438,68 @@ components:
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
         computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
         stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
+    ReapReport:
+      type: object
+      description: |
+        The split of one reap pass: the POST run response on its own, and the
+        reaped and waiting parts of the report. Both lists are empty when no
+        Automaton qualifies.
+      required: [reaped, waiting]
+      properties:
+        reaped:
+          type: array
+          description: The branches a pass would reap (report) or reaped (run)
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches held, and the reason
+          items: {$ref: "#/components/schemas/ReapEntry"}
+    ReapEntry:
+      type: object
+      description: One branch in the reaped or the waiting list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The task sub-branch}
+        backup_ref: {type: string, description: The ref the branch's tip was kept at; present for a branch an earlier pass already backed up}
+        contained_in: {type: string, description: The branch (work or base) whose content covers every commit of the reaped branch}
+        commits: {type: integer, description: The commits the branch carried}
+        reason: {type: string, description: The plain sentence for the entry}
+    ReapSurfaceReport:
+      type: object
+      description: The report, as GET /api/autonomous/branch-reap returns it
+      required: [reaped, waiting, backups, backup_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The task sub-branches that would be reaped
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches that would be held
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        backups:
+          type: array
+          description: Every backup ref under refs/datawatch/reap-backup/, sorted by ref; empty while no pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        backup_days: {type: integer, description: The retention of the backup refs in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    ReapBackup:
+      type: object
+      description: One backup ref under refs/datawatch/reap-backup/
+      required: [ref, sha]
+      properties:
+        branch: {type: string, description: The task sub-branch the ref came from, when its key matches a stored one; empty otherwise}
+        ref: {type: string, description: The full ref name}
+        sha: {type: string, description: The tip the ref holds}
+    ReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/branch-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The branch that came back}
+        backup_ref: {type: string, description: The newest backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     TriageList:
       type: object
       description: |-
@@ -14608,6 +14773,17 @@ components:
           type: string
           description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
           example: "3ab70001"
+        worker_profile_name:
+          type: string
+          description: |
+            Name of the worker session profile this launch should take: one of the built-ins
+            (`minimal`, `digest`, `datawatch-tools`, `full`) or a profile you defined in
+            `autonomous.worker_profiles`. A name the daemon does not know never starts a
+            half-applied session: that launch falls back to the full harness and the session
+            record carries the reason. Omit (or send empty) to leave the choice to the daemon's rules —
+            the daemon-wide `autonomous.worker_profile` and then the session-kind default.
+            Claude Code only; ignored by other backends.
+          example: "digest"
         task:
           type: string
           description: Task description passed to the LLM

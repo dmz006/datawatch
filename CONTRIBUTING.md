@@ -136,10 +136,12 @@ Steps:
   hoisted top-level functions. Shared shim helpers live in
   `internal/server/web/testutil_browser_stub.js` — reuse them rather than
   duplicating a new stub per file.
+- **Build host toolchain:** `make check-toolchain` belongs to the local pre-tag run; it exits 0 when everything is current or a version source is unreachable, and exits 1 when Go or a tool is behind (see [docs/howto/build-host-toolchain.md](docs/howto/build-host-toolchain.md)).
 
 ## Code Style
 
 - Format with `gofmt -w .` before committing. No external linters are required for PRs.
+- The format check (`scripts/check-gofmt.sh`, run via `make check-gofmt`) runs in `make lint` and in the local pre-tag run, and fails on any unformatted Go file.
 - Add doc comments to all exported types and functions.
 - Keep functions focused on a single responsibility.
 - Prefer explicit error handling over panics.

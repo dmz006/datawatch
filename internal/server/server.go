@@ -477,6 +477,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// decompose-lint — config read/replace + per-PRD stored record / dry run.
 	apiMux.HandleFunc("/api/autonomous/decompose-lint/config", api.handleAutonomousDecomposeLintConfig)
 	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
+	// One page of one Automaton's task rows (never part of the list).
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/tasks", api.handlePRDTasks)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/archive", api.handlePRDArchive)
+	apiMux.HandleFunc("/api/autonomous/archive", api.handleAutonomousArchive)
 	// Planning routing: config, test and scorecard.
 	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)
@@ -647,6 +651,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                  // safe-to-delete report of finished Automaton branches and worktrees
+	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list

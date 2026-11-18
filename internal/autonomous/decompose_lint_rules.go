@@ -34,9 +34,10 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Thirteen rules, in the order findings should surface them: the nine
-// block-severity rules (tasks that cross a hard boundary, plus the three
-// verification-script stability rules that follow read_only_unverifiable)
+// Seventeen rules, in the order findings should surface them: the
+// thirteen block-severity rules (tasks that cross a hard boundary, plus
+// the seven verification-script stability rules that follow
+// read_only_unverifiable)
 // first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
@@ -113,6 +114,38 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "verify_script_docs_without_sync: the task's verification script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`, so it fails on a stale embedded copy; run `make sync-docs` first (directly or via a sourced helper).",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptDocsWithoutSync: true,
+			},
+		},
+		{
+			ID:       "artefact_files_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton: the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail - exclude docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and CHANGELOG.md from the unexpected-files computation (rule artefact_files_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptArtefactFilesAllowed: true,
+			},
+		},
+		{
+			ID:       "final_gate_artefact_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree: check only the files this task adds, or skip the file-set check when the final gate re-runs the script (rule final_gate_artefact_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptFinalGateArtefactAllowed: true,
+			},
+		},
+		{
+			ID:       "script_invokes_known_flag",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "script invokes a command with a flag that the command's own help does not list: validate every command and flag a script uses against the real binary's help before the script is accepted (rule script_invokes_known_flag)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptInvokesUnknownFlag: true,
+			},
+		},
+		{
+			ID:       "check_matches_spec_text",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts a heading or output format the task spec does not name: state the exact heading and format the script checks in the task spec that asks for it (rule check_matches_spec_text)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptSpecUnanchored: true,
 			},
 		},
 		{

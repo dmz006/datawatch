@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.179.0"
+var Version = "9.182.27"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4745,14 +4745,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
-			ResumeMaxAgeSeconds:   acfgIn.ResumeMaxAgeSeconds,
-			StaleTaskSeconds:      acfgIn.StaleTaskSeconds,
-			TaskMaxAttemptSeconds: acfgIn.TaskMaxAttemptSeconds,
-			TaskNoProgressSeconds: acfgIn.TaskNoProgressSeconds,
-			StuckRunningSeconds:   acfgIn.StuckRunningSeconds,
-			AutoFixRetries:        acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes:  acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:          acfgIn.SecurityScan,
+			ResumeMaxAgeSeconds:    acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:       acfgIn.StaleTaskSeconds,
+			TaskMaxAttemptSeconds:  acfgIn.TaskMaxAttemptSeconds,
+			TaskNoProgressSeconds:  acfgIn.TaskNoProgressSeconds,
+			StuckRunningSeconds:    acfgIn.StuckRunningSeconds,
+			AutoFixRetries:         acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes:   acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:           acfgIn.SecurityScan,
+			SecurityScanExtensions: acfgIn.SecurityScanExtensions,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
@@ -6962,6 +6963,43 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// BL24 — warn-only pre-commit security scan over the task's
+			// worktree, fired by the session manager exactly once, after
+			// every commit guard, immediately before the completion commit
+			// is authorized. The config is read through the live pointer at
+			// call time (effectiveAutonomousConfig: the Manager's live
+			// Config() snapshot when attached, else the boot-time literal)
+			// so a runtime config set takes effect on the next scan without
+			// a restart. Findings land on the task via
+			// RecordTaskSecurityFindings (status untouched). This path is
+			// warn-only end to end: the hook never returns an error, a
+			// panicking hook is recovered by the session manager, and the
+			// commit always proceeds.
+			mgr.SetPreCommitScan(func(sess *session.Session) {
+				if sess == nil || sess.ProjectDir == "" {
+					return
+				}
+				if sess.PRDID == "" {
+					return // only autonomous PRD task sessions are scanned
+				}
+				acfg := effectiveAutonomousConfig(autonomousMgrRef, amgrCfg)
+				if !acfg.SecurityScan {
+					return
+				}
+				findings := autonomouspkg.RunPreCommitSecurityScan(true, sess.ProjectDir, acfg.SecurityScanExtensions)
+				if len(findings) == 0 {
+					return
+				}
+				for _, f := range findings {
+					fmt.Printf("[security-scan] %s: %s\n", sess.FullID, f)
+				}
+				if prdID, taskID := amgr.FindTaskBySessionID(sess.FullID); prdID != "" && taskID != "" {
+					if rerr := amgr.RecordTaskSecurityFindings(prdID, taskID, findings); rerr != nil {
+						fmt.Printf("[warn] [security-scan] %s: record on %s/%s: %v\n", sess.FullID, prdID, taskID, rerr)
+					}
+				}
+				fmt.Printf("[security-scan] %s: %d findings in %s (warn-only: the completion commit proceeded)\n", sess.FullID, len(findings), sess.ProjectDir)
+			})
 			// merge_pipeline — the merge-shadow comparison after a ship reads
 			// version files and the registry file from it.
 			amgr.SetMergePipelineConfig(cfg.Autonomous.MergePipeline)
@@ -6972,6 +7010,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.archive — the finished-Automaton archive reads its
+			// switch and retention at every use; the background pass only reads
+			// and rewrites Automaton record files and never touches a session.
+			amgr.SetArchiveSettings(func() (bool, int) {
+				ac := cfg.Autonomous.Archive
+				return ac.EffectiveEnabled(), ac.EffectiveRetentionDays()
+			})
 			// autonomous.project_link_backfill_apply (default off) — one-time
 			// project link backfill: dry-run report only unless set, then a
 			// durable done marker stops re-runs. Reads and writes Automaton
@@ -12409,7 +12454,7 @@ func newConfigSetCmd() *cobra.Command {
 			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
-			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model), " +
+			"autonomous.parallel.merge_conflict_model (model name; empty = the non-Opus daemon default \"sonnet\"), " +
 			"autonomous.parallel.merge_retry_seconds (whole seconds >= 0; default 60, 0 = timer off).\n\n" +
 			"Merge pipeline release keys: autonomous.merge_pipeline.release_size_map (kind=size pairs such as feature=minor,bug=patch, or a JSON object; sizes are patch|minor|major|none), " +
 			"autonomous.merge_pipeline.major_trigger (manual|milestone|never), autonomous.merge_pipeline.release_cadence (per_merge; batch and manual are not available yet) and " +
@@ -12446,7 +12491,7 @@ func newConfigSetCmd() *cobra.Command {
 			"(manual, milestone or never; default manual). A project with its own value keeps it.\n\n" +
 			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
 			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
-			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"and worker_profile_defaults.kind (each a JSON object of role, task kind or session kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
 			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
@@ -12960,7 +13005,10 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			launchRole, _ := cmd.Flags().GetString("launch-role")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+			profileName, _ := cmd.Flags().GetString("worker-profile-name")
+			model, _ := cmd.Flags().GetString("model")
+			effort, _ := cmd.Flags().GetString("effort")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName, model, effort)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -12975,6 +13023,9 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
+	newCmd.Flags().String("worker-profile-name", "", "worker profile name (built-in or user-defined) applied at launch for any session kind; unknown = full harness, reason recorded (sent as worker_profile_name)")
+	newCmd.Flags().String("model", "", "Model for this claude-code session (alias like sonnet or full name). Omit to use the LLM row's model or the daemon default")
+	newCmd.Flags().String("effort", "", "Session effort: quick|normal|thorough. Omit for the default")
 	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
@@ -13680,16 +13731,46 @@ func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
 // sessionNewStartBodyRole is sessionNewStartBodyPriority plus the optional
 // launch_role placement fact (worker|verifier|planner|judge|supervisor),
 // sent only when one was given; the server validates it.
-func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) ([]byte, error) {
+func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName ...string) ([]byte, error) {
 	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
-	if err != nil || strings.TrimSpace(launchRole) == "" {
+	pn := ""
+	if len(profileName) > 0 {
+		pn = strings.TrimSpace(profileName[0])
+	}
+	if err != nil || (strings.TrimSpace(launchRole) == "" && pn == "") {
 		return body, err
 	}
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}
-	m["launch_role"] = strings.TrimSpace(launchRole)
+	if r := strings.TrimSpace(launchRole); r != "" {
+		m["launch_role"] = r
+	}
+	if pn != "" {
+		m["worker_profile_name"] = pn
+	}
+	return json.Marshal(m)
+}
+
+// sessionNewStartBodyModel is sessionNewStartBodyRole plus the optional model
+// and effort, each sent only when non-empty.
+func sessionNewStartBodyModel(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole, profileName, model, effort string) ([]byte, error) {
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
+	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	if err != nil || (model == "" && effort == "") {
+		return body, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	if model != "" {
+		m["model"] = model
+	}
+	if effort != "" {
+		m["effort"] = effort
+	}
 	return json.Marshal(m)
 }
 
@@ -13719,9 +13800,9 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName string, model, effort string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+	body, err := sessionNewStartBodyModel(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName, model, effort)
 	if err != nil {
 		return err
 	}

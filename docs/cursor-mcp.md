@@ -121,7 +121,7 @@ Selected core tools:
 | Tool | Description |
 |------|-------------|
 | `list_sessions` | List all active AI sessions on this host |
-| `start_session` | Start a new AI session (supports `caller_session_id`, `kill_children`, `permission_mode`) |
+| `start_session` | Start a new AI session (supports `model`, `effort`, `name`, `caller_session_id`, `kill_children`, `permission_mode`) |
 | `session_output` | Get the last N lines of output from a session |
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
@@ -157,8 +157,10 @@ Selected core tools:
 | `autonomous_decision_record_list` / `autonomous_decision_record_get` | List or read decision records: `state` (`open`, `answered` or `withdrawn`), `prd_id`, `limit` (1–1000, default 100); listing also returns the daemon's folder-watch status; read-only, needs `autonomous:read` |
 | `plan_record_create` / `plan_record_update` / `plan_record_import` | Write plan records (registry rows and findings kept by the daemon): create or change one, or import the plans registry and findings files. `kind` is `registry-row` or `finding`; `ref` is an id, `row <n>`, a title or a unique title prefix; import previews unless `dry_run` is `false` |
 | `plan_record_list` / `plan_record_get` / `plan_record_search` | List one kind, read one record, or search titles and notes across both kinds (`project`, `state`, `limit`, `offset`; the daemon caps a page at 500) |
-| `housekeeping_repairs` | Read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`) the mode in effect (`off`, `report`, `on`), what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe; no arguments, read-only. Change a mode with `config_set`, key `autonomous.housekeeping_repairs.<group>` |
+| `housekeeping_repairs` | Read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) the mode in effect (`off`, `report`, `on`), what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe; no arguments, read-only. Change a mode with `config_set`, key `autonomous.housekeeping_repairs.<group>` |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
+| `autonomous_prd_tasks` | One page of one Automaton's task rows (`limit`, `cursor`) |
+| `autonomous_prd_archive` / `autonomous_archive` | Read one finished Automaton's archive (`id`); report (dry run, the default) or perform (`dry_run=false`) the archive of finished Automata |
 | `autonomous_event_kinds` | List every lifecycle event kind a subscription can match, grouped, with each kind's description and whether it wakes the supervisor by default (read-only, no parameters) |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_prd_set_project` | Link an Automaton to a configured project (`id`, `project`); an empty project clears the link and an unknown name is refused with the configured names |
@@ -305,6 +307,6 @@ A remote AI agent (e.g. running in a cloud function) can:
 This enables fully autonomous AI workflows that delegate coding tasks to
 datawatch-managed AI sessions on your development machines.
 
-- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role and task kind, the latest start-up averages per profile and role, and `in_force`, the profile each role and task kind starts with now. Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
+- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role, task kind and session kind, the latest start-up averages per profile and role, and `in_force`, the profile each of them starts with now (thirteen entries). Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
 - `secret_scan_config_get` / `secret_scan_config_set` — read and change the push-time secret scan (`git.secret_scan`); the setter validates the mode, detector names and fingerprints.
 - `secret_scan_stats` — read the daemon's pre-push secret-scan counters (`runs`, `findings`, `shadow_reports`, `refusals`, `last_run_at`, `last_refusal_at`) plus the effective `git.secret_scan` mode; proxies `GET /api/git/secret-scan/stats`. Counters are in-memory since daemon start and reset on restart.

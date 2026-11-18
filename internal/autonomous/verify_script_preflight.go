@@ -39,7 +39,7 @@ var preflightRunShellCheck = func(interpreter, scriptText string) (string, error
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	path := filepath.Join(dir, "script.sh")
 	if err := os.WriteFile(path, []byte(scriptText), 0o600); err != nil {
 		return "", err

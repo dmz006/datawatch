@@ -198,6 +198,9 @@ type candidateProc struct {
 	uid     string
 	user    string
 	cmdline string
+	// namesPID is true when the cmdline names the daemon's own pid as a
+	// whole token: direct evidence, stronger than a unit-name match.
+	namesPID bool
 }
 
 func procScanCause() Cause {
@@ -221,37 +224,133 @@ func procScanCause() Cause {
 	return c
 }
 
-// scanCandidates lists live /proc entries whose cmdline contains a
-// service-control verb (or `datawatch stop|restart`) and names the
-// datawatch unit or the daemon's own pid.
-func scanCandidates(ownPID int) []candidateProc {
-	ownPIDStr := strconv.Itoa(ownPID)
+// procSource is the process table as seen by the procscan: the candidate
+// pids, a cmdline lookup and an identity lookup per pid. The default
+// implementation reads the live proc filesystem; tests install a scoped one.
+type procSource interface {
+	pids() []int
+	cmdline(pid int) (string, bool)
+	identity(pid int) (uid, userName string)
+}
+
+// liveProcSource reads the live proc filesystem.
+type liveProcSource struct{}
+
+func (liveProcSource) pids() []int {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
 	}
-	var out []candidateProc
+	var out []int
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
 		pid, aerr := strconv.Atoi(e.Name())
-		if aerr != nil || pid == ownPID {
+		if aerr != nil {
 			continue
 		}
-		raw, rerr := os.ReadFile("/proc/" + e.Name() + "/cmdline")
-		if rerr != nil {
+		out = append(out, pid)
+	}
+	return out
+}
+
+func (liveProcSource) cmdline(pid int) (string, bool) {
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
+	if err != nil {
+		return "", false
+	}
+	return strings.Trim(strings.ReplaceAll(string(raw), "\x00", " "), " "), true
+}
+
+func (liveProcSource) identity(pid int) (string, string) {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
+	if err != nil {
+		return "", ""
+	}
+	uid := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "Uid:") {
 			continue
 		}
-		cmdline := strings.Trim(strings.ReplaceAll(string(raw), "\x00", " "), " ")
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			uid = parts[1]
+		}
+		break
+	}
+	if uid == "" {
+		return "", ""
+	}
+	userName := ""
+	if u, uerr := user.LookupId(uid); uerr == nil {
+		userName = u.Username
+	}
+	return uid, userName
+}
+
+var (
+	procSourceMu     sync.RWMutex
+	activeProcSource procSource = liveProcSource{}
+)
+
+func currentProcSource() procSource {
+	procSourceMu.RLock()
+	defer procSourceMu.RUnlock()
+	return activeProcSource
+}
+
+// installProcSource replaces the source used by the scan (test seam) and
+// returns the previous one; resetProcSource restores the live default.
+func installProcSource(s procSource) procSource {
+	procSourceMu.Lock()
+	defer procSourceMu.Unlock()
+	prev := activeProcSource
+	activeProcSource = s
+	return prev
+}
+
+func resetProcSource() { installProcSource(liveProcSource{}) }
+
+// scanCandidates lists process-table entries whose cmdline contains a
+// service-control verb (or `datawatch stop|restart`) and names the
+// datawatch unit or the daemon's own pid.
+func scanCandidates(ownPID int) []candidateProc {
+	src := currentProcSource()
+	ownPIDStr := strconv.Itoa(ownPID)
+	var out []candidateProc
+	for _, pid := range src.pids() {
+		if pid == ownPID {
+			continue
+		}
+		cmdline, ok := src.cmdline(pid)
+		if !ok {
+			continue
+		}
 		if cmdline == "" || !looksLikeStopCommand(cmdline, ownPIDStr) {
 			continue
 		}
-		uid, user := procIdentity(pid)
-		out = append(out, candidateProc{pid: pid, uid: uid, user: user, cmdline: cmdline})
+		uid, user := src.identity(pid)
+		namesPID := hasPIDToken(strings.Fields(cmdline), ownPIDStr)
+		out = append(out, candidateProc{pid: pid, uid: uid, user: user, cmdline: cmdline, namesPID: namesPID})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].pid < out[j].pid })
+	rankCandidates(out)
 	return out
+}
+
+// rankCandidates orders candidates so the most specific evidence comes
+// first: processes that name the daemon's own pid (for example
+// `kill <pid>`) rank above processes that only name the datawatch unit
+// (for example a `systemctl stop datawatch-other` for an unrelated unit
+// whose name merely contains the word). Within each group lower pids
+// come first, so the order is deterministic.
+func rankCandidates(c []candidateProc) {
+	sort.SliceStable(c, func(i, j int) bool {
+		if c[i].namesPID != c[j].namesPID {
+			return c[i].namesPID
+		}
+		return c[i].pid < c[j].pid
+	})
 }
 
 // hasPIDToken reports whether any field names the pid as a whole token:
@@ -301,27 +400,7 @@ func looksLikeStopCommand(cmdline, ownPID string) bool {
 }
 
 func procIdentity(pid int) (uid string, userName string) {
-	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
-	if err != nil {
-		return "", ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "Uid:") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			uid = parts[1]
-		}
-		break
-	}
-	if uid == "" {
-		return "", ""
-	}
-	if u, uerr := user.LookupId(uid); uerr == nil {
-		userName = u.Username
-	}
-	return uid, userName
+	return currentProcSource().identity(pid)
 }
 
 // buildParentChain walks the daemon's ancestry (including itself) up to

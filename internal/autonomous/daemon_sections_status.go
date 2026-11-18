@@ -26,27 +26,39 @@ import (
 // two copies are equal after StripDaemonSections, and the raw contents differ
 // (an unchanged file is not a daemon-only change). Every other case — missing
 // or unreadable working copy, file absent from HEAD, cancelled context, or an
-// unsafe path (empty, absolute, escaping upward, NUL byte) — returns false.
+// unsafe path (empty, absolute, escaping upward, NUL byte, or a symlink chain
+// leaving dir) — returns false.
 func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
 	if run == nil {
 		return false
 	}
 	rel = normalizeDriftPath(rel)
-	if _, ok := localRelPath(rel); !ok {
+	if rel == "" || strings.ContainsRune(rel, 0) || strings.ContainsRune(dir, 0) || dir == "" {
+		return false
+	}
+	relOS := filepath.Clean(filepath.FromSlash(rel))
+	if !filepath.IsLocal(relOS) {
 		return false
 	}
 	if ctx.Err() != nil {
 		return false
 	}
-	if strings.ContainsRune(rel, 0) {
+	// Containment is checked inline against the symlink-resolved base: the
+	// resolved target must sit under the base plus the separator, so a
+	// sibling directory named like the base is refused.
+	realBase, err := filepath.EvalSymlinks(dir)
+	if err != nil {
 		return false
 	}
-	relOS := filepath.FromSlash(rel)
-	if !filepath.IsLocal(relOS) {
+	realBase = filepath.Clean(realBase)
+	curPath, err := filepath.EvalSymlinks(filepath.Join(realBase, relOS))
+	if err != nil {
 		return false
 	}
-	checkedRel := relOS
-	cur, err := os.ReadFile(filepath.Join(dir, checkedRel))
+	if !strings.HasPrefix(curPath, realBase+string(filepath.Separator)) {
+		return false
+	}
+	cur, err := os.ReadFile(curPath) // #nosec G304 -- curPath is cleaned, local and resolved inside the resolved base above
 	if err != nil {
 		return false
 	}
@@ -61,6 +73,48 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 		return false
 	}
 	return platformcontext.StripDaemonSections(string(cur)) == platformcontext.StripDaemonSections(head)
+}
+
+// daemonSectionsOnlyUntracked is the untracked sibling of
+// daemonSectionsOnlyChange: for a file git reports as untracked ("??") it
+// answers whether the file holds nothing of the task's own — its content, after
+// platformcontext.StripDaemonSections removes the daemon's marked blocks
+// (platform context, RTK, cross-session, Memory, Session Guardrails), is empty
+// or whitespace-only. A rules file that exists only to carry the daemon's
+// injected sections is not the task's work. It needs no git: the working copy
+// alone is enough, so it needs no runner. It fails closed like its sibling: a
+// missing or unreadable working copy, an unsafe path (empty, absolute,
+// escaping upward, NUL byte) or a cancelled context all return false.
+func daemonSectionsOnlyUntracked(ctx context.Context, dir, rel string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	rel = normalizeDriftPath(rel)
+	if rel == "" || strings.ContainsRune(rel, 0) || strings.ContainsRune(dir, 0) || dir == "" {
+		return false
+	}
+	relOS := filepath.Clean(filepath.FromSlash(rel))
+	if !filepath.IsLocal(relOS) {
+		return false
+	}
+	realBase, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	realBase = filepath.Clean(realBase)
+	curPath, err := filepath.EvalSymlinks(filepath.Join(realBase, relOS))
+	if err != nil {
+		return false
+	}
+	if !strings.HasPrefix(curPath, realBase+string(filepath.Separator)) {
+		return false
+	}
+	cur, err := os.ReadFile(curPath) // #nosec G304 -- curPath is cleaned, local and resolved inside the resolved base above
+	if err != nil {
+		return false
+	}
+	stripped := platformcontext.StripDaemonSections(string(cur))
+	return strings.TrimSpace(stripped) == ""
 }
 
 // filterDaemonOnlyPorcelain removes from line-based `git status --porcelain`
@@ -83,19 +137,24 @@ func filterDaemonOnlyPorcelain(ctx context.Context, dir string, porcelain string
 }
 
 // ignoreDaemonOnlyPorcelainLine judges one line of `git status --porcelain`
-// ("XY path"). Only an unstaged modification of a tracked file (" M") is a
-// candidate: the daemon writes its marked blocks into the working copy and
-// never stages. Every other record — staged, deleted, untracked, renamed, or
-// a quoted/unparseable path — is kept, and a " M" line is dropped only when
-// daemonSectionsOnlyChange positively establishes it as daemon-only. Fails
-// closed: any doubt keeps the line.
+// ("XY path"). Two records may be dropped: an untracked file ("??") that is
+// one of the launcher's own root files (isLauncherToolingFile), and an
+// unstaged modification of a tracked file (" M") that differs from HEAD only
+// by the daemon's marked blocks (daemonSectionsOnlyChange). Every other
+// record — other untracked paths, staged, deleted, renamed, or a
+// quoted/unparseable path — is kept. Fails closed: any doubt keeps the line.
 func ignoreDaemonOnlyPorcelainLine(ctx context.Context, dir, line string, run driftGitRunner) bool {
-	if len(line) < 4 || line[2] != ' ' || line[:2] != " M" {
+	if len(line) < 4 || line[2] != ' ' {
 		return false
 	}
-	p := line[3:]
-	if p == "" || p[0] == '"' {
+	if p := line[3:]; p == "" || p[0] == '"' {
 		return false // quoted paths carry git's C-style escapes; do not interpret them here
 	}
-	return daemonSectionsOnlyChange(ctx, dir, p, run)
+	if line[:2] == "??" {
+		return isLauncherToolingFile(line[3:])
+	}
+	if line[:2] != " M" {
+		return false
+	}
+	return daemonSectionsOnlyChange(ctx, dir, line[3:], run)
 }

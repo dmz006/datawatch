@@ -385,6 +385,26 @@ def main(argv=None):
     if sh("systemctl --user is-active datawatch").strip() != "active":
         findings.append("DAEMON is not active")
 
+    # Opus is never approved: Claude work runs on Sonnet or Haiku. A session started with no
+    # model gets the account default (Opus), so read the model each recent transcript really used.
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
+        try:
+            if time.time() - os.path.getmtime(f) > 25 * 60:
+                continue
+            last = None
+            with open(f, errors="ignore") as fh:
+                for ln in fh:
+                    m = re.search(r'"model":"(claude-[a-z0-9.-]+)"', ln)
+                    if m:
+                        last = m.group(1)
+            if last and re.search(r"opus|fable", last):
+                msg = ("OPUS session on %s in %s: never approved, end it and name the model (sonnet or haiku)"
+                       % (last, f.split("/")[-2][-48:]))
+                if msg not in findings:
+                    findings.append(msg)
+        except Exception:
+            pass
+
     # models
     for name, url in model_hosts():
         m = models(url)
@@ -512,6 +532,30 @@ def main(argv=None):
     ab = sh("git -C %s rev-list --left-right --count origin/main...main" % BASE).split()
     if len(ab) == 2 and ab[1] != "0":
         findings.append("MAIN is %s commit(s) ahead of origin: push pending" % ab[1])
+
+    # The local daemon is updated with every release (standing rule): flag a daemon behind main.
+    main_ver = re.search(r'Version\s*=\s*"([0-9.]+)"', sh("git -C %s show HEAD:internal/server/api.go" % BASE))
+    health = get_json("https://localhost:8443/api/health", insecure=True) or {}
+    if main_ver and health.get("version") and health["version"] != main_ver.group(1):
+        findings.append("DEPLOY daemon runs %s but main is %s: run supervisor-scratch/sv/deploy.sh (standing rule: update the local daemon with every release)" % (health["version"], main_ver.group(1)))
+
+    # Every release gets a feature review: flag releases newer than the last one the supervisor reviewed, so a
+    # newly shipped setting or feature is looked at, turned on or parked, and not missed. After the review the
+    # supervisor records the version: echo X.Y.Z > supervisor-scratch/last-reviewed-version
+    try:
+        seen_path = os.path.join(os.path.dirname(os.path.abspath(BASE)), "supervisor-scratch", "last-reviewed-version")
+        seen = open(seen_path).read().strip() if os.path.exists(seen_path) else ""
+        def _v(x):
+            return tuple(int(p) for p in x.split(".")[:3])
+        if seen:
+            fresh = []
+            for m in re.finditer(r"^## v([0-9]+\.[0-9]+\.[0-9]+) \u2014 (.+)$", open(os.path.join(BASE, "CHANGELOG.md")).read(), re.M):
+                if _v(m.group(1)) > _v(seen):
+                    fresh.append("%s %s" % (m.group(1), m.group(2)[:60]))
+            if fresh:
+                findings.append("REVIEW %d release(s) shipped since the last feature review (%s): read each CHANGELOG entry, turn on or park what it added, then echo the newest version into supervisor-scratch/last-reviewed-version" % (len(fresh), "; ".join(fresh[:4])))
+    except Exception:
+        pass
 
     # CI on main and tags
     ci = sh("gh run list --limit 20 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)

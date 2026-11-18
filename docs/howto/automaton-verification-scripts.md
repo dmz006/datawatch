@@ -44,10 +44,13 @@ task that fails for no reason in its own files. This guide says how to write
 scripts that do not drift, what the decompose lint flags, and how to fix a
 plan that has the problem.
 
-## 1. The five habits
+## 1. The nine habits
 
 Every script the planner writes — and every one you write by hand — follows
-these. The planner is given the same rules in its prompt.
+these. The planner's prompt carries the first four as a shared helper text, and
+the rest are enforced by the decompose-lint rules and the final-gate plan check
+when the plan comes in — a finding feeds the planner a retry with the text to
+fix.
 
 1. **Run `make sync-docs` first, in any docs check.** A script that checks
    the docs, the embedded docs copy (`internal/server/web/docs`) or how-to
@@ -69,6 +72,27 @@ these. The planner is given the same rules in its prompt.
 5. **One final gate for the Automaton, at the end.** Story-level checks are
    plain task verification; there is no per-story gate — see
    [section 4](#4-one-final-gate-per-automaton).
+6. **Exempt the generated artefacts from a file-set check.** The daemon
+   writes the per-Automaton artefacts — the changelog, tracker-rows and
+   registry-row drafts (`docs/plans/drafts/`), the parity issue and its hash
+   file (`docs/plans/parity-issues/`) and the gate report
+   (`docs/plans/reports/`) — into the cumulative tree, so a
+   changed-file-set check must exempt those paths or compare against a
+   cumulative list that already names them.
+7. **Write the final-gate re-run into a whole-set claim.** A script that
+   asserts a finite whole set of changed files must still pass when the
+   final gate re-runs it after every standard task has landed: assert only
+   the files this task adds, or guard the claim so it skips on the gate's
+   re-run.
+8. **Match flags against the real binary, not memory.** Every long option a
+   script invokes (`command … --flag`) must be listed as a whole option in
+   that command's own help (`command --help`); short flags and a command
+   that does not resolve or answer a bounded help probe are out of scope.
+9. **Anchor every heading and output-format assertion in the task spec.** A
+   script that greps a markdown heading, or the gate phrases "Final answer"
+   / "Verification summary", needs the task spec to name that heading or
+   phrase verbatim — a "Gates section" in the spec anchors a grep of
+   `## Gates`, and a spec naming `## Gates` anchors a grep of `Gates`.
 
 ## 2. The cumulative allowed-file helper
 
@@ -135,13 +159,17 @@ Decompose lint reads each task's script from the project directory and names
 the finding with **the script path and the rule id**, for example
 `verify_script_task_files_only: .datawatch/verify/<name>.sh …`. A script that
 does not exist yet (or is a command string, or lies outside the project) is
-skipped by the three rules below; the warn rule
+skipped by the rules below that read a script; the warn rule
 `unexecutable_verification_script` keeps covering it.
 
 | Rule id | Severity | What it means | How to fix it |
 |---|---|---|---|
 | `verify_script_task_files_only` | block | The script compares only against the task's own files (a literal list equal to them, or a file-listing diff of HEAD, the tree or `main`) and never against the merge base. | Compare against `git merge-base HEAD main` — directly, or through a sourced helper — and compare the result with the cumulative allowed list. |
 | `verify_script_docs_without_sync` | block | The script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`. | Add `make sync-docs` as the script's first step, or source a helper that runs it. |
+| `artefact_files_allowed` | block | Runs a changed-file-set check that does not exempt the generated artefacts the daemon writes per Automaton (the changelog draft, the parity issue draft and its hash file, the gate report) — the final gate re-runs the script against the cumulative tree, where exactly those files exist. | Exempt `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-file computation — in the check itself or in the sourced helper. |
+| `final_gate_artefact_allowed` | block | Asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; the gate runs after every standard task has landed, so a finite whole-set claim can only fail. | Assert only the files this task adds, or guard the claim so it skips when the final gate re-runs the script. |
+| `script_invokes_known_flag` | block | Invokes a command with a long flag (`--flag`) the command's own help does not list as a whole option — a flag invented from memory. | Check each command and flag against the real binary's help (`command --help`) before accepting the script; short flags and a command that does not resolve or answer a bounded help probe are out of scope. |
+| `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not name — the check is anchored to an assumption about output shape, not to the spec. | Name the exact heading or phrase in the spec the script checks (a "Gates section" in the spec anchors a grep of `## Gates`). |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 | `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
@@ -151,8 +179,10 @@ skipped by the three rules below; the warn rule
 
 **Operator note.** The rows fall in three groups:
 
-- The first three (`verify_script_task_files_only`,
-  `verify_script_docs_without_sync`, `final_gate_without_script`) are rules in
+- The first seven (`verify_script_task_files_only`,
+  `verify_script_docs_without_sync`, `artefact_files_allowed`,
+  `final_gate_artefact_allowed`, `script_invokes_known_flag`,
+  `check_matches_spec_text`, `final_gate_without_script`) are rules in
   the rule pack, severity `block`: in `enforce` mode they feed the planner a
   retry with the findings as guidance; in `shadow` mode they are recorded on
   the Automaton and nothing is retried. An operator rule with the same id can
@@ -169,6 +199,50 @@ skipped by the three rules below; the warn rule
 See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
 for the whole rule pack.
+
+### A script that does not exist yet
+
+The warn rule `unexecutable_verification_script` reports a missing script file
+and states which of two cases applies to the Automaton task:
+
+- **The daemon will write the verbatim block.** The task spec says
+  `Write it VERBATIM to <path>` followed by a fenced script block, and `<path>`
+  is the task's verification script. The daemon writes that block to the path
+  before the task starts, so the finding is informational.
+- **The task creates it and it is checked after the task writes it.** The spec
+  tells the worker to create the script (for example `Create the script at
+  <path>`) and carries no verbatim block. The file is absent at start; the
+  verification after the task runs the written file and fails if it was never
+  written.
+
+When neither applies, the finding keeps its plain warning that the script does
+not exist: add a verbatim block, tell the worker to create the script, or list
+the script in the task's generated files.
+
+**What happens at task start.** The pre-start verifier no longer refuses a task
+only because its script is missing when the spec says how the file comes to
+exist:
+
+1. **Verbatim block.** Before the check, the daemon writes the block to the
+   script path with mode `0755` and records a `verifier_materialize` decision
+   on the Automaton. It never overwrites a file that already exists, and it
+   refuses an absolute path, a `..` path or a path that is not the task's
+   verification script. This also rebuilds the script on a restart after
+   `.datawatch/verify/` was removed.
+2. **Task creates it.** With no verbatim block and a spec that tells the worker
+   to create the script (`Write it to <path>`, `Create the script at <path>`,
+   `touch <path>`, `chmod +x <path>`), the missing file is accepted, a
+   `verifier_prestart_task_created` decision is recorded and the task starts.
+   The path must be the task's own script (full path or its base name) and
+   directly follow the instruction on the same line.
+3. **Neither.** The task is still refused (or, in `shadow` mode, recorded) as
+   before: the script does not exist.
+
+Only a **missing** script is accepted this way. A script that exists but is not
+executable, has no shebang or lies outside the project is still a problem. The
+check after the task runs the written file and fails the task if it was never
+written, so accepting the start loses no safety. With
+`autonomous.checks.pre_start_verifier` set to `off` none of this runs.
 
 ## 5a. Preflight checks for planner-written scripts
 
@@ -233,12 +307,50 @@ A typical fix after a lint finding:
 3. If the task needs no script, set `verification_script_reason` instead.
 4. Dry-run again; the finding disappears when the rule no longer matches.
 
+## 7. The verification lint gate
+
+A task's verification once passed a branch that the repository's own `make lint`
+rejected: the script checked the task's behavior, and nothing ran the linter over
+the code it changed. The lint gate closes that gap.
+
+- **What it lints.** It lists the files the branch changed against its merge base
+  with `main` (untracked files included), keeps the Go files, and lints only their
+  package directories (`./<dir>`). Files outside Go packages are ignored.
+- **No Go change, no lint.** When the branch touches no Go package the gate passes
+  without starting the linter.
+- **Findings fail the gate.** The linter runs as `golangci-lint run <packages>` from
+  the project directory. A non-zero exit fails the gate, and the linter output is
+  kept with the result, trimmed and capped at 8 KiB.
+- **A linter that cannot run is never a pass.** If `golangci-lint` is not on `PATH`
+  or cannot start, the gate returns an error instead of a result; treat it as an
+  infrastructure fault, not as a clean branch.
+
+**When it runs.** The gate runs during verification of every task and every story,
+right after the verification script passes and before any guardrail runs. A script
+that fails never reaches the gate. The gate is skipped (counts as a pass) when the
+unit has no project directory or the directory is not a git work tree.
+
+**What a failure looks like.** A failing gate records a `lint-gate` verdict with
+outcome `block` and severity `high`, sets the unit's failure reason to category
+`content`, source `lint-gate`, not retryable, and appends the message (starting
+`lint gate failed`) to the script output you see on the task. No guardrail runs
+after it. Both linter findings and a linter that cannot start produce this block;
+a missing `golangci-lint` is not retried as infrastructure. Fix the findings (or
+install the linter on the worker's node) and reset the task.
+
+The gate has no setting of its own; the linter command is fixed and injectable only
+in tests. See **Verification lint gate** in [the definitions](../datawatch-definitions.md#shadow-merge-checks), listed beside the merge lint checks.
+
 ## Still to review (operator)
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All three stability rules are
-  `block`: in `enforce` mode a script that breaks one sends the plan back to
+- **Block severity is the shipped default.** All seven verification-script
+  stability rules are `block` (`verify_script_task_files_only`,
+  `verify_script_docs_without_sync`, `artefact_files_allowed`,
+  `final_gate_artefact_allowed`, `script_invokes_known_flag`,
+  `check_matches_spec_text` and `final_gate_without_script`): in `enforce`
+  mode a script that breaks one sends the plan back to
   the planner (up to `max_retries`) before any task runs. Decide whether you
   want that, or want `shadow` first to see how often your planners trip them;
   an operator rule with the same id replaces the built-in.
@@ -248,6 +360,18 @@ These points are decisions or checks the docs cannot settle for you:
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
+- **Lint gate blocks on a missing linter.** The gate now runs after every passing
+  task and story script. A node without `golangci-lint` on `PATH` blocks every Go
+  task as a non-retryable content failure, not an infrastructure retry. Confirm
+  each worker node has the linter, or decide whether that case should be retried.
+- **No off switch.** The gate cannot be turned off per Automaton or globally; a
+  repository with pre-existing findings in a touched package blocks until fixed.
+- **Lint version.** The gate uses whatever `golangci-lint` is on `PATH`; it does not
+  check the version CI pins (the shadow merge's lint version pin does that).
+- **Spec wording decides the case.** The task-created case is matched on
+  phrases in the spec text. A spec that words the instruction differently is
+  still refused at start; confirm your planner's wording on a dry run before
+  relying on it.
 - **Preflight severity is fixed at `block`.** The four `verify_script_*`
   preflight checks in [section 5a](#5a-preflight-checks-for-planner-written-scripts)
   now run on every decompose and on a script edit, with no setting to turn

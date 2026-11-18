@@ -1005,7 +1005,7 @@ paths:
         `autonomous.parallel.read_only_tasks` (true|false, default true; tasks flagged read_only skip the tree lock),
         `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
         `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
-        `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
+        `autonomous.parallel.merge_conflict_model` (string, default empty = the non-Opus daemon default ("sonnet"); a model the operator names, an Opus model included, is used as written; the model that resolves a merge conflict),
         `autonomous.parallel.merge_retry_seconds` (whole seconds >= 0, default 60; seconds between timed merge retry passes, 0 turns the timer off),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
@@ -1060,6 +1060,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -3776,6 +3778,107 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/branch-reap:
+    get:
+      summary: Branch reaper report
+      description: |
+        The read-side pass of the task sub-branch reaper. `reaped` lists the
+        task sub-branches a pass would reap (their Automaton's landing state
+        has settled and their commits are all on the base), with `commits`
+        the commits they carried, `contained_in` the branch whose content
+        covers them and `reason` the plain sentence; `backup_ref` is present
+        for any of them an earlier pass already backed up. `waiting` lists the
+        branches that would be held (still landing, a commit not contained in
+        the base, or a merge in progress). `backups` lists every backup ref
+        under refs/datawatch/reap-backup/, `branch` the task sub-branch it
+        came from when it matches a stored one, and `sha` the tip it holds.
+        `backup_days` is the retention of those refs in whole days (0 or unset
+        reads 30; autonomous.reaped_branch_backup_days). The report only
+        reads; nothing is backed up, deleted or restored. Only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousBranchReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Branch reaper report (read-side pass)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/run:
+    post:
+      summary: Run one branch reap pass
+      description: |
+        Performs one reap pass. For every Automaton whose landing state has
+        settled, each task sub-branch whose commits are all on the base is
+        backed up to refs/datawatch/reap-backup/ first and then deleted with
+        git branch -D; `waiting` lists the branches held (still landing, a
+        commit not contained in the base, or a merge in progress). Takes no
+        body (a non-empty body is refused); the report (GET
+        /api/autonomous/branch-reap) already computed what would happen.
+        Running the reaper is an operator-approved write and a federated peer
+        needs the autonomous write capability.
+      operationId: autonomousBranchReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/branch-reap/restore:
+    post:
+      summary: Restore one reaped branch
+      description: |
+        Recreates one branch an earlier pass reaped, from its newest backup
+        ref under refs/datawatch/reap-backup/. The body is {"branch": "..."}
+        where branch is the task sub-branch from the report; a missing or
+        empty branch is refused. A branch that was never reaped answers 404.
+        A restore is an operator-approved write and a federated peer needs the
+        autonomous write capability.
+      operationId: autonomousBranchReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The task sub-branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/cleanup:
     get:
       summary: Automation cleanup status
@@ -3789,11 +3892,17 @@ paths:
         failed counts, the bytes freed, the last error, and the split between
         this daemon's own Automata and the rest. `worktree_disk` and
         `temp_disk` (when present) are the disk readings behind the two passes;
-        a pass that has not run has no reading.
-        `disk_alert_percent` is the threshold in effect
+        a pass that has not run has no reading. Each reading carries its own
+        `threshold`: the worktree disk is checked against
+        `disk_alert_percent`, the temp-folder disk against the lower of that
+        value and a fixed 80. `disk_alert_percent` is the threshold in effect
         (`autonomous.automation.disk_alert_percent`), `disk_alert` whether the
         rate-limited alert is currently due, and `last_disk_alert_at` the last
-        time it fired (null until then). The status is read from the in-memory
+        time it fired (null until then). While the temp-folder disk is at or
+        above its threshold the status also carries `biggest_temp_folders` (top
+        five folders directly in the temp folder with path, size, held and
+        liveness_known); the alert body names them the same way. The status is
+        read from the in-memory
         watch kept by the coordination loop, so a read never scans the disk again.
         Read-only; only GET is served, and a federated peer needs the autonomous
         read capability.
@@ -4714,7 +4823,7 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
-                  verify_tls: {type: boolean, default: false, description: "When true, model pulls to this node verify its HTTPS certificate against the system roots; false (the default) skips verification for a node on a private network. Independent of the usage-probe TLS settings."}
+                  verify_tls: {type: boolean, default: false, description: "Kept for configuration compatibility. Model pulls to this node always verify its HTTPS certificate — against the system roots (plus tls_ca_file when set), or against the tls_cert_fingerprint pin when set. There is no per-node off switch."}
     put:
       summary: Replace one compute node
       description: Replaces the whole node. Omitting session_slots clears the override, and omitting max_concurrent_sessions clears the ceiling.
@@ -4731,7 +4840,7 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
-                verify_tls: {type: boolean, default: false, description: "Verify this node's HTTPS certificate on model pulls (default false = skip verification). Omitting it on a replace resets it to false."}
+                verify_tls: {type: boolean, default: false, description: "Kept for configuration compatibility. Model pulls to this node always verify its HTTPS certificate (system roots, plus tls_ca_file or tls_cert_fingerprint when set). Omitting it on a replace still leaves it false; it no longer gates the pull."}
       responses:
         "200":
           description: The updated node record
@@ -5887,7 +5996,7 @@ paths:
                       disk_alert_percent:
                         type: integer
                         default: 85
-                        description: "Whole percent 1-100; the disk-usage threshold at or above which the rate-limited cleanup disk alert fires (autonomous.automation.disk_alert_percent)."
+                        description: "Whole percent 1-100; the disk-usage threshold at or above which the rate-limited cleanup disk alert fires (autonomous.automation.disk_alert_percent). The temp-folder disk always checks against the lower of this value and the fixed 80."
                       uncommitted_work_policy:
                         type: string
                         enum: [hold, warn, off]
@@ -6069,7 +6178,7 @@ paths:
                       description: "Whole number >= 1; a pass removes at most this many entries (autonomous.automation.cleanup_max_removals_per_pass). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
                     disk_alert_percent:
                       type: integer
-                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). A fractional or out-of-range value rejects the PUT with 400."
+                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). The temp-folder disk always checks against the lower of this value and the fixed 80. A fractional or out-of-range value rejects the PUT with 400."
                     uncommitted_work_policy:
                       type: string
                       enum: [hold, warn, off]
@@ -6219,7 +6328,13 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
-      responses: {"200": {description: OK}, "404": {description: Unknown tag}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50}, description: "Page size. Summary form: at most 500. With full=true: at most 100, so one call cannot write hundreds of megabytes"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page; a bad cursor is a 400"}
+        - {name: full, in: query, required: false, schema: {type: boolean, default: false}, description: "Heavy form. true returns whole Automaton records (stories and tasks) instead of summary rows. With a limit or cursor it is one filtered, capped page of records ({prds,total,next_cursor}); with neither it returns every record, kept for compatibility, and can be hundreds of megabytes. The default summary list is built from the summary index alone and never reads a record"}
+      responses:
+        "200": {description: "OK. The summary list answers 304 to a matching If-None-Match without building any row; its ETag changes when any Automaton changes"}
+        "304": {description: Not modified}
+        "404": {description: Unknown tag}
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate
@@ -6273,6 +6388,128 @@ paths:
                         reason: {type: string, description: "One sentence of operator copy"}
                         read_hint: {type: string, description: "How to read the underlying item"}
       "400": {description: "No spec, a lane preference outside the vocabulary, or a spec carrying the capped-view truncation marker (a copy from a capped view)"}
+  /api/autonomous/prds/{id}/tasks:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: One page of an Automaton's task rows
+      description: "Reads only that Automaton. Rows carry id, title, status, story, timestamps, session ids and a short error; never the spec or history. It is never part of the list. Requires the autonomous read capability."
+      operationId: autonomousPRDTasks
+      tags: [Autonomous]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page"}
+        - {name: story, in: query, required: false, schema: {type: string}, description: "Only tasks of this story id"}
+        - {name: status, in: query, required: false, schema: {type: string}, description: "Comma-separated task statuses"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prd_id: {type: string}
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        story: {type: string}
+                        story_title: {type: string}
+                        created_at: {type: string, format: date-time}
+                        updated_at: {type: string, format: date-time}
+                        started_at: {type: string, format: date-time}
+                        completed_at: {type: string, format: date-time}
+                        session_id: {type: string}
+                        verifier_session_id: {type: string}
+                        judge_session_ids: {type: array, items: {type: string}}
+                        error: {type: string, description: "Shortened to 240 characters"}
+                  total: {type: integer, description: "Tasks matching the filters, ignoring the cursor"}
+                  next_cursor: {type: string}
+        "400": {description: Bad limit or cursor}
+        "404": {description: Unknown Automaton}
+  /api/autonomous/prds/{id}/archive:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Read the archive of one finished Automaton
+      description: "Read on ask. Returns the parts that were moved out of the live record when the Automaton was archived: the decision log, every task's session history (history notes, session decisions, attempts, events, infra retries, runner evidence), long task errors and the raw judge text of every verdict. Reads only that Automaton's archive file. Requires the autonomous read capability."
+      operationId: autonomousPRDArchive
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: integer}
+                  id: {type: string}
+                  decisions: {type: array, items: {type: object}}
+                  memory_report: {type: string}
+                  verdict_raw_judge: {type: array, items: {type: string}}
+                  stories: {type: array, items: {type: object}, description: "Raw judge text of each story's verdicts, by story index"}
+                  tasks: {type: array, items: {type: object}, description: "The parts moved out of each task, by story and task index"}
+        "404": {description: Unknown Automaton, or an Automaton that is not archived}
+        "500": {description: The archive file is missing or does not match its marker}
+  /api/autonomous/archive:
+    post:
+      summary: Archive finished Automata (dry run by default)
+      description: "A finished Automaton is completed, shipped or cancelled and older than autonomous.archive.retention_days. The default is a dry run: the report names which Automata would be archived, with the bytes before and after, and writes nothing. With dry_run false the run first copies each touched record to a backup directory and verifies every copy by size and SHA-256, stopping without any change when one does not verify. It then archives one Automaton at a time and verifies each archive before rewriting the live record. An Automaton with a running task, an open session or an unmerged branch it still needs is skipped, never forced. No data is deleted, counts and lists read the same afterwards, and a second run archives nothing more. Requires the autonomous write capability."
+      operationId: autonomousArchive
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, default: true, description: "true or absent: report only. false: take the verified backup and archive."}
+      responses:
+        "200":
+          description: The dry-run plan, or the run report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run: {type: boolean}
+                  retention_days: {type: integer}
+                  eligible:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        bytes_before: {type: integer}
+                        bytes_after: {type: integer}
+                        archive_bytes: {type: integer}
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        reason: {type: string}
+                  not_finished: {type: integer}
+                  already_archived: {type: integer}
+                  bytes_before: {type: integer}
+                  bytes_after: {type: integer}
+                  archive_bytes: {type: integer}
+                  archived: {type: array, items: {type: object}, description: "Run only: the Automata archived"}
+                  failed: {type: array, items: {type: object}, description: "Run only: the Automata whose archive failed, with the reason"}
+                  backup_dir: {type: string, description: "Run only: where the verified backup sits"}
+                  backup_files: {type: integer}
+                  backup_bytes: {type: integer}
+        "400": {description: Unreadable body}
+        "409": {description: The run was refused or stopped before any change (a backup copy did not verify, or the daemon cannot yet tell whether a session is open)}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
@@ -10481,7 +10718,7 @@ paths:
       operationId: burnGuardConfigGet
       tags: [Singletons]
       responses:
-        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude, max_projection_gap_points"}
+        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude, max_projection_gap_points, mode, week_tolerance, points_to_week_factor, window_percent_per_point, window_stop_percent, reading_freshness_minutes"}
         "401": {$ref: "#/components/responses/Unauthorized"}
     put:
       summary: Change burn guard settings; one invalid value rejects the whole body and nothing is stored
@@ -12134,8 +12371,8 @@ components:
         blocker: {type: string}
         eligibility_reason:
           type: string
-          enum: [stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid]
-          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work) or worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository)"
+          enum: [operator_hold, stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid, plan_coverage_blocked]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: operator_hold (an operator put the Automaton on hold; it is checked first and applies to every status lane fill would otherwise consider), stale (the Automaton has had no update for longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work), worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository) or plan_coverage_blocked (it is awaiting review and its stored plan-coverage record fails the approve gate in block mode without a covering acknowledgment). Remedy for plan_coverage_blocked: re-decompose with a plan that covers the spec, or explicitly acknowledge exactly that failing surface (AcknowledgePlanCoverage)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}
@@ -12362,6 +12599,68 @@ components:
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
         computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
         stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
+    ReapReport:
+      type: object
+      description: |
+        The split of one reap pass: the POST run response on its own, and the
+        reaped and waiting parts of the report. Both lists are empty when no
+        Automaton qualifies.
+      required: [reaped, waiting]
+      properties:
+        reaped:
+          type: array
+          description: The branches a pass would reap (report) or reaped (run)
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches held, and the reason
+          items: {$ref: "#/components/schemas/ReapEntry"}
+    ReapEntry:
+      type: object
+      description: One branch in the reaped or the waiting list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The task sub-branch}
+        backup_ref: {type: string, description: The ref the branch's tip was kept at; present for a branch an earlier pass already backed up}
+        contained_in: {type: string, description: The branch (work or base) whose content covers every commit of the reaped branch}
+        commits: {type: integer, description: The commits the branch carried}
+        reason: {type: string, description: The plain sentence for the entry}
+    ReapSurfaceReport:
+      type: object
+      description: The report, as GET /api/autonomous/branch-reap returns it
+      required: [reaped, waiting, backups, backup_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The task sub-branches that would be reaped
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        waiting:
+          type: array
+          description: The branches that would be held
+          items: {$ref: "#/components/schemas/ReapEntry"}
+        backups:
+          type: array
+          description: Every backup ref under refs/datawatch/reap-backup/, sorted by ref; empty while no pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        backup_days: {type: integer, description: The retention of the backup refs in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    ReapBackup:
+      type: object
+      description: One backup ref under refs/datawatch/reap-backup/
+      required: [ref, sha]
+      properties:
+        branch: {type: string, description: The task sub-branch the ref came from, when its key matches a stored one; empty otherwise}
+        ref: {type: string, description: The full ref name}
+        sha: {type: string, description: The tip the ref holds}
+    ReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/branch-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The branch that came back}
+        backup_ref: {type: string, description: The newest backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     CleanupStatus:
       type: object
       description: |-
@@ -12381,9 +12680,22 @@ components:
         temp_disk:
           allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
           description: The disk reading behind the daemon temp-file sweep; absent until it runs
-        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85)"}
+        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85; the temp-folder disk checks against the lower of this and the fixed 80)"}
         disk_alert: {type: boolean, description: "True while the rate-limited disk alert is due"}
         last_disk_alert_at: {type: string, nullable: true, format: date-time, description: When the rate-limited alert last fired; null until it does}
+        biggest_temp_folders:
+          type: array
+          description: "Present only while the temp-folder disk is at or above its threshold (measured on that check; absent until such a check, cleared once the disk drops back below): the top five folders directly in the temp folder"
+          items: {$ref: "#/components/schemas/TempFolderInfo"}
+    TempFolderInfo:
+      type: object
+      description: One folder in the biggest-temp-folders report, as the disk alert and the cleanup status name it (the alert body says "held by a running process (an open handle into it)", "no running process holds it", or "could not tell whether a running process holds it — treat it as held")
+      required: [path, size]
+      properties:
+        path: {type: string, description: The folder's path, directly under the temp folder}
+        size: {type: integer, description: Approximate size in bytes}
+        held: {type: boolean, description: True when a live process holds it (an open handle into it, or a working directory inside it)}
+        liveness_known: {type: boolean, description: False when the platform could not prove liveness (no readable /proc); the folder is then treated as held and reported as held}
     UncommittedWorkStatus:
       type: object
       description: |-
@@ -12646,7 +12958,8 @@ components:
       properties:
         path: {type: string, description: The path the usage was measured for}
         percent: {type: integer, description: Disk usage used percent}
-        alert: {type: boolean, description: "True when the reading is at or above the threshold"}
+        alert: {type: boolean, description: "True when the reading is at or above its threshold"}
+        threshold: {type: integer, description: "The percent threshold this reading was checked against (the worktree disk uses disk_alert_percent; the temp-folder disk always uses the lower of that value and the fixed 80)"}
     TriageList:
       type: object
       description: |-

@@ -11,35 +11,35 @@ func TestModelPullConsentCheck(t *testing.T) {
 	allowModel := config.ModelConsentEntry{Name: "gpt-oss:20b", Allowed: true}
 	refuseModel := config.ModelConsentEntry{Name: "phi3", Allowed: false, Note: "licensed only"}
 	rows := []struct {
-		name      string
-		consent   config.ModelPullConsent
-		model     string
-		wantAllow bool
-		wantVia   string
+		name       string
+		consent    config.ModelPullConsent
+		model      string
+		wantAllow  bool
+		wantVia    string
 		wantReason string
 	}{
 		{
-			name:      "no consent refuses everything with the setup key",
-			consent:   config.ModelPullConsent{},
-			model:     "gpt-oss:20b",
+			name:       "no consent refuses everything with the setup key",
+			consent:    config.ModelPullConsent{},
+			model:      "gpt-oss:20b",
 			wantReason: "autonomous.model_pull_consent",
 		},
 		{
-			name:      "no consent refuses publisher-style names too",
-			consent:   config.ModelPullConsent{},
-			model:     "org/model:1",
+			name:       "no consent refuses publisher-style names too",
+			consent:    config.ModelPullConsent{},
+			model:      "org/model:1",
 			wantReason: "autonomous.model_pull_consent",
 		},
 		{
-			name:      "a refused entry names itself",
-			consent:   config.ModelPullConsent{Models: []config.ModelConsentEntry{refuseModel}},
-			model:     "phi3:mini",
+			name:       "a refused entry names itself",
+			consent:    config.ModelPullConsent{Models: []config.ModelConsentEntry{refuseModel}},
+			model:      "phi3:mini",
 			wantReason: "allowed:false",
 		},
 		{
-			name:      "the operator note travels with the refusal",
-			consent:   config.ModelPullConsent{Models: []config.ModelConsentEntry{refuseModel}},
-			model:     "phi3",
+			name:       "the operator note travels with the refusal",
+			consent:    config.ModelPullConsent{Models: []config.ModelConsentEntry{refuseModel}},
+			model:      "phi3",
 			wantReason: "operator note: licensed only",
 		},
 		{
@@ -64,21 +64,21 @@ func TestModelPullConsentCheck(t *testing.T) {
 			wantVia:   "publisher",
 		},
 		{
-			name:      "a publisher miss falls through to the unlist refusal",
-			consent:   config.ModelPullConsent{Publishers: []string{"org"}},
-			model:     "other/model",
+			name:       "a publisher miss falls through to the unlist refusal",
+			consent:    config.ModelPullConsent{Publishers: []string{"org"}},
+			model:      "other/model",
 			wantReason: "not on the publisher allow-list",
 		},
 		{
-			name:      "a plain unlisted name says it has no publisher to allow by",
-			consent:   config.ModelPullConsent{Publishers: []string{"org"}},
-			model:     "gpt-oss",
+			name:       "a plain unlisted name says it has no publisher to allow by",
+			consent:    config.ModelPullConsent{Publishers: []string{"org"}},
+			model:      "gpt-oss",
 			wantReason: "no publisher to allow by",
 		},
 		{
-			name:      "an empty model name is refused",
-			consent:   config.ModelPullConsent{Models: []config.ModelConsentEntry{allowModel}},
-			model:     "   ",
+			name:       "an empty model name is refused",
+			consent:    config.ModelPullConsent{Models: []config.ModelConsentEntry{allowModel}},
+			model:      "   ",
 			wantReason: "empty model name",
 		},
 		{
@@ -87,7 +87,7 @@ func TestModelPullConsentCheck(t *testing.T) {
 				Models:     []config.ModelConsentEntry{{Name: "org/model", Allowed: false}},
 				Publishers: []string{"org"},
 			},
-			model:     "org/model",
+			model:      "org/model",
 			wantReason: "allowed:false",
 		},
 	}
@@ -151,9 +151,9 @@ func TestAutomationRequiredModels(t *testing.T) {
 	})
 	t.Run("every role, no fallbacks", func(t *testing.T) {
 		a := &Automation{
-			ID:              "a1",
-			Model:           "gpt-oss:20b",
-			PlanningModel:   "phi3:mini",
+			ID:                "a1",
+			Model:             "gpt-oss:20b",
+			PlanningModel:     "phi3:mini",
 			VerificationModel: "llama3.1:8b",
 			DecisionAssistant: &DecisionAssistant{Model: "qwen3:4b"},
 		}
@@ -170,9 +170,9 @@ func TestAutomationRequiredModels(t *testing.T) {
 	})
 	t.Run("unset roles fall back to the setup level, same model joins sources", func(t *testing.T) {
 		a := &Automation{
-			ID:              "a1",
-			Model:           "gpt-oss:20b",
-			PlanningModel:   "gpt-oss:20b", // same model as the execution role
+			ID:                "a1",
+			Model:             "gpt-oss:20b",
+			PlanningModel:     "gpt-oss:20b", // same model as the execution role
 			VerificationModel: "",
 			DecisionAssistant: &DecisionAssistant{Model: "gpt-oss:20b"},
 		}
@@ -203,10 +203,10 @@ func TestAutomationRequiredModels(t *testing.T) {
 
 func TestNewAutomationSetupReport(t *testing.T) {
 	a := &Automation{
-		ID:              "a1",
-		Model:           "gpt-oss:20b", // allowed
-		PlanningModel:   "phi3",        // refused, with note
-		VerificationModel: "org/model", // allowed via publisher
+		ID:                "a1",
+		Model:             "gpt-oss:20b",                           // allowed
+		PlanningModel:     "phi3",                                  // refused, with note
+		VerificationModel: "org/model",                             // allowed via publisher
 		DecisionAssistant: &DecisionAssistant{Model: "stray-name"}, // unlisted plain name
 	}
 	consent := config.ModelPullConsent{
