@@ -149,12 +149,11 @@ func (a *API) productionPlanningResumeHooks() planningResumeHooks {
 //   - ingest_output: the planner ended with a complete, parsable output. The
 //     plan is ingested through the normal decompose path, and a decision says
 //     it was recovered from the output file.
-//   - restart_planning: the policy is restart, or the planner left no usable
-//     output. The planner record is cleared, PlanningRestartedOnce is set and
-//     planning starts again exactly once. When the flag is already set the
-//     Automaton goes to draft instead.
-//   - reset to draft: the policy is draft, or no reader is wired, or a restart
-//     was already used.
+//   - restart: the planner session is gone and left no usable output. The
+//     planner record is cleared and the decompose starts again.
+//
+// The decision is ResolvePlannerResume. No path counts a failure, records a
+// failure or sets the Automaton to draft: it stays in planning.
 //
 // Every live planner session of the PRD that no reader owns is killed on every
 // path, and the decision says how many were killed.
@@ -166,64 +165,43 @@ func (a *API) bootResumePlanning(prd *PRD) {
 // outcomes can be tested with fakes.
 func (a *API) bootResumePlanningWith(prd *PRD, h planningResumeHooks) {
 	var plannerID, outputFile string
-	var restartedOnce bool
 	a.M.store.WithLock(func() {
 		plannerID, outputFile = prd.PlannerSessionID, prd.PlannerOutputFile
-		restartedOnce = prd.PlanningRestartedOnce
 	})
 	policy := config.NormalizePlanningRestartPolicy(a.M.Config().PlanningRestartPolicy)
-	in := PlanningResumeInput{
-		Policy:               a.M.Config().PlanningRestartPolicy,
-		HasPlannerRecord:     plannerID != "",
-		SessionAlive:         plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID),
-		AlreadyRestartedOnce: restartedOnce,
+	alive := plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID)
+	if plannerID != "" && !alive {
+		// A planner that ended with a complete, parsable plan is ingested as a
+		// normal decompose result; the Automaton moves on without a new planner.
+		if raw := h.readOutput(prd, outputFile); ClassifyPlannerOutput(raw) == OutputCompleteParsable {
+			if err := h.ingest(prd.ID, string(raw)); err == nil {
+				a.M.ClearPlannerSession(prd.ID)
+				orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+				h.recordDecision(BootResumeEntry{
+					PRDID: prd.ID, Outcome: "planning_ingested", At: time.Now(),
+					Reason: fmt.Sprintf("plan recovered from the planner output file %s: the planner session had ended with complete, parsable output, so it was ingested as a normal decompose result and no new planner ran. %s", outputFile, orphanNote(orphans)),
+				})
+				return
+			} else {
+				fmt.Printf("[autonomous] boot-resume: prd=%s: ingest of the recorded planner output failed: %v\n", prd.ID, err)
+			}
+		}
 	}
-	var raw []byte
-	if in.HasPlannerRecord && !in.SessionAlive {
-		raw = h.readOutput(prd, outputFile)
-		in.OutputState = ClassifyPlannerOutput(raw)
-	}
-	action, reason := DecidePlanningResumeWithReason(in)
+	action, reason := ResolvePlannerResume(alive)
 	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart: %s (action=%s)\n", prd.ID, reason, action)
 
-	switch action {
-	case ActionAttachReader:
+	if action == PlannerResumeReattach {
 		if a.M.reattachPlanner(prd.ID, plannerID, outputFile) {
-			a.M.killOrphanDecomposeSessions(prd.ID, plannerID)
-			return
-		}
-	case ActionIngestOutput:
-		err := h.ingest(prd.ID, string(raw))
-		if err == nil {
-			a.M.ClearPlannerSession(prd.ID)
-			orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+			orphans := a.M.killOrphanDecomposeSessions(prd.ID, plannerID)
 			h.recordDecision(BootResumeEntry{
-				PRDID: prd.ID, Outcome: "planning_ingested", At: time.Now(),
-				Reason: fmt.Sprintf("plan recovered from the planner output file %s: the planner session had ended with complete, parsable output, so it was ingested as a normal decompose result and no new planner ran. %s", outputFile, orphanNote(orphans)),
+				PRDID: prd.ID, Outcome: "planning_reattached", At: time.Now(),
+				Reason: fmt.Sprintf("%s. %s", reason, orphanNote(orphans)),
 			})
 			return
 		}
-		fmt.Printf("[autonomous] boot-resume: prd=%s: ingest of the recorded planner output failed: %v\n", prd.ID, err)
-	case ActionRestartPlanning:
-		if !restartedOnce {
-			a.restartPlanningOnBoot(prd, h, reason, policy)
-			return
-		}
-		reason += "; planning was already restarted once for this Automaton, so it is reset to draft"
+		reason = "the planner session is still alive but no reader could be attached, so the Automaton stays in planning and the decompose is started again"
 	}
-
-	// Reset to draft: the fallback for every other path.
-	a.M.ClearPlannerSession(prd.ID)
-	a.M.store.WithLock(func() { prd.Status = PRDDraft })
-	if a.M.store.SavePRD(prd) == nil {
-		a.M.emitPRDStatus(prd, PRDPlanning, nil, nil)
-	}
-	orphans := a.M.killOrphanDecomposeSessions(prd.ID)
-	h.recordDecision(BootResumeEntry{
-		PRDID: prd.ID, Outcome: "planning_reset_to_draft", At: time.Now(),
-		Reason: fmt.Sprintf("%s; policy=%s; reset to draft. %s", reason, policy, orphanNote(orphans)),
-	})
-	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
+	a.restartPlanningOnBoot(prd, h, reason, policy)
 }
 
 // restartPlanningOnBoot starts planning again for prd, exactly once: it kills
@@ -239,7 +217,7 @@ func (a *API) restartPlanningOnBoot(prd *PRD, h planningResumeHooks, reason, pol
 	})
 	h.recordDecision(BootResumeEntry{
 		PRDID: prd.ID, Outcome: "planning_restarted", At: time.Now(),
-		Reason: fmt.Sprintf("%s; policy=%s; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. %s%s", reason, policy, orphanNote(orphans), a.M.bootBackoffNote(prd.DecompositionProfile)),
+		Reason: fmt.Sprintf("%s; policy=%s; the Automaton stays in planning and the decompose is started again. %s%s", reason, policy, orphanNote(orphans), a.M.bootBackoffNote(prd.DecompositionProfile)),
 	})
 	fmt.Printf("[autonomous] boot-resume: prd=%s planning restarted once (policy=%s)\n", prd.ID, policy)
 	h.startDecompose(prd.ID)
