@@ -18,6 +18,8 @@ Makefile
 scripts/test-stories/pwa/TS-797.mjs
 docs/testing/README.md
 docs/howto/navigation-mobile-fit.md
+docs/testing-tracker.md
+internal/server/web/docs/testing-tracker.md
 internal/server/web/docs/testing/README.md
 internal/server/web/docs/howto/navigation-mobile-fit.md
 .datawatch/verify/e2e-pwa-config-helper.sh
