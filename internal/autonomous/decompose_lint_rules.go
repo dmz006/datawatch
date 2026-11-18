@@ -34,8 +34,8 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Fifteen rules, in the order findings should surface them: the eleven
-// block-severity rules (tasks that cross a hard boundary, plus the five
+// Sixteen rules, in the order findings should surface them: the twelve
+// block-severity rules (tasks that cross a hard boundary, plus the six
 // verification-script stability rules that follow read_only_unverifiable)
 // first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
@@ -129,6 +129,14 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "verification script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree: check only the files this task adds, or skip the file-set check when the final gate re-runs the script (rule final_gate_artefact_allowed)",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptFinalGateArtefactAllowed: true,
+			},
+		},
+		{
+			ID:       "script_invokes_known_flag",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "script invokes a command with a flag that the command's own help does not list: validate every command and flag a script uses against the real binary's help before the script is accepted (rule script_invokes_known_flag)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptInvokesUnknownFlag: true,
 			},
 		},
 		{

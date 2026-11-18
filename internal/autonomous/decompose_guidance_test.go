@@ -151,6 +151,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"verify_script_docs_without_sync",
 				"artefact_files_allowed",
 				"final_gate_artefact_allowed",
+				"script_invokes_known_flag",
 				"final_gate_without_script",
 				"no_verification_script",
 				"unexecutable_verification_script",
