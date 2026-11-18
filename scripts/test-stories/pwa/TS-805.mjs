@@ -23,7 +23,18 @@ await runPerfStory(async (page) => {
       // Start from an empty loader cache so the failure is a first-load failure.
       await p.evaluate(() => { try { Object.keys(localStorage).filter((k) => k.startsWith('cs_list_')).forEach((k) => localStorage.removeItem(k)); } catch {} });
       const fault = await failEndpoint(p, tab.endpoint, { status: 500 });
-      await openTab(p, tab, { clear: true });
+      if (tab.name === 'sessions') {
+        // The Sessions list is fetched when the page starts (and by the
+        // reconnect resync), not on every visit to the tab, so a first-load
+        // failure is a reload of the page with the fault in place. The
+        // WebSocket also delivers sessions and marks the list loaded (an
+        // empty list then shows the empty state, correctly), so it is held
+        // silent: the REST list is the only source in this scenario.
+        await p.routeWebSocket(/\/ws(\?|$)/, () => {});
+        await p.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+        await p.waitForFunction(() => typeof window.navigate === 'function', null, { timeout: 60000 });
+      }
+      await openTab(p, tab, { clear: tab.name !== 'sessions' });
       await waitForState(p, ['failed'], 20000).catch(() => {
         throw new Error(`${tab.name}: no failed state after ${tab.endpoint} returned 500 (state: ${'see screenshot'})`);
       });

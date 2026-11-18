@@ -17,7 +17,7 @@ await runPerfStory(async (page) => {
   const { context, page: p } = await coldPage(page.context().browser());
   try {
     await openPWA(p);
-    await openTab(p, { view: 'autonomous', subtab: 'automation' });
+    await openTab(p, { view: 'autonomous', subtab: 'automation', inner: 'resources' });
     await p.waitForFunction(() => window._listLoaders && window._listLoaders.automation_capacity
       && window._listLoaders.automation_capacity.state.loadedOnce, null, { timeout: 30000 })
       .catch(() => { throw new Error('automation_capacity loader never loaded'); });

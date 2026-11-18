@@ -7,11 +7,11 @@
  * depend on the daemon's data). The Automation sub-tab (opened from the Automata tab) must go loading -> empty
  * state, never blank, never the empty state before the load finished, and the
  * empty state must carry the Create Automation button that opens the form. The
- * shared capacity card must render beside it.
+ * shared capacity card renders on the Resources sub-tab beside it.
  */
 import { screenshot } from './lib.mjs';
 import {
-  runPerfStory, coldPage, openPWA, fulfillEndpoint, delayEndpoint, measureTab,
+  runPerfStory, coldPage, openPWA, fulfillEndpoint, measureTab,
   assertMeasure, check, viewState, saveJson,
 } from './perf-lib.mjs';
 
@@ -20,11 +20,9 @@ await runPerfStory(async (page) => {
   try {
     await openPWA(p);
     await fulfillEndpoint(p, '/api/automations', []);
-    // Hold the list back so the "no empty state before the first load" rule is observable.
-    await delayEndpoint(p, '/api/capacity', 600);
 
     const states = [];
-    const r = await measureTab(p, 'autonomous', { subtab: 'automation', timeout: 30000, watchMs: 800 });
+    const r = await measureTab(p, 'autonomous', { subtab: 'automation', inner: 'automations', timeout: 30000, watchMs: 800 });
     states.push(...r.states);
     assertMeasure('automation-empty', r);
     check(r.firstState === 'empty', `first settled state was "${r.firstState}", expected the empty state (${r.states.join(' > ')})`);
@@ -39,14 +37,20 @@ await runPerfStory(async (page) => {
     const label = (await btn.textContent()) || '';
     check(/create/i.test(label), `button label "${label.trim()}" does not mention Create`);
 
-    // The capacity card is the shared component, rendered in its own slot.
+    // The capacity card is the shared component, on the Resources sub-tab of
+    // Automation; the empty list sits on the Automations sub-tab.
+    await p.evaluate(() => window.switchAutomationSubtab('resources'));
     await p.waitForFunction(() => {
       const c = document.getElementById('automationCapacityCard');
       return c && c.innerText.trim().length > 0;
     }, null, { timeout: 15000 });
+    await screenshot(p, 'automation-capacity');
+    await p.evaluate(() => window.switchAutomationSubtab('automations'));
+    await p.waitForSelector('#automationEmptyCreateBtn', { timeout: 15000 });
     await screenshot(p, 'automation-empty');
 
-    await btn.click();
+    const btn2 = await p.$('#automationEmptyCreateBtn');
+    await btn2.click();
     await p.waitForFunction(() => !!document.querySelector('#automationForm, .automation-form, .modal, [id*="utomationForm"]'),
       null, { timeout: 5000 }).catch(() => { throw new Error('Create Automation did not open a form'); });
     check((await viewState(p)) !== 'blank', 'view blank after opening the form');

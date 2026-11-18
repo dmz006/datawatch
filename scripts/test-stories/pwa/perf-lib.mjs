@@ -34,7 +34,9 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { env, storyEvidenceDir } from './lib.mjs';
+import http from 'node:http';
+import https from 'node:https';
+import { env, storyEvidenceDir, sandboxTlsAgent } from './lib.mjs';
 
 const num = (name, dflt) => {
   const v = Number(process.env[name]);
@@ -84,10 +86,13 @@ export function budgetFor(profileName) {
 // Main tabs and the list endpoint each one loads first. Automata and Automation
 // share one main tab (view 'autonomous'); `subtab` is the sub-tab button the
 // story selects after opening it (see openTabSrc / openTab).
+// The Resources sub-tab of Automation: the capacity card and its siblings.
+export const AUTOMATION_RESOURCES_TAB = { name: 'automation-resources', view: 'autonomous', subtab: 'automation', inner: 'resources', endpoint: '/api/capacity' };
+
 export const TABS = [
   { name: 'sessions', view: 'sessions', endpoint: '/api/sessions' },
   { name: 'automata', view: 'autonomous', subtab: 'automata', endpoint: '/api/autonomous/prds' },
-  { name: 'automation', view: 'autonomous', subtab: 'automation', endpoint: '/api/automations' },
+  { name: 'automation', view: 'autonomous', subtab: 'automation', inner: 'automations', endpoint: '/api/automations' },
   { name: 'observer', view: 'observer', endpoint: '/api/observer/stats' },
   { name: 'settings', view: 'settings', endpoint: '/api/config' },
 ];
@@ -157,54 +162,73 @@ export async function setProfile(cdp, profileName) {
 //   empty    an empty-state block
 //   content  rendered content (a loaded body or any non-empty text)
 //   blank    nothing — the state that must never be observed
-// Kept as a function source string so it can be injected into evaluate calls.
-export const CLASSIFY_SRC = `(() => {
-  const el = document.getElementById('view');
-  if (!el) return 'blank';
-  if (el.querySelector('.list-state-failed')) return 'failed';
-  const hasBody = !!el.querySelector('.list-state-body');
-  if (!hasBody && el.querySelector('.list-state-skeleton, .list-skel-row, .skeleton, .loading, [aria-busy="true"]')) return 'loading';
-  if (el.querySelector('.list-state-empty, .automation-empty-state, .empty-state')) return 'empty';
-  const txt = (el.innerText || '').trim();
-  if (!txt || el.children.length === 0) return 'blank';
-  if (!hasBody && /^\\s*(loading|…|\\.\\.\\.)/i.test(txt)) return 'loading';
-  return 'content';
-})()`;
+// The page's Content-Security-Policy has no 'unsafe-eval', so the in-page code
+// is real functions (serialised by Playwright) installed once per document as
+// window.__dwPerf — never source strings run through eval().
+function installPerfHelpers() {
+  if (window.__dwPerf) return;
+  window.__dwPerf = {
+    classify() {
+      const el = document.getElementById('view');
+      if (!el) return 'blank';
+      if (el.querySelector('.list-state-failed')) return 'failed';
+      const hasBody = !!el.querySelector('.list-state-body');
+      if (!hasBody && el.querySelector('.list-state-skeleton, .list-skel-row, .skeleton, .loading, [aria-busy="true"]')) return 'loading';
+      if (el.querySelector('.list-state-empty, .automation-empty-state, .empty-state')) return 'empty';
+      const txt = (el.innerText || '').trim();
+      if (!txt || el.children.length === 0) return 'blank';
+      if (!hasBody && /^\s*(loading|…|\.\.\.)/i.test(txt)) return 'loading';
+      return 'content';
+    },
+    // Open a main tab and, when it has one, select its sub-tab by clicking the
+    // sub-tab button (the same path an operator takes). window.switchAutomataTab
+    // is the fallback when the bar has not rendered yet.
+    // `inner` is the second-row sub-tab of the Automation sub-tab (inbox,
+    // automations, resources, ...); the Automation sub-tab opens on Inbox.
+    openTab(view, subtab, inner) {
+      window.navigate(view);
+      if (!subtab) return;
+      const btn = document.querySelector('.automata-tabs-bar .output-tab[data-tab="' + subtab + '"]');
+      if (btn) { if (!btn.classList.contains('active')) btn.click(); }
+      else if (window.switchAutomataTab) window.switchAutomataTab(subtab);
+      if (inner && window.switchAutomationSubtab) window.switchAutomationSubtab(inner);
+    },
+  };
+}
 
-export function viewState(page) {
-  return page.evaluate(CLASSIFY_SRC).catch(() => 'unknown');
+// Install the in-page helpers (idempotent; a reload drops them, so every
+// caller below installs again first).
+export function ensurePerfHelpers(page) {
+  return page.evaluate(installPerfHelpers);
+}
+
+export async function viewState(page) {
+  try {
+    await ensurePerfHelpers(page);
+    return await page.evaluate(() => window.__dwPerf.classify());
+  } catch { return 'unknown'; }
 }
 
 // Wait until #view classifies as one of `states`. Returns elapsed ms.
 export async function waitForState(page, states, timeout = 30000) {
   const t0 = Date.now();
+  await ensurePerfHelpers(page);
   await page.waitForFunction(
-    ({ src, want }) => want.includes(eval(src)),
-    { src: CLASSIFY_SRC, want: states },
+    (want) => want.includes(window.__dwPerf.classify()),
+    states,
     { timeout, polling: 50 },
   );
   return Date.now() - t0;
 }
 
-// Runs in the page: open a main tab and, when it has one, select its sub-tab by
-// clicking the sub-tab button (the same path an operator takes). The button is
-// found by its data-tab value; window.switchAutomataTab is the fallback when the
-// bar has not rendered yet.
-export const OPEN_TAB_SRC = `((view, subtab) => {
-  window.navigate(view);
-  if (!subtab) return;
-  const btn = document.querySelector('.automata-tabs-bar .output-tab[data-tab="' + subtab + '"]');
-  if (btn) { if (!btn.classList.contains('active')) btn.click(); }
-  else if (window.switchAutomataTab) window.switchAutomataTab(subtab);
-})`;
-
 // Open `tab` (an entry of TABS) in the page. `clear` empties #view first so the
 // next state seen is the one the open produced.
-export function openTab(page, tab, { clear = false } = {}) {
-  return page.evaluate(({ src, view, subtab, clear }) => {
+export async function openTab(page, tab, { clear = false } = {}) {
+  await ensurePerfHelpers(page);
+  return page.evaluate(({ view, subtab, inner, clear }) => {
     if (clear) document.getElementById('view').innerHTML = '';
-    return eval(src)(view, subtab);
-  }, { src: OPEN_TAB_SRC, view: tab.view, subtab: tab.subtab || null, clear });
+    return window.__dwPerf.openTab(view, subtab, inner);
+  }, { view: tab.view, subtab: tab.subtab || null, inner: tab.inner || null, clear });
 }
 
 // --- measurement -------------------------------------------------------------
@@ -216,9 +240,10 @@ export function openTab(page, tab, { clear = false } = {}) {
 //   blankAfterIndicator  number of samples that were blank AFTER the indicator
 //   states       ordered list of distinct states seen
 // `watchMs` keeps sampling after first content so a late blank is caught.
-export function measureTab(page, view, { timeout = 60000, watchMs = 500, subtab = null } = {}) {
-  return page.evaluate(({ view, subtab, timeout, watchMs, src, openSrc }) => new Promise((resolve) => {
-    const classify = () => eval(src);
+export async function measureTab(page, view, { timeout = 60000, watchMs = 500, subtab = null, inner = null } = {}) {
+  await ensurePerfHelpers(page);
+  return page.evaluate(({ view, subtab, inner, timeout, watchMs }) => new Promise((resolve) => {
+    const classify = () => window.__dwPerf.classify();
     const el = document.getElementById('view');
     const res = { indicatorMs: null, firstContentMs: null, blankAfterIndicator: 0, states: [], timedOut: false };
     el.innerHTML = '';
@@ -251,9 +276,9 @@ export function measureTab(page, view, { timeout = 60000, watchMs = 500, subtab 
     }
     mo.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
     iv = setInterval(sample, 20);
-    eval(openSrc)(view, subtab);
+    window.__dwPerf.openTab(view, subtab, inner);
     sample();
-  }), { view, subtab, timeout, watchMs, src: CLASSIFY_SRC, openSrc: OPEN_TAB_SRC });
+  }), { view, subtab, inner, timeout, watchMs });
 }
 
 // Poll the tab container for `ms` and return every sample's state. Used by the
@@ -432,13 +457,28 @@ export const sumBytes = (entries) => entries.reduce((n, e) => n + e.bytes, 0);
 
 // --- seeding -----------------------------------------------------------------
 
+// REST call to the daemon. The sandbox daemon serves a self-signed certificate,
+// so this goes through node:https with the dedicated agent that pins that
+// certificate (TEST_TLS_CA); verification stays on. Plain http uses node:http.
 async function apiJson(pathAndQuery, init = {}) {
-  const r = await fetch(env.http + pathAndQuery, {
-    ...init,
-    headers: { Authorization: `Bearer ${env.token}`, 'Content-Type': 'application/json', ...(init.headers || {}) },
+  const url = new URL(pathAndQuery, env.http);
+  const mod = url.protocol === 'https:' ? https : http;
+  const body = init.body;
+  const headers = { Authorization: `Bearer ${env.token}`, 'Content-Type': 'application/json', ...(init.headers || {}) };
+  if (body) headers['Content-Length'] = Buffer.byteLength(body);
+  const opts = { method: init.method || 'GET', headers };
+  if (url.protocol === 'https:') opts.agent = sandboxTlsAgent();
+  const { status, text } = await new Promise((resolve, reject) => {
+    const req = mod.request(url, opts, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
   });
-  if (!r.ok) throw new Error(`${init.method || 'GET'} ${pathAndQuery} -> ${r.status}`);
-  const text = await r.text();
+  if (status < 200 || status >= 300) throw new Error(`${opts.method} ${pathAndQuery} -> ${status}`);
   return text ? JSON.parse(text) : null;
 }
 
@@ -501,8 +541,27 @@ export async function cleanupSeed() {
 // --- context helpers ---------------------------------------------------------
 
 // A fresh browser context (cold: empty cache, empty localStorage).
-export async function coldPage(browser, { viewport = { width: 1280, height: 800 } } = {}) {
+//
+// The Automata tab and its Automation sub-tab are shown only when
+// /api/autonomous/config answers enabled:true (production has it on). The
+// release-smoke sandbox daemon starts with the subsystem off, which would hide
+// the very tabs these stories load, so the context answers that one endpoint
+// with the daemon's real body and enabled forced true. Nothing else changes.
+// Pass { autonomousEnabled: false } to leave the daemon's own answer alone.
+export async function coldPage(browser, { viewport = { width: 1280, height: 800 }, autonomousEnabled = true } = {}) {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport });
+  if (autonomousEnabled) {
+    await context.route('**/api/autonomous/config', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      let body = {};
+      try {
+        const resp = await route.fetch();
+        body = await resp.json();
+      } catch { /* daemon answered nothing usable: the forced flag alone */ }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...body, enabled: true }) })
+        .catch(() => {});
+    });
+  }
   const page = await context.newPage();
   return { context, page };
 }
