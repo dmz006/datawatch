@@ -2970,7 +2970,7 @@ The report is CI-safe by design: one line per finding, `path:line: class`,
 then a per-class count summary, and nothing else — the matched text is never
 printed, so the output is safe in CI logs or a commit message. Exit `0` clean,
 `1` findings, `2` usage or configuration error. Run it with `make check-leaks`
-or `bash scripts/check-no-local-leaks.sh [root]`.
+or `bash scripts/check-no-local-leaks.sh [root]`; `make check-leaks` also runs the generated reports folder scan (`make check-generated-reports-leaks`), which scans every tracked and untracked report under `docs/plans/reports` with the same classes — the untracked surface the tree check cannot see — and the report generators already strip the host prefix from session ids they render (details in the reference).
 
 It is wired into three gates: the pre-commit chain
 (`hooks/pre-commit-leak-check`, the middle step of the
