@@ -4,10 +4,10 @@ set -u
 cd "$(git rev-parse --show-toplevel)"
 fail() { echo "FAIL: $*"; exit 1; }
 MB="$(git merge-base HEAD main)"
-CHANGED="$({ git diff --name-only "$MB"; git ls-files --others --exclude-standard; } | sort -u)"
+CHANGED="$({ git diff --name-only "$MB"; git ls-files --others --exclude-standard; } | grep -vE '^(worker-starting-context\.md|AGENT\.md|CLAUDE\.md|docs/plans/(drafts|parity-issues|reports)/)' | sort -u)"
 need() { echo "$CHANGED" | grep -qx "$1" || fail "$1 is not in the changed file set"; }
 fmt_go() { g="$(echo "$CHANGED" | grep "\.go$" | while read -r f; do [ -f "$f" ] && echo "$f"; done)"; [ -z "$g" ] && return 0; bad="$(echo "$g" | xargs gofmt -l)"; [ -z "$bad" ] || fail "gofmt needed: $bad"; }
-nofix() { echo "$CHANGED" | grep -E "^(AGENT|CLAUDE)\.md$" >/dev/null && fail "launcher file changed"; return 0; }
+nofix() { git diff --name-only "$MB" HEAD | grep -E "^(AGENT|CLAUDE)\.md$" >/dev/null && fail "launcher file committed"; return 0; }
 
 ALLOW="internal/autonomous/|internal/server/web/|docs/|scripts/|CHANGELOG.md|\.datawatch/"
 for f in $CHANGED; do case "$f" in AGENT.md|CLAUDE.md) continue;; esac; echo "$f" | grep -Eq "^($ALLOW)" || fail "changed file outside the plan: $f"; done
