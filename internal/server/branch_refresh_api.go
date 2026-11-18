@@ -43,6 +43,16 @@ type branchRefreshStatser interface {
 	BranchRefreshStats() autonomous.BranchRefreshStats
 }
 
+// The daemon wires *autonomous.API (not *Manager) into the server, so the
+// wrapper must carry both optional surfaces; a missing method used to make
+// these routes answer 501 "not supported by this manager". The housekeeping
+// repairs fix used the same pattern: forwarding methods on the wrapper plus
+// this compile-time assertion that *autonomous.API satisfies both interfaces.
+var (
+	_ branchRefreshOverrideSetter = (*autonomous.API)(nil)
+	_ branchRefreshStatser        = (*autonomous.API)(nil)
+)
+
 // BranchRefreshRESTOperation is one branch refresh REST route, read by the
 // parity test.
 type BranchRefreshRESTOperation struct {

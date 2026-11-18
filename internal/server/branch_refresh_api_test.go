@@ -279,3 +279,49 @@ func TestBranchRefreshStats_Route(t *testing.T) {
 		t.Fatalf("no manager: want 503, got %d", rec.Code)
 	}
 }
+
+// TestBranchRefresh_LiveWrapperPassesRouteGates exercises the very object the
+// daemon wires into the server — *autonomous.API from autonomous.NewAPI — and
+// both optional-interface gates the two routes use. Without the wrapper's
+// forwarding methods either gate failed and the routes answered 501 "not
+// supported by this manager" (the same fault the housekeeping repairs routes
+// hit); the compile-time assertions in branch_refresh_api.go pin the
+// interfaces, this test pins the behaviour through them.
+func TestBranchRefresh_LiveWrapperPassesRouteGates(t *testing.T) {
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	api := autonomous.NewAPI(mgr)
+	if _, ok := any(api).(branchRefreshStatser); !ok {
+		t.Fatalf("*autonomous.API fails the stats route gate (*autonomous.API method set)")
+	}
+	if _, ok := any(api).(branchRefreshOverrideSetter); !ok {
+		t.Fatalf("*autonomous.API fails the override route gate")
+	}
+
+	s := &Server{autonomousMgr: api, cfg: &config.Config{}}
+
+	// The stats gate passes: the live wrapper serves the numbers (a failed
+	// gate would answer 501 here).
+	rec := getBranchRefreshStats(s, http.MethodGet)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats through the live wrapper: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var stats autonomous.BranchRefreshStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.Enabled != mgr.BranchRefreshStats().Enabled {
+		t.Fatalf("wrapper must forward the manager's enabled, got %v want %v", stats.Enabled, mgr.BranchRefreshStats().Enabled)
+	}
+
+	// The override gate passes: a bad body is refused with 400 and an unknown
+	// Automaton with 404 — both mean the request got through the gate.
+	if rec = postBranchRefresh(s, "no-such-automaton", `{"enabled": "yes"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body through the live wrapper: want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec = postBranchRefresh(s, "no-such-automaton", `{"enabled": true}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown Automaton through the live wrapper: want 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
