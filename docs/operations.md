@@ -1301,7 +1301,7 @@ A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel
 
 ### Generated artefacts
 
-The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
+The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. When the record carries a ledger-backed cost summary, the gate report gains a `Cost` section: the sessions, the token and tool-call counts, the span of time, and — when one exists — the API-equivalent estimate with its label, plus the ledger's window and unknown-spend notes. Generated artefacts never carry machine-specific names: the session ids are printed bare (the `<host>-` or `<host>:` prefix stripped, the segment after the last separator kept) and the ledger notes are scrubbed (the local hostname replaced by `host`, absolute paths reduced to their final element). **Still to review (operator):** reports written before that stripping — on disk, on a branch or in git history — may still carry the private hostname; regenerating now writes the bare form, but a file a person edited is never overwritten and committed history keeps what was written. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
 
 ---
 
@@ -2972,7 +2972,7 @@ The report is CI-safe by design: one line per finding, `path:line: class`,
 then a per-class count summary, and nothing else — the matched text is never
 printed, so the output is safe in CI logs or a commit message. Exit `0` clean,
 `1` findings, `2` usage or configuration error. Run it with `make check-leaks`
-or `bash scripts/check-no-local-leaks.sh [root]`.
+or `bash scripts/check-no-local-leaks.sh [root]`; `make check-leaks` also runs the generated reports folder scan (`make check-generated-reports-leaks`), which scans every tracked and untracked report under `docs/plans/reports` with the same classes — the untracked surface the tree check cannot see — and the report generators already strip the host prefix from session ids they render (details in the reference).
 
 It is wired into three gates: the pre-commit chain
 (`hooks/pre-commit-leak-check`, the middle step of the
@@ -2989,7 +2989,12 @@ last-commit diff check covers that surface.
 Operator review still needed: keep `.leak-patterns.local` seeded on every
 machine that builds or commits the repository — until it exists the `local`
 class is silently inactive there — and keep the pre-commit chain installed so
-the gate is not only `make lint`. Reference:
+the gate is not only `make lint`. The generated reports folder scan runs only
+as part of `make check-leaks`/`make lint`: the pre-commit hook and the
+release smoke run the whole-tree check alone, so run `make lint` (or
+`make check-generated-reports-leaks`) before publishing or citing a generated
+report, and discard stale reports under `docs/plans/reports` rather than
+letting them accumulate. Reference:
 [howto/local-env-leak-check.md](howto/local-env-leak-check.md).
 
 ### gofmt format check

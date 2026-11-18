@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -299,6 +299,16 @@ check-sarif-upload:
 # an error (that class is skipped with a stderr notice).
 check-leaks:
 	bash scripts/check-no-local-leaks.sh .
+	bash scripts/check-generated-reports-leaks.sh
+
+# Generated reports leak check: every tracked and untracked report file
+# under docs/plans/reports is copied to a throwaway directory and scanned
+# with the same check-no-local-leaks machinery, LEAK_CHECK_LOCAL pointing
+# at this repository's .leak-patterns.local (that class is skipped with a
+# stderr notice when the file is absent). The report is path:line: class
+# only — matched text is never printed.
+check-generated-reports-leaks:
+	bash scripts/check-generated-reports-leaks.sh
 
 # Fails when a changed file looks like a copy of operator configuration or
 # credentials (backups, .env files, config copies, key files). Compares the
