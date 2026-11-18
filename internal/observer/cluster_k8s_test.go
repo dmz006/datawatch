@@ -62,11 +62,11 @@ func TestParseNodeMetricsResponse_RealPayload(t *testing.T) {
 
 func TestParseCPUtoMilli_AllUnits(t *testing.T) {
 	cases := map[string]int64{
-		"":            0,
-		"168064370n":  168,
-		"500m":        500,
-		"2":           2000,
-		"500u":        0, // 500 microcores → 0 millicores rounded
+		"":           0,
+		"168064370n": 168,
+		"500m":       500,
+		"2":          2000,
+		"500u":       0, // 500 microcores → 0 millicores rounded
 	}
 	for in, want := range cases {
 		if got := parseCPUtoMilli(in); got != want {

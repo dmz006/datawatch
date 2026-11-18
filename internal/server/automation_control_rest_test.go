@@ -204,7 +204,7 @@ func TestAutomationRESTControl(t *testing.T) {
 		// A reason is required.
 		ctl(t, s, a, "insert_member", map[string]any{"member": map[string]any{"prd_id": prdID}}, http.StatusBadRequest)
 		got := ctl(t, s, a, "insert_member", map[string]any{
-			"member":  map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review"}, "reason": "found a gap", "actor": "alice",
+			"member": map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review"}, "reason": "found a gap", "actor": "alice",
 		}, http.StatusOK)
 		if len(got.PendingInserts) != 1 || got.PendingInserts[0].PRDID != prdID || got.PendingInserts[0].Stage != "review" || len(got.Members) != 3 {
 			t.Fatalf("insert on a running automation should be held: pending=%+v members=%d", got.PendingInserts, len(got.Members))

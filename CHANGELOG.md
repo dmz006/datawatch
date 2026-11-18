@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
 ## v9.182.20 — Keep the operator host name out of generated reports
 
 ### Changed

@@ -324,7 +324,11 @@ func TestRequirementsReport_BackendMinimums(t *testing.T) {
 		{"no execution", func(b AutomationBackends) AutomationBackends { b.Execution = nil; return b }, "execution backend"},
 		{"no planning", func(b AutomationBackends) AutomationBackends { b.Planning = nil; return b }, "planning backend"},
 		{"no verification", func(b AutomationBackends) AutomationBackends { b.Verification = nil; return b }, "verification backend"},
-		{"no provider", func(b AutomationBackends) AutomationBackends { b.ClaudeConfigured = false; b.LocalPoolConfigured = false; return b }, "local model pool"},
+		{"no provider", func(b AutomationBackends) AutomationBackends {
+			b.ClaudeConfigured = false
+			b.LocalPoolConfigured = false
+			return b
+		}, "local model pool"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -352,10 +356,10 @@ func TestRequirementsReport_EachProviderOptionalButOneRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	rep2 := m.RequirementsReport(AutomationBackends{
-		Execution:          []string{"pi-prompt"},
-		Planning:           []string{"claude-code"},
-		Verification:       []string{"claude-code"},
-		ClaudeConfigured:   true,
+		Execution:           []string{"pi-prompt"},
+		Planning:            []string{"claude-code"},
+		Verification:        []string{"claude-code"},
+		ClaudeConfigured:    true,
 		LocalPoolConfigured: false,
 	})
 	if !rep2.OK {
@@ -363,10 +367,10 @@ func TestRequirementsReport_EachProviderOptionalButOneRequired(t *testing.T) {
 	}
 	// Local pool alone is enough.
 	rep3 := m.RequirementsReport(AutomationBackends{
-		Execution:          []string{"pi-prompt"},
-		Planning:           []string{"pi-prompt"},
-		Verification:       []string{"pi-prompt"},
-		ClaudeConfigured:   false,
+		Execution:           []string{"pi-prompt"},
+		Planning:            []string{"pi-prompt"},
+		Verification:        []string{"pi-prompt"},
+		ClaudeConfigured:    false,
 		LocalPoolConfigured: true,
 	})
 	if !rep3.OK {

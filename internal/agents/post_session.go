@@ -24,9 +24,9 @@ import (
 // PRHookConfig groups the dependencies the hook needs. None of the
 // fields are nil-safe at construction; New verifies them.
 type PRHookConfig struct {
-	Manager  *Manager       // for AgentID → Project + GitToken lookup
-	Provider git.Provider   // for OpenPR call (gh / glab / stub)
-	Pusher   BranchPusher   // pushes the working branch (project session.ProjectGit)
+	Manager  *Manager     // for AgentID → Project + GitToken lookup
+	Provider git.Provider // for OpenPR call (gh / glab / stub)
+	Pusher   BranchPusher // pushes the working branch (project session.ProjectGit)
 	Now      func() time.Time
 }
 

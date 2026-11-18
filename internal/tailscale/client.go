@@ -20,19 +20,19 @@ import (
 )
 
 const (
-	tailscaleAPIBase  = "https://api.tailscale.com/api/v2"
-	headscaleAPIv1    = "/api/v1"
+	tailscaleAPIBase   = "https://api.tailscale.com/api/v2"
+	headscaleAPIv1     = "/api/v1"
 	defaultHTTPTimeout = 10 * time.Second
 )
 
 // NodeInfo is a normalised node/device record returned by Status and Nodes.
 type NodeInfo struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	IP      string   `json:"ip"`
-	Online  bool     `json:"online"`
-	Tags    []string `json:"tags,omitempty"`
-	OS      string   `json:"os,omitempty"`
+	ID     string   `json:"id"`
+	Name   string   `json:"name"`
+	IP     string   `json:"ip"`
+	Online bool     `json:"online"`
+	Tags   []string `json:"tags,omitempty"`
+	OS     string   `json:"os,omitempty"`
 }
 
 // StatusResponse is returned by GET /api/tailscale/status.
@@ -114,13 +114,13 @@ func (c *Client) headscaleNodes(ctx context.Context) ([]NodeInfo, error) {
 	// Headscale v0.22+ response: {"nodes": [...]}
 	var wrapper struct {
 		Nodes []struct {
-			ID              string   `json:"id"`
-			Name            string   `json:"name"`
-			IPAddresses     []string `json:"ipAddresses"`
-			Online          bool     `json:"online"`
-			ForcedTags      []string `json:"forcedTags"`
-			ValidTags       []string `json:"validTags"`
-			OS              string   `json:"os"`
+			ID          string   `json:"id"`
+			Name        string   `json:"name"`
+			IPAddresses []string `json:"ipAddresses"`
+			Online      bool     `json:"online"`
+			ForcedTags  []string `json:"forcedTags"`
+			ValidTags   []string `json:"validTags"`
+			OS          string   `json:"os"`
 		} `json:"nodes"`
 	}
 	if err := json.Unmarshal(body, &wrapper); err != nil {
@@ -187,11 +187,11 @@ type PreAuthKeyOptions struct {
 
 // PreAuthKeyResult holds the newly generated pre-auth key.
 type PreAuthKeyResult struct {
-	Key       string `json:"key"`
-	Reusable  bool   `json:"reusable"`
-	Ephemeral bool   `json:"ephemeral"`
+	Key       string   `json:"key"`
+	Reusable  bool     `json:"reusable"`
+	Ephemeral bool     `json:"ephemeral"`
 	Tags      []string `json:"tags,omitempty"`
-	ExpiresAt string `json:"expires_at,omitempty"`
+	ExpiresAt string   `json:"expires_at,omitempty"`
 }
 
 // GeneratePreAuthKey creates a new headscale pre-auth key. Only supported
