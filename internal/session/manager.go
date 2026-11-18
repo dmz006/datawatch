@@ -2536,7 +2536,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// as --model.
 	if b, ok := backendObj.(interface{ Name() string }); ok && b.Name() == "claude-code" {
 		if opt == nil || opt.Model == "" {
-			return nil, fmt.Errorf("claude-code launch refused: no explicit model set — datawatch will not fall back to the account default or upgrade the model on its own; name a model (e.g. \"sonnet\" or \"haiku\") and try again")
+			return nil, fmt.Errorf("claude-code launch refused: no explicit model set — datawatch will not fall back to the account default or upgrade the model on its own; name a model (e.g. \"sonnet\" or \"haiku\") in any of these places and try again: the `datawatch session new --model <name>` flag; the `model` field of POST /api/sessions/start; the MCP `start_session` `model` argument; the chat `new: model=<name>` token; or the LLM row via `datawatch llm models add <llm> --model <name>`")
 		}
 	}
 
