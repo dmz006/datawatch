@@ -13,6 +13,36 @@ import (
 	"strings"
 )
 
+// SupervisorWatchBacklogSubject is the fixed "backlog" subject every
+// backlog finding carries, so the kind+subject pair dedupes the
+// consolidated finding the way one Automaton's task_failed findings do.
+const SupervisorWatchBacklogSubject = "backlog"
+
+// SupervisorWatchPriorityStallText builds the operator line for one
+// priority-stall finding: it names the Automaton, its resolved priority,
+// how long it has been waiting, the stall threshold and the floor, and
+// says it is not being picked up. One line, the Automaton name, never a
+// tracker id.
+func SupervisorWatchPriorityStallText(subject string, priority, ageMinutes, thresholdMinutes, floor int) string {
+	return fmt.Sprintf(
+		"Automaton %s at priority %d has been waiting %d minutes (stall threshold %d minutes, priority floor %d) without being picked up",
+		subject, priority, ageMinutes, thresholdMinutes, floor)
+}
+
+// SupervisorWatchBacklogText builds the operator line for the
+// consolidated backlog finding. count is the total number of listed
+// Automata and entries is the already-prepared entry list — sorted by
+// highest resolved priority first, within the same priority by oldest
+// created first, and already capped at sixteen entries with a "+k more"
+// tail — joined into the one-line text that starts with
+// "BACKLOG <n> Automata (highest priority first, then oldest)", the
+// Automata name, never a tracker id.
+func SupervisorWatchBacklogText(count int, entries []string) string {
+	return fmt.Sprintf(
+		"BACKLOG %d Automata (highest priority first, then oldest): %s",
+		count, strings.Join(entries, " "))
+}
+
 // SupervisorWatchText returns the operator-facing one-line text for one
 // finding kind, with subject inlined (the stable id the finding is
 // about: an Automaton id, a node name, a lane name, a CI run id, or the
@@ -55,6 +85,19 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 		return fmt.Sprintf("CI run %s is red: triage the failure before shipping more Automata", subject), nil
 	case SupervisorWatchCISTuck:
 		return fmt.Sprintf("CI run %s has been in progress abnormally long: the Automata release pipeline is stalled until it is done", subject), nil
+
+	case SupervisorWatchPriorityStall:
+		// The check-side text (SupervisorWatchPriorityStallText) carries
+		// the priority, age, threshold and floor; this fallback says the
+		// same thing without the numbers.
+		return "Automaton " + subject + " is not being picked up: it has been waiting past the stall threshold for its priority", nil
+
+	case SupervisorWatchBacklog:
+		// The check-side text (SupervisorWatchBacklogText) carries the
+		// sorted, capped entry list; this fallback names the queue without
+		// it.
+		return "BACKLOG: Automata are waiting for the operator's attention or a free lane, highest priority first, then oldest", nil
+
 	default:
 		return "", fmt.Errorf("supervisor watch: no text for unknown kind %q (must be one of %s)",
 			kind, strings.Join(supervisorWatchKindStrings(), ", "))

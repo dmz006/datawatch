@@ -5,6 +5,8 @@
 package autonomous
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -413,5 +415,273 @@ func TestSupervisorWatchWorkIdleLaneIgnoresStaleQueuedWork(t *testing.T) {
 	}
 	if got := run(t, 200*time.Hour); len(got) != 0 {
 		t.Fatalf("stale queued work must not raise idle_lane_eligible_work, got %+v", got)
+	}
+}
+
+// workTestQueuePRD builds a PRD for the queue checks: an explicit waiting
+// status, a resolved priority, a creation instant and the given tasks.
+func workTestQueuePRD(id string, status PRDStatus, priority int, created time.Time, tasks ...Task) *PRD {
+	p := workTestPRD(id, nil, tasks...)
+	p.Status = status
+	p.Priority = priority
+	p.CreatedAt = created
+	return p
+}
+
+// TestSupervisorWatchWorkPriorityStall — an Automaton that is in the
+// waiting set, at or above the priority floor, and waiting longer than the
+// stall threshold raises one priority_stall finding naming it; each of
+// the three conditions failing on its own raises nothing; a below-floor
+// or below-threshold Automaton is never reported; an already-raised
+// Automaton is not reported twice; and the explicit zero floor admits
+// whatever priorities are in the queue.
+func TestSupervisorWatchWorkPriorityStall(t *testing.T) {
+	now := time.Now()
+	stall, floor := 30, 80
+	cfg := SupervisorWatchConfig{StallThresholdMinutes: &stall, PriorityFloor: &floor}
+	long := now.Add(-45 * time.Minute)
+
+	cases := []struct {
+		name     string
+		prd      *PRD
+		wantKind SupervisorWatchKind
+		wantText string
+	}{
+		{
+			name:     "waiting above floor and past threshold raises",
+			prd:      workTestQueuePRD("stalled-1", PRDApproved, 90, long),
+			wantKind: SupervisorWatchPriorityStall,
+			wantText: SupervisorWatchPriorityStallText("stalled-1", 90, 45, 30, 80),
+		},
+		{
+			name: "at the floor raises",
+			prd:  workTestQueuePRD("at-floor", PRDApproved, 80, long),
+			wantKind: SupervisorWatchPriorityStall,
+		},
+		{
+			name: "below floor does not raise",
+			prd:  workTestQueuePRD("low-prio", PRDApproved, 79, long),
+		},
+		{
+			name: "below threshold does not raise",
+			prd:  workTestQueuePRD("young", PRDApproved, 90, now.Add(-20*time.Minute)),
+		},
+		{
+			name: "at the threshold does not raise",
+			prd:  workTestQueuePRD("exact", PRDApproved, 90, now.Add(-30*time.Minute)),
+		},
+		{
+			name: "running is not waiting",
+			prd:  workTestQueuePRD("running", PRDRunning, 90, long),
+		},
+		{
+			name: "held by decision is not a stall",
+			prd:  workTestQueuePRD("held", PRDHeld, 90, long),
+		},
+		{
+			name: "completed is not waiting",
+			prd:  workTestQueuePRD("done", PRDCompleted, 90, long),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := NewSupervisorWatchWork(
+				&fakeSupervisorWatchPRDLister{prds: []*PRD{tc.prd}}, nil, nil)
+			got := w.CheckPriorityStall(now, cfg)
+			if tc.wantKind == SupervisorWatchPriorityStall {
+				if len(got) != 1 {
+					t.Fatalf("want 1 finding, got %d: %+v", len(got), got)
+				}
+				if got[0].Kind != SupervisorWatchPriorityStall || got[0].Subject != tc.prd.ID {
+					t.Errorf("wrong kind/subject: %+v", got[0])
+				}
+				want := SupervisorWatchPriorityStallText(tc.prd.ID, tc.prd.Priority, 45, 30, 80)
+				if got[0].Text != want {
+					t.Errorf("text = %q, want %q", got[0].Text, want)
+				}
+				if !strings.Contains(strings.ToLower(got[0].Text), "automaton") {
+					t.Errorf("text must name the Automaton: %q", got[0].Text)
+				}
+			} else if len(got) != 0 {
+				t.Fatalf("want no findings, got %d: %+v", len(got), got)
+			}
+		})
+	}
+
+	t.Run("explicit zero floor admits low priority", func(t *testing.T) {
+		zero := 0
+		cfgZero := SupervisorWatchConfig{StallThresholdMinutes: &stall, PriorityFloor: &zero}
+		w := NewSupervisorWatchWork(
+			&fakeSupervisorWatchPRDLister{prds: []*PRD{workTestQueuePRD("low", PRDApproved, 3, long)}},
+			nil, nil)
+		got := w.CheckPriorityStall(now, cfgZero)
+		if len(got) != 1 || got[0].Subject != "low" {
+			t.Fatalf("explicit 0 floor must admit priority 3, got %+v", got)
+		}
+	})
+
+	t.Run("already raised is not raised again", func(t *testing.T) {
+		w := NewSupervisorWatchWork(
+			&fakeSupervisorWatchPRDLister{prds: []*PRD{workTestQueuePRD("dup", PRDApproved, 90, long)}},
+			nil, nil)
+		w.Raise(SupervisorWatchFinding{Kind: SupervisorWatchPriorityStall, Subject: "dup"})
+		if got := w.CheckPriorityStall(now, cfg); len(got) != 0 {
+			t.Fatalf("re-raised: %+v", got)
+		}
+	})
+
+	t.Run("unset config reads defaults (80 floor, 30 minutes)", func(t *testing.T) {
+		unset := SupervisorWatchConfig{}
+		if unset.EffectivePriorityFloor() != 80 || unset.EffectiveStallThresholdMinutes() != 30 {
+			t.Fatalf("defaults moved: floor=%d stall=%d",
+				unset.EffectivePriorityFloor(), unset.EffectiveStallThresholdMinutes())
+		}
+		below := workTestQueuePRD("b", PRDApproved, 79, long)
+		above := workTestQueuePRD("a", PRDApproved, 80, long)
+		w := NewSupervisorWatchWork(
+			&fakeSupervisorWatchPRDLister{prds: []*PRD{below, above}}, nil, nil)
+		got := w.CheckPriorityStall(now, unset)
+		if len(got) != 1 || got[0].Subject != "a" {
+			t.Fatalf("defaults admit only at-or-above 80, got %+v", got)
+		}
+	})
+}
+
+// TestSupervisorWatchWorkBacklogOrder — the backlog finding lists every
+// waiting Automaton and every failed or blocked Automaton with work left,
+// sorted by highest priority first and within a priority by oldest created
+// first; a failed or blocked Automaton with no work left is excluded; a
+// completed Automaton is excluded; the finding carries the fixed "backlog"
+// subject; an empty queue raises nothing; and an already-raised backlog is
+// not raised again.
+func TestSupervisorWatchWorkBacklogOrder(t *testing.T) {
+	now := time.Now()
+	oldest := now.Add(-200 * time.Minute)
+	middle := now.Add(-45 * time.Minute)
+	young := now.Add(-5 * time.Minute)
+
+	// b is the highest priority (90); c is next (70); a is lowest (50).
+	// c is failed but still has one task left; d is blocked with no work
+	// left (excluded); e is completed (excluded).
+	queue := []*PRD{
+		workTestQueuePRD("a", PRDApproved, 50, middle),
+		workTestQueuePRD("b", PRDDraft, 90, young),
+		workTestQueuePRD("c", PRDFailed, 70, oldest,
+			workTestTask("c", "t", TaskFailed)), // one task left
+		workTestQueuePRD("d", PRDBlocked, 60, middle,
+			workTestTask("d", "t", TaskCompleted)), // no work left: excluded
+		workTestQueuePRD("e", PRDCompleted, 95, oldest), // completed: excluded
+	}
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)
+	got := w.CheckBacklog(now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 backlog finding, got %d: %+v", len(got), got)
+	}
+	f := got[0]
+	if f.Kind != SupervisorWatchBacklog {
+		t.Fatalf("kind = %q, want backlog", f.Kind)
+	}
+	if f.Subject != SupervisorWatchBacklogSubject {
+		t.Fatalf("subject = %q, want %q", f.Subject, SupervisorWatchBacklogSubject)
+	}
+	want := SupervisorWatchBacklogText(3, []string{
+		"b(draft)",
+		"c(failed, 1 left)",
+		"a(approved)",
+	})
+	if f.Text != want {
+		t.Fatalf("text = %q, want %q", f.Text, want)
+	}
+	if !strings.HasPrefix(f.Text, "BACKLOG 3 Automata (highest priority first, then oldest): ") {
+		t.Errorf("text must open with the BACKLOG count and order note: %q", f.Text)
+	}
+	lower := strings.ToLower(f.Text)
+	if !strings.Contains(lower, "automata") {
+		t.Errorf("text must name the Automata: %q", f.Text)
+	}
+
+	t.Run("already raised is not raised again", func(t *testing.T) {
+		w2 := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)
+		w2.Raise(SupervisorWatchFinding{Kind: SupervisorWatchBacklog, Subject: SupervisorWatchBacklogSubject})
+		if got := w2.CheckBacklog(now); len(got) != 0 {
+			t.Fatalf("re-raised: %+v", got)
+		}
+	})
+}
+
+// TestSupervisorWatchWorkBacklogTiebreaks — within the same priority the
+// oldest created is listed first; a missing creation instant reads as
+// oldest; and a created-instant tie falls back to Automaton id, so the
+// order is total and deterministic.
+func TestSupervisorWatchWorkBacklogTiebreaks(t *testing.T) {
+	now := time.Now()
+	t1 := now.Add(-100 * time.Minute)
+	t2 := now.Add(-50 * time.Minute)
+
+	queue := []*PRD{
+		workTestQueuePRD("id-a", PRDApproved, 70, t1),
+		workTestQueuePRD("id-b", PRDApproved, 70, t2), // same prio, newer
+		workTestQueuePRD("id-c", PRDApproved, 70, t1), // tie with id-a -> id order
+		workTestQueuePRD("id-d", PRDApproved, 70, time.Time{}), // no created -> oldest
+	}
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)
+	got := w.CheckBacklog(now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(got))
+	}
+	want := SupervisorWatchBacklogText(4, []string{
+		"id-d(approved)", // missing created reads as oldest
+		"id-a(approved)", // tie on t1 with id-c -> id order puts a before c
+		"id-c(approved)",
+		"id-b(approved)", // newest of the 70s
+	})
+	if got[0].Text != want {
+		t.Fatalf("text = %q, want %q", got[0].Text, want)
+	}
+}
+
+// TestSupervisorWatchWorkBacklogCap — a queue longer than sixteen
+// entries lists the first sixteen and a "+k more" tail, while the count
+// still names the whole queue.
+func TestSupervisorWatchWorkBacklogCap(t *testing.T) {
+	now := time.Now()
+	queue := make([]*PRD, 0, 20)
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("q-%02d", i)
+		queue = append(queue, workTestQueuePRD(id, PRDApproved, 50+i, now.Add(-time.Duration(i)*time.Minute)))
+	}
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)
+	got := w.CheckBacklog(now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(got))
+	}
+	if strings.Count(got[0].Text, "more") == 0 {
+		t.Fatalf("cap tail missing: %q", got[0].Text)
+	}
+	if !strings.HasSuffix(got[0].Text, "+4 more") {
+		t.Fatalf("cap tail must count the unlisted entries (+4 more): %q", got[0].Text)
+	}
+	if !strings.HasPrefix(got[0].Text, "BACKLOG 20 Automata") {
+		t.Fatalf("count must still name the whole queue: %q", got[0].Text)
+	}
+}
+
+// TestSupervisorWatchWorkBacklogEmpty — no waiting Automaton and no
+// unfinished failure or block raises nothing.
+func TestSupervisorWatchWorkBacklogEmpty(t *testing.T) {
+	now := time.Now()
+	queue := []*PRD{
+		workTestQueuePRD("done", PRDCompleted, 90, now.Add(-100*time.Minute)),
+		workTestQueuePRD("blocked-no-left", PRDBlocked, 70, now.Add(-100*time.Minute),
+			workTestTask("blocked-no-left", "t", TaskCompleted)),
+		workTestQueuePRD("running", PRDRunning, 95, now.Add(-100*time.Minute)),
+	}
+	w := NewSupervisorWatchWork(&fakeSupervisorWatchPRDLister{prds: queue}, nil, nil)
+	if got := w.CheckBacklog(now); len(got) != 0 {
+		t.Fatalf("empty queue must raise nothing, got %+v", got)
+	}
+	if got := NewSupervisorWatchWork(nil, nil, nil).CheckBacklog(now); len(got) != 0 {
+		t.Fatalf("nil lister must raise nothing, got %+v", got)
 	}
 }

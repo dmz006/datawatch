@@ -143,6 +143,8 @@ func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*
 	out = append(out, work.CheckIdleLane()...)
 	out = append(out, work.CheckCIRed()...)
 	out = append(out, work.CheckCISTuck()...)
+	out = append(out, work.CheckPriorityStall(time.Now(), cfg)...)
+	out = append(out, work.CheckBacklog(time.Now())...)
 
 	if baseRepo != "" {
 		wt := NewSupervisorWatchWorktree(

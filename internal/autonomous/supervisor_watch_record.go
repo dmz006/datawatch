@@ -69,6 +69,25 @@ const (
 	// SupervisorWatchCISTuck — a CI run has been in progress abnormally
 	// long.
 	SupervisorWatchCISTuck SupervisorWatchKind = "ci_stuck"
+	// SupervisorWatchPriorityStall — an Automaton sits in the waiting set
+	// (draft, planning, needs_review, approved or revisions_asked — never
+	// held, running, done or closed) at a resolved priority at or above the
+	// priority floor and has been waiting strictly longer than the stall
+	// threshold without moving. Subject: the Automaton id. The finding text
+	// names the Automaton, its priority, how long it has waited, the stall
+	// threshold and the floor, and says it is not being picked up.
+	SupervisorWatchPriorityStall SupervisorWatchKind = "priority_stall"
+	// SupervisorWatchBacklog — the single consolidated finding listing every
+	// waiting Automaton (as in priority_stall) plus every failed or blocked
+	// Automaton that still has work left (at least one task that is not
+	// completed or cancelled). Subject: the fixed string "backlog". The
+	// finding text starts with
+	// "BACKLOG <n> Automata (highest priority first, then oldest)" and then
+	// lists one entry per Automaton — <id>(<status>) or <id>(<status>, <n> left)
+	// when work is left — sorted by highest resolved priority first, within
+	// the same priority by oldest created first, capped at sixteen entries
+	// with a "+<k> more" tail when the queue is longer.
+	SupervisorWatchBacklog SupervisorWatchKind = "backlog"
 )
 
 // SupervisorWatchKinds is the complete stable finding vocabulary, in
@@ -88,6 +107,8 @@ var SupervisorWatchKinds = []SupervisorWatchKind{
 	SupervisorWatchMainCheckoutDirty,
 	SupervisorWatchCIRed,
 	SupervisorWatchCISTuck,
+	SupervisorWatchPriorityStall,
+	SupervisorWatchBacklog,
 }
 
 // ValidSupervisorWatchKind reports whether k is one of the stable

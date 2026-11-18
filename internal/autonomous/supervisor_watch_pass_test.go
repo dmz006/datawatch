@@ -771,3 +771,65 @@ func TestSupervisorWatchPassRunsWorktreeChecks(t *testing.T) {
 		t.Errorf("an empty tree with an unreadable repository raised %+v", got)
 	}
 }
+
+// TestSupervisorWatchPassPriorityStallRunsTheRealCheck — with no findings
+// seam, the pass's own check run includes the two queue checks: a
+// waiting Automaton past the stall threshold for its priority yields a
+// priority_stall finding, and the waiting queue yields the consolidated
+// backlog finding, both recorded by the pass.
+func TestSupervisorWatchPassPriorityStallRunsTheRealCheck(t *testing.T) {
+	m := swNewManager(t)
+	m.mu.Lock()
+	m.cfg.Automation.SupervisorWatch.Mode = SupervisorWatchModeShadow
+	m.mu.Unlock()
+
+	stalled := &PRD{
+		ID:        "queue-1",
+		Title:     "queue-1",
+		Status:    PRDApproved,
+		Priority:  90,
+		CreatedAt: time.Now().Add(-45 * time.Minute),
+	}
+	if err := m.Store().SavePRD(stalled); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+
+	c := NewCoordinator(m, swFakeStarter{})
+	if c == nil {
+		t.Fatal("NewCoordinator returned nil")
+	}
+	sink := &laneFillAlertSink{}
+	c.alertFn = sink.add
+
+	c.supervisorWatchPass()
+
+	st := m.supervisorWatchStore()
+	if st == nil {
+		t.Fatal("no watch store")
+	}
+	all := st.List()
+	var ps, bk *SupervisorWatchFinding
+	for _, f := range all {
+		switch {
+		case f.Kind == SupervisorWatchPriorityStall && f.Subject == "queue-1":
+			ps = f
+		case f.Kind == SupervisorWatchBacklog && f.Subject == SupervisorWatchBacklogSubject:
+			bk = f
+		}
+	}
+	if ps == nil {
+		t.Fatalf("pass did not record the priority_stall finding; got %d finding(s): %+v", len(all), all)
+	}
+	if !strings.Contains(strings.ToLower(ps.Text), "automaton") {
+		t.Errorf("priority_stall text must name the Automaton: %q", ps.Text)
+	}
+	if bk == nil {
+		t.Fatalf("pass did not record the backlog finding; got %+v", all)
+	}
+	if !strings.HasPrefix(bk.Text, "BACKLOG 1 Automata (highest priority first, then oldest): ") {
+		t.Errorf("backlog text = %q", bk.Text)
+	}
+	if got := sink.all(); len(got) != 0 {
+		t.Errorf("shadow raised %d alert(s), want 0", len(got))
+	}
+}
