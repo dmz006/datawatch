@@ -165,7 +165,7 @@ func TestRunnerCleanMergeStoresPlanWithoutApplying(t *testing.T) {
 func TestRunnerConflictsClassifiedAndGatesSkipped(t *testing.T) {
 	repo := runnerConflictRepo(t)
 	in := runnerInput(t, repo, "work")
-	in.ChangelogTasks = nil // no entry: the changelog must stay empty, not invented
+	in.ChangelogTasks = nil // no entry task: the branch CHANGELOG.md entry is read instead
 	calls := 0
 
 	plan, err := Runner{Gates: fakeGates(t, GatePass, &calls), Now: fixedClock()}.Run(context.Background(), in)
@@ -193,11 +193,8 @@ func TestRunnerConflictsClassifiedAndGatesSkipped(t *testing.T) {
 			t.Errorf("gate %s status %q, want skipped", g.Name, g.Status)
 		}
 	}
-	if plan.ChangelogSource != ChangelogSourceMissing || plan.ChangelogHeading != "" || plan.ChangelogBody != "" {
-		t.Errorf("changelog %q %q %q, want missing and empty", plan.ChangelogSource, plan.ChangelogHeading, plan.ChangelogBody)
-	}
-	if plan.PlannedVersion != "" || plan.ReleaseSize != ReleaseSizeNone || plan.ReadmeLine != "" {
-		t.Errorf("planned %q size %q readme %q, want none", plan.PlannedVersion, plan.ReleaseSize, plan.ReadmeLine)
+	if plan.ChangelogSource != ChangelogSourceBranch || plan.PlannedVersion != "1.3.0" || plan.ReleaseSize != ReleaseSizeMinor {
+		t.Errorf("changelog %q planned %q size %q, want branch 1.3.0 minor", plan.ChangelogSource, plan.PlannedVersion, plan.ReleaseSize)
 	}
 	codes := map[string]int{}
 	for _, f := range plan.Findings {
@@ -206,8 +203,8 @@ func TestRunnerConflictsClassifiedAndGatesSkipped(t *testing.T) {
 		}
 		codes[f.Code]++
 	}
-	if codes["conflict_unresolved"] != 1 || codes["changelog_missing"] != 1 || len(plan.Findings) != 2 {
-		t.Errorf("findings %v, want one conflict_unresolved and one changelog_missing", codes)
+	if codes["conflict_unresolved"] != 1 || len(plan.Findings) != 1 {
+		t.Errorf("findings %v, want one conflict_unresolved", codes)
 	}
 }
 
