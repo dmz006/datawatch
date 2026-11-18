@@ -36,10 +36,13 @@ is read" below.
 **Does:**
 
 - Write one shadow merge plan per finished Automaton at the supervisor's release:
-  the release size (`patch`, `minor`, `major` or `none`), the version the bump step
-  would set, the changelog heading and body drawn only from the Automaton's own
-  changelog entry task (strict format, empty otherwise — nothing is invented), the
-  README line, the registry row, and the parity-issue flag.
+  the release size (`patch`, `minor`, `major` or `none`), the planned version
+  (the version the changelog entry's heading names), the changelog heading and
+  body drawn from the Automaton's own changelog entry task, then — when it has
+  no usable entry — the changelog-draft artefact the branch recorded (its
+  `Output`), then the new top entry the branch adds to `CHANGELOG.md` (nothing
+  is invented when none of the three yields one), the README line, the registry
+  row, and the parity-issue flag.
 - Settle merge conflicts in a **throwaway trial worktree** outside the project
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
@@ -86,15 +89,22 @@ repository root that the base ref does not track in its root tree, dotfiles
 included. It catches the stray tracked file that would otherwise ride into the
 merge at the repository root.
 
-**Load-sensitive test gate — `load_sensitive` (a status, not a failure).** The
-`test` gate that fails on its first run is run once more, alone. When the rerun
-passes, the gate is recorded `load_sensitive` — the first five lines of the
-failing run are kept as the gate's finding — and it does not block the plan.
-When the rerun does not pass, the first failure stands, with the rerun's status
-noted in the detail. It is the daemon's answer to the test that fails only under load: the
-gate names it, and the operator still decides what that test is.
+**Load-sensitive test gate — `load_sensitive` (reported as a pass, with the flake named).**
+Only the `test` gate is rerun after a failure — a failed build or lint is never
+rerun. The `test` gate that fails on its first run is run once more, alone. When
+the rerun passes, the gate is reported as a *pass* — status `load_sensitive`,
+which the plan's gate comparison counts as passing, not as a failure, and which
+does not block the plan — with the flake named: its detail says it failed in
+the first run and passed when rerun alone, and, from the run's `go test -json`,
+names the tests that failed the first run and passed the rerun as
+`flaky tests: TestA, TestB passed when rerun alone`; the first five lines of the
+failing run are kept as the gate's finding (`finding: …`). When the rerun does
+not pass, the first run's `fail` stands, with the rerun's status noted in the
+detail (`rerun alone also …`). It is the daemon's answer to the test that fails
+only under load: the gate names it, and the operator still decides what that
+test is.
 
-**Lint version pin — `lint_version_mismatch` and `lint_tool_unavailable` (block).** The `lint` gate runs the golangci-lint the trial merge's CI workflow pins — the `version` of a `golangci/golangci-lint-action` step in `.github/workflows/ci.yaml`, a `v`-prefix aside — not whatever happens to be on `PATH`. The daemon resolves that exact version in order: the binary in its own tools folder (`<data dir>/tools/golangci-lint/<version>/`), else the `PATH` binary when it already reports the pinned version, else it installs the pinned version into the tools folder (one install at a time, bounded to ten minutes) and uses that. The resolved binary's folder is put first on the gate's `PATH`, so `make lint` runs the pinned linter, and the gate's detail records the pin, the binary path, its version and where it came from (`tools folder`, `PATH` or `installed`). Because the daemon provides the pinned linter itself, its own merge pipeline no longer fails the lint gate on a host whose installed golangci-lint differs from CI. When the pinned version cannot be provided — no data directory, the install fails or times out, or the installed binary does not report the pinned version — the gate fails with one blocking `lint_tool_unavailable` finding naming the pin and the reason; a resolved binary that still differs from the pin fails with the blocking `lint_version_mismatch`. A CI workflow that pins nothing — no workflow, no such step, no `version` key — or one that cannot be read keeps the earlier behavior: the gate's status is unchanged and only the `PATH` golangci-lint's version (and, when the pin could not be read, the reason) is added to the detail. It is the answer to the lint that differs between local and CI, and to a daemon that could never pass its own lint gate. **Operator review:** the first gate run for a new pin downloads and builds golangci-lint, so it needs network and a Go toolchain on the daemon host and can take minutes; a `lint_tool_unavailable` finding means fixing that host, not the code.
+**Lint version pin — `lint_version_mismatch` and `lint_tool_unavailable` (block).** The `lint` gate runs the golangci-lint the trial merge's CI workflow pins — the `version` of a `golangci/golangci-lint-action` step in `.github/workflows/ci.yaml`, a `v`-prefix aside — not whatever happens to be on `PATH`. The daemon resolves that exact version in order: the binary in its own tools folder (`<data dir>/tools/golangci-lint/<version>/`), else the `PATH` binary when it already reports the pinned version, else it installs the pinned version into the tools folder (one install at a time, bounded to ten minutes) and uses that. The resolved binary's folder is put first on the gate's `PATH`, so `make lint` runs the pinned linter, and the gate's detail records the pin, the binary path, its version and where it came from (`tools folder`, `PATH` or `installed`). Because the daemon provides the pinned linter in its own tools folder, the host's own copy of golangci-lint — and what the host's tool updater keeps refreshing it to — no longer bears on the lint gate: its own merge pipeline no longer fails the lint gate on a host whose installed golangci-lint differs from CI. When the pinned version cannot be provided — no data directory, the install fails or times out, or the installed binary does not report the pinned version — the gate fails with one blocking `lint_tool_unavailable` finding naming the pin and the reason; a resolved binary that still differs from the pin fails with the blocking `lint_version_mismatch`. A CI workflow that pins nothing — no workflow, no such step, no `version` key — or one that cannot be read keeps the earlier behavior: the gate's status is unchanged and only the `PATH` golangci-lint's version (and, when the pin could not be read, the reason) is added to the detail. It is the answer to the lint that differs between local and CI, and to a daemon that could never pass its own lint gate. **Operator review:** the first gate run for a new pin downloads and builds golangci-lint, so it needs network and a Go toolchain on the daemon host and can take minutes; a `lint_tool_unavailable` finding means fixing that host, not the code.
 
 **Plans-link gate — `check-plans-links`.** The gate runner runs the project's
 make target of a given name — build, lint and test are the standard three in
@@ -133,16 +143,20 @@ a hung PWA suite — one stuck on a browser or a server, and whatever it spawned
 recorded `timeout`. It is the replay of the PWA test suite that hangs: the gate
 can only end by its timeout, and after it ends the suite is gone.
 
-**Version bump that is not safe to run twice.** The planned version is derived
-from the default branch's version and the release size alone — a pure function
-of those two inputs, and a base that is not a plain `X.Y.Z` version (or a size
-that is not `patch`, `minor` or `major`) is refused, nothing is guessed. The
-trial tree's own version is only ever compared against the result, never used
-to compute it: planning twice over the same base and size gives the same
-planned version, and a trial tree that already carries the bump is reported as
-already at planned (with the version files that differ from the planned
-version — or hold no version at all — listed as stale). A bump applied twice
-therefore cannot move the version twice.
+**Version bump that is not safe to run twice.** The planned version is the
+version the changelog entry's heading names — a `## [version] - YYYY-MM-DD`
+heading with a non-empty body, from the entry task, the branch's draft or the
+branch's `CHANGELOG.md` — and the release size is the step between the base
+version (the default branch's) and that planned one: a major when the major
+number steps, a minor when the minor number steps, a patch otherwise; it is
+`none` when either side is not a plain `X.Y.Z` version or the planned one is
+not above the base — nothing is inferred in either direction. The trial tree's
+own version is only ever compared against the planned one, never used to compute
+it: the plan run twice on the same entry and base yields the same planned
+version and the same size, and a trial tree that already carries the bump is
+reported as already at planned (with the version files that differ from the
+planned version — or hold no version at all — listed as stale). A bump applied
+twice therefore cannot move the version twice.
 
 ## Where the shadow state is read
 
@@ -193,8 +207,15 @@ to its defaults are indistinguishable.
   counted. `met` is `length >= threshold`, with `threshold` the configured value
   in effect (the default `5` when unset). A project with no stored comparisons
   has no streak at all — every read surface shows none for it.
-- The streak is a read, not a gate: nothing is approved, switched or filed on
-  the strength of it, and it resets silently when a major difference lands.
+- The streak is the bar the daemon's merge step comes on at: that step comes on
+  only after the shadow has agreed with the merge that actually landed for the
+  project's most recent `agreement_streak` merges — that is, only once the
+  project's streak reads `met` — and until then the merge stays with the
+  supervisor (see [Switching from shadow to on](#switching-from-shadow-to-on)).
+  The switch itself is the supervisor's recorded decision on the Phase 4 release
+  approval modes, taking the met streak as its evidence: no code path approves,
+  switches or files anything on the strength of a streak alone. The streak
+  resets silently when a major difference lands.
 
 ## Where the settings can be set
 
@@ -204,7 +225,7 @@ block, one place it is read back from:
 | Path | How |
 | --- | --- |
 | **YAML** | `config.yaml` → `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`, `autonomous.merge_shadow.plan_keep`, `autonomous.merge_shadow.agreement_streak` |
-| **REST** | `PUT /api/config` with any of the three keys (the `GET /api/config` read returns the merged default for each) |
+| **REST** | `PUT /api/config` with any of the four keys (the `GET /api/config` read returns the merged default for each) |
 | **MCP** | The generic `config_set` tool, with the key `autonomous.merge_shadow.<key>` and its value. The shadow has no dedicated MCP setter; `get_config` reads it back. |
 | **CLI** | `datawatch config set autonomous.merge_shadow.enabled true|false` and friends |
 | **Comm channel** | `configure autonomous.merge_shadow.enabled=false`, `configure autonomous.merge_shadow.gate_timeout=1m`, `configure autonomous.merge_shadow.plan_keep=50` |
@@ -281,7 +302,10 @@ the same way every time:
 
 - **Evidence bar.** Ten merges where the daemon's plan equals the manual merge or
   is better, at least two with conflicts, at least two with PWA changes, and no
-  blocking comparison defect.
+  blocking comparison defect. The per-project agreement streak is its running,
+  machine-readable measure: the daemon's merge step comes on only once that
+  streak reads `met` — the shadow has agreed for the project's most recent
+  `agreement_streak` merges.
 - **Who decides.** The supervisor validates the checks and reports the
   comparison. Patch and minor modes are the supervisor's to move toward `auto` as
   the daemon improves. The major mode stays `ask` unless the operator changes it.
@@ -333,7 +357,8 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   surfaces above stay empty until that lands; the plan is the one read that
   already works.
 - Whether the Phase 4 evidence bar is met before you step out of the loop entirely —
-  the shadow is how you collect that evidence
+  the shadow is how you collect that evidence, and the per-project streak
+  (threshold `agreement_streak`) is whether it has been met for that project
   ([2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md),
   Phase 4).
 
