@@ -29,6 +29,14 @@ function load({ activeElement = null, inputValue = '' } = {}) {
   };
   const inputEl = { value: inputValue };
   sandbox.document.getElementById = id => (id === 'sessionInput' ? inputEl : makeStubElement());
+  // A real browser always has sessionStorage; the once-only SW auto-reload
+  // marker (cs_sw_autoreload_done) is written there.
+  const ss = new Map();
+  sandbox.sessionStorage = {
+    getItem: k => (ss.has(k) ? ss.get(k) : null),
+    setItem: (k, v) => { ss.set(k, String(v)); },
+    removeItem: k => { ss.delete(k); },
+  };
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
   return { sandbox, appended, reloads, timers };

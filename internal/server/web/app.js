@@ -297,6 +297,91 @@ window.fetch = function(...args) {
   });
 };
 
+// ── Saved-state reads: never throw, one bad key never blocks the rest ─────
+// localStorage can be unavailable (blocked, private mode, non-browser hosts)
+// and operator-saved values can be malformed or from a release that stored
+// a different shape. _safeStored is the single entry point for reading a
+// saved value: it never throws and validates the raw string with the
+// provided reader. The reader returns the accepted value, or null to mean
+// "reject" — the key is then removed (so the bad value is not re-read), one
+// line goes to console.info, and the fallback is used. No toast, nothing
+// visible in the UI; the page just opens with the default.
+// An optional 4th argument (ls) lets callers/tests inject a specific storage
+// object instead of the ambient localStorage.
+function _sessionsLogDiscard(key) {
+  try { console.info('[sessions] saved value for ' + key + ' was unrecognized; using the default and dropping it'); } catch (_) { /* no console */ }
+}
+
+function _safeStored(key, read, fallback, ls) {
+  if (ls === undefined) {
+    try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  }
+  let raw = null;
+  let have = false;
+  try {
+    // The capability check is inside the try: a blocked storage can make even
+    // reading ``ls.getItem`` throw, and that must degrade to the fallback too.
+    if (!ls || typeof ls.getItem !== 'function') return fallback;
+    raw = ls.getItem(key);
+    have = (raw !== null && raw !== undefined);
+  } catch (_) { return fallback; }
+  if (!have) return fallback;
+  let v = fallback;
+  try { v = read(raw, ls); } catch (_) { v = null; }
+  if (v === null || v === undefined) {
+    try { if (ls && typeof ls.removeItem === 'function') ls.removeItem(key); } catch (_) { /* best effort */ }
+    _sessionsLogDiscard(key);
+    return fallback;
+  }
+  return v;
+}
+
+// Reader: a stored JSON array of non-empty strings (manual session order,
+// watched/muted lists, collapsed group keys). A single bad entry disqualifies
+// the whole value so one stray number can't corrupt the list — it is dropped
+// and the default (an empty list) is used instead.
+function _storedStrArrayRead(raw) {
+  let p = null;
+  try { p = JSON.parse(raw); } catch (_) { return null; }
+  if (!Array.isArray(p)) return null;
+  if (!p.every(x => typeof x === 'string' && x)) return null;
+  return p;
+}
+
+// One optional block inside a page render must be able to fail on its own:
+// log it and render it as absent instead of taking the whole page down with
+// it. The block's output is expected to be an HTML string.
+function _sessionsRenderGuard(label, fn) {
+  try { return (typeof fn === 'function') ? fn() : ''; } catch (err) {
+    try { console.info('[sessions] "' + label + '" block skipped: ' + ((err && err.message) || err)); } catch (_) { /* no console */ }
+    return '';
+  }
+}
+
+// Safe counterpart for writes: storing the operator's preference must never
+// throw either (storage can be blocked or full). Best-effort, silent on
+// failure — the in-memory state already carries the value for this page.
+function _storedWrite(key, value) {
+  let ls = null;
+  try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  try {
+    // Inside the try: a blocked storage can make reading ``ls.setItem`` throw.
+    if (!ls || typeof ls.setItem !== 'function') return;
+    ls.setItem(key, value);
+  } catch (_) { /* storage blocked/full: in-memory state is enough for this page */ }
+}
+
+// Chips the state filter accepts: the buckets (all/active/waiting/done) or a
+// real session state (running … killed, from the state filter; the history
+// states are included since setSessionStateChip enables those too). Anything
+// else stored under this key is a stale value we don't know about.
+const SESSIONS_STATE_CHIP_KEYS = ['all', 'active', 'waiting', 'done',
+  'running', 'waiting_input', 'stalled', 'rate_limited',
+  'complete', 'failed', 'killed', 'cancelled', 'archived'];
+
+// Saved search text cap. Above this the value is a bug, not a saved search.
+const SESSIONS_SEARCH_MAX_LEN = 500;
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -326,7 +411,7 @@ const state = {
   // v6.13.9 (BL277) — yellow popup removed; needsInputDismissed and
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
-  sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
+  sessionOrder: _safeStored('cs_session_order', _storedStrArrayRead, []), // manual ordering
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _initServerDropdown/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
@@ -348,12 +433,12 @@ const state = {
   // GH#172 D61 — watch sessions + watched-badge filter. Same client-
   // only persistence pattern as sessionOrder above (personal marker,
   // not shared/authoritative — no backend state needed).
-  watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
+  watchedSessions: new Set(_safeStored('cs_sessions_watched', _storedStrArrayRead, [])),
   sessionWatchFilter: false,
   // GH#172 D62 — swipe-to-mute + muted icon. Same client-only
   // persistence pattern; gates handleNeedsInput's Notification/toast.
-  mutedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_muted') || '[]')),
-  sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
+  mutedSessions: new Set(_safeStored('cs_sessions_muted', _storedStrArrayRead, [])),
+  sessionTreeView: _safeStored('cs_session_tree_view', (raw) => (raw === '1' || raw === '0') ? raw : null, '0') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
@@ -706,7 +791,14 @@ function _daemonVersionNoteFrame(version, serverName) {
   const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
   if (!(key in bySrv)) {
     bySrv[key] = version; // first frame from this server: record only
-    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    if (key === 'local' && !state._daemonVersion) {
+      state._daemonVersion = version;
+      // The SW may have been registered before the version was known (bare
+      // /sw.js); adopt the versioned script URL now (no-op if it already is).
+      _swAdoptDaemonVersion(version);
+      // The notice (if painted) keys off this state — keep it current.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
+    }
     return;
   }
   if (bySrv[key] === version || seen[key] === version) return;
@@ -714,6 +806,7 @@ function _daemonVersionNoteFrame(version, serverName) {
   seen[key] = version;
   _loadUiConfig();
   _onDaemonVersionChange(version);
+  try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
 }
 
 // The daemon serving this page (the primary), captured at boot from a
@@ -729,6 +822,10 @@ function _bootDaemonVersion() {
       const v = (h && typeof h.version === 'string') ? h.version : '';
       if (!v || state._daemonVersion) return; // lost the race to a local frame
       state._daemonVersion = v;
+      // registerServiceWorker may have run before the version was known and
+      // registered bare /sw.js; adopt /sw.js?v=<v> now (no-op if already
+      // versioned with this release).
+      _swAdoptDaemonVersion(v);
       const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
       bySrv[_daemonVersionKey('local')] = v;
     })
@@ -8274,16 +8371,17 @@ function renderSessionsView() {
   // v7.0.0-alpha.22 (multi-select) — status filter is a SET of chips:
   // every selected state counts, any unselected state is hidden. Empty
   // set = 'all'. Persists in localStorage; state.sessionStateChip is the
-  // legacy single-select reader of the same choice.
+  // legacy single-select reader of the same choice. Saved values are
+  // validated on read: a malformed set or an unknown legacy chip is dropped
+  // and the page opens on 'all'.
   if (!Array.isArray(state.sessionStateChips)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_STATE_CHIPS_KEY); } catch (_) { stored = null; }
-    const storedArr = (stored) ? JSON.parse(stored).filter(x => typeof x === 'string') : null;
+    const storedArr = _safeStored(SESSIONS_STATE_CHIPS_KEY, _storedStrArrayRead, null);
     if (storedArr) state.sessionStateChips = storedArr;
     else if (state.sessionStateChip === undefined) {
-      let legacy = null;
-      try { legacy = localStorage.getItem('cs_session_state_chip'); } catch (_) { legacy = null; }
-      state.sessionStateChip = (legacy !== null) ? legacy : 'all';
+      state.sessionStateChip = _safeStored(
+        'cs_session_state_chip',
+        (raw) => (typeof raw === 'string' && SESSIONS_STATE_CHIP_KEYS.indexOf(raw) >= 0) ? raw : null,
+        'all');
       state.sessionStateChips = (state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
     } else {
       state.sessionStateChips = (state.sessionStateChip && state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
@@ -8291,9 +8389,7 @@ function renderSessionsView() {
   }
   // Backend filter — its own multi-select set, NOT the search box text.
   if (!Array.isArray(state.sessionBackendSel)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_BACKEND_SEL_KEY); } catch (_) { stored = null; }
-    state.sessionBackendSel = (stored) ? (JSON.parse(stored) || []).filter(x => typeof x === 'string') : [];
+    state.sessionBackendSel = _safeStored(SESSIONS_BACKEND_SEL_KEY, _storedStrArrayRead, []);
   }
   const chip = _sessionStateSel();
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -8364,9 +8460,10 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    let stored = null;
-    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
-    state._filtersCollapsed = stored === null ? true : stored === '1';
+    // Only '0' and '1' are values this page writes — anything else is a
+    // stale value from another release and is forgotten (default wins).
+    state._filtersCollapsed =
+      _safeStored('cs_filters_collapsed', (raw) => (raw === '0' || raw === '1') ? raw : null, '1') === '1';
   }
   const collapsed = !!state._filtersCollapsed;
   // The search-icon toggle moved to the top header bar (next to the
@@ -8423,13 +8520,16 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
-  const sheetHtml = _sessionsSheetHTML({
+  // The filters sheet is optional chrome: if it fails to build on our end
+  // (unexpected data, a bad helper), log it and render the rest of the page
+  // without it.
+  const sheetHtml = _sessionsRenderGuard('filters sheet', () => _sessionsSheetHTML({
     groupBy: _sessionsGroupCurrent(),
     stateBadges,
     llmBadges: backendTypes.length > 1 ? backendBadges : '',
     tagPanel: tagFilterPanelHtml,
     tagHelp: tagHelpLink,
-  });
+  }));
   _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -8619,12 +8719,11 @@ function _sessionsTileModeDefault(width) {
 }
 
 function _sessionsReadStoredMode(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string' && v) ? v : null;
+  // One of list/tiles/compact. A stored value from another release (or a
+  // broken write) is unrecognized: forget it and let _sessionsViewMode apply
+  // the viewport default.
+  const read = (raw) => (typeof raw === 'string' && raw && SESSIONS_VIEW_MODES.indexOf(raw) >= 0) ? raw : null;
+  return _safeStored(SESSIONS_VIEW_MODE_KEY, read, null, lse);
 }
 
 function _sessionsStoreMode(mode, lse) {
@@ -8676,12 +8775,10 @@ function _sessionsSearchCountText(shown, total) {
 }
 
 function _sessionsSearchReadStored(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_SEARCH_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string') ? v : '';
+  // A plain string, capped: a saved value longer than SESSIONS_SEARCH_MAX_LEN
+  // is a bug, not a saved search — forget it and open with an empty box.
+  const read = (raw) => (typeof raw === 'string' && raw.length <= SESSIONS_SEARCH_MAX_LEN) ? raw : null;
+  return _safeStored(SESSIONS_SEARCH_KEY, read, '', lse);
 }
 
 function _sessionsSearchWriteStored(text, lse) {
@@ -8893,17 +8990,23 @@ function _sessionsGroupStorage() {
 function _sessionsGroupCurrent() {
   if (state.sessionGroupBy === undefined) {
     let by = null;
-    try {
-      const ls = _sessionsGroupStorage();
-      if (ls) {
-        const raw = ls.getItem(SESSIONS_GROUP_STORE_KEY);
-        if (raw) by = _sessionsGroupValidate(JSON.parse(raw));
-        else {
-          const legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY);
-          if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
-        }
+    const ls = _sessionsGroupStorage();
+    // The current shape is {axis, tagPrefix}. Its value is validated; a
+    // stored value that isn't a known axis is forgotten (default: no
+    // grouping). The legacy bare tag-prefix shape is migrated forward once.
+    if (ls) {
+      let raw = null;
+      try { raw = ls.getItem(SESSIONS_GROUP_STORE_KEY); } catch (_) { raw = null; }
+      if (raw) {
+        by = _safeStored(SESSIONS_GROUP_STORE_KEY,
+          (r) => { let p; try { p = JSON.parse(r); } catch (_) { return null; } return _sessionsGroupValidate(p); },
+          null, ls);
+      } else {
+        let legacy = null;
+        try { legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY); } catch (_) { legacy = null; }
+        if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
       }
-    } catch (_) { by = null; }
+    }
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
@@ -9215,14 +9318,16 @@ function _sessionsCollapseKey(by, key) {
 }
 
 function _sessionsCollapsedRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
-  } catch (_) { return []; }
+  // Group keys the operator collapsed (an array of strings). A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with nothing collapsed. An array keeps only its string entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(k => typeof k === 'string' && k);
+  };
+  return _safeStored(SESSIONS_COLLAPSED_KEY, read, [], storage) || [];
 }
 
 function _sessionsCollapseWrite(keys, storage) {
@@ -9558,17 +9663,18 @@ window.setSessionGroupBy = setSessionGroupBy;
 
 // ── Saved views (per device) ────────────────────────────────────────────
 function _savedViewsRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(v => v && typeof v === 'object'
+  // A list of saved views {id, name, mode, groupBy, filter}. A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with no saved views. An array keeps only well-formed entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(v => v && typeof v === 'object'
       && typeof v.id === 'string' && v.id
       && typeof v.name === 'string' && v.name.trim());
-  } catch (_) { return []; }
+  };
+  return _safeStored(SESSIONS_SAVED_VIEWS_KEY, read, [], storage) || [];
 }
 
 function _savedViewsWrite(views, storage) {
@@ -10319,7 +10425,7 @@ function _sessionsSheetHTML(parts) {
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
       <div class="sessions-sheet-body">
         ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
-        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_view_title', 'Views'), _sessionsRenderGuard('saved views', renderSessionsViewsBar) || '')}
         ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
       </div>
     </div>
@@ -10516,7 +10622,7 @@ function toggleHistory() {
 // BL348 — tree view toggle
 function toggleSessionTreeView() {
   state.sessionTreeView = !state.sessionTreeView;
-  localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
+  _storedWrite('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
   renderSessionsView();
 }
 window.toggleSessionTreeView = toggleSessionTreeView;
@@ -17649,6 +17755,20 @@ function renderSettingsView() {
                serving this page. Informational only — never the update banner,
                never touches _onDaemonVersionChange. -->
           <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Loaded-version notice + Reset browser state (2026-11-09). The
+               notice shows the release this page's assets were loaded with
+               (window.__DW_VERSION__, baked into the HTML at request time)
+               next to the daemon version (state._daemonVersion); a
+               mismatch gets its own skew wording. The button clears only
+               what this app owns in this browser — cs_/dw_ localStorage
+               keys, the sessionStorage reload markers, every Cache Storage
+               cache, every service worker — and reloads once. It is never
+               a server action: no session is ever touched. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <div id="aboutLoadedVersionNotice" style="font-size:12px;color:var(--text2);">—</div>
+            <button class="btn-secondary" style="font-size:12px;" onclick="confirmResetBrowserState()">${escHtml(t('settings_reset_browser_state') || 'Reset browser state')}</button>
+            <div style="font-size:11px;color:var(--text2);">${escHtml(t('settings_reset_browser_state_hint') || "Clears this app's saved settings and cached files in this browser, then reloads. It never touches running sessions.")}</div>
+          </div>
           <!-- Which server every About sub-section (this Version card, the
                API block, the Config Viewer block) above/below actually
                describes. The single shared "Showing:" label for the whole
@@ -18205,6 +18325,9 @@ function renderSettingsView() {
   if (aboutCanvas && window.DWSplashArt) {
     window._aboutSplashStopFn = window.DWSplashArt.startScene(aboutCanvas, { compact: true });
   }
+  // Loaded-version notice — the card just re-rendered, paint it now (both
+  // versions are usually known by the time the About tab opens).
+  if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice();
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -21221,6 +21344,9 @@ function loadVersionInfo() {
           noteEl.innerHTML = '';
         }
       }
+      // Loaded-version notice — the daemon version may just have been
+      // confirmed (or corrected for a peer); repaint if the card is up.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
     })
     .catch(e => {
       loadAboutShowingServer();
@@ -32001,7 +32127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
     state._filtersCollapsed = !state._filtersCollapsed;
-    localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
+    _storedWrite('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
     if (state.activeView === 'sessions') renderSessionsView();
   });
 
@@ -33103,12 +33229,72 @@ let _swDisabledInfoShown = false;
 // an update and reload the page.
 let _swControllerChangeAttached = false;
 
+// ── Versioned SW registration + once-only upgrade reload ─────────────
+// The worker script's bytes are identical every release, so registering it
+// as bare /sw.js can mean the browser never installs a fresh copy. The page
+// therefore registers /sw.js?v=<daemon version>: each release is a distinct
+// script URL for the browser (and sw.js derives its cache name from the
+// same query string), so an upgrade is always visible. The version is
+// state._daemonVersion (recorded by _daemonVersionNoteFrame); if it has not
+// been recorded yet when registerServiceWorker runs, register bare and adopt
+// the versioned URL later (see _swAdoptDaemonVersion). Pure helper:
+function _swScriptUrl(version) {
+  if (version && typeof version === 'string') {
+    const v = version.trim();
+    if (v) return '/sw.js?v=' + encodeURIComponent(v);
+  }
+  return '/sw.js';
+}
+
+// Once-only auto-reload slot. sessionStorage survives a reload (it is
+// cleared only when the tab closes), so a tab can auto-reload for a SW
+// upgrade at most once: whatever controllerchange events fire afterwards
+// (claim re-fires, re-register, etc.) find the marker and do not reload —
+// a reload loop is impossible by construction. If the marker cannot be
+// read/written (storage blocked or unavailable), refuse the slot: an
+// unrecorded reload would be repeated forever.
+const SW_AUTO_RELOAD_MARK_KEY = 'cs_sw_autoreload_done';
+function _swTakeAutoReloadSlot(store) {
+  try {
+    if (!store) return false;
+    if (store.getItem(SW_AUTO_RELOAD_MARK_KEY) === '1') return false;
+    store.setItem(SW_AUTO_RELOAD_MARK_KEY, '1');
+    return true;
+  } catch (_) { return false; }
+}
+
+// registerServiceWorker may run before state._daemonVersion is known (it
+// fires on DOMContentLoaded; the version arrives from /api/health or the
+// first 'sessions' frame). When the local version is first recorded after a
+// bare registration, re-register with the versioned script URL so this tab's
+// worker is the current release. Re-registering is per-scope idempotent:
+// same URL is a no-op; a new URL is an ordinary SW update.
+function _swAdoptDaemonVersion(version) {
+  try {
+    if (!version) return;
+    const url = _swScriptUrl(version);
+    if (window._swRegUrl === url) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register(url).then(reg => {
+      if (!reg) return;
+      window._swReg = reg;
+      window._swRegUrl = url;
+    }).catch(() => {});
+  } catch (_) { /* SW is best-effort; never break the page */ }
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
+    // The versioned script URL keeps the browser's "has the worker file
+    // changed" check honest across releases (see _swScriptUrl above); bare
+    // /sw.js only when the release has not been recorded yet —
+    // _swAdoptDaemonVersion re-registers once it has.
+    const scriptUrl = _swScriptUrl(state._daemonVersion);
+    navigator.serviceWorker.register(scriptUrl).then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
+      window._swRegUrl = scriptUrl;
       // GATE alpha.36 (operator 2026-05-10): force an SW update check
       // on load AND every 60s. Without this the browser may sit on a
       // stale SW until next cold-start.
@@ -33168,7 +33354,11 @@ function registerServiceWorker() {
           console.log('SW controller changed — fresh assets available');
           if (_canAutoReload(_autoReloadCtx())) {
             // Real build change: a fresh SW took control of this page and
-            // the user is idle — take the page over now.
+            // the user is idle — take the page over now. Once-only: the
+            // sessionStorage slot (see _swTakeAutoReloadSlot) survives the
+            // reload, so a controllerchange re-firing on the freshly loaded
+            // page can never reload a second time.
+            if (!_swTakeAutoReloadSlot(typeof sessionStorage !== 'undefined' ? sessionStorage : null)) return;
             _reloadGuard = true;
             window.location.reload();
           } else {
@@ -33180,27 +33370,209 @@ function registerServiceWorker() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Settings → About — loaded-version notice + Reset browser state (2026-11-09)
+//
+// The notice compares two releases: the one this page's assets were loaded
+// with (window.__DW_VERSION__, stamped into the HTML at request time — see
+// index.html) and the daemon version already tracked for the update banner
+// (state._daemonVersion, see _daemonVersionNoteFrame). Same release → one
+// quiet line. Different → skew wording (informational, like the existing
+// federated-peer skew note). Unknown halves read "not recorded yet".
+function _aboutLoadedPageVersion() {
+  try {
+    const v = (typeof window !== 'undefined' && window.__DW_VERSION__) ? String(window.__DW_VERSION__).trim() : '';
+    if (!v || v.indexOf('%') !== -1) return ''; // unbaked placeholder — treat as unknown
+    return v;
+  } catch (_) { return ''; }
+}
+window._aboutLoadedPageVersion = _aboutLoadedPageVersion;
+
+function renderAboutLoadedVersionNotice() {
+  let el = null;
+  try { el = (typeof document !== 'undefined') ? document.getElementById('aboutLoadedVersionNotice') : null; } catch (_) { return; }
+  if (!el) return; // About tab not rendered — nothing to paint
+  const pageVer = _aboutLoadedPageVersion();
+  const daemonVer = (typeof state !== 'undefined' && state && state._daemonVersion) ? String(state._daemonVersion).trim() : '';
+  if (pageVer && daemonVer && pageVer !== daemonVer) {
+    el.textContent = t('about_loaded_version_skew', [pageVer, daemonVer])
+      || `This page was loaded with v${pageVer}, a different release than v${daemonVer}, the one the daemon reports. Reset browser state clears this browser's copies of the app and reloads it fresh.`;
+  } else if (pageVer && daemonVer) {
+    el.textContent = t('about_loaded_version_match', [pageVer, daemonVer])
+      || `Loaded with v${pageVer} — the daemon reports the same release, v${daemonVer}.`;
+  } else if (pageVer) {
+    el.textContent = t('about_loaded_version_daemon_unknown', [pageVer])
+      || `Loaded with v${pageVer}. The daemon version is not recorded yet.`;
+  } else {
+    el.textContent = t('about_loaded_version_pending')
+      || 'Version information appears here once the page and daemon versions are known.';
+  }
+}
+window.renderAboutLoadedVersionNotice = renderAboutLoadedVersionNotice;
+
+// Reset browser state: clears ONLY what this app owns in this browser and
+// reloads exactly once:
+//   * localStorage keys with the cs_ / dw_ prefixes (app settings, the
+//     token, splash records) — every other key in this origin's storage is
+//     left exactly as it is;
+//   * the sessionStorage reload markers (the once-only auto-reload slot and
+//     the index.html _dw_reloaded_for_<version> one-shots) — other session
+//     keys (e.g. the alert-muted flag) are left alone;
+//   * every Cache Storage cache (the app shell and data caches);
+//   * every registered service worker in this scope.
+// Deliberately a browser-state reset, not a server action: no fetch, no
+// WebSocket, no session endpoint is ever touched, so no session can be
+// affected. Every step is individually fault-tolerant and the reload is
+// ALWAYS reached exactly once — even when a cache delete or worker
+// unregistration throws. Pure over injected deps (localStorage /
+// sessionStorage / caches / serviceWorker / reload) so node:test can drive
+// it with fakes — no browser required.
+const BROWSER_STATE_STORAGE_PREFIXES = ['cs_', 'dw_'];
+// Exact keys this app owns that do not carry a cs_/dw_ prefix: the locale
+// override (setLocaleOverride, app.js — read at boot, same app only).
+const BROWSER_STATE_STORAGE_EXACT_KEYS = ['datawatch.locale'];
+const BROWSER_STATE_SESSION_MARKER_KEYS = ['cs_sw_autoreload_done'];
+const BROWSER_STATE_SESSION_MARKER_PREFIXES = ['_dw_reloaded_for_'];
+
+function _ownedStorageKeys(store, prefixes, exactKeys) {
+  const out = [];
+  const exact = exactKeys || [];
+  for (const k of exact) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    if (out.indexOf(ks) >= 0) continue;
+    for (const p of prefixes) {
+      if (ks.indexOf(p) === 0) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+function _ownedSessionMarkerKeys(store) {
+  const out = [];
+  for (const k of BROWSER_STATE_SESSION_MARKER_KEYS) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    for (const p of BROWSER_STATE_SESSION_MARKER_PREFIXES) {
+      if (ks.indexOf(p) === 0 && out.indexOf(ks) === -1) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+async function resetBrowserState(deps) {
+  deps = deps || {};
+  const prefixes = (Array.isArray(deps.keyPrefixes) && deps.keyPrefixes.length)
+    ? deps.keyPrefixes.map(String)
+    : BROWSER_STATE_STORAGE_PREFIXES;
+  const store = deps.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  const session = deps.sessionStorage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+  const cacheManager = deps.caches || (typeof caches !== 'undefined' ? caches : null);
+  const swController = deps.serviceWorker
+    || (typeof navigator !== 'undefined' && navigator && typeof navigator.serviceWorker !== 'undefined' ? navigator.serviceWorker : null);
+  const doReload = typeof deps.reload === 'function'
+    ? deps.reload
+    : (() => { try { window.location.reload(); } catch (_) { location.reload(); } });
+
+  const result = { removedStorageKeys: 0, removedSessionMarkers: 0, deletedCaches: 0, unregisteredWorkers: 0, reloaded: false };
+
+  // 1. localStorage — only the keys this app owns (cs_ / dw_ prefixes plus
+  //    the exact-key locale override); every other key stays put.
+  if (store) {
+    let keys = [];
+    try { keys = _ownedStorageKeys(store, prefixes, BROWSER_STATE_STORAGE_EXACT_KEYS); } catch (_) { keys = []; }
+    for (const k of keys) {
+      try { store.removeItem(k); result.removedStorageKeys++; } catch (_) {}
+    }
+  }
+
+  // 2. sessionStorage — only the reload markers.
+  if (session) {
+    let markers = [];
+    try { markers = _ownedSessionMarkerKeys(session); } catch (_) { markers = []; }
+    for (const k of markers) {
+      try { session.removeItem(k); result.removedSessionMarkers++; } catch (_) {}
+    }
+  }
+
+  // 3. Cache Storage — delete every cache. A failing delete must not stop
+  //    the rest: the reload below still happens, and the fresh install's
+  //    activate step sweeps stale caches as a second pass.
+  if (cacheManager && typeof cacheManager.keys === 'function') {
+    let names = [];
+    try { names = await cacheManager.keys(); } catch (_) { names = []; }
+    for (const name of (names || [])) {
+      let ok = false;
+      try { ok = await cacheManager.delete(name); } catch (_) { ok = false; }
+      if (ok) result.deletedCaches++;
+    }
+  }
+
+  // 4. Service workers — unregister every registration in this scope.
+  if (swController && typeof swController.getRegistrations === 'function') {
+    let regs = [];
+    try { regs = await swController.getRegistrations(); } catch (_) { regs = []; }
+    for (const reg of (regs || [])) {
+      let ok = false;
+      try { ok = await reg.unregister(); } catch (_) { ok = false; }
+      if (ok) result.unregisteredWorkers++;
+    }
+  }
+
+  // 5. Reload — exactly once, always reached, even when every step above
+  //    failed. A clean page from the server is the whole point of the
+  //    button; a half-reset browser would be worse than no reset at all.
+  try { doReload(); result.reloaded = true; } catch (_) { /* reload itself failed; nothing left to do */ }
+
+  return result;
+}
+window.resetBrowserState = resetBrowserState;
+
+// The About-card button. One click: pressing the button IS the
+// confirmation — no second confirm step, no dialog. Ends with the same
+// hard reload the legacy forcePWAUpdate used (full refresh splash, which
+// also bypasses the HTTP cache).
+async function confirmResetBrowserState() {
+  let reloaded = false;
+  const doReload = () => {
+    if (reloaded) return; // exactly one reload, whatever else throws
+    reloaded = true;
+    try { if (typeof window !== 'undefined' && typeof window.performFullPageRefresh === 'function') { window.performFullPageRefresh({ eyeBolt: false }); return; } } catch (_) {}
+    try { window.location.reload(); } catch (_) { location.reload(); }
+  };
+  try {
+    await resetBrowserState({ reload: doReload });
+  } catch (_) {
+    doReload();
+  }
+}
+window.confirmResetBrowserState = confirmResetBrowserState;
+
 // GATE alpha.36 (operator 2026-05-10): manual escape hatch for stuck
 // PWA caches. Unregisters every SW + drops every cache + reloads with
 // bypass. Operator can fire this from the dev console
 // (window.forcePWAUpdate()) or via the long-press refresh hint.
+// Reuses resetBrowserState (owned storage keys, reload markers, all
+// caches, all workers) and finishes with the same hard reload it always
+// used. resetBrowserState never throws and always runs its reload exactly
+// once, so the legacy try/catch-then-reload shape is preserved.
 window.forcePWAUpdate = async function() {
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-  } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
-  // Hard reload bypassing HTTP cache too.
-  // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
-  // eye keeps the deliberate gesture from reading as a broken page.
-  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
-  // hatch) — never triggered by a federated-server switch.
-  performFullPageRefresh({ eyeBolt: false });
+    await resetBrowserState({ reload: () => performFullPageRefresh({ eyeBolt: false }) });
+  } catch (e) {
+    console.warn('forcePWAUpdate cleanup error:', e);
+    performFullPageRefresh({ eyeBolt: false });
+  }
 };
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
