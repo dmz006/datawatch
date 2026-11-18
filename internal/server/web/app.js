@@ -25854,6 +25854,9 @@ const GENERAL_CONFIG_FIELDS = [
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+    // File extensions the security scan covers. Empty = the scanner's
+    // built-in defaults (.py, .pyw); non-empty = exactly those extensions.
+    { key: 'autonomous.security_scan_extensions', label: 'Security scan extensions (default .py, .pyw)', type: 'text', placeholder: '.py, .pyw', csv: true },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },

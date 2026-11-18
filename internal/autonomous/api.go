@@ -1311,7 +1311,7 @@ func (a *API) resumeAfterInfraRecovery(prdID string, before PRDStatus, since tim
 	}
 	recovered := false
 	for i := len(p.Decisions) - 1; i >= 0 && !p.Decisions[i].At.Before(since); i-- {
-		if p.Decisions[i].Kind == infraDependentsRecoveredKind {
+		if p.Decisions[i].Kind == infraDependentsRecoveredKind || p.Decisions[i].Kind == dependentsRecoveredKind {
 			recovered = true
 			break
 		}
