@@ -5,9 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-- Docs, shipping in the next patch above main: the Projects page and the Automata page now appear at once from the last good data and refresh in the background, each card with its own loading state and its own retry; the Automata list is summaries only, with whole records only behind `full=true`, `--full` or the MCP `full` argument and the tasks of one Automaton paged on demand; and the new how-to `docs/howto/automata-archive.md` describes archiving finished Automata (what moves, what stays, nothing deleted, `datawatch autonomous archive --dry-run` then `--apply`, the verified backup, `autonomous.archive.enabled` and `autonomous.archive.retention_days`). The Projects how-to states the measured targets (roll-up under 300 ms warm and under 1.5 s cold for 700 Automata), and the glossary gains the summary index, store revision, retention window and refreshed roll-up cache and archived Automaton entries.
-- The project roll-up, timeline (Gantt), history and progress reads now come from the in-memory Automaton summary index instead of copying every full Automaton record, so a read no longer scales with the amount of spec and task text. The response shape is unchanged.
-- The project roll-up is cached per project, window and store revision (with the project configuration and the Automation list in the key), so a repeat read does no work and a write to a member rebuilds it. Points are computed once per store revision, and the merge proof is remembered per work branch, so a read no longer runs git for an Automaton whose proof is known. `generated_at` is the time of the build.
+### Fixed
+
+- **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
+- **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
+
+## v9.182.24 — Stale browser state cannot break the Sessions view-mode buttons
+
+### Changed
+
+- Stale browser state cannot break the Sessions view-mode buttons.
 
 ## v9.182.23 — Session-kind profiles: lean starts for every session kind
 
