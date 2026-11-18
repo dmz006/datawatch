@@ -34,9 +34,10 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Sixteen rules, in the order findings should surface them: the twelve
-// block-severity rules (tasks that cross a hard boundary, plus the six
-// verification-script stability rules that follow read_only_unverifiable)
+// Seventeen rules, in the order findings should surface them: the
+// thirteen block-severity rules (tasks that cross a hard boundary, plus
+// the seven verification-script stability rules that follow
+// read_only_unverifiable)
 // first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
@@ -137,6 +138,14 @@ func DefaultDecomposeLintRules() []Rule {
 			Message:  "script invokes a command with a flag that the command's own help does not list: validate every command and flag a script uses against the real binary's help before the script is accepted (rule script_invokes_known_flag)",
 			Match: config.DecomposeLintMatch{
 				VerificationScriptInvokesUnknownFlag: true,
+			},
+		},
+		{
+			ID:       "check_matches_spec_text",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts a heading or output format the task spec does not name: state the exact heading and format the script checks in the task spec that asks for it (rule check_matches_spec_text)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptSpecUnanchored: true,
 			},
 		},
 		{

@@ -203,6 +203,11 @@ func verifyScriptFindingPath(m *compiledMatch, dir string, t Task) string {
 			return p
 		}
 	}
+	if m.specUnanchored {
+		if _, p, ok := verifyScriptSpecUnanchored(dir, t); ok {
+			return p
+		}
+	}
 	for _, sub := range m.anyOf {
 		if p := verifyScriptFindingPath(&sub, dir, t); p != "" {
 			return p

@@ -125,8 +125,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: sixteen rules —
-the twelve `block` rules first (the six boundary rules, then the six
+The built-in pack is the **floor** every run starts from: seventeen rules —
+the thirteen `block` rules first (the six boundary rules, then the seven
 verification-script rules), then the four `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
@@ -145,15 +145,16 @@ and never name a particular project, repository or home directory.
 | `artefact_files_allowed` | block | a verification script that does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton — the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail. Fix: exclude `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-files computation |
 | `final_gate_artefact_allowed` | block | a verification script that asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree. Fix: check only the files this task adds, or skip the file-set check when the final gate re-runs the script |
 | `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help (`--help`, then `-h`, then the bare command, each under a bounded timeout). A command that does not resolve, a probe that fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
+| `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not name verbatim — a heading also anchors with its leading `#` stripped. Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
-### The six verification-script rules
+### The seven verification-script rules
 
-The last six `block` rules read the task's verification script from the
+The last seven `block` rules read the task's verification script from the
 project directory (and any helper it sources, one level deep) and name the
 **script path and the rule id** in the finding:
 
@@ -180,14 +181,23 @@ project directory (and any helper it sources, one level deep) and name the
   unresolvable command, a hung or silent probe, short flags, a missing
   script — is skipped, never guessed. The finding names the offending
   invocation.
+- `check_matches_spec_text` — fires when the script (or a helper it sources)
+  asserts a markdown heading, or the exact gate output formats `Final answer`
+  / `Verification summary`, that the task's own spec does not name verbatim (a
+  heading also anchors with its leading `#` stripped); a spec that names the
+  heading it asks for (or says "the final answer" and the script checks
+  `Final answer`) anchors, and arbitrary words never match. Fix: state the
+  exact heading and format the script checks in the task spec that asks for
+  it. The finding names the script path and the unanchored checked item.
 - `final_gate_without_script` — fires on a `final_gate` task that has no
   script, no `verification_script_reason` and no usable report path. Fix: give
   it a script, a report path, or a reason.
 
-They use six match predicates (below): `verification_script_task_files_only`,
+They use seven match predicates (below): `verification_script_task_files_only`,
 `verification_script_docs_without_sync`, `verification_script_artefact_files_allowed`,
-`verification_script_final_gate_artefact_allowed` and
-`verification_script_invokes_unknown_flag` (the last three read the
+`verification_script_final_gate_artefact_allowed`,
+`verification_script_invokes_unknown_flag` and
+`verification_script_spec_unanchored` (the last five read the
 script's content), plus `verification_script_reason_empty` with
 `kind: final_gate`. A script that does not exist yet is
 skipped by the content-reading ones. The full authoring guide, with the fix for each rule

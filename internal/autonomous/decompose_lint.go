@@ -103,6 +103,7 @@ type compiledMatch struct {
 	artefactFiles      bool
 	finalGateArtefact  bool
 	invokesUnknownFlag bool
+	specUnanchored     bool
 	kind               string
 	anyOf              []compiledMatch
 	allOf              []compiledMatch
@@ -111,7 +112,7 @@ type compiledMatch struct {
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateArtefact || m.invokesUnknownFlag {
+	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateArtefact || m.invokesUnknownFlag || m.specUnanchored {
 		return true
 	}
 	for i := range m.anyOf {
@@ -174,6 +175,11 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.invokesUnknownFlag {
 		if _, _, ok := verifyScriptInvokesUnknownFlag(dir, t); !ok {
+			return false
+		}
+	}
+	if m.specUnanchored {
+		if _, _, ok := verifyScriptSpecUnanchored(dir, t); !ok {
 			return false
 		}
 	}
@@ -252,7 +258,8 @@ func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, err
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
 		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFilesAllowed,
 		finalGateArtefact: m.VerificationScriptFinalGateArtefactAllowed, invokesUnknownFlag: m.VerificationScriptInvokesUnknownFlag,
-		kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		specUnanchored: m.VerificationScriptSpecUnanchored,
+		kind:           strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -520,6 +527,11 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	if m.invokesUnknownFlag {
 		if _, s, ok := verifyScriptInvokesUnknownFlag(dir, t); ok {
 			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (invokes "+s+", a flag the command's own help does not list)")
+		}
+	}
+	if m.specUnanchored {
+		if i, s, ok := verifyScriptSpecUnanchored(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(s)+" (checks "+strconv.Quote(i)+", which the task spec does not name)")
 		}
 	}
 	if len(parts) == 0 {

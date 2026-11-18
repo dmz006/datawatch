@@ -257,6 +257,12 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 				Match:    DecomposeLintMatch{VerificationScriptInvokesUnknownFlag: true},
 				Message:  "every flag a script uses must be listed in the command's own help",
 			},
+			{
+				ID:       "spec_matches_text",
+				Severity: "block",
+				Match:    DecomposeLintMatch{VerificationScriptSpecUnanchored: true},
+				Message:  "verification script checks must be named in the task spec",
+			},
 		},
 	}
 	cfg.Autonomous.TaskTemplates = TaskTemplatesConfig{
@@ -295,8 +301,8 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	if dl.MaxRetries != 0 {
 		t.Fatalf("max_retries after Save/Load = %d, want 0 (an explicit 0 must round-trip)", dl.MaxRetries)
 	}
-	if len(dl.Rules) != 5 {
-		t.Fatalf("rules after Save/Load = %d entries, want 5", len(dl.Rules))
+	if len(dl.Rules) != 6 {
+		t.Fatalf("rules after Save/Load = %d entries, want 6", len(dl.Rules))
 	}
 	if dl.Rules[0].ID != "require.verification" || dl.Rules[0].Severity != "block" || dl.Rules[0].Message != "task must declare a verification script" {
 		t.Fatalf("rule[0] after Save/Load = %+v", dl.Rules[0])
@@ -315,6 +321,9 @@ func TestDecomposeLintSaveLoadRoundTrip(t *testing.T) {
 	}
 	if dl.Rules[4].ID != "script_flag_known" || !dl.Rules[4].Match.VerificationScriptInvokesUnknownFlag {
 		t.Fatalf("rule[4].match.verification_script_invokes_unknown_flag after Save/Load = %+v, want true", dl.Rules[4].Match)
+	}
+	if dl.Rules[5].ID != "spec_matches_text" || !dl.Rules[5].Match.VerificationScriptSpecUnanchored {
+		t.Fatalf("rule[5].match.verification_script_spec_unanchored after Save/Load = %+v, want true", dl.Rules[5].Match)
 	}
 	if dl.Rules[0].Match.SpecRegex != `^\s*implement` || dl.Rules[0].Match.FilesRegex != `\.(go|md)$` {
 		t.Fatalf("rule[0] regexes after Save/Load = %+v", dl.Rules[0].Match)

@@ -22,7 +22,9 @@ for FOR_ID in artefact_files_allowed final_gate_artefact_allowed script_invokes_
 done
 echo 'ok: embedded copy documents all four rule ids'
 
-go test ./scripts/ -run 'HowtoCoverage' -count=1
-go test ./internal/server/web/... -run 'DocsIndex' -count=1
+# The howto coverage gate is the shell script (there is no Go package in scripts/):
+bash scripts/check-howto-coverage.sh
+# The docs-index gate lives in internal/docsindex (internal/server/web holds JS assets):
+go test ./internal/docsindex/ -count=1
 
 echo 'PASS: howto documents the four new rules on every doc surface'
