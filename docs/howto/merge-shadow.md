@@ -40,9 +40,13 @@ a PWA card; see "Where the shadow state is read" below.
   setting, then the built-in default (`patch`, `minor`, `major` or `none`) — the
   version the bump step would set (the default branch's version bumped by that
   size; `none` plans no version), the changelog heading and body drawn only from
-  the Automaton's own changelog entry task (strict format, empty otherwise —
-  nothing is invented; an entry that does not name the planned version blocks
-  the plan with `changelog_version_mismatch`), the
+  the Automaton's own changelog — its changelog draft file
+  (`docs/plans/drafts/<automaton id>-changelog.md`) or, when that file is absent
+  or malformed, the output of its changelog entry task (strict
+  `## [version] - YYYY-MM-DD` heading plus a non-empty body; empty heading and
+  body when neither carries a well-formed entry — nothing is invented; an entry
+  that does not name the planned version blocks the plan with
+  `changelog_version_mismatch`), the
   README line, the registry row, and the parity-issue flag.
 - Settle merge conflicts in a **throwaway trial worktree** outside the project
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the

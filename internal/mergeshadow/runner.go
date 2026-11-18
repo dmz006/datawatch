@@ -53,8 +53,9 @@ type Input struct {
 	ReleaseSize ReleaseSize
 	// ChangeRecord is the Automaton's change record, nil when it has none.
 	ChangeRecord *changerecord.ChangeRecord
-	// ChangelogTasks are the Automaton's tasks, carrying their output, so the
-	// changelog entry can be read from the entry task.
+	// ChangelogTasks are the Automaton's tasks, carrying their output; when
+	// the Automaton's changelog draft file does not hold a usable entry, the
+	// changelog entry is read from the entry task.
 	ChangelogTasks []ChangelogTask
 	// GateTimeout bounds each gate. Zero or less uses the config default.
 	GateTimeout time.Duration
@@ -84,8 +85,10 @@ type Runner struct {
 //  2. classify each conflicted path by file class;
 //  3. run the gates in that worktree, unless the merge has conflicts, in
 //     which case every gate is recorded as skipped;
-//  4. take the changelog entry from the entry task; when a version is
-//     planned, the entry must name it, otherwise that is a finding;
+//  4. take the changelog entry from the Automaton's changelog draft
+//     file when it holds a well-formed one, else from the entry task;
+//     when a version is planned, the entry must name it, otherwise that
+//     is a finding;
 //  5. take the release size from the input, and when it is not none derive
 //     the planned version from the base ref's current version (the version
 //     planner) and from it the README line, registry row and parity-issue
@@ -169,8 +172,9 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 		}
 	}
 
-	// Step 4: the changelog entry, taken from the entry task.
-	entry := ReadChangelogEntry(in.ChangelogTasks)
+	// Step 4: the changelog entry, from the Automaton's changelog draft
+	// file when it holds one, else from the entry task.
+	entry := ReadChangelogEntry(in.AutomatonID, in.RepoPath, in.ChangelogTasks)
 	plan.ChangelogSource = entry.Source
 	plan.ChangelogHeading = entry.Heading
 	plan.ChangelogBody = entry.Body
@@ -302,7 +306,7 @@ func findingsFor(trialErr error, conflicts []Conflict, gates []Gate, entry Chang
 	}
 	if planned != "" {
 		if entry.Source == ChangelogSourceMissing {
-			out = append(out, Finding{Code: "changelog_missing", Message: "no task produced a usable changelog entry", Blocking: true})
+			out = append(out, Finding{Code: "changelog_missing", Message: "no changelog draft file and no task produced a usable changelog entry", Blocking: true})
 		} else if !headingNamesVersion(entry.Heading, planned) {
 			out = append(out, Finding{Code: "changelog_version_mismatch", Message: "changelog heading " + entry.Heading + " does not name the planned version " + planned, Blocking: true})
 		}

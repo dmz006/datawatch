@@ -446,3 +446,69 @@ func TestRunnerDefaultsBaseRefAndGateTimeout(t *testing.T) {
 		t.Errorf("gates called %d times", calls)
 	}
 }
+
+func TestRunnerChangelogDraftFileReadFromTheRepository(t *testing.T) {
+	repo := runnerRepo(t)
+	draft := "## [1.3.0] - 2026-11-09\n\n### Added\n- from the draft file\n"
+	name := filepath.Join(repo, changelogDraftPath("a1"))
+	if err := os.MkdirAll(filepath.Dir(name), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte(draft), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := runnerInput(t, repo, "work")
+	in.ChangeRecord = &changerecord.ChangeRecord{AutomatonID: "a1", Packages: []string{"main"}}
+
+	calls := 0
+	plan, err := Runner{Gates: fakeGates(t, GatePass, &calls)}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if plan.ChangelogSource != "docs/plans/drafts/a1-changelog.md" {
+		t.Errorf("source %q, want the draft file path", plan.ChangelogSource)
+	}
+	if plan.ChangelogHeading != "## [1.3.0] - 2026-11-09" {
+		t.Errorf("heading %q", plan.ChangelogHeading)
+	}
+	if plan.ChangelogBody == "" || !strings.Contains(plan.ChangelogBody, "- from the draft file") || strings.Contains(plan.ChangelogBody, "- thing") {
+		t.Errorf("body %q must come from the draft file, not the task output", plan.ChangelogBody)
+	}
+	if len(plan.Findings) != 0 {
+		t.Errorf("findings %+v, want none", plan.Findings)
+	}
+	if len(plan.Gates) != 3 {
+		t.Errorf("gates %+v, want the three fake gates", plan.Gates)
+	}
+}
+
+func TestRunnerChangelogDraftMalformedFallsBackToTask(t *testing.T) {
+	repo := runnerRepo(t)
+	name := filepath.Join(repo, changelogDraftPath("a1"))
+	if err := os.MkdirAll(filepath.Dir(name), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte("## Added\n\nno version in the heading\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := runnerInput(t, repo, "work")
+	in.ChangeRecord = &changerecord.ChangeRecord{AutomatonID: "a1", Packages: []string{"main"}}
+
+	calls := 0
+	plan, err := Runner{Gates: fakeGates(t, GatePass, &calls)}.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if plan.ChangelogSource != "t9" {
+		t.Errorf("source %q, want t9", plan.ChangelogSource)
+	}
+	if plan.ChangelogHeading != "## [v1.3.0] - 2026-11-09" {
+		t.Errorf("heading %q", plan.ChangelogHeading)
+	}
+	if !strings.Contains(plan.ChangelogBody, "- thing") {
+		t.Errorf("body %q, want the entry task's body", plan.ChangelogBody)
+	}
+	if len(plan.Findings) != 0 {
+		t.Errorf("findings %+v, want none", plan.Findings)
+	}
+}

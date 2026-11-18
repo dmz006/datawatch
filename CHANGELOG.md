@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- shadow merge plan: the changelog heading and body now come from the Automaton's changelog draft file when that file exists and is well-formed (`## [version] - YYYY-MM-DD` plus a non-empty body), falling back to its changelog entry task's output when the draft file is absent or malformed; the plan's `changelog_source` names the draft file's path or the entry task's id (`missing` when neither carries a well-formed entry).
+
 ## v9.182.23 — Session-kind profiles: lean starts for every session kind
 
 ### Changed

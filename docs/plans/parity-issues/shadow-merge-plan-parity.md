@@ -37,7 +37,7 @@ The daemon's merge side, in the shadow period of Phase 4 of the autonomy handove
 (`docs/plans/2026-11-03-autonomy-handover-plan.md`): the daemon plans a finished
 Automaton's merge and records the plan without touching the repository — the
 release size (`patch`, `minor`, `major` or `none`), the version the bump step would
-set, the changelog heading and body, the changelog source (the entry task id, or
+set, the changelog heading and body, the changelog source (the draft file's path, the entry task id, or
 `missing`), the README line, the registry row, the parity-issue flag, each conflict
 with its file class, resolution and resolver, each gate with its status and
 duration, and each finding with a code and whether it blocks. Client-relevant
@@ -55,10 +55,11 @@ applied, so a plan is a record, not a queue; a plan never touches the project �
 the trial merge that finds the conflicts runs in a throwaway worktree outside the
 project tree, uncommitted (`--no-commit --no-ff`), with the scratch tree removed on
 every exit path, no ref created or moved and nothing pushed; and a plan never
-invents — the changelog text comes only from the Automaton's own changelog entry
-task when its output has the exact `## [version] - YYYY-MM-DD` heading with a
-non-empty body, and otherwise the plan carries an empty heading and body with the
-source `missing`. On the client side the current behavior is the pre-Phase-4
+invents — the changelog text comes only from the Automaton's own changelog —
+its changelog draft file first, then its changelog entry task — when that text
+has the exact `## [version] - YYYY-MM-DD` heading with a non-empty body, the
+source naming the draft file's path or the entry task's id, and otherwise the
+plan carries an empty heading and body with the source `missing`. On the client side the current behavior is the pre-Phase-4
 behavior: the merge pipeline features (`GET/PUT/DELETE/POST /api/autonomous/merge-pipeline`,
 the conflict policy and model settings, see `docs/plans/parity-issues/merge-pipeline.md`)
 are already mirrored by Android and iPhone, and this step adds nothing the clients
@@ -96,6 +97,31 @@ advances past shadow mode; the moment the daemon starts applying a plan (the fir
 legitimate `applied: true`), the parity contract must say exactly what a client
 shows while a merge run is pending approval in `ask` mode and how the operator
 answers, because that interaction does not exist in the clients at all today.
+
+## The changelog reader's sources (updated 2026-11-17)
+
+How it works: `ReadChangelogEntry` takes the Automaton id and the repository
+path in addition to the changelog entry tasks. It first tries the Automaton's
+changelog draft file at its generated-artefact path (the same
+`genartifacts.DefaultPaths()` template the artefact writer uses, with the
+Automaton id substituted in) and, when the file exists and parses under the
+strict rules (`## [version] - YYYY-MM-DD` heading plus a non-empty body), the
+entry's text and the draft file's path become the plan's changelog heading and
+body and its `changelog_source`. When the file is absent or malformed, the
+reader falls back to the entry tasks exactly as before (the first well-formed
+output wins; its task id becomes the source), and when neither source carries a
+well-formed entry the source is `missing`.
+
+Why this shape: the draft file is the Automaton's own tracked changelog
+deliverable — the same text a person would land into `CHANGELOG.md` — so the
+plan should compare the supervisor's landed release against that text before
+considering the task output; the task output stays the fallback so a plan for an
+Automaton that finished before draft files existed, or with `changelog_draft`
+off, reads exactly as before. The strict parsing rules and the
+`changelog_version_mismatch` blocking are unchanged, and no setting, surface or
+default changes: every read surface and the comparison keep their contracts, and
+`changelog_source` only gains one allowed meaning (the draft file's path)
+alongside the task id and `missing`.
 
 ## Filing record
 

@@ -79,7 +79,11 @@ Every generated file starts with this marker line:
 | `registry_row` | `docs/plans/drafts/<automaton-id>-registry-row.md` | One table row |
 
 `<automaton-id>` is replaced with the Automaton id. The paths are relative to
-the project directory, and the daemon creates the folders.
+the project directory, and the daemon creates the folders. The
+`changelog_draft` file is also the first source the merge shadow plan reads for
+the changelog heading and body — it reads the file when it exists and is
+well-formed and only falls back to the changelog entry task's output when the
+file is absent or malformed ([howto/merge-shadow.md](merge-shadow.md)).
 
 ### Gate report: the counts, and the cost the ledger knows about
 

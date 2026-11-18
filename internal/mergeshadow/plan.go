@@ -40,8 +40,8 @@ func (s ReleaseSize) Valid() bool {
 	return false
 }
 
-// ChangelogSourceMissing is the changelog_source value used when no entry task
-// id could be found for the Automaton.
+// ChangelogSourceMissing is the changelog_source value used when neither the
+// Automaton's changelog draft file nor its entry task carried a usable entry.
 const ChangelogSourceMissing = "missing"
 
 // Conflict is one file the merge would touch that needs a resolution.
@@ -78,7 +78,8 @@ type MergePlan struct {
 	PlannedVersion   string      `json:"planned_version"`
 	ChangelogHeading string      `json:"changelog_heading"`
 	ChangelogBody    string      `json:"changelog_body"`
-	// ChangelogSource is the entry task id, or ChangelogSourceMissing.
+	// ChangelogSource is the path of the draft file the entry was read from,
+	// the id of the entry task, or ChangelogSourceMissing.
 	ChangelogSource   string     `json:"changelog_source"`
 	ReadmeLine        string     `json:"readme_line"`
 	RegistryRow       string     `json:"registry_row"`

@@ -25,6 +25,7 @@ var allowedRootFiles = map[string]bool{
 // reports and run archives go under docs/, never in a new top-level folder.
 var allowedRootDirs = map[string]bool{
 	".github": true, ".oss-scanner": true, ".rtk": true, ".zap": true,
+	".datawatch": true, // the PRD verification suite (.datawatch/verify/) is tracked on purpose
 	"channel": true, "charts": true, "cmd": true, "deploy": true, "docker": true,
 	"docs": true, "examples": true, "hooks": true, "install": true,
 	"internal": true, "packaging": true, "scripts": true, "security": true,

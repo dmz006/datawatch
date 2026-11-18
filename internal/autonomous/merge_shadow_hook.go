@@ -161,8 +161,9 @@ func (m *Manager) mergeShadowChangeRecord(automatonID string) *changerecord.Chan
 }
 
 // mergeShadowChangelogTasks lists the Automaton's tasks for the changelog
-// reader. Only the changelog entry task's output is read: the others carry no
-// changelog text, so their output is not loaded.
+// reader. Of the task outputs only the changelog entry task's is loaded — the
+// others carry no changelog text — and the reader consults it last, after
+// reading the Automaton's own changelog draft file.
 func (m *Manager) mergeShadowChangelogTasks(prd *PRD) []mergeshadow.ChangelogTask {
 	var out []mergeshadow.ChangelogTask
 	for si := range prd.Story {
