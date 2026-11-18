@@ -1,4 +1,4 @@
-// merge_shadow_config_set.go — datawatch config set for the three
+// merge_shadow_config_set.go — datawatch config set for the four
 // autonomous.merge_shadow.* settings. The CLI validates with the daemon
 // API's own rules (server.ValidateMergeShadowValue) before anything is
 // sent, sends each value with its natural JSON type, and prints the help
@@ -59,8 +59,9 @@ func mergeShadowConfigSet(cfg *config.Config, key, value string) (handled bool, 
 
 // mergeShadowTypedValue maps the command-line text to the JSON type the
 // daemon expects for each field: a boolean for enabled, the duration
-// string as-is for gate_timeout, and a whole number for plan_keep (100.0
-// parses — JSON cannot tell it from 100 — and the API validator decides).
+// string as-is for gate_timeout, and a whole number for plan_keep and
+// agreement_streak (100.0 parses — JSON cannot tell it from 100 — and the
+// API validator decides).
 func mergeShadowTypedValue(field, value string) (text string, typed any, ok bool) {
 	switch field {
 	case "enabled":
@@ -77,6 +78,12 @@ func mergeShadowTypedValue(field, value string) (text string, typed any, ok bool
 			return value, nil, false
 		}
 		return value, n, true
+	case "agreement_streak":
+		n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || n != math.Trunc(n) {
+			return value, nil, false
+		}
+		return value, n, true
 	}
 	return value, nil, false
 }
@@ -87,8 +94,8 @@ func mergeShadowFieldType(field string) string {
 		return "true or false"
 	case "gate_timeout":
 		return "duration string such as \"20m\""
-	case "plan_keep":
+	case "plan_keep", "agreement_streak":
 		return "positive whole number"
 	}
-	return "enabled, gate_timeout or plan_keep"
+	return "enabled, gate_timeout, plan_keep or agreement_streak"
 }

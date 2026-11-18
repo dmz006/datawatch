@@ -21,14 +21,20 @@ type MergeShadowConfig struct {
 	// 200). Older plans are pruned past this count. A value below 1 falls back
 	// to the default.
 	PlanKeep *int `yaml:"plan_keep" json:"plan_keep"`
+	// AgreementStreak is the agreement-streak threshold (default 5): the run
+	// of most-recent merges with no major comparison difference that counts as
+	// a project's agreement streak, read on the merge shadow status surfaces.
+	// A value below 1 falls back to the default.
+	AgreementStreak *int `yaml:"agreement_streak" json:"agreement_streak"`
 }
 
 // Defaults for autonomous.merge_shadow. Pinned by merge_shadow_test.go, so a
 // changed default is a deliberate edit to this block and its tests.
 const (
-	DefaultMergeShadowEnabled     = true
-	DefaultMergeShadowGateTimeout = 20 * time.Minute
-	DefaultMergeShadowPlanKeep    = 200
+	DefaultMergeShadowEnabled         = true
+	DefaultMergeShadowGateTimeout     = 20 * time.Minute
+	DefaultMergeShadowPlanKeep        = 200
+	DefaultMergeShadowAgreementStreak = 5
 )
 
 // EffectiveEnabled reports whether the shadow merge plan is on. Absent is on.
@@ -59,4 +65,13 @@ func (m MergeShadowConfig) EffectivePlanKeep() int {
 		return DefaultMergeShadowPlanKeep
 	}
 	return *m.PlanKeep
+}
+
+// EffectiveAgreementStreak returns the agreement-streak threshold, or the
+// default when the key is absent or below 1.
+func (m MergeShadowConfig) EffectiveAgreementStreak() int {
+	if m.AgreementStreak == nil || *m.AgreementStreak < 1 {
+		return DefaultMergeShadowAgreementStreak
+	}
+	return *m.AgreementStreak
 }

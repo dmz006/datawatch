@@ -204,3 +204,59 @@ func Compare(plan *MergePlan, landed Landed, parityIssuePresent bool, manualGate
 	}
 	return c, nil
 }
+
+// AgreementStreak is the agreement read computed from a project's stored
+// comparisons: how many of the most recent merges landed without a major
+// difference (Length), how many merges the run is measured over (Total),
+// judged against a threshold with Meets.
+type AgreementStreak struct {
+	// Length is the count of the most recent consecutive comparisons with
+	// no major difference.
+	Length int
+	// Total is the number of stored comparisons the streak is measured over.
+	Total int
+}
+
+// Meets reports whether the streak reaches threshold. A threshold at or
+// below zero is already met.
+func (s AgreementStreak) Meets(threshold int) bool {
+	if threshold <= 0 {
+		return true
+	}
+	return s.Length >= threshold
+}
+
+// AgreementStreakOf computes the project's agreement streak from its stored
+// comparisons. The records are considered in the time order of their
+// CreatedAt stamps (input order is not significant): the streak is the run
+// of the most recent comparisons that hold no Difference graded major — a
+// minor difference does not break the run, a major one does, and that
+// comparison's streak position ends there. An empty slice of comparisons
+// gives an empty streak of zero length over zero merges.
+func AgreementStreakOf(comparisons []*Comparison) AgreementStreak {
+	ordered := make([]*Comparison, len(comparisons))
+	copy(ordered, comparisons)
+	sort.Slice(ordered, func(i, j int) bool {
+		if !ordered[i].CreatedAt.Equal(ordered[j].CreatedAt) {
+			return ordered[i].CreatedAt.Before(ordered[j].CreatedAt)
+		}
+		return ordered[i].AutomatonID < ordered[j].AutomatonID
+	})
+	out := AgreementStreak{Total: len(ordered)}
+	for i := len(ordered) - 1; i >= 0; i-- {
+		if hasMajorDifference(ordered[i]) {
+			break
+		}
+		out.Length++
+	}
+	return out
+}
+
+func hasMajorDifference(c *Comparison) bool {
+	for _, d := range c.Differences {
+		if d.Severity == SeverityMajor {
+			return true
+		}
+	}
+	return false
+}
