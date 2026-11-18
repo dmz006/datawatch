@@ -356,3 +356,21 @@ func TestGeneratedArtifactsDoNotHold(t *testing.T) {
 		}
 	})
 }
+
+// TestGeneratedArtifactsDoNotHoldGeneratorNames covers the paths the
+// artefact generator itself writes, and keeps hand-written files holding.
+func TestGeneratedArtifactsDoNotHoldGeneratorNames(t *testing.T) {
+	porcelain := "?? docs/plans/reports/a1b2-gate.md\n" +
+		"?? docs/plans/reports/.a1b2-gate.md.genhash\n" +
+		"?? docs/plans/parity-issues/a1b2.md\n" +
+		"?? docs/plans/drafts/a1b2-changelog.md\n" +
+		"?? docs/plans/notes.md\n" +
+		" M internal/foo.go\n"
+	gen, rest := SplitGeneratedArtefacts(porcelain, nil)
+	if len(gen) != 3 {
+		t.Fatalf("generated = %v", gen)
+	}
+	if len(rest) != 3 {
+		t.Fatalf("remaining = %v", rest)
+	}
+}

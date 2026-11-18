@@ -17,6 +17,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/genartifacts"
 )
 
 const (
@@ -49,6 +51,19 @@ func isGeneratedArtefact(p string, extraReports []string) bool {
 			continue
 		}
 		if clean == r || clean == r+generatedHashSuffix {
+			return true
+		}
+	}
+	// The generator's own paths: a gate report, parity draft or draft named
+	// by the generator, and the hash sidecar it keeps beside each of them.
+	// A parity folder file named only by the Automaton id cannot be told from
+	// a hand-written one by name, so it is not exempt here.
+	if path.Dir(clean) != generatedParityDir && genartifacts.MatchesTrackedPath(clean) {
+		return true
+	}
+	if base := path.Base(clean); strings.HasPrefix(base, ".") && strings.HasSuffix(base, ".genhash") && len(base) > len(".genhash")+1 {
+		target := path.Join(path.Dir(clean), strings.TrimSuffix(base[1:], ".genhash"))
+		if isGeneratedArtefact(target, extraReports) {
 			return true
 		}
 	}
