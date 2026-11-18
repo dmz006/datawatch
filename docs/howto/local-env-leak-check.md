@@ -112,9 +112,12 @@ make check-generated-reports-leaks
 bash scripts/check-generated-reports-leaks.sh docs/plans/reports
 ```
 
-It is part of `make check-leaks`, so it runs wherever the whole-tree check
-runs — the pre-commit chain, `make lint` and the release smoke — and it can
-also be run on its own as above.
+It is a step of `make check-leaks` (after the whole-tree check), so a
+failing lint means a leak finding until you act on the report. The
+pre-commit chain and `scripts/release-smoke.sh` run the whole-tree check
+only, not this scan — the reports folder is generated session output, not
+part of the tracked tree they guard. The scan can also be run on its own
+as above, and `make lint` is the gate that covers it.
 
 ### Reading the report
 
@@ -232,8 +235,10 @@ git commit
          ├── hooks/pre-commit-leak-check  ──► scripts/check-no-local-leaks.sh .
          └── scripts/check-no-unscoped-tmux.sh
 
-make lint ───────────────────────────────► make check-leaks
-scripts/release-smoke.sh (before a release) ─► make check-leaks
+make lint ─────────────────────────► make check-leaks
+                                   ├── scripts/check-no-local-leaks.sh .
+                                   └── scripts/check-generated-reports-leaks.sh
+scripts/release-smoke.sh (before a release) ─► scripts/check-no-local-leaks.sh .
 ```
 
 - **Pre-commit**: `hooks/pre-commit-leak-check` runs the whole-tree check
@@ -253,9 +258,12 @@ scripts/release-smoke.sh (before a release) ─► make check-leaks
 - **`make lint`**: `check-leaks` is one of its steps (it runs the whole-tree
   check and the generated reports folder scan together), so a failing lint
   means a leak finding until you act on the report.
-- **Release**: `scripts/release-smoke.sh` runs the leak check before a
-  release is cut; it can be skipped only with `DW_SKIP_LOCAL_LEAKS_CHECK=1`
-  (which the operator owns, deliberately).
+- **Release**: `scripts/release-smoke.sh` runs the whole-tree check
+  before a release is cut; it can be skipped only with
+  `DW_SKIP_LOCAL_LEAKS_CHECK=1` (which the operator owns, deliberately).
+  The release smoke does not run the generated reports folder scan either. If a
+  generated report must be cited in a release note, run
+  `make check-generated-reports-leaks` (or `make lint`) against it first.
 
 ## What the tree check cannot see
 
@@ -277,5 +285,10 @@ check for exactly that surface.
       `make lint` and the release smoke catch a leak.
 - [ ] New generic patterns added to `scripts/leak-check.patterns` stay
       self-clean (bracketed dots) and the file still passes `make check-leaks`.
+- [ ] Stale generated reports under `docs/plans/reports` are cleaned up or
+      pass the scan: the pre-commit gate and the release smoke run the
+      whole-tree check only, so `make lint` (via
+      `make check-generated-reports-leaks`) is the only standing gate over
+      that untracked surface.
 - [ ] `scripts/leak-check.exclude` stayed minimal: every entry has a comment
       saying why the path cannot be made clean.
