@@ -78,6 +78,78 @@ scanned root:
 | `LEAK_CHECK_EXCLUDE` | exclude glob list | `scripts/leak-check.exclude` |
 | `LEAK_CHECK_LOCAL` | local fixed-string list | `<root>/.leak-patterns.local` |
 
+## The generated reports folder scan
+
+The whole-tree check scans **tracked** files, and the generated reports
+under `docs/plans/reports` are largely *not* tracked: they are session
+artefacts — plan-coverage gate outputs, final-gate reports and similar —
+written by sessions that may have picked up values from the operator's own
+environment (a hostname inside a quoted path, a private address in a log
+excerpt, a home-directory path pasted from real output). Untracked files are
+exactly the surface the tracked-tree scan cannot see, and they are where a
+generated report leaks from, so the reports folder gets its own scan over
+the same four classes.
+
+`make check-generated-reports-leaks` runs
+`scripts/check-generated-reports-leaks.sh [folder]` (the folder defaults to
+`docs/plans/reports`):
+
+- It collects **every file under the folder** — tracked (`git ls-files`) and
+  untracked non-ignored (`git ls-files --others --exclude-standard`) — and
+  copies them into a throwaway directory (`mktemp -d`, removed on exit),
+  keeping the repository-relative structure.
+- It hands that directory to the same `check-no-local-leaks.sh` machinery,
+  with `LEAK_CHECK_LOCAL` pointing at **this repository's**
+  `.leak-patterns.local`, so the `local` class runs against your fixed
+  strings even though the scan root is the throwaway copy. If the file is
+  absent the class is skipped with a stderr notice — never an error.
+- A tracked file that was deleted from the working tree has no content left
+  to leak: removing a leak is never blocked.
+
+```bash
+make check-generated-reports-leaks
+# or directly, for another folder:
+bash scripts/check-generated-reports-leaks.sh docs/plans/reports
+```
+
+It is part of `make check-leaks`, so it runs wherever the whole-tree check
+runs — the pre-commit chain, `make lint` and the release smoke — and it can
+also be run on its own as above.
+
+### Reading the report
+
+Same shape as the whole-tree check, with the paths being the real ones
+(because the throwaway copy keeps the repository-relative structure):
+
+```text
+docs/plans/reports/18970001-gate.md:42: address
+local patterns: skipped        # stderr, only when .leak-patterns.local is absent
+address: 1
+```
+
+One line per finding — `path:line: class`, path relative to the repository
+root — then a per-class count summary, and nothing else. The matched text is
+never printed, so the output is CI-safe and safe to paste, exactly like the
+tree check. Exit `0` clean, `1` findings reported, `2` usage or
+configuration error.
+
+Fix a finding by the same routes as the tree check (placeholder, operator
+config, environment variable, or `scripts/scrub-peer-names.sh`) — or simply
+discard the stale report. The report is generated output, so cleaning the
+value at the source (the generator or the session that wrote it) is the
+durable fix.
+
+### Host names in session ids are already stripped
+
+A second line of defence is built into the report generators themselves:
+session ids in generated reports no longer carry a host prefix. An id of
+the form `<host>-<id>` or `<host>:<id>` is reduced to its final segment
+after the last `-` or `:`, and a test renders every report kind with a fake
+host name and asserts the host does not appear anywhere in the output. The
+scan above still runs because a report can carry values the generator does
+not scrub (log excerpts, quoted paths, free-text notes) — the two layers
+cover different material.
+
 ## The local patterns file
 
 `.leak-patterns.local` is where you keep tokens that are too private to put
@@ -178,8 +250,9 @@ scripts/release-smoke.sh (before a release) ─► make check-leaks
   ln -s -f ../../hooks/pre-commit-leak-check .git/hooks/pre-commit-leak-check
   ```
 
-- **`make lint`**: `check-leaks` is one of its steps, so a failing lint means
-  a leak finding until you act on the report.
+- **`make lint`**: `check-leaks` is one of its steps (it runs the whole-tree
+  check and the generated reports folder scan together), so a failing lint
+  means a leak finding until you act on the report.
 - **Release**: `scripts/release-smoke.sh` runs the leak check before a
   release is cut; it can be skipped only with `DW_SKIP_LOCAL_LEAKS_CHECK=1`
   (which the operator owns, deliberately).
