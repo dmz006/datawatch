@@ -33,7 +33,8 @@ func TestValidateWorkerProfileConfig_ValidConfigPasses(t *testing.T) {
 	profiles := map[string]workerprofile.WorkerProfile{"reviewer": validWorkerProfile()}
 	defaults := WorkerProfileDefaultsConfig{
 		Role: map[string]string{"planner": "full", "verifier": "reviewer", "judge": ""},
-		Kind: map[string]string{"docs": "reviewer", "note": "minimal"},
+		// Task kinds and session kinds are both valid kind keys.
+		Kind: map[string]string{"docs": "reviewer", "note": "minimal", "supervisor": "digest", "one_shot": "reviewer"},
 	}
 	cfg := workerProfileCfg(profiles, defaults, "reviewer")
 	if err := ValidateWorkerProfileConfig(cfg); err != nil {
@@ -113,10 +114,20 @@ func TestValidateWorkerProfileConfig_RefusesUnknownRoleAndKindKeys(t *testing.T)
 	}
 
 	kindCfg := workerProfileCfg(nil, WorkerProfileDefaultsConfig{
-		Kind: map[string]string{"planner": "digest"},
+		Kind: map[string]string{"not-a-kind": "digest"},
 	}, "")
-	if err := ValidateWorkerProfileConfig(kindCfg); err == nil || !strings.Contains(err.Error(), `unknown key "planner"`) {
-		t.Fatalf("role name used as kind key: want refusal, got %v", err)
+	if err := ValidateWorkerProfileConfig(kindCfg); err == nil || !strings.Contains(err.Error(), `unknown key "not-a-kind"`) {
+		t.Fatalf("unknown kind key: want refusal, got %v", err)
+	}
+
+	// A session-kind key is a valid kind key even when it is also a role
+	// name (planner); an unset kind is accepted too.
+	okCfg := workerProfileCfg(nil, WorkerProfileDefaultsConfig{
+		Role: map[string]string{"judge": ""},
+		Kind: map[string]string{"planner": "full"},
+	}, "")
+	if err := ValidateWorkerProfileConfig(okCfg); err != nil {
+		t.Fatalf("session-kind / empty keys: want accepted, got %v", err)
 	}
 }
 

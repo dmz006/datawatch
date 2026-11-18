@@ -1193,8 +1193,16 @@ func (l *Ledger) AcquireRechecking(ctx context.Context, req Request, timeout tim
 		case <-w.grant:
 			return nil
 		case <-ctx.Done():
+			l.mu.Lock()
+			why := w.reason
+			l.mu.Unlock()
 			l.remove(w)
-			return ctx.Err()
+			// Wrap, never replace: errors.Is(err, ctx.Err()) still holds, but
+			// the caller also learns what the request was waiting on.
+			if why == "" {
+				return ctx.Err()
+			}
+			return fmt.Errorf("%w: waiting on %s", ctx.Err(), why)
 		case <-deadline:
 			l.mu.Lock()
 			why := w.reason
