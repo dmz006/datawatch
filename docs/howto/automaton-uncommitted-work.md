@@ -76,11 +76,12 @@ at the worktree with `git status`:
    `git add .`, and the commit runs the repository's own commit hooks: a failing
    hook is a failed commit.
    A declared file that git ignores and that is not tracked (for example a file
-   under `.datawatch/`) is skipped rather than staged, because `git add` would
-   refuse it and fail the whole commit; the other declared files are still
-   committed. A tracked file is always staged, even if it matches an ignore
-   rule. If git cannot say which paths it ignores, nothing is skipped and the
-   real git error is reported.
+   under `.datawatch/`) is staged with `git add -f -- <path>`, because a plain
+   `git add` would refuse it and fail the whole commit; it is committed along
+   with the other declared files. Only the exact listed path is forced, never
+   a directory or a wildcard. A tracked file is always staged normally. If git
+   cannot say which paths it ignores, nothing is forced and the real git error
+   is reported.
 2. **Look again.** If the worktree is now clean for the task, it is marked
    complete as usual, and the commit is the one its post-verify revision is
    pinned to.
