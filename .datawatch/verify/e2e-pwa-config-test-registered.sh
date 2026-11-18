@@ -30,7 +30,7 @@ internal/server/web/docs/howto/navigation-mobile-fit.md
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
-    .datawatch/*|.decompose-output-*.json|*.log|CHANGELOG.md|docs/plans/*) ;;
+    .datawatch/*|.decompose-output-*.json|*.log|CHANGELOG.md|docs/plans/*|scripts/test-stories/pwa/node_modules|scripts/test-stories/pwa/node_modules/*) ;;
     *) grep -Fxq -- "$f" <<< "$allowed" || bad "file outside the allowed set: $f" ;;
   esac
 done < "$CH"
