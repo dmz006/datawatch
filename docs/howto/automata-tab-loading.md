@@ -289,6 +289,19 @@ connection, holds it down, restores it, and checks that the refresh stays
 inside a small request and byte budget, twice in a row. The same checks run in
 release smoke against the smoke daemon.
 
+## For the operator to review
+
+- **CI wiring of the speed check.** `scripts/perf-rollup-check.sh` and the 700-Automaton
+  limits in `scripts/perf-budget.sh` exist and run by hand, but no step in
+  `.github/workflows/ci.yaml` calls them yet, so a slow regression is not caught
+  automatically. Confirm whether to wire them in.
+- **Time limits are host-dependent.** The targets (roll-up under 300 ms warm and
+  1.5 s cold) were set on one host; confirm them for the slower hosts you run.
+- **Translations.** The new loading, retry and cached-copy strings are in the five
+  locales; a native speaker has not reviewed the four non-English ones.
+- **Mobile parity.** The Android and iPhone apps do not yet open from a cached copy;
+  this is tracked in datawatch-app.
+
 ## Where to go next
 
 - [list-endpoints-and-paging.md](list-endpoints-and-paging.md): the API behind
