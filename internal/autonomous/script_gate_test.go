@@ -75,6 +75,45 @@ func TestScriptGateRunFailingCommand(t *testing.T) {
 	if res.Passed || res.ExitCode != 7 {
 		t.Fatalf("want fail with exit 7, got %+v", res)
 	}
+	if res.Reason != "gate exited with code 7" {
+		t.Fatalf("a plain failing gate keeps the exit-code reason, got %q", res.Reason)
+	}
+}
+
+func TestScriptGateRunNoSpaceReportsTempFolderFull(t *testing.T) {
+	dir := gateProject(t)
+	rel := writeGateScript(t, dir, "nospace.sh", "echo write failed: no space left on device\nexit 1\n")
+	res := RunScriptGate(context.Background(), GateCheck{Kind: GateCheckScript, Script: rel}, dir, 10*time.Second)
+	if res.Passed || res.ExitCode != 1 {
+		t.Fatalf("want fail with exit 1, got %+v", res)
+	}
+	if res.Reason != "temporary folder full" {
+		t.Fatalf("want reason temporary folder full, got %q", res.Reason)
+	}
+	if !strings.Contains(res.Output, "no space left on device") {
+		t.Fatalf("output missing the no-space line: %q", res.Output)
+	}
+}
+
+func TestScriptGateRunEnospcPhraseReportsTempFolderFull(t *testing.T) {
+	dir := gateProject(t)
+	rel := writeGateScript(t, dir, "enospc.sh", "echo open /tmp/x: ENOSPC\nexit 5\n")
+	res := RunScriptGate(context.Background(), GateCheck{Kind: GateCheckScript, Script: rel}, dir, 10*time.Second)
+	if res.Passed || res.ExitCode != 5 {
+		t.Fatalf("want fail with exit 5, got %+v", res)
+	}
+	if res.Reason != "temporary folder full" {
+		t.Fatalf("want reason temporary folder full, got %q", res.Reason)
+	}
+}
+
+func TestScriptGateRunQuotaPhraseReportsTempFolderFull(t *testing.T) {
+	dir := gateProject(t)
+	rel := writeGateScript(t, dir, "quota.sh", "echo write: disk quota exceeded\nexit 1\n")
+	res := RunScriptGate(context.Background(), GateCheck{Kind: GateCheckScript, Script: rel}, dir, 10*time.Second)
+	if res.Reason != "temporary folder full" {
+		t.Fatalf("want reason temporary folder full, got %q", res.Reason)
+	}
 }
 
 func TestScriptGateRunTimeoutKillsChild(t *testing.T) {

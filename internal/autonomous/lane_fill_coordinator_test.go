@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // laneFillFake is a starter that records every call of any kind. Run, like
@@ -21,6 +23,7 @@ type laneFillFake struct {
 	calls []string
 
 	runErr, approveErr, setErr, decomposeErr error
+	approveErrByPRD                          map[string]error
 	noFlip                                   bool
 }
 
@@ -57,8 +60,65 @@ func (f *laneFillFake) Approve(id, actor, note string) (any, error) {
 	if f.approveErr != nil {
 		return nil, f.approveErr
 	}
+	if err := f.approveErrByPRD[id]; err != nil {
+		return nil, err
+	}
 	f.m.store.MutatePRD(id, func(p *PRD) bool { p.Status = PRDApproved; return true })
 	return nil, nil
+}
+
+// laneFillFailingCoverage is a stored coverage record that fails under its
+// own pinned settings: one requirement missing, a 100% minimum, block
+// mode, no acknowledgment. planCoverageGateBlocks returns true for it.
+func laneFillFailingCoverage() *PlanCoverage {
+	return &PlanCoverage{
+		Mode:     config.PlanCoverageBlock,
+		MinRatio: 1,
+		Report: PlanCoverageReport{
+			Missing:   1,
+			Unmatched: []RequirementVerdict{{Requirement: "cover the refusal text", Verdict: CoverageMissing}},
+		},
+	}
+}
+
+// setPlanCoverage stores a plan-coverage record on a harness Automaton, the
+// way decompose stores one, so planCoverageGateBlocks sees it.
+func (h *laneFillHarness) setPlanCoverage(prdID string, pc *PlanCoverage) {
+	h.t.Helper()
+	if !h.m.store.MutatePRD(prdID, func(p *PRD) bool { p.PlanCoverage = pc; return true }) {
+		h.t.Fatalf("could not set the stored plan-coverage record on %s", prdID)
+	}
+}
+
+func countCalls(calls []string, want string) int {
+	n := 0
+	for _, c := range calls {
+		if c == want {
+			n++
+		}
+	}
+	return n
+}
+
+func countCallPrefix(calls []string, prefix string) int {
+	n := 0
+	for _, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+func findBlockedDecision(t *testing.T, st LaneFillStatus, prdID string) LaneFillDecision {
+	t.Helper()
+	for _, d := range st.Decisions {
+		if d.Action == LaneFillActionBlocked && d.PRDID == prdID {
+			return d
+		}
+	}
+	t.Fatalf("no blocked decision for %s in %+v", prdID, st.Decisions)
+	return LaneFillDecision{}
 }
 
 func (f *laneFillFake) Decompose(id string) (any, error) {
@@ -138,7 +198,7 @@ func newLaneFillHarnessUnstarted(t *testing.T, dir string, cfg Config) *laneFill
 	}
 	base := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
 	h := &laneFillHarness{t: t, dir: dir, m: m, now: base, base: base}
-	h.fake = &laneFillFake{m: m}
+	h.fake = &laneFillFake{m: m, approveErrByPRD: map[string]error{}}
 	h.c = NewCoordinator(m, h.fake)
 	h.c.now = func() time.Time { return h.now }
 	h.c.auditFn = func(action string, d map[string]any) {
@@ -765,5 +825,100 @@ func TestLaneFillRestartModeChangeAppliesLive(t *testing.T) {
 	}
 	if st := h.status(); st.Mode != "on" {
 		t.Errorf("mode = %q", st.Mode)
+	}
+}
+
+func TestLaneFillRefusesPlanCoverageGatedReadyAndSkipsToNext(t *testing.T) {
+	h := newLaneFillHarness(t, "on")
+	h.c.SetReady()
+	gated := h.addPRD("gated work", PRDNeedsReview, "claude", "claude-code")
+	h.setPlanCoverage(gated.ID, laneFillFailingCoverage())
+	// The gate would refuse an approval of the gated one anyway; make the
+	// fake refuse it too, so a planner bug that tried it would fail loudly.
+	h.fake.approveErrByPRD[gated.ID] = errors.New("plan-coverage gate (plan_coverage_check=block): approval is blocked")
+	second := h.addPRD("second work", PRDNeedsReview, "claude", "claude-code")
+
+	h.poll()
+
+	blk := findBlockedDecision(t, h.status(), gated.ID)
+	if blk.EligibilityReason != LaneFillReasonPlanCoverageBlocked {
+		t.Fatalf("blocked decision for the gated one: %+v", blk)
+	}
+	if !strings.Contains(blk.Blocker, "plan coverage gate") {
+		t.Errorf("blocker = %q, want the gate named in the text", blk.Blocker)
+	}
+
+	start := findDecision(t, h.status(), "claude-1", LaneFillActionStartPRD)
+	if start.PRDID != second.ID || !start.Executed || start.Error != "" {
+		t.Fatalf("start decision = %+v, want the eligible second one %s", start, second.ID)
+	}
+
+	calls := h.fake.all()
+	if n := countCalls(calls, "approve:"+gated.ID+":lane_fill"); n != 0 {
+		t.Errorf("approval was attempted on the gated Automaton: %v", calls)
+	}
+	if n := countCalls(calls, "run:"+gated.ID); n != 0 {
+		t.Errorf("the gated Automaton was started: %v", calls)
+	}
+	if n := countCalls(calls, "approve:"+second.ID+":lane_fill"); n != 1 {
+		t.Errorf("approve calls on the second = %d, want 1: %v", n, calls)
+	}
+	if n := countCalls(calls, "run:"+second.ID); n != 1 {
+		t.Errorf("run calls on the second = %d, want 1: %v", n, calls)
+	}
+}
+
+func TestLaneFillPlanCoverageGatedLonePreparesDraft(t *testing.T) {
+	h := newLaneFillHarness(t, "on")
+	h.c.SetReady()
+	gated := h.addPRD("gated work", PRDNeedsReview, "claude", "claude-code")
+	h.setPlanCoverage(gated.ID, laneFillFailingCoverage())
+	h.fake.approveErrByPRD[gated.ID] = errors.New("plan-coverage gate (plan_coverage_check=block): approval is blocked")
+	draft := h.addPRD("draft work", PRDDraft, "claude", "")
+
+	h.poll()
+
+	blk := findBlockedDecision(t, h.status(), gated.ID)
+	if blk.EligibilityReason != LaneFillReasonPlanCoverageBlocked {
+		t.Fatalf("blocked decision for the gated one: %+v", blk)
+	}
+	d := findDecision(t, h.status(), "claude-1", LaneFillActionDecompose)
+	if d.PRDID != draft.ID || !d.Executed || d.Error != "" {
+		t.Fatalf("decompose decision = %+v, want the draft %s", d, draft.ID)
+	}
+
+	calls := h.fake.all()
+	if n := countCallPrefix(calls, "approve:"); n != 0 {
+		t.Errorf("lane fill acknowledged or approved the failed coverage: %v", calls)
+	}
+	if n := countCalls(calls, "run:"+gated.ID); n != 0 {
+		t.Errorf("the gated Automaton was started: %v", calls)
+	}
+	if n := countCalls(calls, "decompose:"+draft.ID); n != 1 {
+		t.Errorf("decompose calls on the draft = %d, want 1: %v", n, calls)
+	}
+}
+
+func TestLaneFillPlanCoverageGatedAcknowledgedStarts(t *testing.T) {
+	h := newLaneFillHarness(t, "on")
+	h.c.SetReady()
+	gated := h.addPRD("gated work", PRDNeedsReview, "claude", "claude-code")
+	h.setPlanCoverage(gated.ID, laneFillFailingCoverage())
+	if _, err := h.m.AcknowledgePlanCoverage(gated.ID, "api", "risk accepted for this lane"); err != nil {
+		h.t.Fatalf("acknowledging the failing surface: %v", err)
+	}
+
+	h.poll()
+
+	calls := h.fake.all()
+	if n := countCalls(calls, "approve:"+gated.ID+":lane_fill"); n != 1 {
+		t.Fatalf("approve calls = %d, want 1 (an acknowledgment covers the gate): %v", n, calls)
+	}
+	if n := countCalls(calls, "run:"+gated.ID); n != 1 {
+		t.Fatalf("run calls = %d, want 1: %v", n, calls)
+	}
+	d := findDecision(t, h.status(), "claude-1", LaneFillActionStartPRD)
+	if d.PRDID != gated.ID || !d.Executed || d.Error != "" {
+		t.Errorf("start decision = %+v, want the acknowledged one", d)
 	}
 }

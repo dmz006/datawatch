@@ -420,6 +420,7 @@ const PENDING_TRANSLATION = new Set([
   'lane_fill_eligibility_proposal_missing',
   'lane_fill_eligibility_main_carries_work',
   'lane_fill_eligibility_worktree_invalid',
+  'lane_fill_eligibility_plan_coverage_blocked',
   'lane_fill_lane_counts',
   'lane_fill_lane_counts_part',
   'lane_fill_lane_counts_source_caps',

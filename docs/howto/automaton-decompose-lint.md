@@ -515,6 +515,19 @@ writes keep passing after earlier tasks land. A generated script must:
 4. run gofmt only on the listed changed Go files, never a whole package or
    directory.
 
+The same rules area pins the planner to **full file paths verbatim**: every
+file named anywhere in a task title, spec or files list is written exactly
+as its real repo-relative path, in one piece — no space inside the name, no
+ellipsis, no abbreviation, no truncation. Older plans showed the failure the
+rule prevents: a name severed to `docs/plans/2026-11-16-re…`, a stray `Run`
+left where a path was cut from its tail, a report path reduced to prose like
+`Th-final-gate.txt`. The plan-coverage structural check extracts file-name
+tokens that stop at the first space, so it reads a name cut mid-way as a
+missing file and blocks approval until the spec carries the complete path.
+What the rule covers, and why it is a prompt rule rather than a lint rule,
+is in
+[§ The full-file-path rule is always enforced too](#the-full-file-path-rule-is-always-enforced-too).
+
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose
@@ -657,6 +670,52 @@ the decompose checks report:
 | `system-binary-path` | a real system path | the command name, resolved at runtime with `command -v` |
 | `private-address` | a private address | "the target host" or a configured host name |
 | `worktree-path` | a worktree path | a repo-relative path |
+
+### The full-file-path rule is always enforced too
+
+Beside the forbidden-pattern list, **both planning prompts** the
+decomposer uses carry one fixed `Rules` bullet about how file names are
+written: every file named anywhere in a task title, spec or files list
+must be written exactly as its **real repo-relative path — the full path
+in one piece**, with no space inside the name, no ellipsis, no
+abbreviation, no truncation; a long hyphenated file name is spelled out
+completely. A display form of a path — a severed name such as
+`docs/plans/2026-11-16-re`, or a report path written as prose — is a
+defect. The bullet is fixed text the way the forbidden-pattern list is:
+`decompose_guidance` does not replace it.
+
+It exists for the plan-coverage structural check. That check extracts
+file-name tokens from the spec and the plan, and a token **stops at the
+first space**: a path broken across a line or written as a truncated
+fragment is read as a name of its own. A fragment is a *different name*
+from the full path the plan's tasks declare — the file-list matching is
+by exact name — and a name that exists neither in the tree nor in an
+earlier task's `files_generated` is reported as a missing file. In
+`block` mode that then locks Approve on noise, and the worker who later
+looks the file up meets a path the plan never wrote out completely.
+
+Note the shape of the guard: it is a prompt rule on the planner, **not a
+decompose-lint rule** — no rule id fires on a severed name. The backstop
+is the reporting gate itself: a severed name still fails the coverage
+report, and you see it as a missing-file finding on a fragment that is
+not a real file. When you do, the fix is to put the full path back into
+the task's spec and files list (or acknowledge the finding on the usual
+path), not to search the tree for the fragment.
+
+The gate mechanics are in [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check) (the `unresolved_file` finding) and [the plan-coverage findings filters](plan-coverage-filters.md).
+
+> **Operator review:** there is no new rule id and no new setting to wire: the
+> bullet is fixed text in both planning prompts, and a severed name is not
+> caught by the spec lint at all — the plan-coverage gate is the only thing
+> that reports it. Still for you to confirm: (1) drafts planned before the
+> rule shipped (and any plan a model still writes by display form) can carry a
+> severed name — if one sits blocked on a missing-file finding whose "file" is
+> a fragment of a real path, the fix is to put the full path back into the
+> task's spec and files list, or to acknowledge the finding on the usual path;
+> (2) because the guard is a prompt rule, a plan that names a file by display
+> form passes the spec lint clean and fails only at the coverage gate, so the
+> finding you act on is a plan-coverage `unresolved_file`, not a decompose-lint
+> one.
 
 ## 6a. Planning failures: what you see, what the daemon fixes, what it asks
 

@@ -3,7 +3,7 @@
 - Date: 2026-11-12
 - Version when written: v9.149.0
 - Scope: step one of moving the plans registry into datawatch. A registry row and a finding become records the daemon keeps, reachable from REST, MCP, the CLI, the comm channel and the web app, with a one-time import of the old files and an optional write-through at ship time.
-- Design: [plans and backlog in datawatch](2026-11-10-plans-and-backlog-in-datawatch.md) holds the operator decisions this follows. The Projects page that shows the records is described in [the Automata pages redesign](2026-11-06-automata-pages-redesign.md).
+- Design: [plans and backlog in datawatch](historical-plans/2026-11-10-plans-and-backlog-in-datawatch.md) holds the operator decisions this follows. The Projects page that shows the records is described in [the Automata pages redesign](2026-11-06-automata-pages-redesign.md).
 - Release: shipped in the next patch above main. No version number is claimed here; the release path adds it.
 - How-to: [plan records](../howto/plan-records.md).
 

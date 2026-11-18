@@ -1812,7 +1812,7 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
 - `evidence.degraded` lists pool hosts that could not be read but do not block the lanes (`host`, `error`, `since`, the time the host first failed); it is `[]` when none is degraded. A host is degraded only when it holds no work, no lane is placed on it, and it has been unreachable for at least `autonomous.lane_fill.host_down_after_minutes` (default 10; `0` never). The lanes are then judged from the readable hosts. A failed session list always blocks.
 - `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
 - `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
-- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. It is absent when the decision is not a refusal.
+- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment). It is absent when the decision is not a refusal.
 - `modes` is the mode in effect for each lane kind (`gpu` and `claude`); a kind with no mode of its own takes the base `mode`.
 - `lane_counts` gives, for `gpu` and `claude`, the `configured` count, the `effective` count the last poll used and the `source` of the effective count: `config`, or `llm_caps` when it is the sum of the LLM in-flight caps.
 
@@ -2519,7 +2519,8 @@ autonomous:
   task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
-  security_scan:          true        # nightwire-port .py scanner before commit
+  security_scan:          true        # warn-only security scan of the task's worktree right before the completion commit: findings recorded on the task (security_findings, max 20 entries, full text) plus the security_finding_count counter (cumulative over all passes) and one decision-log entry (security_scan_findings); never fails the task or the commit; set to false to skip the scan; read live at commit time, so a config set (REST, MCP, CLI, comm or the PWA toggle) reaches the next completion commit with no restart
+  security_scan_extensions: []        # file extensions the security scan covers; unset or an empty list (an explicit [] round-trips and reads the same) = built-in defaults (.py, .pyw); a non-empty list scans exactly those and no others; read live at scan time; in the autonomous settings GET response; the autonomous config PUT accepts a JSON array or a comma-separated list for it
   snapshot_never_stage:   []          # never-stage patterns for the automatic snapshot commits; unset reads the built-in list (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp); an explicit [] protects nothing (see "Snapshot never-stage list")
   verifier_policy:                    # which backend runs a verification (see "Verifier policy")
     mode:                 fixed       # fixed | prefer-free | balance | gpu-only | claude-only

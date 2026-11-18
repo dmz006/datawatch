@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/gitguard"
+	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
 // ProjectGit manages git operations on the user's project directory.
@@ -65,9 +66,12 @@ func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
 // StagingSkip records one candidate file that an automatic commit did not
 // stage and why. Reason is one of:
 //
-//	"outside-plan"   the path is outside the task's declared plan scope
-//	"never-stage"    the path matches an autonomous.snapshot_never_stage pattern
-//	"ignored"        the path matches .gitignore (git check-ignore)
+//	"outside-plan"    the path is outside the task's declared plan scope
+//	"never-stage"     the path matches an autonomous.snapshot_never_stage pattern
+//	"ignored"         the path matches .gitignore (git check-ignore)
+//	"launcher"        the path is one of the session launcher's two root tooling files
+//	"daemon-sections" the path is the root rules file (AGENT.md or CLAUDE.md) and its
+//	                  only difference from HEAD is the daemon's own sections
 //
 // plus the staging guard's own reasons ("size", "ignore-dir", "pattern",
 // "outside-root") from internal/gitguard. Skipping is the safe direction:
@@ -75,6 +79,70 @@ func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
 type StagingSkip struct {
 	Path   string `json:"path"`
 	Reason string `json:"reason"`
+}
+
+// The two root files the session launcher drops into the working directory
+// at session start. These names must stay equal to
+// internal/autonomous.LauncherToolingFileNames (worker-mcp.json and
+// worker-starting-context.md): internal/session cannot import
+// internal/autonomous (it would be an import cycle — autonomous spawns
+// sessions), so this package carries its own copy here, the same precedent
+// as the launcher names kept local in manager.go's never-stage wiring.
+const (
+	launcherMCPConfigFileName       = "worker-mcp.json"
+	launcherStartingContextFileName = "worker-starting-context.md"
+)
+
+// isLauncherToolingFile reports whether rel is one of the session
+// launcher's two root tooling files (exact name match at the repository
+// root). A same-named file in a subfolder (e.g. sub/worker-mcp.json) is
+// not a launcher file: the launcher writes only into the directory root.
+func isLauncherToolingFile(rel string) bool {
+	if filepath.IsAbs(rel) || strings.ContainsRune(rel, 0) {
+		return false
+	}
+	rel = path.Clean(filepath.ToSlash(rel))
+	return rel == launcherMCPConfigFileName || rel == launcherStartingContextFileName
+}
+
+// isRulesFile reports whether rel is a rules file at the repository root —
+// the files the session launcher rewrites to append the daemon's own
+// sections (see daemonSectionsOnlyChange).
+func isRulesFile(rel string) bool {
+	if filepath.IsAbs(rel) || strings.ContainsRune(rel, 0) {
+		return false
+	}
+	rel = path.Clean(filepath.ToSlash(rel))
+	return rel == "AGENT.md" || rel == "CLAUDE.md"
+}
+
+// daemonSectionsOnlyChange reports whether the working copy of rel differs
+// from its HEAD copy only by the daemon's own sections — the
+// datawatch:platform-context block, the rtk-instructions block, the
+// cross-session-communication-rule block, the memory-knowledge section
+// ("# Memory & Knowledge (datawatch)"), and the Session Guardrails section:
+// both copies pass through
+// platformcontext.StripDaemonSections (the inverse of the launcher's
+// append) and come out equal. Fail-closed: an unreadable working copy, a
+// file absent from HEAD, or any git failure returns false, so the file
+// stays a staging candidate.
+func (g *ProjectGit) daemonSectionsOnlyChange(rel string) bool {
+	relPath, err := filepath.Abs(filepath.Join(g.dir, filepath.FromSlash(rel)))
+	if err != nil {
+		return false
+	}
+	cur, err := os.ReadFile(relPath) // #nosec G304 -- rel is a root rules file name matched by isRulesFile
+	if err != nil {
+		return false
+	}
+	head, err := gitOutputOperands(g.dir, []string{"show"}, "HEAD:"+rel)
+	if err != nil {
+		return false
+	}
+	if string(cur) == head {
+		return false
+	}
+	return platformcontext.StripDaemonSections(string(cur)) == platformcontext.StripDaemonSections(head)
 }
 
 // NewProjectGit creates a new ProjectGit for the given directory, bounded
@@ -287,8 +355,11 @@ func (g *ProjectGit) stageChanges(scope []string) ([]StagingSkip, error) {
 	// Protection checks applied to every candidate before the staging
 	// guard sees them (see classifyCandidates):
 	//
+	//	the session launcher's two root tooling files — reason "launcher"
 	//	autonomous.snapshot_never_stage patterns — reason "never-stage"
 	//	.gitignore rules (git check-ignore)       — reason "ignored"
+	//	root rules file whose only diff vs HEAD is the daemon's sections
+	//	                                        — reason "daemon-sections"
 	//	paths outside the plan scope              — reason "outside-plan"
 	//
 	// Paths surviving all of those are then run through the staging guard
@@ -385,25 +456,41 @@ func (g *ProjectGit) scopedCandidates(absDir string, inside []string) (insideCan
 // classifyCandidates runs every candidate through the automatic-commit
 // protection checks that the staging guard does not cover:
 //
-//  1. the autonomous.snapshot_never_stage patterns set on this ProjectGit
+//  1. the session launcher's two root tooling files, which the launcher
+//     drops into the working directory at session start and that must
+//     never be baked into a ref (reason "launcher");
+//  2. the autonomous.snapshot_never_stage patterns set on this ProjectGit
 //     by the call site (reason "never-stage");
-//  2. the repository's ignore rules, asked of git itself via check-ignore
+//  3. the repository's ignore rules, asked of git itself via check-ignore
 //     (reason "ignored") — check-ignore exempts files already in the
 //     index, which is what we want: a tracked file the task modified is
 //     the task's own work, while a path git reports as ignored must never
-//     be newly added.
+//     be newly added;
+//  4. the root rules file (AGENT.md or CLAUDE.md) whose only difference
+//     from HEAD is the daemon's own appended sections (reason
+//     "daemon-sections") — the launcher rewrites it at session start, so
+//     it is not the worker's work; any real edit keeps it (fail-closed,
+//     see daemonSectionsOnlyChange).
 //
 // Skipped candidates come back with their reason so commit callers can
 // report them; kept candidates are plain paths in input order.
 func (g *ProjectGit) classifyCandidates(candidates []string) (kept []string, skipped []StagingSkip) {
 	ignored := g.ignoredSet(candidates)
 	for _, c := range candidates {
+		if isLauncherToolingFile(c) {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "launcher"})
+			continue
+		}
 		if g.matchesNeverStage(c) {
 			skipped = append(skipped, StagingSkip{Path: c, Reason: "never-stage"})
 			continue
 		}
 		if ignored[c] {
 			skipped = append(skipped, StagingSkip{Path: c, Reason: "ignored"})
+			continue
+		}
+		if isRulesFile(c) && g.daemonSectionsOnlyChange(c) {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "daemon-sections"})
 			continue
 		}
 		kept = append(kept, c)

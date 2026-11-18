@@ -15,11 +15,20 @@
 // is left alone — and a branch with nothing of the sort gets no cleanup
 // commit at all, so a merge of it moves the base branch exactly once.
 //
-// Every write goes through the task worktree's ordinary git add / git commit
-// path (git show for reads, the manager's injectable baseCommitRunner): no
-// reset, no checkout, no stash, no force — the branch only ever advances by
-// one plain commit. A rules file with uncommitted changes beyond the daemon's
-// own sections is an error, and the merge must not run.
+// The same cleanup removes the two root launcher files (worker-mcp.json,
+// worker-starting-context.md, see launcher_files.go) when a belt branch
+// committed them but they are not part of the target state — present at the
+// branch tip, absent at the base commit. A launcher-named file that belongs
+// to the target state, and a same-named file in a subfolder, are both kept
+// (fail-closed): only the exact root names the launcher writes are candidates,
+// and only when the base has no such file.
+//
+// Every write goes through the task worktree's ordinary git add / git rm /
+// git commit path (git show for reads, the manager's injectable
+// baseCommitRunner): no reset, no checkout, no stash, no force — the branch
+// only ever advances by one plain commit. A rules file with uncommitted
+// changes beyond the daemon's own sections is an error, and the merge must
+// not run.
 package autonomous
 
 import (
@@ -98,17 +107,56 @@ func (m *Manager) cleanDaemonSectionsBeforeMerge(ctx context.Context, dir, base 
 		}
 		changed = append(changed, rel)
 	}
-	if len(changed) == 0 {
+
+	// Launcher residue on the branch tip. The two root launcher files only
+	// drop when the branch committed them and the target state has none:
+	// present here, absent at base. A base-tracked worker-mcp.json (the
+	// operator's own file) is left exactly as the branch left it, and a
+	// same-named file in a subfolder never reaches this loop because only
+	// the two exact root names are candidates — fail-closed.
+	var removed []string
+	for _, rel := range launcherToolingFiles() {
+		headOut, herr := run(ctx, dir, "show", "HEAD:"+rel)
+		if herr != nil {
+			continue // absent at the branch tip: nothing to drop
+		}
+		if _, berr := run(ctx, dir, "show", base+":"+rel); berr == nil {
+			continue // part of the target state: keep (fail-closed)
+		}
+		full, err := safeJoin(dir, rel)
+		if err != nil {
+			return fmt.Errorf("clean daemon sections before merge: %w", err)
+		}
+		if work, werr := os.ReadFile(full); werr == nil && string(work) != headOut {
+			return fmt.Errorf("clean daemon sections before merge: %s has uncommitted changes beyond the committed launcher artifact; refusing to remove it", rel)
+		}
+		// a missing working copy is safe: git rm only stages the deletion
+		if _, rerr := run(ctx, dir, "rm", "--quiet", "--", rel); rerr != nil {
+			return fmt.Errorf("clean daemon sections before merge: remove launcher file %s: %w", rel, rerr)
+		}
+		removed = append(removed, rel)
+	}
+
+	touched := append(append([]string{}, changed...), removed...)
+	if len(touched) == 0 {
 		return nil
 	}
 	// --quiet exits non-zero when the index differs from HEAD; a clean exit
 	// means nothing actually staged and there is no cleanup commit to make.
-	if _, err := run(ctx, dir, append([]string{"diff", "--cached", "--quiet", "--"}, changed...)...); err == nil {
+	if _, err := run(ctx, dir, append([]string{"diff", "--cached", "--quiet", "--"}, touched...)...); err == nil {
 		return nil
 	}
-	msg := fmt.Sprintf("Strip daemon sections from %s before merge", strings.Join(changed, ", "))
-	if _, cerr := run(ctx, dir, append(append(gitIdentityArgs(ctx, dir), "commit", "-m", msg, "--"), changed...)...); cerr != nil {
-		return fmt.Errorf("clean daemon sections before merge: commit %s: %w", strings.Join(changed, ", "), cerr)
+	var msg string
+	switch {
+	case len(removed) == 0:
+		msg = fmt.Sprintf("Strip daemon sections from %s before merge", strings.Join(changed, ", "))
+	case len(changed) == 0:
+		msg = fmt.Sprintf("Remove launcher files %s before merge", strings.Join(removed, ", "))
+	default:
+		msg = fmt.Sprintf("Strip daemon sections and remove launcher files from %s before merge", strings.Join(touched, ", "))
+	}
+	if _, cerr := run(ctx, dir, append(append(gitIdentityArgs(ctx, dir), "commit", "-m", msg, "--"), touched...)...); cerr != nil {
+		return fmt.Errorf("clean daemon sections before merge: commit %s: %w", strings.Join(touched, ", "), cerr)
 	}
 	return nil
 }

@@ -67,7 +67,7 @@ type MergeConflictFile struct {
 type MergeResolveRequest struct {
 	PRD   *PRD
 	Task  *Task
-	Model string // merge_conflict_model; empty = strongest planning model
+	Model string // merge_conflict_model; unset reads the daemon default (non-Opus)
 	Dir   string // the PRD worktree the merge runs in
 	Files []MergeConflictFile
 }

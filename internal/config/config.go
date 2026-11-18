@@ -3695,6 +3695,13 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers (e.g. ".py"). Unset (nil) or an explicitly empty list means
+	// the scanner's built-in defaults (.py, .pyw); a non-empty list scans
+	// exactly those extensions and no others. The scan is warn-only. No
+	// `omitempty`, deliberately, same JSON round-trip reason as
+	// SnapshotNeverStage below.
+	SecurityScanExtensions []string `yaml:"security_scan_extensions" json:"security_scan_extensions"`
 	// SnapshotNeverStage lists path patterns the autonomous snapshot and
 	// automatic-staging paths (the refs/datawatch/attempts attempt snapshots
 	// and the other automatic commits) must never stage: an entry ending in
@@ -9455,7 +9462,8 @@ type AutonomousParallelConfig struct {
 	// means the default (see autonomous.EffectiveMergeConflictPolicy).
 	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
 	// MergeConflictModel: model that resolves a merge conflict. Empty
-	// means the strongest configured planning model.
+	// reads the non-Opus daemon default (config.MergePipelineDefaultConflictModel);
+	// an operator-named model, an Opus model included, is used as written.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
 	// MergeRetrySeconds: whole seconds between timed merge retry passes.
 	// Pointer so an explicit 0 (timer off) survives; nil means the default

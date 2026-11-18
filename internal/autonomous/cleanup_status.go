@@ -47,6 +47,20 @@ const cleanupStatusFile = "cleanup_status.json"
 // raised per this long, not one per poll.
 const defaultCleanupDiskAlertInterval = time.Hour
 
+// tempDiskAlertPercent is the fixed — not operator-configured — low-space
+// threshold for the disk that holds the daemon's temporary folder: when
+// that disk is at or above it, the disk alert fires even though the
+// configured disk alert percent is higher. The configured percent keeps
+// applying to the worktree-base disk, and a configured percent below
+// this still alerts earlier — the effective temp-disk threshold is
+// min(configured percent, tempDiskAlertPercent).
+const tempDiskAlertPercent int = 80
+
+// tempFolderReportTop caps how many of the biggest folders the disk
+// alert names inside the temp folder: enough for the operator to find
+// the space, without the alert becoming a directory listing.
+const tempFolderReportTop = 5
+
 // Where a removal happened: the owner's own end-of-work path versus
 // the periodic safety net. The status keeps the two splits apart so
 // the operator can see when the net is doing real work (it should
@@ -143,6 +157,21 @@ type CleanupDiskCheck struct {
 	Path    string `json:"path"`
 	Percent *int   `json:"percent,omitempty"`
 	Alert   bool   `json:"alert"`
+	// Threshold is the usage percent this reading was checked against:
+	// the configured disk alert percent for the worktree-base disk,
+	// min(configured percent, tempDiskAlertPercent) for the temp
+	// folder's disk.
+	Threshold int `json:"threshold,omitempty"`
+}
+
+// TempFolderInfo is one folder inside the daemon's temp folder,
+// measured on the pass in which that disk was at or above its
+// disk-alert threshold.
+type TempFolderInfo struct {
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`           // approximate: recursive size of the files below it
+	Held     bool   `json:"held"`           // a live process holds it (an open handle, or the cwd)
+	Liveness bool   `json:"liveness_known"` // false: the probe could not tell; treat as held
 }
 
 // CleanupStatus is the read model for the rest of the daemon: REST,
@@ -159,6 +188,13 @@ type CleanupStatus struct {
 	// is not configured or not readable.
 	WorktreeDisk *CleanupDiskCheck `json:"worktree_disk,omitempty"`
 	TempDisk     *CleanupDiskCheck `json:"temp_disk,omitempty"`
+	// BiggestTempFolders is the biggest folders directly inside the
+	// daemon's temp folder — path, approximate size, and whether a live
+	// process holds each one (see TempFolderInfo) — measured on the
+	// last pass in which that disk was at or above its disk-alert
+	// threshold. Nil until that happens, or when the temp folder cannot
+	// be listed.
+	BiggestTempFolders []TempFolderInfo `json:"biggest_temp_folders,omitempty"`
 	// DiskAlert is true while either reading is at or above the
 	// threshold.
 	DiskAlert bool `json:"disk_alert"`
@@ -176,6 +212,7 @@ type cleanupStatusRecorder struct {
 	path     string
 	st       CleanupStatus
 	stat     diskStatser
+	liveness func(path string) (held, known bool) // folder-holds probe: the alert-body folder report is unit-testable
 	now      func() time.Time
 	interval time.Duration // disk-alert rate limit
 }
@@ -208,6 +245,7 @@ func newCleanupStatusRecorder(dir string) *cleanupStatusRecorder {
 	r := &cleanupStatusRecorder{
 		path:     path, // "" = no usable data directory: recorder is inert
 		stat:     realStatser{},
+		liveness: cacheFolderLiveness, // whether a live process holds a folder (cache_folder_liveness.go)
 		now:      func() time.Time { return time.Now().UTC() },
 		interval: defaultCleanupDiskAlertInterval,
 		st: CleanupStatus{
@@ -232,15 +270,23 @@ func (r *cleanupStatusRecorder) Snapshot() CleanupStatus {
 		}
 		st.Worktrees.SkippedByReason = cp
 	}
+	if len(st.BiggestTempFolders) > 0 {
+		st.BiggestTempFolders = append([]TempFolderInfo(nil), st.BiggestTempFolders...)
+	}
 	return st
 }
 
 // DiskCheck runs one statfs per configured path, stores the readings
-// (marking each one whose usage is at or above the threshold), and
+// (marking each one whose usage is at or above its threshold), and
 // returns whether a disk alert is due now — at most one per
-// rate-limit interval even while the disk stays full. It never fails:
-// an unreadable path is reported with a nil percent instead of an
-// error.
+// rate-limit interval even while the disk stays full. The
+// worktree-base disk is checked against the configured threshold; the
+// temp folder's disk against the lower of the configured threshold and
+// the fixed tempDiskAlertPercent (cleanup_status.go). When the
+// temp folder's disk is over its threshold the biggest folders inside
+// the temp folder are measured and named, with whether a live process
+// holds each one. It never fails: an unreadable path is reported
+// with a nil percent instead of an error.
 func (r *cleanupStatusRecorder) DiskCheck(threshold int, worktreeBase, tempDir string) (due bool, st CleanupStatus) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -254,8 +300,23 @@ func (r *cleanupStatusRecorder) DiskCheck(threshold int, worktreeBase, tempDir s
 	if worktreeBase != "" {
 		r.st.WorktreeDisk = r.checkOne(worktreeBase, threshold)
 	}
+	// The fixed temp-folder threshold: alerts at 80% even though the
+	// configured percent (default 85) is higher; a configured percent
+	// below it still wins (alerts earlier).
+	tempThreshold := threshold
+	if tempThreshold > tempDiskAlertPercent {
+		tempThreshold = tempDiskAlertPercent
+	}
 	if tempDir != "" {
-		r.st.TempDisk = r.checkOne(tempDir, threshold)
+		r.st.TempDisk = r.checkOne(tempDir, tempThreshold)
+	}
+	// The folder report exists only while the temp folder's disk is over
+	// its threshold: once the disk recovers, the names are stale, so the
+	// record goes back to nil.
+	if td := r.st.TempDisk; td != nil && td.Alert {
+		r.st.BiggestTempFolders = r.biggestTempFolders(tempDir)
+	} else {
+		r.st.BiggestTempFolders = nil
 	}
 	alert := false
 	for _, c := range []*CleanupDiskCheck{r.st.WorktreeDisk, r.st.TempDisk} {
@@ -274,9 +335,12 @@ func (r *cleanupStatusRecorder) DiskCheck(threshold int, worktreeBase, tempDir s
 	return due, r.st
 }
 
-// checkOne measures one path against the threshold.
+// checkOne measures one path against the threshold, recording which
+// threshold was used on the reading itself (the two disks can have
+// different ones: the temp folder's disk uses the fixed 80% when the
+// configured percent is higher).
 func (r *cleanupStatusRecorder) checkOne(path string, threshold int) *CleanupDiskCheck {
-	c := &CleanupDiskCheck{Path: path}
+	c := &CleanupDiskCheck{Path: path, Threshold: threshold}
 	s, err := r.stat.Stat(path)
 	if err != nil {
 		return c // unreadable: no percent, no alert from this disk
@@ -523,26 +587,122 @@ func (m *Manager) alertCleanupDisk(st CleanupStatus) {
 }
 
 // cleanupDiskAlertBody renders the user-facing disk alert. The
-// reading that crossed the threshold is named; a disk whose reading
-// is unavailable is not blamed.
+// readings that crossed their thresholds are named with the threshold
+// each one was checked against; a disk whose reading is unavailable,
+// or below its threshold, is not blamed. When the temp folder's disk
+// is what crossed, the biggest folders inside the temp folder are
+// named with their approximate size and whether a live process holds
+// them — the operator gets the space and its owner in one read. The
+// wording never promises a removal: the alert raises, the cleanup
+// paths remove.
 func cleanupDiskAlertBody(st CleanupStatus) string {
 	hot := make([]string, 0, 2)
 	for _, c := range []*CleanupDiskCheck{st.WorktreeDisk, st.TempDisk} {
-		if c == nil {
+		if c == nil || c.Percent == nil || !c.Alert {
 			continue
 		}
-		if p := c.Percent; p != nil && *p >= st.DiskAlertPercent {
-			note := "the disk holding the daemon session temp dir "
-			if c == st.WorktreeDisk {
-				note = "the disk holding the Automaton worktree base "
-			}
-			hot = append(hot, fmt.Sprintf("%s%s is at %d%%", note, c.Path, *p))
+		note := "the disk holding the daemon's temp folder "
+		if c == st.WorktreeDisk {
+			note = "the disk holding the Automaton worktree base "
 		}
+		suffix := ""
+		if c.Threshold > 0 {
+			suffix = fmt.Sprintf(" (threshold %d%%)", c.Threshold)
+		}
+		hot = append(hot, fmt.Sprintf("%s%s is at %d%%%s", note, c.Path, *c.Percent, suffix))
 	}
 	if len(hot) == 0 {
-		return fmt.Sprintf("Automaton cleanup: a disk the Automaton worktrees and session temp space live on is at or above the %d%% threshold; free space there.", st.DiskAlertPercent)
+		return "Automaton cleanup: a disk the Automaton worktrees and the daemon's temp folder live on is at or above its low-space threshold; free space there. The alert never removes anything — the cleanup paths do."
 	}
-	return fmt.Sprintf("Automaton cleanup: %s (threshold %d%%). Removing the Automaton worktrees and session temp files that live there would free space.", joinStrings(hot, "; and "), st.DiskAlertPercent)
+	body := "Automaton cleanup: " + joinStrings(hot, "; and ") + ". Free space on that disk; the alert never removes anything — the Automaton cleanup paths (worktrees, session temp files) are the ones that remove."
+	if st.TempDisk != nil && st.TempDisk.Alert && len(st.BiggestTempFolders) > 0 {
+		body += " The biggest folders inside the temp folder right now:"
+		for _, f := range st.BiggestTempFolders {
+			body += fmt.Sprintf(" %s — about %s — %s;", f.Path, humanSize(f.Size), folderLivenessText(f))
+		}
+	}
+	return body
+}
+
+// folderLivenessText says, for one named temp-folder entry, whether a
+// live process holds it. It reuses the cache-folder liveness probe
+// result: held is a running process with an open handle (or cwd) into
+// the folder; not held is the probe checked and found none; unknown is
+// the probe could not check, and the operator is told to treat it as
+// held.
+func folderLivenessText(f TempFolderInfo) string {
+	if f.Liveness {
+		if f.Held {
+			return "held by a running process (an open handle into it)"
+		}
+		return "no running process holds it"
+	}
+	return "could not tell whether a running process holds it — treat it as held"
+}
+
+// biggestTempFolders is the temp-folder folder report the disk alert
+// names: the top tempFolderReportTop folders directly inside the temp
+// folder, biggest first, each with its approximate recursive size and
+// whether a live process holds it (the cache-folder liveness probe,
+// injectable in tests). An unreadable entry simply counts as zero; a
+// folder the probe cannot decide is reported as unknown, and the alert
+// wording tells the operator to treat it as held.
+func (r *cleanupStatusRecorder) biggestTempFolders(dir string) []TempFolderInfo {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil // not listable: the alert still fires, without the folder names
+	}
+	type folderSize struct {
+		path string
+		size int64
+	}
+	var folders []folderSize
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue // the alert names folders, not stray files
+		}
+		p := filepath.Join(dir, e.Name())
+		folders = append(folders, folderSize{path: p, size: directorySize(p)})
+	}
+	sort.Slice(folders, func(i, j int) bool {
+		if folders[i].size != folders[j].size {
+			return folders[i].size > folders[j].size
+		}
+		return folders[i].path < folders[j].path
+	})
+	if len(folders) > tempFolderReportTop {
+		folders = folders[:tempFolderReportTop]
+	}
+	out := make([]TempFolderInfo, 0, len(folders))
+	probe := r.liveness
+	if probe == nil {
+		probe = cacheFolderLiveness
+	}
+	for _, f := range folders {
+		held, known := probe(f.path)
+		out = append(out, TempFolderInfo{Path: f.path, Size: f.size, Held: held, Liveness: known})
+	}
+	return out
+}
+
+// directorySize sums the sizes of the regular files below path
+// (symlinks are not followed, so a link loop cannot double-count). It
+// is an approximate size: the alert says "about N", and an unreadable
+// entry contributes nothing rather than failing the report.
+func directorySize(path string) int64 {
+	var total int64
+	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d == nil {
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if info, ierr := d.Info(); ierr == nil {
+				total += info.Size()
+			}
+		}
+		return nil
+	})
+	return total
 }
 
 func joinStrings(items []string, sep string) string {
