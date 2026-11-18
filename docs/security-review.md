@@ -121,6 +121,14 @@ CVE-2026-93990, which was never actually in `.trivyignore` — a stale
 entry this regeneration drops). Do not hand-edit the table below; edit
 the registry and run `python3 scripts/gen_trivyignore.py`.
 
+**Operator review (agent-base staging scan):** the image-refresh blocking
+scan of the agent-base staging image failed on findings that the Dockerfile
+upgrade layer or the registry did not yet cover; the fix lives in
+`docker/dockerfiles/Dockerfile.agent-base`, `security/accepted-risks.yml` and
+`.trivyignore`. Confirm the next refresh run promotes agent-base and re-check
+the expiry of every entry added for it. See
+[container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
+
 **Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
 was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
 which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
