@@ -739,6 +739,32 @@ whose branch read-only git cannot prove merged on the default branch gets a
 
 All refusals say why: a missing actor or reason is refused with the requirement named; a record that is already `landed`, or already `kept`/`dropped`, is refused — the record is never rewritten once settled.
 
+## What a finished Automaton leaves behind (terminal release)
+
+When an Automaton is **merged, cancelled or archived**, the daemon runs one residue release for it straight away (the periodic cleanup pass runs the same release later for anything held back). It removes the Automaton's work tree, each of its task work trees and its local branch, as soon as nothing unmerged or hand-written would be lost. Removal is never forced: generated files are deleted first, then plain `git worktree remove` and `git branch -d` run, so git itself refuses anything the checks missed.
+
+An entry the release leaves in place carries one hold reason:
+
+| Hold reason | Meaning |
+|---|---|
+| `held_unmerged` | Commits on the branch are not all on the base branch (or that could not be established). A task branch not yet on the Automaton branch or the base branch holds its task work tree the same way. |
+| `held_hand_written` | The work tree has uncommitted files that are neither the daemon's own sections nor generated files. |
+| `held_in_use` | A live session or lease is using the work tree. |
+| `held_primary` | The entry is the main checkout; it is never touched. |
+| `held_error` | Git refused the removal; the refusal is recorded. |
+
+**Generated files do not hold a work tree.** The final gate report, the hash file beside it, the parity issue draft and the drafts folder are written by the daemon, so when they are untracked they no longer count as uncommitted work. The exemption is narrow: a modified or staged file, and any other untracked file, still holds the tree.
+
+**Merge trial folders.** A trial merge builds a detached worktree in a `trial-merge-*` folder under the data directory's `merge-shadow-scratch` folder. The trial removes it when it ends; a daemon that stopped mid-trial cannot. The daemon therefore sweeps every holder folder once at start, unregistering its worktree from the owning repository first. Only those holder folders are touched.
+
+**Task sub-branches** that are already contained are removed by the branch reaper (backup ref first), described [below](#the-task-sub-branch-reaper-backup-first-then-remove).
+
+### Still needs your review (terminal release)
+
+- **Remote branches.** The code behind this change removes local branches, work trees and trial folders. It does not push a delete for a remote branch, so a branch already pushed to the remote stays there until you remove it. Confirm that is the behavior you want before relying on the title's "remote branches".
+- **The daemon-start sweep treats every holder as stale.** Run only one daemon against a data directory; a second daemon's running trial would lose its folder.
+- **Hand-written holds stay until you act.** `held_unmerged` and `held_hand_written` entries are not retried into removal; review them in the status and commit, merge or discard by hand.
+
 ## The task sub-branch reaper (backup first, then remove)
 
 A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).

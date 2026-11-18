@@ -51,3 +51,7 @@ saved command (`!name` / `/name`), an approve/reject word, or an option
 id or label of the session's open question; other text is typed into the
 session as before. See
 [howto/alerts-and-notifications.md](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
+## Terminal release
+
+The residue release the daemon runs when an Automaton is merged, cancelled or archived: it removes the Automaton's work tree, task work trees and local branch unless a hold reason (`held_unmerged`, `held_hand_written`, `held_in_use`, `held_primary`, `held_error`) applies, and sweeps stale merge trial folders at daemon start. Remote branches are not deleted. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md#what-a-finished-automaton-leaves-behind-terminal-release).
