@@ -2283,3 +2283,12 @@ memory_recall "recent work this codebase"
 - Build, test, and release procedures
 - Known patterns and gotchas to avoid
 - Directory structure and key files
+## Session Checkpoints
+
+## 2026-11-09 06:30 — COMPLETED — supervisor-watch: required test names + coordinator-now injection
+- Feature (priority_stall + backlog findings) already committed (`f82b6fa18`); this session audited it and closed two gaps.
+- **Gap 1 — `time.Now()` in the pass:** `supervisorWatchRawFindings` now threads the pass's `now` (coordinator-injectable `c.now`) — signature `supervisorWatchRawFindings(now time.Time, cfg, prds)`; `supervisorWatchPoll` passes its `now`; 10 tmux-baseline test call sites updated.
+- **Gap 2 — required test names:** `TestSupervisorWorkPriorityStall` / `TestSupervisorWorkBacklogOrder` (wrappers over the existing `TestSupervisorWatchWork*` bodies) and a real `TestSupervisorWatchPassPriorityStall` (record → shadow would-alert → stale-resolve), per the task's test-name requirement.
+- **Pass-test clock subtlety:** the finding store stamps `FirstSeenAt` with its own wall clock, so the fake pass clock is anchored on `base := time.Now()` and runs 1–32 minutes ahead.
+- Gates: `go build ./...` clean, `go vet` clean, `go test ./internal/autonomous/` all pass (163s), three required-name tests pass by name, `python3 -m py_compile scripts/supervisor-watch.py` ok.
+- Files changed (+140/−15): `supervisor_watch_pass.go`, `supervisor_watch_pass_test.go`, `supervisor_watch_tmux_baseline_test.go`, `supervisor_watch_work_test.go`.
