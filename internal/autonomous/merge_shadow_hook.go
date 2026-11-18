@@ -85,6 +85,9 @@ func (m *Manager) startMergeShadow(prd *PRD) <-chan struct{} {
 		defer close(done)
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		// The trial removes its own worktree; this runs on every exit, errors
+		// included, and drops any registration the trial left dangling.
+		defer pruneTrialRegistrations(in.RepoPath)
 		plan, err := mergeShadowRun(ctx, in)
 		if err != nil {
 			log.Printf("[autonomous] merge shadow: automaton %s: %v", prd.ID, err)
@@ -175,4 +178,16 @@ func (m *Manager) mergeShadowTaskOutput(sessionID string) string {
 		return ""
 	}
 	return out
+}
+
+// pruneTrialRegistrations drops worktree registrations of the repository whose
+// folder is gone. It never removes a worktree that still exists, so a trial of
+// another Automaton running in the same repository is not disturbed.
+func pruneTrialRegistrations(repo string) {
+	if repo == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	_, _ = NewMergeGitRunner().Run(ctx, repo, "worktree", "prune")
 }
