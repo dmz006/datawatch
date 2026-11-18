@@ -66,3 +66,12 @@ func sessionMCPServers(projectDir string) map[string]channel.MCPServerSpec {
 	}
 	return cfg.MCPServers
 }
+
+// startWorkerProfileValue returns the profile for StartOptions.WorkerProfile
+// (the zero value when none applies).
+func startWorkerProfileValue(p *workerprofile.WorkerProfile) workerprofile.WorkerProfile {
+	if p == nil {
+		return workerprofile.WorkerProfile{}
+	}
+	return *p
+}

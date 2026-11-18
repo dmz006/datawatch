@@ -387,3 +387,17 @@ func containsTag(tags []string, want string) bool {
 	}
 	return false
 }
+
+func TestSessionNewStartBodyRoleWorkerProfileName(t *testing.T) {
+	body, err := sessionNewStartBodyRole("t", "", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor", " lean ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"worker_profile_name":"lean"`) || !strings.Contains(string(body), `"launch_role":"supervisor"`) {
+		t.Fatalf("body missing fields: %s", body)
+	}
+	plain, _ := sessionNewStartBodyRole("t", "", "", "", "", "", false, "", false, false, nil, false, nil, "")
+	if strings.Contains(string(plain), "worker_profile_name") {
+		t.Fatalf("plain body carries profile name: %s", plain)
+	}
+}
