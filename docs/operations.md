@@ -1087,6 +1087,22 @@ When the completion review has blocked an Automaton, or holds it in `needs_revie
 
 The head compared here is the same real working-tree head the review uses, so a fix committed by hand, not only by a task attempt, lets the rejudge through. This refusal applies to a held Automaton. A plain `blocked` Automaton is not refused on an unchanged head: with the judge verdict cache on, the stored verdict is replayed when the rules text is also unchanged and the verdict recorded a fingerprint, and the judge runs fresh otherwise and whenever the cache is off.
 
+### Verification-script preflight
+
+Four text-only checks for planner-written verification and final-gate scripts
+(shell syntax, helper shell mismatch, piped `grep -q` under `pipefail`, and a
+non-cumulative allowed-file list) run on every decompose-lint pass and when a
+task edit sets a verification script. Every finding is `block`: in `enforce`
+mode it sends the plan back to the planner; in `shadow` it is recorded; with
+decompose lint `off` the preflight still runs once and records what it finds.
+An edit's findings are reported, never enforced. There is no configuration key
+for the preflight and the dry run does not include it. A separate `warn` rule,
+`fixed_calendar_date_in_test`, flags a test-writing task whose spec holds a
+fixed `YYYY-MM-DD` date. Rule ids and fixes:
+[howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+**Operator review:** the preflight severity is fixed at `block` with no
+off switch; confirm that suits your planners.
+
 ### Read-only task without a verification script or report path
 
 A read-only task declares that it changes no files, so the only output it

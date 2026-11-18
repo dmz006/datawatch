@@ -53,3 +53,16 @@ saved command (`!name` / `/name`), an approve/reject word, or an option
 id or label of the session's open question; other text is typed into the
 session as before. See
 [howto/alerts-and-notifications.md](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
+## Verification-script preflight
+
+Text-only checks on a verification or final-gate script that catch causes of a
+failed first run unrelated to the task: a shell syntax error
+(`verify_script_syntax`), a helper called with a different shell than its
+shebang (`verify_script_shell_mismatch`), a piped `grep -q` under `pipefail`
+(`verify_script_pipefail_grep_q`), and an allowed-file list that is not
+cumulative over the whole plan (`verify_script_allowed_files`). Runs on every
+decompose-lint pass (recorded even in mode `off`; drives the retry in
+`enforce`) and when a task edit sets a verification script; every finding is
+`block`. The dry run does not run it. See
+[howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
