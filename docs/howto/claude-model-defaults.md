@@ -72,6 +72,19 @@ the launch it applies to:
   own use, name the model on the LLM you select (LLM registry rows carry a
   model and a model list; see [LLM registry](llm-registry.md)).
 
+| Name a model | Surface |
+|---|---|
+| CLI | `datawatch session new --model <name>` (and `--effort quick\|normal\|thorough`) |
+| MCP | the `start_session` `model` argument (with `effort` and `name`) |
+| Chat | `new: model=<name>: <task>` |
+| PWA | the model field of the New Session form — name a model there |
+| LLM row | `datawatch llm models add <llm> --model <name>` |
+
+To get the `sonnet` / a hand-picked model on a direct start, name it on any
+surface above. If you name nothing, the start tries the LLM row's model, then
+the daemon's global planning model, and only then refuses — the autonomous
+paths end in the daemon `sonnet` default instead.
+
 Nothing in the daemon, a plan, or a task type silently substitutes a
 different model for yours: the session record holds exactly the model the
 CLI was passed (see [verification](#verification-which-model-actually-ran)).
@@ -108,8 +121,16 @@ created — with a plain reason that tells you exactly why:
 ```
 claude-code launch refused: no explicit model set — datawatch will not
 fall back to the account default or upgrade the model on its own; name a
-model (e.g. "sonnet" or "haiku") and try again
+model (e.g. "sonnet" or "haiku") in any of these places and try again: the
+`datawatch session new --model <name>` flag; the `model` field of POST
+/api/sessions/start; the MCP `start_session` `model` argument; the chat
+`new: model=<name>` token; or the LLM row via
+`datawatch llm models add <llm> --model <name>`
 ```
+
+Before refusing, a direct start falls back through the request's model, then
+the LLM row's model, then the daemon's global planning model (when its backend
+is `claude-code`); the refusal fires only when all are empty.
 
 **What it means.** Every model-resolution layer for that launch is empty: no
 LLM row, task/story/PRD pair, automation or global default, or explicit
@@ -118,7 +139,7 @@ declined to use your account default in place of one).
 
 **Next steps.**
 
-1. Name a model on the surface closest to the launch — the LLM row
+1. Name a model (or set one on the LLM row so every start using it resolves one) on the surface closest to the launch — the LLM row
    (as above), the task or PRD LLM pair, or the automation/global default.
 2. Re-run the start; the session record will then show the model you named,
    which is exactly what the CLI passed to Claude Code.

@@ -421,7 +421,7 @@ func TestRunSessionNewSendsWorkerProfileName(t *testing.T) {
 	}
 	cfg := &config.Config{}
 	cfg.Server.Port = port
-	if err := runSessionNew(cfg, "t", "", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor", "lean"); err != nil {
+	if err := runSessionNew(cfg, "t", "", "", "", "", "", false, "", false, false, nil, false, nil, "supervisor", "lean", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if got["worker_profile_name"] != "lean" || got["launch_role"] != "supervisor" {

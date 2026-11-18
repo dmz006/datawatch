@@ -364,6 +364,9 @@ datawatch session new "build a REST API in Go"
 # Start with a name, explicit directory, and backend
 datawatch session new --name "api work" --dir ~/projects/api --backend aider "build a REST API"
 
+# Name the model (and optionally effort) for a claude-code session
+datawatch session new --model sonnet --effort normal "build a REST API"
+
 # Show recent output from a session
 datawatch session status a3f2
 
@@ -396,7 +399,7 @@ The `--config` flag works with all session subcommands:
 datawatch session list --config /path/to/config.yaml
 ```
 
-**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
+**A claude-code start must name a model.** Under the explicit-model policy the daemon will not launch a `claude-code` session with no model set — it refuses before any tracker, session record or tmux pane is created, and never runs the session under the operator's account default (which on some installs is a premium, Opus-class model). A direct start with no model of its own resolves one first: the request's model, then the LLM row's model, then the global autonomous planning model when its backend is `claude-code`; the refusal fires only when all are empty, and its message lists every place a model can be named. Start with an LLM entry that names the model (`--llm`), for example a registry entry whose backend is `claude-code` and whose model is `sonnet` or `haiku`; a model named this way is the one the session record shows and the one passed to the CLI as `--model`. Other backends are unaffected. See [howto/explicit-model-policy.md](howto/explicit-model-policy.md).
 
 ### Command Library
 
@@ -4072,7 +4075,8 @@ silent upgrade. When no launch layer names a model, the daemon names one:
 An Opus-class model runs only when the operator explicitly names one at the
 session, task, story, PRD, automation, or config-line level (see [Autonomous
 PRD LLM Configuration](#autonomous-prd-llm-configuration) for the PRD and
-planner pairs). A Claude Code launch whose model is still empty after every
+planner pairs). A direct Claude Code start first falls back from the request's
+model to the LLM row's model, then the global planning model. A launch whose model is still empty after every
 layer is refused up front — before any tracker, session record, or tmux pane
 is created — with the reason `claude-code launch refused: no explicit model
 set`; name a model (e.g. `sonnet` or `haiku`) at the closest layer and try

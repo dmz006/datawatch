@@ -5588,6 +5588,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			opts.PermissionMode = cl.PermissionMode
 		}
 	}
+	// Direct claude-code model chain: body model, then the resolved LLM row's
+	// model, then the daemon's global autonomous planning/execution pair.
+	// All empty leaves opts.Model empty so the manager refuses the launch.
+	if opts.Model == "" {
+		opts.Model = s.directClaudeModel(resolvedLLMRef, opts.Backend)
+	}
 	// Wire LLM registry session-backend settings into opts so the session
 	// manager uses per-named-LLM values instead of global cfg defaults.
 	if s.inferenceReg != nil {
@@ -16122,4 +16128,44 @@ func planRecordsSurface(p config.AutonomousPlanRecordsConfig) map[string]interfa
 		"write_through":          p.EffectiveWriteThrough(),
 		"import_conflict_policy": p.EffectiveImportConflictPolicy(),
 	}
+}
+
+// directClaudeModel resolves a model for a direct (interactive) claude-code
+// start that named none: the LLM row's model (Model, else the first non-empty
+// Models entry), then the daemon's global autonomous planning model when its
+// backend is claude-code. It returns "" for any other kind or when every
+// layer is empty, so the manager's refusal still fires.
+func (s *Server) directClaudeModel(llmRef, backend string) string {
+	name := llmRef
+	if name == "" {
+		name = backend
+	}
+	var entry *inference.LLM
+	if s.inferenceReg != nil && name != "" {
+		if e, err := s.inferenceReg.Get(name); err == nil {
+			entry = e
+		}
+	}
+	isClaudeCode := backend == string(inference.KindClaudeCode) ||
+		(entry != nil && entry.Kind == inference.KindClaudeCode)
+	if !isClaudeCode {
+		return ""
+	}
+	if entry != nil && entry.Kind == inference.KindClaudeCode {
+		if entry.Model != "" {
+			return entry.Model
+		}
+		for _, m := range entry.Models {
+			if m.Model != "" {
+				return m.Model
+			}
+		}
+	}
+	if s.cfg != nil {
+		a := s.cfg.Autonomous
+		if a.PlanningModel != "" && (a.PlanningBackend == "" || a.PlanningBackend == string(inference.KindClaudeCode)) {
+			return a.PlanningModel
+		}
+	}
+	return ""
 }

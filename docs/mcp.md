@@ -1337,13 +1337,17 @@ Start a new AI coding session.
 | `llm` | string | No | LLM registry name to use for this session (e.g. `"ollama"`, `"claude"`). Overrides daemon default. |
 | `compute_node` | string | No | ComputeNode registry name. Requires `llm` to be set. |
 | `name` | string | No | Human-readable session name (used by `send_input` name resolution). |
+| `model` | string | No | Model for a `claude-code` session (alias such as `sonnet` or a full name). Omit it and the daemon uses the LLM row's model, then the global planning model; if all are empty the start is refused under the [explicit-model policy](howto/explicit-model-policy.md). |
+| `effort` | string | No | Session effort: `quick`, `normal` or `thorough`. Omit for the default. |
 | `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
 | `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
 | `image_paths` | string[] | No | Local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and prepended to the task as `[image: ...]`. Requires `vision.enabled: true`. |
 
-**Example response:**
+**Example call and response:**
 ```
+start_session(task="fix the flaky test", llm="claude-code", model="sonnet", effort="normal", name="flaky-fix")
+
 Session started.
 ID:      a3f2
 Task:    write unit tests for the auth package
@@ -1686,7 +1690,7 @@ Sent to parent session pp01.
 **Usage pattern for sub-agents:**
 ```
 # At spawn time, parent passes its own session ID:
-start_session(task="...", caller_session_id="host-abc123")
+start_session(task="...", caller_session_id="host-abc123", model="sonnet")
 
 # When the sub-agent finishes, it calls:
 reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")
