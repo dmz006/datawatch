@@ -4,8 +4,9 @@
  * tags: surface:pwa feature:load-performance feature:offline
  *
  * With the PWA loaded the browser goes offline. Opening Sessions, Automata and
- * Automation while offline must show cached content or the failed state with
- * Retry — never a blank view. Back online, Retry (or the next poll) must bring
+ * Automation while offline must show cached content (an empty list warmed
+ * online is cached content too) or the failed state with Retry — never a
+ * blank view. Back online, Retry (or the next poll) must bring
  * each tab back to content/empty with no failed banner.
  */
 import { screenshot } from './lib.mjs';
@@ -33,7 +34,7 @@ await runPerfStory(async (page) => {
       const samples = await sampleStates(p, 2500);
       assertNeverBlank(`offline/${tab.name}`, samples);
       const last = samples[samples.length - 1].s;
-      check(['content', 'failed', 'loading'].includes(last), `offline/${tab.name}: unexpected state ${last}`);
+      check(['content', 'empty', 'failed', 'loading'].includes(last), `offline/${tab.name}: unexpected state ${last}`);
       report[tab.name] = { offline: last };
       await screenshot(p, `${tab.name}-offline`);
     }

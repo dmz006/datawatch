@@ -4912,10 +4912,10 @@ else
   LOAD_OUT_FILE="$TMPD/load-out.$$"
   LOAD_TO_BIN="$(command -v timeout 2>/dev/null || true)"
   if [[ -n "$LOAD_TO_BIN" ]]; then
-    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TLS_CA="$TEST_DATA_DIR/tls/server/cert.pem" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
       "$LOAD_TO_BIN" "${SMOKE_LOAD_TIMEOUT:-900}" node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
   else
-    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TLS_CA="$TEST_DATA_DIR/tls/server/cert.pem" TEST_TOKEN="$TOK" EVIDENCE_DIR="$LOAD_EVD" \
       node "$PWA_DIR/run-all.mjs" --group load >"$LOAD_OUT_FILE" 2>&1
   fi
   LOAD_RC=$?

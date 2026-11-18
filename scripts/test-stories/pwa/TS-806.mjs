@@ -18,8 +18,8 @@ import {
   runPerfStory, openTab, coldPage, openPWA, failEndpoint, delayEndpoint, check, saveJson, BUDGET,
 } from './perf-lib.mjs';
 
-// Automation is the first sub-tab of the Automata tab: open the tab, select the sub-tab.
-const AUTOMATION_TAB = { view: 'autonomous', subtab: 'automation' };
+// The capacity card is on the Resources sub-tab of the Automation sub-tab of Automata.
+const AUTOMATION_TAB = { view: 'autonomous', subtab: 'automation', inner: 'resources' };
 const CARD = '#automationCapacityCard';
 const POLL_MS = 5000; // pollMs of the automation_capacity loader
 
