@@ -18258,7 +18258,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
       <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
-      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escJsAttr(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
     </tr>
   `).join('');
   overlay.innerHTML = `

@@ -160,3 +160,95 @@ func TestGateVerifierPrestart_EmptyIsNA(t *testing.T) {
 		t.Fatalf("empty script blocked: err=%v status=%s", err, task.Status)
 	}
 }
+
+func TestSpecInstructsCreateScript(t *testing.T) {
+	script := ".datawatch/verify/task1.sh"
+	cases := []struct {
+		name, spec string
+		want       bool
+	}{
+		{"write it to", "Write the checker first.\nWrite it to .datawatch/verify/task1.sh, then run it.", true},
+		{"chmod +x same path", "Author the guardrail, then run:\nchmod +x .datawatch/verify/task1.sh", true},
+		{"quoted path", "Write it to `.datawatch/verify/task1.sh`.", true},
+		{"creating the script at", "Create the script at .datawatch/verify/task1.sh and make it pass.", true},
+		{"base name only", "Then chmod +x task1.sh (already under .datawatch/verify/)", true},
+		{"no creation verb", "The script lives at .datawatch/verify/task1.sh; run it with bash.", false},
+		{"creates a different path", "Write it to .datawatch/verify/other.sh", false},
+		{"verbatim instruction is not creation", "Write it VERBATIM to .datawatch/verify/task1.sh", false},
+		{"empty spec", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := specInstructsCreateScript(c.spec, script); got != c.want {
+				t.Fatalf("specInstructsCreateScript(%q, %q) = %v, want %v", c.spec, script, got, c.want)
+			}
+		})
+	}
+	t.Run("empty script", func(t *testing.T) {
+		if got := specInstructsCreateScript("does not apply", ""); got != false {
+			t.Fatalf("expected false for empty script, got %v", got)
+		}
+	})
+}
+
+func TestGateVerifierPrestart_OnAcceptsScriptTheTaskCreates(t *testing.T) {
+	prestartSetMode(t, config.ChecksModeOn)
+	script := ".datawatch/verify/task1.sh"
+	m, prd, task, dir := prestartFixture(t, script)
+	task.Spec = "Write the guardrail first.\nWrite it to " + script +
+		" and chmod +x " + script + ", then run it with `bash " + script + "`."
+	if err := m.gateVerifierPrestart(prd, task, dir); err != nil || task.Status == TaskBlocked {
+		t.Fatalf("on mode must accept a script the task itself creates: err=%v status=%s", err, task.Status)
+	}
+	found := false
+	for _, d := range prd.Decisions {
+		if d.Kind == "verifier_prestart_task_created" {
+			found = true
+		}
+		if d.Kind == "verifier_prestart_shadow" {
+			t.Fatalf("on mode recorded a shadow finding: %+v", prd.Decisions)
+		}
+	}
+	if !found {
+		t.Fatalf("no task-created decision recorded: %+v", prd.Decisions)
+	}
+	if s, ok := m.store.SnapshotPRD(prd.ID); ok && s.Triage != nil && len(s.Triage.Notes) != 0 {
+		t.Fatalf("task-created acceptance must not record triage: %+v", s.Triage.Notes)
+	}
+}
+
+func TestGateVerifierPrestart_OnBlocksMissingWithoutCreateInstruction(t *testing.T) {
+	prestartSetMode(t, config.ChecksModeOn)
+	script := ".datawatch/verify/task1.sh"
+	m, prd, task, dir := prestartFixture(t, script)
+	// Mentions the path but never tells the worker to create it.
+	task.Spec = "The guardrail lives at " + script + "; run it with bash."
+	if err := m.gateVerifierPrestart(prd, task, dir); err == nil || task.Status != TaskBlocked {
+		t.Fatalf("a spec that only mentions the script must still block: err=%v status=%s", err, task.Status)
+	}
+}
+
+func TestGateVerifierPrestart_OnBlocksMissingWhenSpecCreatesOtherPath(t *testing.T) {
+	prestartSetMode(t, config.ChecksModeOn)
+	script := ".datawatch/verify/task1.sh"
+	m, prd, task, dir := prestartFixture(t, script)
+	task.Spec = "Write the guardrail to .datawatch/verify/other.sh and run it."
+	if err := m.gateVerifierPrestart(prd, task, dir); err == nil || task.Status != TaskBlocked {
+		t.Fatalf("creating a different path must not rescue the missing script: err=%v status=%s", err, task.Status)
+	}
+}
+
+func TestGateVerifierPrestart_ShadowAcceptsScriptTheTaskCreates(t *testing.T) {
+	prestartSetMode(t, config.ChecksModeShadow)
+	script := ".datawatch/verify/task1.sh"
+	m, prd, task, dir := prestartFixture(t, script)
+	task.Spec = "Write it to " + script + ", then chmod +x " + script + "."
+	if err := m.gateVerifierPrestart(prd, task, dir); err != nil || task.Status == TaskBlocked {
+		t.Fatalf("shadow blocked a task-created script: err=%v status=%s", err, task.Status)
+	}
+	for _, d := range prd.Decisions {
+		if d.Kind == "verifier_prestart_shadow" {
+			t.Fatalf("task-created acceptance must not be recorded as a shadow finding: %+v", prd.Decisions)
+		}
+	}
+}

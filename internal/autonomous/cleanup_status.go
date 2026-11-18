@@ -841,6 +841,14 @@ func FixCleanupPermissions(base string, paths []string) (int, error) {
 			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
 			continue
 		}
+		// Inline prefix check on the cleaned candidate itself, before any
+		// filesystem call: under the lexical base or the resolved base plus
+		// the separator, so a sibling named like the base is refused.
+		if !strings.HasPrefix(p, cleanBase+string(filepath.Separator)) &&
+			!strings.HasPrefix(p, realBase+string(filepath.Separator)) {
+			errs = append(errs, fmt.Sprintf("%s: outside the worktree base", orig))
+			continue
+		}
 		if _, err := os.Lstat(p); err != nil {
 			continue // already gone: nothing to fix
 		}

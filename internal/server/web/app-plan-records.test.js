@@ -618,10 +618,37 @@ test('the settings rows link to the plan records how-to through the howto-link m
 
 // ── locales ──────────────────────────────────────────────────────────────────
 
+// hasTrackerCode is the plain-text form of the BL/GH/B code check: a
+// word-bounded BL, GH or B followed by two or more digits.
+function hasTrackerCode(v) {
+  const s = String(v);
+  const word = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_';
+  for (const p of ['BL', 'GH', 'B']) {
+    for (let i = s.indexOf(p); i > -1; i = s.indexOf(p, i + 1)) {
+      if (i > 0 && word(s[i - 1])) continue;
+      let j = i + p.length;
+      let digits = 0;
+      while (j < s.length && s[j] >= '0' && s[j] <= '9') { digits++; j++; }
+      if (digits >= 2 && !(j < s.length && word(s[j]))) return true;
+    }
+  }
+  return false;
+}
+
 test('every plan_records_ key app.js uses exists in all five bundles, with no tracker ids', () => {
   const src = fs.readFileSync(APP_JS, 'utf8');
   const used = new Set();
-  for (const m of src.matchAll(/\bt\('((?:plan_records_|settings_automata_plan_records_)[a-z_]+)'/g)) used.add(m[1]);
+  for (const prefix of ["t('plan_records_", "t('settings_automata_plan_records_"]) {
+    for (let from = 0; ; ) {
+      const i = src.indexOf(prefix, from);
+      if (i < 0) break;
+      const keyStart = i + 3; // just after t('
+      const end = src.indexOf("'", keyStart);
+      if (end < 0) break;
+      used.add(src.slice(keyStart, end));
+      from = keyStart;
+    }
+  }
   for (const k of ['plan_records_state_open', 'plan_records_import_reason_title', 'plan_records_import_action_suffix']) used.add(k);
   assert.ok(used.size > 40, 'the section uses many strings: ' + used.size);
   for (const lang of LANGS) {
@@ -629,7 +656,7 @@ test('every plan_records_ key app.js uses exists in all five bundles, with no tr
     for (const k of used) assert.ok(typeof b[k] === 'string' && b[k] !== '', `${lang} is missing ${k}`);
     for (const [k, v] of Object.entries(b)) {
       if (!/^(plan_records_|settings_automata_plan_records_)/.test(k)) continue;
-      assert.ok(!/\b(BL|GH|B)\d{2,}\b/.test(v), `${lang} ${k} carries a tracker id`);
+      assert.ok(!hasTrackerCode(v), `${lang} ${k} carries a tracker id`);
       assert.ok(!/\bPRD\b/.test(v), `${lang} ${k} says PRD instead of Automaton`);
     }
   }
