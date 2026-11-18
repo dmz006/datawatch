@@ -5599,6 +5599,10 @@ before approving any task to check it.
 
 ---
 
+## Finished Automaton residue (terminal release)
+
+When an Automaton is merged, cancelled or archived the daemon removes its work tree, task work trees and local branch unless a hold reason applies (`held_unmerged`, `held_hand_written`, `held_in_use`, `held_primary`, `held_error`); removal is never forced. Generated files (final gate report, hash file, parity draft, drafts folder) do not hold a tree. At daemon start the daemon also sweeps stale `trial-merge-*` folders under `merge-shadow-scratch` in the data directory, so run one daemon per data directory. Remote branches are not deleted by this release; remove them by hand. Details and the review list: [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md#what-a-finished-automaton-leaves-behind-terminal-release).
+
 ## PRD Git-Worktree Isolation + Completion PR (BL407, all phases)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
