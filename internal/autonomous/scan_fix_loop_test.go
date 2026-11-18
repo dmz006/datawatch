@@ -363,3 +363,63 @@ func runeCount(s string) int {
 	}
 	return n
 }
+
+// TestRunScanFixLoopFixedOnFirstRetry — a finding that gets fixed: exactly one
+// corrective task is opened, the re-scan passes, the loop finishes as
+// "fixed" without holding the parent — so the Automaton proceeds as usual.
+func TestRunScanFixLoopFixedOnFirstRetry(t *testing.T) {
+	bad := scan.Finding{RuleID: "r1", Severity: scan.SeverityError, Message: "broken"}
+	f := &fakeFixLoop{
+		t:     t,
+		scans: []*scan.Result{fakeScanResult(bad), fakeScanResult()},
+	}
+	rep, err := RunScanFixLoop(f.deps(), "parent-1", 3)
+	if err != nil {
+		t.Fatalf("loop error: %v", err)
+	}
+	if rep.Outcome != FixLoopOutcomeFixed {
+		t.Fatalf("Outcome = %q, want %q", rep.Outcome, FixLoopOutcomeFixed)
+	}
+	if len(rep.Attempts) != 1 {
+		t.Fatalf("Attempts = %d, want exactly 1", len(rep.Attempts))
+	}
+	if len(f.fixed) != 1 {
+		t.Fatalf("fix tasks run = %d, want exactly 1", len(f.fixed))
+	}
+	if !strings.HasPrefix(f.fixed[0], "child-A") {
+		t.Fatalf("run step ran %v, want the first corrective task (child-A*)", f.fixed)
+	}
+	if len(f.held) != 0 {
+		t.Fatalf("parent was held %d time(s); a fixed finding must not hold the Automaton", len(f.held))
+	}
+}
+
+// TestManagerScanConfigCarriesFixLoopKeys — the caller decides between a plain
+// scan and the loop by reading scan.Config (the /scan/fixloop route in
+// internal/server checks fix_loop_enabled): the master switch and the retry
+// budget must both survive the SetScanConfig/ScanConfig round-trip, and the
+// reader must return a copy so callers can't rewrite the manager's config.
+func TestManagerScanConfigCarriesFixLoopKeys(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(dir, DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	sc := m.ScanConfig()
+	sc.FixLoopEnabled = true
+	sc.FixLoopMaxRetries = 5
+	m.SetScanConfig(sc)
+
+	got := m.ScanConfig()
+	if !got.FixLoopEnabled || got.FixLoopMaxRetries != 5 {
+		t.Fatalf("ScanConfig() = enabled=%v retries=%d, want enabled=true retries=5", got.FixLoopEnabled, got.FixLoopMaxRetries)
+	}
+
+	// Copy semantics: the reader gets its own copy.
+	got.FixLoopEnabled = false
+	got.FixLoopMaxRetries = 0
+	if !m.ScanConfig().FixLoopEnabled || m.ScanConfig().FixLoopMaxRetries != 5 {
+		t.Fatalf("mutating the returned config rewrote the manager's config")
+	}
+}
