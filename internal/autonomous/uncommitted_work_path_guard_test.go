@@ -70,6 +70,10 @@ func TestClassifyTaskCommitPathsPathGuardTable(t *testing.T) {
 		wantSkip   bool
 	}{
 		{"traversal", "../escape.txt", true, false},
+		{"deep traversal", "a/../../x", true, false},
+		{"absolute", filepath.Join(os.TempDir(), "nope-abs"), true, false},
+		{"empty", "", true, false},
+		{"dot", ".", true, false},
 		{"nul byte", "a\x00b", true, false},
 		{"in base", "inside.txt", true, false},
 		{"in base missing", "nowhere.txt", false, true},
@@ -102,6 +106,10 @@ func TestIsDaemonIgnoreChangePathGuardTable(t *testing.T) {
 		want      bool
 	}{
 		{"traversal", "../.gitignore", false},
+		{"deep traversal", "a/../../.gitignore", false},
+		{"absolute", filepath.Join(dir, ".gitignore"), false},
+		{"empty", "", false},
+		{"dot", ".", false},
 		{"nul byte", ".gitignore\x00x", false},
 		{"in base", ".gitignore", true},
 	}
