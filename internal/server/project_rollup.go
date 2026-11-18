@@ -33,7 +33,8 @@
 // Throughput: an Automaton counts as finished when it is completed, or when it
 // is cancelled or archived and its work branch is already on the project's
 // default branch (the read-only merge proof the merged-member decision uses),
-// or when it carries a shipped record (a merge commit). The supervisor and the
+// or when it carries a shipped record (a merge commit) while the shipped
+// surface is enabled (it then also displays as completed). The supervisor and the
 // daemon cancel and archive an Automaton right after its work is merged, so a
 // status of completed alone would read shipped work as zero. The finish time is
 // the merge or ship time when known, else the last update, and it must fall in
@@ -48,6 +49,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -108,7 +110,10 @@ type projectRollup struct {
 	GeneratedAt  time.Time     `json:"generated_at"`
 	PointsPriced bool          `json:"points_priced"`
 	Arcs         []rollupGroup `json:"arcs"`
-	Unassigned   rollupGroup   `json:"unassigned"`
+	// Plans is the project's plans, the successor of Arcs (Arcs stays as a
+	// deprecated field). It is read from the plan-record summary index.
+	Plans      []planRow   `json:"plans"`
+	Unassigned rollupGroup `json:"unassigned"`
 	// WithoutProject lists the Automata without a project: no link, no
 	// Automation or parent project, no directory match and no arc. It is
 	// not part of Total.
@@ -144,9 +149,17 @@ type rollupInput struct {
 	// landed (zero time = unknown). It is asked only for a cancelled or
 	// archived Automaton with no shipped record. Nil means not merged.
 	Merged func(e autonomous.SummaryEntry) (merged bool, at time.Time)
+	// ReleaseHeld says whether a release plan holds an Automaton. An Automaton
+	// no arc holds that a release plan holds is attributed to that plan, so it
+	// is left out of the unassigned group. Nil means no release plans.
+	ReleaseHeld func(automatonID string) bool
 
 	// seenTasks keeps a task from being counted twice in the throughput.
 	seenTasks map[string]bool
+	// ShippedEnabled is the in-force autonomous.shipped.enabled setting. When
+	// set, an Automaton carrying a shipped record displays and counts as
+	// completed even if its stored status is still cancelled.
+	ShippedEnabled bool
 }
 
 // parseRollupWindow reads the window query value. Empty means the default.
@@ -187,7 +200,7 @@ func buildProjectRollup(in rollupInput) projectRollup {
 	}
 
 	arcIndex := map[string]int{}
-	out := projectRollup{Project: in.Project, WindowDays: in.WindowDays, GeneratedAt: in.Now}
+	out := projectRollup{Project: in.Project, WindowDays: in.WindowDays, GeneratedAt: in.Now, Plans: []planRow{}}
 	out.Arcs = make([]rollupGroup, 0, len(in.Arcs))
 	for _, arc := range in.Arcs {
 		if _, dup := arcIndex[arc.AutomationID]; dup {
@@ -226,6 +239,11 @@ func buildProjectRollup(in rollupInput) projectRollup {
 		if i, ok := arcIndex[auto]; ok && auto != "" {
 			g = &out.Arcs[i]
 		} else if resolved == in.Project {
+			if in.ReleaseHeld != nil && in.ReleaseHeld(p.ID) {
+				// A release plan holds it, so it is attributed: the plans
+				// block lists it, and it is not unassigned.
+				continue
+			}
 			g = &out.Unassigned
 		} else if resolved == "" && (auto == "" || !in.ArcHeld[auto]) {
 			g = &out.WithoutProject
@@ -261,8 +279,9 @@ func buildProjectRollup(in rollupInput) projectRollup {
 // the group's throughput. The group's task and finished counts are set here so
 // finishGroup only has to sum points and divide.
 func rollupAutomatonFor(p *autonomous.SummaryEntry, auto string, in rollupInput, inWindow func(*time.Time) bool, g *rollupGroup) rollupAutomaton {
+	display := displayStatusOf(p, in.ShippedEnabled)
 	ra := rollupAutomaton{
-		ID: p.ID, Title: p.Title, Status: string(p.Status),
+		ID: p.ID, Title: p.Title, Status: display,
 		AutomationID: auto, SessionIDs: []string{},
 	}
 	if ids := rollupSessionIDs(p, in.ExtraSessionIDs); ids != nil {
@@ -292,9 +311,19 @@ func rollupAutomatonFor(p *autonomous.SummaryEntry, auto string, in rollupInput,
 	return ra
 }
 
+// displayStatusOf is the status an Automaton summary displays as: completed
+// when it carries a shipped record and the shipped surface is enabled, else its
+// stored status (the summary-entry form of PRDEffectiveDisplayStatus).
+func displayStatusOf(p *autonomous.SummaryEntry, shippedEnabled bool) string {
+	if shippedEnabled && p.IsShipped() {
+		return autonomous.CompletedDisplayStatus
+	}
+	return string(p.Status)
+}
+
 // rollupFinished decides whether an Automaton counts as finished and when it
 // finished: completed; or cancelled or archived with its branch already on the
-// default branch; or carrying a shipped record. The time is the merge or ship
+// default branch; or carrying a shipped record while the shipped surface is enabled. The time is the merge or ship
 // time when known, else the last update.
 func rollupFinished(p *autonomous.SummaryEntry, in rollupInput) (bool, time.Time) {
 	at := func(known time.Time) time.Time {
@@ -308,7 +337,7 @@ func rollupFinished(p *autonomous.SummaryEntry, in rollupInput) (bool, time.Time
 		shipAt = *p.MergedAt
 	}
 	switch {
-	case p.IsShipped():
+	case p.IsShipped() && in.ShippedEnabled:
 		return true, at(shipAt)
 	case p.Status == autonomous.PRDCompleted:
 		return true, at(shipAt)
@@ -378,9 +407,7 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "config not available", http.StatusServiceUnavailable)
 		return
 	}
-	name := r.PathValue("name")
-	entry, ok := s.cfg.Projects[name]
-	if !ok {
+	if _, ok := s.cfg.Projects[r.PathValue("name")]; !ok {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
@@ -389,14 +416,35 @@ func (s *Server) handleProjectRollup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	resp, ok := s.projectRollupFor(w, r, r.PathValue("name"), windowDays)
+	if !ok {
+		return
+	}
+	resp.Plans = s.plansForAlias(resp.Project)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// projectRollupFor builds the roll-up of one project. It answers the failure
+// itself (404 unknown project, 503 no Automata store) and returns false.
+func (s *Server) projectRollupFor(w http.ResponseWriter, r *http.Request, name string, windowDays int) (projectRollup, bool) {
+	entry, ok := s.cfg.Projects[name]
+	if !ok {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return projectRollup{}, false
+	}
 	mgr := s.costReportAutonomousManager()
 	if mgr == nil {
 		http.Error(w, "automations not available", http.StatusServiceUnavailable)
-		return
+		return projectRollup{}, false
 	}
 	body := s.projectRollupBody(mgr, name, entry, windowDays)
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	var out projectRollup
+	if err := json.Unmarshal(body, &out); err != nil {
+		http.Error(w, "roll-up unreadable", http.StatusInternalServerError)
+		return projectRollup{}, false
+	}
+	return out, true
 }
 
 // rollupProjectDirs is the configured project name to directory map the

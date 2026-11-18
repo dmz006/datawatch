@@ -350,7 +350,10 @@ func waitQueued(t *testing.T, l *Ledger, n int) {
 }
 
 // Role ranks a waiter ahead of others in the same pool: verifier before
-// worker before planner, ahead of priority. A zero-value role is a worker.
+// worker before planner, ahead of priority — except for the last free slot,
+// which a queued worker takes ahead of a verifier (the verifier waits or
+// goes through its verifier pool or the review reserve).
+// A zero-value role is a worker.
 func TestRoleOrdersWaitersWhenPoolFrees(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -374,10 +377,18 @@ func TestRoleOrdersWaitersWhenPoolFrees(t *testing.T) {
 			want: "work",
 		},
 		{
-			name: "verifier queued after worker is granted first",
+			name: "queued worker takes the last slot ahead of a verifier",
 			queue: []Request{
 				{Holder: "work", PRDID: "W", Role: RoleWorker},
 				{Holder: "verify", PRDID: "V", Role: RoleVerifier},
+			},
+			want: "work",
+		},
+		{
+			name: "with no worker queued the verifier takes the last slot",
+			queue: []Request{
+				{Holder: "verify", PRDID: "V", Role: RoleVerifier},
+				{Holder: "plan", PRDID: "P", Role: RolePlanner},
 			},
 			want: "verify",
 		},
@@ -560,5 +571,105 @@ func TestHandoffKeepsAdoptedCountAtThree(t *testing.T) {
 	st := led.Snapshot()
 	if len(st.Leases) != 3 || st.Pools[0].Held != 3 {
 		t.Fatalf("after hand-off want 3 leases and 3 held, got leases=%+v pools=%+v", st.Leases, st.Pools)
+	}
+}
+
+// The last free slot of a pool is held for a worker that is queued for it,
+// even against a verifier (which would normally rank ahead of workers). The
+// verifier is admitted when the worker drains or through its own pools.
+func TestLastSlotHeldForQueuedWorker(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("llm:b", 1)  // held by h: this is what blocks the worker
+	l.SetLimit("node:a", 2) // one free slot — the "last slot"
+	ctx := context.Background()
+
+	if err := l.Acquire(ctx, Request{Holder: "h", PRDID: "H", Pools: []string{"llm:b", "node:a"}}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// w queues for both pools; llm:b is full, so w waits while node:a's last
+	// slot stays free.
+	wch := make(chan error, 1)
+	go func() {
+		wch <- l.Acquire(ctx, Request{Holder: "w", PRDID: "W", Pools: []string{"llm:b", "node:a"}, Role: RoleWorker}, 5*time.Second, nil, nil)
+	}()
+	waitQueued(t, l, 1)
+
+	// A role-ordered verifier must not take that last slot from the queued
+	// worker.
+	var reason string
+	err := l.Acquire(ctx, Request{Holder: "v", PRDID: "V", Pools: []string{"node:a"}, Role: RoleVerifier}, 50*time.Millisecond, nil, func(r string) { reason = r })
+	if err == nil {
+		l.Release("v")
+		t.Fatal("verifier granted the queued worker's last node slot")
+	}
+	if !strings.Contains(reason, "last slot held for queued worker(s) w") {
+		t.Fatalf("block reason = %q, want the last-slot rule naming worker w", reason)
+	}
+
+	// h drains: the worker's pool frees and it is granted (still inside its
+	// initial wait), before any further verifier traffic.
+	l.Release("h")
+	select {
+	case we := <-wch:
+		if we != nil {
+			t.Fatalf("worker should be granted once h drains: %v", we)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker was not granted once h drained")
+	}
+	if l.Held("v") {
+		t.Fatal("verifier holds a slot although it was never granted")
+	}
+
+	// The worker is done: its slot frees, and the verifier takes it — no
+	// worker is queued, so the rule no longer applies.
+	l.Release("w")
+	if v2 := l.Acquire(ctx, Request{Holder: "v2", PRDID: "V", Pools: []string{"node:a"}, Role: RoleVerifier}, time.Second, nil, nil); v2 != nil {
+		t.Fatalf("verifier should be admitted after the worker drained: %v", v2)
+	}
+}
+
+// The last-slot rule scopes to pools the queued worker itself needs and
+// applies to verifiers only: a planner may still take the last slot, and a
+// worker waiting elsewhere does not hold the slot.
+func TestLastSlotRuleScope(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("llm:b", 1)
+	l.SetLimit("node:a", 2)
+	ctx := context.Background()
+	if err := l.Acquire(ctx, Request{Holder: "h", PRDID: "H", Pools: []string{"llm:b", "node:a"}}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	wch := make(chan error, 1)
+	go func() {
+		wch <- l.Acquire(ctx, Request{Holder: "w", PRDID: "W", Pools: []string{"llm:b", "node:a"}, Role: RoleWorker}, time.Second, nil, nil)
+	}()
+	waitQueued(t, l, 1)
+
+	// Planner: outside the rule, takes the last node slot right away.
+	if err := l.Acquire(ctx, Request{Holder: "p", PRDID: "P", Pools: []string{"node:a"}, Role: RolePlanner}, time.Second, nil, nil); err != nil {
+		t.Fatalf("planner should take the last slot, got %v", err)
+	}
+
+	// A verifier blocked on a pool the queued worker does not need is granted:
+	// the worker waits for "llm:b" only, so "node:b"'s last slot is free game.
+	l2 := New(fast())
+	l2.SetLimit("llm:b", 1)
+	l2.SetLimit("node:b", 2)
+	if err := l2.Acquire(ctx, Request{Holder: "h", PRDID: "H", Pools: []string{"llm:b", "node:b"}}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	w2 := make(chan error, 1)
+	go func() {
+		w2 <- l2.Acquire(ctx, Request{Holder: "w", PRDID: "W", Pools: []string{"llm:b"}, Role: RoleWorker}, 5*time.Second, nil, nil)
+	}()
+	select {
+	case err := <-w2:
+		t.Fatalf("worker should be waiting: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := l2.Acquire(ctx, Request{Holder: "v", PRDID: "V", Pools: []string{"node:b"}, Role: RoleVerifier}, time.Second, nil, nil); err != nil {
+		t.Fatalf("verifier should take node:b's last slot (worker does not need it): %v", err)
 	}
 }

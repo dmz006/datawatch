@@ -73,6 +73,8 @@ type rollupCacheKey struct {
 	revision   uint64
 	config     string // hash of the configured projects, arcs included
 	automation string // hash of the Automation list
+	shipped    bool   // autonomous.shipped.enabled in force
+	held       string // hash of the Automata a release plan holds
 }
 
 type rollupFlight struct {
@@ -219,6 +221,20 @@ func rollupAutomationHash(automations []*autonomous.Automation) string {
 	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
+// rollupHeldHash is a hash of the ids of the Automata a release plan holds, so
+// a change of plan membership (which moves no Automaton revision) rebuilds the
+// roll-up.
+func rollupHeldHash(entries []autonomous.SummaryEntry, held func(string) bool) string {
+	h := sha256.New()
+	for i := range entries {
+		if held(entries[i].ID) {
+			_, _ = h.Write([]byte(entries[i].ID))
+			_, _ = h.Write([]byte{0})
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
+}
+
 // projectRollupBody returns the encoded roll-up of one project for a window:
 // from the cache when the key is unchanged, else built once from the summary
 // index. generated_at is the time of the build.
@@ -232,6 +248,11 @@ func (s *Server) projectRollupBody(mgr *autonomous.Manager, name string, entry c
 		revision:   store.Revision(), // read before the entries: a newer build is never keyed older
 		config:     rollupConfigHash(s.cfg.Projects),
 		automation: rollupAutomationHash(automations),
+		shipped:    s.shippedSettings().EffectiveEnabled(),
+	}
+	releaseHeld := s.releaseHeldFunc()
+	if releaseHeld != nil {
+		key.held = rollupHeldHash(store.SummaryEntries(), releaseHeld)
 	}
 	body, _ := s.rollup.cache.get(key, func() []byte {
 		now := time.Now()
@@ -249,6 +270,8 @@ func (s *Server) projectRollupBody(mgr *autonomous.Manager, name string, entry c
 			Projects:        rollupProjectDirs(s.cfg.Projects),
 			ArcHeld:         rollupArcHeld(s.cfg.Projects),
 			Merged:          s.rollupMergedFn(mgr),
+			ShippedEnabled:  key.shipped,
+			ReleaseHeld:     releaseHeld,
 		})
 		b, err := json.Marshal(resp)
 		if err != nil {

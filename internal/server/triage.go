@@ -92,7 +92,44 @@ func (s *Server) handleAutonomousTriage(w http.ResponseWriter, r *http.Request) 
 	writeJSONOK(w, struct {
 		Records      []*autonomous.TriageRecord `json:"records"`
 		AlertMinutes int                        `json:"alert_minutes"`
-	}{out, tr.TriageAlertMinutes()})
+		Held         autonomous.HeldGroup       `json:"held"`
+	}{out, tr.TriageAlertMinutes(), triageHeldGroup(s.autonomousMgr, automID, prdID, status)})
+}
+
+// triageHeldReader is the optional read surface for the held group.
+// *autonomous.API provides it; a manager without it reads as no held
+// Automata.
+type triageHeldReader interface {
+	HeldAutomata() autonomous.HeldGroup
+}
+
+// triageHeldGroup returns the held group for the triage read, narrowed by
+// the same filters as the records. A held Automaton is neither failed nor
+// blocked, so a status filter leaves the group empty; the Automation and
+// Automaton filters keep only the matching held Automata. The lists are
+// never nil.
+func triageHeldGroup(mgr any, automationID, prdID, status string) autonomous.HeldGroup {
+	empty := autonomous.HeldGroup{Held: []autonomous.HeldView{}}
+	hr, ok := mgr.(triageHeldReader)
+	if !ok || status != "" {
+		return empty
+	}
+	g := hr.HeldAutomata()
+	out := empty
+	for _, v := range g.Held {
+		if automationID != "" && v.AutomationID != automationID {
+			continue
+		}
+		if prdID != "" && v.ID != prdID {
+			continue
+		}
+		out.Held = append(out.Held, v)
+		out.Total++
+		if v.Expired {
+			out.Expired++
+		}
+	}
+	return out
 }
 
 // TriageRESTOperation is one triage REST route, read by the parity test.

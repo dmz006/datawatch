@@ -76,7 +76,7 @@ test('the Focus button renders on an arc row, an arc card and the Automation det
   const unRow = html.split('data-key="none"')[1] || '';
   assert.doesNotMatch(unRow, /project-gantt-focus/, 'the no-arc group has no Focus button');
 
-  vm.runInContext("_projectsState.subtab = 'arcs'", sb); // the arc cards sit on the Arcs page sub-tab
+  vm.runInContext("_projectsState.subtab = 'plans'", sb); // the plan cards sit on the Plans page sub-tab
   const card = vm.runInContext(`_projectPageHTML({ name: 'acme' }, { arcs: [{ automation_id: 'a1', state: 'active', priority: 1, tasks: { done: 1, total: 2 }, automata: [] }], unassigned: { automata: [] } }, '', null)`, sb);
   assert.match(card, /<summary[\s\S]*data-focus="a1"[\s\S]*<\/summary>/, 'arc card has Focus beside the Gantt');
 
@@ -98,7 +98,13 @@ test('focus reads once with focus=<id>, the range is first task to last task', a
   assert.equal(r.start, Date.parse(ago(30)) - mg, 'starts at the first task minus the 2 percent margin');
   assert.equal(r.end, Date.parse(ago(2)) + mg, 'ends at the last task plus the margin');
   assert.match(cap.panel, /Focus: Arc one/);
-  assert.match(bodyHtml(sb), new RegExp('First task ' + new Date(Date.parse(ago(31))).toLocaleDateString().replace(/[/.]/g, '\\$&') + ' – last task'));
+  // The label prints the range the page uses (first task minus the margin to last
+  // task plus the margin), not a hand-picked instant — ago(31) can be the previous
+  // calendar day from r.start depending on time zone and time of day. The page
+  // renders the dates verbatim, so the label carries this exact fragment.
+  const dateText = ts => new Date(ts).toLocaleDateString();
+  const rangeFragment = 'First task ' + dateText(r.start) + ' – last task ' + dateText(r.end);
+  assert.ok(bodyHtml(sb).includes(rangeFragment), 'the label carries the first-to-last task range');
   assert.ok(tl.every(c => c.method === 'GET'), 'a read');
   assert.equal(calls.filter(c => c.method !== 'GET').length, 0, 'no write route');
 });

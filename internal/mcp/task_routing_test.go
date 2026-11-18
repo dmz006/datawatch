@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,8 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/inference"
+	dwserver "github.com/dmz006/datawatch/internal/server"
 )
 
 var taskRoutingToolCaps = map[string]string{
@@ -218,5 +222,152 @@ func TestTaskRoutingProfileWriteToolsProxy(t *testing.T) {
 	}
 	if _, err := s.handleTaskRoutingProfileSave(ctx, callReq(map[string]any{"name": "a", "rows": "{"})); err == nil {
 		t.Error("bad rows must be refused")
+	}
+}
+
+// config_set against the real /api/config handler: each of the three task
+// routing keys is written and read back through get_config's source (GET).
+
+func taskRoutingConfigMCP(t *testing.T) (*Server, func() config.TaskRoutingConfig) {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.Autonomous.TaskRouting = config.DefaultTaskRouting()
+	cfg.Autonomous.TaskRouting.Profiles["alt"] = cfg.Autonomous.TaskRouting.Profiles["default"]
+	api := dwserver.NewServer(dwserver.NewHub(), nil, "h", "", nil, cfg, filepath.Join(t.TempDir(), "config.yaml"))
+	reg := inference.NewRegistry()
+	for _, n := range []string{"pi-prompt", "claude-code"} {
+		if err := reg.Add(&inference.LLM{Name: n, Kind: inference.KindOllama}); err != nil {
+			t.Fatalf("registry add %s: %v", n, err)
+		}
+	}
+	api.SetInference(reg, nil)
+	ts := httptest.NewServer(api.ConfigHandler())
+	t.Cleanup(ts.Close)
+	s := &Server{webPort: bl427Port(t, ts), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
+	read := func() config.TaskRoutingConfig {
+		resp, err := http.Get(ts.URL + "/api/config")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close() //nolint:errcheck
+		var top struct {
+			Autonomous struct {
+				TaskRouting config.TaskRoutingConfig `json:"task_routing"`
+			} `json:"autonomous"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&top); err != nil {
+			t.Fatal(err)
+		}
+		return top.Autonomous.TaskRouting
+	}
+	return s, read
+}
+
+func taskRoutingConfigSetMCP(t *testing.T, s *Server, key, value string) (string, bool) {
+	t.Helper()
+	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{"key": key, "value": value}))
+	if err != nil {
+		t.Fatalf("handleConfigSet: %v", err)
+	}
+	return automationText(t, res), res.IsError
+}
+
+func TestTaskRoutingConfigSetMCPEnabledAndActiveProfile(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.enabled", "true"); isErr {
+		t.Fatalf("enabled: %s", text)
+	}
+	if !read().Enabled {
+		t.Fatal("enabled did not read back true")
+	}
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.active_profile", "alt"); isErr || !strings.Contains(text, "Set ") {
+		t.Fatalf("active_profile: %s", text)
+	}
+	if got := read().ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile = %q, want alt", got)
+	}
+	// A profile that does not exist is skipped and reported, not stored.
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing.active_profile", "ghost")
+	if !isErr || !strings.Contains(text, "not stored") || strings.Contains(text, "Set ") {
+		t.Fatalf("unknown profile should be reported as not stored, got %q (isError=%v)", text, isErr)
+	}
+	if got := read().ActiveProfile; got != "alt" {
+		t.Fatalf("active_profile changed to %q after a skipped write", got)
+	}
+}
+
+func TestTaskRoutingConfigSetMCPBlock(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	good := config.DefaultTaskRouting()
+	good.Enabled = true
+	good.Profiles["lean"] = good.Profiles["default"]
+	good.ActiveProfile = "lean"
+	b, _ := json.Marshal(good)
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", string(b)); isErr {
+		t.Fatalf("block: %s", text)
+	}
+	if got := read(); !got.Enabled || got.ActiveProfile != "lean" || len(got.Profiles["lean"]) == 0 {
+		t.Fatalf("block did not read back: %+v", got)
+	}
+	// A block that fails ValidateTaskRouting is skipped and reported.
+	bad := `{"enabled":true,"active_profile":"x","profiles":{"x":{"not-a-task-type":{"worker_backend":"pi-prompt"}}}}`
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", bad)
+	if !isErr || !strings.Contains(text, "not stored") {
+		t.Fatalf("invalid block should be reported as not stored, got %q (isError=%v)", text, isErr)
+	}
+	if got := read(); got.ActiveProfile != "lean" || len(got.Profiles["x"]) != 0 {
+		t.Fatalf("a refused block was stored: %+v", got.ActiveProfile)
+	}
+}
+
+// Unknown and premium rows refused through config_set (the real /api/config
+// handler with the LLM registry wired): the message names the row and the
+// stored block does not change.
+
+const (
+	taskRoutingBadUnknownBlock = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"ghost-llm"}}}}`
+	taskRoutingBadModelBlock   = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"ollama/qwen3.8:27b"}}}}`
+	taskRoutingPremiumBlock    = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5"}}}}`
+	taskRoutingPremiumOKBlock  = `{"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"claude-code","worker_model":"claude-opus-5-5","allow_premium_model":true}}}}`
+)
+
+func TestTaskRoutingConfigSetMCPUnknownBackendAndModelNamesRow(t *testing.T) {
+	for name, c := range map[string]struct{ block, want string }{
+		"backend": {taskRoutingBadUnknownBlock, "ghost-llm"},
+		"model":   {taskRoutingBadModelBlock, "ollama/qwen3.8:27b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, read := taskRoutingConfigMCP(t)
+			before := read()
+			text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", c.block)
+			if !isErr || !strings.Contains(text, "not stored") {
+				t.Fatalf("bad row should be refused, got %q (isError=%v)", text, isErr)
+			}
+			for _, w := range []string{`profile "x"`, `row "final_gate"`, "worker", c.want} {
+				if !strings.Contains(text, w) {
+					t.Errorf("message does not name %s: %s", w, text)
+				}
+			}
+			if got := read(); got.ActiveProfile != before.ActiveProfile || len(got.Profiles["x"]) != 0 {
+				t.Fatalf("a refused block was stored: %+v", got.ActiveProfile)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingConfigSetMCPPremiumModelNeedsFlag(t *testing.T) {
+	s, read := taskRoutingConfigMCP(t)
+	text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", taskRoutingPremiumBlock)
+	if !isErr || !strings.Contains(text, "allow_premium_model") || !strings.Contains(text, `row "final_gate"`) || !strings.Contains(text, `profile "x"`) {
+		t.Fatalf("premium row without the flag should be refused naming the row, got %q (isError=%v)", text, isErr)
+	}
+	if got := read(); got.ActiveProfile == "x" || len(got.Profiles["x"]) != 0 {
+		t.Fatalf("a refused premium block was stored: %+v", got.ActiveProfile)
+	}
+	if text, isErr := taskRoutingConfigSetMCP(t, s, "autonomous.task_routing", taskRoutingPremiumOKBlock); isErr {
+		t.Fatalf("premium row with the flag refused: %s", text)
+	}
+	if got := read(); got.ActiveProfile != "x" || !got.Profiles["x"]["final_gate"].AllowPremiumModel {
+		t.Fatalf("flagged premium block not stored: %+v", got.Profiles["x"])
 	}
 }

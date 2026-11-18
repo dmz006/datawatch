@@ -195,6 +195,9 @@ func (m *Manager) ReconcileJudges(host JudgeHost) []JudgeAction {
 	lookup := m.judgeUnitLookup()
 	var done []JudgeAction
 	for _, a := range PlanJudgeReconcile(host.LiveJudges(), lookup) {
+		if held, ok := lookup(a.UnitID); ok && m.prdIsHeld(held.PRDID) {
+			continue // a held Automaton's units and record are left exactly as they are
+		}
 		switch a.Kind {
 		case judgeActionEnd:
 			if err := host.End(a.SessionID, a.Reason); err != nil {

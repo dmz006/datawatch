@@ -41,12 +41,16 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 			label, _ := cmd.Flags().GetString("label")
 			enabled, _ := cmd.Flags().GetBool("enabled")
 			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
+			tlsCertFingerprint, _ := cmd.Flags().GetString("tls-cert-fingerprint")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
 			}
 			if url == "" {
 				return fmt.Errorf("--url is required")
+			}
+			if tlsCertFingerprint != "" && tlsSkipVerify {
+				return fmt.Errorf("--tls-cert-fingerprint and --tls-skip-verify cannot both be set — use the fingerprint pin instead of skipping verification")
 			}
 
 			body := map[string]any{
@@ -63,6 +67,9 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 			if tlsSkipVerify {
 				body["tls_skip_verify"] = true
 			}
+			if tlsCertFingerprint != "" {
+				body["tls_cert_fingerprint"] = tlsCertFingerprint
+			}
 			return daemonJSON(http.MethodPost, "/api/servers", body)
 		},
 	}
@@ -72,6 +79,7 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 	addCmd.Flags().String("label", "", "human-readable label (optional)")
 	addCmd.Flags().Bool("enabled", true, "whether the server is active")
 	addCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this server only (self-signed/local-dev server on a trusted network)")
+	addCmd.Flags().String("tls-cert-fingerprint", "", "pin this server's leaf certificate: 64 hex chars (SHA-256, colons/spaces ignored); wins over --tls-skip-verify, and the two cannot both be set")
 	cmd.AddCommand(addCmd)
 
 	updateCmd := &cobra.Command{
@@ -103,6 +111,9 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 				body["tls_skip_verify"] = tlsSkipVerify
 			}
+			if pin, _ := cmd.Flags().GetString("tls-cert-fingerprint"); pin != "" {
+				body["tls_cert_fingerprint"] = pin
+			}
 			return daemonJSON(http.MethodPut, "/api/servers/"+args[0], body)
 		},
 	}
@@ -111,6 +122,7 @@ YAML-seeded entries (cfg.servers) are read-only seeds visible in the list.`,
 	updateCmd.Flags().String("label", "", "new human-readable label")
 	updateCmd.Flags().Bool("enabled", true, "enable or disable the server")
 	updateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this server only")
+	updateCmd.Flags().String("tls-cert-fingerprint", "", "pin this server's leaf certificate: 64 hex chars (SHA-256); wins over --tls-skip-verify; unset = unchanged")
 	cmd.AddCommand(updateCmd)
 
 	cmd.AddCommand(&cobra.Command{

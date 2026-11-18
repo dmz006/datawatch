@@ -136,7 +136,7 @@ test('while the roll-up loads there is no roll-up block', () => {
   const { sb } = loadView();
   const html = pageAllSubtabs(sb, FULL, null, '', null);
   assert.doesNotMatch(html, /class="project-rollup"/);
-  assert.match(html, /Loading arcs…/);
+  assert.match(html, /Loading plans…/);
 });
 
 test('a history list shows Automata with links and snapshots as progress lines', () => {

@@ -16,7 +16,7 @@ import (
 
 func (s *Server) toolHousekeepingRepairs() mcpsdk.Tool {
 	return mcpsdk.NewTool("housekeeping_repairs",
-		mcpsdk.WithDescription("Read the housekeeping repairs: per group (\"task_chain\", \"advance_judge\", \"lane_fill\", \"leftovers\") the mode in effect (\"off\", \"report\" or \"on\"; report records what it would do and acts on nothing), what a report-mode pass would do (\"would\"), what an on-mode pass did (\"did\"), and the cases that failed (\"failed\") or were skipped as unsafe (\"skipped_unsafe\"). Each entry says what was found, what was done and how to undo it. Takes no arguments; any argument is refused. Read-only: reading never repairs anything, raises an alert or changes a mode (change a mode with the config set tool, key autonomous.housekeeping_repairs.<group>). The same object as GET /api/autonomous/housekeeping-repairs."),
+		mcpsdk.WithDescription("Read the housekeeping repairs: per group (\"task_chain\", \"advance_judge\", \"lane_fill\", \"leftovers\", \"planning\") the mode in effect (\"off\", \"report\" or \"on\"; report records what it would do and acts on nothing), what a report-mode pass would do (\"would\"), what an on-mode pass did (\"did\"), and the cases that failed (\"failed\") or were skipped as unsafe (\"skipped_unsafe\"). Each entry says what was found, what was done and how to undo it. Takes no arguments; any argument is refused. Read-only: reading never repairs anything, raises an alert or changes a mode (change a mode with the config set tool, key autonomous.housekeeping_repairs.<group>). The same object as GET /api/autonomous/housekeeping-repairs."),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }

@@ -1,14 +1,21 @@
-// Automaton merge-pending pass. A completed Automaton whose work branch still
-// carries commits that are not on main is "merge pending". The pass runs from
-// Coordinator.triagePass (automation_coordinator.go) and, depending on
+// Automaton merge-pending pass. A finished Automaton whose work branch still
+// carries commits that are not on main is "merge pending". The pass covers
+// completed Automata and, while autonomous.automation.
+// merge_pending_include_terminal is on (the default), archived, needs_review,
+// blocked and failed Automata too. It runs from Coordinator.triagePass
+// (automation_coordinator.go) and, depending on
 // autonomous.automation.merge_pending_mode:
 //
 //   - off: nothing here runs and git is never called;
 //   - shadow: the outcome is written to the bounded shadow decision list
 //     (merge_shadow_record.go) and nothing else - no record, no alert;
-//   - on: a pending branch gets a merge_pending TriageRecord, and one that has
-//     stood for merge_pending_alert_minutes raises exactly one alert per
-//     episode.
+//   - on: a pending branch of a completed Automaton gets a merge_pending
+//     TriageRecord; a pending branch of an Automaton in one of the other
+//     covered states is tracked as an in-memory episode instead, so a failed
+//     or blocked triage record is never overwritten or cleared. Either way an
+//     episode that has stood for merge_pending_alert_minutes raises exactly
+//     one alert. An episode ends when the branch is merged, empty or needs a
+//     look.
 //
 // Branch comparisons use CompareBranchToMain against the worktree base repo
 // and are cached in memory by branch tip and base tip, so git compares again
@@ -57,12 +64,39 @@ type mergePendingState struct {
 	// since is when each Automaton was first seen merge pending in shadow
 	// mode, so a shadow decision can say whether it would have alerted.
 	since map[string]time.Time
+	// episodes is the merge-pending episode of each Automaton in a covered
+	// state other than completed, keyed by Automaton id, while
+	// merge_pending_mode is on. Those Automata carry no merge_pending record:
+	// a failed or blocked one holds its triage record there instead.
+	episodes map[string]mergeEpisode
 	// logged is the last unknown-state text logged per branch, so an
 	// unchanged failure is logged once, not every poll.
 	logged map[string]string
 	shadow *mergeShadowRecords
 	// bases caches the default branch resolved per base repository.
 	bases map[string]string
+}
+
+// mergeEpisode is one in-memory merge-pending episode: when the branch was
+// first seen pending and when, if ever, the episode's one alert was raised.
+type mergeEpisode struct {
+	since     time.Time
+	alertedAt *time.Time
+}
+
+// mergePendingTerminalStates are the Automaton states besides completed that
+// the pass covers while merge_pending_include_terminal is on.
+var mergePendingTerminalStates = map[PRDStatus]bool{
+	PRDArchived:    true,
+	PRDNeedsReview: true,
+	PRDBlocked:     true,
+	PRDFailed:      true,
+}
+
+// mergePendingCovers reports whether the pass looks at an Automaton in
+// status: completed always, the terminal states only when includeTerminal.
+func mergePendingCovers(status PRDStatus, includeTerminal bool) bool {
+	return status == PRDCompleted || (includeTerminal && mergePendingTerminalStates[status])
 }
 
 // resolveMergeBase finds the branch Automaton work branches in repo are
@@ -288,8 +322,8 @@ func (c *Coordinator) mergeCompare(repo, branch string) (MergeCompare, bool) {
 }
 
 // mergePendingPrune drops cached and tracked state for branches and
-// Automata the pass did not see this poll, which keeps all three maps
-// bounded by the number of finished Automata.
+// Automata the pass did not see this poll, which keeps every map bounded by
+// the number of finished Automata.
 func (c *Coordinator) mergePendingPrune(branches, prdIDs map[string]struct{}) {
 	s := &c.mp
 	s.mu.Lock()
@@ -309,13 +343,19 @@ func (c *Coordinator) mergePendingPrune(branches, prdIDs map[string]struct{}) {
 			delete(s.since, id)
 		}
 	}
+	for id := range s.episodes {
+		if _, ok := prdIDs[id]; !ok {
+			delete(s.episodes, id)
+		}
+	}
 }
 
-// mergePendingClear drops the Automaton's shadow episode and its stored
-// merge_pending record. Any other stored record is left as it is.
+// mergePendingClear drops the Automaton's shadow and in-memory episodes and
+// its stored merge_pending record. Any other stored record is left as it is.
 func (c *Coordinator) mergePendingClear(prd *PRD) {
 	c.mp.mu.Lock()
 	delete(c.mp.since, prd.ID)
+	delete(c.mp.episodes, prd.ID)
 	c.mp.mu.Unlock()
 	if prd.Triage != nil && prd.Triage.Status == TriageStatusMergePending {
 		if err := c.m.ClearTriageRecord(prd.ID); err != nil {
@@ -324,7 +364,50 @@ func (c *Coordinator) mergePendingClear(prd *PRD) {
 	}
 }
 
-// mergePendingCheck handles one completed Automaton with a work branch while
+// mergeEpisodeSeed starts the in-memory episode of an Automaton in a covered
+// state other than completed from the merge_pending record it carried while
+// it was completed, so a completed Automaton that is archived (or reopened)
+// with its branch still pending keeps the episode's first-seen time and its
+// one alert. An Automaton that already has an episode, or no such record, is
+// left as it is.
+func (c *Coordinator) mergeEpisodeSeed(prd *PRD) {
+	rec := prd.Triage
+	if rec == nil || rec.Status != TriageStatusMergePending || rec.Branch != prd.Git.Branch {
+		return
+	}
+	s := &c.mp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.episodes[prd.ID]; ok {
+		return
+	}
+	if s.episodes == nil {
+		s.episodes = map[string]mergeEpisode{}
+	}
+	ep := mergeEpisode{since: rec.FirstSeenAt}
+	if rec.AlertedAt != nil {
+		t := *rec.AlertedAt
+		ep.alertedAt = &t
+	}
+	s.episodes[prd.ID] = ep
+}
+
+// mergeEpisodeFor returns the in-memory episode of the Automaton, if any.
+func (c *Coordinator) mergeEpisodeFor(prdID string) (mergeEpisode, bool) {
+	s := &c.mp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ep, ok := s.episodes[prdID]
+	return ep, ok
+}
+
+// mergePendingTitle is the merge-pending alert title: it names the
+// Automaton, its state and the work branch.
+func mergePendingTitle(name string, state PRDStatus, branch string) string {
+	return fmt.Sprintf("Automaton %s merge pending (%s, branch %s)", name, state, branch)
+}
+
+// mergePendingCheck handles one covered Automaton with a work branch while
 // merge_pending_mode is shadow or on. It returns the alert to raise, if any;
 // the caller sends it after the pass. An unknown state changes nothing.
 func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Time, threshold time.Duration) (title, body string, alert bool) {
@@ -337,7 +420,10 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 		name = prd.ID
 	}
 	pending := cmp.State == MergeStatePending
-	c.m.noteCondition(KindAutomatonMergeReady, prd, pending)
+	completed := prd.Status == PRDCompleted
+	if completed {
+		c.m.noteCondition(KindAutomatonMergeReady, prd, pending)
+	}
 
 	if mode == config.MergePendingModeShadow {
 		wouldAlert := false
@@ -359,20 +445,27 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 			c.mp.mu.Unlock()
 		}
 		c.shadowRecords().observe(MergeShadowDecision{
-			AutomatonID:  prd.ID,
-			Name:         name,
-			Branch:       prd.Git.Branch,
-			State:        cmp.State,
-			CommitsAhead: cmp.Ahead,
-			WouldAlert:   wouldAlert,
+			AutomatonID:    prd.ID,
+			Name:           name,
+			AutomatonState: string(prd.Status),
+			Branch:         prd.Git.Branch,
+			State:          cmp.State,
+			CommitsAhead:   cmp.Ahead,
+			WouldAlert:     wouldAlert,
 		}, now)
-		// shadow never writes a merge_pending record; drop any stale one
-		if prd.Triage != nil {
+		// shadow never writes a merge_pending record; drop any stale one from
+		// a completed Automaton. Any other Automaton's record (a failed or
+		// blocked triage record) is never touched here.
+		if completed && prd.Triage != nil {
 			if err := c.m.ClearTriageRecord(prd.ID); err != nil {
 				log.Printf("[autonomous] clear triage record for %s: %v", prd.ID, err)
 			}
 		}
 		return "", "", false
+	}
+
+	if !completed {
+		return c.mergePendingEpisode(prd, name, cmp, now, threshold)
 	}
 
 	if !pending {
@@ -403,7 +496,43 @@ func (c *Coordinator) mergePendingCheck(prd *PRD, mode, repo string, now time.Ti
 		return "", "", false
 	}
 	// SaveTriageRecord has carried the stored FirstSeenAt into fresh
-	return fmt.Sprintf("Automaton %s merge pending", name), mergePendingAlertBody(fresh, now), true
+	return mergePendingTitle(name, prd.Status, prd.Git.Branch), mergePendingAlertBodyFor(fresh, prd.Status, now), true
+}
+
+// mergePendingEpisode is the on-mode check for an Automaton in a covered
+// state other than completed. The episode lives in memory only: no triage
+// record is written, read or cleared, so a failed or blocked record stays as
+// the triage pass left it. A branch that is merged, empty or needs a look
+// ends the episode.
+func (c *Coordinator) mergePendingEpisode(prd *PRD, name string, cmp MergeCompare, now time.Time, threshold time.Duration) (title, body string, alert bool) {
+	s := &c.mp
+	if cmp.State != MergeStatePending {
+		s.mu.Lock()
+		delete(s.episodes, prd.ID)
+		s.mu.Unlock()
+		return "", "", false
+	}
+	s.mu.Lock()
+	if s.episodes == nil {
+		s.episodes = map[string]mergeEpisode{}
+	}
+	ep, seen := s.episodes[prd.ID]
+	if !seen {
+		ep = mergeEpisode{since: now}
+	}
+	alerting := threshold > 0 && ep.alertedAt == nil && !now.Before(ep.since.Add(threshold))
+	if alerting {
+		t := now
+		ep.alertedAt = &t
+	}
+	s.episodes[prd.ID] = ep
+	s.mu.Unlock()
+	if !alerting {
+		return "", "", false
+	}
+	rec := c.mergePendingRecord(prd, cmp, now)
+	rec.FirstSeenAt = ep.since
+	return mergePendingTitle(name, prd.Status, prd.Git.Branch), mergePendingAlertBodyFor(rec, prd.Status, now), true
 }
 
 // mergePendingRecord builds the merge_pending record for a finished
@@ -438,18 +567,25 @@ func (c *Coordinator) mergePendingRecord(prd *PRD, cmp MergeCompare, now time.Ti
 }
 
 // mergePendingAlertBody renders the body of the merge-pending alert for one
-// record: which Automaton, its work branch and how far ahead of main it is,
-// how long it has been waiting, and what the operator can do. It is shared by
-// every surface that reports a merge-pending Automaton.
+// record of a completed Automaton. It is shared by every surface that reports
+// a merge-pending Automaton; see mergePendingAlertBodyFor.
 func mergePendingAlertBody(rec *TriageRecord, now time.Time) string {
+	return mergePendingAlertBodyFor(rec, PRDCompleted, now)
+}
+
+// mergePendingAlertBodyFor renders the body of the merge-pending alert for
+// one record: which Automaton and its state, its work branch and how far
+// ahead of main it is, how long it has been waiting, and what the operator
+// can do.
+func mergePendingAlertBodyFor(rec *TriageRecord, state PRDStatus, now time.Time) string {
 	var b strings.Builder
 	name := rec.PRDTitle
 	if name == "" {
 		name = rec.PRDID
 	}
 	base := mergeBaseText(rec.BaseBranch)
-	fmt.Fprintf(&b, "Automaton %q (id %s) has finished, but its work branch %s has %d commit(s) that are not on %s yet.\n",
-		name, rec.PRDID, rec.Branch, rec.CommitsAhead, base)
+	fmt.Fprintf(&b, "Automaton %q (id %s) is %s, and its work branch %s has %d commit(s) that are not on %s yet.\n",
+		name, rec.PRDID, state, rec.Branch, rec.CommitsAhead, base)
 	if rec.AutomationID != "" {
 		member := ""
 		if rec.MemberID != "" {

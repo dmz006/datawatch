@@ -544,6 +544,8 @@ type laneFillRaw struct {
 	branch, worktreeDir string
 	// reviewOutcome is the Automaton's last blocked rules review record, if any.
 	reviewOutcome *RulesReviewOutcome
+	// hold is a copy of the hold record of a held Automaton, nil otherwise.
+	hold *HoldState
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -551,7 +553,8 @@ var laneFillRunningTask = map[TaskStatus]bool{
 	TaskQueued: true, TaskWaitingCapacity: true,
 }
 
-// laneFillTerminal says the Automaton has ended for good.
+// laneFillTerminal says the Automaton has ended for good. A held Automaton has
+// not: it waits by operator decision and can be released.
 func laneFillTerminal(s PRDStatus) bool {
 	switch NormalizePRDStatus(s) {
 	case PRDCompleted, PRDRejected, PRDCancelled, PRDArchived:
@@ -560,6 +563,8 @@ func laneFillTerminal(s PRDStatus) bool {
 	return false
 }
 
+// laneFillRunning says the Automaton occupies a lane. A held Automaton does
+// not: nothing is running for it.
 func laneFillRunning(s PRDStatus) bool {
 	s = NormalizePRDStatus(s)
 	return s == PRDRunning || s == PRDActive
@@ -578,6 +583,10 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
 				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
 				reviewOutcome: p.RulesReviewOutcome,
+			}
+			if p.Hold != nil {
+				h := *p.Hold
+				r.hold = &h
 			}
 			if p.Git.Branch != "" && p.ProjectDir != "" && p.ProjectProfile == "" && p.ClusterProfile == "" {
 				r.worktreeDir = p.ProjectDir
@@ -608,18 +617,18 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 
 // workerBackend resolves the Automaton's effective worker backend with the
 // resolver the executor uses.
-func (c *Coordinator) laneFillWorkerBackend(r laneFillRaw, execution string) string {
+func (c *Coordinator) laneFillWorkerBackend(r laneFillRaw, mcfg Config) string {
 	var story *Story
 	if r.workerStoryBackend != "" || r.workerStoryModel != "" {
 		story = &Story{Backend: r.workerStoryBackend, Model: r.workerStoryModel}
 	}
 	task := r.worker
-	prd := &PRD{ID: r.id, Backend: r.backend, Model: r.model}
+	prd := &PRD{ID: r.id, Backend: r.backend, Model: r.model, LanePreference: r.pref}
 	var auto *Automation
 	if r.automationID != "" {
 		auto, _ = c.m.automations.Get(r.automationID)
 	}
-	backend, _ := admittedWorker(&task, story, prd, auto, execution)
+	backend, _ := admittedWorker(&task, story, prd, auto, executionFallbackBackend(mcfg, prd))
 	return backend
 }
 
@@ -648,7 +657,7 @@ func laneFillRefLookup(raws []laneFillRaw) PRDRefLookup {
 // evidence. It holds no Manager or store lock while it calls the evidence
 // source or the merge probe.
 func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, now time.Time) (LaneFillInput, LaneFillStatus) {
-	execution := c.m.Config().ExecutionBackend
+	mcfg := c.m.Config()
 	raws := c.readLaneFillRaw()
 	lookup := laneFillRefLookup(raws)
 
@@ -674,7 +683,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		if r.template {
 			continue
 		}
-		backend := c.laneFillWorkerBackend(r, execution)
+		backend := c.laneFillWorkerBackend(r, mcfg)
 		switch {
 		case laneFillRunning(r.status):
 			running = append(running, c.laneFillVerifierWait(LaneOccupant{PRDID: r.id, Title: r.title, Backend: backend}))
@@ -695,7 +704,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		if _, busy := decomposing[r.id]; busy {
 			continue // a decompose lane fill started is still running
 		}
-		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec, Status: r.status, RulesReviewOutcome: r.reviewOutcome}
+		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec, Status: r.status, RulesReviewOutcome: r.reviewOutcome, Hold: r.hold}
 		holdCode, holdText := PRDHoldCode(prd, lookup)
 		cand := LaneFillCandidate{
 			ID: r.id, Title: r.title, Status: NormalizePRDStatus(r.status),
@@ -706,6 +715,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			AllTasksDone:         r.tasks > 0 && r.tasks == r.tasksDone,
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
+			CoverageGateBlocked:  c.m.planCoverageGateBlocks(r.id),
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
@@ -784,6 +794,8 @@ func (c *Coordinator) laneFillForgetStart(id string) {
 // set, must also confirm commits ahead of main. A probe that errors is
 // ignored, so the status rule alone decides.
 func (c *Coordinator) laneFillNeedsMerge(ctx context.Context, probe MergeProbe, cand LaneFillCandidate) bool {
+	// Only blocked or failed work needs a merge flag; a held Automaton never
+	// does, whatever its tasks say, so lane fill never reports a merge for it.
 	if !cand.AllTasksDone || (cand.Status != PRDBlocked && cand.Status != PRDFailed) {
 		return false
 	}

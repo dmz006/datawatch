@@ -42,9 +42,9 @@ func TestHasCRLF(t *testing.T) {
 	cases := map[string]bool{
 		"a@example.com":              false,
 		"":                           false,
-		"a\r\nBcc: evil@example.com":       true,
-		"a\nBcc: evil@example.com":         true,
-		"a\rBcc: evil@example.com":         true,
+		"a\r\nBcc: evil@example.com": true,
+		"a\nBcc: evil@example.com":   true,
+		"a\rBcc: evil@example.com":   true,
 		"normal multi\nline is fine": true, // hasCRLF doesn't distinguish context -- callers decide what to check
 	}
 	for in, want := range cases {
@@ -86,13 +86,25 @@ func TestSend_RejectsCRLFInFromAddress_BeforeDialing(t *testing.T) {
 func TestSend_EmptyRecipientFallsBackToConfiguredTo(t *testing.T) {
 	// Regression check, unrelated to the CRLF fix: recipient=="" must
 	// still fall back to b.to, not be treated as itself invalid.
-	b := &Backend{host: "203.0.113.1", port: 25, from: "a@example.com", to: "configured@example.com"}
-	err := b.Send("", "msg")
-	// Expect a network-related error (non-routable host), NOT the CRLF
-	// rejection error -- proves the empty recipient took the b.to
-	// fallback path rather than being rejected outright.
-	if err != nil && strings.Contains(err.Error(), "newline") {
-		t.Fatalf("empty recipient was incorrectly rejected as if it contained a newline: %v", err)
+	srv := startFakeSMTPServer(t)
+	host, portStr, _ := net.SplitHostPort(srv.addr)
+	var port int
+	fmt.Sscanf(portStr, "%d", &port) //nolint:errcheck
+
+	b := &Backend{host: host, port: port, username: "u", password: "p", from: "a@example.com", to: "configured@example.com"}
+	// The send must succeed (not be rejected as containing a newline),
+	// and the message must be addressed to the configured fallback.
+	if err := b.Send("", "msg"); err != nil {
+		t.Fatalf("empty recipient should fall back to b.to and send, got: %v", err)
+	}
+
+	select {
+	case got := <-srv.received:
+		if !strings.Contains(got, "To: configured@example.com") {
+			t.Errorf("expected fallback To header, got:\n%s", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("fake SMTP server never received a DATA payload")
 	}
 }
 

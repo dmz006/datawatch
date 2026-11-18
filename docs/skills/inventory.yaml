@@ -235,6 +235,9 @@ entries:
   - /api/automations/
   - /api/automations/merged-members
   - /api/autonomous/attention
+  - /api/autonomous/branch-reap
+  - /api/autonomous/branch-reap/restore
+  - /api/autonomous/branch-reap/run
   - /api/autonomous/checks
   - /api/autonomous/cleanup
   - /api/autonomous/config

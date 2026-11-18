@@ -61,6 +61,10 @@ Common kv pairs:
                                       caps its inflight unless max_inflight>0 wins)
   max_inflight=<N>        (explicit inflight cap on the LLM; N>=0, 0=unlimited,
                            wins over the plan_tier table and the kind default)
+  fallthrough_target=true|false   (allow autonomous workers to fall through to this
+                           LLM when their requested pool is full; needs
+                           autonomous.capacity_fallthrough on; default false;
+                           update: omit keeps the stored value)
 
 Budget kv pairs (a dollar ceiling over one window; the set is replaced as a whole):
   budget_ceiling_usd=<N>  budget_hours=<N>         rolling window of N trailing hours (1-720)
@@ -366,7 +370,8 @@ func parseLLMKVPairs(s string) map[string]any {
 			// daemon while an absent key leaves the stored value untouched.
 			out[k] = strings.TrimSpace(v)
 		case "auto_git_init", "auto_git_commit", "skip_permissions",
-			"channel_enabled", "auto_accept_disclaimer", "auto_add_models":
+			"channel_enabled", "auto_accept_disclaimer", "auto_add_models",
+			"fallthrough_target":
 			out[k] = strings.EqualFold(v, "true") || v == "1"
 		default:
 			out[k] = v

@@ -167,6 +167,30 @@ func TestRepairGraceDelaysAction(t *testing.T) {
 	}
 }
 
+func TestHousekeepingOneRecordPerSubject(t *testing.T) {
+	// Two repairs of the advance_judge group (advance and judge) used to
+	// each record the same stuck Automaton in one pass; now the group reads
+	// the subject once and records exactly one entry for it.
+	f1 := &fakeRepair{group: RepairGroupAdvanceJudge, findings: []RepairFinding{{Subject: "Automaton x", Summary: "stuck"}}}
+	f2 := &fakeRepair{group: RepairGroupAdvanceJudge, findings: []RepairFinding{{Subject: "Automaton x", Summary: "stuck"}}}
+	h := newHarness(t, "on", f1, f2)
+	if recs := h.r.Run(context.Background()); len(recs) != 1 {
+		t.Fatalf("one pass recorded %d entries: %v", len(recs), recs)
+	}
+	if got := len(f1.applied) + len(f2.applied); got != 1 {
+		t.Fatalf("repaired %d times: %v / %v", got, f1.applied, f2.applied)
+	}
+	count := 0
+	for _, rec := range h.r.Records() {
+		if rec.Subject == "Automaton x" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("want exactly one entry for the subject, got %d: %v", count, h.r.Records())
+	}
+}
+
 func TestRepairRecordBoundedAndPersisted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "repairs.json")
 	f := &fakeRepair{group: RepairGroupTaskChain}

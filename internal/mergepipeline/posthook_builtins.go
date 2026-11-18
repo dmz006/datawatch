@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // PostShipSettings is the autonomous.merge_pipeline.post_ship block copied
@@ -269,4 +270,37 @@ func RunNotify(ctx context.Context, n Notifier, project, version string, s PostS
 		return "", builtinErr("sending the notification: %s", err)
 	}
 	return "sent the notification", nil
+}
+
+// Completer marks an Automaton Completed once its work has shipped. A nil
+// Completer makes the mark_completed built-in fail rather than skip. The
+// daemon wires the Automaton manager's MarkPRDCompleted behind it; the
+// interface has no cancel or session method, so the hook cannot reach either.
+type Completer interface {
+	// MarkCompleted sets the Automaton completed with the release version,
+	// the merge commit and the merge time. It is a no-op that returns nil
+	// when the Automaton is already completed.
+	MarkCompleted(ctx context.Context, automatonID, release, commit string, mergedAt time.Time) error
+}
+
+// RunMarkCompleted is the mark_completed built-in.
+func RunMarkCompleted(ctx context.Context, c Completer, automatonID, release, commit string, mergedAt time.Time) (string, error) {
+	if c == nil {
+		return "", builtinErr("no completer is wired, so the mark_completed hook was not run")
+	}
+	if strings.TrimSpace(automatonID) == "" {
+		return "", builtinErr("the run names no Automaton, so the mark_completed hook has nothing to mark")
+	}
+	if err := c.MarkCompleted(ctx, automatonID, release, commit, mergedAt); err != nil {
+		return "", builtinErr("marking the Automaton completed: %s", err)
+	}
+	return "marked the Automaton completed in " + release, nil
+}
+
+// runMarkCompleted supplies the run's own facts: the Automaton it belongs
+// to, the merge commit (main's head after the push) and the merge time.
+func (s *runState) runMarkCompleted(ctx context.Context, version string) (string, error) {
+	commit, _ := s.mainHead(ctx)
+	at := s.r.now()
+	return RunMarkCompleted(ctx, s.r.Completer, s.req.AutomatonID, version, commit, at)
 }

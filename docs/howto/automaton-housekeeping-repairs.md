@@ -1,14 +1,14 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers]
+  topics: [autonomous, automation, supervisor, supervisor watch, housekeeping, repairs, findings, grace period, task chain, judge, lane fill, leftovers, planning, planning failure, live daemon housekeeping routes]
 exec_steps:
   - tool: supervisor_watch_list
     description: Read the supervisor watch findings, open first - the kinds in this table are the finding kinds you see there
     args: {}
     read_only: true
   - tool: autonomous_config_get
-    description: Read the autonomous settings, including the supervisor watch block and the four repair groups
+    description: Read the autonomous settings, including the supervisor watch block and the five repair groups
     args: {}
     read_only: true
 ---
@@ -17,23 +17,49 @@ exec_steps:
 
 The supervisor script (`scripts/supervisor-watch.py`) and the daemon's
 [supervisor watch](automation-supervisor-watch.md) both find the same kinds of
-trouble in the Automata and the machines that run them. Today an operator fixes
-each one by hand, and the [supervisor loop](supervisor-loop.md) keeps the
-mechanical steps moving. This page is the single table of **every finding kind**:
+trouble in the Automata and the machines that run them. The daemon's repair
+framework runs the repairs itself, but every group defaults to `report` — so
+until an operator turns a group to `on`, the operator still fixes each finding
+by hand, and the [supervisor loop](supervisor-loop.md) keeps the mechanical
+steps moving. This page is the single table of **every finding kind**:
 what causes it, whether the daemon can fix it safely by itself, what it does and
 after how long, and what is always left for you.
 
-**Where the code stands.** The watch is report-only in every mode today: it
-records and alerts, and it acts on nothing. The repair framework and its
-settings now exist: the four group settings and the grace setting under
-`autonomous.housekeeping_repairs` are part of the config and are read and
-checked when the daemon loads it, and each group defaults to `report`, so a
-daemon that never sets one behaves as it does now. The daemon does not run the
-repair pass yet, and the settings are not yet accepted by `config set`,
-`PUT /api/config`, `config_set`, `configure` or Settings in the web UI, so the
-only way to set one today is the config file, and setting one changes nothing
-until the pass is switched on in a later release. The grace is the wait before
-a repair acts; a repair never acts on the poll that first sees a finding.
+**Where the code stands.** The watch is report-only in every mode: in `report`
+each group records what it would do and acts on nothing, and whatever a group's
+mode, nothing here ever merges, ships, ends a session or touches a security
+workflow. The repair framework is running: the daemon builds the Repairer at
+startup and runs the pass on the supervisor loop's schedule (each idle tick,
+after the loop's steps). The
+five group settings and the grace setting under
+`autonomous.housekeeping_repairs` are part of the config, are validated when
+the daemon loads it, and are accepted at runtime on every config set path —
+`config set` on the CLI, `PUT /api/config`, `config_set` on MCP, `configure` on
+a comm channel, and the group-rows in Settings of the web UI. Each group
+defaults to `report`, so a daemon that never sets one records what it would do
+and acts on nothing; a group is `on` only because the operator set it. The
+grace is the wait before a repair acts; a repair never acts on the poll that
+first sees a finding.
+
+The repairs the daemon builds for the pass, and the settings that switch them
+on, are described group by group below, together with exactly what they do,
+what they never do, and how to undo them. A live daemon answers the routes
+listed under **Reading the repairs**; a **503** `autonomous disabled` there
+means Automata are off on that daemon, not a bug. The housekeeping action
+routes (unlanded-work keep, archive-branch and delete-worktree, the
+uncommitted-work diff and commit, and fix-permissions) also work on the live
+daemon: the wrapper the daemon wires into the server carries every method their
+gate needs (the build proves it), so the list read answers an empty list, never
+an error. A call is refused at the gate while Automata are off (**503**),
+without the autonomous capability (**403**), or with the wrong method
+(**405**); an action that passes the gate still fails with its own answers —
+**400** for incomplete input (a delete without `confirm: true`, no base
+repository, an empty commit message), **404** for a branch not in the current
+unlanded list, **409** for the action's own failure (a delete whose bundle
+backup fails removes nothing). An answer of **503** `Housekeeping actions
+unavailable` on any of them comes from an old daemon build, not a setting —
+upgrade the daemon. See
+[Automaton worktree cleanup](automaton-worktree-cleanup.md#these-routes-work-on-the-live-daemon).
 
 **Reading the repairs.** One read-only view shows, per group, the mode in
 effect, what a report-mode pass would do (`would`), what an on-mode pass did
@@ -51,13 +77,18 @@ anything, raises an alert or changes a mode. It is on every surface:
 
 A group's mode is changed only through the config set paths, key
 `autonomous.housekeeping_repairs.<group>`; none of the read surfaces can change
-it. Until the daemon runs the repair pass, `did` stays empty and `would` shows
-only what the pass has recorded.
+it. In `report` only `would` entries are produced; in `on`, `did`, `failed` and
+`skipped_unsafe` entries appear as the pass repairs.
 
 **What the shipped framework repairs.** The framework is narrower than the
-table below. The table is the full set of finding kinds and the design for each;
-the repairs written so far are these four, one per group, each built on a
-mechanical step the [supervisor loop](supervisor-loop.md) already has:
+table below. The table is the full set of finding kinds and the design for each.
+The repairs the daemon builds are: these five, one per group, each built on a
+mechanical step the [supervisor loop](supervisor-loop.md) already has, plus the
+extras described in the group sections below (three in `task_chain`, three in
+`advance_judge` and one in `planning`). Two are in the code and tested but the
+daemon does not build them yet, so turning their group to `on` does not
+activate them: the `lane_fill` group's lane-fill start and the `leftovers`
+group's three release repairs.
 
 | Group | What the shipped repair finds | What it does in `on` |
 |---|---|---|
@@ -65,10 +96,10 @@ mechanical step the [supervisor loop](supervisor-loop.md) already has:
 | `advance_judge` | A task held for review after its infrastructure retries ran out. | Retries the failed infrastructure task. |
 | `lane_fill` | The running lane count differs from the wanted count, inside the lane bounds. | Corrects the lane count to the wanted one. |
 | `leftovers` | Leftover files crossed the disk cleanup alert threshold. | Runs the cleanup sweep, which only refreshes the cleanup status and raises the disk alert. |
+| `planning` | A draft Automaton with no stories whose planning failed for a reason retrying will not change, where every spec lint finding is one the daemon can reword. | Rewords the spec with the lint suggestions, applies it as a revision and plans again: the same path as the planning question's *Fix the wording and plan again* answer. |
 
 The `task_chain` group also has three repairs for stuck task chains, each run in
-`on` and only reported in `report`. They are written and tested but, like the
-rest of the pass, the daemon does not start them yet, so none acts today:
+`on` and only reported in `report`:
 
 - **Dependent reset.** A task that failed only because a task it depends on
   failed is reset (a plain reset, never a force-cancel) once every dependency is
@@ -88,14 +119,12 @@ stop it; for a removed stray file, restore it from the worker's session output
 if needed and cancel the retried task to stop it.
 
 The `advance_judge` group also has three repairs for finished and review-blocked
-Automata, run in `on` and only reported in `report`. They are written and tested
-but, like the rest of the pass, the daemon does not start them yet, so none acts
-today:
+Automata, run in `on` and only reported in `report`:
 
-- **Advance.** An Automaton that is running with every task finished (done or
-  cancelled) is moved to its next state by the normal completion step, once the
-  grace has passed. It is left alone while a live run still holds it, and it is
-  refused as unsafe while any task is unfinished.
+- **Advance.** An Automaton that is running with every task finished (done,
+  failed or cancelled) is moved to its next state by the normal completion step,
+  once the grace has passed. It is left alone while a live run still holds it,
+  and it is refused as unsafe while any task is unfinished.
 - **Judge repair.** An Automaton blocked by the rules review with no repair task
   yet gets one repair task, made once from the review's real findings (a task
   carrying the findings is added to the last story, then reset with a plain
@@ -106,15 +135,29 @@ today:
 
 The advance and judge repairs refuse, as an unsafe finding (recorded as skipped,
 one alert), when a task is not finished, when the judge repair was already made
-once, or when the review recorded no findings. Their undo hints: the advance moved
-on by the normal completion step, so pause or cancel the Automaton from the
+once, or when the review recorded no findings. They each read the Automata once
+per pass and make at most one finding per Automaton, worded from a single check
+of its state, so a finding never says both that every task finished and that
+some are not finished. Each read gives one finding per stuck Automaton, never the same
+Automaton listed several times. An advance finding has one of two shapes:
+
+| Shape | Finding text | Safe | What the pass does |
+|---|---|---|---|
+| Stuck but finished | `Automaton "<title>" is stuck: it is running and all of its tasks are finished, but it is not advancing` | Yes | After the grace, in `on`, advances it by the normal completion step |
+| Unfinished tasks | `Automaton "<title>" is running with N of M tasks not finished` | No | Records it as skipped, with the reason `N of M tasks are not finished, so advancing could lose work`; never advances it |
+
+A running Automaton whose tasks are all finished but which a live run still
+holds is not a finding at all. See **What a skipped unsafe finding means**
+below for how to act on the unsafe shape.
+
+Their undo hints: the advance moved on by the normal completion step, so pause or cancel the Automaton from the
 Automata page to stop it; for the judge repair, cancel the repair task from the
 Automaton's task list (it is recorded and will not be made again); the merge
 report changed nothing.
 
 The `lane_fill` group also has one repair for an idle lane, run in `on` and only
-reported in `report`. It is written and tested but, like the rest of the pass,
-the daemon does not start it yet, so it acts on nothing today:
+reported in `report`. It is written and tested; the daemon does not build it
+yet (the repairs in the same group do run), so it acts on nothing today:
 
 - **Lane fill start.** A lane that is idle while eligible work waits for it gets
   the next eligible Automaton started, through the normal run path, once the
@@ -133,8 +176,8 @@ page; nothing else was changed. The lane fill rules themselves are in
 
 The `leftovers` group also has three release repairs for what a **finished**
 Automaton leaves behind, run in `on` and only reported in `report`. They are
-written and tested but, like the rest of the pass, nothing in the daemon builds or
-starts them yet, so they act on nothing today:
+written and tested; nothing in the daemon builds or starts them yet, so they
+act on nothing today (the group's disk-cleanup sweeps do run):
 
 - **Lease release.** Releases the capacity lease a finished Automaton still holds.
 - **Worktree release.** Removes the worktree a finished Automaton still holds.
@@ -166,9 +209,12 @@ shipped code before you turn any group to `on`:
   seconds (5 minutes)** and applies to every group; there is no longer or
   per-group wait (for example none for `WORKTREE`). `0` means no grace.
 - The table's repair columns (a judge re-run, a single reset of a failed task,
-  worktree pruning, lease and placement fixes) are the design; the shipped
-  repairs are the four above. Confirm which of the table's rows you still want
-  built.
+  worktree pruning, lease and placement fixes) are the design. The repairs the
+  daemon builds are the five above plus the three `task_chain` extras, the three
+  `advance_judge` extras and the one `planning` extra; the `lane_fill` group's
+  lane-fill start and the `leftovers` group's three release repairs are in the
+  code but the daemon does not build them yet. Confirm which of the table's
+  rows you still want built.
 - The three task chain repairs run fixed commands (`make sync-docs`, `git clean -f -- <one path>`) in
   the Automaton worktree. Confirm you accept those commands, and that a final-gate failure
   naming `internal/server/web/docs` as stale is a reliable signal, before turning `task_chain` to `on`.
@@ -177,13 +223,22 @@ shipped code before you turn any group to `on`:
   uncommitted work, no unlanded commits and no live session" is a strong enough
   test for you, before turning `leftovers` to `on`. The `leftovers` group also
   holds the older disk cleanup sweep, so `on` switches both. The release repairs
-  have no setting of their own and are not started by the daemon yet.
+  have no setting of their own and the daemon does not build them yet, so
+  turning `leftovers` to `on` activates the sweep, not the release repairs.
+- The planning repair rewrites a draft's spec and plans it again without you.
+  Confirm you accept that, and that "a draft with no stories and a recorded
+  non-retryable planning failure whose every spec lint finding can be reworded"
+  is a reliable signal, before turning `planning` to `on`. In `report` it only
+  records what it would do. The reworded spec is a normal revision on the
+  decision log. It has no setting beyond the group mode.
 - The lane fill start repair starts a real Automaton on an idle lane. Confirm you
   accept that it starts work without you, that it follows capacity, the inflight
   caps and the usage guard as described, and that it is separate from the lane
-  fill's own shadow/live mode, before turning `lane_fill` to `on`. The same
-  group's lane-count correction and the table's `LEASE` and `PLACEMENT` rows are
-  a different matter and are not changed by this repair.
+  fill's own shadow/live mode, before turning `lane_fill` to `on`. Note that the
+  daemon does not build this repair yet, so turning the group to `on` does not
+  activate it; the same group's lane-count correction and the table's `LEASE`
+  and `PLACEMENT` rows are a different matter and are not changed by this
+  repair.
 - The advance repair re-fires the completion step, and the judge repair adds
   one task titled "Fix rules review findings" (actor `housekeeping-repair`) to
   the Automaton's last story. Confirm you accept both, and that "blocked with a
@@ -194,13 +249,15 @@ shipped code before you turn any group to `on`:
   `MERGE WAIT` / `MERGE READY` are reported only. Decide whether the table rows
   should be reworded or built as written.
 - The read view and its card are new. Confirm the card's wording (it says a
-  stuck state "is looked at after N seconds") reads right to you, and check
-  that the Settings rows for the four groups save a value on your build: the
-  settings are validated when the config loads, but this page's author could
-  not confirm every set path writes them yet.
-- No surface starts the repair pass yet, so the card, the REST route, the MCP
-  tool, the CLI and chat will show empty `would` and `did` lists until a later
-  release switches the pass on.
+  stuck state "is looked at after N seconds") reads right to you. The five
+  groups' Settings rows save the values, and the settings are accepted on
+  every config set path as well as the config file; invalid values are refused
+  on all of them.
+- The pass runs on the supervisor loop's schedule, so in `report` (the
+  default) the card, the REST route, the MCP tool, the CLI and the chat verb
+  show `would` entries as soon as the pass sees a finding, and in `on` they
+  show `did`, `failed` and `skipped_unsafe` entries as it repairs. Turn a
+  group to `on` deliberately.
 - An unsafe finding is never repaired: it is recorded as skipped, and one
   warning alert is raised for that subject until it stops being found.
 
@@ -217,7 +274,7 @@ kind in the watch yet, and `CI STUCK` is `ci_stuck`).
 | `MERGE READY` (`automaton_not_merged`) | Every task is done, the review passed or warned, and the branch is not yet on the base branch. | No: merging is never automatic from the watch. | Reports it. Nothing else. | The merge and the ship. |
 | `JUDGE BLOCKED` | Every task is done but the rules review blocked the Automaton. | Partly: the Automaton's own corrective path may add work, but the watch does not decide a block is wrong. | Group **advance_judge**: reports it and makes sure the corrective-work path has run once. It never overrides the verdict and never merges. | Reading the verdict, and any decision to override or reject it. |
 | `NEW failed task` (`task_failed`, `task_review_needed`) | A task failed, or is held for a person to review. | Yes for a first failure after an infrastructure cause; no for a review hold, which exists so a person looks. | Group **task_chain**: after the grace it resets a failed task once, within the retry rules the Automaton already has. A review hold is only reported. | Reading the verifier verdict; every review hold; a task that fails again. |
-| `BACKLOG` | Failed or blocked Automata with work left, or Automata waiting for review, approval or planning. | Partly: it can reset the failed ones the same way as a failed task and start the next step of a chain. | Group **task_chain**: the same single reset, and starting the next chain step once the one before it is done. Review, approval and planning waits are reported only. | Approving, planning and deciding what to repair or cancel. |
+| `BACKLOG` | Failed or blocked Automata with work left, or Automata waiting for review, approval or planning. | Partly: it can reset the failed ones the same way as a failed task and start the next step of a chain. | Group **task_chain**: the same single reset, and starting the next chain step once the one before it is done. Review, approval and planning waits are reported only. | Approving, planning and deciding what to repair or cancel. A draft whose planning failure is not one the daemon can reword is reported and left for you (see *Planning repair* below). |
 | `IDLE lanes` (`idle_lane_eligible_work`) | A lane is idle while work that is eligible for it waits. | Yes: it is exactly what lane fill does. | Group **lane_fill**: on the lane fill's own rules and its own mode, it starts the next eligible Automaton. An Automaton lane fill refuses (a hold, a stale spec) is never started. | Anything lane fill refuses; the lane count and caps. |
 | `SILENT` (`worktree_silent`) | A running Automaton has a task in progress, and nothing in its worktree or transcript changed for longer than `silent_minutes`. | No: a quiet worker may be loading a model or thinking. | Reports it. It never signals or ends the session. | Checking the worker's process and files, and deciding to reset it. |
 | `LEASE` | A capacity lease holds a slot with no node lease, or with an unknown node after adoption. | Yes for a lease whose holder is gone; the repair only corrects the lease record. | Group **lane_fill**: after the grace it re-adopts or releases the lease record. It never touches the session. | A lease whose holder is still running. |
@@ -236,9 +293,29 @@ A check that cannot tell says nothing. Every repair acts only on a finding that
 is still open at the end of its grace, and a finding that closes by itself in
 the meantime is never repaired.
 
-## The four settings groups
+## Planning repair
 
-The repairable kinds sit in four groups. Each group has one setting and one mode,
+The `planning` group (default `report`) repairs a draft Automaton that sits
+with zero stories because planning failed for a reason retrying will not change
+(the recorded planning failure is not retryable; see
+[automaton-decompose-lint.md](automaton-decompose-lint.md#6a-planning-failures-what-you-see-what-the-daemon-fixes-what-it-asks)).
+
+- **When every finding can be reworded**, after the grace it does what the
+  planning question's *Fix the wording and plan again* answer does: rewrites
+  the spec with the spec lint's suggestions, applies it as a revision and plans
+  again. It re-checks that the draft is still stuck and still correctable just
+  before acting, and refuses if not.
+- **When a finding cannot be reworded** (a private address, a worktree path),
+  the finding is an unsafe finding: it is recorded as skipped with one warning
+  alert for that draft and the spec is left alone. A person changes it.
+- A retryable failure is never touched; it keeps its retry budget.
+- It never touches, kills or signals a session, merges, ships, or changes a
+  model or backend. Undo: edit the spec back from the Automaton's detail view
+  and plan again.
+
+## The five settings groups
+
+The repairable kinds sit in five groups. Each group has one setting and one mode,
 and the repairs of a group act only in `on`. The settings live under
 `autonomous.housekeeping_repairs`, beside `grace_seconds`:
 
@@ -248,6 +325,7 @@ and the repairs of a group act only in `on`. The settings live under
 | Advance and judge | `autonomous.housekeeping_repairs.advance_judge` | `STUCK`, `MERGE WAIT`, `JUDGE BLOCKED` |
 | Lane fill | `autonomous.housekeeping_repairs.lane_fill` | `IDLE lanes`, `LEASE`, `PLACEMENT` |
 | Leftovers | `autonomous.housekeeping_repairs.leftovers` | `WORKTREE`, and the leftover lease, worktree and tmux name of a finished Automaton |
+| Planning | `autonomous.housekeeping_repairs.planning` | A draft with no stories whose planning failed for a non-retryable reason (the planning part of `BACKLOG`) |
 
 | Mode | What it does |
 |---|---|
@@ -267,12 +345,15 @@ autonomous:
     advance_judge: report
     lane_fill: report
     leftovers: report
+    planning: report
     grace_seconds: 300
 ```
 
 Runtime change through `config set` on the CLI, `PUT /api/config`, `config_set`
-on MCP, `configure` on a comm channel and Settings in the web UI is not wired
-yet; edit the config file for now.
+on MCP, `configure` on a comm channel and Settings in the web UI works today:
+each path validates the value the same way the config file is validated, and
+the change takes effect on the next pass. The config file is the durable home
+for the same block.
 
 ## What the daemon never does
 
@@ -281,10 +362,43 @@ Whatever the mode of any group, a repair never:
 - **merges** an Automaton or **ships** a release;
 - **deletes a session**, and never kills or signals a session;
 - **changes a model or a backend**, and never loads or unloads a model;
-- **touches a security workflow** or its result.
+- **touches a security workflow** or its result;
+- **changes a held Automaton or any of its tasks.** An Automaton an operator put
+  on hold (see [Put an Automaton on hold](automaton-hold.md)) is skipped by every
+  repair, by the supervisor loop, the stuck-running and verifier watchdogs, boot
+  reconcile, infrastructure retries, merge retries and the completed migration;
+  only an operator release or extend changes it.
 
 Kinds that are not in a group (`MERGE READY`, `SILENT`, `TMUX`, `NODE`, `MODEL`,
 `MAIN`, `DAEMON`, `CI STUCK`, `CI RED`) are reported in every mode.
+
+## What a skipped unsafe finding means
+
+A `skipped_unsafe` entry is a finding the pass saw and chose not to repair,
+because repairing it could lose or overwrite work. Nothing was changed. The
+entry carries the finding text and the reason, and one warning alert is raised
+for that subject until it stops being found; the alert is not repeated each
+pass. It is the same in `report` and `on`: turning a group to `on` never makes
+an unsafe finding repairable.
+
+How to act on one, by its reason:
+
+- **`N of M tasks are not finished, so advancing could lose work`** (advance).
+  The Automaton is running but some tasks have not finished. Open it from the
+  Automata page and look at those tasks: if they are still running or queued,
+  wait; if they are stuck, reset or cancel them yourself. Once every task is
+  finished, the next read reports it as stuck but finished, and the pass can
+  advance it.
+- **`N of M tasks are not finished, so a repair could lose work`** (judge
+  repair). Same remedy: finish, reset or cancel the open tasks first.
+- **`the repair task was already made once for this review`**. Finish or cancel
+  that repair task; the pass will not make a second one.
+- **`the review recorded no findings`**. There is nothing real to repair from.
+  Read the rules review verdict and decide by hand whether to run the review
+  again or override it.
+
+For any other group, the reason on the entry names what made it unsafe; fix
+that condition by hand, and the finding clears on a later read.
 
 ## Reading what a repair did
 
@@ -307,8 +421,11 @@ for each shipped repair:
   status and raises the disk alert. For the release repairs, start the Automaton
   again from the Automata page to take a lease again or recreate a worktree; a
   released tmux name is simply free to reuse.
+- `planning`: the spec change is on the Automaton's decision log; edit the spec
+  back from the Automaton's detail view and plan again. No session was touched.
 
-No surface reads the record yet: it is reachable only through the decision log.
-The finding itself keeps its first-seen time and is read through the supervisor
-watch on any surface, as described in
+Every repair and every report-mode "would repair" also writes a record, which
+is the durable trail: the read view shows the last 200 entries, and the
+decision log keeps the full history. The finding itself keeps its first-seen
+time and is read through the supervisor watch on any surface, as described in
 [automation-supervisor-watch.md](automation-supervisor-watch.md).

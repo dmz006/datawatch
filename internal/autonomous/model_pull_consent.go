@@ -213,7 +213,7 @@ type AutomationSetupReport struct {
 	AutomationID string             `json:"automation_id"`
 	Models       []SetupReportModel `json:"models"`
 	// Missing lists the required models whose pull would be refused.
-	Missing []string  `json:"missing,omitempty"`
+	Missing []string `json:"missing,omitempty"`
 	// AllAllowed is true when every required model would be allowed.
 	AllAllowed bool `json:"all_allowed"`
 }

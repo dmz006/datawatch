@@ -12,7 +12,8 @@ const mergeCLISample = `{"mode":"shadow","alert_minutes":30,
 "automata":[{"automaton_id":"p1","name":"Add paging","branch":"automaton/p1","state":"pending","commits_ahead":3,
   "pending_since":"2026-01-02T00:00:00Z","alerted_at":null,"would_alert":true}],
 "shadow_decisions":[{"at":"2026-01-02T00:40:00Z","automaton_id":"p1","name":"Add paging","branch":"automaton/p1",
-  "state":"pending","commits_ahead":3,"would_alert":true,"repeat_count":4,"last_seen_at":"2026-01-02T01:00:00Z"}]}`
+  "state":"pending","commits_ahead":3,"would_alert":true,"repeat_count":4,"last_seen_at":"2026-01-02T01:00:00Z"}],
+"shadow_decisions_total":5,"shadow_decisions_false":2}`
 
 const safeToDeleteCLISample = `{"safe":[{"branch":"automaton/p2","worktree":"/work/p2","reason":"merged into main","commits":0}],
 "held":[{"branch":"automaton/p1","worktree":"","state":"pending"},
@@ -35,6 +36,7 @@ func TestMergeCLI_MergeCommandPrints(t *testing.T) {
 		"would alert",
 		"Shadow decisions",
 		"seen 4 times",
+		"Shadow decisions made: 5, later found false: 2.",
 		"Nothing has been merged, deleted or pushed.",
 	} {
 		if !strings.Contains(out, want) {

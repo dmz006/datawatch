@@ -77,6 +77,10 @@ type SummaryEntry struct {
 	NotifyEvents     []string `json:"notify_events,omitempty"`
 	GuardrailProfile string   `json:"guardrail_profile,omitempty"`
 
+	// HasPlanningFailure is set when the record carries a planning failure, so
+	// a list read fetches the record only for those rows.
+	HasPlanningFailure bool `json:"-"`
+
 	// Row is the list row of the Automaton, built once per record change.
 	// It is never edited in place: a read copies the value and fills the
 	// read-time fields (project, inherited tags, display state) on the copy.
@@ -217,6 +221,7 @@ func buildSummaryEntry(p *PRD) SummaryEntry {
 	e.NotifyEvents = cloneSummaryStrings(p.NotifyEvents)
 	e.GuardrailProfile = p.GuardrailProfile
 	e.Row = buildIndexedSummaryRow(p)
+	e.HasPlanningFailure = p.LastDecomposeFailure != nil
 	var workers, verifiers, judges, decompose, all idSet
 	for _, v := range p.Verdicts {
 		judges.add(v.JudgeSessionID)

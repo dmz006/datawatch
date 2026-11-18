@@ -97,7 +97,7 @@ graph TD
     end
 
     subgraph "Storage"
-        SessJSON["sessions.json (encrypted)"]
+        SessJSON["sessions.d/ session records (encrypted with --secure)"]
         OutLog["output.log(.enc) — XChaCha20 envelope"]
         VecMem["Vector store\nSQLite or PostgreSQL+pgvector"]
         FileStore["FileService\n/api/files/*\npeers/ + discussions/\n(config:read/write)"]

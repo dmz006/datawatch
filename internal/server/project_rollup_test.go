@@ -326,6 +326,7 @@ func TestBuildProjectRollup_FinishedCounting(t *testing.T) {
 
 	got := buildProjectRollup(rollupInput{
 		Project: "acme", Dir: dir, Entries: summaryOf(prds), WindowDays: 7, Now: rollupNow,
+		ShippedEnabled: true,
 		Merged: func(p autonomous.SummaryEntry) (bool, time.Time) {
 			if p.ID == "merged" {
 				return true, in3h
@@ -445,9 +446,43 @@ func TestBuildProjectRollup_JSONShapeStable(t *testing.T) {
 	const thr = `{"automata_finished":1,"tasks_finished":1,"automata_per_day":0.14285714285714285,"tasks_per_day":0.14285714285714285}`
 	group := `{"automata":[` + line + `],"tasks":{"done":1,"total":1},"points":1.5,"throughput":` + thr + `}`
 	empty := `{"automata":[],"tasks":{"done":0,"total":0},"points":0,"throughput":{"automata_finished":0,"tasks_finished":0,"automata_per_day":0,"tasks_per_day":0}}`
-	want := `{"project":"acme","window_days":7,"generated_at":"2026-11-09T12:00:00Z","points_priced":true,"arcs":[],"unassigned":` + group +
+	want := `{"project":"acme","window_days":7,"generated_at":"2026-11-09T12:00:00Z","points_priced":true,"arcs":[],"plans":[],"unassigned":` + group +
 		`,"without_project":` + empty + `,"total":` + group + `}`
 	if string(b) != want {
 		t.Fatalf("roll-up JSON changed:\n got %s\nwant %s", b, want)
+	}
+}
+
+func TestCompletedDisplayRollupThroughput(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-24 * time.Hour)
+	mk := func(id string, st autonomous.PRDStatus, commit string) *autonomous.PRD {
+		return &autonomous.PRD{ID: id, Status: st, MergeCommit: commit, UpdatedAt: recent, AutomationID: "arc"}
+	}
+	in := rollupInput{
+		Project: "p", Dir: "/x",
+		Arcs: []config.ProjectArc{{AutomationID: "arc"}},
+		Entries: summaryOf([]*autonomous.PRD{
+			mk("done", autonomous.PRDCompleted, ""),
+			mk("merged-cancelled", autonomous.PRDCancelled, "abc"),
+			mk("plain-cancelled", autonomous.PRDCancelled, ""),
+		}),
+		WindowDays: 7, Now: now, ShippedEnabled: true,
+	}
+	got := buildProjectRollup(in)
+	if n := got.Total.Throughput.AutomataFinished; n != 2 {
+		t.Errorf("finished = %d, want 2 (completed + merged-cancelled)", n)
+	}
+	for _, a := range got.Arcs[0].Automata {
+		if a.ID == "merged-cancelled" && (a.Status != "completed" || !a.Finished) {
+			t.Errorf("merged-cancelled line = %+v", a)
+		}
+		if a.ID == "plain-cancelled" && a.Finished {
+			t.Errorf("plain cancelled counted as finished")
+		}
+	}
+	in.ShippedEnabled = false
+	if n := buildProjectRollup(in).Total.Throughput.AutomataFinished; n != 1 {
+		t.Errorf("surface off finished = %d, want 1", n)
 	}
 }

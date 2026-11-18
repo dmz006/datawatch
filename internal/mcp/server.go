@@ -784,6 +784,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
+	mcpSrv.AddTool(s.toolAutonomousCompletedMigrate(), tracked(s.handleAutonomousCompletedMigrate))
+	mcpSrv.AddTool(s.toolAutonomousPRDHold(), tracked(s.handleAutonomousPRDHold))
+	mcpSrv.AddTool(s.toolAutonomousPRDReleaseHold(), tracked(s.handleAutonomousPRDReleaseHold))
+	mcpSrv.AddTool(s.toolAutonomousHeld(), tracked(s.handleAutonomousHeld))
+	mcpSrv.AddTool(s.toolAutonomousHeldMigrate(), tracked(s.handleAutonomousHeldMigrate))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
 	mcpSrv.AddTool(s.toolAutonomousDefectIntake(), tracked(s.handleAutonomousDefectIntake))
 	mcpSrv.AddTool(s.toolAutonomousDefectBatches(), tracked(s.handleAutonomousDefectBatches))
@@ -831,6 +836,20 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPlanRecordUpdate(), tracked(s.handlePlanRecordUpdate))
 	mcpSrv.AddTool(s.toolPlanRecordSearch(), tracked(s.handlePlanRecordSearch))
 	mcpSrv.AddTool(s.toolPlanRecordImport(), tracked(s.handlePlanRecordImport))
+	mcpSrv.AddTool(s.toolPlanMigrate(), tracked(s.handlePlanMigrate))
+	mcpSrv.AddTool(s.toolPlanCreate(), tracked(s.handlePlanCreate))
+	mcpSrv.AddTool(s.toolPlanReorder(), tracked(s.handlePlanReorder))
+	mcpSrv.AddTool(s.toolPlanReorderAutomata(), tracked(s.handlePlanReorderAutomata))
+	mcpSrv.AddTool(s.toolPlanAttach(), tracked(s.handlePlanAttach))
+	mcpSrv.AddTool(s.toolPlanDetach(), tracked(s.handlePlanDetach))
+	mcpSrv.AddTool(s.toolPlanThemeList(), tracked(s.handlePlanThemeList))
+	mcpSrv.AddTool(s.toolPlanThemeSet(), tracked(s.handlePlanThemeSet))
+	mcpSrv.AddTool(s.toolPlanArchive(), tracked(s.handlePlanArchive))
+	mcpSrv.AddTool(s.toolPlanRestore(), tracked(s.handlePlanRestore))
+	mcpSrv.AddTool(s.toolPlanUnattributedList(), tracked(s.handlePlanUnattributedList))
+	mcpSrv.AddTool(s.toolPlanAttachBulk(), tracked(s.handlePlanAttachBulk))
+	mcpSrv.AddTool(s.toolPlanRowPlanList(), tracked(s.handlePlanRowPlanList))
+	mcpSrv.AddTool(s.toolPlanRowPlanConvert(), tracked(s.handlePlanRowPlanConvert))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))
@@ -840,11 +859,18 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousReleaseReadiness(), tracked(s.handleAutonomousReleaseReadiness))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
+
+	// Branch reaper: the report is read-only; the run and the restore are the operator writes.
+	mcpSrv.AddTool(s.toolAutonomousBranchReap(), tracked(s.handleAutonomousBranchReap))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRun(), tracked(s.handleAutonomousBranchReapRun))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRestore(), tracked(s.handleAutonomousBranchReapRestore))
 	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
 	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))         // autonomous_landing_keep: keep the branch unmerged on purpose
+	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))         // autonomous_landing_drop: record that the work will not be merged
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
@@ -2007,6 +2033,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("launch_role",
 			mcpsdk.Description("Optional placement role the session plays: worker | verifier | planner | judge | supervisor. Start the operator's supervisor session with launch_role=supervisor; it then carries the supervisor role tag plus compute, backend, lane and project tags and no automaton tag. Omit for an unchanged plain session."),
 		),
+		mcpsdk.WithString("worker_profile_name",
+			mcpsdk.Description("Optional worker profile name (built-in or user-defined) applied at launch for any session kind: its tool server list, tools, skills and starting context. An unknown name starts the full harness and records the reason on the session record. A launch_role=supervisor session with no name takes the lean supervisor kind default."),
+		),
 		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
 			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
@@ -2543,6 +2572,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 	git := req.GetBool("git", false)
 	launchRole := strings.TrimSpace(req.GetString("launch_role", ""))
+	profileName := strings.TrimSpace(req.GetString("worker_profile_name", ""))
 	priority, hasPriority, perr := priorityFromReq(req)
 	if perr != nil {
 		return toolError("start_session", perr), nil
@@ -2564,7 +2594,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "") && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "" || profileName != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2598,6 +2628,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if launchRole != "" {
 			body["launch_role"] = launchRole
+		}
+		if profileName != "" {
+			body["worker_profile_name"] = profileName
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,

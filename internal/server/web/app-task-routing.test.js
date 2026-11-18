@@ -55,9 +55,15 @@ test('card has the enable toggle, profile bar, one row per task type and the pre
   assert.match(html, /<option value="default" selected>default<\/option>/);
   assert.match(html, /<option value="thrifty">thrifty<\/option>/);
   assert.match(html, /running|already running/);
-  const rows = html.match(/<tr class="task-routing-row[^"]*" data-type="([^"]*)"/g).map(r => r.match(/data-type="([^"]*)"/)[1]);
+  const rows = [];
+  for (let i = html.indexOf('<tr class="task-routing-row'); i > -1; i = html.indexOf('<tr class="task-routing-row', i + 1)) {
+    const tagEnd = html.indexOf('>', i);
+    const tag = html.slice(i, tagEnd > -1 ? tagEnd : html.length);
+    const d = tag.indexOf('data-type="');
+    if (d > -1) rows.push(tag.slice(d + 'data-type="'.length, tag.indexOf('"', d + 'data-type="'.length)));
+  }
   assert.deepEqual(rows, TYPES);
-  for (const cls of ['task-routing-save-profile', 'task-routing-delete-profile', 'task-routing-export', 'task-routing-import']) assert.match(html, new RegExp(cls));
+  for (const cls of ['task-routing-save-profile', 'task-routing-delete-profile', 'task-routing-export', 'task-routing-import']) assert.ok(html.includes(cls), cls + ' missing');
   assert.match(html, /id="trImportFile" type="file"/);
   assert.match(html, /id="trPreviewAutomaton"/);
   assert.match(html, /taskRoutingPreview\(\)/);
@@ -68,11 +74,23 @@ test('card has the enable toggle, profile bar, one row per task type and the pre
 test('row selects come from the registry, keep the stored choice and show effort and second choice', () => {
   const sb = loadApp();
   const row = sb.taskRoutingRowHtml('ui_code', view().profiles.default.ui_code, CTX, []);
-  assert.match(row, /data-field="worker_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="claude-code" selected>/);
-  assert.match(row, /data-field="worker_model"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="sonnet" selected>/);
-  assert.match(row, /data-field="verification_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="pi-prompt" selected>/);
-  assert.match(row, /data-field="effort"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="high" selected>/);
-  assert.match(row, /data-field="second_backend"[^>]*>(?:(?!<\/select>)[\s\S])*<option value="pi-prompt" selected>/);
+  // Each field is one <select data-field="...">…</select>: assert on the exact
+  // rendered markup — the select opens with its data-field and the stored choice
+  // is a selected option inside it.
+  const selectBlock = (row, field) => {
+    const open = row.indexOf(`data-field="${field}"`);
+    assert.ok(open > -1, 'the row has a select for ' + field);
+    const close = row.indexOf('</select>', open);
+    assert.ok(close > open, 'the select for ' + field + ' is closed');
+    return row.slice(open, close);
+  };
+  for (const [field, selected] of [
+    ['worker_backend', '<option value="claude-code" selected>claude-code</option>'],
+    ['worker_model', '<option value="sonnet" selected>sonnet</option>'],
+    ['verification_backend', '<option value="pi-prompt" selected>pi-prompt</option>'],
+    ['effort', '<option value="high" selected>high</option>'],
+    ['second_backend', '<option value="pi-prompt" selected>pi-prompt</option>'],
+  ]) assert.ok(selectBlock(row, field).includes(selected), 'the ' + field + ' select keeps the stored choice');
   // a model the registry no longer lists stays visible
   const stale = sb.taskRoutingRowHtml('ui_code', { worker_backend: 'claude-code', worker_model: 'gone-model' }, CTX, []);
   assert.match(stale, /<option value="gone-model" selected>gone-model<\/option>/);
@@ -86,11 +104,25 @@ test('server validation errors show inline on the row they name and escape their
     'task_routing: active profile "zzz" does not exist',
   ];
   const html = sb.taskRoutingCardHtml(view(), CTX, null, problems);
-  assert.match(html, /data-type="ui_code"[\s\S]*?class="task-routing-row-error"[^>]*>[^<]*allow_premium_model/);
+  const uiRow = html.indexOf('data-type="ui_code"');
+  assert.ok(uiRow > -1, 'the ui_code row is rendered');
+  const rowErr = html.indexOf('class="task-routing-row-error"', uiRow);
+  assert.ok(rowErr > uiRow, 'the ui_code row carries the row-error class');
+  const rowErrEnd = html.indexOf('>', rowErr);
+  assert.ok(rowErrEnd > rowErr, 'the row-error element opens after its class');
+  const rowErrClose = html.indexOf('<', rowErrEnd + 1);
+  const rowErrText = rowErrClose > -1 ? html.slice(rowErrEnd + 1, rowErrClose) : html.slice(rowErrEnd + 1);
+  assert.ok(rowErrText.includes('allow_premium_model'), 'the inline error names allow_premium_model');
   assert.match(html, /task-routing-row-invalid" data-type="docs_set"/);
   assert.doesNotMatch(html, /<img onerror/);
   assert.match(html, /&lt;img onerror=x&gt;/);
-  assert.match(html, /class="task-routing-invalid"[^>]*>[^<]*active profile &quot;zzz&quot;/);
+  const inv = html.indexOf('class="task-routing-invalid"');
+  assert.ok(inv > -1, 'the invalid line element is rendered');
+  const invEnd = html.indexOf('>', inv);
+  assert.ok(invEnd > inv, 'the invalid line opens after its class');
+  const invClose = html.indexOf('<', invEnd + 1);
+  const invText = invClose > -1 ? html.slice(invEnd + 1, invClose) : html.slice(invEnd + 1);
+  assert.ok(invText.includes('active profile &quot;zzz&quot;'), 'the profile name is entity-escaped in the message');
   assert.doesNotMatch(html, /row "ui_code": worker/); // the general list holds only the table-wide problems
 });
 
@@ -311,5 +343,171 @@ test('every task_routing_ key the app uses exists in all five bundles', () => {
     const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', lang + '.json'), 'utf8'));
     const missing = keys.filter(k => !(k in b));
     assert.deepEqual(missing, [], lang + ' is missing keys');
+  }
+});
+
+// Settings page: write each of the three task routing keys (the enable switch,
+// the active profile, the whole table) through the card and read it back from
+// the re-rendered card. The fake daemon keeps state and refuses what the real
+// one refuses: an active profile that does not exist and a table that fails
+// validation, both leaving the stored block alone.
+
+function statefulDaemon(sb) {
+  const state = JSON.parse(JSON.stringify(view({ active_profile: 'default' })));
+  const calls = [];
+  const refuse = (msg, problems) => Promise.reject(new Error(JSON.stringify({ error: msg, problems })));
+  sb.apiFetch = (url, opts) => {
+    calls.push([url, opts]);
+    const method = (opts && opts.method) || 'GET';
+    if (url === '/api/llms') return Promise.resolve({ llms: [{ name: 'claude-code', kind: 'claude-code', model: 'sonnet' }, { name: 'pi-prompt', kind: 'pi-prompt' }] });
+    if (url === '/api/autonomous/task-routing' && method === 'GET') return Promise.resolve(JSON.parse(JSON.stringify(state)));
+    if (url === '/api/autonomous/task-routing' && method === 'PUT') {
+      const body = JSON.parse(opts.body);
+      if (body.active_profile && !body.profiles[body.active_profile]) return refuse('the routing table is not valid; nothing was changed', ['task_routing: active profile "' + body.active_profile + '" does not exist']);
+      for (const p of Object.values(body.profiles)) {
+        for (const t of Object.keys(p)) if (!TYPES.includes(t)) return refuse('the routing table is not valid; nothing was changed', ['task_routing: unknown task type ' + t]);
+      }
+      Object.assign(state, { enabled: body.enabled, active_profile: body.active_profile, profiles: body.profiles });
+      return Promise.resolve({});
+    }
+    if (url === '/api/autonomous/task-routing/active-profile' && method === 'PUT') {
+      const name = JSON.parse(opts.body).name;
+      if (!state.profiles[name]) return refuse('profile "' + name + '" does not exist; nothing was changed', []);
+      state.active_profile = name;
+      return Promise.resolve({ active_profile: name });
+    }
+    return Promise.resolve(null);
+  };
+  vm.runInContext('apiFetch = globalThis.apiFetch', sb);
+  return { state, calls };
+}
+
+function mountSettingsCard(sb) {
+  const panel = { innerHTML: '' };
+  const toasts = [];
+  sb.document.getElementById = id => (id === 'automataTaskRoutingPanel' ? panel : id === 'trEnabled' ? { checked: sb._trToggleValue } : null);
+  sb.showToast = (msg, kind) => { toasts.push([String(msg), kind]); };
+  vm.runInContext('showToast = globalThis.showToast', sb);
+  return { panel, toasts };
+}
+
+test('TaskRouting Settings page writes the enable switch and reads it back', async () => {
+  const sb = loadApp();
+  const { panel } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  assert.match(panel.innerHTML, /id="trEnabled" checked/);
+  sb._trToggleValue = false;
+  await sb.taskRoutingToggle();
+  assert.equal(daemon.state.enabled, false);
+  assert.doesNotMatch(panel.innerHTML, /id="trEnabled" checked/);
+  sb._trToggleValue = true;
+  await sb.taskRoutingToggle();
+  assert.equal(daemon.state.enabled, true);
+  assert.match(panel.innerHTML, /id="trEnabled" checked/);
+});
+
+test('TaskRouting Settings page writes the active profile and reports one that does not exist', async () => {
+  const sb = loadApp();
+  const { panel, toasts } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  await sb.taskRoutingSwitchProfile('thrifty');
+  assert.equal(daemon.state.active_profile, 'thrifty');
+  assert.match(panel.innerHTML, /<option value="thrifty" selected>thrifty<\/option>/);
+  toasts.length = 0;
+  await sb.taskRoutingSwitchProfile('ghost');
+  assert.equal(daemon.state.active_profile, 'thrifty', 'a missing profile is not stored');
+  assert.match(panel.innerHTML, /<option value="thrifty" selected>thrifty<\/option>/);
+  assert.ok(toasts.some(([m, k]) => k === 'error' && /ghost/.test(m)), 'the refusal is reported: ' + JSON.stringify(toasts));
+});
+
+test('TaskRouting Settings page writes the whole table and reports a table the server refuses', async () => {
+  const sb = loadApp();
+  const { panel, toasts } = mountSettingsCard(sb);
+  const daemon = statefulDaemon(sb);
+  await sb.loadAutomataTaskRoutingPanel();
+  sb.taskRoutingEditField('ui_code', 'worker_backend', 'pi-prompt');
+  sb.taskRoutingEditField('ui_code', 'worker_model', 'qwen');
+  await sb.taskRoutingSaveTable();
+  assert.equal(daemon.state.profiles.default.ui_code.worker_backend, 'pi-prompt');
+  assert.equal(daemon.state.profiles.default.ui_code.worker_model, 'qwen');
+  assert.match(panel.innerHTML, /data-type="ui_code"/);
+  assert.match(panel.innerHTML, /<option value="qwen" selected>qwen<\/option>/);
+
+  // A table the daemon refuses (a row for a task type that does not exist) is
+  // reported inline and in a toast, and the stored block does not change.
+  const before = JSON.stringify(daemon.state.profiles);
+  toasts.length = 0;
+  sb.taskRoutingEditField('not_a_task_type', 'worker_backend', 'pi-prompt');
+  await sb.taskRoutingSaveTable();
+  assert.equal(JSON.stringify(daemon.state.profiles), before);
+  assert.ok(toasts.some(([, k]) => k === 'error'), 'the refusal is reported in a toast');
+  assert.match(panel.innerHTML, /unknown task type|not valid/);
+});
+
+test('no duplicate task routing card id or editor element id in app.js', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  for (const id of ['automataTaskRoutingPanel', 'settings-sec-automata_task_routing']) {
+    const needle = 'id="' + id + '"';
+    let n = 0;
+    for (let from = 0; ; ) {
+      const i = src.indexOf(needle, from);
+      if (i < 0) break;
+      n++;
+      from = i + needle.length;
+    }
+    assert.equal(n, 1, 'id ' + id + ' appears ' + n + ' times');
+  }
+  // settings section header registered once, and no second window.taskRouting* definition
+  const defs = (src.match(/^window\.taskRouting[A-Za-z]* = function/gm) || []);
+  assert.ok(defs.length > 10);
+  assert.equal(new Set(defs).size, defs.length, 'a window.taskRouting* function is defined twice');
+  assert.equal((src.match(/settingsSectionHeader\('automata_task_routing'/g) || []).length, 1);
+});
+
+test('every t() key used by the routing editor, chips and detail line exists in all five bundles', () => {
+  const lines = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8').split('\n');
+  const start = lines.findIndex(l => l.startsWith('// ── Task routing card'));
+  const end = lines.findIndex((l, i) => i > start && l.startsWith('// ── Tag registry settings panel'));
+  assert.ok(start > 0 && end > start);
+  const seg = lines.slice(start, end).join('\n');
+  const keyChar = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_' || c === '.';
+  const wordChar = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_';
+  const keys = new Set();
+  for (let from = 0; ; ) {
+    const i = seg.indexOf('t(', from);
+    if (i < 0) break;
+    const prev = i > 0 ? seg[i - 1] : '';
+    if (!wordChar(prev)) {
+      let j = i + 2;
+      while (j < seg.length && (seg[j] === ' ' || seg[j] === '\t' || seg[j] === '\n' || seg[j] === '\r')) j++;
+      const q = seg[j];
+      if (q === "'" || q === '"') {
+        let k = j + 1;
+        while (k < seg.length && keyChar(seg[k])) k++;
+        if (k > j + 1 && seg[k] === q) keys.add(seg.slice(j + 1, k));
+      }
+    }
+    from = i + 1;
+  }
+  for (let from = 0; ; ) {
+    const i = seg.indexOf("'task_routing_", from);
+    if (i < 0) break;
+    const start = i + 1;
+    let k = start;
+    while (k < seg.length && ((seg[k] >= 'a' && seg[k] <= 'z') || seg[k] === '_')) k++;
+    if (k > start && seg[k] === "'") keys.add(seg.slice(start, k));
+    from = i + 1;
+  }
+  assert.ok(keys.size > 25);
+  for (const lang of ['en', 'de', 'es', 'fr', 'ja']) {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', lang + '.json'), 'utf8'));
+    assert.deepEqual([...keys].filter(k => !(k in b)), [], lang + ' is missing keys');
+    for (const k of keys) {
+      if (lang !== 'en' && k.startsWith('task_routing_')) {
+        assert.ok(String(b[k]).length > 0, lang + ' ' + k + ' empty');
+      }
+    }
   }
 });

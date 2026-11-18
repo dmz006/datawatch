@@ -11,6 +11,11 @@ package autonomous
 //  3. otherwise (or a nil auto): the global planning backend and model.
 //
 // The Automation's execution and verification defaults play no part here.
+//
+// The empty model it returns stays empty: the explicit-model policy
+// (model_policy.go) fills it downstream, at the last tier of
+// resolvePlannedModel, only when no operator-named tier (PRD decomposition
+// model, this row, the PRD model, the verification model) supplied one.
 func effectivePlanning(auto *Automation, cfg Config) (backend, model string) {
 	if auto != nil {
 		if auto.PlanningBackend != "" {

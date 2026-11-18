@@ -132,8 +132,10 @@ type PeerEventSubscriberConfig struct {
 	// backoff curve); it is called on every poll.
 	Settings func() ForwardSettings
 	// NewClient builds the HTTP client for one poll (the daemon passes
-	// multiserver.HTTPClient). The peer's TLS skip-verify setting is passed in.
-	NewClient func(skipVerify bool, timeout time.Duration) *http.Client
+	// multiserver.PeerHTTPClient). The peer's TLS skip-verify setting and
+	// pinned certificate fingerprint (empty = default verification) are
+	// passed in.
+	NewClient func(skipVerify bool, pinnedSHA256 string, timeout time.Duration) *http.Client
 	// Publish hands one accepted event to local dispatch.
 	Publish func(LifecycleEvent)
 	// Audit records one JSON-lines + CEF audit entry.
@@ -472,7 +474,7 @@ func (p peerPoll) fromAttempt(att webhookAttempt) peerPoll {
 // never follow a redirect either, so the bearer token is never sent to a second
 // host.
 func (s *PeerEventSubscriber) client(peer PeerRef, set ForwardSettings) *http.Client {
-	c := s.cfg.NewClient(peer.TLSSkipVerify, set.Timeout)
+	c := s.cfg.NewClient(peer.TLSSkipVerify, peer.TLSCertFingerprint, set.Timeout)
 	if c == nil {
 		c = &http.Client{Timeout: set.Timeout}
 	}

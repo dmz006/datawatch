@@ -20,6 +20,10 @@ import (
 // any testing machinery runs.
 const signalChildRole = "signal-parent"
 
+// childStartedLine is the line the signal-parent helper child writes to its
+// stdout once it is running, before it sends any signal.
+const childStartedLine = "child-started"
+
 // runSignalParentRole is the child role: send SIGTERM to the exact PID
 // given by the parent — nothing else, ever — then stay alive until the
 // parent closes our stdin (EOF) or the 120 second safety cap runs out,
@@ -31,6 +35,9 @@ func runSignalParentRole() int {
 		fmt.Fprintf(os.Stderr, "signal-parent role: bad parent pid %q: %v\n", raw, err)
 		return 2
 	}
+	// Announce that we are running (our /proc cmdline is now set) before
+	// sending anything; the parent waits for this line through a pipe.
+	_, _ = fmt.Fprintln(os.Stdout, childStartedLine)
 	if err := signalProc(pid, syscall.SIGTERM); err != nil {
 		fmt.Fprintf(os.Stderr, "signal-parent role: kill %d: %v\n", pid, err)
 		return 3
@@ -93,8 +100,11 @@ func TestSignalChildProcScan(t *testing.T) {
 		"DW_SHUTDOWNCAUSE_ROLE="+signalChildRole,
 		"DW_SHUTDOWNCAUSE_PARENT_PID="+strconv.Itoa(myPID),
 	)
-	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
+	childStdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe for child: %v", err)
+	}
 	// Hold a stdin pipe to the child open for as long as we need it: the
 	// child blocks on it (with its own safety cap), so it cannot exit
 	// between sending SIGTERM and our procscan attribution check. The
@@ -112,12 +122,21 @@ func TestSignalChildProcScan(t *testing.T) {
 		_ = cmd.Wait()
 	}()
 
+	// Wait for the child to announce it has started and for its own /proc
+	// entry to show its cmdline, both with bounded timeouts, instead of
+	// relying on scheduling.
+	awaitChildReady(t, childStdout, cmd.Process.Pid, "kill "+strconv.Itoa(myPID))
+
 	var sig os.Signal
 	select {
 	case sig = <-sigCh:
 	case <-time.After(30 * time.Second):
 		t.Fatalf("waited 30s for SIGTERM from child pid %d, cmdline %q", cmd.Process.Pid, childCmdline)
 	}
+
+	// Scope the procscan to this test's descendants so unrelated host
+	// processes can never be picked up as the sender.
+	scopeProcScanToDescendants(t, myPID)
 
 	c := Capture(sig)
 

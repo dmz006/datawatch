@@ -154,7 +154,7 @@ func (m *Manager) applyQueuedStoryLLM(prdID, storyID, backend, effort, model, ac
 		}
 		out := LLMOverrideOutcome{TaskID: t.ID, Reason: "not started: the override takes effect when the task runs"}
 		if t.Status == TaskWaitingCapacity && backend != "" {
-			b, mod := resolveTaskBackendModel(t, story, prd, auto, m.cfg.ExecutionBackend)
+			b, mod := resolveTaskBackendModel(t, story, prd, auto, executionFallbackBackend(m.cfg, prd))
 			if m.requeueQueuedCapacity(prd, t, b, mod) {
 				out.CapacityMoved = true
 				out.Reason += "; its queued capacity request was retargeted to the new pool"
@@ -215,7 +215,7 @@ func (m *Manager) applyQueuedTaskLLM(prdID, taskID, backend, effort, model, acto
 
 	out := LLMOverrideOutcome{TaskID: taskID, Reason: "not started: the override takes effect when the task runs"}
 	if oldStatus == TaskWaitingCapacity && backend != "" && oldBackend != backend {
-		_, mod := resolveTaskBackendModel(task, story, prd, m.AutomationForPRD(prd), m.cfg.ExecutionBackend)
+		_, mod := resolveTaskBackendModel(task, story, prd, m.AutomationForPRD(prd), executionFallbackBackend(m.cfg, prd))
 		if m.requeueQueuedCapacity(prd, task, backend, mod) {
 			out.CapacityMoved = true
 			out.Reason += "; its queued capacity request was retargeted to the new pool"

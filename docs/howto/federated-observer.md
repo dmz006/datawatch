@@ -86,6 +86,67 @@ Each parent gets its own peer registration + per-parent token file
 (`peer-primary_8443.token`, `peer-secondary_8443.token`). A slow parent
 does not delay pushes to others.
 
+## Push-channel TLS (verified by default)
+
+Observer **pushes** over `https://` now verify the counterpart's
+certificate. This covers the two daemon push paths: a worker's
+Shape A push into its parent, and the primary → root federation push
+(`observer.federation`). Before this, the worker push ran with
+certificate checking off unconditionally, so an `https://` parent with a
+self-signed or private-CA certificate that a peer could push to before
+may need a pin or the explicit opt-out (below) after the upgrade.
+
+**Worker (Shape A) push** — the parent already injects the spawn-time
+fingerprint into container workers for the bootstrap channel; the push
+channel reuses it:
+
+| Knob | Effect |
+|------|--------|
+| *(none)* | The parent's leaf is verified against the **system trust store**; a one-line startup notice says the push verifies against the system trust store. |
+| `DATAWATCH_PARENT_CERT_FINGERPRINT` | Hex SHA-256 fingerprint of the parent's leaf cert (case-insensitive, colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. A malformed pin **fails closed** — the push refuses to start. The pin **wins over the opt-out**: with a pin set, `DATAWATCH_OBSERVER_PUSH_INSECURE` has no effect. |
+| `DATAWATCH_OBSERVER_PUSH_INSECURE` = `1` / `true` / `yes` / `on` (case-insensitive) | Explicit opt-out, honored **only when no pin is set**. The daemon prints a warning naming the parent's host (never any token) announcing that certificate verification is **SKIPPED** for that push. |
+
+An `http://` parent has no TLS to verify: no pin, no opt-out, no notice.
+
+**Federation push (primary → root)** — `observer.federation`:
+
+- **Default:** the root's certificate is verified against the system
+  trust store; no notice when verification is on.
+- `observer.federation.insecure: true` still skips verification, but the
+  daemon now prints at startup
+  `[observer/federation] WARNING: TLS certificate verification is
+  SKIPPED for the federation root <url> … Remove
+  observer.federation.insecure to verify the root's certificate
+  normally`. There is no pin knob on this push: trust the root's
+  certificate (a trusted CA, or self-signed into the system store)
+  rather than opting out.
+
+  Cross-link reference for all three peer links (peers, worker push,
+  primary → root), with the openssl derivation and the upgrade note:
+  [howto/peer-tls-verification](peer-tls-verification.md).
+
+**What stays the same:** the worker **bootstrap** channel for a
+TLS-less parent keeps its existing unverified fallback (unchanged);
+and `datawatch-stats` is a separate binary with its own `--insecure-tls`
+flag — that flag does not apply to daemon pushes, and the env vars above
+do not apply to the stats binary.
+
+**For the operator (review before upgrading a fleet):** a peer whose
+push target is a self-signed or private-CA `https://` parent was
+working *because* verification was off. After the upgrade it fails the
+TLS handshake unless you:
+
+1. set `DATAWATCH_PARENT_CERT_FINGERPRINT` to the parent's leaf
+   fingerprint — `openssl x509 -noout -fingerprint -sha256 -in
+   <leaf.pem>` on the parent (or derive it from the cert served at
+   `GET <parent>/api/agents/ca.pem`), or
+2. set `DATAWATCH_OBSERVER_PUSH_INSECURE=1` and accept the startup
+   warning.
+
+A primary pushing into a self-signed root needs either the root's
+certificate in the system trust store or `observer.federation.insecure:
+true` (warned at startup).
+
 ## Base requirements
 
 - `datawatch start` — daemon up on each host.
@@ -338,6 +399,11 @@ the `observers:read` capability.
 | **Comm channel** | `observer pull status` — the same rows, table-rendered |
 | **MCP** | `observer_pull_status` tool (read-only, `observers:read`) — same rows for an LLM or automation |
 
+### For the operator to review
+
+- **Deterministic collector tests — no behavior change.** The pull collector's unit tests used to race the state store: the fake fetcher signalled when `Fetch` returned, but the collector records the result only after that, so a test reading `Last` right after the fetch signal could see the previous value. The tests no longer read it immediately: a helper (`waitForLast`) polls the recorded state every 5 ms inside a loop that is itself bounded by a 5-second deadline, and when the deadline expires it takes one final read of the state so a failing test reports the latest recorded value, not a stale one. The collector tests are now stable. Review flag: this is a test-only change — the collector, its settings, the staleness reasons and all five surfaces above behave exactly as described here, so no config or workflow changes on your side; if the collector suite ever flaps on a heavily loaded machine, re-run it with `env -u TMUX -u TMUX_TMPDIR go test ./internal/observer/ -count=1 -run '^TestObserverPullCollector'` before treating it as a real regression.
+- **Pull mode is still not validated live.** The pull rows in the [testing tracker](../testing-tracker.md) remain **Validated: No** — every pull test runs against fakes and stand-in daemons; a two-daemon sandbox pull is still outstanding.
+
 ## Other channels
 
 ### 5a. Mobile (Compose Multiplatform)
@@ -531,6 +597,11 @@ bash install/install-stats.sh \
 - **Peer can't reach primary.** Mesh is up but `push_to.url` wrong
   (probably `127.0.0.1` instead of the tailnet IP). Use the primary's
   100.x.y.z address.
+- **Worker push fails the TLS handshake after upgrading.** Pushes
+  verify the parent's certificate by default now. Pin the parent's leaf
+  with `DATAWATCH_PARENT_CERT_FINGERPRINT`, or set
+  `DATAWATCH_OBSERVER_PUSH_INSECURE=1` and accept the startup warning
+  (see [Push-channel TLS (verified by default)](#push-channel-tls-verified-by-default)).
 - **Token expired.** Peer-mint tokens default to 7-day TTL. Mint a
   fresh one + re-register on the peer.
 - **Stale peer in the list.** Peer crashed; daemon restarted but the

@@ -5,7 +5,7 @@
 //	worker_profile                  a profile name (built-in or user-defined); empty clears it
 //	worker_profiles                 the user profile table, a JSON object of name -> profile settings
 //	worker_profile_defaults.role    a JSON object of role (planner, worker, verifier, judge) -> profile name
-//	worker_profile_defaults.kind    a JSON object of task kind (implementation, docs, note, final_gate) -> profile name
+//	worker_profile_defaults.kind    a JSON object of kind (task kind: implementation, docs, note, final_gate; session kind: supervisor, operator_interactive, scheduled_command, planner, one_shot, review) -> profile name
 //
 // They map onto the autonomous.worker_profile, autonomous.worker_profiles and
 // autonomous.worker_profile_defaults config paths. Every set is checked through

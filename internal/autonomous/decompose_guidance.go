@@ -93,7 +93,9 @@ func (m *Manager) decomposeGuidanceBlock() string {
 	m.mu.Unlock()
 	block := strings.TrimSpace(BuildDecomposeGuidance(&config.AutonomousConfig{DecomposeLint: lintCfg, DecomposeGuidance: guidance}))
 	if block == "" {
-		return ""
+		block = ForbiddenPatternGuidance()
+	} else {
+		block += "\n\n" + ForbiddenPatternGuidance()
 	}
 	return "\n\n--- Decompose guidance ---\n" + block
 }
@@ -113,4 +115,34 @@ func looksLikeGuidancePath(v string) bool {
 		}
 	}
 	return false
+}
+
+// forbiddenPattern is one pattern the decompose prompt warns about,
+// keyed by the same rule name the spec lint and the gates report.
+type forbiddenPattern struct {
+	Rule        string
+	Pattern     string
+	Alternative string
+}
+
+// forbiddenPatterns lists the patterns a plan must not contain, in
+// prompt order. The Rule values are the SpecRule* names, so the prompt,
+// the spec lint and the gates cannot drift.
+var forbiddenPatterns = []forbiddenPattern{
+	{SpecRuleReleaseVersionFixed, "a fixed release number", "say 'the next patch above main'"},
+	{SpecRuleTrackerID, "a tracker id", "describe the work itself"},
+	{SpecRuleSystemPath, "a real system path", "use the command name, resolved at runtime with command -v"},
+	{SpecRulePrivateAddress, "a private address", "say 'the target host' or a configured host name"},
+	{SpecRuleWorktreePath, "a worktree path", "use a repo-relative path"},
+}
+
+// ForbiddenPatternGuidance renders the forbidden-pattern list, one line
+// per rule with one short correct alternative.
+func ForbiddenPatternGuidance() string {
+	var b strings.Builder
+	b.WriteString("Never put these in a story or task title, description or spec:")
+	for _, f := range forbiddenPatterns {
+		b.WriteString("\n- " + f.Pattern + " (" + f.Rule + "): instead " + f.Alternative)
+	}
+	return b.String()
 }

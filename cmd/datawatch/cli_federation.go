@@ -37,12 +37,16 @@ func newFederationCmd() *cobra.Command {
 			capsStr, _ := cmd.Flags().GetString("capabilities")
 			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 			fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
+			tlsCertFingerprint, _ := cmd.Flags().GetString("tls-cert-fingerprint")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
 			}
 			if url == "" {
 				return fmt.Errorf("--url is required")
+			}
+			if tlsCertFingerprint != "" && tlsSkipVerify {
+				return fmt.Errorf("--tls-cert-fingerprint and --tls-skip-verify cannot both be set — use the fingerprint pin instead of skipping verification")
 			}
 
 			body := map[string]any{
@@ -54,6 +58,9 @@ func newFederationCmd() *cobra.Command {
 			}
 			if tlsSkipVerify {
 				body["tls_skip_verify"] = true
+			}
+			if tlsCertFingerprint != "" {
+				body["tls_cert_fingerprint"] = tlsCertFingerprint
 			}
 			if fingerprintSync {
 				body["fingerprint_sync"] = true
@@ -97,6 +104,7 @@ func newFederationCmd() *cobra.Command {
 	peerAddCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names (optional)")
 	peerAddCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns (e.g. telegram:group:-123,signal:+1555)")
 	peerAddCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network)")
+	peerAddCmd.Flags().String("tls-cert-fingerprint", "", "pin this peer's leaf certificate: 64 hex chars (SHA-256, colons/spaces ignored); wins over --tls-skip-verify, and the two cannot both be set (note: distinct from --fingerprint-sync, which opts the peer into the resource-fingerprint exchange)")
 	peerAddCmd.Flags().Bool("fingerprint-sync", false, "opt this peer into the resource-fingerprint exchange (opt-in per peer; default false; true = explicit)")
 	peerAddCmd.Flags().Bool("observer-pull", false, "opt this peer into the observer pull protocol (the daemon periodically pulls this peer's observer stats; opt-in, default off)")
 	peerAddCmd.Flags().Int("observer-pull-interval", 0, "observer pull interval in seconds (0 = daemon's global observer.pull default)")
@@ -134,6 +142,9 @@ func newFederationCmd() *cobra.Command {
 			if cmd.Flags().Changed("tls-skip-verify") {
 				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 				body["tls_skip_verify"] = tlsSkipVerify
+			}
+			if pin, _ := cmd.Flags().GetString("tls-cert-fingerprint"); pin != "" {
+				body["tls_cert_fingerprint"] = pin
 			}
 			if cmd.Flags().Changed("fingerprint-sync") {
 				fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
@@ -181,6 +192,7 @@ func newFederationCmd() *cobra.Command {
 	peerUpdateCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names")
 	peerUpdateCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns")
 	peerUpdateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only")
+	peerUpdateCmd.Flags().String("tls-cert-fingerprint", "", "pin this peer's leaf certificate: 64 hex chars (SHA-256); wins over --tls-skip-verify; unset = unchanged")
 	peerUpdateCmd.Flags().Bool("fingerprint-sync", false, "opt the peer into the resource-fingerprint exchange (pass true to turn on, --fingerprint-sync=false to turn off; unset = unchanged)")
 	peerUpdateCmd.Flags().Bool("observer-pull", false, "opt the peer into the observer pull protocol (pass true to turn on, --observer-pull=false to turn off; unset = unchanged)")
 	peerUpdateCmd.Flags().Int("observer-pull-interval", 0, "observer pull interval in seconds (0 = daemon's global default; unset = unchanged)")

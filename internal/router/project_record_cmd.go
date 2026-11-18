@@ -58,11 +58,14 @@ func projectRecordFieldList() string {
 // unknown verb.
 func (r *Router) handleProjectRecordCmd(fields []string) bool {
 	switch fields[0] {
-	case "show", "arcs", "progress", "timeline", "set":
+	case "show", "arcs", "plans", "progress", "timeline", "set":
 	default:
 		return false
 	}
 	verb := fields[0]
+	if verb == "plans" {
+		verb = "arcs" // plans is the current name; arcs stays as the deprecated alias
+	}
 	args := fields[1:]
 	if len(args) == 0 {
 		r.send(fmt.Sprintf("[%s] %s", r.hostname, projectRecordUsage(verb)))
@@ -90,7 +93,7 @@ func projectRecordUsage(verb string) string {
 	case "show":
 		return "Usage: project show <project-name>"
 	case "arcs":
-		return "Usage: project arcs <project-name>"
+		return "Usage: project plans <project-name> (arcs is the deprecated old name)"
 	case "progress":
 		return "Usage: project progress <project-name>"
 	case "timeline":
@@ -101,7 +104,7 @@ func projectRecordUsage(verb string) string {
 }
 
 // projectTimelineUsage is the usage line for the timeline verb.
-const projectTimelineUsage = "Usage: project timeline <project-name> [level=arcs|automata|tasks] [parent=<arc>|none] [automaton=<id>] [focus=<arc>|none] [limit=<n>] [cursor=<c>]. Each row shows its start, end, status and release; tasks show what they depend on; an Automaton shows chain edges to the next Automaton."
+const projectTimelineUsage = "Usage: project timeline <project-name> [level=arcs|automata|tasks] (arcs lists the plans) [parent=<plan>|none] [automaton=<id>] [focus=<plan>|none] [limit=<n>] [cursor=<c>]. Each row shows its start, end, status and release; tasks show what they depend on; an Automaton shows chain edges to the next Automaton."
 
 // projectTimelineOptions are the key=value options the timeline verb passes on.
 var projectTimelineOptions = map[string]bool{
@@ -254,14 +257,14 @@ func formatProjectShow(rawBody string) string {
 		lines = append(lines, fmt.Sprintf("  %-22s %s", f+":", plainValue(rec[f])))
 	}
 	arcs, _ := rec["arcs"].([]any)
-	lines = append(lines, fmt.Sprintf("  %-22s %d", "arcs:", len(arcs)))
+	lines = append(lines, fmt.Sprintf("  %-22s %d", "plans:", len(arcs)))
 	if t, ok := rec["target"].(map[string]any); ok {
 		lines = append(lines, fmt.Sprintf("  %-22s %s", "target:", plainValue(t["name"])))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// projectArcs prints the project's ordered arc list.
+// projectArcs prints the project's ordered plan list (the deprecated `arcs` verb).
 func (r *Router) projectArcs(name string) {
 	body, err := r.commGet("/api/projects/"+url.PathEscape(name), nil)
 	if err != nil {
@@ -284,9 +287,9 @@ func formatProjectArcs(name, rawBody string) string {
 		return rawBody
 	}
 	if len(rec.Arcs) == 0 {
-		return "No arcs for project " + name + "."
+		return "No plans for project " + name + "."
 	}
-	lines := []string{fmt.Sprintf("Arcs for project %s (%d):", name, len(rec.Arcs))}
+	lines := []string{fmt.Sprintf("Plans for project %s (%d):", name, len(rec.Arcs))}
 	for i, a := range rec.Arcs {
 		state := a.State
 		if state == "" {
@@ -423,7 +426,7 @@ func formatProjectProgress(name, rawBody string) string {
 		if state == "" {
 			state = "planned"
 		}
-		lines = append(lines, fmt.Sprintf("  arc %s [%s]: %d automata, tasks %d/%d",
+		lines = append(lines, fmt.Sprintf("  plan %s [%s]: %d automata, tasks %d/%d",
 			a.AutomationID, state, len(a.Automata), a.Tasks.Done, a.Tasks.Total))
 	}
 	if len(v.Unassigned.Automata) > 0 {

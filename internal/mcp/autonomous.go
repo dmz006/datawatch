@@ -199,6 +199,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("automation_child_inherit", mcpsdk.Description("Whether a child Automaton (one created with a parent) inherits its parent's project, priority, tags and Automation membership (autonomous.automation.child_inherit). On by default; values set on the child always win. Omit to keep the current value.")),
 		mcpsdk.WithString("automation_merge_pending_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Merge-pending check of finished Automaton branches: off (the default, no check), shadow (records and reports only) or on. Empty keeps the current value.")),
 		mcpsdk.WithNumber("automation_merge_pending_alert_minutes", mcpsdk.Description("Minutes a finished Automaton branch may sit unmerged before a merge-pending alert is raised. Whole number >= 0; 0 turns the merge-pending alert off, unset keeps the 30-minute default.")),
+		mcpsdk.WithBoolean("automation_merge_pending_include_terminal", mcpsdk.Description("Whether the merge-pending check covers terminal Automata (archived, needs_review, blocked and failed) beside completed (autonomous.automation.merge_pending_include_terminal). On by default; off covers only completed. Omit to keep the current value.")),
 		mcpsdk.WithString("automation_merged_member_policy", mcpsdk.Enum("completed", "manual", "block"), mcpsdk.Description("What an Automaton does when a member ends cancelled or completed and its work is already merged into the project default branch: completed (the default) treats the member as completed and the chain follows its on_complete edge, manual keeps the blocked outcome and adds the merge proof to the block reason for the operator, block keeps the blocked outcome and runs no git check. A branch that is not merged always keeps the blocked outcome. Empty keeps the current value.")),
 		mcpsdk.WithString("lane_fill_mode", mcpsdk.Enum("off", "shadow", "on"), mcpsdk.Description("Lane fill mode: off (no planning), shadow (plans and records every decision but starts nothing) or on (starts the planned work). Empty is shadow.")),
 		mcpsdk.WithNumber("lane_fill_gpu_lanes", mcpsdk.Description("Number of GPU lanes lane fill plans for. Whole number >= 0.")),
@@ -235,6 +236,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("archive_enabled", mcpsdk.Description("Whether the daemon may archive finished Automata on its own (autonomous.archive.enabled). On by default; off means only the explicit migration command archives.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
+		mcpsdk.WithNumber("backoff_reserve_for_review", mcpsdk.Description("Review slots a backed-off backend may keep for review work while its usage back-off is active: a whole number >= 0 (0 = no slot reserve; unset reads the 1-slot default). Set with autonomous_config_set, read back in usage_backoff_status's config.reserve_for_review.")),
+		mcpsdk.WithNumber("backoff_reserve_tokens_per_hour", mcpsdk.Description("Per-hour token budget the review reserve may spend on a backed-off backend: a whole number >= 0 (0 = no per-hour budget, the default). Set with autonomous_config_set, read back in usage_backoff_status's config.reserve_tokens_per_hour; the reserve array reports the current window's usage.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
 		mcpsdk.WithBoolean("plan_coverage_suppress_created_files", mcpsdk.Description("On (the default), a requirement that appears only on the 'create Y' side of an 'X or create Y' alternative does not count as an unmatched requirement for coverage. Pass false to count every numbered requirement regardless.")),
 		mcpsdk.WithBoolean("plan_coverage_scoped_requirements", mcpsdk.Description("On (the default), only the numbered requirements inside the configured plan-coverage requirement sections count toward the coverage gate. Pass false to count numbered requirements from the whole spec.")),
@@ -248,6 +251,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Content auto-fix retries per Automaton (default 1). When the completion review still blocks after these are spent, the Automaton goes to needs_review with the findings attached.")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
+		mcpsdk.WithArray("security_scan_extensions", mcpsdk.Description("File extensions the security scan covers (e.g. [\".py\"]). Unset or an empty list = the scanner's built-in defaults (.py, .pyw); a non-empty list scans exactly those extensions. The scan is warn-only."), mcpsdk.WithStringItems()),
 		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
 		mcpsdk.WithNumber("verifier_min_free_mem_mb", mcpsdk.Description("Free GPU memory (MB) a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024 default; 0 turns the check off. Negative values are refused.")),
 		mcpsdk.WithNumber("verifier_headroom_max_age_hours", mcpsdk.Description("How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours. Negative values are refused.")),
@@ -284,6 +288,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("session_start_confirm_seconds", mcpsdk.Description("Bound in seconds for a claude-code autonomous session to produce its first assistant output after start — a session still in waiting_input with no assistant output longer than this is a 'session never started' failure (default 120 = 2m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("stuck_running_seconds", mcpsdk.Description("How long, in seconds, an Automaton may stay running with every task finished, no live worker session and no live executor before the stuck-running watchdog re-fires its completion roll-up once, and then blocks it after a second full bound; when the only blockers are cancelled tasks (every task completed or cancelled, at least one completed) that first step advances it to the completion review and records the skipped cancelled tasks (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("loop_detect_turns", mcpsdk.Description("Turn window the live loop detector looks over when watching a worker session (default 3; 0 turns loop detection off entirely; negative values are rejected)")),
+		mcpsdk.WithBoolean("unlanded_alert_enabled", mcpsdk.Description("Daily pending-branch alert: once per calendar day, raise one alert naming the oldest pending Automaton branch and its age when more than unlanded_alert_threshold branches wait for cleanup (default true)")),
+		mcpsdk.WithNumber("unlanded_alert_threshold", mcpsdk.Description("How many pending Automaton branches are allowed before the daily alert fires; it fires when the count is strictly above this (default 3; 0 alerts on any pending branch; must be a whole number >= 0)")),
 		mcpsdk.WithNumber("task_max_attempt_seconds", mcpsdk.Description("Wall-clock cap on one task attempt in seconds (0 = off, the default; recommended 5400)")),
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
@@ -454,6 +460,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["snapshot_never_stage"]; ok {
 			body["snapshot_never_stage"] = req.GetStringSlice("snapshot_never_stage", []string{})
 		}
+		// Presence-aware like snapshot_never_stage above: an explicit [] leaves
+		// the scanner's built-in defaults (.py, .pyw) in effect, an absent key
+		// leaves the stored list untouched.
+		if _, ok := args["security_scan_extensions"]; ok {
+			body["security_scan_extensions"] = req.GetStringSlice("security_scan_extensions", []string{})
+		}
 	}
 	// Plan-coverage gate — off|warn|block mode (empty = send nothing, let
 	// the REST side keep its stored value) plus the presence-aware
@@ -482,15 +494,22 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			}
 		}
 	}
-	// Usage back-off (autonomous.usage_backoff / backoff_max_wait_minutes);
-	// the mode is omitted when empty, the maximum is presence-aware so the
-	// REST side validates whatever the caller sent.
+	// Usage back-off (autonomous.usage_backoff / backoff_max_wait_minutes /
+	// backoff_reserve_for_review / backoff_reserve_tokens_per_hour); the mode
+	// is omitted when empty, the numbers are presence-aware so the REST side
+	// validates whatever the caller sent (an explicit 0 is forwarded).
 	if v := req.GetString("usage_backoff", ""); v != "" {
 		body["usage_backoff"] = v
 	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["backoff_max_wait_minutes"]; ok {
 			body["backoff_max_wait_minutes"] = req.GetFloat("backoff_max_wait_minutes", 0)
+		}
+		if _, ok := args["backoff_reserve_for_review"]; ok {
+			body["backoff_reserve_for_review"] = req.GetFloat("backoff_reserve_for_review", 0)
+		}
+		if _, ok := args["backoff_reserve_tokens_per_hour"]; ok {
+			body["backoff_reserve_tokens_per_hour"] = req.GetFloat("backoff_reserve_tokens_per_hour", 0)
 		}
 	}
 	// Automation idle-alert + triage-alert thresholds (autonomous.automation.*);
@@ -545,6 +564,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["automation_merge_pending_alert_minutes"]; ok {
 			auto["merge_pending_alert_minutes"] = req.GetFloat("automation_merge_pending_alert_minutes", 0)
+		}
+		if _, ok := args["automation_merge_pending_include_terminal"]; ok {
+			auto["merge_pending_include_terminal"] = req.GetBool("automation_merge_pending_include_terminal", true)
 		}
 	}
 	if v := req.GetString("automation_merged_member_policy", ""); v != "" {
@@ -777,6 +799,15 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["judge_verdict_cache_enabled"]; ok {
 			body["judge_verdict_cache_enabled"] = req.GetBool("judge_verdict_cache_enabled", true)
 		}
+		// Daily pending-branch alert: sent as given when present, so the
+		// daemon refuses a negative or fractional threshold instead of it
+		// being dropped here.
+		if _, ok := args["unlanded_alert_enabled"]; ok {
+			body["unlanded_alert_enabled"] = req.GetBool("unlanded_alert_enabled", true)
+		}
+		if v, ok := args["unlanded_alert_threshold"]; ok {
+			body["unlanded_alert_threshold"] = v
+		}
 	}
 	if v := req.GetFloat("judge_timeout_seconds", -1); v >= 0 {
 		body["judge_timeout_seconds"] = int(v)
@@ -973,8 +1004,8 @@ func qualityGatesSmokePackages(v any) []string {
 
 func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_list",
-		mcpsdk.WithDescription("BL24 — list Automata, newest first. By default this returns the summary list: one small row per Automaton, with no task detail. Read one Automaton's tasks a page at a time with autonomous_prd_tasks. Pass full=true for whole records; with limit (or cursor) that is one page of whole records, without either it is every record, the heavy form. limit and cursor page the list: pass the next_cursor of one reply as the cursor of the next. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed) in the full form, or push_state in the summary. Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the summary list under the in-force autonomous.shipped settings applies, and shipped=true matches only while enabled."),
-		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; may include shipped (the shipped-state bucket, not a stored status).")),
+		mcpsdk.WithDescription("BL24 — list Automata, newest first. By default this returns the summary list: one small row per Automaton, with no task detail. Read one Automaton's tasks a page at a time with autonomous_prd_tasks. Pass full=true for whole records; with limit (or cursor) that is one page of whole records, without either it is every record, the heavy form. limit and cursor page the list: pass the next_cursor of one reply as the cursor of the next. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed) in the full form, or push_state in the summary. Narrow the list without changing any stored state: status takes comma-separated statuses matched against the displayed status (an Automaton whose work landed shows as completed), and shipped is still accepted and selects records that carry a shipped record; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the summary list under the in-force autonomous.shipped settings applies, and shipped=true matches only while enabled."),
+		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; matched against the displayed status (an Automaton whose work landed shows as completed); shipped is still accepted and selects records that carry a shipped record.")),
 		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only PRDs that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
 		mcpsdk.WithBoolean("full", mcpsdk.Description("true: return whole records instead of summaries (default false). Heavy without limit.")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Rows per page, 1 or more (daemon default when omitted).")),
@@ -1078,7 +1109,24 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 		body["parent_prd_id"] = parent
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)
-	return llmSetterResult(out, err)
+	return withSpecCheckText(llmSetterResult(out, err))
+}
+
+// withSpecCheckText adds the spec-check lines as a second text item after
+// the JSON reply (which already carries the spec_check array), so a reader
+// of the plain text sees the same lines every other surface prints.
+func withSpecCheckText(res *mcpsdk.CallToolResult, err error) (*mcpsdk.CallToolResult, error) {
+	if err != nil || res == nil || res.IsError || len(res.Content) == 0 {
+		return res, err
+	}
+	tc, ok := res.Content[0].(mcpsdk.TextContent)
+	if !ok {
+		return res, err
+	}
+	if block := autonomous.SpecCheckBlockFromReply([]byte(tc.Text)); block != "" {
+		res.Content = append(res.Content, mcpsdk.NewTextContent(block))
+	}
+	return res, err
 }
 
 func (s *Server) toolAutonomousPRDSetKind() mcpsdk.Tool {
@@ -1196,6 +1244,149 @@ func (s *Server) handleAutonomousShippedBackfill(_ context.Context, req mcpsdk.C
 	return llmSetterResult(out, err)
 }
 
+// toolAutonomousCompletedMigrate + handler serve the operator/LLM "move
+// cancelled, merged Automata to Completed" action: it proxies the server's
+// POST /api/autonomous/completed/migrate endpoint.
+func (s *Server) toolAutonomousCompletedMigrate() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_completed_migrate",
+		mcpsdk.WithDescription("Move Automata (and Automations) that were cancelled but whose work is already merged to the base branch to status Completed, so they stop showing as cancelled. Never kills a session and never touches an Automaton whose work is not merged. Records are taken oldest first. A real run is refused while a final gate is running. Returns the report: considered, changed, would_complete (dry run) or completed (real run) with each record's title and merge commit, already_completed, and any errors. Set dry_run=true to list what would change without writing anything; limit caps how many records one run changes (0 or absent: no limit); id restricts the run to one Automaton or Automation."),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true: list what would change without writing; false or absent: the run writes (default)")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("most records one run changes; 0 or absent means no limit")),
+		mcpsdk.WithString("id", mcpsdk.Description("optional: restrict the run to this one Automaton or Automation id")),
+	)
+}
+func (s *Server) handleAutonomousCompletedMigrate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	v := url.Values{}
+	if req.GetBool("dry_run", false) {
+		v.Set("dry_run", "true")
+	}
+	if n := req.GetInt("limit", 0); n != 0 {
+		v.Set("limit", strconv.Itoa(n))
+	}
+	if id := strings.TrimSpace(req.GetString("id", "")); id != "" {
+		v.Set("id", id)
+	}
+	path := "/api/autonomous/completed/migrate"
+	if enc := v.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	return llmSetterResult(out, err)
+}
+
+// ----- Operator hold: hold or extend, release, the Held group, migration -----
+// Each tool is a thin proxy to the hold REST routes; the daemon owns every
+// rule and every refusal.
+// holdUntilHelp names the values the until argument accepts.
+const holdUntilHelp = "optional look-again time: an RFC 3339 time, a date such as 2026-12-01 (end of that day, UTC) or a duration such as 72h"
+
+// holdActor is the actor recorded when the caller names none.
+func holdActor(req mcpsdk.CallToolRequest) string {
+	if a := strings.TrimSpace(req.GetString("actor", "")); a != "" {
+		return a
+	}
+	return "operator"
+}
+
+// toolAutonomousPRDHold + handler put an Automaton on hold, or change the
+// hold of one already held. They proxy POST /api/autonomous/prds/{id}/hold.
+func (s *Server) toolAutonomousPRDHold() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_hold",
+		mcpsdk.WithDescription("Put an Automaton on hold on purpose, for example until after a release. A held Automaton waits by operator decision: it is not blocked, not failed and not waiting for review, nothing starts it, and its tasks keep their state. A hold needs a reason and is allowed from draft, needs_review, approved, revisions_asked, paused, blocked and failed; it is refused from planning, running, completed, rejected, cancelled, archived. Calling this on an Automaton that is already held extends the hold: a field you give replaces the stored one, a field you leave out is kept. Release it with autonomous_prd_release_hold."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("reason", mcpsdk.Required(), mcpsdk.Description("why the Automaton waits (at most 500 characters); required when placing a hold")),
+		mcpsdk.WithString("condition", mcpsdk.Description("optional free text shown to the operator, such as 'until after the release'; never evaluated")),
+		mcpsdk.WithString("until", mcpsdk.Description(holdUntilHelp)),
+		mcpsdk.WithString("actor", mcpsdk.Description("who is holding it (defaults to operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDHold(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	body, _ := json.Marshal(map[string]string{
+		"reason":    req.GetString("reason", ""),
+		"condition": req.GetString("condition", ""),
+		"until":     strings.TrimSpace(req.GetString("until", "")),
+		"actor":     holdActor(req),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(id)+"/hold", body)
+	return llmSetterResult(out, err)
+}
+
+// toolAutonomousPRDReleaseHold + handler end a hold. They proxy
+// POST /api/autonomous/prds/{id}/release_hold.
+func (s *Server) toolAutonomousPRDReleaseHold() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_release_hold",
+		mcpsdk.WithDescription("Release an Automaton from its operator hold. It returns to the status it had when it was held (a blocked Automaton gets its blocked reason back). Releasing does not start anything; the normal paths pick the Automaton up from there. Errors when the Automaton is not held."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("note", mcpsdk.Description("optional free-form note saved on the decision entry")),
+		mcpsdk.WithString("actor", mcpsdk.Description("who is releasing it (defaults to operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDReleaseHold(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	body, _ := json.Marshal(map[string]string{
+		"note":  req.GetString("note", ""),
+		"actor": holdActor(req),
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(id)+"/release_hold", body)
+	return llmSetterResult(out, err)
+}
+
+// toolAutonomousHeld + handler read the Held group. They proxy
+// GET /api/autonomous/held.
+func (s *Server) toolAutonomousHeld() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_held",
+		mcpsdk.WithDescription("Read the Held group: every Automaton the operator put on hold, each with its title, reason, optional condition and look-again line (looked at again on a date, no date set, or hold expired, ready to review). Expired holds come first, then the soonest look-again time, then the oldest hold. Read-only."),
+	)
+}
+func (s *Server) handleAutonomousHeld(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/held", nil)
+	return llmSetterResult(out, err)
+}
+
+// toolAutonomousHeldMigrate + handler list look-alike blocked or failed
+// Automata and put the chosen ones on hold. They proxy
+// POST /api/autonomous/held/migrate.
+func (s *Server) toolAutonomousHeldMigrate() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_held_migrate",
+		mcpsdk.WithDescription("List blocked or failed Automata that look like they are waiting on purpose (a failed evaluation run, parked design work, a blocked reason that says hold or until after the release) and put the ones you choose on hold. A dry run, or a call with no ids, only lists the candidates and changes nothing. A real run needs ids and a reason that you supply; the reason is never generated. Condition and until are optional and apply to every chosen id. A real run is refused while a final gate is running and skips, with a reason, any id that is missing, already held, or not blocked or failed."),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true: list the candidates without writing. Absent: a dry run when ids is empty, a real run otherwise")),
+		mcpsdk.WithArray("ids", mcpsdk.WithStringItems(), mcpsdk.Description("Automaton ids to put on hold; they need not be candidates")),
+		mcpsdk.WithString("reason", mcpsdk.Description("why they wait; required for a real run")),
+		mcpsdk.WithString("condition", mcpsdk.Description("optional free text shown to the operator; never evaluated")),
+		mcpsdk.WithString("until", mcpsdk.Description(holdUntilHelp)),
+		mcpsdk.WithString("actor", mcpsdk.Description("who is holding them (defaults to operator)")),
+	)
+}
+func (s *Server) handleAutonomousHeldMigrate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"actor": holdActor(req)}
+	if args := req.GetArguments(); args != nil {
+		if _, given := args["dry_run"]; given {
+			body["dry_run"] = req.GetBool("dry_run", false)
+		}
+	}
+	var ids []string
+	for _, id := range req.GetStringSlice("ids", nil) {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 0 {
+		body["ids"] = ids
+	}
+	for _, k := range []string{"reason", "condition"} {
+		if v := req.GetString(k, ""); v != "" {
+			body[k] = v
+		}
+	}
+	if v := strings.TrimSpace(req.GetString("until", "")); v != "" {
+		body["until"] = v
+	}
+	b, _ := json.Marshal(body)
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/held/migrate", b)
+	return llmSetterResult(out, err)
+}
+
 // toolAutonomousShippedCounts + handler read the per-status shipped counts
 // (the PRD and Automation buckets) computed under the in-force
 // autonomous.shipped settings. It proxies the server's
@@ -1203,7 +1394,7 @@ func (s *Server) handleAutonomousShippedBackfill(_ context.Context, req mcpsdk.C
 // status touched.
 func (s *Server) toolAutonomousShippedCounts() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_shipped_counts",
-		mcpsdk.WithDescription("Read the per-status shipped counts — the PRD and Automation buckets — computed under the in-force autonomous.shipped settings. One count per displayed status, with the shipped bucket separated from cancelled while enabled + count_separately hold: a PRD/Automation cancelled without its work landing counts as cancelled, one whose work landed (non-empty merge commit) counts as shipped while the stored status stays cancelled. The response also echoes the effective settings (enabled, show_chip, filter_default, count_separately, backfill_on_start) it was computed under. Read-only: it never writes any shipped record and touches no status. Same numbers as the dashboard's shipped card and the autonomous shipped counts CLI verb."),
+		mcpsdk.WithDescription("Read the per-status counts — the PRD and Automation buckets — computed under the in-force autonomous.shipped settings. One count per displayed status, while the shipped surface is enabled: a PRD/Automation cancelled without its work landing counts as cancelled, one whose work landed (non-empty merge commit) counts as completed together with the stored-completed ones, even when its stored status is still cancelled (there is no separate shipped bucket). The response also echoes the effective settings (enabled, show_chip, filter_default, count_separately, backfill_on_start) it was computed under. Read-only: it never writes any shipped record and touches no status. Same numbers as the dashboard's shipped card and the autonomous shipped counts CLI verb."),
 	)
 }
 func (s *Server) handleAutonomousShippedCounts(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1469,7 +1660,7 @@ func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsd
 	if err != nil {
 		return nil, err
 	}
-	return textOK(string(out)), nil
+	return withSpecCheckText(textOK(string(out)), nil)
 }
 
 func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
@@ -1480,6 +1671,8 @@ func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only) — the full spec text: read the existing spec first from autonomous_prd_get with detail=full, which returns task specs whole and uncut; a spec carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)")),
 		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
 		mcpsdk.WithString("report_path", mcpsdk.Description("Optional: the one repo-relative file the read-only task may write, under .datawatch/reports/. The task must be read_only (set it via read_only in the same call if needed) or it is rejected.")),
+		mcpsdk.WithString("verification_script", mcpsdk.Description("Optional: the task's verification script, one repo-relative script file (for example scripts/verify.sh). A command string, an absolute path, a path with a .. segment or the project root is rejected. The path is also added to the task's files_generated when not yet listed. Omit to leave unchanged.")),
+		mcpsdk.WithString("verification_script_reason", mcpsdk.Description("Optional: why the task carries no verification script (the exemption the plan check accepts in place of a script), for example a documentation-only change. Can be set with or without verification_script. Omit to leave unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1502,6 +1695,12 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 	}
 	if v := req.GetString("report_path", ""); v != "" {
 		editBody["report_path"] = v
+	}
+	if v := req.GetString("verification_script", ""); v != "" {
+		editBody["verification_script"] = v
+	}
+	if v := req.GetString("verification_script_reason", ""); v != "" {
+		editBody["verification_script_reason"] = v
 	}
 	body, _ := json.Marshal(editBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)

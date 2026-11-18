@@ -22,7 +22,7 @@ const ROLL = (a, b) => ({
 });
 
 // A DOM stand-in that keeps one element per id and counts the writes to each.
-function load({ route, store, hash = '#projects/acme', throwingStorage = false } = {}) {
+function load({ route, store, hash = '#projects/acme/plans', throwingStorage = false } = {}) {
   const els = {};
   const sandbox = buildSandbox({ initialHash: hash });
   sandbox.document.getElementById = id => {

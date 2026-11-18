@@ -256,7 +256,10 @@ func EffectiveTaskTemplates(cfg *config.Config) []config.TaskTemplateDef {
 }
 
 // ApplyTaskTemplates appends the template tasks the planner did not
-// already produce to every story, and returns the updated stories
+// already produce to every story (the final_gate template is the
+// exception: it is applied once, to the last story, depending on every
+// task of the Automaton; any final_gate task on another story is
+// dropped), and returns the updated stories
 // plus one "<story>/<template>" entry per applied template task
 // (nil/empty when nothing was applied).
 //
@@ -283,17 +286,94 @@ func ApplyTaskTemplates(stories []Story, feature, projectDir string, cfg *config
 		return append([]Story(nil), stories...), nil
 	}
 	templates := EffectiveTaskTemplates(cfg)
-	out := make([]Story, 0, len(stories))
+	perStory := make([]config.TaskTemplateDef, 0, len(templates))
+	var finalGate []config.TaskTemplateDef
+	for _, def := range templates {
+		if strings.TrimSpace(def.ID) == TemplateFinalGate {
+			finalGate = append(finalGate, def)
+			continue
+		}
+		perStory = append(perStory, def)
+	}
+	out := dropMisplacedFinalGates(stories)
 	var applied []string
-	for i := range stories {
-		story := stories[i]
-		newStory, added := applyTemplatesToStory(story, feature, templates, cfg)
-		out = append(out, newStory)
+	for i := range out {
+		story := out[i]
+		newStory, added := applyTemplatesToStory(story, feature, perStory, cfg)
+		out[i] = newStory
 		for _, id := range added {
 			applied = append(applied, TaskTemplateAppliedLabel(story.ID, id))
 		}
 	}
+	if len(out) > 0 && len(finalGate) > 0 {
+		last := len(out) - 1
+		if added := applyFinalGate(&out[last], out, feature, finalGate, cfg); added {
+			applied = append(applied, TaskTemplateAppliedLabel(out[last].ID, TemplateFinalGate))
+		}
+	}
 	return out, applied
+}
+
+// dropMisplacedFinalGates returns a copy of stories in which every
+// final_gate task on a story other than the last is removed (and
+// scrubbed from the other tasks' depends_on): the Automaton has one
+// final gate, at the end.
+func dropMisplacedFinalGates(stories []Story) []Story {
+	out := append([]Story(nil), stories...)
+	dropped := make(map[string]bool)
+	for i := 0; i < len(out)-1; i++ {
+		kept := make([]Task, 0, len(out[i].Tasks))
+		for _, t := range out[i].Tasks {
+			if t.Kind == TaskKindFinalGate {
+				dropped[t.ID] = true
+				continue
+			}
+			kept = append(kept, t)
+		}
+		out[i].Tasks = kept
+	}
+	if len(dropped) == 0 {
+		return out
+	}
+	for i := range out {
+		tasks := append([]Task(nil), out[i].Tasks...)
+		for j := range tasks {
+			var deps []string
+			for _, d := range tasks[j].DependsOn {
+				if !dropped[d] {
+					deps = append(deps, d)
+				}
+			}
+			tasks[j].DependsOn = deps
+		}
+		out[i].Tasks = tasks
+	}
+	return out
+}
+
+// applyFinalGate appends the one final gate to the last story: its
+// depends_on covers every task of every story, and its slots are
+// rendered from the union of all task files. It adds nothing when the
+// last story already carries a final gate (planner-written or from an
+// earlier run). Reports whether a gate was added.
+func applyFinalGate(last *Story, all []Story, feature string, defs []config.TaskTemplateDef, cfg *config.Config) bool {
+	whole := *last
+	whole.Tasks = nil
+	for _, s := range all {
+		whole.Tasks = append(whole.Tasks, s.Tasks...)
+	}
+	for _, t := range whole.Tasks {
+		if t.Kind == TaskKindFinalGate {
+			return false
+		}
+	}
+	n := len(whole.Tasks)
+	merged, added := applyTemplatesToStory(whole, feature, defs, cfg)
+	if len(added) == 0 {
+		return false
+	}
+	last.Tasks = append(append([]Task(nil), last.Tasks...), merged.Tasks[n:]...)
+	return true
 }
 
 // applyTemplatesToStory appends the applicable template tasks to one

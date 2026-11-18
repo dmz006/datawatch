@@ -20,6 +20,7 @@ const noProfileReason = "no profile configured; full harness"
 type LaunchInput struct {
 	Role          string
 	Kind          string
+	Activity      string
 	TaskName      string
 	AutomatonName string
 	ProjectName   string
@@ -35,7 +36,7 @@ type LaunchInput struct {
 // is false, the returned profile is the built-in fallback and must not be
 // attached to the launch; the Decision explains why.
 func ResolveForLaunch(in LaunchInput) (WorkerProfile, bool, Decision) {
-	kind := in.Kind
+	kind := effectiveKind(ResolveInput{Kind: in.Kind, Activity: in.Activity, KindDefaults: in.KindDefaults})
 	if _, kindConfigured := in.KindDefaults[kind]; !kindConfigured {
 		if _, roleConfigured := in.RoleDefaults[in.Role]; roleConfigured {
 			// A configured role default must beat the built-in kind default.
@@ -46,6 +47,7 @@ func ResolveForLaunch(in LaunchInput) (WorkerProfile, bool, Decision) {
 	p, d := Resolve(ResolveInput{
 		Role:          in.Role,
 		Kind:          kind,
+		Activity:      "",
 		TaskName:      in.TaskName,
 		AutomatonName: in.AutomatonName,
 		ProjectName:   in.ProjectName,

@@ -26,6 +26,8 @@ structured hierarchy of stories + tasks, queues it for review, then
 runs the approved tasks under verification.
 This howto walks the spawn → plan → review → run loop.
 
+> Planning failed, or a spec check warning on create? See [automata-planning-failures.md](automata-planning-failures.md).
+
 ## What it is
 
 An Automaton is a structured spec that the daemon's autonomous
@@ -71,7 +73,7 @@ autonomous:
   enabled: true
   planning_backend: claude-code   # was "decomposition_backend" before v7.0
   planning_effort: high           # was "decomposition_effort"
-  planning_model: ""              # was "decomposition_model" — empty = LLM default
+  planning_model: ""              # was "decomposition_model" — empty = the daemon default model for that backend (sonnet on claude-code), not the backend's built-in default
   max_concurrent_tasks: 1         # tasks of one Automaton run at once; 1 = sequential
 ```
 
@@ -202,6 +204,9 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PR
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/run
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/cancel
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/archive
+# (Archive is refused while the Automaton's landing record is still pending:
+#  its work branch has not landed on the default branch yet — ship it, or
+#  record keep or drop for its landing. See howto/automaton-worktree-cleanup.md, "The landing record".)
 
 # Hard delete.
 curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
@@ -296,11 +301,21 @@ command like `go build ./... && go test ./...` is not a script), or a
 `report_path` under `.datawatch/reports/` where it writes its verdict. The
 plan-coverage gate and the decompose lint both refuse a read-only task with
 neither, whether it is read-only by the marker or by the `read_only` flag,
-because a failure of it would otherwise leave nothing to inspect.
+because a failure of it would otherwise leave nothing to inspect. If the plan
+came back without one, set it on the task in place with `prd-edit-task
+--verification-script <path>` (or the **Verification script** field of the task
+editor) instead of re-decomposing; the path must be one repo-relative script
+file and is added to the task's generated files.
 
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
-task titled "Add the retry setting to the config loader".
+task titled "Add the retry setting to the config loader". And every one of
+those names is written as **full file paths verbatim** — the exact
+repo-relative path, in one piece, with no space inside, no ellipsis and no
+abbreviation — because the coverage gate extracts names that stop at the
+first space and reads a name cut mid-way as a *different* missing file; the
+rule and its rationale are in
+[the full-file-path section of the decompose-lint how-to](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too).
 
 These are exempt without a marker:
 
@@ -342,6 +357,20 @@ gate with nothing runnable — fails it.
 - **A read-only task may write exactly one file: its report, and any other change still fails.** The only write a read-only task is allowed is to the one `report_path` it carries, and that path has to live under `.datawatch/reports/`. The read-only tree check that runs after the task compares the tree before and after and sets aside only `.datawatch/` (in which the report lives) plus that one report path. If the task leaves an extra report file under the older `docs/plans/reports/` location, that file is moved under `.datawatch/reports/` and the move is recorded as the decision for the write, so the report file itself does not fail the task. Any other change the task left behind still fails it, and the daemon records that read-only violation, naming the file.
 - **Automata decomposed with the old template pack keep working.** This change alters what a fresh template application produces, not what already exists: an Automaton whose stories already carry the old pack's closing tasks keeps running, and the two old standard tasks — the final gate and the release version note — can still be cancelled or removed like any other task, without disturbing the rest of the story.
 
+## Verification scripts that stay stable
+
+The planner is told to write each verification script so it keeps passing as
+the other tasks of the Automaton land: run `make sync-docs` first in any docs
+check, build the allowed-file list from every file the Automaton may touch (the
+cumulative allowed-file helper), compare against the merge base, never run a
+formatter over a whole folder, and plan **one** final gate, as the last task,
+with a script or an explicit `verification_script_reason`. Three decompose-lint
+rules flag a plan that breaks this, naming the script and the rule id, and the
+script gate now runs every task's script across the whole Automaton when the
+final gate has none of its own. Fix a flagged task in place with the task edit
+(`verification_script` / `verification_script_reason`) instead of re-decomposing.
+The full guide is [Verification scripts that stay stable](automaton-verification-scripts.md).
+
 ## Choose the verifier per task, story or Automaton
 
 After a task runs, a verifier LLM judges the work. By default every
@@ -364,7 +393,10 @@ Most specific wins: task → story → Automaton → Automation → global. Set 
 **backend** at the level you want; a model or effort without any
 per-unit backend leaves the verifier on the global path. An explicit
 backend also skips the `verification_backends` pool. Send `""` (or an
-empty field in the PWA) to clear and inherit again.
+empty field in the PWA) to clear and inherit again. A `claude-code`
+verifier that ends up with no model from any of those levels runs on the
+daemon default model, `sonnet`, not the backend's built-in default — see
+[Explicit model policy](explicit-model-policy.md).
 
 ```bash
 # Stronger verifier for one risky task.

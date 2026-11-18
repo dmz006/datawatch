@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -135,5 +136,101 @@ func TestTaskRoutingCommBadUsageAndHelp(t *testing.T) {
 	help := strings.Join(r.HandleTestMessage("autonomous"), "\n")
 	if !strings.Contains(help, "task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]") {
 		t.Errorf("chat help does not list task-routing: %q", help)
+	}
+}
+
+// The comm configure verb carries the three task routing keys to the daemon
+// unchanged and shows the daemon's reply, including a skipped key.
+
+func taskRoutingConfigureReply(t *testing.T, fn func(key, value string) error, text string) string {
+	t.Helper()
+	var wg sync.WaitGroup
+	var got string
+	wg.Add(1)
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: func(s string) {
+		got = s
+		wg.Done()
+	}}}
+	r.SetConfigureFunc(fn)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+	wg.Wait()
+	return got
+}
+
+func TestTaskRoutingConfigureVerbWritesAndReadsBack(t *testing.T) {
+	block := `{"enabled":true,"active_profile":"lean","profiles":{"lean":{"docs_set":{"worker_backend":"pi-prompt"}}}}`
+	store := map[string]string{}
+	set := func(k, v string) error {
+		if k == "autonomous.task_routing.active_profile" && v == "ghost" {
+			return errors.New(k + " not stored (the active profile must name an existing profile)")
+		}
+		store[k] = v
+		return nil
+	}
+	for _, c := range []struct{ key, value string }{
+		{"autonomous.task_routing.enabled", "true"},
+		{"autonomous.task_routing.active_profile", "lean"},
+		{"autonomous.task_routing", block},
+	} {
+		reply := taskRoutingConfigureReply(t, set, c.key+"="+c.value)
+		if !strings.Contains(reply, "Set "+c.key) {
+			t.Errorf("%s: reply %q does not confirm the write", c.key, reply)
+		}
+		// The key and the whole value (a JSON block holds '=' free text and
+		// commas) reach the daemon unchanged.
+		if store[c.key] != c.value {
+			t.Errorf("%s read back %q, want %q", c.key, store[c.key], c.value)
+		}
+	}
+	// A skipped key is a failure reply, and nothing is stored.
+	reply := taskRoutingConfigureReply(t, set, "autonomous.task_routing.active_profile=ghost")
+	if !strings.Contains(reply, "Configure failed") || !strings.Contains(reply, "not stored") {
+		t.Errorf("a skipped profile must be reported as a failure, got %q", reply)
+	}
+	if store["autonomous.task_routing.active_profile"] != "lean" {
+		t.Errorf("a skipped profile was stored: %q", store["autonomous.task_routing.active_profile"])
+	}
+}
+
+// A daemon refusal of an unknown or premium row reaches the chat reply with
+// the row named, and the chat verb claims no success and stores nothing.
+
+func TestTaskRoutingCommConfigureUnknownAndPremiumRefusalNamesRow(t *testing.T) {
+	refusals := map[string]string{
+		"Unknown": `autonomous.task_routing not stored: profile "x" row "final_gate": worker names LLM backend "ghost-llm", which is not known`,
+		"Premium": `autonomous.task_routing not stored: profile "x" row "final_gate": worker names model "claude-opus-5-5", which needs allow_premium_model set on this row`,
+	}
+	for name, refusal := range refusals {
+		t.Run(name, func(t *testing.T) {
+			stored := map[string]string{}
+			set := func(k, v string) error {
+				if k == "autonomous.task_routing" {
+					return errors.New(refusal)
+				}
+				stored[k] = v
+				return nil
+			}
+			reply := taskRoutingConfigureReply(t, set, `autonomous.task_routing={"enabled":true,"active_profile":"x","profiles":{"x":{"final_gate":{"worker_backend":"ghost-llm"}}}}`)
+			if !strings.Contains(reply, "Configure failed") || strings.Contains(reply, "Set autonomous.task_routing") {
+				t.Fatalf("a refused row must be reported as a failure: %q", reply)
+			}
+			for _, w := range []string{`profile "x"`, `row "final_gate"`, "worker"} {
+				if !strings.Contains(reply, w) {
+					t.Errorf("reply does not name %s: %q", w, reply)
+				}
+			}
+			if len(stored) != 0 {
+				t.Errorf("a refused row was stored: %v", stored)
+			}
+		})
+	}
+}
+
+func TestTaskRoutingCommProfileUseUnknownRowRefusalIsReported(t *testing.T) {
+	_, port := taskRoutingCommFake(t, map[string]string{})
+	r := setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("autonomous task-routing profile use ghost"), "\n")
+	if !strings.Contains(got, "autonomous task-routing failed") || strings.Contains(got, "Active profile is now") {
+		t.Errorf("a refused switch must not claim success: %q", got)
 	}
 }

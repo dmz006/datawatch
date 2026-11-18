@@ -109,7 +109,6 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(messaging.Message)
 	}
 }
 
-
 // Link is not implemented for this adapter (linking is done via the link command).
 func (a *Adapter) Link(deviceName string, onQR func(string)) error { return nil }
 

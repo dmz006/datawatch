@@ -43,6 +43,9 @@ import (
 // Every offender is collected (not just the first) so a retry attempt
 // sees the full list in one error.
 func validateVerificationScriptCoverage(projectDir string, stories []Story) error {
+	if err := validateFinalGatePlacement(stories); err != nil {
+		return err
+	}
 	if projectDir == "" {
 		return nil
 	}
@@ -56,6 +59,10 @@ func validateVerificationScriptCoverage(projectDir string, stories []Story) erro
 			// planner's work: the planner was never asked to script it, so
 			// the plan is not rejected for it.
 			if isTemplateTaskID(t.ID) {
+				continue
+			}
+			if t.Kind == TaskKindFinalGate && strings.TrimSpace(t.VerificationScript) == "" && strings.TrimSpace(t.VerificationScriptReason) == "" {
+				offenders = append(offenders, fmt.Sprintf("story %q / final gate task %q (needs a verification_script or a verification_script_reason)", s.Title, t.Title))
 				continue
 			}
 			if len(t.FilesPlanned) > 0 && strings.TrimSpace(t.VerificationScript) == "" {
@@ -76,4 +83,22 @@ func validateVerificationScriptCoverage(projectDir string, stories []Story) erro
 // (see templateTaskID).
 func isTemplateTaskID(id string) bool {
 	return strings.Contains(id, "-tpl-")
+}
+
+// validateFinalGatePlacement rejects a plan whose planner-written final_gate
+// task sits on any story but the last: the Automaton has one final gate, at
+// the end. Template-appended tasks are exempt.
+func validateFinalGatePlacement(stories []Story) error {
+	var offenders []string
+	for i := 0; i < len(stories)-1; i++ {
+		for _, t := range stories[i].Tasks {
+			if t.Kind == TaskKindFinalGate && !isTemplateTaskID(t.ID) {
+				offenders = append(offenders, fmt.Sprintf("story %q / task %q", stories[i].Title, t.Title))
+			}
+		}
+	}
+	if len(offenders) == 0 {
+		return nil
+	}
+	return fmt.Errorf("decompose placed a final_gate task on a story other than the last: %s. The Automaton has exactly one final gate, on the last story; remove the others", strings.Join(offenders, "; "))
 }

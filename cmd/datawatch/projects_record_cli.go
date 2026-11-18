@@ -114,24 +114,24 @@ func parseArcSpecs(specs []string) ([]projectArcArg, error) {
 		}
 		parts := strings.Split(raw, ":")
 		if len(parts) != 3 {
-			return nil, fmt.Errorf("arc %q: want id:priority:state", raw)
+			return nil, fmt.Errorf("plan entry %q: want id:priority:state", raw)
 		}
 		id := strings.TrimSpace(parts[0])
 		if id == "" {
-			return nil, fmt.Errorf("arc %q: automation id is empty", raw)
+			return nil, fmt.Errorf("plan entry %q: automation id is empty", raw)
 		}
 		if seen[id] {
-			return nil, fmt.Errorf("arc %q: automation %q listed twice", raw, id)
+			return nil, fmt.Errorf("plan entry %q: automation %q listed twice", raw, id)
 		}
 		priority, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 		if err != nil {
-			return nil, fmt.Errorf("arc %q: priority must be an integer", raw)
+			return nil, fmt.Errorf("plan entry %q: priority must be an integer", raw)
 		}
 		state := strings.TrimSpace(parts[2])
 		switch state {
 		case "", "planned", "active", "done":
 		default:
-			return nil, fmt.Errorf("arc %q: state must be planned, active or done", raw)
+			return nil, fmt.Errorf("plan entry %q: state must be planned, active or done", raw)
 		}
 		seen[id] = true
 		arcs = append(arcs, projectArcArg{AutomationID: id, Priority: priority, State: state})
@@ -163,7 +163,7 @@ func newProjectsShowCmd() *cobra.Command {
 	var window int
 	cmd := &cobra.Command{
 		Use:   "show <name>",
-		Short: "Show a project's record and its roll-up (arcs, Automata, tasks, points, throughput)",
+		Short: "Show a project's record and its roll-up (plans, Automata, tasks, points, throughput)",
 		Long:  "Show a project's record and its roll-up.\n\nThroughput counts Automata finished and tasks finished in the window. An Automaton is finished when it is completed, when it is cancelled or archived and its work branch is already on the project's default branch, or when it carries a shipped record. A task counts from its own completion time, whatever the Automaton's final status.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -255,27 +255,16 @@ func newProjectsArcsCmd() *cobra.Command {
 	var set []string
 	cmd := &cobra.Command{
 		Use:   "arcs <name>",
-		Short: "Show a project's arcs, or replace them with --set id:priority:state,...",
-		Long: "Without --set, print the project's arcs. With --set, replace the whole list " +
+		Short: "Deprecated: use `datawatch plans list <name>`; --set still replaces the plan list",
+		Long: "Deprecated alias of `datawatch plans list <name>`: without --set it prints a " +
+			"note and shows the project's plans. With --set, replace the whole plan list " +
 			"with the entries given (state is planned, active or done). --set with an empty " +
-			"value clears the arcs.",
+			"value clears the plan list.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Note: `projects arcs` is deprecated; use `datawatch plans list "+args[0]+"`.")
 			if !cmd.Flags().Changed("set") {
-				rec, err := fetchProjectRecord(args[0])
-				if err != nil {
-					return err
-				}
-				arcs := rec.Arcs
-				if arcs == nil {
-					arcs = []projectArcArg{}
-				}
-				body, err := json.Marshal(arcs)
-				if err != nil {
-					return err
-				}
-				prettyPrint(body)
-				return nil
+				return runPlansList(cmd, args[0], 0, false)
 			}
 			arcs, err := parseArcSpecs(set)
 			if err != nil {
@@ -290,7 +279,7 @@ func newProjectsArcsCmd() *cobra.Command {
 			return daemonJSON(http.MethodPost, "/api/projects", up)
 		},
 	}
-	cmd.Flags().StringSliceVar(&set, "set", nil, "replace the arcs: comma-separated id:priority:state entries")
+	cmd.Flags().StringSliceVar(&set, "set", nil, "replace the plan list: comma-separated id:priority:state entries")
 	return cmd
 }
 
@@ -326,7 +315,7 @@ func newProjectsTimelineCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "timeline <name>",
-		Short: "Show when each arc, Automaton and task of a project started and finished, with status, dependencies and Automaton chain edges",
+		Short: "Show when each plan, Automaton and task of a project started and finished, with status, dependencies and Automaton chain edges",
 		Long:  "Show the project timeline. Each row has start, end, status and release; task rows carry depends_on; Automaton levels and --focus replies carry edges, the chain between Automata. The daemon reply is printed unchanged.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -346,10 +335,10 @@ func newProjectsTimelineCmd() *cobra.Command {
 			return daemonGet(path)
 		},
 	}
-	cmd.Flags().StringVar(&level, "level", "", "rows to show: arcs (default), automata or tasks")
-	cmd.Flags().StringVar(&parent, "parent", "", "with --level automata: the arc id, or none for Automata no arc holds")
+	cmd.Flags().StringVar(&level, "level", "", "rows to show: arcs (the plans, default), automata or tasks")
+	cmd.Flags().StringVar(&parent, "parent", "", "with --level automata: the plan id, or none for Automata no plan holds")
 	cmd.Flags().StringVar(&automaton, "automaton", "", "with --level tasks: the Automaton id")
-	cmd.Flags().StringVar(&focus, "focus", "", "one arc id (or none): its Automata and their tasks in one reply")
+	cmd.Flags().StringVar(&focus, "focus", "", "one plan id (or none): its Automata and their tasks in one reply")
 	cmd.Flags().IntVar(&limit, "limit", 0, "maximum rows per page (daemon default when unset)")
 	cmd.Flags().StringVar(&cursor, "cursor", "", "continue from a next_cursor returned by an earlier call")
 	return cmd

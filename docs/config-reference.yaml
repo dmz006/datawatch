@@ -143,6 +143,10 @@ session:
   # 0 = legacy single send-keys (triggers missed-Enter bug on React Ink TUIs).
   # 200 (default) fixes claude-code and other Ink-based TUIs.
   # Applies to ALL send sources (schedule, MCP, CLI, API) since v8.12.9.
+  # After this settle the daemon also waits (fixed 1.5 s max) for the pasted
+  # text or its [Pasted text #N] placeholder to show in the pane, sends Enter,
+  # and for pasted/multi-line/long input re-sends Enter at most twice while the
+  # text is still unsent (paste_submit.go). Those timings are not config keys.
   schedule_settle_ms: 200
 
   # UI prompt handling — every value below is read live from this config,
@@ -405,9 +409,22 @@ server:
 #   DATAWATCH_API_URL        Base URL of the parent daemon API the bridge calls back to
 #                            (default http://localhost:8080). Wrong value → bridge starts but
 #                            tool discovery fails; sessions show "reply-only" mode.
-#   DATAWATCH_TOKEN          Bearer token for the parent daemon API. Must match server.token.
-#                            Wrong/missing → 401 on discovery and /api/channel/ready;
-#                            bridge starts but push notifications never work.
+#   DATAWATCH_TOKEN          Bearer token the bridge authenticates with against the parent daemon
+#                            API. In the per-session .mcp.json the daemon writes this is the
+#                            session's scoped, short-lived credential (default session-default
+#                            grant) — minted at session start, revoked when the session ends or
+#                            is killed (a leftover project file therefore holds a dead bearer).
+#                            In the instance-level .mcp.json in the data directory the
+#                            credential is the instance-scoped, EXPIRING one: same default
+#                            session-default grant, valid about an hour, refreshed at each
+#                            session launch and revoked when no live session remains (the
+#                            datawatch entry is then removed), so NO daemon-written .mcp.json
+#                            carries the long-lived admin server.token anymore. Operator-
+#                            managed host configs still use server.token or a federation
+#                            peer token. See docs/howto/federation-cbac.md for the
+#                            capability model. Wrong/missing → 401 on discovery and
+#                            /api/channel/ready; bridge starts but push notifications never
+#                            work.
 #   CLAUDE_SESSION_ID        Session ID injected so the bridge can tag replies correctly.
 #                            Auto-set by the daemon; do not override unless testing.
 #
@@ -1127,6 +1144,15 @@ servers:
   # - name: self-signed-peer
   #   url: https://homelab.local:8443
   #   enabled: true
+  #   # Trust a self-signed peer one of two ways (mutually exclusive — the
+  #   # request is rejected when both are set):
+  #   tls_cert_fingerprint: "<64-hex SHA-256 of the peer's LEAF cert>"
+  #   #   (recommended: the chain is not checked, the leaf must match;
+  #   #    derive it with `openssl x509 -noout -fingerprint -sha256 -in
+  #   #    <leaf.pem>`; update the pin when the peer's leaf changes)
+  #   # — or, for a trusted-network self-signed/local-dev peer only
+  #   # (announced with a warning + a warn-level "Peer certificate not
+  #   # verified" system alert, once per peer per daemon run):
   #   tls_skip_verify: true       # disables TLS cert verification for THIS peer
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
@@ -1187,10 +1213,20 @@ profiles:
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
 # LLM registry entries (the `llms:` list; manage with `datawatch llm ...`).
-# Each entry may carry a per-LLM verification_mode key:
+# Each entry may carry a per-LLM verification_mode key and a
+# fallthrough_target key:
 #   llms:
 #     - name: <llm-name>
 #       verification_mode: generate    # default "generate" (empty string too)
+#       fallthrough_target: false      # default false
+# fallthrough_target: when true, this entry is an allowed fall-through target:
+#   with autonomous.capacity_fallthrough on, a worker whose requested pool is
+#   full may be admitted on this entry instead of waiting. Set it with
+#   `datawatch llm update <name> --fallthrough-target`, MCP llm_update, comm
+#   `llm update <name> fallthrough_target=true`, PUT on the LLM entry, or the
+#   Allowed fall-through target switch in the web app LLM settings. The
+#   Claude lane and GPU lane backends from autonomous.lane_fill are tried
+#   first without any mark.
 # verification_mode: how this LLM judges a verification.
 #   "" or "generate" (default) asks the judge to write a verdict and parses it.
 #   "classify" reads the judge's option probabilities instead and fails closed
@@ -1289,6 +1325,13 @@ autonomous:
   # Commits behind the base a branch may be before it is refreshed.
   # 0 or unset reads as 5.
   branch_refresh_behind_limit: 5
+  # Daily pending-branch alert (docs/howto/automaton-worktree-cleanup.md).
+  # Once per calendar day, when more pending (superseded) Automaton branches
+  # wait for cleanup than unlanded_alert_threshold, raise one alert naming the
+  # oldest pending branch and its age. Unset enabled reads true; unset
+  # threshold reads 3; 0 alerts on any pending branch; negative is refused.
+  unlanded_alert_enabled: true
+  unlanded_alert_threshold: 3
   # ── Shadow merge plan (autonomous.merge_shadow) ──
   # What these keys enable, and every way they are set and read, is in
   # docs/howto/merge-shadow.md.
@@ -1370,6 +1413,14 @@ autonomous:
   # comm `configure autonomous.automation.merge_pending_alert_minutes=45`, the
   # MCP autonomous_config_set tool (automation_merge_pending_alert_minutes), and
   # the PWA Settings field (settings_automation_merge_pending_alert_minutes).
+  #
+  # merge_pending_include_terminal: bool, default true (an unset key reads
+  # true). When on, the merge-pending check also looks at archived,
+  # needs_review, blocked and failed Automata with a work branch, raising one
+  # alert per episode that names the Automaton, its state and the branch; a
+  # failed or blocked Automaton's triage record is left as it is. false keeps
+  # the check to completed Automata only. Set in this file; the other config
+  # surfaces do not write this key yet.
   #
   # child_inherit: bool, default true (an unset key reads true). When on, a
   # child Automaton (a task's child, a fix Automaton, a defect with a parent)
@@ -1475,7 +1526,10 @@ autonomous:
   # (automation_cleanup_max_removals_per_pass).
   #
   # disk_alert_percent: whole number, clamped to 1..100. The disk-usage
-  # percent at or above which a disk alert is raised. An unset key (0) reads
+  # percent at or above which the worktree-disk alert is raised (the disk
+  # holding the worktree base repository). The temp-folder disk always checks
+  # against the lower of this value and the fixed 80, so at the default 85
+  # the temp disk alerts at 80. An unset key (0) reads
   # the 85 default; a stored value below 1 reads as 1 and above 100 reads as
   # 100 — the clamp happens on read, the write is never refused for range.
   # Settable via PUT /api/config (key autonomous.automation.disk_alert_percent),
@@ -1717,6 +1771,7 @@ autonomous:
     triage_alert_minutes: 30
     merge_pending_mode: off
     merge_pending_alert_minutes: 30
+    merge_pending_include_terminal: true
     child_inherit: true
     merged_member_policy: completed
     agent_insert_policy: allow
@@ -2261,9 +2316,10 @@ autonomous:
   # conflict_policy: stop_and_ask | mechanical | mechanical_and_model. Default
   #   mechanical_and_model. A policy that needs a model degrades to
   #   stop_and_ask when no model is set or none can be reached.
-  # conflict_model: a name in the LLM registry. Unset reads the built-in default
-  #   name (claude-opus-5-5); an explicit empty string means no model. Never adds
-  #   or changes a registry entry.
+  # conflict_model: a name in the LLM registry. Unset reads the non-Opus daemon
+  #   default name (sonnet); a model the operator names, an Opus model
+  #   included, is used as written; an explicit empty string means no model.
+  #   Never adds or changes a registry entry.
   # conflict_mode: shadow | on. Default shadow. shadow runs the conflict model
   #   without acting on its proposal; on acts on the proposal.
   # conflict_confirm_first_n: a whole number. Default 5. How many of a project's
@@ -2305,7 +2361,7 @@ autonomous:
   #   source_order: [file, record]
   #   fallback_on_bad_file: record
   #   conflict_policy: mechanical_and_model
-  #   conflict_model: claude-opus-5-5
+  #   conflict_model: sonnet
   #   conflict_mode: shadow
   #   conflict_confirm_first_n: 5
   #   version_files: []
@@ -2690,6 +2746,11 @@ autonomous:
     # Leftover state of finished work (lease, worktree, tmux name): released only
     # when the safe-to-delete check passes. off, report or on. Default: report.
     leftovers: report
+    # Draft Automata with no stories whose planning failed for a reason retrying
+    # will not change: when every spec lint finding is one the daemon can reword,
+    # re-plan it the way the planning question's fix answer does; otherwise it is
+    # reported once with an alert and left alone. off, report or on. Default: report.
+    planning: report
     # Seconds a stuck state must persist before it is reported or repaired.
     # Whole number, 0 or more; 0 means no grace. Default: 300.
     grace_seconds: 300
@@ -3211,7 +3272,8 @@ autonomous:
     # value is refused.
     merge_conflict_policy: additive_then_model
     # merge_conflict_model: the model that resolves a conflict. Default empty,
-    # which uses the strongest configured planning model.
+    # which reads the non-Opus daemon default ("sonnet"); a model the operator
+    # names, an Opus model included, is used as written.
     merge_conflict_model: ""
     # merge_retry_seconds: whole seconds between timed merge retry passes over
     # blocked merges. Default 60. 0 turns the timer off. A negative value is
@@ -3240,7 +3302,10 @@ autonomous:
   archive_grace_minutes: 60
   # Pool fall-through (default false). When a task's requested LLM pool is full
   # and another allowed backend/model can take it now, admit it there instead
-  # of waiting. Off = a task always waits for its own pool.
+  # of waiting. Off = a task always waits for its own pool. The alternates are
+  # the other lane fill backend (autonomous.lane_fill claude_backend or
+  # gpu_backend) first, then LLM entries marked fallthrough_target; a disabled,
+  # full or non-serving backend is skipped, and only workers fall through.
   capacity_fallthrough: false
   # Node over-admission rules (all default true; false restores the earlier
   # behaviour). capacity_strict_node_limit: a session adopted onto a full node
@@ -3353,6 +3418,8 @@ autonomous:
   # autonomous_usage_backoff_cleared, autonomous_usage_backoff_auto_cleared,
   # autonomous_usage_backoff_restored (a flag read back from
   # <data_dir>/autonomous/backoff.json at daemon start),
+  # autonomous_usage_backoff_reserve_admitted / autonomous_usage_backoff_reserve_refused
+  # (one per review-reserve verdict on a held backend, subject the backend),
   # autonomous_usage_backoff_patterns_rechecked, autonomous_budget_ceiling_wait,
   # autonomous_budget_window_resumed and autonomous_budget_window_rollover.
   # Read them with GET /api/audit (action=autonomous_* lists the family;
@@ -3505,18 +3572,22 @@ autonomous:
   verification_backend: ""
   # BL25 verifier model override. Empty = default to the PRD's own model
   # when verification_backend was also left empty and the PRD's backend was
-  # ask-compatible (v8.36.0); otherwise the resolved backend's own default
-  # model.
+  # ask-compatible (v8.36.0); otherwise the daemon default model for that
+  # backend (sonnet on claude-code — the explicit-model policy, never the
+  # backend's built-in default).
   verification_model: ""
   # v9.10.18 — pinned model for the guardrail JUDGE (rules-review, ci-watch,
   # per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier
   # precedence chain that replaces the old silent backend-default fallback:
   # PRD guardrail_model → task guardrail_model → this field →
   # verification_model → planning_model. Empty = the tier falls through to
-  # the next; if ALL tiers resolve to nothing servable on the judge
-  # backend, the record gets a loud non-retried infra-category block
-  # (ErrNoGuardrailModel) — a pi-family judge NEVER runs on the backend's
-  # built-in default model. Pairing is validated per tier (a bare Claude
+  # the next; a pi-family judge whose tiers all resolve to nothing servable
+  # gets a loud non-retried infra-category block (ErrNoGuardrailModel) and a
+  # pi-family judge NEVER runs on the backend's built-in default model. A
+  # claude-code judge with no model named at the PRD or task level now
+  # resolves to the daemon default (sonnet) instead of that block — the
+  # explicit-model policy; a pin the backend cannot serve is still a loud
+  # failure. Pairing is validated per tier (a bare Claude
   # alias on a pi-family backend, or a provider-qualified model on
   # claude-code, is skipped with a recorded reason).
   guardrail_model: ""
@@ -3796,9 +3867,29 @@ autonomous:
   # for those gates. Unset or 0 reads the default of 24 hours; negative is a
   # config error.
   verifier_headroom_max_age_hours: 24
-  # Run the nightwire-port security pattern scan over modified files
-  # before marking a task complete.
+  # Whole days the backup ref of a reaped Automaton branch is kept before it
+  # is pruned. Unset or 0 reads the default of 30 days; negative is a config
+  # error.
+  reaped_branch_backup_days: 30
+  # Run the security pattern scan over the task's worktree right before
+  # the completion commit. Warn-only: findings are recorded on the task
+  # (up to 20, full text) plus a cumulative counter
+  # (security_findings / security_finding_count, cumulative over all passes),
+  # one decision-log entry
+  # of kind security_scan_findings is appended, and the scan never fails
+  # the task or the commit. Set it to false to skip the scan. The key is
+  # read live at commit time, so a config set from any surface (REST
+  # PUT /api/config, MCP autonomous_config_set, the CLI
+  # datawatch config set autonomous.security_scan=…, the comm
+  # configure verb, or the PWA's "Run security scan before commit" toggle)
+  # reaches the next completion commit with no daemon restart.
   security_scan: true
+  # File extensions the security scan covers. Unset or an empty list
+  # reads the built-in defaults (.py, .pyw) — an explicit [] round-trips
+  # and reads the same as unset; a non-empty list scans
+  # exactly those extensions and no others. Read live at scan time, like
+  # the switch above.
+  security_scan_extensions: []
   # Snapshot and automatic-staging paths (the refs/datawatch/attempts
   # attempt snapshots and the other automatic commits) must never stage
   # candidates whose repo-relative path matches these patterns, matched
@@ -3896,10 +3987,13 @@ autonomous:
   # and docs/plans/2026-10-20-plan-coverage-gate.md.
   plan_coverage_check: block
   # Reactive usage back-off mode. pause_backend (default): when a session on
-  # a backend hits a rate/usage limit, autonomous dispatch to that backend is
-  # held until its reset time (or the max wait below). off: no automatic
-  # flags are set; an operator can still set one by hand. Interactive session
-  # starts are never blocked either way. Reachable via REST PUT /api/config
+  # a backend hits a rate/usage limit, autonomous worker dispatch to that
+  # backend is held until its reset time (or the max wait below). off: no
+  # automatic flags are set; an operator can still set one by hand.
+  # Interactive session starts are never blocked either way. While a flag is
+  # up, review roles (guardrail judges, verifiers, planning sessions) may
+  # still be admitted on that backend through the review reserve below.
+  # Reachable via REST PUT /api/config
   # (this dotted key), MCP autonomous_config_set, CLI `datawatch config set
   # autonomous.usage_backoff=off`, comm `configure autonomous.usage_backoff=off`
   # and the PWA Settings field. Manual flags: `datawatch usage-backoff`,
@@ -3909,6 +4003,38 @@ autonomous:
   # rate-limit message carries no parseable reset time. Default 60; a value
   # below 1 is treated as 60. Same surfaces as autonomous.usage_backoff.
   backoff_max_wait_minutes: 60
+  # Live session slots a usage-backed-off backend keeps for the review roles
+  # (guardrail judges, verifiers, decompose/planning sessions). While a
+  # backend is held, new worker sessions are refused for the whole flag, but
+  # a review-role request is admitted if it fits in this many live slots
+  # (a live verifier or planner session on the backend already holds one) and
+  # within the optional one-hour token budget below; otherwise it waits with
+  # the back-off-classified reason "pool llm:<backend> backpressure:
+  # back-off, review reserve in use" until the flag clears. Default 1;
+  # 0 disables the reserve (every new session on the held backend is refused,
+  # review roles included). Read live at decision time; no restart needed.
+  # Reachable via REST PUT /api/config (this dotted key), MCP
+  # autonomous_config_set, CLI `datawatch config set
+  # autonomous.backoff_reserve_for_review=2`, comm `configure
+  # autonomous.backoff_reserve_for_review=2` and the PWA Settings field.
+  # The reserve's rolling token state is in memory and does not survive a
+  # daemon restart. The effective value and the reserve's per-backend window
+  # usage show in every usage-backoff status. The reserve's verdicts are
+  # audited as autonomous_usage_backoff_reserve_admitted /
+  # autonomous_usage_backoff_reserve_refused. See docs/howto/usage-backoff.md
+  # and docs/howto/automata-capacity.md (The review reserve).
+  backoff_reserve_for_review: 1
+  # Rolling one-hour token budget for review-reserve admissions on a held
+  # backend, in whole tokens. 0 (default) means no token budget: only the
+  # live slot count above bounds the reserve. When set above 0, a
+  # review-reserve admission is refused while the tokens recorded for that
+  # backend inside the current rolling hour are at or above this value,
+  # even with a free slot; enforced only when token usage is reported. Read
+  # live at decision time; no restart needed. Same surfaces as
+  # autonomous.backoff_reserve_for_review (YAML, REST, MCP, CLI, comm, PWA).
+  # See docs/howto/usage-backoff.md (What a flag does not hold: the review
+  # reserve).
+  backoff_reserve_tokens_per_hour: 0
   # Minimum covered/extractable-requirement ratio a plan must meet for
   # coverage to pass. Value must be in (0,1]; zero or negative normalizes to
   # 1.0 (require full coverage) and values above 1 clamp to 1.0 (see
@@ -4250,13 +4376,20 @@ autonomous:
   # Worker session profiles: what a worker, verifier or judge session starts
   # with (MCP servers, tools, skills, project context, model, effort). Built-in
   # names: minimal, digest, full, datawatch-tools; a user profile may not reuse
-  # them. Sessions you start yourself always start with the full harness.
+  # them. Sessions you start yourself resolve at their own layer: a profile
+  # named on the start (worker_profile_name) wins, then the daemon-wide name,
+  # then the kind's row for a start with launch facts (launch_role=supervisor
+  # or launch_role=planner, launch_kind=review, or one-shot mode); a plain
+  # start with no name and no launch facts starts with the full harness,
+  # unchanged.
   #   worker_profiles: map of profile name to a profile. Profile fields are
   #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
   #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
   #     minimal|digest|full, model, effort. Default empty.
   #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
-  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     name. worker_profile_defaults.kind: task kind
+  #     (implementation|docs|note|final_gate) or session kind (supervisor,
+  #     operator_interactive, scheduled_command, planner, one_shot, review)
   #     -> profile name. Empty value = no default. Default empty.
   #   worker_profile: global profile name; empty = the role default.
   #   Launch behaviour: each launch resolves its profile by name, task ->
@@ -4272,11 +4405,12 @@ autonomous:
   #     profile and apply it to the session start (its MCP config, tools,
   #     skills and starting context). Verifier and judge launches resolve it
   #     when they start their one-shot session.
-  #   Read the profile in force per role and task kind on GET /api/config
-  #     (autonomous.in_force), MCP worker_profile_status, datawatch config get,
-  #     the comm channel configure key, or the web settings group.
+  #   Read the profile in force per role, task kind and session kind on
+  #     GET /api/config (autonomous.in_force), MCP worker_profile_status,
+  #     datawatch config get, the comm channel configure key, or the web
+  #     settings group.
   #   Refused at load: a built-in name reused, an invalid profile, a value
-  #   naming an unknown profile, an unknown role or kind key.
+  #   naming an unknown profile, an unknown role key or task-/session-kind key.
   worker_profiles: {}
   #   reviewer:
   #     mcp: {mode: list, servers: [github]}
@@ -4452,8 +4586,8 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # eight rules: six block, two warn; the pack is the floor, your rules
-    # the ceiling over it). Empty (below) = the built-in pack, unmodified.
+    # seventeen rules: thirteen block, four warn; the pack is the floor, your
+    # rules the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
     # anything else is a config error). A rule's message is required on an
@@ -4462,7 +4596,21 @@ autonomous:
     # read_only tri-state (absent = don't check),
     # verification_script_empty, report_path_empty (no usable report path
     # under .datawatch/reports/), verification_script_unexecutable (the
-    # script is a command string or not a runnable file), and any_of (at least one member) / all_of
+    # script is a command string or not a runnable file),
+    # verification_script_reason_empty, verification_script_task_files_only
+    # (script compares only against the task's own files, never the merge
+    # base), verification_script_docs_without_sync (script checks docs
+    # without make sync-docs),
+    # verification_script_artefact_files_allowed (script's changed-file-set
+    # check does not exempt the daemon's per-Automaton generated artefacts),
+    # verification_script_final_gate_artefact_allowed (script asserts the
+    # whole changed-file set against a finite list with no guard for the
+    # final gate re-running it),
+    # verification_script_invokes_unknown_flag (script invokes a long flag
+    # the command's own help does not list),
+    # verification_script_spec_unanchored (script asserts a heading or gate
+    # phrase the task spec does not name),
+    # kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.
@@ -4835,7 +4983,7 @@ orchestrator:
 #     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
 #     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
-#     # verify_tls: false                       # true = model pulls to this node verify its certificate against the system roots; default off
+#     # verify_tls: false                       # kept for compatibility: model pulls to this node always verify its certificate (system roots, plus tls_ca_file / tls_cert_fingerprint when set); no per-node off switch
 
 # ── Compute pin keeper ──
 # Node drain state (drained, drain_until, drain_reason) is runtime state kept in
@@ -4923,6 +5071,30 @@ observer:
   # Shape A + B enable by running `datawatch setup ebpf`; Shape C
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
+
+  # Federation push (primary → root): this primary pushes its own
+  # observer stats to the root primary. Empty parent_url disables it.
+  federation:
+    # Root primary base URL (e.g. https://datawatch-root:8443).
+    # Empty = federation push disabled.
+    parent_url: ""
+    # Name this primary registers as on the root (default: hostname).
+    peer_name: ""
+    # Seconds between federation pushes (default 10).
+    push_interval_seconds: 10
+    # Registration token persisted across restarts.
+    # Empty: the daemon falls back to ./observer/federation.token, a
+    # path relative to the directory it was started from.
+    token_path: ""
+    # Last-resort: skip TLS certificate verification on the parent
+    # (dev / self-signed root). Default false — the parent's
+    # certificate is verified against the system trust store. When true
+    # the daemon prints "WARNING: TLS certificate verification is
+    # SKIPPED for the federation root <url>" at startup; there is no
+    # pin on this push, so prefer the root's certificate in the system
+    # trust store. See docs/howto/peer-tls-verification.md.
+    insecure: false
+
   peers:
     # silent_alert_minutes: how long a registered observer peer may go
     # without pushing before the daemon raises one "Observer peer silent"

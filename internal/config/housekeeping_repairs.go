@@ -6,7 +6,7 @@ import (
 )
 
 // Housekeeping repairs. The autonomous.housekeeping_repairs block holds one
-// mode per repair group (task_chain, advance_judge, lane_fill, leftovers) and
+// mode per repair group (task_chain, advance_judge, lane_fill, leftovers, planning) and
 // the grace period a stuck state must outlast before it is looked at.
 //
 // A mode is off (the group does nothing), report (the group records what it
@@ -27,11 +27,11 @@ const (
 // HousekeepingGraceSecondsDefault — the grace when the setting is unset.
 const HousekeepingGraceSecondsDefault = 300
 
-// HousekeepingRepairGroups — the four repair groups, in run order.
-var HousekeepingRepairGroups = []string{"task_chain", "advance_judge", "lane_fill", "leftovers"}
+// HousekeepingRepairGroups — the five repair groups, in run order.
+var HousekeepingRepairGroups = []string{"task_chain", "advance_judge", "lane_fill", "leftovers", "planning"}
 
 // HousekeepingRepairsSettingFields — the block's fields, for help text.
-var HousekeepingRepairsSettingFields = []string{"task_chain", "advance_judge", "lane_fill", "leftovers", "grace_seconds"}
+var HousekeepingRepairsSettingFields = []string{"task_chain", "advance_judge", "lane_fill", "leftovers", "planning", "grace_seconds"}
 
 // HousekeepingRepairsConfig — the autonomous.housekeeping_repairs block.
 type HousekeepingRepairsConfig struct {
@@ -43,6 +43,8 @@ type HousekeepingRepairsConfig struct {
 	LaneFill string `yaml:"lane_fill,omitempty" json:"lane_fill,omitempty"`
 	// Leftovers — mode for leftover state left by finished work.
 	Leftovers string `yaml:"leftovers,omitempty" json:"leftovers,omitempty"`
+	// Planning — mode for drafts whose planning failed and will not clear.
+	Planning string `yaml:"planning,omitempty" json:"planning,omitempty"`
 	// GraceSeconds — seconds a stuck state must persist before it is
 	// reported or repaired. Nil means the default; 0 means no grace.
 	GraceSeconds *int `yaml:"grace_seconds,omitempty" json:"grace_seconds,omitempty"`
@@ -103,6 +105,8 @@ func (h HousekeepingRepairsConfig) ModeFor(group string) string {
 		m = h.LaneFill
 	case "leftovers":
 		m = h.Leftovers
+	case "planning":
+		m = h.Planning
 	}
 	if mode, err := ParseHousekeepingMode(m); err == nil {
 		return mode
@@ -123,7 +127,7 @@ func (h HousekeepingRepairsConfig) Effective() HousekeepingRepairsConfig {
 	g := h.GraceSecondsOrDefault()
 	return HousekeepingRepairsConfig{
 		TaskChain: h.ModeFor("task_chain"), AdvanceJudge: h.ModeFor("advance_judge"),
-		LaneFill: h.ModeFor("lane_fill"), Leftovers: h.ModeFor("leftovers"),
+		LaneFill: h.ModeFor("lane_fill"), Leftovers: h.ModeFor("leftovers"), Planning: h.ModeFor("planning"),
 		GraceSeconds: &g,
 	}
 }
@@ -132,7 +136,7 @@ func (h HousekeepingRepairsConfig) Effective() HousekeepingRepairsConfig {
 // the key was a valid one.
 func SetHousekeepingRepairsField(h HousekeepingRepairsConfig, field string, value interface{}) (HousekeepingRepairsConfig, bool) {
 	switch field {
-	case "task_chain", "advance_judge", "lane_fill", "leftovers":
+	case "task_chain", "advance_judge", "lane_fill", "leftovers", "planning":
 		m, err := ParseHousekeepingMode(value)
 		if err != nil {
 			return h, false
@@ -144,6 +148,8 @@ func SetHousekeepingRepairsField(h HousekeepingRepairsConfig, field string, valu
 			h.AdvanceJudge = m
 		case "lane_fill":
 			h.LaneFill = m
+		case "planning":
+			h.Planning = m
 		default:
 			h.Leftovers = m
 		}
@@ -167,7 +173,7 @@ func ValidateHousekeepingRepairsSetting(key string, value interface{}) error {
 		return fmt.Errorf("%s: not an %s key", key, HousekeepingRepairsSettingPrefix+"*")
 	}
 	switch field {
-	case "task_chain", "advance_judge", "lane_fill", "leftovers":
+	case "task_chain", "advance_judge", "lane_fill", "leftovers", "planning":
 		if _, err := ParseHousekeepingMode(value); err != nil {
 			return fmt.Errorf("%s: %v", key, err)
 		}
@@ -192,6 +198,8 @@ func ValidateHousekeepingRepairsConfig(h HousekeepingRepairsConfig) error {
 			m = h.AdvanceJudge
 		case "lane_fill":
 			m = h.LaneFill
+		case "planning":
+			m = h.Planning
 		default:
 			m = h.Leftovers
 		}

@@ -87,6 +87,16 @@ names no backends and sets no Claude session cap, the judge has nothing to
 choose from. It then uses the unit's own guardrail backend, and only on its
 first attempt.
 
+**The model the judge runs on.** A model named at the PRD or task level — or
+a global guardrail or verification model the backend can serve — is used as
+named, including a premium Opus or Fable model the operator chose. A
+`claude-code` judge with no model named anywhere runs on the daemon default
+model, `sonnet`: before the explicit-model policy that case was a loud
+`no guardrail model` block verdict and the judge never launched, so the
+unconfigured judge is now judged on an explicit model instead of blocked. A
+pin that names a model the backend cannot serve still fails loudly.
+See [Explicit model policy](explicit-model-policy.md).
+
 ## The three modes for judges
 
 A judge uses the verifier policy's mode. The selector runs the same rules for
@@ -101,7 +111,12 @@ judge list the same way.
 
 A backend that is held (a usage back-off on a Claude backend holds every Claude
 backend, since they share one limit) or that has reached the Claude session cap
-is not eligible, whatever the mode.
+is not eligible, whatever the mode. That is the *selector's* rule — it skips
+held backends when picking. A judge is still a review role, so if it ends up
+on a held backend anyway (the unit-backend fallback, or a back-off flag that
+lands after the pick), its admission goes through that backend's
+[review reserve](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve)
+(a bounded slot), not the worker's refusal.
 
 Every pick is written to the Automaton's decision log with the judge role, the
 backend, the model and the reason, and to the audit log. Look for a
@@ -144,7 +159,10 @@ Points to keep in mind:
   window, separate from the verifier's count. A judge that takes a Claude lane
   uses one count toward the cap, and only once its lease is granted.
 - A Claude backend is recognised by its name, which starts with `claude`.
-- The cap and the usage back-off apply to judges as they do to verifiers. The
+- The cap and the usage back-off apply to judges as they do to verifiers: the
+  selector skips a held backend when picking, and a judge that is nonetheless
+  placed on one is admitted through its review reserve (a review role), not
+  refused the way a worker is. The
   stronger-verifier fields (`force_stronger_on_retry`, `final_gate_stronger`)
   do not apply to judges, because a judge is never a retry or the final gate.
 

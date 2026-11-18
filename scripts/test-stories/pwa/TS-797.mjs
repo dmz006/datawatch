@@ -232,8 +232,15 @@ async function runScenario(page, { label, base, trusted }) {
   }
 
   // Open the first session card → its detail view.
-  await page.waitForSelector('.session-card[data-full-id]', { timeout: 20000 });
-  const fullId = await page.evaluate(() => document.querySelector('.session-card[data-full-id]').dataset.fullId);
+  // The sessions page renders tiles by default at this viewport: tiles carry
+  // data-sess-id; .session-card elements exist only in list mode.
+  await page.waitForSelector('.session-card[data-full-id], [data-sess-id]', { timeout: 20000 }).catch(() => {});
+  const fullId = await page.evaluate(() => {
+    const el = document.querySelector('.session-card[data-full-id]')
+      || document.querySelector('[data-sess-id]');
+    return el ? (el.dataset.fullId || el.dataset.sessId) : null;
+  });
+  if (!fullId) throw new Error('seeded sessions did not render a session element (neither .session-card nor [data-sess-id])');
   console.log(`[TS-797][${label}] opened session detail: ${fullId}`);
   await page.evaluate((id) => navigate('session-detail', id), fullId);
   await page.waitForFunction(

@@ -255,7 +255,11 @@ func (r *Router) handleCooldown(cmd Command) {
 }
 
 // handleUsageBackoff serves "usage_backoff status|set|clear" through the
-// /api/usage-backoff loopback, mirroring the cooldown verbs.
+// /api/usage-backoff loopback, mirroring the cooldown verbs. Status and
+// recheck pass the REST body through verbatim, so the review-reserve config
+// fields (config.reserve_for_review, config.reserve_tokens_per_hour) and the
+// live reserve array (one {backend, tokens_used} per backed-off backend)
+// reach the chat surface without any local parsing or key list.
 func (r *Router) handleUsageBackoff(cmd Command) {
 	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all] | recheck]"
 	switch cmd.UsageBackoffVerb {
@@ -540,9 +544,25 @@ const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit
 // shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
 const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
 
+// completedMigrateUsage is the comm-channel usage line for the
+// cancelled-to-Completed migration.
+const completedMigrateUsage = "usage: autonomous completed-migrate [dry_run=true] [limit=N] [id=<id>]   (move cancelled Automata whose work is already merged to Completed; limit 0 = no limit)"
+
+// holdUsage is the comm-channel usage line for putting an Automaton on hold.
+const holdUsage = "usage: autonomous hold <id> <reason words> [until=<time|date|duration>] [condition=<words>]   (say why it waits; quote a multi-word value: condition=\"until after the release\"; leave the reason out only to change the hold of an Automaton that is already held)"
+
+// releaseHoldUsage is the comm-channel usage line for releasing a hold.
+const releaseHoldUsage = "usage: autonomous release-hold <id> [note]   (the Automaton returns to the status it had)"
+
+// heldUsage is the comm-channel usage line for reading the Held group.
+const heldUsage = "usage: autonomous held   (list the Automata on hold)"
+
+// heldMigrateUsage is the comm-channel usage line for the hold migration.
+const heldMigrateUsage = "usage: autonomous held-migrate [dry_run=true] [id=<id>]... [reason=<words>] [until=<time|date|duration>] [condition=<words>]   (no id, or dry_run=true, lists the blocked or failed look-alikes; a real run needs id= and reason=)"
+
 // autonomousListUsage is the comm-channel usage line for the narrowable PRD
 // list.
-const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>] [limit=N] [cursor=C]   (summary rows; shipped may appear in status; pass a reply's next_cursor as cursor to page)"
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>] [limit=N] [cursor=C]   (summary rows; status matches the displayed status, so an Automaton whose work landed shows as completed; pass a reply's next_cursor as cursor to page)"
 
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
@@ -626,10 +646,250 @@ func (r *Router) handleAutonomousShippedBackfillVerb(args []string) {
 	r.reply("autonomous shipped-backfill", prettyJSON(out))
 }
 
+// handleAutonomousCompletedMigrateVerb serves the completed-migrate comm
+// verb: POST /api/autonomous/completed/migrate with dry_run, limit and id
+// taken from key=value tokens, replying with the daemon's report. A busy
+// refusal (a final gate is running) replies with the daemon's message.
+func (r *Router) handleAutonomousCompletedMigrateVerb(args []string) {
+	const title = "autonomous completed-migrate"
+	q := url.Values{}
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply(title+" failed", completedMigrateUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		switch k {
+		case "dry_run", "dry-run":
+			if strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on") {
+				q.Set("dry_run", "true")
+			} else if !strings.EqualFold(v, "false") && v != "0" && !strings.EqualFold(v, "off") {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+		case "limit":
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+			if n > 0 {
+				q.Set("limit", strconv.Itoa(n))
+			}
+		case "id":
+			if v == "" {
+				r.reply(title+" failed", completedMigrateUsage)
+				return
+			}
+			q.Set("id", v)
+		default:
+			r.reply(title+" failed", completedMigrateUsage)
+			return
+		}
+	}
+	path := "/api/autonomous/completed/migrate"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	out, err := r.commJSON(http.MethodPost, path, "")
+	if err != nil {
+		msg := strings.TrimPrefix(err.Error(), "HTTP 409: ")
+		r.reply(title+" failed", strings.TrimSpace(msg))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
+// holdPair is one key=value token of a hold verb with its full value.
+type holdPair struct{ key, value string }
+
+// holdQuotes maps an opening quote to the quote that closes it.
+var holdQuotes = map[byte]byte{'"': '"', '\'': '\''}
+
+// firstByte returns the first byte of s, or 0 when s is empty.
+func firstByte(s string) byte {
+	if s == "" {
+		return 0
+	}
+	return s[0]
+}
+
+// splitHoldTokens separates the key=value tokens of a hold verb from its
+// plain words. Only the names in keys are read as pairs; any other token is a
+// plain word, so a hold reason may contain an equals sign. A value that
+// starts with a quote runs to the closing quote and may hold spaces
+// (condition="until after the release").
+//
+// With strict set, the migration's reading applies: plain words that follow a
+// key named in textKeys continue that value (reason=parked until after the
+// release), and a plain word anywhere else is refused. ok is false for an
+// unclosed quote, an empty value or, in strict mode, a stray word.
+func splitHoldTokens(tokens []string, keys, textKeys map[string]bool, strict bool) (words []string, pairs []holdPair, ok bool) {
+	for i := 0; i < len(tokens); i++ {
+		tok := tokens[i]
+		eq := strings.IndexByte(tok, '=')
+		key := ""
+		if eq > 0 {
+			key = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(tok[:eq]), "-", "_"))
+		}
+		if eq <= 0 || !keys[key] {
+			if strict {
+				return nil, nil, false
+			}
+			words = append(words, tok)
+			continue
+		}
+		value := tok[eq+1:]
+		if closer, quoted := holdQuotes[firstByte(value)]; quoted {
+			parts := []string{value[1:]}
+			for !strings.HasSuffix(parts[len(parts)-1], string(closer)) {
+				i++
+				if i >= len(tokens) {
+					return nil, nil, false
+				}
+				parts = append(parts, tokens[i])
+			}
+			joined := strings.Join(parts, " ")
+			value = joined[:len(joined)-1]
+		} else if strict && textKeys[key] {
+			for i+1 < len(tokens) && !strings.Contains(tokens[i+1], "=") {
+				i++
+				value += " " + tokens[i]
+			}
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, nil, false
+		}
+		pairs = append(pairs, holdPair{key: key, value: value})
+	}
+	return words, pairs, true
+}
+
+// handleAutonomousHoldVerb serves the hold comm verb: it puts an Automaton
+// on hold, or changes the hold of one already held, through
+// POST /api/autonomous/prds/{id}/hold. The reason is the words left after the
+// id once the until= and condition= tokens are removed. With no reason and
+// nothing else to change there is nothing to send, so the reply is the usage;
+// to place a new hold the daemon still requires a reason.
+func (r *Router) handleAutonomousHoldVerb(args []string) {
+	const title = "autonomous hold"
+	if len(args) < 2 {
+		r.reply(title+" failed", holdUsage)
+		return
+	}
+	words, pairs, ok := splitHoldTokens(args[2:], map[string]bool{"until": true, "condition": true}, nil, false)
+	if !ok {
+		r.reply(title+" failed", holdUsage)
+		return
+	}
+	body := map[string]string{"reason": strings.Join(words, " "), "actor": "operator"}
+	for _, p := range pairs {
+		body[p.key] = p.value
+	}
+	if body["reason"] == "" && len(pairs) == 0 {
+		r.reply(title+" failed", holdUsage)
+		return
+	}
+	b, _ := json.Marshal(body)
+	out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(args[1])+"/hold", string(b))
+	if err != nil {
+		r.reply(title+" failed", strings.TrimSpace(err.Error()))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
+// handleAutonomousReleaseHoldVerb serves the release-hold comm verb:
+// POST /api/autonomous/prds/{id}/release_hold, with the words after the id as
+// the note.
+func (r *Router) handleAutonomousReleaseHoldVerb(args []string) {
+	const title = "autonomous release-hold"
+	if len(args) < 2 {
+		r.reply(title+" failed", releaseHoldUsage)
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"note": strings.Join(args[2:], " "), "actor": "operator"})
+	out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(args[1])+"/release_hold", string(body))
+	if err != nil {
+		r.reply(title+" failed", strings.TrimSpace(err.Error()))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
+// handleAutonomousHeldVerb serves the held comm verb: GET /api/autonomous/held,
+// the Held group. Read-only.
+func (r *Router) handleAutonomousHeldVerb(args []string) {
+	const title = "autonomous held"
+	if len(args) > 1 {
+		r.reply(title+" failed", heldUsage)
+		return
+	}
+	out, err := r.commGet("/api/autonomous/held", nil)
+	if err != nil {
+		r.reply(title+" failed", strings.TrimSpace(err.Error()))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
+// handleAutonomousHeldMigrateVerb serves the held-migrate comm verb:
+// POST /api/autonomous/held/migrate with dry_run, id (repeatable, or a comma
+// list), reason, condition and until taken from key=value tokens. dry_run is
+// sent only when given, so the daemon's default applies (a dry run while no
+// id is given). A busy refusal (a final gate is running) replies with the
+// daemon's message.
+func (r *Router) handleAutonomousHeldMigrateVerb(args []string) {
+	const title = "autonomous held-migrate"
+	keys := map[string]bool{"dry_run": true, "id": true, "reason": true, "condition": true, "until": true}
+	_, pairs, ok := splitHoldTokens(args[1:], keys, map[string]bool{"reason": true, "condition": true}, true)
+	if !ok {
+		r.reply(title+" failed", heldMigrateUsage)
+		return
+	}
+	body := map[string]any{"actor": "operator"}
+	var ids []string
+	for _, p := range pairs {
+		switch p.key {
+		case "dry_run":
+			switch {
+			case strings.EqualFold(p.value, "true") || p.value == "1" || strings.EqualFold(p.value, "on"):
+				body["dry_run"] = true
+			case strings.EqualFold(p.value, "false") || p.value == "0" || strings.EqualFold(p.value, "off"):
+				body["dry_run"] = false
+			default:
+				r.reply(title+" failed", heldMigrateUsage)
+				return
+			}
+		case "id":
+			for _, id := range strings.Split(p.value, ",") {
+				if id = strings.TrimSpace(id); id != "" {
+					ids = append(ids, id)
+				}
+			}
+		default:
+			body[p.key] = p.value
+		}
+	}
+	if len(ids) > 0 {
+		body["ids"] = ids
+	}
+	b, _ := json.Marshal(body)
+	out, err := r.commJSON(http.MethodPost, "/api/autonomous/held/migrate", string(b))
+	if err != nil {
+		r.reply(title+" failed", strings.TrimSpace(strings.TrimPrefix(err.Error(), "HTTP 409: ")))
+		return
+	}
+	r.reply(title, prettyJSON(out))
+}
+
 // handleAutonomousShippedCountsVerb serves the shipped-counts comm verb:
 // GET /api/autonomous/shipped/counts — the per-status PRD and Automation
 // count buckets computed under the in-force autonomous.shipped settings
-// (shipped separated from cancelled while enabled + count_separately hold),
+// (shipped work counted as completed, never cancelled, while enabled),
 // with the effective settings echoed. Read-only.
 func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
 	out, err := r.commGet("/api/autonomous/shipped/counts", nil)
@@ -691,12 +951,16 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 		r.reply("autonomous list failed", err.Error())
 		return
 	}
-	r.reply("autonomous list", prettyJSON(out))
+	reply := prettyJSON(out)
+	if lines := autonomous.PlanningFailureListLines([]byte(out)); len(lines) > 0 {
+		reply += "\n" + strings.Join(lines, "\n")
+	}
+	r.reply("autonomous list", reply)
 }
 
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec> [--parent <automaton-id>]|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|project <id> <name|clear>|project-backfill [apply]|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|plan-records [registry-row|finding] [project=P] [state=S]|plan-record get <ref>|plan-record create <json>|plan-record update <ref> <json>|plan-record search <text>|plan-record import [dry-run]|repo-ci-watch|supervisor-watch|housekeeping-repairs|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
+	help := "usage: autonomous {status|list|event-log [kind=K] [project=P] [q=TEXT] [limit=1..10] [before=CURSOR]|event-kinds [group=G]|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|generated-artefacts [set <key> <on|off>]|change-record <id>|regenerate <id> <kind>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [report_path=<path>] [verification_script=<path>] [verification_script_reason=<text>] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-node <automaton> <task> <node|clear>|set-story-node <automaton> <story> <node|clear>|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|hold <id> <reason words> [until=<value>] [condition=<words>]|release-hold <id> [note]|held|held-migrate [dry_run=true] [id=<id>]... [reason=<words>] [until=<value>] [condition=<words>]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec> [--parent <automaton-id>]|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|project <id> <name|clear>|project-backfill [apply]|lane-fill [limit]|lane-utilization [window]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-shadow|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|checks [automaton-id]|ship [automaton-id]|rules [automaton-id]|rules set <key> <value> [project-dir]|restart-interruptions|decisions [automaton-id]|planning-routing [show|test|scorecard]|task-routing [show|profile list|profile use <name>|automaton <id>|dry-run <id> [profile]]|decision-records [automaton-id]|decision-record <id>|decision-record create <json>|decision-record withdraw <id> [reason]|plan-records [registry-row|finding] [project=P] [state=S[,S...]]|plan-record get <ref>|plan-record create <json>|plan-record update <ref> <json>|plan-record search <text>|plan-record import [dry-run]|plan list <project>|plan new <project> <title...>|plan move <project> <plan> <position>|plan move <plan> automaton <id> <position>|plan attach <plan> automaton|automation|finding <id>|plan detach <plan> automaton|automation|finding <id>|plan attach <plan> automaton|automation <id> <id>... [theme=T]|plan themes <plan>|plan theme add|rename|remove|place|unplace|reorder|reorder-items <plan> ...|plan archive <plan> [protect=<plan>] [reason...]|plan restore <plan>|plan unattributed [project=P] [current=R] [next=R]|plan migrate release project=P [current=R] [next=R]|plan migrate release approve <preview-id> project=P|arcs (alias of plan)|plan-migrate [apply]|repo-ci-watch|supervisor-watch|housekeeping-repairs|supervisor jobs|supervisor runs [job=X] [outcome=Y] [limit=N]|supervisor wake [status|set key=value ...]|peer-events [status|start <peer> <queue> [since=N]|stop <peer>]|supervisor run job=NAME [input=X] [candidates=A,B]|merge|safe-to-delete|branch-reap|branch-reap-restore <branch>|cleanup|lint config|lint config-set key=value|lint dry-run <id>|lint findings <id>|uncommitted-work [automaton-id]|unlanded-work [keep|archive-branch|delete-worktree <branch> [confirm]]|landing <id>|landing keep <id> <reason...>|landing drop <id> <reason...>|protected-paths [automaton-id]|authorize-paths <automaton-id> <path> [<path>...]|authorize-paths <automaton-id> clear|request-watch [session <id>|automaton <id>]|host-load|merged-members [automation-id]|pending-items [waiting|attached|done] [automation-id]|pending-item-add <title...> [ref=<label>]|pending-item-attach <item-id> <automaton-id>|pending-items-refresh|overlap <text>|security-failure [run-id]|tags [counts]|tags sweep [dry-run]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|session-tags list|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions|requirements-report [text|json]|model-pull-consent-get|model-pull-consent-set model=<name> [deny=<name> ...] [publisher=<p> ...]|branch-refresh <id> enabled|disabled|inherit|branch-refresh-stats|node-versions <name>|standard-tasks}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -833,6 +1097,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		reply := prettyJSON(out)
+		if line := autonomous.PlanningFailureOneLine(autonomous.PlanningFailureFromBody([]byte(out))); line != "" {
+			reply += "\n" + line
+		}
 		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {
 			reply += "\n" + strings.Join(lines, "\n")
 		}
@@ -1001,20 +1268,20 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous request-revision failed", err.Error())
 			return
 		}
-		r.reply("autonomous request-revision", prettyJSON(out))
+		r.reply("autonomous request-revision", prettyJSON(out)+specCheckChatText(out))
 	case "edit-task", "edit_task":
-		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [<new-spec…>]"
+		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [verification_script=<path>] [verification_script_reason=<text|\"quoted text\">] [<new-spec…>]"
 		if len(args) < 4 {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
-		rest, readOnly, reportPath, tokErr := takeTaskTokens(args[3:])
+		rest, tok, tokErr := takeEditTaskTokens(args[3:])
 		if tokErr != nil {
 			r.reply("autonomous edit-task failed", tokErr.Error())
 			return
 		}
 		newSpec := strings.TrimSpace(strings.Join(rest, " "))
-		if newSpec == "" && readOnly == nil && reportPath == "" {
+		if newSpec == "" && tok.readOnly == nil && tok.reportPath == "" && tok.verificationScript == "" && tok.verificationScriptReason == "" {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
@@ -1026,11 +1293,17 @@ func (r *Router) handleAutonomous(cmd Command) {
 		if newSpec != "" {
 			editBody["new_spec"] = newSpec
 		}
-		if readOnly != nil {
-			editBody["read_only"] = *readOnly
+		if tok.readOnly != nil {
+			editBody["read_only"] = *tok.readOnly
 		}
-		if reportPath != "" {
-			editBody["report_path"] = reportPath
+		if tok.reportPath != "" {
+			editBody["report_path"] = tok.reportPath
+		}
+		if tok.verificationScript != "" {
+			editBody["verification_script"] = tok.verificationScript
+		}
+		if tok.verificationScriptReason != "" {
+			editBody["verification_script_reason"] = tok.verificationScriptReason
 		}
 		body, _ := json.Marshal(editBody)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_task", string(body))
@@ -1409,7 +1682,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous create failed", err.Error())
 			return
 		}
-		r.reply("autonomous create", prettyJSON(out))
+		r.reply("autonomous create", prettyJSON(out)+specCheckChatText(out))
 	// BL221 (v6.2.0) Phase 3 — scan commands
 	case "scan":
 		if len(args) < 2 {
@@ -1627,6 +1900,16 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleAutonomousShippedBackfillVerb(args)
 	case "archive":
 		r.handleAutonomousArchiveVerb(args)
+	case "completed-migrate", "completed_migrate":
+		r.handleAutonomousCompletedMigrateVerb(args)
+	case "hold":
+		r.handleAutonomousHoldVerb(args)
+	case "release-hold", "release_hold":
+		r.handleAutonomousReleaseHoldVerb(args)
+	case "held":
+		r.handleAutonomousHeldVerb(args)
+	case "held-migrate", "held_migrate":
+		r.handleAutonomousHeldMigrateVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":
 		r.handleLaneFillVerb(verb, args)
 	case "lane-utilization", "lane_utilization":
@@ -1666,6 +1949,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleDecisionRecordsVerb(verb, args)
 	case "plan-records", "plan_records", "plan-record", "plan_record":
 		r.handlePlanRecordsVerb(verb, args)
+	case "plan", "plans", "arcs":
+		r.handlePlanVerb(args)
+	case "plan-migrate", "plan_migrate", "plans-migrate":
+		r.handlePlanMigrateVerb(args[1:])
 	case "repo-ci-watch", "repo_ci_watch":
 		r.handleRepoCIWatchVerb(verb, args)
 	case "housekeeping-repairs", "housekeeping_repairs":
@@ -1676,7 +1963,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleSupervisorLoopVerb(verb, args)
 	case "peer-events", "peer_events":
 		r.handlePeerEventsVerb(args)
-	case "merge", "safe-to-delete", "safe_to_delete":
+	case "merge", "safe-to-delete", "safe_to_delete", "branch-reap", "branch_reap", "branch-reap-restore", "branch_reap_restore":
 		r.handleMergeVerb(verb, args)
 	case "cleanup":
 		r.handleCleanupVerb(verb, args)
@@ -1690,6 +1977,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleUncommittedWorkVerb(verb, args)
 	case "unlanded-work", "unlanded_work":
 		r.handleUnlandedWorkVerb(verb, args)
+	case "landing", "landing-keep", "landing_keep", "landing-drop", "landing_drop":
+		r.handleLandingVerb(verb, args)
 	case "request-watch", "request_watch":
 		r.handleRequestWatchVerb(verb, args)
 	case "protected-paths", "protected_paths", "authorize-paths", "authorize_paths":
@@ -2109,13 +2398,43 @@ func takeReadOnlyToken(args []string) ([]string, *bool, error) {
 	return rest, ro, err
 }
 
+// taskTokens are the option tokens an edit-task or add-task command can carry
+// ahead of its free text. A nil readOnly or an empty string means the token was
+// absent.
+type taskTokens struct {
+	readOnly                 *bool
+	reportPath               string
+	verificationScript       string
+	verificationScriptReason string
+}
+
 // takeTaskTokens strips leading read_only=<bool> and report_path=<path>
 // tokens (in either order) from args and returns the remaining words plus the
 // parsed values (flag nil / path empty when absent). Any other word ends the
 // token run and starts the positional text.
 func takeTaskTokens(args []string) ([]string, *bool, string, error) {
-	var ro *bool
-	var reportPath string
+	rest, tok, err := takeTaskTokenRun(args, false)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return rest, tok.readOnly, tok.reportPath, nil
+}
+
+// takeEditTaskTokens is takeTaskTokens for edit-task: it also takes
+// verification_script=<path> and verification_script_reason=<text> in any
+// order among the leading tokens.
+func takeEditTaskTokens(args []string) ([]string, taskTokens, error) {
+	return takeTaskTokenRun(args, true)
+}
+
+// takeTaskTokenRun is the shared leading-token loop. withScript turns on the
+// two verification script keys; without it they end the token run like any
+// other word. The reason is split on whitespace like every other word, so a
+// reason with spaces is written in double quotes
+// (verification_script_reason="docs only change"); an unterminated quote is an
+// error rather than a silently shortened reason.
+func takeTaskTokenRun(args []string, withScript bool) ([]string, taskTokens, error) {
+	var tok taskTokens
 tokens:
 	for len(args) > 0 {
 		k, v, ok := strings.Cut(args[0], "=")
@@ -2124,19 +2443,49 @@ tokens:
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		switch k {
-		case "read_only", "read-only":
+		switch {
+		case k == "read_only" || k == "read-only":
 			b, err := strconv.ParseBool(v)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("read_only must be true or false, got %q", v)
+				return nil, taskTokens{}, fmt.Errorf("read_only must be true or false, got %q", v)
 			}
-			ro = &b
-		case "report_path":
-			reportPath = v
+			tok.readOnly = &b
+		case k == "report_path":
+			tok.reportPath = v
+		case withScript && k == "verification_script":
+			tok.verificationScript = v
+		case withScript && k == "verification_script_reason":
+			if strings.HasPrefix(v, `"`) {
+				words := []string{v}
+				for !closesQuotedValue(strings.Join(words, " ")) {
+					args = args[1:]
+					if len(args) == 0 {
+						return nil, taskTokens{}, fmt.Errorf("verification_script_reason has an opening quote with no closing quote")
+					}
+					words = append(words, args[0])
+				}
+				v = strings.Trim(strings.Join(words, " "), `"`)
+			}
+			tok.verificationScriptReason = v
 		default:
 			break tokens
 		}
 		args = args[1:]
 	}
-	return args, ro, reportPath, nil
+	return args, tok, nil
+}
+
+// closesQuotedValue reports whether s, which starts with a double quote, also
+// ends with one (and is longer than the opening quote alone).
+func closesQuotedValue(s string) bool {
+	return len(s) >= 2 && strings.HasSuffix(s, `"`)
+}
+
+// specCheckChatText is the spec-check findings of a create or revise reply
+// as plain chat text, set after a blank line; "" when the spec is clean.
+func specCheckChatText(reply string) string {
+	if block := autonomous.SpecCheckBlockFromReply([]byte(reply)); block != "" {
+		return "\n\n" + block
+	}
+	return ""
 }

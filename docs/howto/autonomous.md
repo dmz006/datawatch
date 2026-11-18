@@ -78,7 +78,12 @@ it has a different job, so it runs through the common staging guard only:
 the per-file size cap, ignored cache/build directories, model-weight
 patterns and the file-count refusal, with no whole-tree `git add` — but
 without the task write-scope filter and the
-`autonomous.snapshot_never_stage` checks.
+`autonomous.snapshot_never_stage` checks. It also never records the two
+launcher files `worker-mcp.json` and `worker-starting-context.md` (the
+artifacts the session launcher drops into the working directory at
+session start): they are dropped from the candidate list entirely, so a
+snapshot of an attempt that stalled with those uncommitted shows the
+attempt's own work and nothing of the launcher's.
 
 The two session commits — the ones whose output becomes the task's
 committed work — follow this staging discipline:
@@ -105,6 +110,21 @@ committed work — follow this staging discipline:
      tracked and was modified is the task's own work and is not
      affected — the rule keeps `node_modules/`, build output, caches and
      such from being pulled in.
+   - **the two launcher files** — `worker-mcp.json` and
+     `worker-starting-context.md`, the artifacts the session launcher
+     drops into the working directory at session start (reason
+     `launcher`). Only the exact names at the repository root match, so
+     a same-named file in a subfolder runs the other checks as usual —
+     but unlike the uncommitted-work and read-only checks, this skip is
+     by name: a root `worker-mcp.json` or `worker-starting-context.md`
+     that the repository tracks is refused here too, with the same
+     reason, so if a task genuinely needs a file with that exact name it
+     must give it a different name.
+   - **a root rule file whose only change is the daemon's sections** — an
+     `AGENT.md` or `CLAUDE.md` whose only difference from HEAD is the
+     daemon's own appended sections (reason `daemon-sections`). The same
+     file with any other change, or a same-named file under a subfolder,
+     is still a candidate.
 5. **The staging guard still applies** to whatever survives: per-file
    size cap (reason `size`), ignored cache/build directories and
    model-weight patterns (reasons `ignore-dir`, `pattern`), candidates
@@ -122,8 +142,9 @@ committed work — follow this staging discipline:
 
 In short: a file reaches an automatic commit only if it is within the
 task's declared scope (or the run's own changes), it is not in your
-never-stage list, git does not report it as ignored for a new add, and
-the staging guard accepts it.
+never-stage list, git does not report it as ignored for a new add, it is not one
+of the two launcher files or a rule file whose only change is the
+daemon's sections, and the staging guard accepts it.
 
 ## `autonomous.snapshot_never_stage` — patterns the snapshot must never stage
 
@@ -228,7 +249,9 @@ pass with skips:
 - **`reason`** is one of: `never-stage` (your
   `autonomous.snapshot_never_stage` list), `ignored` (the repository's
   ignore rules), `outside-plan` (outside the task's declared write
-  scope), plus the staging guard's reasons `size`, `ignore-dir`,
+  scope), `launcher` (one of the two root launcher files),
+  `daemon-sections` (a root rule file whose only change is the daemon's
+  sections), plus the staging guard's reasons `size`, `ignore-dir`,
   `pattern`, `outside-root` when a guard rule did the refusing.
 - **Semantics:** it is *advisory evidence* — the list names the files
   that were left unstaged and why, so you can decide whether they matter
@@ -253,7 +276,14 @@ the name. `never-stage` → it is in your `snapshot_never_stage` list;
 remove or narrow that pattern only if it was not meant to protect that
 path (remember patterns are root-anchored: `out/` protects the `out`
 directory at the repository root and its contents — a nested `out/`
-needs its own entry, e.g. `build/out/`).
+needs its own entry, e.g. `build/out/`). `launcher` → the path is
+`worker-mcp.json` or `worker-starting-context.md` at the repository root:
+those are the session launcher's own artifacts and are never staged
+on purpose — if a task genuinely needs files with those exact names, the
+name is the problem (choose a different one), not the guard. `daemon-sections` → a root
+`AGENT.md` or `CLAUDE.md` whose only change is the daemon's own sections:
+the real change you expected must have been in a different file (or was
+lost), so look at the task's output, not at that entry.
 
 **The guard refused the whole commit** (`auto-commit refused: …` in the
 daemon log, the task failing or stalling on the commit): too many files

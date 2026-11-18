@@ -62,6 +62,7 @@ type questionWire struct {
 	Label          string               `json:"label"`
 	Text           string               `json:"text"`
 	State          string               `json:"state"`
+	SessionID      string               `json:"session_id"`
 	Options        []questionOptionWire `json:"options"`
 	Recommendation *struct {
 		OptionID  string `json:"option_id"`
@@ -338,6 +339,17 @@ func (r *Router) handleQuestionAnswer(id, optionToken, quote string) {
 // loopback and reports the result. Shared by the explicit subverb and
 // the bare-reply rule.
 func (r *Router) recordQuestionAnswer(id, optionID, quote string) {
+	body, err := r.postQuestionAnswer(id, optionID, quote)
+	if err != nil {
+		r.reply("question answer failed", err.Error())
+		return
+	}
+	r.reply("question answered", body)
+}
+
+// postQuestionAnswer sends the answer with surface comm:<channel> and the
+// sender's comm identity, returning the daemon's response body.
+func (r *Router) postQuestionAnswer(id, optionID, quote string) (string, error) {
 	b, err := json.Marshal(map[string]string{
 		"chosen_option_id": optionID,
 		"quote":            quote,
@@ -345,15 +357,9 @@ func (r *Router) recordQuestionAnswer(id, optionID, quote string) {
 		"actor":            r.commSubIdentity(),
 	})
 	if err != nil {
-		r.reply("question answer failed", err.Error())
-		return
+		return "", err
 	}
-	body, err := r.commJSON("POST", questionPath(id, "answer"), string(b))
-	if err != nil {
-		r.reply("question answer failed", err.Error())
-		return
-	}
-	r.reply("question answered", body)
+	return r.commJSON("POST", questionPath(id, "answer"), string(b))
 }
 
 // resolveQuestionOption maps an option token (a 1-based option number or

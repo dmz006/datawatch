@@ -136,6 +136,36 @@ servers:
 `${secret:nas-token}` resolves from the secrets store at startup so you don't
 store raw tokens in config files.
 
+## Peer TLS (verified by default)
+
+When a remote's `url` is `https://`, the daemon **verifies the remote's
+certificate against the system trust store by default**. The daemon makes
+the proxy calls itself (`/api/proxy/{name}/...`, health probes, the Test
+button's probe), so trusting the CA in the *browser* is not enough for them
+— a self-signed or private-CA remote needs one of the two per-peer options
+below, or the requests fail the TLS handshake.
+
+| Option | Effect |
+|--------|--------|
+| `tls_cert_fingerprint` (recommended for self-signed remotes) | Pins the remote's **leaf certificate**: the SHA-256 of that one certificate, 64 hex characters (colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. Derive it by saving the leaf with `openssl s_client -connect <host:port>` and running `openssl x509 -noout -fingerprint -sha256 -in <leaf.pem>`. A malformed value is **rejected when saved** (REST `400` / CLI error). The pin **wins over** `tls_skip_verify` — the two cannot both be set. When the remote's leaf later changes (renewal, re-issue) the pin stops matching and the peer goes unreachable until you update it. |
+| `tls_skip_verify: true` | Turns certificate verification off **for this peer only** — every other peer keeps full verification. For a self-signed/local-dev peer on a trusted network, never a production posture. Saving such a peer announces it: the create/update response carries a `warnings` array, and the daemon emits a warn-level system alert titled **Peer certificate not verified** (at most once per peer per daemon run) with the one line `<name>: this peer's certificate is not verified (tls_skip_verify is set); set tls_cert_fingerprint to pin its leaf certificate instead` (also logged). |
+
+**Where to set it (all surfaces agree):**
+
+| Surface | How |
+|---------|-----|
+| **PWA** | Settings → Comms → Servers, Add/Edit form: the **Skip TLS certificate verification** checkbox (shows the line "TLS certificate verification is disabled for this server — use only on a trusted network.") and the **Certificate fingerprint (pin)** field; the form keeps the two mutually exclusive. The Observer → Federation Peers card's add/edit peer form carries the same pair. |
+| **CLI** | `datawatch server add --tls-cert-fingerprint <64-hex>` or `--tls-skip-verify` (same flags on `datawatch server update <name>`; there, omitting `--tls-cert-fingerprint` leaves the pin unchanged). `datawatch federation peer add/update` take the same flags — `--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`, which opts the peer into the resource-fingerprint exchange. |
+| **REST** | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` (and `/api/federation/peers`); create/update responses carry the `warnings` array when applicable, and `POST /api/servers/{name}/test` surfaces it after the probe. Pin + skip together, or a malformed pin, is a `400`. |
+| **YAML** | `tls_cert_fingerprint: <64-hex>` (or `tls_skip_verify: true`) on the `servers:` entry — daemon restart required (YAML entries are read-only builtins). |
+
+**Operator review:** an `https://` remote you reached before by trusting its
+CA only in the browser now needs that CA in the daemon's system trust store,
+a leaf pin, or the explicit skip — and the skip is warned. Prefer the pin
+(or a trusted CA) over `tls_skip_verify`; if you used the skip, watch for
+the **Peer certificate not verified** alert and replace it with a pin once
+the peer's certificate is stable.
+
 ## Switch between servers (header dropdown)
 
 Every page has a **server dropdown** in the fixed app header — a native
@@ -228,11 +258,17 @@ to
   - the error panel, when a remote server cannot be reached and no
     sessions are loaded, offers an explicit **Back to \<hostname\>**
     button;
-  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
-    it appears while a remote server is the active one and clicking it
-    returns you to local data; it is the `.server-indicator` chip in
-    `renderSessionsView` in `internal/server/web/app.js`
-    (`onclick="selectServer(null)"`), covered by the PWA test
+  - the **Sessions toolbar** now carries a **server select** in its one-line
+    top bar (an **All servers** entry, **This server**, one entry per
+    peer) — picking **This server** (or any other entry) goes through the
+    same `selectServer()` path as the header dropdown;
+  - a clickable **🌐 \<name\>** indicator on the line below the Sessions toolbar,
+    next to **Tree** and **History** (it lives on the Sessions page
+    toolbar, not the one-line top bar) — it appears while a remote server
+    is the active one and clicking it returns you to local data; it is the
+    `.server-indicator` chip in `renderSessionsView` in
+    `internal/server/web/app.js` (`onclick="selectServer(null)"`), covered
+    by the PWA test
     `internal/server/web/app-select-server-controls.test.js`;
   - on the **Servers card** under Settings → Comms → Remote Servers, the
     row for the active remote server carries a **Back to \<hostname\>**
@@ -330,7 +366,11 @@ the About tab sees two matching builds.
 **Test button returns red / error toast**
 - Verify the URL is reachable from the browser (not just from the daemon host).
 - Check that the remote bearer token matches what the remote daemon is configured with.
-- If TLS: ensure the remote's CA cert is trusted by the browser.
+- If using TLS: the daemon verifies the remote's certificate against its
+  system trust store (browser trust does not cover the daemon's proxy
+calls) — trust the CA on the daemon host, pin the leaf with
+  `tls_cert_fingerprint`, or explicitly set `tls_skip_verify: true`
+  (announced with a warning); see [Peer TLS (verified by default)](#peer-tls-verified-by-default).
 
 **[remote] badge missing on aggregated cards**
 - The remote server may be offline; the aggregated endpoint skips unreachable
@@ -347,6 +387,7 @@ the About tab sees two matching builds.
 ## See also
 
 - [`howto/federated-observer.md`](federated-observer.md) — push-based peer stats aggregation
+- [`howto/federation-fingerprint.md`](federation-fingerprint.md) — the `fingerprint-sync` per-peer flag (distinct from the `tls_cert_fingerprint` pin)
 - [`howto/secrets-manager.md`](secrets-manager.md) — store remote bearer tokens as `${secret:...}` refs
 - [`howto/daemon-operations.md`](daemon-operations.md) — start / configure remote instances
 - [`architecture-overview.md`](../architecture-overview.md) — how proxy routing and server store fit together

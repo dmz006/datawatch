@@ -17,10 +17,10 @@ func TestResolvePlannedModel(t *testing.T) {
 		want                    string
 	}{
 		{
-			name:                "global ollama-prefixed model does not pair with claude-code",
+			name:                "global ollama-prefixed model does not pair with claude-code, daemon default applies",
 			backend:             "claude-code",
 			globalPlanningModel: "ollama/qwen3.8-64k:27b",
-			want:                "",
+			want:                DefaultClaudeModel,
 		},
 		{
 			name:                "global ollama-prefixed model is forwarded by pi-prompt with no planning backend",
@@ -36,11 +36,11 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:                  "ollama/qwen3.8-64k:27b",
 		},
 		{
-			name:                  "global ollama-prefixed model with non-matching planning backend does not pair with claude-code",
+			name:                  "global ollama-prefixed model with non-matching planning backend does not pair with claude-code, daemon default applies",
 			backend:               "claude-code",
 			globalPlanningBackend: "opencode",
 			globalPlanningModel:   "ollama/qwen3.8-64k:27b",
-			want:                  "",
+			want:                  DefaultClaudeModel,
 		},
 		{
 			name:       "PRD backend and model pair with the resolved backend",
@@ -50,11 +50,11 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:       "claude-sonnet-5",
 		},
 		{
-			name:       "PRD model is ignored when its backend differs from the resolved backend",
+			name:       "PRD model is ignored when its backend differs from the resolved backend, daemon default applies",
 			backend:    "claude-code",
 			prdBackend: "opencode",
 			prdModel:   "ollama/qwen3.8:27b",
-			want:       "",
+			want:       DefaultClaudeModel,
 		},
 		{
 			name:                  "global pair with matching backend uses the global model",
@@ -96,9 +96,9 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:                  "qwen3.8:27b",
 		},
 		{
-			name:    "nothing set returns empty so the backend default applies",
+			name:    "nothing set returns the daemon default for a claude-code session",
 			backend: "claude-code",
-			want:    "",
+			want:    DefaultClaudeModel,
 		},
 		{
 			name:                    "tier 4: pi-prompt with only the global verification model takes it",
@@ -113,10 +113,10 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:                    "claude-sonnet-5",
 		},
 		{
-			name:                    "tier 4: provider-qualified verification model is refused on claude-code",
+			name:                    "tier 4: provider-qualified verification model is refused on claude-code, daemon default applies",
 			backend:                 "claude-code",
 			globalVerificationModel: "ollama/qwen3.8-64k:27b",
-			want:                    "",
+			want:                    DefaultClaudeModel,
 		},
 		{
 			name:                    "tier 4: bare claude alias is refused on a pi-family backend",
@@ -278,7 +278,9 @@ func TestServesProviderModels(t *testing.T) {
 // instead of parsing the model string, so a wrong resolver fails the matrix.
 // A foreign prefix only disqualifies a model when the decompose backend
 // cannot serve provider-tagged models (pi-family backends forward any
-// "provider/model" string to their configured provider).
+// "provider/model" string to their configured provider). A claude-code
+// session with no model named at any tier falls to the daemon default
+// (explicit-model policy, model_policy.go).
 func expectedPlannedModel(backend string, g plannedGlobalCase, p plannedPRDCase) string {
 	if p.prdDecompositionModel != "" {
 		return p.prdDecompositionModel
@@ -292,6 +294,9 @@ func expectedPlannedModel(backend string, g plannedGlobalCase, p plannedPRDCase)
 	}
 	if p.prdModel != "" && p.prdBackend == backend {
 		return p.prdModel
+	}
+	if backend == claudeCodeBackendName {
+		return DefaultClaudeModel
 	}
 	return ""
 }

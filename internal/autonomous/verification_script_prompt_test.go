@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -94,7 +95,7 @@ func TestVerificationScriptSuffix_SizeInvariantToRepoContents(t *testing.T) {
 	if len(got) != len(empty) {
 		t.Errorf("suffix must be static text: len %d with repo content vs %d for an empty dir", len(got), len(empty))
 	}
-	if len(got) >= 3000 {
+	if len(got) >= 5000 {
 		t.Errorf("suffix should stay small, got %d bytes", len(got))
 	}
 	if strings.Contains(got, "script-00.sh") || strings.Contains(got, "SCRIPT-BODY-MARKER") {
@@ -348,5 +349,40 @@ func TestDecomposeStreaming_RejectsZeroScriptsWhenFilesArePlanned(t *testing.T) 
 	}
 	if got.Status != PRDDraft {
 		t.Errorf("status = %q, want rolled back to draft so the operator can retry", got.Status)
+	}
+}
+
+func TestVerifyStable_SuffixCarriesHelperAndPlannerRules(t *testing.T) {
+	m := &Manager{cfg: Config{}}
+	got := m.verificationScriptSuffix(&PRD{ProjectDir: t.TempDir()})
+	for _, want := range []string{
+		VerificationScriptHelperText(),
+		"make sync-docs",
+		"git merge-base",
+		"cumulative",
+		"Do not generate a per-story gate.",
+		"Plan exactly one real final gate for the whole Automaton, as the last task, with kind final_gate.",
+		"A final_gate task always carries a verification_script (also listed in files_generated) or an explicit verification_script_reason; never emit one with neither.",
+		"Use Automaton wording in user-facing text.",
+	} {
+		if !strings.Contains(strings.Join(strings.Fields(got), " "), strings.Join(strings.Fields(want), " ")) {
+			t.Errorf("suffix missing %q", want)
+		}
+	}
+	if i, j := strings.Index(got, "make sync-docs"), strings.Index(got, "Do NOT inline"); i < 0 || j < 0 || i > j {
+		t.Errorf("helper rules must precede the Do NOT inline sentence")
+	}
+	if i, j := strings.Index(got, "5. If the listed"), strings.Index(got, "make sync-docs"); i < 0 || i > j {
+		t.Errorf("helper rules must follow rule 5")
+	}
+	if regexp.MustCompile(`\bv?\d+\.\d+\.\d+\b`).MatchString(got) {
+		t.Errorf("suffix must not contain a fixed release number")
+	}
+}
+
+func TestVerifyStable_HeadlessSuffixStillEmpty(t *testing.T) {
+	m := &Manager{cfg: Config{}}
+	if got := m.verificationScriptSuffix(&PRD{}); got != "" {
+		t.Fatalf("headless suffix must be empty, got %q", got)
 	}
 }

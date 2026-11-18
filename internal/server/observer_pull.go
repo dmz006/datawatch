@@ -304,7 +304,7 @@ func (p *observerPull) Fetch(ctx context.Context, name string) (*observer.StatsR
 
 	// peerClient honours the entry's TLSSkipVerify (and the pinned
 	// SHA-256 when one is configured) and caches per peer.
-	target := federationTarget{name: entry.Name, url: entry.URL, token: entry.Token, skipVerify: entry.TLSSkipVerify}
+	target := federationTarget{name: entry.Name, url: entry.URL, token: entry.Token, skipVerify: entry.TLSSkipVerify, pinnedSHA256: entry.TLSCertFingerprint}
 	client := s.peerClient(target)
 
 	endpoint := strings.TrimRight(entry.URL, "/") + "/api/observer/stats?v=2"

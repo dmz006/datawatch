@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -180,6 +181,16 @@ func resolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) 
 		out.Effort = string(auto.VerificationEffort)
 	default:
 		out.Effort = cfg.VerificationEffort
+	}
+	// Explicit-model policy (model_policy.go): a claude-code verifier session
+	// is started with an explicit model. When the precedence above (task ->
+	// story -> Automaton -> Automation -> global, pool and policy sources
+	// included) leaves the model empty for a claude-code backend, the daemon
+	// default is sonnet. A non-empty model named at any level — including a
+	// premium Opus/Fable one — passed through the precedence and is carried
+	// unchanged. Other backends are untouched.
+	if out.Backend == claudeCodeBackendName && strings.TrimSpace(out.Model) == "" {
+		out.Model = DefaultClaudeModel
 	}
 	out.Mode = string(inference.VerificationModeGenerate)
 	return out

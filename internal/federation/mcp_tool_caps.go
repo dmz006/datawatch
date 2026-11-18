@@ -151,6 +151,11 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_type":                      CapAutonomousWrite,
 	"autonomous_shipped_record":                    CapAutonomousWrite, // operator records a PRD or Automation as shipped
 	"autonomous_shipped_backfill":                  CapAutonomousWrite, // operator runs the shipped-state backfill from merge history (dry_run or writing)
+	"autonomous_completed_migrate":                 CapAutonomousWrite, // operator moves cancelled, merged Automata to Completed (dry_run, limit, id); never kills a session
+	"autonomous_prd_hold":                          CapAutonomousWrite, // operator puts an Automaton on hold, or extends the hold
+	"autonomous_prd_release_hold":                  CapAutonomousWrite, // operator ends a hold; the Automaton returns to the status it had
+	"autonomous_held":                              CapAutonomousRead,  // read the Held group
+	"autonomous_held_migrate":                      CapAutonomousWrite, // operator lists look-alikes (dry run) or holds the chosen ids
 	"autonomous_shipped_counts":                    CapAutonomousRead,  // read the per-status shipped counts (PRD + Automation buckets) under the in-force settings
 	"autonomous_defect_intake":                     CapAutonomousWrite, // routes a defect: creates or extends an Automaton and logs the decision
 	"autonomous_defect_batches":                    CapAutonomousRead,  // read the open defect batches with the story-to-defect mapping
@@ -235,9 +240,14 @@ var MCPToolCap = map[string]string{
 	"question_quality":                     CapAutonomousRead,
 	"autonomous_merge":                     CapAutonomousRead,
 	"autonomous_safe_to_delete":            CapAutonomousRead,
+	"autonomous_branch_reap":               CapAutonomousRead,
+	"autonomous_branch_reap_run":           CapAutonomousWrite,
+	"autonomous_branch_reap_restore":       CapAutonomousWrite,
 	"autonomous_cleanup_status":            CapAutonomousRead,
 	"autonomous_uncommitted_work":          CapAutonomousRead,
 	"autonomous_unlanded_work":             CapAutonomousRead,
+	"autonomous_landing_keep":              CapAutonomousWrite,
+	"autonomous_landing_drop":              CapAutonomousWrite,
 	"autonomous_request_watch":             CapAutonomousRead,
 	"autonomous_overlap_search":            CapAutonomousRead,
 	"security_failure_list":                CapAutonomousRead,
@@ -582,9 +592,26 @@ var MCPToolCap = map[string]string{
 	// Plan records (proxies internal/server's /api/plan-records). The same
 	// split as the REST gate: create, update and import mutate; get, list and
 	// search only read.
-	"plan_record_create":          CapAutonomousWrite,
-	"plan_record_update":          CapAutonomousWrite,
-	"plan_record_import":          CapAutonomousWrite,
+	"plan_record_create":    CapAutonomousWrite,
+	"plan_record_update":    CapAutonomousWrite,
+	"plan_record_import":    CapAutonomousWrite,
+	"plan_migrate":          CapAutonomousWrite,
+	"plan_create":           CapAutonomousWrite,
+	"plan_reorder":          CapAutonomousWrite,
+	"plan_reorder_automata": CapAutonomousWrite,
+	"plan_attach":           CapAutonomousWrite,
+	"plan_detach":           CapAutonomousWrite,
+	// Release plans (proxies internal/server's themes, archive, restore,
+	// unattributed, bulk attach and row-plan routes): the list tools only read,
+	// every other tool mutates.
+	"plan_theme_set":              CapAutonomousWrite,
+	"plan_archive":                CapAutonomousWrite,
+	"plan_restore":                CapAutonomousWrite,
+	"plan_attach_bulk":            CapAutonomousWrite,
+	"plan_row_plan_convert":       CapAutonomousWrite,
+	"plan_theme_list":             CapAutonomousRead,
+	"plan_unattributed_list":      CapAutonomousRead,
+	"plan_row_plan_list":          CapAutonomousRead,
 	"plan_record_get":             CapAutonomousRead,
 	"plan_record_list":            CapAutonomousRead,
 	"plan_record_search":          CapAutonomousRead,
@@ -800,8 +827,9 @@ var nonConfigWriteTools = map[string]bool{
 	"automation_set_budget": true, "automation_set_decision_assistant": true, "automation_set_effort_ceiling": true, "automation_set_llm": true,
 	"automation_set_verification_llm": true, "automation_skip_member": true, "automation_update": true, "autonomous_attention_list": true,
 	"autonomous_cleanup_status": true, "autonomous_config_get": true, "autonomous_decisions": true, "autonomous_events_pending": true,
-	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_lane_utilization": true, "autonomous_learnings": true,
+	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_landing_drop": true, "autonomous_landing_keep": true, "autonomous_lane_utilization": true, "autonomous_learnings": true,
 	"autonomous_merge": true, "autonomous_merge_pipeline_get": true, "autonomous_merge_pipeline_set_record": true, "autonomous_merge_pipeline_validate": true,
+	"autonomous_branch_reap": true, "autonomous_branch_reap_run": true, "autonomous_branch_reap_restore": true,
 	"autonomous_overlap_search": true, "autonomous_timeline": true, "autonomous_pending_item_add": true, "autonomous_pending_item_attach": true, "autonomous_pending_items": true, "autonomous_pending_items_refresh": true, "autonomous_prd_add_story": true, "autonomous_prd_add_task": true, "autonomous_prd_approve": true,
 	"autonomous_prd_approve_task": true, "autonomous_prd_cancel": true, "autonomous_prd_cancel_story": true, "autonomous_prd_cancel_task": true,
 	"autonomous_prd_children": true, "autonomous_prd_clone_to_template": true, "autonomous_prd_create": true, "autonomous_prd_decompose": true,
@@ -819,7 +847,7 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_set_task_verification_llm": true, "autonomous_prd_set_task_verifier_policy": true, "autonomous_prd_set_thinking_level": true, "autonomous_prd_set_type": true,
 	"autonomous_prd_set_verification_llm": true, "autonomous_prd_set_verifier_policy": true, "autonomous_progress": true, "autonomous_progress_trend": true,
 	"autonomous_repo_ci_watch": true, "autonomous_request_watch": true, "autonomous_safe_to_delete": true, "autonomous_scan_config_get": true,
-	"autonomous_shipped_backfill": true, "autonomous_shipped_counts": true, "autonomous_shipped_record": true, "autonomous_status": true,
+	"autonomous_completed_migrate": true, "autonomous_prd_hold": true, "autonomous_prd_release_hold": true, "autonomous_held": true, "autonomous_held_migrate": true, "autonomous_shipped_backfill": true, "autonomous_shipped_counts": true, "autonomous_shipped_record": true, "autonomous_status": true,
 	"autonomous_subscribe": true, "autonomous_subscription_test": true, "autonomous_subscription_update": true, "autonomous_subscriptions": true,
 	"autonomous_tag_create": true, "autonomous_tag_delete": true, "autonomous_tag_list": true, "autonomous_tag_registry_dismiss_note": true,
 	"autonomous_tag_registry_status": true, "autonomous_tag_rename": true, "autonomous_tag_set_color": true, "autonomous_tag_set_parent": true,
@@ -915,8 +943,11 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_generated_artefact": true, "autonomous_prd_regenerate_artefact": true, "autonomous_prd_set_authorized_paths": true, "autonomous_prd_set_breaking_change": true,
 	"autonomous_prd_set_release_size": true, "autonomous_prd_set_story_node": true, "autonomous_prd_set_task_node": true, "autonomous_prd_set_worker_profile": true,
 	"autonomous_protected_paths": true, "autonomous_release_readiness": true, "autonomous_standard_tasks": true, "autonomous_tag_sweep": true,
-	"plan_record_create": true, "plan_record_get": true, "plan_record_import": true, "plan_record_list": true,
+	"plan_create": true, "plan_reorder": true, "plan_reorder_automata": true, "plan_attach": true, "plan_detach": true,
+	"plan_migrate": true, "plan_record_create": true, "plan_record_get": true, "plan_record_import": true, "plan_record_list": true,
 	"plan_record_search": true, "plan_record_update": true,
+	"plan_theme_list": true, "plan_theme_set": true, "plan_archive": true, "plan_restore": true,
+	"plan_unattributed_list": true, "plan_attach_bulk": true, "plan_row_plan_list": true, "plan_row_plan_convert": true,
 	"checks_status": true, "compute_node_backend_versions": true, "compute_node_drain": true, "compute_node_undrain": true,
 	"compute_placement_answer": true, "compute_placement_list": true, "compute_served_models": true, "generated_artefacts_get": true, "llm_classifier": true, "planning_routing_get": true,
 	"planning_routing_test": true, "planning_scorecard": true, "task_routing_get": true, "task_routing_profile_list": true, "task_routing_profile_export": true, "task_routing_automaton": true, "task_routing_dry_run": true, "platform_context_status": true, "plugin_service_restart": true,

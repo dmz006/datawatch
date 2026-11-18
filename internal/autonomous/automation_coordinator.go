@@ -149,11 +149,12 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
 // terminal kinds plus the non-terminal member transitions that matter
-// (revert to approved after start, archive, the wait-only statuses, and running,
+// (revert to approved after start, archive, the wait-only statuses including
+// held, and running,
 // which reopens a member that was cancelled).
 func coordinatorKinds() []string {
 	kinds := TerminalPRDKinds()
-	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused, PRDRunning} {
+	for _, s := range []PRDStatus{PRDApproved, PRDArchived, PRDNeedsReview, PRDRevisionsAsked, PRDPlanning, PRDDraft, PRDPaused, PRDHeld, PRDRunning} {
 		kinds = append(kinds, PRDStatusKind(s))
 	}
 	return kinds
@@ -830,15 +831,38 @@ func (c *Coordinator) triagePass() {
 	mergeMode := cfg.Automation.EffectiveMergePendingMode()
 	mergeActive := mergeMode == config.MergePendingModeShadow || mergeMode == config.MergePendingModeOn
 	mergeThreshold := time.Duration(cfg.Automation.EffectiveMergePendingAlertMinutes()) * time.Minute
+	mergeTerminal := cfg.Automation.EffectiveMergePendingIncludeTerminal()
 	mergeBranches, mergePRDs := map[string]struct{}{}, map[string]struct{}{}
 
 	type dueAlert struct{ level, title, body string }
 	var due []dueAlert
 
+	// mergeTerminalCheck runs the merge-pending check for an Automaton in a
+	// covered state other than completed. Its episode is kept in memory
+	// (mergePendingEpisode), so the triage record a failed or blocked
+	// Automaton holds is neither overwritten nor cleared by it.
+	mergeTerminalCheck := func(prd *PRD) {
+		if !mergeActive || prd.Git.Branch == "" || !mergePendingCovers(prd.Status, mergeTerminal) {
+			return
+		}
+		c.mergeEpisodeSeed(prd)
+		mergeBranches[prd.Git.Branch], mergePRDs[prd.ID] = struct{}{}, struct{}{}
+		if title, body, ok := c.mergePendingCheck(prd, mergeMode, cfg.WorktreeBaseRepo, now, mergeThreshold); ok {
+			due = append(due, dueAlert{level: "warn", title: title, body: body})
+		}
+	}
+
 	automations := m.automations
 	for _, prd := range m.store.ListPRDs() {
 		switch prd.Status {
+		case PRDHeld:
+			// A held Automaton keeps its stored triage record as it is: the
+			// pass neither refreshes, alerts on nor clears it.
+			continue
 		case PRDFailed, PRDBlocked:
+			// the merge-pending check reads the record as it was before
+			// the triage refresh below, and never writes it
+			mergeTerminalCheck(prd)
 			var isMember bool
 			if prd.AutomationID != "" && automations != nil {
 				if _, ok := automations.Get(prd.AutomationID); ok {
@@ -878,6 +902,13 @@ func (c *Coordinator) triagePass() {
 				})
 			}
 		default:
+			if prd.Status != PRDCompleted {
+				// archived and needs_review: the merge-pending check first
+				// (it may seed its episode from a merge_pending record
+				// carried over from completed), then the record clearing
+				// below, as before
+				mergeTerminalCheck(prd)
+			}
 			if mergeActive && prd.Status == PRDCompleted && prd.Git.Branch != "" {
 				if prd.Triage != nil && prd.Triage.Status != TriageStatusMergePending {
 					// a completed Automaton holds no failed or blocked record
@@ -939,6 +970,13 @@ func (c *Coordinator) triagePass() {
 	if due, st := c.m.CleanupDiskPass(); due {
 		c.alert("warn", "Disk almost full (Automaton cleanup)", cleanupDiskAlertBody(st))
 	}
+
+	// Cache-folder sweep — right beside the temp-file sweep: stale
+	// go-build / trivy scan-cache folders directly under the temp root
+	// that no live process holds. off does nothing, report lists
+	// would-removes, on removes; both removals and freed space are
+	// counted in the result.
+	c.m.SweepCacheFoldersPass()
 
 	for _, d := range due {
 		c.alert(d.level, d.title, d.body)

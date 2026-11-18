@@ -376,7 +376,7 @@ type ReportCapability struct {
 // (minimums + overrides + per-capability nodes), what is missing, and the
 // automation backend minimums.
 type RequirementsReport struct {
-	GeneratedAt  time.Time      `json:"generated_at"`
+	GeneratedAt  time.Time          `json:"generated_at"`
 	Capabilities []ReportCapability `json:"capabilities"`
 	Backends     AutomationBackends `json:"backends"`
 	Missing      []string           `json:"missing"` // every unmet requirement, human-readable
@@ -431,8 +431,8 @@ func BuildRequirementsReport(in RequirementsReportInput) RequirementsReport {
 		}
 		if !rc.Satisfied {
 			rep.Missing = append(rep.Missing, fmt.Sprintf(
-					"%s: no node enabled with Ollama %s or later (minimum: %s)",
-					capability, required, minimumSource(overridden)))
+				"%s: no node enabled with Ollama %s or later (minimum: %s)",
+				capability, required, minimumSource(overridden)))
 		}
 		rep.Capabilities = append(rep.Capabilities, rc)
 	}

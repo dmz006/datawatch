@@ -244,6 +244,9 @@ esac
 		mode   string
 		signal syscall.Signal
 		want   int
+		// ignore names a signal the driver inherits as SIG_IGN (as under
+		// nohup or a background job); the cleanup must still run.
+		ignore string
 	}
 	cases := []modeCase{
 		{name: "NormalExit", mode: "normal", want: 0},
@@ -251,6 +254,8 @@ esac
 		{name: "InterruptSigint", mode: "wait", signal: syscall.SIGINT, want: 130},
 		{name: "InterruptSigterm", mode: "wait", signal: syscall.SIGTERM, want: 143},
 		{name: "InterruptSighup", mode: "wait", signal: syscall.SIGHUP, want: 129},
+		{name: "InterruptSighupInheritedIgnored", mode: "wait", signal: syscall.SIGHUP, want: 129, ignore: "HUP"},
+		{name: "InterruptSigtermInheritedIgnored", mode: "wait", signal: syscall.SIGTERM, want: 143, ignore: "TERM"},
 	}
 
 	for _, tc := range cases {
@@ -266,6 +271,11 @@ esac
 			}
 
 			cmd := exec.Command(bash, driverPath)
+			if tc.ignore != "" {
+				// An ignored signal survives exec, so the driver starts with it
+				// at SIG_IGN exactly as under nohup.
+				cmd = exec.Command(bash, "-c", `trap "" `+tc.ignore+`; exec "$0" "$@"`, bash, driverPath)
+			}
 			cmd.Dir = root
 			cmd.Env = dcEnv(
 				"DW_FIX="+fix,
@@ -353,7 +363,8 @@ esac
 			case <-time.After(30 * time.Second):
 				_ = cmd.Process.Kill()
 				select {
-				case <-doneCh:
+				case err := <-doneCh:
+					_ = err
 				case <-time.After(10 * time.Second):
 				}
 				t.Fatalf("driver did not end within 30s on mode %s", tc.mode)

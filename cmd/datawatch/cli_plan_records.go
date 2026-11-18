@@ -9,9 +9,9 @@
 //	    → GET /api/plan-records/{registry-rows|findings}/{ref}
 //	datawatch plan-record update <ref> [--kind K] [--project P] [--title … --body … --state …] [--json]
 //	    → PUT /api/plan-records/{registry-rows|findings}/{ref}
-//	datawatch plan-record list [--kind K] [--project P] [--state S] [--limit n] [--json]
+//	datawatch plan-record list [--kind K] [--project P] [--state S[,S...]] [--limit n] [--json]
 //	    → GET /api/plan-records/{registry-rows|findings}
-//	datawatch plan-record search <text> [--kind K] [--project P] [--state S] [--json]
+//	datawatch plan-record search <text> [--kind K] [--project P] [--state S[,S...]] [--json]
 //	    → GET /api/plan-records/search
 //	datawatch plan-record import [--project P] [--source registry|findings|all] [--policy suffix|rename|skip] [--dry-run=false]
 //	    → POST /api/plan-records/import
@@ -439,8 +439,8 @@ number when it came from the registry file.
   datawatch plan-record create --kind registry-row|finding --project <alias> --title <title> [--body <text>] [--state <state>]
   datawatch plan-record get <ref> [--kind K] [--project P]
   datawatch plan-record update <ref> [--kind K] [--project P] [--title … --body … --state …]
-  datawatch plan-record list [--kind K] [--project P] [--state S] [--limit n]
-  datawatch plan-record search <text> [--kind K] [--project P] [--state S]
+  datawatch plan-record list [--kind K] [--project P] [--state S[,S...]] [--limit n]
+  datawatch plan-record search <text> [--kind K] [--project P] [--state S[,S...]]
   datawatch plan-record import [--project P] [--source registry|findings|all] [--policy suffix|rename|skip] [--dry-run=false]
 
 A <ref> is an id, a uid, "row <n>" (the old row number), an exact title, an
@@ -706,16 +706,20 @@ func newPlanRecordListCmd() *cobra.Command {
 				suffix = "?" + enc
 			}
 			combined := map[string]json.RawMessage{}
+			anyKindOK := false
+			var lastRefuse error
 			for _, s := range segs {
 				out, derr := daemonJSONBody(http.MethodGet, "/api/plan-records/"+s+suffix, nil)
 				if derr != nil {
 					// A state that fits only one kind is refused by the other
 					// collection; with no --kind that is not a failure.
 					if len(segs) > 1 && state != "" && strings.HasPrefix(derr.Error(), "HTTP 400") {
+						lastRefuse = derr
 						continue
 					}
 					return derr
 				}
+				anyKindOK = true
 				if jsonOut {
 					if len(segs) == 1 {
 						planRecordPrintJSON(cmd.OutOrStdout(), out)
@@ -731,6 +735,11 @@ func newPlanRecordListCmd() *cobra.Command {
 					return rerr
 				}
 			}
+			if !anyKindOK && state != "" && lastRefuse != nil {
+				// Every collection refused the state filter: surface the
+				// daemon's plain refusal instead of an empty list.
+				return lastRefuse
+			}
 			if jsonOut {
 				raw, _ := json.MarshalIndent(combined, "", "  ")
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(raw))
@@ -740,7 +749,7 @@ func newPlanRecordListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&kind, "kind", "", "registry-row or finding (both when left out)")
 	cmd.Flags().StringVar(&project, "project", "", "Only this project alias")
-	cmd.Flags().StringVar(&state, "state", "", "Only this state")
+	cmd.Flags().StringVar(&state, "state", "", "Only records in these states: one, or a comma-separated list")
 	cmd.Flags().IntVar(&limit, "limit", 0, "How many records to return (the daemon caps at 1000)")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Skip this many records")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the raw JSON")
@@ -785,7 +794,7 @@ func newPlanRecordSearchCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&kind, "kind", "", "registry-row or finding (both when left out)")
 	cmd.Flags().StringVar(&project, "project", "", "Only this project alias")
-	cmd.Flags().StringVar(&state, "state", "", "Only this state")
+	cmd.Flags().StringVar(&state, "state", "", "Only records in these states: one, or a comma-separated list")
 	cmd.Flags().IntVar(&limit, "limit", 0, "How many hits to return (the daemon caps at 1000)")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Skip this many hits")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the raw JSON")

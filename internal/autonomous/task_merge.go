@@ -67,7 +67,7 @@ type MergeConflictFile struct {
 type MergeResolveRequest struct {
 	PRD   *PRD
 	Task  *Task
-	Model string // merge_conflict_model; empty = strongest planning model
+	Model string // merge_conflict_model; unset reads the daemon default (non-Opus)
 	Dir   string // the PRD worktree the merge runs in
 	Files []MergeConflictFile
 }
@@ -433,7 +433,7 @@ func unmergedPaths(ctx context.Context, dir string) []string {
 
 // abortMerge backs out an unfinished merge, restoring the tree it began from.
 func abortMerge(ctx context.Context, dir string) {
-	if _, err := runGitInCtx(ctx, dir, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err != nil {
+	if !mergeInProgress(ctx, NewMergeGitRunner(), dir) {
 		return // no merge in progress
 	}
 	if _, err := runGitInCtx(ctx, dir, "merge", "--abort"); err != nil {

@@ -39,6 +39,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		mcpsdk.WithString("fallthrough_target", mcpsdk.Description("true/false — allow autonomous workers to fall through to this LLM when their requested pool is full (needs autonomous.capacity_fallthrough on; default false; omit on update to keep the stored value)")),
 		llmBudgetOption(),
 		llmRolesOption(),
 		// Session-backend fields
@@ -75,6 +76,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		mcpsdk.WithString("fallthrough_target", mcpsdk.Description("true/false — allow autonomous workers to fall through to this LLM when their requested pool is full (needs autonomous.capacity_fallthrough on; default false; omit on update to keep the stored value)")),
 		llmBudgetOption(),
 		llmRolesOption(),
 		// Session-backend fields
@@ -273,6 +275,9 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	// auto_add_models (bug fix: was missing).
 	if v := optString(req, "auto_add_models"); v != "" {
 		body["auto_add_models"] = strings.EqualFold(v, "true") || v == "1"
+	}
+	if v := optString(req, "fallthrough_target"); v != "" {
+		body["fallthrough_target"] = strings.EqualFold(v, "true") || v == "1"
 	}
 	// Session-backend fields.
 	if v := optString(req, "binary"); v != "" {

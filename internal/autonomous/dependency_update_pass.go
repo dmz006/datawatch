@@ -175,8 +175,12 @@ func (c *Coordinator) dependencyUpdatePass() {
 		if noted {
 			return // one note per held run, not one per poll
 		}
+		reason := "the previous dependency update Automaton is not finished"
+		if status == string(PRDHeld) {
+			reason = "the previous dependency update Automaton is on hold"
+		}
 		c.audit("dependency_update_skipped", map[string]any{
-			"reason":    "the previous dependency update Automaton is not finished",
+			"reason":    reason,
 			"automaton": st.Title,
 			"status":    status,
 		})

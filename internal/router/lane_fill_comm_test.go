@@ -32,6 +32,7 @@ func laneFillCommDaemon(t *testing.T, status int, body string) (*lanePathLog, in
 		log.calls++
 		log.path = r.URL.Path
 		log.query = r.URL.RawQuery
+		log.method = r.Method
 		raw, _ := io.ReadAll(r.Body)
 		log.body = string(raw)
 		w.WriteHeader(status)
@@ -44,6 +45,7 @@ type lanePathLog struct {
 	calls       int
 	path, query string
 	body        string
+	method      string
 }
 
 func TestLaneFillComm_StatusRendersLanesQueuedAndNewestFive(t *testing.T) {

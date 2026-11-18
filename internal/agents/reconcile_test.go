@@ -19,9 +19,11 @@ type discoveryFakeDriver struct {
 	calls  int
 }
 
-func (d *discoveryFakeDriver) Kind() string                                          { return d.kind }
-func (d *discoveryFakeDriver) Spawn(_ context.Context, _ *Agent) error               { return nil }
-func (d *discoveryFakeDriver) Status(_ context.Context, _ *Agent) (State, error)     { return StateReady, nil }
+func (d *discoveryFakeDriver) Kind() string                            { return d.kind }
+func (d *discoveryFakeDriver) Spawn(_ context.Context, _ *Agent) error { return nil }
+func (d *discoveryFakeDriver) Status(_ context.Context, _ *Agent) (State, error) {
+	return StateReady, nil
+}
 func (d *discoveryFakeDriver) Logs(_ context.Context, _ *Agent, _ int) (string, error) {
 	return "", nil
 }
@@ -35,9 +37,9 @@ func (d *discoveryFakeDriver) ListLabelled(_ context.Context, _ *profile.Cluster
 // reconciler skips it cleanly.
 type nonDiscoveryDriver struct{ kind string }
 
-func (d *nonDiscoveryDriver) Kind() string                                          { return d.kind }
-func (d *nonDiscoveryDriver) Spawn(_ context.Context, _ *Agent) error               { return nil }
-func (d *nonDiscoveryDriver) Status(_ context.Context, _ *Agent) (State, error)     { return "", nil }
+func (d *nonDiscoveryDriver) Kind() string                                      { return d.kind }
+func (d *nonDiscoveryDriver) Spawn(_ context.Context, _ *Agent) error           { return nil }
+func (d *nonDiscoveryDriver) Status(_ context.Context, _ *Agent) (State, error) { return "", nil }
 func (d *nonDiscoveryDriver) Logs(_ context.Context, _ *Agent, _ int) (string, error) {
 	return "", nil
 }

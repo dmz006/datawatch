@@ -151,8 +151,69 @@ type DecomposeLintMatch struct {
 	// executable, shebang-less or outside the project. A script the
 	// task lists in its own files is not flagged. Absent (false) = do
 	// not check.
-	VerificationScriptUnexecutable bool   `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
-	FilesRegex                     string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	VerificationScriptUnexecutable bool `yaml:"verification_script_unexecutable,omitempty" json:"verification_script_unexecutable,omitempty"`
+	// VerificationScriptReasonEmpty asserts the task states no reason for
+	// lacking a verification script (verification_script_reason is
+	// empty). Absent (false) = do not check.
+	VerificationScriptReasonEmpty bool `yaml:"verification_script_reason_empty,omitempty" json:"verification_script_reason_empty,omitempty"`
+	// VerificationScriptTaskFilesOnly asserts the task's verification
+	// script (read from the project directory, plus any repo-relative
+	// helper it sources, one level deep) compares only against the
+	// task's own files — a literal allowed-file list equal to them, or
+	// a file-listing diff of HEAD, the working tree or main — and never
+	// against the merge base. A script that does not exist yet is
+	// skipped. Absent (false) = do not check.
+	VerificationScriptTaskFilesOnly bool `yaml:"verification_script_task_files_only,omitempty" json:"verification_script_task_files_only,omitempty"`
+	// VerificationScriptDocsWithoutSync asserts the task's verification
+	// script (and followed helpers) checks docs, the embedded docs copy
+	// or how-to coverage but does not run `make sync-docs`. A script
+	// that does not exist yet is skipped. Absent (false) = do not check.
+	VerificationScriptDocsWithoutSync bool `yaml:"verification_script_docs_without_sync,omitempty" json:"verification_script_docs_without_sync,omitempty"`
+
+	// VerificationScriptArtefactFilesAllowed asserts the task's
+	// verification script (and followed helpers) performs a changed-
+	// file-set check (a git diff --name-only, status --porcelain or
+	// ls-files listing compared against a finite allowed list, or an
+	// assert-no-unexpected-files pattern) without exempting the
+	// artefact paths the daemon writes per Automaton (docs/plans/drafts,
+	// docs/plans/parity-issues, docs/plans/reports, CHANGELOG). A
+	// script with no file-set check at all never matches, and a script
+	// that does not exist yet is skipped. Absent (false) = do not
+	// check.
+	VerificationScriptArtefactFilesAllowed bool `yaml:"verification_script_artefact_files_allowed,omitempty" json:"verification_script_artefact_files_allowed,omitempty"`
+	// VerificationScriptSpecUnanchored asserts the task's verification
+	// script (and followed helpers) checks a markdown heading (a quoted
+	// string of one to six # followed by a space, or the same heading with
+	// the # stripped) or the exact gate output format "Final answer" /
+	// "Verification summary" that the task's own spec does not name
+	// verbatim — anchoring the assertion to what the task's own spec
+	// actually asks for. A script that does not exist yet is skipped.
+	// Absent (false) = do not check.
+	VerificationScriptSpecUnanchored bool `yaml:"verification_script_spec_unanchored,omitempty" json:"verification_script_spec_unanchored,omitempty"`
+	// VerificationScriptFinalGateArtefactAllowed asserts the task's
+	// verification script (and followed helpers) enforces the whole
+	// changed-file set against a finite list (a git diff --name-only,
+	// status --porcelain or ls-files listing) while exempting the
+	// generated-artefact directories, but carries no FINAL_GATE /
+	// DW_FINAL_GATE sentinel to skip the check when the final gate
+	// re-runs the script on the cumulative tree (where earlier
+	// tasks' files are present). A script with no whole-listing
+	// assertion never matches, and a script that does not exist yet is
+	// skipped. Absent (false) = do not check.
+	VerificationScriptFinalGateArtefactAllowed bool `yaml:"verification_script_final_gate_artefact_allowed,omitempty" json:"verification_script_final_gate_artefact_allowed,omitempty"`
+	// VerificationScriptInvokesUnknownFlag asserts the task's
+	// verification script (and followed helpers) invokes a PATH-
+	// resolvable command with a long flag that the command's own help
+	// output does not list as a whole option — the script is validated
+	// against the real binary before it is accepted. A script that does
+	// not exist yet, a command that does not resolve on PATH, and a
+	// probe that fails or prints nothing are skipped (never
+	// guess). Absent (false) = do not check.
+	VerificationScriptInvokesUnknownFlag bool `yaml:"verification_script_invokes_unknown_flag,omitempty" json:"verification_script_invokes_unknown_flag,omitempty"`
+	// Kind asserts the task's kind (for example "final_gate" or
+	// "smoke"), compared case-insensitively. Empty = do not check.
+	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	FilesRegex string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.

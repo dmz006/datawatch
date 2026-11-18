@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_completed_migrate`, `autonomous_shipped_counts` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -41,7 +41,7 @@ POST   /api/autonomous/prds/{id}/approve   review/approve gate                  
 POST   /api/autonomous/prds/{id}/resume   resume a paused PRD, or one the boot-resume gate parked; body: {actor, note} (409-style 400 if neither)
 POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {actor, reason}                          [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
-POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/edit_task per-task edit on needs_review/revisions_asked (or a held task of a blocked Automaton); body: {task_id, [new_spec], [read_only], [report_path], [verification_script], [verification_script_reason], actor} — at least one field besides task_id   [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
 POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override; body: {backend, effort, model, decomposition_profile, [guardrail_backend], [guardrail_model], actor}   [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override; body: {task_id, backend, effort, model, [guardrail_backend], [guardrail_model], actor}             [v5.4.0  / BL203]
@@ -88,6 +88,7 @@ POST   /api/autonomous/prds/{id}/shipped   record the Automaton's shipped state;
 POST   /api/automations/{id}/shipped       record the Automation's shipped state (same body)
 GET    /api/autonomous/shipped/counts      per-status shipped counts (PRD + Automation buckets) plus the in-force autonomous.shipped settings
 POST   /api/autonomous/shipped/backfill[?dry_run=true]  one backfill pass over the base repository's default-branch merge history; dry_run scans and reports without writing
+POST   /api/autonomous/completed/migrate[?dry_run=true&limit=N&id=ID]  move cancelled Automata and Automations whose work is already merged to Completed; dry_run reports without writing; 409 while a final gate runs; never touches a session
 GET    /api/dashboard/cards/shipped        live payload for the dashboard Shipped card (system card in the factory layout); the companion app renders it through the parity item below
 
 # Guardrail Library + Profiles
@@ -560,10 +561,33 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verificati
 These are independent of `guardrail_backend` / `guardrail_model`
 above, which pick the guardrail judge.
 
-`verification_script`, `files_generated` and `files_touched` are
-system-populated and read-only — they appear in
-`GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
-surfaces, which pass the same JSON through) but have no setter.
+`files_generated` and `files_touched` are system-populated and
+read-only — they appear in `GET /api/autonomous/prds/{id}` (and the MCP /
+CLI / comm `get` surfaces, which pass the same JSON through) but have no
+setter. `verification_script` is written by the planner, and the operator can
+now correct it in place with `edit_task` (see below); the field is still
+returned by `get` as before.
+
+**Editing a task's verification script (`edit_task`).** The `edit_task` body
+takes two more optional keys next to `new_spec`, `read_only` and
+`report_path`; an omitted or empty key leaves that field unchanged:
+
+| Key | Meaning |
+|-----|---------|
+| `verification_script` | The task's verification script: **one repo-relative script file** (for example `scripts/verify.sh`). A command string, an absolute path, a path with a `..` segment, the project root, or a path that is not already clean (`./scripts/verify.sh`, `a//b`) is refused with `400` and nothing is stored. The path is also appended to the task's `files_generated` when it is not yet listed, so the plan stays consistent. |
+| `verification_script_reason` | Why the task carries no script (the exemption the plan check accepts in place of one). Stored as given; it can be set with or without `verification_script`, and setting one does not clear the other. Text matching the injection guard is refused. |
+
+The same PRD and task status gates as every other `edit_task` field apply
+(`needs_review`, `revisions_asked`, `cancelled`, or a failed, blocked or held
+task of a `blocked` Automaton; a `completed` task is immutable). The edit is
+recorded on the decision log as `edit_task` with the script path and reason in
+its note, and in the audit log. The same two inputs exist as MCP
+`autonomous_prd_edit_task` `verification_script` / `verification_script_reason`,
+CLI `datawatch autonomous prd-edit-task --verification-script <path>
+--verification-script-reason <text>`, comm `autonomous edit-task <prd> <task>
+verification_script=<path> verification_script_reason="<text>"`, and the
+**Verification script** and **Script exemption reason** fields of the task
+editor in the web app.
 
 ### Verifier policy (`set_task_verifier_policy` / `set_verifier_policy`)
 
@@ -970,6 +994,35 @@ The decision log gains the kinds `rules_review_fix_failed`, `rules_review_retrie
 and `rules_review_auto_fix_disabled`, one for each of the three held actions. Show an
 unknown kind as plain text.
 
+### Planning failure (`planning_failure`)
+
+An Automaton whose last planning attempt failed carries a `planning_failure`
+object on `GET /api/autonomous/prds/{id}` (every `detail` level) and on every
+row of `GET /api/autonomous/prds` (the summary list and `?full=1`). The key is
+left out when the last planning attempt did not fail, so a draft with no
+stories is never explained only by an internal field.
+
+| Field | Meaning |
+|-------|---------|
+| `reason` | Plain-language reason planning failed |
+| `category` | Failure category (`scope`, `infra`, ...) |
+| `source` | The rule that tripped (for example `release-version-fixed`) |
+| `phrases` | The exact phrases that tripped the rule (omitted when none) |
+| `retryable` | `true` when planning will be tried again by itself |
+| `retry_counts` | Retries used so far, per category (omitted when none) |
+| `retry_budget` | Retries allowed for this failure's category |
+| `occurred_at` | When the failure was recorded |
+
+The same object is returned by the MCP tools `autonomous_prd_get` and
+`autonomous_prd_list`. The CLI `autonomous prd-get` prints a "Planning failed"
+section and `autonomous prd-list` adds one `planning failed:` line per
+affected Automaton; both write these plain-text lines to standard error, so
+standard output stays one JSON document. The chat verbs `autonomous get` and `autonomous list` add a
+one-line failure with the reason and the phrases. The PWA shows the same fields
+on the Automaton detail and a "Planning failed" badge on the Automata list card
+of a draft; when the "Fix the wording and plan again" question is waiting, the
+detail shows it with the ordinary question row.
+
 ### Automata list (`GET /api/autonomous/prds`)
 
 The default reply is a summary list, not whole records: each row carries ids,
@@ -981,7 +1034,7 @@ Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
 |---|---|
 | `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
 | `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
-| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. May include `shipped`, which selects the shipped bucket on the *status* axis. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. Matches the displayed status, so `completed` includes a cancelled record whose work landed. `shipped` is still accepted as a legacy alias that selects records carrying shipped state. |
 | `shipped=<true|false>` | The shipped selection: `true` keeps only records that carry shipped state (a non-empty `merge_commit`), `false` only records that do not. Absent, the server's `autonomous.shipped.filter_default` view applies. Orthogonal to `status` — set either, both, or neither. |
 | `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
 | `q=<text>` | Case-insensitive match against title and id. |
@@ -1759,7 +1812,7 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
 - `evidence.degraded` lists pool hosts that could not be read but do not block the lanes (`host`, `error`, `since`, the time the host first failed); it is `[]` when none is degraded. A host is degraded only when it holds no work, no lane is placed on it, and it has been unreachable for at least `autonomous.lane_fill.host_down_after_minutes` (default 10; `0` never). The lanes are then judged from the readable hosts. A failed session list always blocks.
 - `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
 - `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
-- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. It is absent when the decision is not a refusal.
+- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked` (a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment). It is absent when the decision is not a refusal.
 - `modes` is the mode in effect for each lane kind (`gpu` and `claude`); a kind with no mode of its own takes the base `mode`.
 - `lane_counts` gives, for `gpu` and `claude`, the `configured` count, the `effective` count the last poll used and the `source` of the effective count: `config`, or `llm_caps` when it is the sum of the LLM in-flight caps.
 
@@ -2293,6 +2346,29 @@ Give a `title`, a `spec`, or both. The warnings come back best match first, at m
 
 The create route, `POST /api/autonomous/prds`, runs the same finder after it stores the Automaton, so a failed search never stops a create. In `on` mode its reply carries `overlap_warnings`, an empty list when nothing matches. In `shadow` mode it writes one `automaton_create_search` audit entry and the reply has no such field. In `off` mode it searches nothing.
 
+### Spec check on create and revise
+
+`POST /api/autonomous/prds` and `POST /api/autonomous/prds/{id}/request_revision` both lint the Automaton's spec text and return the findings in a top-level `spec_check` array on the reply. The array is always present and is empty when the spec is clean. A finding never blocks the create or the revision. On a revision the daemon lints the stored spec together with the revision note.
+
+```json
+{
+  "id": "ab12cd34",
+  "spec_check": [
+    {
+      "rule": "names_tracker_id",
+      "phrase": "BL123",
+      "severity": "warning",
+      "correctable": true,
+      "suggestion": "remove 'BL123' and describe the work itself instead of naming a tracking item by id"
+    }
+  ]
+}
+```
+
+`rule` is one of `release-version-fixed`, `names_tracker_id`, `system-binary-path`, `private-address` or `worktree-path`. `phrase` is the exact text found. `severity` is `warning` when the planner would copy the phrase into a task title and the daemon can fix the wording itself (`correctable` is true), and `error` when the operator or planner has to reword it. `suggestion` is the rewording.
+
+Every surface renders the findings with one shared formatter, one line per finding: the severity, the rule, the exact phrase and the suggested rewording. The CLI (`datawatch autonomous prd-create`, `prd-request-revision`) prints `spec check:` lines after the reply. The MCP tools `autonomous_prd_create` and `autonomous_prd_request_revision` return the JSON reply and, when there are findings, a second text item with the lines. The comm verbs `autonomous create` and `autonomous request-revision` append a `Spec check:` block to the reply. The web create and revise forms show a warning block. The `automation_create` and `automation_update` tools take no spec text, so they carry no `spec_check`.
+
 Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
 
 ---
@@ -2333,7 +2409,7 @@ The 200 reply is the record as stored. Each record writes an audit entry (`recor
 ### The shipped selection and the `shipped` status axis
 
 - `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true` (only the records that carry shipped state) or `shipped=false` (only the ones that do not). Absent, the server's `autonomous.shipped.filter_default` view applies (`all`, `shipped` or `unshipped`).
-- `status=…` on either list may include `shipped` as one of the statuses; that selects the shipped bucket on the *status* axis.
+- `status=…` on either list matches the displayed status (`completed` includes a cancelled record whose work landed); `shipped` stays a legacy alias selecting records that carry shipped state.
 - The two axes are independent: set either, both, or neither.
 - The MCP list tools take the same parameter, strictly `"true"` or `"false"` (`autonomous_prd_list` and `automation_list`) — omit it for the default view.
 
@@ -2378,6 +2454,18 @@ The reply is the same in both modes:
 ```
 
 400 when the repository is absent on the serving machine, or while `autonomous.shipped.enabled` is off (the reply names the key). The same pass is MCP `autonomous_shipped_backfill` (`dry_run` optional; the federation write cap applies), the CLI `datawatch autonomous shipped backfill [--dry-run]`, and the comm verb `autonomous shipped-backfill [dry_run=true]`. `backfill_on_start` runs it once at every daemon start.
+
+### Completed migration
+
+```
+POST /api/autonomous/completed/migrate                       # writes
+POST /api/autonomous/completed/migrate?dry_run=true          # reports without writing
+POST /api/autonomous/completed/migrate?limit=20&id=a1b2c3d4  # at most 20 records; one record
+```
+
+Moves Automata and Automations that ended `cancelled` but whose work is already merged on the default branch to `completed`, so finished work stops reading as cancelled. `dry_run`, `limit` (0 = no limit; oldest first) and `id` come from the query or a JSON body (the query wins); a bad `dry_run` or `limit` is a 400. Evidence is a shipped record or the read-only merge proof of the `automaton/<id>` branch; a record with neither is left cancelled. The completion time is the merge time, never the run time. Each moved record gets one `completed_migration` decision-log line saying what changed, why, and how to undo it. It is idempotent (records already Completed count under `already_completed`) and it never starts, stops or signals a session.
+
+Reply keys: `considered`, `changed`, `would_complete` (dry run) or `completed` (real run), `already_completed`, `left_cancelled`, `left_other`, `deferred`, `errors`. A real run while a final gate is running is refused with 409; a dry run still reports, with `busy: true`. Needs the autonomous write capability. The same call is MCP `autonomous_completed_migrate` (`dry_run`, `limit`, `id`), the CLI `datawatch autonomous completed-migrate [--dry-run] [--limit N] [--id ID]`, and the comm verb `autonomous completed-migrate dry_run=true limit=N id=ID`. See [howto/automata-completed-migration.md](../howto/automata-completed-migration.md).
 
 ### Settings
 
@@ -2431,7 +2519,8 @@ autonomous:
   task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
-  security_scan:          true        # nightwire-port .py scanner before commit
+  security_scan:          true        # warn-only security scan of the task's worktree right before the completion commit: findings recorded on the task (security_findings, max 20 entries, full text) plus the security_finding_count counter (cumulative over all passes) and one decision-log entry (security_scan_findings); never fails the task or the commit; set to false to skip the scan; read live at commit time, so a config set (REST, MCP, CLI, comm or the PWA toggle) reaches the next completion commit with no restart
+  security_scan_extensions: []        # file extensions the security scan covers; unset or an empty list (an explicit [] round-trips and reads the same) = built-in defaults (.py, .pyw); a non-empty list scans exactly those and no others; read live at scan time; in the autonomous settings GET response; the autonomous config PUT accepts a JSON array or a comma-separated list for it
   snapshot_never_stage:   []          # never-stage patterns for the automatic snapshot commits; unset reads the built-in list (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp); an explicit [] protects nothing (see "Snapshot never-stage list")
   verifier_policy:                    # which backend runs a verification (see "Verifier policy")
     mode:                 fixed       # fixed | prefer-free | balance | gpu-only | claude-only

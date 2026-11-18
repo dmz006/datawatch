@@ -80,10 +80,21 @@ make is hardened:
 | `--no-ext-diff` (on `git diff` only) | An external diff program named by the repository or its attributes |
 
 The calls are read-only (`git diff` and `git log`). The check also
-refuses to run for a project folder that is empty, relative or starts
-with a dash (it would be read as a git option): the call fails with
-`invalid git directory` and git is not started, so that task gets no
-finding from the check.
+refuses to run for a project folder that is empty, contains a NUL byte,
+is relative, starts with a dash (it would be read as a git option), or
+is not an existing directory: the call fails with `invalid git
+directory` and git is not started, so that task gets no finding from
+the check. Revision values are held to the same standard:
+the recorded pre-task SHA and base commit must be a plain revision —
+non-empty, no NUL byte, no leading dash — and a value that is not is
+read as "no revision": the check answers with its documented empty
+result and git is not started, so a malformed revision cannot steer the
+command or produce a finding. And the file reads the check makes inside
+the project — the undeclared-edit check and the daemon-ignore change
+check — are containment-validated against the resolved project folder,
+so a path that is reachable only through a symlink chain that leaves the
+folder is refused: it is not counted as a daemon change and is never
+opened.
 
 There is nothing to configure: the hardening has no setting and no
 per-Automaton override, and what the check flags, and what
