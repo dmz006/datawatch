@@ -237,6 +237,13 @@ Recovery moves that have been needed in practice:
 - **Worktree mode is the default for every PRD.** Direct tree mode stays as an explicit
   opt-in, and only one running PRD may hold a direct tree. A recursive child PRD is
   exempt from its parent's hold (BL469).
+- **The merge tooling removes its own merge worktree after each ship.** The supervisor
+  tooling that merges Automata (the merge helper) creates a merge trial worktree for each
+  merge. Removing it after every ship, whether the merge succeeded or failed, is a
+  required step, the same as the cleanup of the Automaton's worktree, task worktrees,
+  local branch and remote branches. A merge worktree left behind is residue and a defect
+  of the tooling. The only repository script that creates a worktree today
+  (`scripts/plans-tidy-daily.sh`) removes it on exit.
 - Worktree pruning, archive versus purge, is deferred until after the 10.0.0
   architecture, project and release work. It belongs to automation planning (BL471).
 
