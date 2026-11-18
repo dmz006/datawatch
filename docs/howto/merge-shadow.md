@@ -37,8 +37,12 @@ a PWA card; see "Where the shadow state is read" below.
 - Write one shadow merge plan per finished Automaton at the supervisor's release:
   the release size (`patch`, `minor`, `major` or `none`), the version the bump step
   would set, the changelog heading and body drawn only from the Automaton's own
-  changelog entry task (strict format, empty otherwise — nothing is invented), the
-  README line, the registry row, and the parity-issue flag.
+  changelog entry task (strict format) or, when that yields no entry, from the
+  branch itself — the generated changelog draft (source `draft`), else the new top
+  entry of `CHANGELOG.md` on the branch (source `branch`); empty with source
+  `missing` otherwise — nothing is invented. The release size and planned version
+  follow from that heading, so they are filled whenever the branch carries an
+  entry. The README line, the registry row, and the parity-issue flag.
 - Settle merge conflicts in a **throwaway trial worktree** outside the project
   tree, uncommitted (`--no-commit --no-ff`), then remove the scratch tree; the
   conflicts, each with its file class, resolution and resolver, are recorded in
@@ -90,8 +94,14 @@ merge at the repository root.
 passes, the gate is recorded `load_sensitive` — the first five lines of the
 failing run are kept as the gate's finding — and it does not block the plan.
 When the rerun does not pass, the first failure stands, with the rerun's status
-noted in the detail. It is the daemon's answer to the test that fails only under load: the
-gate names it, and the operator still decides what that test is.
+noted in the detail. A `load_sensitive` gate counts as a pass: it adds no blocking
+finding to the plan, and the comparison treats `pass` and `load_sensitive` as the same
+result for a gate. Only the `test` gate is rerun; a failing build or lint gate stands.
+The gate's detail names the flaky tests (`flaky tests: <names> passed when rerun alone`)
+so the flake is not lost. It is the daemon's answer to the test that fails only under
+load: the gate names it, and the operator still decides what that test is — **review
+every named flaky test**, because a pass that was reached by a rerun is still a test to
+fix.
 
 **Lint version pin — `lint_version_mismatch` and `lint_tool_unavailable` (block).** The `lint` gate runs the golangci-lint the trial merge's CI workflow pins — the `version` of a `golangci/golangci-lint-action` step in `.github/workflows/ci.yaml`, a `v`-prefix aside — not whatever happens to be on `PATH`. The daemon resolves that exact version in order: the binary in its own tools folder (`<data dir>/tools/golangci-lint/<version>/`), else the `PATH` binary when it already reports the pinned version, else it installs the pinned version into the tools folder (one install at a time, bounded to ten minutes) and uses that. The resolved binary's folder is put first on the gate's `PATH`, so `make lint` runs the pinned linter, and the gate's detail records the pin, the binary path, its version and where it came from (`tools folder`, `PATH` or `installed`). Because the daemon provides the pinned linter itself, its own merge pipeline no longer fails the lint gate on a host whose installed golangci-lint differs from CI. When the pinned version cannot be provided — no data directory, the install fails or times out, or the installed binary does not report the pinned version — the gate fails with one blocking `lint_tool_unavailable` finding naming the pin and the reason; a resolved binary that still differs from the pin fails with the blocking `lint_version_mismatch`. A CI workflow that pins nothing — no workflow, no such step, no `version` key — or one that cannot be read keeps the earlier behavior: the gate's status is unchanged and only the `PATH` golangci-lint's version (and, when the pin could not be read, the reason) is added to the detail. It is the answer to the lint that differs between local and CI, and to a daemon that could never pass its own lint gate. **Operator review:** the first gate run for a new pin downloads and builds golangci-lint, so it needs network and a Go toolchain on the daemon host and can take minutes; a `lint_tool_unavailable` finding means fixing that host, not the code.
 
