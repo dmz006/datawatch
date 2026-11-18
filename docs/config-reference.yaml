@@ -1379,6 +1379,12 @@ autonomous:
     # Number of shadow merge plans kept per project. Older plans are pruned
     # past this count. Default 200; a value below 1 falls back to the default.
     plan_keep: 200
+    # Agreement streak threshold: how many most-recent consecutive stored
+    # comparisons a project needs, with no major difference in any of them,
+    # before its agreement streak reads `met` (exposed as `streak` on the REST,
+    # MCP, CLI and comm shadow reads). Default 5; a value below 1 is refused
+    # on write.
+    agreement_streak: 5
   # ── Lifecycle event notification sinks ──
   # Documented as autonomous.notify.default_events elsewhere (see
   # docs/implementation.md "Lifecycle event sinks" and the PWA settings

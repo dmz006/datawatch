@@ -81,7 +81,7 @@ GET    /api/autonomous/deploy              deploy state: effective settings, whe
 POST   /api/autonomous/deploy/run          start the deploy sequence for the current build now; answers {status, note, error?}; 409 while a merge or deploy is running
 POST   /api/autonomous/merge/run           run a merge through the resolved merge pipeline: body {project?, title, branches}; answers {run, error?}; each step is recorded in pipeline_runs of the merge state
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions, merge_lock (the lock held on the base repository by a running merge, omitted when none); read-only, never runs git
-GET    /api/autonomous/merge/shadow        shadow merge state per project: stored plans, stored comparisons and per-release-size matched/different counts; read-only, stores only
+GET    /api/autonomous/merge/shadow        shadow merge state per project: stored plans, stored comparisons, per-release-size matched/different counts and the agreement streak (`length`, `total`, `threshold`, `met`); read-only, stores only
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 GET    /api/autonomous/restart-interruptions  the planning Automata, verifying tasks, running judges, running tasks and live sessions a daemon restart now would interrupt (each id + count) plus `needs_force` and the restart policy; read-only, autonomous read capability. `POST /api/restart` (409 + the report while `needs_force` and no force) and `restart_daemon` (error + the report; `force=true` to proceed) reuse it
 
@@ -2286,7 +2286,7 @@ The states:
 `state` is read from the daemon's in-memory comparison, so this route **never runs git** and answers quickly; an Automaton the check has not compared yet reads `unknown`. A shadow decision is one row per change of an Automaton's outcome: an identical decision is not appended again, it raises `repeat_count` and moves `last_seen_at` instead. `repeat_count` can therefore be 1 for a row seen once. The history is bounded at 1000 rows and survives a daemon restart.
 
 ### `GET /api/autonomous/merge/shadow`
-The shadow merge plan state (Phase 4, shadow mode), grouped by project: the stored **plans** (one per finished Automaton, `applied` always `false`), the stored **comparisons**, and the matched/different comparison counts per release size. Read-only: it reads the two stores under the daemon's data directory (`merge-plans/`, `merge-comparisons/`); it runs no git, merges nothing and never applies a plan. The settings (`autonomous.merge_shadow.*`) and the walkthrough are in [howto/merge-shadow.md](../howto/merge-shadow.md).
+The shadow merge plan state (Phase 4, shadow mode), grouped by project: the stored **plans** (one per finished Automaton, `applied` always `false`), the stored **comparisons**, the matched/different comparison counts per release size, and the **agreement streak** for each project that has stored comparisons (`length` the most-recent consecutive zero-major-difference comparisons, `total`, `threshold` the `autonomous.merge_shadow.agreement_streak` value in effect — default `5` — and `met`). Read-only: it reads the two stores under the daemon's data directory (`merge-plans/`, `merge-comparisons/`); it runs no git, merges nothing and never applies a plan. The settings (`autonomous.merge_shadow.*`) and the walkthrough are in [howto/merge-shadow.md](../howto/merge-shadow.md).
 
 ```
 GET /api/autonomous/merge/shadow
@@ -2336,7 +2336,8 @@ GET /api/autonomous/merge/shadow
         "minor": { "matched": 0, "different": 0 },
         "major": { "matched": 0, "different": 0 },
         "none":  { "matched": 0, "different": 0 }
-      }
+      },
+      "streak": { "length": 4, "total": 4, "threshold": 5, "met": false }
     }
   ]
 }
@@ -2348,6 +2349,7 @@ GET /api/autonomous/merge/shadow
 | `projects[].plans` | The stored shadow merge plans for the project, always an array (never `null`); one per finished Automaton, each with `applied` `false` — a record, not a queue |
 | `projects[].comparisons` | The stored comparisons, always an array; a comparison joins its plan by `automaton_id` to find its project |
 | `projects[].counts` | All four release sizes (`patch`, `minor`, `major`, `none`) always present. A comparison counts as `different` when it found at least one difference, as `matched` otherwise |
+| `projects[].streak` | The agreement streak: `length` the project's most-recent consecutive stored comparisons with no major difference, `total` the comparisons counted, `threshold` the `autonomous.merge_shadow.agreement_streak` value in effect (default `5`) and `met` whether `length` reaches it. Absent for a project with no stored comparisons. Evidence for the Phase 4 handover bar — it approves nothing |
 | `comparisons[].differences[]` | Each difference: `field`, `severity` (`major` or `minor`), `planned` (the plan's value) and `landed` (the landed value, `(missing)` when it landed nowhere) |
 
 Answers: `405` with `Allow: GET` for any other method; `403` for a federated peer without the autonomous read capability; `500` with the store's error when the plan or comparison store cannot be read. The **defect candidates** the comparison records are not in this body — they stay the JSON file under the data directory (`<data directory>/defect-candidates/<automaton id>.json`) until filing them into the defect queue lands.

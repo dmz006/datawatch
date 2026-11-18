@@ -15,7 +15,7 @@ const mergeShadowPath = "/api/autonomous/merge/shadow"
 
 func (s *Server) toolAutonomousMergeShadowStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_shadow_status",
-		mcpsdk.WithDescription("Read the shadow merge state: per project, the stored shadow merge plans, the stored comparisons, and the matched and different comparison counts per release size (patch, minor, major, none). Read-only; the same data as GET /api/autonomous/merge/shadow. project limits the answer to one project (default: every project)."),
+		mcpsdk.WithDescription("Read the shadow merge state: per project, the stored shadow merge plans, the stored comparisons, the matched and different comparison counts per release size (patch, minor, major, none), and the agreement streak against the configured autonomous.merge_shadow.agreement_streak threshold. Read-only; the same data as GET /api/autonomous/merge/shadow. project limits the answer to one project (default: every project)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — only this project's entry; default is every project")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)

@@ -1,7 +1,7 @@
 ---
 title: "How to: Merge shadow"
-description: "What the three merge shadow settings enable, their defaults and the values they accept, every way they are set, where the shadow state is read (REST, MCP, CLI, comm channel, PWA card) and what the daemon never does"
-last_updated: "2026-11-09"
+description: "What the four merge shadow settings enable, their defaults and the values they accept, every way they are set, where the shadow state is read (REST, MCP, CLI, comm channel, PWA card) and what the daemon never does"
+last_updated: "2026-11-17"
 topics:
   - merge
   - shadow
@@ -26,9 +26,10 @@ merge would do (release size, version, changelog heading, README line, registry 
 conflicts, gates, parity-issue flag) with `applied` stuck at `false`, and keeps the
 plan in the shadow store. The three keys live in one settings block, are on by
 default, and can be set from YAML, the API, MCP, the command line, the comm channel
-or the web UI. The plan, and (once they are stored) the comparisons, are read —
-never acted on — from the REST route, the MCP tool, the CLI, the comm channel and
-a PWA card; see "Where the shadow state is read" below.
+or the web UI. The plan, and (once they are stored) the comparisons — and the
+agreement streak read from them — are read — never acted on — from the REST
+route, the MCP tool, the CLI and the comm channel; see "Where the shadow state
+is read" below.
 
 ## What the merge shadow does — and what it never does
 
@@ -104,17 +105,38 @@ timing assumption — in the test or the code it exercises: a passing rerun is
 not a fix, and it is never repaired by a retry, a longer sleep, loading the
 machine up before the run, or excluding the test. How to prove the fix (the
 repeated run under the race detector) is in
-[testing.md](../testing.md#proving-an-intermittent-test-fix).
+[testing.md](../testing.md#proving-an-intermittent-test-fix). For the
+comparison with the supervisor's own merge, an `intermittent` test gate counts
+as a pass: a plain `pass` in the supervisor's gate record and an `intermittent`
+gate in the plan agree, and a `fail` or `timeout` on either side still
+differs. The plan's gate detail names the flaky tests (`flaky tests: …`), so the
+flake stays visible next to the pass.
+
+**Pinned lint tool — `lint_tool_unavailable` (blocks).** When the trial merge's
+CI workflow pins a golangci-lint version, the `lint` gate runs that version, not
+the copy on the host. The daemon looks in its own tools folder
+(`<data dir>/tools/golangci-lint/<version>/`), then at the `PATH` binary when it
+already reports the pinned version, and otherwise installs the pinned version
+into the tools folder (`go install`, one install at a time, under a file lock,
+bounded by a ten minute limit) and puts that folder first on `PATH` for the
+gate. The gate's detail records the pinned version and which binary ran, and
+from where (`tools folder`, `PATH` or `installed`). The host tool updater may
+keep the host copy current without changing what the gate runs. When the pinned
+version cannot be provided (no `go`, no network, the install failed, no data
+directory) the gate fails with one blocking `lint_tool_unavailable` finding that
+names the reason; `lint_version_mismatch` is raised only when the binary that
+ran still differs from the pin.
 
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
 workflow pins — the `version` of a `golangci/golangci-lint-action` step in
 `.github/workflows/ci.yaml`, a `v`-prefix aside. A difference fails the gate
 with one blocking finding; a local version that cannot be determined counts as
-a mismatch. A CI workflow that pins nothing — no workflow, no such step, no
-`version` key — or one that cannot be read, leaves the gate's status unchanged
-and adds only the local version (and, when the pin could not be read, the
-reason) to the gate's detail. It is the answer to the lint that differs between
+a mismatch. With a pin the gate checks the binary it ran, as described above.
+A CI workflow that pins nothing — no workflow, no such step, no `version` key —
+or one that cannot be read, leaves the gate's status unchanged and adds only the
+local version (and, when the pin could not be read, the reason) to the gate's
+detail. It is the answer to the lint that differs between
 local and CI.
 
 **Plans-link gate — `check-plans-links`.** The gate runner runs the project's
@@ -171,10 +193,10 @@ All five surfaces proxy one daemon endpoint and read — none of them writes:
 
 | Surface | What it reads |
 | --- | --- |
-| **REST** | `GET /api/autonomous/merge/shadow` (read capability required; `405` with `Allow: GET` for any other method) → `projects[]`, each with `plans` (the stored shadow plans), `comparisons` (the stored shadow comparisons) and `counts` (per release size `patch`, `minor`, `major`, `none`: matched and different comparison counts). An empty `projects` list is the valid empty state, not an error. |
+| **REST** | `GET /api/autonomous/merge/shadow` (read capability required; `405` with `Allow: GET` for any other method) → `projects[]`, each with `plans` (the stored shadow plans), `comparisons` (the stored shadow comparisons), `counts` (per release size `patch`, `minor`, `major`, `none`: matched and different comparison counts) and `streak` (`length` the most recent consecutive zero-major-difference comparisons, `total`, `threshold` and `met`; absent for a project with no stored comparisons). An empty `projects` list is the valid empty state, not an error. |
 | **MCP** | `autonomous_merge_shadow_status` — read-only; the same answer, with an optional `project` argument to restrict it to one project. |
-| **CLI** | `datawatch autonomous merge-shadow status` — matched and different counts per release size, or `no merge shadow comparison exists yet` while nothing is stored; `datawatch autonomous merge-shadow compare <automaton-id>` — that Automaton's comparison: matched, different, not-compared, then each difference with its field, severity, planned value and landed value (or `No merge shadow comparison exists for Automaton <id>`). |
-| **Comm channel** | `autonomous merge-shadow` — one summary line: `Merge shadow: patch 4 matched, 1 different; minor …; major …; none …`; `No merge comparisons yet` while nothing is stored. It takes no arguments. |
+| **CLI** | `datawatch autonomous merge-shadow status` — matched and different counts per release size, plus `agreement streak N of T (met|not met, C compared)` per project, or `no merge shadow comparison exists yet` while nothing is stored; `datawatch autonomous merge-shadow compare <automaton-id>` — that Automaton's comparison: matched, different, not-compared, then each difference with its field, severity, planned value and landed value (or `No merge shadow comparison exists for Automaton <id>`). |
+| **Comm channel** | `autonomous merge-shadow` — one summary line: `Merge shadow: patch 4 matched, 1 different; minor …; major …; none …; streak: a 2/3 not met, b 4/3 met`; `No merge comparisons yet` while nothing is stored. It takes no arguments. |
 | **PWA** | The **Merge shadow** card on the **Events** tab (the Setup and policy sub-tab was removed): matched and different per release size, summed over all projects (plain figures — the card carries no links of its own). Rendered only when the shadow is enabled **and** at least one comparison has been stored — otherwise the card is absent from the page, which is the expected state, not a failure. |
 
 **Why the comparison reads can come back empty.** The post-ship flow does not
@@ -189,9 +211,9 @@ The stored **plans** are already listed per project on every surface. The defect
 **candidates** have no operator-facing read at all yet — they are the JSON file
 under the data directory (`<data directory>/defect-candidates/<automaton id>.json`).
 
-## The three settings
+## The four settings
 
-All three keys live under `autonomous.merge_shadow` and are **on by default** —
+All four keys live under `autonomous.merge_shadow` and are **on by default** —
 the block behaves as if the defaults were written. An unset block and a block set
 to its defaults are indistinguishable.
 
@@ -200,6 +222,22 @@ to its defaults are indistinguishable.
 | `autonomous.merge_shadow.enabled` | bool | `true` (when unset) | Master switch: when `true` the supervisor's release step runs the shadow plan; when `false` no plan is recorded at all. It is not a mode — there is no `on` state. |
 | `autonomous.merge_shadow.gate_timeout` | duration | `20m` | The wait budget each gate of the throwaway trial merge may use before giving up — a per-gate budget, not a cap across all gates. When the budget ends, the gate's whole process group is killed (unix), so a hung suite leaves no children behind (see "Hung gate suite" in the checks section). A value that is not a positive Go duration is refused with the problem named on every write surface (nothing is written); a stored value that fails to parse falls back to the default at read time. |
 | `autonomous.merge_shadow.plan_keep` | int | `200` | How many shadow merge plans are kept per project; anything older than the newest N is pruned. Values below `1` fall back to the default. |
+| `autonomous.merge_shadow.agreement_streak` | int | `5` | The agreement streak threshold: the number of most-recent consecutive stored comparisons a project needs — with **no major difference** in any of them — before its streak reads `met`. It is the machine-readable form of the handover evidence bar, counted continuously. A value below `1` is refused on write; a stored value below `1` falls back to the default at read time. |
+
+### How the streak is counted
+
+- A comparison **breaks the streak** only when it holds at least one **major**
+  difference (wrong or missing version, a planned heading, README line, registry
+  row or parity issue that did not land, a planned gate missing from or different
+  in the manual gate record). A comparison that differs only in **minor** detail
+  does not break it.
+- `length` counts the most recent consecutive zero-major-difference comparisons
+  of a project, newest first; `total` is the number of stored comparisons
+  counted. `met` is `length >= threshold`, with `threshold` the configured value
+  in effect (the default `5` when unset). A project with no stored comparisons
+  has no streak at all — every read surface shows none for it.
+- The streak is a read, not a gate: nothing is approved, switched or filed on
+  the strength of it, and it resets silently when a major difference lands.
 
 ## Where the settings can be set
 
@@ -208,7 +246,7 @@ block, one place it is read back from:
 
 | Path | How |
 | --- | --- |
-| **YAML** | `config.yaml` → `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`, `autonomous.merge_shadow.plan_keep` |
+| **YAML** | `config.yaml` → `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`, `autonomous.merge_shadow.plan_keep`, `autonomous.merge_shadow.agreement_streak` |
 | **REST** | `PUT /api/config` with any of the three keys (the `GET /api/config` read returns the merged default for each) |
 | **MCP** | The generic `config_set` tool, with the key `autonomous.merge_shadow.<key>` and its value. The shadow has no dedicated MCP setter; `get_config` reads it back. |
 | **CLI** | `datawatch config set autonomous.merge_shadow.enabled true|false` and friends |
@@ -231,9 +269,14 @@ number of comparisons, not the number of fields.
   `different` and `not_compared` field counts, then each difference as
   `<field> [<severity>]: planned “…”, landed “…”`. A missing landed value shows
   as `(missing)`.
-- **Comm** — one line, `Merge shadow: patch 4 matched, 1 different; …`.
+- **Comm** — one line, `Merge shadow: patch 4 matched, 1 different; …; streak: a 2/3 not met, b 4/3 met` (the `streak:>` part only when at least one project has a stored comparison).
 - **PWA card** — the same per-size figures, summed over every project, shown only
-  when the shadow is enabled and at least one comparison is stored.
+  when the shadow is enabled and at least one comparison is stored. The card
+  carries no agreement streak.
+
+The `streak` on the REST, MCP and CLI surfaces is per project and uses the same
+rule on every one (same function, same threshold, same zero-major-difference
+test): `met` is the streak length reaching `autonomous.merge_shadow.agreement_streak`.
 
 Read the empty states as facts, not faults. `projects: []`, `no merge shadow
 comparison exists yet`, `No merge comparisons yet`, and a missing card all mean
@@ -323,7 +366,7 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   test to watch), the failing tests named in a failed `test`
   gate's detail (a stale expected count is a test to fix before the next merge),
   and the blocking `unmerged_task_branch`, `stray_root_file`,
-  `lint_version_mismatch` and `review_stale` findings (a `review_stale` review
+  `lint_version_mismatch`, `lint_tool_unavailable` and `review_stale` findings (a `review_stale` review
   is a verdict on an older commit — the current head is not reviewed yet, so
   review it before the merge lands) (see
   [The plan's checks and gates](#the-plans-checks-and-gates)).

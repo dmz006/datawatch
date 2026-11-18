@@ -30,11 +30,18 @@ func MergeShadowCommVerbs() []string { return []string{"merge-shadow"} }
 func mergeShadowCommSummary(raw string) (string, error) {
 	var v struct {
 		Projects []struct {
+			Project     string            `json:"project"`
 			Comparisons []json.RawMessage `json:"comparisons"`
 			Counts      map[string]struct {
 				Matched   int `json:"matched"`
 				Different int `json:"different"`
 			} `json:"counts"`
+			Streak *struct {
+				Length    int  `json:"length"`
+				Total     int  `json:"total"`
+				Threshold int  `json:"threshold"`
+				Met       bool `json:"met"`
+			} `json:"streak"`
 		} `json:"projects"`
 	}
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
@@ -55,10 +62,26 @@ func mergeShadowCommSummary(raw string) (string, error) {
 	if total == 0 {
 		return mergeShadowCommEmpty, nil
 	}
-	parts := make([]string, 0, len(mergeShadowCommSizes))
+	parts := make([]string, 0, len(mergeShadowCommSizes)+1)
 	for _, size := range mergeShadowCommSizes {
 		t := sums[size]
 		parts = append(parts, fmt.Sprintf("%s %d matched, %d different", size, t.matched, t.different))
+	}
+	// Each project's agreement streak against its threshold, so the channel
+	// carries the same read the other merge shadow surfaces do.
+	streaks := make([]string, 0, len(v.Projects))
+	for _, p := range v.Projects {
+		if p.Streak == nil {
+			continue
+		}
+		word := "not met"
+		if p.Streak.Met {
+			word = "met"
+		}
+		streaks = append(streaks, fmt.Sprintf("%s %d/%d %s", p.Project, p.Streak.Length, p.Streak.Threshold, word))
+	}
+	if len(streaks) > 0 {
+		parts = append(parts, "streak: "+strings.Join(streaks, ", "))
 	}
 	return "Merge shadow: " + strings.Join(parts, "; "), nil
 }

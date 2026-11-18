@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const mergeShadowBody = `{"projects":[{"project":"a","plans":[],"comparisons":[],"counts":{"patch":{"matched":2,"different":1}}},{"project":"b","plans":[],"comparisons":[],"counts":{"minor":{"matched":0,"different":3}}}]}`
+const mergeShadowBody = `{"projects":[{"project":"a","plans":[],"comparisons":[],"counts":{"patch":{"matched":2,"different":1}},"streak":{"length":4,"total":3,"threshold":5,"met":false}},{"project":"b","plans":[],"comparisons":[],"counts":{"minor":{"matched":0,"different":3}},"streak":{"length":5,"total":3,"threshold":5,"met":true}}]}`
 
 func TestMergeShadowMCP_Registered(t *testing.T) {
 	for _, n := range mergeTestToolNames(t) {
@@ -34,6 +34,10 @@ func TestMergeShadowMCP_ReturnsCounts(t *testing.T) {
 	txt := resultText(t, res, err)
 	if !strings.Contains(txt, `"matched":2`) || !strings.Contains(txt, `"different":3`) {
 		t.Errorf("counts missing: %s", txt)
+	}
+	// The per-project agreement streak is carried through by the proxy.
+	if !strings.Contains(txt, `"streak":{"length":4,"total":3,"threshold":5,"met":false}`) {
+		t.Errorf("project a streak missing: %s", txt)
 	}
 }
 

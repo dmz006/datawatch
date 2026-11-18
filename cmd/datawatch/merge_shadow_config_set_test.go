@@ -1,4 +1,4 @@
-// merge_shadow_config_set_test.go — datawatch config set accepts the three
+// merge_shadow_config_set_test.go — datawatch config set accepts the four
 // autonomous.merge_shadow.* keys, validates them with the daemon API's own
 // rules before anything is sent, sends each with its natural JSON type,
 // prints the help link, and config get reads each one back.
@@ -87,7 +87,7 @@ func mergeShadowGet(t *testing.T, key string) string {
 	return out
 }
 
-// TestMergeShadowConfigSet_EachKeySetAndReadBack: each of the three keys is
+// TestMergeShadowConfigSet_EachKeySetAndReadBack: each of the four keys is
 // accepted, stored by the daemon with its natural JSON type, announced with
 // its value, followed by the help link, and read back unchanged.
 func TestMergeShadowConfigSet_EachKeySetAndReadBack(t *testing.T) {
@@ -102,6 +102,8 @@ func TestMergeShadowConfigSet_EachKeySetAndReadBack(t *testing.T) {
 		{"autonomous.merge_shadow.gate_timeout", "1h30m", "1h30m", `"1h30m"`},
 		{"autonomous.merge_shadow.plan_keep", "100", float64(100), "100"},
 		{"autonomous.merge_shadow.plan_keep", "1", float64(1), "1"},
+		{"autonomous.merge_shadow.agreement_streak", "5", float64(5), "5"},
+		{"autonomous.merge_shadow.agreement_streak", "3", float64(3), "3"},
 	}
 	for _, c := range cases {
 		d := startMergeShadowConfigDaemon(t)
@@ -142,6 +144,10 @@ func TestMergeShadowConfigSet_RefusedByTheAPIsRules(t *testing.T) {
 		{"autonomous.merge_shadow.plan_keep", "-3", "plan_keep: must be a positive whole number"},
 		{"autonomous.merge_shadow.plan_keep", "ten", "plan_keep: must be a positive whole number"},
 		{"autonomous.merge_shadow.plan_keep", "2.5", "plan_keep: must be a positive whole number"},
+		{"autonomous.merge_shadow.agreement_streak", "0", "agreement_streak: must be a positive whole number"},
+		{"autonomous.merge_shadow.agreement_streak", "-3", "agreement_streak: must be a positive whole number"},
+		{"autonomous.merge_shadow.agreement_streak", "ten", "agreement_streak: must be a positive whole number"},
+		{"autonomous.merge_shadow.agreement_streak", "2.5", "agreement_streak: must be a positive whole number"},
 	}
 	for _, c := range cases {
 		d := startMergeShadowConfigDaemon(t)
@@ -163,7 +169,7 @@ func TestMergeShadowConfigSet_RefusedByTheAPIsRules(t *testing.T) {
 }
 
 // TestMergeShadowConfigSet_UnknownFieldIsRefusedLocally: a key under the
-// prefix that is not one of the three fields is refused with the API's
+// prefix that is not one of the four fields is refused with the API's
 // message and nothing is sent.
 func TestMergeShadowConfigSet_UnknownFieldIsRefusedLocally(t *testing.T) {
 	d := startMergeShadowConfigDaemon(t)
@@ -230,6 +236,7 @@ func TestIsMergeShadowConfigKey(t *testing.T) {
 		{"autonomous.merge_shadow.enabled", "enabled", true},
 		{"autonomous.merge_shadow.gate_timeout", "gate_timeout", true},
 		{"autonomous.merge_shadow.plan_keep", "plan_keep", true},
+		{"autonomous.merge_shadow.agreement_streak", "agreement_streak", true},
 		{"autonomous.merge_shadow.other", "", false},
 		{"autonomous.merge_pipeline.file_name", "", false},
 	}
