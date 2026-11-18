@@ -80,10 +80,11 @@ make is hardened:
 | `--no-ext-diff` (on `git diff` only) | An external diff program named by the repository or its attributes |
 
 The calls are read-only (`git diff` and `git log`). The check also
-refuses to run for a project folder that is empty, relative or starts
-with a dash (it would be read as a git option): the call fails with
-`invalid git directory` and git is not started, so that task gets no
-finding from the check. Revision values are held to the same standard:
+refuses to run for a project folder that is empty, contains a NUL byte,
+is relative, starts with a dash (it would be read as a git option), or
+is not an existing directory: the call fails with `invalid git
+directory` and git is not started, so that task gets no finding from
+the check. Revision values are held to the same standard:
 the recorded pre-task SHA and base commit must be a plain revision —
 non-empty, no NUL byte, no leading dash — and a value that is not is
 read as "no revision": the check answers with its documented empty

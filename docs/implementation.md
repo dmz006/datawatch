@@ -1936,6 +1936,12 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   order is deterministic. The first candidate is the recorded sender. This
   is what stops an unrelated same-host process from being attributed as
   the stop sender in a full `go test` run.
+- **Process source seam:** the procscan reads the process table through a
+  small internal `procSource` interface (`pids`, `cmdline`, `identity`).
+  The default `liveProcSource` reads the live proc filesystem, so daemon
+  behavior is unchanged; only tests install another source
+  (`installProcSource` / `resetProcSource`). There is no config key, API
+  field or `source` value for it.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1963,6 +1969,14 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   the test binary in its cmdline, and the captured cause must not point at
   some other process. Skips with a message on non-Linux; signals only its
   own process via the child it started.
+- **Hermetic scope:** after the child has signalled, the test installs a
+  process source limited to the test process's own descendants
+  (`scopeProcScanToDescendants`, in `scope_linux_test.go`), so an unrelated
+  host process (for example a service-stop command on a shared machine) can
+  never be picked up as the sender. The scope is restored at test cleanup.
+  `proctable_linux_test.go` (`TestProcScanFakeTable`) drives candidate
+  scanning and ranking against a fully in-memory fake process table, with
+  no dependence on the live host.
 
 ---
 
@@ -2714,15 +2728,18 @@ section above) — no new config key is introduced here.
 - **Stable generated scripts:** the planning prompt carries a shared helper
   text (`internal/autonomous/verification_script_helpers.go`): docs sync
   first, a cumulative allowed-file list, a merge-base comparison and no
-  package-wide formatter run. Three block-severity lint rules enforce it
+  package-wide formatter run. Seven block-severity lint rules enforce it
   (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
-  `final_gate_without_script`, via the `verification_script_task_files_only`,
-  `verification_script_docs_without_sync` and `verification_script_reason_empty`
-  /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
+  `artefact_files_allowed`, `final_gate_artefact_allowed`,
+  `script_invokes_known_flag`, `check_matches_spec_text`,
+  `final_gate_without_script`, via the `verification_script_*` match
+  predicates in `internal/autonomous/decompose_lint_verify_script.go`,
+  `decompose_lint_script_help.go` and `decompose_lint_spec_text.go`).
   A planner-written final gate off the last story is rejected by the plan check
   (`verification_script_coverage.go`).
-- **Still to review (operator):** the three stability rules ship at `block`
-  severity (operator decision 2026-11-12, option 2); whether `shadow` should
+- **Still to review (operator):** the seven stability rules ship at `block`
+  severity (the first three by operator decision 2026-11-12, option 2; the
+  four added 2026-11-17 ship `block` as well); whether `shadow` should
   precede `enforce`, and a live run confirming planners write stable scripts
   first try, are not settled by this tree. See
   [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).

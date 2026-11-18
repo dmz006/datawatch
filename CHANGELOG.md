@@ -5,6 +5,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
 ## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
 
 ### Changed
