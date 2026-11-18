@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The decompose-lint pack gained four verification-script rules covering generated-artefact file-set exemption, cumulative final-gate re-run safety, script flags validated against the real binary's help, and spec-anchored headings.
+
 ## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
 
 ### Changed
