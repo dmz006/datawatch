@@ -60,13 +60,14 @@ Four built-in profiles ship, **named after what they do**:
 
 ## The defaults: the smallest that works, with full one setting away
 
-Every **role** — planner, worker, verifier, judge — and every **task kind** — implementation, docs, note, final gate — has a default profile. This is the built-in table the resolution rule falls back to when nothing else is set:
+Every **role** — planner, worker, verifier, judge — and every **kind** — the task kinds implementation, docs, note, final gate, and the session kinds supervisor, operator_interactive, scheduled_command, planner, one_shot, review — has a default profile. This is the built-in table the resolution rule falls back to when nothing else is set:
 
 | Default profile | Who has it |
 |-----------------|--------------------|
-| `full` | the **planner** — its own start is the unchanged one, and it is the one that names the profile on a task |
-| `digest` | the **worker** and the **verifier**, each matched to doing or checking a coding job; and **implementation**, **docs** and **final-gate** tasks |
-| `minimal` | the **judge**, reading a verdict, and **note**-kind tasks |
+| `full` | the **planner** — its own start is the unchanged one, and it is the one that names the profile on a task — and the **planner**-kind session (a planning session the daemon starts) |
+| `digest` | the **worker** and the **verifier**, each matched to doing or checking a coding job; and **implementation**, **docs** and **final-gate** tasks; and the **operator_interactive** kind — interactive sessions you start |
+| `datawatch-tools` | the **supervisor** kind — it drives datawatch through its tools and does no other work |
+| `minimal` | the **judge**, reading a verdict, and **note**-kind tasks; and the **scheduled_command**, **one_shot** and **review** sessions |
 
 That is the "smallest that works" line in the code. `full` is reachable from every other default by one setting — on the task, on the Automaton, on the project or daemon-wide — so a job that needs the old, heavy start has it, and nothing else pays for it.
 
@@ -98,7 +99,9 @@ A launch resolves its profile **by name, in this order** — the first name that
 5. the **task-kind default** — the `kind` key of `autonomous.worker_profile_defaults` for that kind, or the built-in kind default when you have not set one;
 6. the **role default** — the `role` key of `autonomous.worker_profile_defaults` for that role, or the built-in role default when you have not set one.
 
-A tier that is set but empty is just unset, so resolution continues to the next tier. That is also how a profile you define for yourself is used: define it once (per project or daemon-wide), and every role, task kind or task that names it gets it.
+A tier that is set but empty is just unset, so resolution continues to the next tier. That is also how a profile you define for yourself is used: define it once (per project or daemon-wide), and every role, task kind, session kind or task that names it gets it.
+
+**Sessions you start resolve the same way at their own layer.** A session started through the PWA (or the operator, scheduled, planner, one-shot or review launches) may name a profile for that one start; the New Session form's **Worker profile** select does that — the built-ins, your profiles, or **Auto**, which leaves the choice to the daemon. With no name set, the daemon-wide profile and then the session-kind default (the `kind` key for the session's kind, or the built-in table above) apply. A session start names no task and no Automaton, so it never sees those two tiers.
 
 With nothing configured at any tier, no profile is applied and the session starts with the full harness.
 
@@ -134,15 +137,15 @@ The profiles sit in the daemon's autonomous config, right beside every other aut
 | Surface | Set | Read back |
 |---------|-----|-----------|
 | **Settings file** | the `autonomous.` block in `~/.datawatch/config.yaml`: `worker_profiles`, `worker_profile_defaults` (`role` and `kind`), `worker_profile` | the three keys as stored |
-| **Web** | the **Worker session profiles** group in Settings: the daemon-wide name (empty clears it), a select per role and per task kind, and your user profiles as one JSON object (empty clears them) — each field saved when it changes | the group shows the values as set; the selects offer the four built-ins plus the user profiles you define |
-| **REST API** | `PUT /api/config` with the `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile` keys; `POST /api/autonomous/prds/{id}/set_worker_profile` sets the one profile an Automaton's sessions start with (empty clears the override) | `GET /api/config` carries the three keys as set, and its `autonomous.in_force` block carries the profile in force for each role and task kind |
-| **MCP** | `config_set` with the same three keys; `autonomous_prd_set_worker_profile` sets the one Automaton's profile name | `get_config section=autonomous` reads the keys as set; `worker_profile_status` reports the built-in names, the profile in force for each role and task kind (its `in_force` block), and the latest start-up averages |
-| **CLI** | `datawatch config set` on `worker_profile`, `worker_profiles`, `worker_profile_defaults.role` and `worker_profile_defaults.kind` — checked against a local copy of the config before anything is sent, so a refused value never reaches the daemon; any other `worker_profile*` key is unknown and refused | `datawatch config get` on those keys, read from the `autonomous` block, followed by the profile in force for each role and task kind |
-| **Comm channel** | `configure autonomous.worker_profiles=...`, `configure autonomous.worker_profile_defaults=...` and `configure autonomous.worker_profile=...` | `configure help` and `configure list` name the three keys; a bare key answers with its one-line help, pointing here, and the profile in force for each role and task kind |
-| **Web settings page** | the **Profile in force** section of the Worker session profiles group | one line per role and task kind: the profile it launches with, and the tier that set it |
+| **Web** | the **Worker session profiles** group in Settings: the daemon-wide name (empty clears it), a select per role, task kind and session kind, and your user profiles as one JSON object (empty clears them) — each field saved when it changes; the New Session form's **Worker profile** select names the profile one specific start should take | the group shows the values as set; the selects offer the four built-ins plus the user profiles you define |
+| **REST API** | `PUT /api/config` with the `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile` keys; `POST /api/autonomous/prds/{id}/set_worker_profile` sets the one profile an Automaton's sessions start with (empty clears the override); `POST /api/sessions/start` accepts `worker_profile_name` for the one start | `GET /api/config` carries the three keys as set, and its `autonomous.in_force` block carries the profile in force for each role, task kind and session kind |
+| **MCP** | `config_set` with the same three keys; `autonomous_prd_set_worker_profile` sets the one Automaton's profile name | `get_config section=autonomous` reads the keys as set; `worker_profile_status` reports the built-in names, the profile in force for each role, task kind and session kind (its `in_force` block), and the latest start-up averages |
+| **CLI** | `datawatch config set` on `worker_profile`, `worker_profiles`, `worker_profile_defaults.role` and `worker_profile_defaults.kind` (the `kind` object takes task-kind and session-kind keys) — checked against a local copy of the config before anything is sent, so a refused value never reaches the daemon; any other `worker_profile*` key is unknown and refused | `datawatch config get` on those keys, read from the `autonomous` block, followed by the profile in force for each role, task kind and session kind |
+| **Comm channel** | `configure autonomous.worker_profiles=...`, `configure autonomous.worker_profile_defaults=...` and `configure autonomous.worker_profile=...` | `configure help` and `configure list` name the three keys; a bare key answers with its one-line help, pointing here, and the profile in force for each role, task kind and session kind |
+| **Web settings page** | the **Profile in force** section of the Worker session profiles group | one line per role, task kind and session kind: the profile it launches with, and the tier that set it |
 
 - `autonomous.worker_profiles` — the profiles you define, keyed by name; each value is a profile's fields (`mcp`, `tools`, `skills`, `context`, `model`, `effort`). A user profile may not reuse a built-in name.
-- `autonomous.worker_profile_defaults` — the `role` and `kind` defaults, which replace the built-in table above for the roles and kinds you set; the valid role keys are `planner`, `worker`, `verifier`, `judge`, the valid kind keys are `implementation`, `docs`, `note`, `final_gate`, and every value must name a built-in or one of your profiles.
+- `autonomous.worker_profile_defaults` — the `role` and `kind` defaults, which replace the built-in table above for the roles and kinds you set; the valid role keys are `planner`, `worker`, `verifier`, `judge`, the valid kind keys are the task kinds `implementation`, `docs`, `note`, `final_gate` and the session kinds `supervisor`, `operator_interactive`, `scheduled_command`, `planner`, `one_shot`, `review`, and every value must name a built-in or one of your profiles.
 - `autonomous.worker_profile` — the daemon-wide (global-layer) profile name, if you want one for everything that names none.
 - on a **task** or an **Automaton** — the `worker_profile` field, the per-task and per-Automaton names that beat the daemon-wide name for the task in question.
 
@@ -165,7 +168,7 @@ Widen a step — take on the next step's kind or role — only while the per-pro
 
 The operator direction allows corrections, and these are the places the correction is due:
 
-- **The defaults table against your fleet.** The built-in table above — the planner on `full`, the worker, the verifier and implementation, docs and final-gate tasks on `digest`, the judge and note-kind tasks on `minimal` — is what a launch falls back to when nothing is configured, set to the smallest that works. If a role is under-equipped on your fleet (a worker that needs a tool the `digest` default does not give it), the spec-line marker on one task fixes that one task, and `autonomous.worker_profile_defaults` fixes the rest.
+- **The defaults table against your fleet.** The built-in table above — the planner (role and kind) on `full`, the worker and the verifier and implementation, docs and final-gate tasks and the operator_interactive sessions on `digest`, the supervisor sessions on `datawatch-tools`, and the judge, note-kind tasks, and the scheduled_command, one_shot and review sessions on `minimal` — is what a launch falls back to when nothing is configured, set to the smallest that works. If a role is under-equipped on your fleet (a worker that needs a tool the `digest` default does not give it), the spec-line marker on one task fixes that one task, and `autonomous.worker_profile_defaults` fixes the rest.
 - **Verifier and judge start records.** Confirm on your build that a verifier or judge session's start record names the profile the profile-in-force read shows for its role. The resolver is `ResolveSessionProfile` in `internal/autonomous/worker_profile_launch.go`, called by `withSessionProfile` in `cmd/datawatch/session_judgment.go` on the verifier and judge launch paths. The field-level "applied" outcomes for these sessions were not re-checked in this docs pass.
 - **The field values of the four built-ins and your own profiles** as they apply on your backends: the allow-lists in `tools`, the named server list in `mcp`, and the context level of each.
 - **The per-surface names and read-backs.** The surfaces above set and read the keys under the names in the table — check they read the way you'd say them, and that a refused value names the valid ones, and that the profile-in-force read names the right tier on each surface.

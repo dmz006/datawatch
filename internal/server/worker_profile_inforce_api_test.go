@@ -84,6 +84,12 @@ func TestWorkerProfileInForce_ListsEveryRoleAndKind(t *testing.T) {
 		{workerprofile.ScopeKind, "docs"},
 		{workerprofile.ScopeKind, "note"},
 		{workerprofile.ScopeKind, "final_gate"},
+		{workerprofile.ScopeSessionKind, "supervisor"},
+		{workerprofile.ScopeSessionKind, "operator_interactive"},
+		{workerprofile.ScopeSessionKind, "scheduled_command"},
+		{workerprofile.ScopeSessionKind, "planner"},
+		{workerprofile.ScopeSessionKind, "one_shot"},
+		{workerprofile.ScopeSessionKind, "review"},
 	}
 	if len(rows) != len(wantScope) {
 		t.Fatalf("want %d in_force entries, got %d: %+v", len(wantScope), len(rows), rows)
@@ -133,6 +139,19 @@ func TestWorkerProfileInForce_KindOverrideReadsAsKind(t *testing.T) {
 	d := findInForce(t, rows, workerprofile.ScopeKind, "docs")
 	if d.Profile != "minimal" || d.Tier != "kind" {
 		t.Errorf("docs with kind override: want profile minimal tier kind, got %+v", d)
+	}
+}
+
+func TestWorkerProfileInForce_SessionKindOverrideReadsAsKind(t *testing.T) {
+	s := newWorkerProfileServer(t)
+	s.cfg.Autonomous.WorkerProfileDefaults.Kind = map[string]string{"supervisor": "minimal"}
+	rows := getInForce(t, s)
+	su := findInForce(t, rows, workerprofile.ScopeSessionKind, "supervisor")
+	if su.Profile != "minimal" || su.Tier != "kind" {
+		t.Errorf("supervisor with kind override: want profile minimal tier kind, got %+v", su)
+	}
+	if os := findInForce(t, rows, workerprofile.ScopeSessionKind, "one_shot"); os.Tier == "kind" {
+		t.Errorf("one_shot without an override must not read tier kind: %+v", os)
 	}
 }
 

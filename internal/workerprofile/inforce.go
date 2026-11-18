@@ -1,17 +1,21 @@
-// inforce.go reports which worker profile each role and task kind starts
-// with, as a read-only view of the launch rules in launch.go.
+// inforce.go reports which worker profile each role, task kind and session
+// kind starts with, as a read-only view of the launch rules in launch.go.
 //
-// InForce asks ResolveForLaunch once per role (worker, verifier, judge) and
-// once per task kind (implementation, docs, note, final_gate), so the output
-// shows the same profile a real launch would attach. Kinds are resolved as
-// worker launches, which is the role that runs them. Nothing here changes
+// InForce asks ResolveForLaunch once per role (worker, verifier, judge),
+// once per task kind (implementation, docs, note, final_gate) and once per
+// session kind (supervisor, operator_interactive, scheduled_command,
+// planner, one_shot, review), so the output shows the same profile a real
+// launch would attach. Task kinds are resolved as worker launches, which is
+// the role that runs them; session kinds are resolved the way the daemon
+// resolves a started session (kind only, no role). Nothing here changes
 // configuration or starts a session.
 package workerprofile
 
 // Scopes an InForceEntry can report.
 const (
-	ScopeRole = "role" // the entry is for a worker role
-	ScopeKind = "kind" // the entry is for a task kind
+	ScopeRole         = "role"           // the entry is for a worker role
+	ScopeKind         = "kind"           // the entry is for a task kind
+	ScopeSessionKind  = "session_kind"   // the entry is for a session kind
 )
 
 // Tiers an InForceEntry can report. Layer names from resolve.go are also
@@ -28,6 +32,10 @@ var inForceRoles = []string{"worker", "verifier", "judge"}
 // inForceKinds lists the task kinds InForce reports, in output order.
 var inForceKinds = []string{"implementation", "docs", "note", "final_gate"}
 
+// inForceSessionKinds lists the session kinds InForce reports, in output
+// order.
+var inForceSessionKinds = []string{KindSupervisor, KindOperator, KindScheduled, KindPlanner, KindOneShot, KindReview}
+
 // InForceInput carries the configured values to report on. Empty names are
 // unset. RoleDefaults and KindDefaults hold only configured values. Lookup
 // finds a named profile; nil means only built-in profiles are found.
@@ -38,18 +46,20 @@ type InForceInput struct {
 	Lookup        func(name string) (WorkerProfile, bool)
 }
 
-// InForceEntry says which profile one role or task kind starts with.
+// InForceEntry says which profile one role, task kind or session kind starts
+// with.
 type InForceEntry struct {
-	Scope   string // ScopeRole or ScopeKind
-	Key     string // the role or task kind name
+	Scope   string // ScopeRole, ScopeKind or ScopeSessionKind
+	Key     string // the role, task kind or session kind name
 	Profile string // the applied profile name, empty when none
 	Tier    string // a layer name, TierBuiltIn, TierDaemon or TierNone
 	Reason  string // a short human-readable explanation
 }
 
-// InForce returns one entry per role and per task kind, roles first.
+// InForce returns one entry per role, task kind and session kind, roles
+// first.
 func InForce(in InForceInput) []InForceEntry {
-	entries := make([]InForceEntry, 0, len(inForceRoles)+len(inForceKinds))
+	entries := make([]InForceEntry, 0, len(inForceRoles)+len(inForceKinds)+len(inForceSessionKinds))
 	for _, role := range inForceRoles {
 		li := LaunchInput{
 			Role:         role,
@@ -70,6 +80,15 @@ func InForce(in InForceInput) []InForceEntry {
 			Lookup:       in.Lookup,
 		}
 		entries = append(entries, inForceEntry(ScopeKind, kind, li))
+	}
+	for _, kind := range inForceSessionKinds {
+		li := LaunchInput{
+			Kind:         kind,
+			GlobalName:   in.GlobalProfile,
+			KindDefaults: in.KindDefaults,
+			Lookup:       in.Lookup,
+		}
+		entries = append(entries, inForceEntry(ScopeSessionKind, kind, li))
 	}
 	return entries
 }

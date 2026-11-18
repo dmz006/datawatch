@@ -12484,7 +12484,7 @@ func newConfigSetCmd() *cobra.Command {
 			"(manual, milestone or never; default manual). A project with its own value keeps it.\n\n" +
 			"Worker profile keys: worker_profile (a profile name, built-in or user-defined; empty clears it), " +
 			"worker_profiles (a JSON object of user profile name to profile settings), and worker_profile_defaults.role " +
-			"and worker_profile_defaults.kind (each a JSON object of role or task kind to profile name). Each value is " +
+			"and worker_profile_defaults.kind (each a JSON object of role, task kind or session kind to profile name). Each value is " +
 			"checked before it is sent; a refused value prints the reason and exits non-zero, and any other key that " +
 			"starts with worker_profile is refused as unknown.\n\n" +
 			"Vault health key: secrets.vault.unreachable_alert_after_seconds (whole seconds >= 0; 0 = alert off, default 120).\n\n" +
