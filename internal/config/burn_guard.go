@@ -37,10 +37,42 @@ const (
 	BurnGuardPointsPerMillionMax     = 1000.0
 	BurnGuardRetryLimitClaudeDefault = 2
 	BurnGuardRetryLimitClaudeMax     = 20
+
+	// pace_line policy modes: off never fires, shadow computes and records the
+	// decision without touching anything, on backs claude-code off until the
+	// estimate is back inside the line and the window.
+	BurnGuardModeOff    = "off"
+	BurnGuardModeShadow = "shadow"
+	BurnGuardModeOn     = "on"
+
+	// pace_line defaults and bounds. An unset mode reads shadow: shadow
+	// first, then on.
+	BurnGuardModeDefault                    = "shadow"
+	BurnGuardWeekToleranceDefault           = 2
+	BurnGuardWeekToleranceMax               = 10
+	BurnGuardPointsToWeekFactorDefault      = 1.3
+	BurnGuardPointsToWeekFactorMin          = 1.0
+	BurnGuardPointsToWeekFactorMax          = 10.0
+	BurnGuardWindowPercentPerPointDefault   = 4.0
+	BurnGuardWindowPercentPerPointMin       = 1.0
+	BurnGuardWindowPercentPerPointMax       = 25.0
+	BurnGuardWindowStopPercentDefault       = 85.0
+	BurnGuardWindowStopPercentMin           = 50.0
+	BurnGuardWindowStopPercentMax           = 95.0
+	BurnGuardReadingFreshnessMinutesDefault = 60
+	BurnGuardReadingFreshnessMinutesMax     = 1440
 )
 
 // BurnGuardConfig is the usage.burn_guard section. Booleans and numerics carry
 // no omitempty so an explicit false or 0 survives a save and reload.
+//
+// The pace_line policy settings (mode, week_tolerance,
+// points_to_week_factor, window_percent_per_point, window_stop_percent,
+// reading_freshness_minutes) sit flat in this same section, beside the
+// existing guard settings; settings only, the guard's behavior is unchanged
+// until the pace_line story lands. The window anchors (windows ending at
+// 02:00, 07:00 and 12:00, then every 5 hours) are fixed behavior, not a
+// setting.
 type BurnGuardConfig struct {
 	// Enabled turns the guard on (default true).
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -75,7 +107,29 @@ type BurnGuardConfig struct {
 	// AskOnChange: when true, the guard asks one open question per rung
 	// change; when false (default) it sends its alert only.
 	AskOnChange bool `yaml:"ask_on_change" json:"ask_on_change"`
+
+	// PaceLineMode is the pace_line policy mode: off | shadow | on
+	// (unset reads shadow; an empty string is stored and read as shadow).
+	PaceLineMode string `yaml:"mode" json:"mode"`
+	// PaceLineWeekTolerance is how many points the week reading may run over
+	// the pace line and still be ok, whole number 0 to 10 (default 2).
+	PaceLineWeekTolerance int `yaml:"week_tolerance" json:"week_tolerance"`
+	// PaceLinePointsToWeekFactor counts one point of ledger burn as this many
+	// points of the weekly allowance, number 1 to 10 (default 1.3).
+	PaceLinePointsToWeekFactor float64 `yaml:"points_to_week_factor" json:"points_to_week_factor"`
+	// PaceLineWindowPercentPerPoint is how much of the current window one
+	// point burned is, number 1 to 25 (default 4).
+	PaceLineWindowPercentPerPoint float64 `yaml:"window_percent_per_point" json:"window_percent_per_point"`
+	// PaceLineWindowStopPercent is the percent used at which a window is
+	// over, number 50 to 95 (default 85).
+	PaceLineWindowStopPercent float64 `yaml:"window_stop_percent" json:"window_stop_percent"`
+	// PaceLineReadingFreshnessMinutes is how long a reading may be before it
+	// is stale and the guard asks the operator for a fresh one, whole number
+	// 1 to 1440 (default 60).
+	PaceLineReadingFreshnessMinutes int `yaml:"reading_freshness_minutes" json:"reading_freshness_minutes"`
 }
+
+var burnGuardModes = []string{BurnGuardModeOff, BurnGuardModeShadow, BurnGuardModeOn}
 
 var (
 	burnGuardRungs    = []string{BurnGuardRungLowerInflight, BurnGuardRungRoutePiPrompt, BurnGuardRungHoldClaude}
@@ -109,6 +163,13 @@ func DefaultBurnGuard() BurnGuardConfig {
 		},
 		RetryLimitClaude: BurnGuardRetryLimitClaudeDefault,
 		AskOnChange:      false, // the guard alerts only; it does not ask questions
+		// pace_line policy: unset mode reads shadow — shadow first, then on.
+		PaceLineMode:                    BurnGuardModeDefault,
+		PaceLineWeekTolerance:           BurnGuardWeekToleranceDefault,
+		PaceLinePointsToWeekFactor:      BurnGuardPointsToWeekFactorDefault,
+		PaceLineWindowPercentPerPoint:   BurnGuardWindowPercentPerPointDefault,
+		PaceLineWindowStopPercent:       BurnGuardWindowStopPercentDefault,
+		PaceLineReadingFreshnessMinutes: BurnGuardReadingFreshnessMinutesDefault,
 	}
 }
 
@@ -214,6 +275,42 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 		say("[warn] usage.burn_guard.retry_limit_claude: %d — using %d", c.RetryLimitClaude, d.RetryLimitClaude)
 		out.RetryLimitClaude = d.RetryLimitClaude
 	}
+
+	// pace_line policy: an unset mode reads shadow; an unset (zero) value takes
+	// its default with no warning, like the price settings; a set value out of
+	// range degrades to the default with a warning.
+	mode := strings.TrimSpace(c.PaceLineMode)
+	if mode == "" {
+		out.PaceLineMode = d.PaceLineMode
+	} else if m, ok := usageChoice(mode, burnGuardModes); !ok {
+		say("[warn] usage.burn_guard.mode: %q is not a mode — using %q (allowed: %s)", c.PaceLineMode, d.PaceLineMode, strings.Join(burnGuardModes, ", "))
+		out.PaceLineMode = d.PaceLineMode
+	} else {
+		out.PaceLineMode = m
+	}
+	if c.PaceLineWeekTolerance < 0 || c.PaceLineWeekTolerance > BurnGuardWeekToleranceMax {
+		say("[warn] usage.burn_guard.week_tolerance: %d — using %d (allowed: 0 to %d)", c.PaceLineWeekTolerance, d.PaceLineWeekTolerance, BurnGuardWeekToleranceMax)
+		out.PaceLineWeekTolerance = d.PaceLineWeekTolerance
+	}
+	pnum := func(key string, v, lo, hi, def float64) float64 {
+		if v == 0 { // unset, like the price settings
+			return def
+		}
+		if burnGuardFinite(v) && v >= lo && v <= hi {
+			return v
+		}
+		say("[warn] usage.burn_guard.%s: %v — using %v (allowed: %g to %g)", key, v, def, lo, hi)
+		return def
+	}
+	out.PaceLinePointsToWeekFactor = pnum("points_to_week_factor", c.PaceLinePointsToWeekFactor, BurnGuardPointsToWeekFactorMin, BurnGuardPointsToWeekFactorMax, d.PaceLinePointsToWeekFactor)
+	out.PaceLineWindowPercentPerPoint = pnum("window_percent_per_point", c.PaceLineWindowPercentPerPoint, BurnGuardWindowPercentPerPointMin, BurnGuardWindowPercentPerPointMax, d.PaceLineWindowPercentPerPoint)
+	out.PaceLineWindowStopPercent = pnum("window_stop_percent", c.PaceLineWindowStopPercent, BurnGuardWindowStopPercentMin, BurnGuardWindowStopPercentMax, d.PaceLineWindowStopPercent)
+	if c.PaceLineReadingFreshnessMinutes == 0 { // unset, kept silent like the factors
+		out.PaceLineReadingFreshnessMinutes = d.PaceLineReadingFreshnessMinutes
+	} else if c.PaceLineReadingFreshnessMinutes > BurnGuardReadingFreshnessMinutesMax {
+		say("[warn] usage.burn_guard.reading_freshness_minutes: %d — using %d (allowed: 1 to %d)", c.PaceLineReadingFreshnessMinutes, d.PaceLineReadingFreshnessMinutes, BurnGuardReadingFreshnessMinutesMax)
+		out.PaceLineReadingFreshnessMinutes = d.PaceLineReadingFreshnessMinutes
+	}
 	return out
 }
 
@@ -224,6 +321,50 @@ func BurnGuardRungs() []string { return append([]string(nil), burnGuardRungs...)
 func ValidateBurnGuardRung(name string) error {
 	if _, ok := usageChoice(name, burnGuardRungs); !ok {
 		return fmt.Errorf("usage.burn_guard.ladder: %q is not a rung (allowed: %s)", name, strings.Join(burnGuardRungs, ", "))
+	}
+	return nil
+}
+
+// BurnGuardModes returns the allowed pace_line mode names, in order:
+// off, shadow, on.
+func BurnGuardModes() []string { return append([]string(nil), burnGuardModes...) }
+
+// IsBurnGuardMode reports whether name is a pace_line mode (off, shadow, on),
+// case-insensitively, blank names rejected.
+func IsBurnGuardMode(name string) bool {
+	_, ok := usageChoice(name, burnGuardModes)
+	return ok
+}
+
+// ValidateBurnGuardPaceLine is the one rule for the pace_line settings —
+// usage.burn_guard.mode, week_tolerance, points_to_week_factor,
+// window_percent_per_point, window_stop_percent and
+// reading_freshness_minutes — shared by the REST config path, the CLI and the
+// comm channel. Call it with resolved settings (unset fields read as default
+// first, as normalizeBurnGuard does): an empty mode is the unset default and
+// is accepted. A refusal is one error naming each offending key and its
+// allowed range.
+func ValidateBurnGuardPaceLine(c BurnGuardConfig) error {
+	var problems []string
+	if m := strings.TrimSpace(c.PaceLineMode); m != "" && !IsBurnGuardMode(m) {
+		problems = append(problems, fmt.Sprintf("usage.burn_guard.mode: %q is not a mode (allowed: %s)", c.PaceLineMode, strings.Join(burnGuardModes, ", ")))
+	}
+	if c.PaceLineWeekTolerance < 0 || c.PaceLineWeekTolerance > BurnGuardWeekToleranceMax {
+		problems = append(problems, fmt.Sprintf("usage.burn_guard.week_tolerance: must be a whole number from 0 to %d", BurnGuardWeekToleranceMax))
+	}
+	num := func(key string, v, lo, hi float64) {
+		if !burnGuardFinite(v) || v < lo || v > hi {
+			problems = append(problems, fmt.Sprintf("usage.burn_guard.%s: must be from %g to %g", key, lo, hi))
+		}
+	}
+	num("points_to_week_factor", c.PaceLinePointsToWeekFactor, BurnGuardPointsToWeekFactorMin, BurnGuardPointsToWeekFactorMax)
+	num("window_percent_per_point", c.PaceLineWindowPercentPerPoint, BurnGuardWindowPercentPerPointMin, BurnGuardWindowPercentPerPointMax)
+	num("window_stop_percent", c.PaceLineWindowStopPercent, BurnGuardWindowStopPercentMin, BurnGuardWindowStopPercentMax)
+	if c.PaceLineReadingFreshnessMinutes < 1 || c.PaceLineReadingFreshnessMinutes > BurnGuardReadingFreshnessMinutesMax {
+		problems = append(problems, fmt.Sprintf("usage.burn_guard.reading_freshness_minutes: must be a whole number from 1 to %d", BurnGuardReadingFreshnessMinutesMax))
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
 }
