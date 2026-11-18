@@ -14797,6 +14797,17 @@ components:
           type: string
           description: Automaton the session belongs to. Stamps the `automaton:` placement tag.
           example: "3ab70001"
+        worker_profile_name:
+          type: string
+          description: |
+            Name of the worker session profile this launch should take: one of the built-ins
+            (`minimal`, `digest`, `datawatch-tools`, `full`) or a profile you defined in
+            `autonomous.worker_profiles`. A name the daemon does not know never starts a
+            half-applied session: that launch falls back to the full harness and the session
+            record carries the reason. Omit (or send empty) to leave the choice to the daemon's rules —
+            the daemon-wide `autonomous.worker_profile` and then the session-kind default.
+            Claude Code only; ignored by other backends.
+          example: "digest"
         task:
           type: string
           description: Task description passed to the LLM

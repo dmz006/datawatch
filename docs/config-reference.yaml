@@ -4360,13 +4360,20 @@ autonomous:
   # Worker session profiles: what a worker, verifier or judge session starts
   # with (MCP servers, tools, skills, project context, model, effort). Built-in
   # names: minimal, digest, full, datawatch-tools; a user profile may not reuse
-  # them. Sessions you start yourself always start with the full harness.
+  # them. Sessions you start yourself resolve at their own layer: a profile
+  # named on the start (worker_profile_name) wins, then the daemon-wide name,
+  # then the kind's row for a start with launch facts (launch_role=supervisor
+  # or launch_role=planner, launch_kind=review, or one-shot mode); a plain
+  # start with no name and no launch facts starts with the full harness,
+  # unchanged.
   #   worker_profiles: map of profile name to a profile. Profile fields are
   #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
   #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
   #     minimal|digest|full, model, effort. Default empty.
   #   worker_profile_defaults.role: planner|worker|verifier|judge -> profile
-  #     name. worker_profile_defaults.kind: implementation|docs|note|final_gate
+  #     name. worker_profile_defaults.kind: task kind
+  #     (implementation|docs|note|final_gate) or session kind (supervisor,
+  #     operator_interactive, scheduled_command, planner, one_shot, review)
   #     -> profile name. Empty value = no default. Default empty.
   #   worker_profile: global profile name; empty = the role default.
   #   Launch behaviour: each launch resolves its profile by name, task ->
@@ -4382,11 +4389,12 @@ autonomous:
   #     profile and apply it to the session start (its MCP config, tools,
   #     skills and starting context). Verifier and judge launches resolve it
   #     when they start their one-shot session.
-  #   Read the profile in force per role and task kind on GET /api/config
-  #     (autonomous.in_force), MCP worker_profile_status, datawatch config get,
-  #     the comm channel configure key, or the web settings group.
+  #   Read the profile in force per role, task kind and session kind on
+  #     GET /api/config (autonomous.in_force), MCP worker_profile_status,
+  #     datawatch config get, the comm channel configure key, or the web
+  #     settings group.
   #   Refused at load: a built-in name reused, an invalid profile, a value
-  #   naming an unknown profile, an unknown role or kind key.
+  #   naming an unknown profile, an unknown role key or task-/session-kind key.
   worker_profiles: {}
   #   reviewer:
   #     mcp: {mode: list, servers: [github]}

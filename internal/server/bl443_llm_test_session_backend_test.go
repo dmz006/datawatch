@@ -24,7 +24,15 @@ func TestHandleLLMTest_SessionBackendKindRejectedClearly(t *testing.T) {
 
 	for _, kind := range []string{"goose", "aider", "claude-code"} {
 		name := "test-" + kind
-		if err := srv.inferenceReg.Add(&inference.LLM{Name: name, Kind: inference.Kind(kind), Binary: "/bin/true"}); err != nil {
+		row := &inference.LLM{Name: name, Kind: inference.Kind(kind)}
+		// The claude-code fixture stays binary-free: the launcher only runs
+		// the canonical claude-code row's binary, so a named row must not
+		// carry one (Validate refuses dead config — that is the point);
+		// the other kinds' Binary is incidental filler for this test.
+		if kind != "claude-code" {
+			row.Binary = "/bin/true"
+		}
+		if err := srv.inferenceReg.Add(row); err != nil {
 			t.Fatalf("register %s: %v", kind, err)
 		}
 
