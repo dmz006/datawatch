@@ -231,3 +231,4 @@ drift. A clean exit means the gate on the release commit has nothing new to coun
 - [Testing against a running daemon](testing-against-a-running-daemon.md)
 - [Container image refresh](container-image-refresh.md)
 - [Open code scanning alerts — fixed on main, closure pending the gate run](../operations.md#open-code-scanning-alerts-fixed-on-main-closure-pending-the-gate-run) — the operator review items the next gate run must clear
+- Scanner-accepted barrier: fixes in the PWA (such as the session card quick-command select, now built with `textContent`) close alerts only after the next gate run on main; operator review items are in the operations entry above.
