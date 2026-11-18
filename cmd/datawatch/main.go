@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.27"
+var Version = "9.182.28"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -9416,6 +9416,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
 				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
 				s.SupervisorWatchAgreedDays = sw.AgreedDays
+				if len(sw.PriorityBands) > 0 {
+					s.SupervisorWatchPriorityBands = make([]statspkg.SupervisorWatchBand, 0, len(sw.PriorityBands))
+					for _, b := range sw.PriorityBands {
+						s.SupervisorWatchPriorityBands = append(s.SupervisorWatchPriorityBands, statspkg.SupervisorWatchBand{
+							Band:                 b.Band,
+							PriorityFrom:         b.PriorityFrom,
+							PriorityTo:           b.PriorityTo,
+							Waiting:              b.Waiting,
+							OldestWaitingMinutes: b.OldestWaitingMinutes,
+							Stalled:              b.Stalled,
+						})
+					}
+				}
 				// Safe-to-delete report stats.
 				sd := amgrRef.SafeDeleteStats()
 				s.SafeDeleteLastMS = sd.LastDurationMs
