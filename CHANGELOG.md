@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
 ## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
 
 ### Changed
