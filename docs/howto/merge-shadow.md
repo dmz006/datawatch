@@ -1,7 +1,7 @@
 ---
 title: "How to: Merge shadow"
 description: "What the three merge shadow settings enable, their defaults and the values they accept, every way they are set, where the shadow state is read (REST, MCP, CLI, comm channel, PWA card) and what the daemon never does"
-last_updated: "2026-11-09"
+last_updated: "2026-11-18"
 topics:
   - merge
   - shadow
@@ -171,14 +171,25 @@ All five surfaces proxy one daemon endpoint and read — none of them writes:
 | **Comm channel** | `autonomous merge-shadow` — one summary line: `Merge shadow: patch 4 matched, 1 different; minor …; major …; none …`; `No merge comparisons yet` while nothing is stored. It takes no arguments. |
 | **PWA** | The **Merge shadow** card on the **Events** tab (the Setup and policy sub-tab was removed): matched and different per release size, summed over all projects (plain figures — the card carries no links of its own). Rendered only when the shadow is enabled **and** at least one comparison has been stored — otherwise the card is absent from the page, which is the expected state, not a failure. |
 
-**Why the comparison reads can come back empty.** The post-ship flow does not
-persist a comparison record yet: the hook persists the **defect candidates**, and
-the `merge-comparisons/` store exists in the code with nothing in the production
-flow writing to it (see "What is still yours to do" in
-[merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do)). Until that
-wiring lands, every comparison read above returns nothing: the `comparisons`
-lists and `counts` stay empty, the CLI answers "no comparison … exists", the
-comm channel answers `No merge comparisons yet`, and the PWA card stays hidden.
+**Why the comparison reads can come back empty.** There are two independent
+reasons, and the reason matters:
+
+- **No stored plan for the Automaton.** The post-ship hook does nothing when
+  there is no stored plan to compare — no git reads, no comparison record, no
+  defect candidates, nothing to read at all. That is what happens when the
+  shadow was off when the Automaton finished, the plan step never produced a
+  stored plan, or the plan was pruned by the project's `plan_keep` retention
+  after the merge landed. The Automaton has no shadow state, and every read for
+  it is empty for that reason — not because the store is broken.
+- **A stored plan, but no stored comparison.** The post-ship flow does not
+  persist a comparison record yet: the hook persists the **defect candidates**, and
+  the comparisons store (`merge-comparisons/`) exists in the code with nothing in the production
+  flow writing to it (see "What is still yours to do" in
+  [merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do)). Until that
+  wiring lands, every comparison read above returns nothing: the `comparisons`
+  lists and `counts` stay empty, the CLI answers "no comparison … exists", the
+  comm channel answers `No merge comparisons yet`, and the PWA card stays hidden.
+
 The stored **plans** are already listed per project on every surface. The defect
 **candidates** have no operator-facing read at all yet — they are the JSON file
 under the data directory (`<data directory>/defect-candidates/<automaton id>.json`).
