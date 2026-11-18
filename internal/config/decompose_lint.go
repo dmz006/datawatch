@@ -210,6 +210,12 @@ type DecomposeLintMatch struct {
 	// probe that fails or prints nothing are skipped (never
 	// guess). Absent (false) = do not check.
 	VerificationScriptInvokesUnknownFlag bool `yaml:"verification_script_invokes_unknown_flag,omitempty" json:"verification_script_invokes_unknown_flag,omitempty"`
+
+	// FixedCalendarDateInTest asserts the task writes a test (a test file
+	// in its files list, or an Add/Write title mentioning test) and its
+	// spec contains a fixed ISO calendar date (YYYY-MM-DD). Absent
+	// (false) = do not check.
+	FixedCalendarDateInTest bool `yaml:"fixed_calendar_date_in_test,omitempty" json:"fixed_calendar_date_in_test,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

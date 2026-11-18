@@ -158,6 +158,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"names_tracker_id",
 				"unbounded_load_step",
 				"check_matches_spec_text",
+				"fixed_calendar_date_in_test",
 			},
 		},
 	}
