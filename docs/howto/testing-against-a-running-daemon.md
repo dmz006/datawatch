@@ -231,6 +231,8 @@ already stood up. Set the env vars documented above and invoke the
 script exactly as shown; nothing about either mechanism assumes an
 interactive shell.
 
+The process-scan and sender-attribution tests in `internal/shutdowncause` are hermetic: their candidate scan runs against an injectable process source restricted to the test's own child processes (descendants), so an unrelated host process with a matching command line can never be selected as the signal sender.
+
 ## See also
 
 - [daemon-operations.md](daemon-operations.md) — general daemon lifecycle (start/stop/restart)
