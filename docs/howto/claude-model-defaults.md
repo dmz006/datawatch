@@ -72,6 +72,19 @@ the launch it applies to:
   own use, name the model on the LLM you select (LLM registry rows carry a
   model and a model list; see [LLM registry](llm-registry.md)).
 
+| Name a model | Surface |
+|---|---|
+| CLI | `datawatch session new --model <name>` (and `--effort quick\|normal\|thorough`) |
+| MCP | the `start_session` `model` argument (with `effort` and `name`) |
+| Chat | `new: model=<name>: <task>` |
+| PWA | the model field of the New Session form — name a model there |
+| LLM row | `datawatch llm models add <llm> --model <name>` |
+
+To get the `sonnet` / a hand-picked model on a direct start, name it on any
+surface above. If you name nothing, the start tries the LLM row's model, then
+the daemon's global planning model, and only then refuses — the autonomous
+paths end in the daemon `sonnet` default instead.
+
 Nothing in the daemon, a plan, or a task type silently substitutes a
 different model for yours: the session record holds exactly the model the
 CLI was passed (see [verification](#verification-which-model-actually-ran)).

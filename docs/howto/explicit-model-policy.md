@@ -98,6 +98,17 @@ policy covers that case with a refusal instead of a guess:
   is untouched. A model found by (2) or (3) is recorded on the session exactly
   as if the operator had named it.
 - **Every direct surface can name the model.** CLI: `datawatch session new --model <name> [--effort quick|normal|thorough]`; MCP: `start_session` with `model`, `effort` and `name`; chat: `new: model=<name>: <task>` (an empty `model=` gets a reply asking for a value); REST: the `model` field of `POST /api/sessions/start`. The CLI and MCP arguments are sent as the same fields REST takes, so all four reach the same fallback chain.
+### How an operator names a model for a direct start
+
+| Surface | How to name the model |
+|---|---|
+| CLI | `datawatch session new --model <name> [--effort quick\|normal\|thorough] "<task>"` |
+| MCP arguments | `start_session` with `model`, `effort` and `name` arguments |
+| Command text (chat) | `new: model=<name>: <task>` |
+| REST | the `model` field of `POST /api/sessions/start` |
+| PWA | the model field of the New Session form |
+| LLM row | `datawatch llm models add <llm> --model <name>` |
+
 - **The fix is to name the model.** An alias from the daemon default set or a
   full registry name, given where the surface takes one (the LLM entry / model
   field of the start request, or the backend's model flag). A model named this

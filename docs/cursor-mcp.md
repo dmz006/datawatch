@@ -121,7 +121,7 @@ Selected core tools:
 | Tool | Description |
 |------|-------------|
 | `list_sessions` | List all active AI sessions on this host |
-| `start_session` | Start a new AI session (supports `caller_session_id`, `kill_children`, `permission_mode`) |
+| `start_session` | Start a new AI session (supports `model`, `effort`, `name`, `caller_session_id`, `kill_children`, `permission_mode`) |
 | `session_output` | Get the last N lines of output from a session |
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
