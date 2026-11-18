@@ -24,11 +24,11 @@ func noSpace(s string) string {
 func TestScheduleValidAndApply(t *testing.T) {
 	res := ResetSpec{Weekday: time.Sunday, Clock: "08:00", Zone: "Europe/Berlin", ServerZone: true, FellBack: true}
 	cases := []struct {
-		name    string
-		sched   Schedule
-		valid   bool
-		wantWD  time.Weekday
-		wantClk string
+		name     string
+		sched    Schedule
+		valid    bool
+		wantWD   time.Weekday
+		wantClk  string
 		wantZone string
 	}{
 		{"valid", Schedule{Weekday: time.Friday, Clock: "16:00"}, true, time.Friday, "16:00", "Europe/Berlin"},

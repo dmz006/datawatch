@@ -72,8 +72,8 @@ for (const sel of STRIPS) {
   });
 
   test(`${sel} has an edge-fade rule`, () => {
-    assert.match(wholeCss, new RegExp(sel.replace('.', '\\.') + '\\.tabs-more-right'));
-    assert.match(wholeCss, new RegExp(sel.replace('.', '\\.') + '\\.tabs-more-left'));
+    assert.ok(wholeCss.includes(sel + '.tabs-more-right'), sel + '.tabs-more-right edge-fade rule is missing');
+    assert.ok(wholeCss.includes(sel + '.tabs-more-left'), sel + '.tabs-more-left edge-fade rule is missing');
     const fade = rulesFor(wholeCss, sel + '.tabs-more-right').join('\n');
     assert.match(fade, /mask-image:\s*linear-gradient/);
   });
@@ -90,7 +90,7 @@ test('Automata top strip and Projects strip are nowrap inside the phone query', 
 
 test('phone query keeps 40 px tap targets on the strips', () => {
   for (const sel of ['.automata-tabs-bar .output-tab', '.automation-subtabs .output-tab', '.prd-detail-tabs .output-tab']) {
-    const decls = rulesFor(phoneScope, sel).concat(rulesFor(phoneScope, sel.replace(' .output-tab', ' .output-tab'))).join('\n');
+    const decls = rulesFor(phoneScope, sel).join('\n');
     assert.match(decls, /min-height:\s*40px/, sel);
   }
 });

@@ -94,4 +94,3 @@ var generatedAvailable = func() bool { return true }
 func newLinuxKprobeProbe() (NetProbe, error) {
 	return loadAndAttach()
 }
-

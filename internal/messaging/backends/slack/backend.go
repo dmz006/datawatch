@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/slack-go/slack"
 	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/slack-go/slack"
 )
 
 // Backend implements messaging.Backend using the Slack RTM API.

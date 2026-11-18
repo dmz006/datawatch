@@ -150,7 +150,7 @@ type Input struct {
 	// SafetyPoints is the margin of the pace policy; nil means 5, and 0 is allowed.
 	SafetyPoints *float64 `json:"safety_points,omitempty"`
 	// Policy is use-all, pace or finish-early; empty or unknown means use-all.
-	Policy        string        `json:"policy"`
+	Policy string `json:"policy"`
 	// AutoLanes switches the auto lane mode on: the first note of the advice then says
 	// the daemon sets the lane count within the operator maximum, and the calculator
 	// still never stops a lane.

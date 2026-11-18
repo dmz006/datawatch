@@ -258,7 +258,7 @@ func TestGateReportCostSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{"## Cost", "Sessions: s-aa, s-bb", "| Sessions | 4 |", "| Tokens in | 1000 |", "| Tokens out | 200 |",
+	for _, w := range []string{"## Cost", "Sessions: aa, bb", "| Sessions | 4 |", "| Tokens in | 1000 |", "| Tokens out | 200 |",
 		"| Cache read | 5000 |", "| Cache creation | 300 |", "| Tool calls | 42 |", "| Span | 1h2m5s |",
 		"| API-equivalent estimate, not billed | $12.35 |", "Window: partial window",
 		"Unknown spend: spend before the ledger horizon is unknown"} {

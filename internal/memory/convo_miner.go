@@ -106,8 +106,9 @@ func ParseSlackExport(r io.Reader, channel string) ([]ImportedMessage, error) {
 }
 
 // ircLineRe matches the common weechat/irssi/hexchat shape:
-//   "2026-04-28 14:32:11 <nick> message body"
-//   "Apr 28 14:32:11 <nick> message body"
+//
+//	"2026-04-28 14:32:11 <nick> message body"
+//	"Apr 28 14:32:11 <nick> message body"
 var ircLineRe = regexp.MustCompile(
 	`^(?:(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})|(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}))\s+<([^>]+)>\s+(.*)$`,
 )

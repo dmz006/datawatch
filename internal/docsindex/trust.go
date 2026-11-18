@@ -38,10 +38,10 @@ type TrustState struct {
 
 // TrustEntry is one source's trust record.
 type TrustEntry struct {
-	Source     string    `json:"source"` // "skill:<name>" | "plugin:<name>"
-	GrantedAt  time.Time `json:"granted_at"`
-	GrantedBy  string    `json:"granted_by,omitempty"` // "operator" | "config" | "comm:<channel>"
-	Note       string    `json:"note,omitempty"`
+	Source    string    `json:"source"` // "skill:<name>" | "plugin:<name>"
+	GrantedAt time.Time `json:"granted_at"`
+	GrantedBy string    `json:"granted_by,omitempty"` // "operator" | "config" | "comm:<channel>"
+	Note      string    `json:"note,omitempty"`
 }
 
 // NewTrustState loads from disk; if the file doesn't exist, returns an
@@ -179,9 +179,9 @@ type PendingQueue struct {
 
 // PendingEntry describes one source awaiting an operator trust decision.
 type PendingEntry struct {
-	Source     string    `json:"source"`
-	NoticedAt  time.Time `json:"noticed_at"`
-	Detail     string    `json:"detail,omitempty"` // e.g. "plugin docs.index=true; 3 files"
+	Source    string    `json:"source"`
+	NoticedAt time.Time `json:"noticed_at"`
+	Detail    string    `json:"detail,omitempty"` // e.g. "plugin docs.index=true; 3 files"
 }
 
 // NewPendingQueue loads from disk; empty when file is absent.

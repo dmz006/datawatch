@@ -2030,6 +2030,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("launch_role",
 			mcpsdk.Description("Optional placement role the session plays: worker | verifier | planner | judge | supervisor. Start the operator's supervisor session with launch_role=supervisor; it then carries the supervisor role tag plus compute, backend, lane and project tags and no automaton tag. Omit for an unchanged plain session."),
 		),
+		mcpsdk.WithString("worker_profile_name",
+			mcpsdk.Description("Optional worker profile name (built-in or user-defined) applied at launch for any session kind: its tool server list, tools, skills and starting context. An unknown name starts the full harness and records the reason on the session record. A launch_role=supervisor session with no name takes the lean supervisor kind default."),
+		),
 		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
 			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
@@ -2566,6 +2569,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 	git := req.GetBool("git", false)
 	launchRole := strings.TrimSpace(req.GetString("launch_role", ""))
+	profileName := strings.TrimSpace(req.GetString("worker_profile_name", ""))
 	priority, hasPriority, perr := priorityFromReq(req)
 	if perr != nil {
 		return toolError("start_session", perr), nil
@@ -2587,7 +2591,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "") && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "" || profileName != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2621,6 +2625,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if launchRole != "" {
 			body["launch_role"] = launchRole
+		}
+		if profileName != "" {
+			body["worker_profile_name"] = profileName
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,

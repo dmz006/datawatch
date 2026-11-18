@@ -44,12 +44,12 @@ type computePlacementSettings struct {
 // with defaults read through where unset.
 func computePlacementConfigSurface(c config.ComputePlacementConfig) computePlacementSettings {
 	return computePlacementSettings{
-		MissingModel:       c.EffectiveMissingModel(),
-		MemHeadroomPct:     c.MemHeadroomPct,
-		DiskHeadroomGB:     c.DiskHeadroomGB,
-		AskTimeoutMinutes:  c.AskTimeoutMinutes,
-		AssumeModelSizeGB:  c.AssumeModelSizeGB,
-		MissingModelVocab:  config.ComputePlacementMissingModels(),
+		MissingModel:      c.EffectiveMissingModel(),
+		MemHeadroomPct:    c.MemHeadroomPct,
+		DiskHeadroomGB:    c.DiskHeadroomGB,
+		AskTimeoutMinutes: c.AskTimeoutMinutes,
+		AssumeModelSizeGB: c.AssumeModelSizeGB,
+		MissingModelVocab: config.ComputePlacementMissingModels(),
 	}
 }
 
