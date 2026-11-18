@@ -165,7 +165,10 @@ TEST_HTTP=https://host:8443 TEST_TLS=1 TEST_TOKEN=... bash scripts/e2e-pwa.sh TS
 What the target does (`scripts/e2e-pwa.sh`):
 
 1. Same daemon lifecycle as `make test-e2e-pwa` (isolated 127.0.0.1 daemon,
-   or the external daemon named by `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN`).
+   or the external daemon named by `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN`). The
+   generated config also sets `server.allowed_project_roots` to the run's
+   temp folder, so stories that seed sessions in the temp folder pass the
+   project-root guard.
 2. `npm ci` in `scripts/test-stories/pwa` and runs `node TS-817.mjs` then
    `node TS-818.mjs`. Exit code: **0 pass, 1 fail, 2 skip** — a finding
    makes the target exit non-zero.

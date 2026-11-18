@@ -51,7 +51,7 @@ env -u TMUX -u TMUX_TMPDIR make test-e2e-shared-nav
 
 The target runs `scripts/e2e-pwa.sh group:shared-nav`. That script does the following:
 
-1. Picks free loopback ports and writes a daemon config from `testdata/datawatch.yaml`, with the token `dw-e2e-pwa-token` (unless `TEST_TOKEN` is set). The config also lists the parent of the run's temp folder as the only project root (`server.allowed_project_roots`), so sessions the stories create under the temp folder pass the project-root check. The helper `scripts/e2e-pwa-config.sh` writes this config, and `tests/test-e2e-pwa-config.sh` checks it.
+1. Picks free loopback ports and writes a daemon config from `testdata/datawatch.yaml`, with the token `dw-e2e-pwa-token` (unless `TEST_TOKEN` is set). The config also lists the parent of the run's temp folder as the only project root (`server.allowed_project_roots`), so sessions the stories create under the temp folder pass the project-root check — seeded sessions start in a bare sandbox without extra config. The helper `scripts/e2e-pwa-config.sh` writes this config, and `tests/test-e2e-pwa-config.sh` checks it.
 2. Starts the daemon from `bin/datawatch` in the foreground and waits up to 60 seconds for `/api/health`.
 3. Runs `npm ci` in `scripts/test-stories/pwa`. This replaces the tracked symlink `scripts/test-stories/pwa/node_modules` with a real directory, and `git status` then shows the symlink as a deleted file. Restore it after the run with `git checkout -- scripts/test-stories/pwa/node_modules`, and do not commit the deletion.
 4. Runs `run-all.mjs --group shared-nav`, which runs `shared-nav-mobile-fit.mjs`. That file runs the probe `shared-nav-mobile-fit-probe.mjs` in gate mode.
