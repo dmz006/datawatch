@@ -3764,6 +3764,8 @@
   "settings_supervisor_watch_mode": "Supervisor watch mode (off, shadow or on; default shadow)",
   "settings_supervisor_watch_alert_minutes": "Supervisor watch alert (minutes a finding stays open before one alert, 0 = off, default 30)",
   "settings_supervisor_watch_silent_minutes": "Supervisor watch silence window (minutes an Automaton worktree may stay silent, default 60)",
+  "settings_supervisor_watch_stall_threshold_minutes": "スーパーバイザー・ウォッチのストールしきい値(オートマトンが何分間停滞してもウォッチが検出するのか, 0 = 期間なし, デフォルト 30)",
+  "settings_supervisor_watch_priority_floor": "スーパーバイザー・ウォッチの優先度フロア(ウォッチが対応する オートマトン の最低優先度, 0 = フロアなし, デフォルト 80)",
   "settings_supervisor_watch_poll_seconds": "Supervisor watch poll interval (seconds, min 60, default 60)",
   "settings_supervisor_watch_script_output_path": "Supervisor watch script record path (repository-relative path of the supervisor script record file, empty = no comparison)",
   "settings_supervisor_watch_tmux_restart_baseline": "Supervisor watch tmux restart baseline (empty = no baseline)",

@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -237,5 +238,89 @@ func TestSupervisorWatchConfigOptionalKeys(t *testing.T) {
 	// No mode set: the effective mode is still the shadow default.
 	if got := c.EffectiveMode(); got != SupervisorWatchModeShadow {
 		t.Errorf("optional-keys config EffectiveMode() = %q, want %q", got, SupervisorWatchModeShadow)
+	}
+}
+
+// TestSupervisorWatchConfigPriorityStallKnobs — stall_threshold_minutes
+// and priority_floor behave like the other minute thresholds: unset (nil)
+// reads the one default through the accessor, an explicit 0 is kept as 0
+// (not defaulted over), an explicit override is read back as-is, and
+// DefaultSupervisorWatchConfig seeds the defaults through the constants —
+// no call site ever writes a literal.
+func TestSupervisorWatchConfigPriorityStallKnobs(t *testing.T) {
+	if DefaultSupervisorWatchStallThresholdMinutes != 30 {
+		t.Fatalf("DefaultSupervisorWatchStallThresholdMinutes = %d, want 30", DefaultSupervisorWatchStallThresholdMinutes)
+	}
+	if DefaultSupervisorWatchPriorityFloor != 80 {
+		t.Fatalf("DefaultSupervisorWatchPriorityFloor = %d, want 80", DefaultSupervisorWatchPriorityFloor)
+	}
+
+	var unset SupervisorWatchConfig
+	if unset.StallThresholdMinutes != nil || unset.PriorityFloor != nil {
+		t.Fatalf("zero config: the two new keys must be unset (nil), got (%v %v)",
+			unset.StallThresholdMinutes, unset.PriorityFloor)
+	}
+	if got, want := unset.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes;
+		got != want {
+		t.Errorf("unset stall_threshold_minutes: Effective = %d, want the %d default", got, want)
+	}
+	if got, want := unset.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor;
+		got != want {
+		t.Errorf("unset priority_floor: Effective = %d, want the %d default", got, want)
+	}
+
+	// An explicit 0 (the operator said zero) is kept, not defaulted over.
+	zero := 0
+	c := SupervisorWatchConfig{StallThresholdMinutes: &zero, PriorityFloor: &zero}
+	if got := c.EffectiveStallThresholdMinutes(); got != 0 {
+		t.Errorf("explicit 0 stall_threshold_minutes: Effective = %d, want 0", got)
+	}
+	if got := c.EffectivePriorityFloor(); got != 0 {
+		t.Errorf("explicit 0 priority_floor: Effective = %d, want 0", got)
+	}
+
+	// Explicit overrides are read back as-is, through the accessors.
+	for _, tc := range []struct{ stall, floor int }{{45, 80}, {30, 90}, {5, 0}} {
+		s, f := tc.stall, tc.floor
+		c := SupervisorWatchConfig{StallThresholdMinutes: &s, PriorityFloor: &f}
+		if got := c.EffectiveStallThresholdMinutes(); got != tc.stall {
+			t.Errorf("stall_threshold_minutes=%d: Effective = %d, want %d", tc.stall, got, tc.stall)
+		}
+		if got := c.EffectivePriorityFloor(); got != tc.floor {
+			t.Errorf("priority_floor=%d: Effective = %d, want %d", tc.floor, got, tc.floor)
+		}
+	}
+
+	// The default config carries both keys through the constants and
+	// validates clean.
+	def := DefaultSupervisorWatchConfig()
+	if def.StallThresholdMinutes == nil || *def.StallThresholdMinutes != DefaultSupervisorWatchStallThresholdMinutes {
+		t.Errorf("DefaultSupervisorWatchConfig().StallThresholdMinutes = %v, want the %d default",
+			def.StallThresholdMinutes, DefaultSupervisorWatchStallThresholdMinutes)
+	}
+	if def.PriorityFloor == nil || *def.PriorityFloor != DefaultSupervisorWatchPriorityFloor {
+		t.Errorf("DefaultSupervisorWatchConfig().PriorityFloor = %v, want the %d default",
+			def.PriorityFloor, DefaultSupervisorWatchPriorityFloor)
+	}
+	if err := ValidateSupervisorWatchConfig(def); err != nil {
+		t.Errorf("Validate(DefaultSupervisorWatchConfig()): %v, want accepted", err)
+	}
+
+	// A negative value on either key is refused, each error naming the full
+	// autonomous.automation.supervisor_watch.<key> path; zero is legal.
+	neg := -1
+	if err := ValidateSupervisorWatchConfig(SupervisorWatchConfig{StallThresholdMinutes: &neg}); err == nil {
+		t.Error("Validate(stall_threshold_minutes: -1): accepted, want refused")
+	} else if !strings.Contains(err.Error(), "autonomous.automation.supervisor_watch.stall_threshold_minutes") {
+		t.Errorf("stall_threshold_minutes refusal must name the full key, got %q", err.Error())
+	}
+	if err := ValidateSupervisorWatchConfig(SupervisorWatchConfig{PriorityFloor: &neg}); err == nil {
+		t.Error("Validate(priority_floor: -1): accepted, want refused")
+	} else if !strings.Contains(err.Error(), "autonomous.automation.supervisor_watch.priority_floor") {
+		t.Errorf("priority_floor refusal must name the full key, got %q", err.Error())
+	}
+	zeroOK := 0
+	if err := ValidateSupervisorWatchConfig(SupervisorWatchConfig{StallThresholdMinutes: &zeroOK, PriorityFloor: &zeroOK}); err != nil {
+		t.Errorf("Validate(both keys 0): %v, want accepted (0 is legal)", err)
 	}
 }

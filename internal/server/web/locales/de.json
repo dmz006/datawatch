@@ -3764,6 +3764,8 @@
   "settings_supervisor_watch_mode": "Supervisor watch mode (off, shadow or on; default shadow)",
   "settings_supervisor_watch_alert_minutes": "Supervisor watch alert (minutes a finding stays open before one alert, 0 = off, default 30)",
   "settings_supervisor_watch_silent_minutes": "Supervisor watch silence window (minutes an Automaton worktree may stay silent, default 60)",
+  "settings_supervisor_watch_stall_threshold_minutes": "Supervisor-Watch-Stallgrenze (Minuten, die ein Automat stillstehen darf, bevor das Watch einen Befund dazu registriert, 0 = ohne Zeitfenster, Standard 30)",
+  "settings_supervisor_watch_priority_floor": "Supervisor-Watch-Prioritätsgrenze (minimale Priorität, ab der das Watch einen wartenden Automaten bearbeitet, 0 = ohne Grenze, Standard 80)",
   "settings_supervisor_watch_poll_seconds": "Supervisor watch poll interval (seconds, min 60, default 60)",
   "settings_supervisor_watch_script_output_path": "Supervisor watch script record path (repository-relative path of the supervisor script record file, empty = no comparison)",
   "settings_supervisor_watch_tmux_restart_baseline": "Supervisor watch tmux restart baseline (empty = no baseline)",
