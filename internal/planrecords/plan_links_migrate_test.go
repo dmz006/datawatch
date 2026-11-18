@@ -1,6 +1,9 @@
 package planrecords
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func migrateFixture(t *testing.T) (*Store, MigrateOptions, *[]auditEv) {
 	t.Helper()
@@ -165,5 +168,54 @@ func TestMigrateClosedRowsAreHistoryNotPlans(t *testing.T) {
 	again, err := Migrate(opts)
 	if err != nil || len(again.WouldLink) != 0 || len(again.WouldCreate) != 0 || len(again.SkippedExisting) != 1 || len(again.HistoryWithoutAutomaton) != 1 {
 		t.Fatalf("second apply: %v %+v", err, again.Counts())
+	}
+}
+
+func TestMigrateConflictExplainsHolderAndChange(t *testing.T) {
+	s, opts, _ := migrateFixture(t)
+	held := mustCreate(t, s, plan("Registry import"))
+	rep, err := Migrate(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Conflicts) != 1 {
+		t.Fatalf("conflicts = %+v", rep.Conflicts)
+	}
+	c := rep.Conflicts[0]
+	if c.HeldBy == "" || !strings.Contains(c.HeldBy, held.ID) {
+		t.Fatalf("held_by = %q, want it to name %s", c.HeldBy, held.ID)
+	}
+	if !strings.Contains(c.WouldChange, `create the plan "Registry import"`) || !strings.Contains(c.WouldChange, "dddd4444") {
+		t.Fatalf("would_change = %q", c.WouldChange)
+	}
+}
+
+func TestMigrateSummaryCountsEveryKindPreviewAndApply(t *testing.T) {
+	_, opts, _ := migrateFixture(t)
+	prev, _ := Migrate(opts)
+	want := "would create 5, would link 4, already present 0, history without an Automaton 1, needs review 0, conflicts 0"
+	if got := prev.Summary(); got != want {
+		t.Fatalf("preview summary = %q", got)
+	}
+	opts.Apply = true
+	app, _ := Migrate(opts)
+	if got := app.Summary(); !strings.HasPrefix(got, "created 5, linked 4, already present 0, history without an Automaton 1, needs review 0, conflicts 0") {
+		t.Fatalf("apply summary = %q", got)
+	}
+}
+
+func TestMigrateSecondApplyChangesNothing(t *testing.T) {
+	s, opts, _ := migrateFixture(t)
+	opts.Apply = true
+	if _, err := Migrate(opts); err != nil {
+		t.Fatal(err)
+	}
+	n := s.Len()
+	rep, err := Migrate(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.WouldCreate) != 0 || len(rep.WouldLink) != 0 || len(rep.Conflicts) != 0 || s.Len() != n {
+		t.Fatalf("second apply changed things: %v len %d -> %d", rep.Counts(), n, s.Len())
 	}
 }

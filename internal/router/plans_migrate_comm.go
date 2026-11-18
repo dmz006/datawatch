@@ -38,6 +38,9 @@ type planMigrateItem struct {
 	LinkKind string `json:"link_kind"`
 	LinkID   string `json:"link_id"`
 	Reason   string `json:"reason"`
+	// HeldBy and WouldChange explain a conflict.
+	HeldBy      string `json:"held_by"`
+	WouldChange string `json:"would_change"`
 }
 
 // handlePlanMigrateVerb answers "autonomous plan-migrate [apply]".
@@ -74,15 +77,17 @@ func planMigrateText(body string) string {
 	if rs.Applied {
 		head, create, link = "Migration", "created", "linked"
 	}
-	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, from linked Automaton %d, fell back %d", head,
-		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting), len(rs.Conflicts),
+	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already present %d, history without an Automaton %d, needs review %d, conflicts %d (titles derived %d, from linked Automaton %d, fell back %d)", head,
+		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting),
+		len(rs.HistoryNoAuto), len(rs.NeedsReview), len(rs.Conflicts),
 		rs.TitlesDerived, rs.TitlesFromLinked, rs.TitlesFellBack)}
 	for i, c := range rs.Conflicts {
 		if i >= planRecordsMaxLines {
 			lines = append(lines, fmt.Sprintf("… and %d more conflicts", len(rs.Conflicts)-i))
 			break
 		}
-		lines = append(lines, "conflict: "+strings.Join(strings.Fields(c.Title), " ")+" — "+c.Reason)
+		lines = append(lines, "conflict: "+strings.Join(strings.Fields(c.Title), " ")+" — "+c.Reason+
+			"; held by: "+c.HeldBy+"; would have changed: "+c.WouldChange)
 	}
 	if len(rs.NeedsReview) > 0 {
 		lines = append(lines, fmt.Sprintf("needs review (%d, no name could be derived, not created):", len(rs.NeedsReview)))
