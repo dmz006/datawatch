@@ -62692,7 +62692,24 @@ function _sessionDetailRepaintHeader() {
   _renderSessionSchedules(sess ? (sess.full_id || sess.id) : sid);
 }
 
+// Document listeners for Escape / outside tap are attached lazily, once, the
+// first time a header popover is opened, so nothing is registered at load.
+let _sessionDetailHeaderListening = false;
+function _sessionDetailHeaderListen() {
+  if (_sessionDetailHeaderListening) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _sessionDetailHeaderListening = true;
+  document.addEventListener('keydown', (e) => { if (e && e.key === 'Escape') _sessionDetailHeaderClose(); });
+  document.addEventListener('click', (e) => {
+    if (!_sessionDetailHeaderOpen) return;
+    const tg = e && e.target;
+    if (tg && typeof tg.closest === 'function' && tg.closest('.session-detail-icon-btn, .session-detail-popover')) return;
+    _sessionDetailHeaderClose();
+  });
+}
+
 function _sessionDetailHeaderToggle(kind) {
+  _sessionDetailHeaderListen();
   _sessionDetailHeaderOpen = _sessionDetailHeaderOpen === kind ? '' : kind;
   _sessionDetailRepaintHeader();
 }
@@ -62702,15 +62719,6 @@ function _sessionDetailHeaderClose() {
   if (!_sessionDetailHeaderOpen) return;
   _sessionDetailHeaderOpen = '';
   _sessionDetailRepaintHeader();
-}
-if (typeof document !== 'undefined' && document.addEventListener) {
-  document.addEventListener('keydown', (e) => { if (e && e.key === 'Escape') _sessionDetailHeaderClose(); });
-  document.addEventListener('click', (e) => {
-    if (!_sessionDetailHeaderOpen) return;
-    const tg = e && e.target;
-    if (tg && typeof tg.closest === 'function' && tg.closest('.session-detail-icon-btn, .session-detail-popover')) return;
-    _sessionDetailHeaderClose();
-  });
 }
 
 window.openSessionTagsModal = function(fullId) {
