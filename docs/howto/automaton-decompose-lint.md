@@ -183,6 +183,29 @@ project directory (and any helper it sources, one level deep) and name the
   verbatim in the task spec. Fix: state the exact heading or the exact format
   being checked, word for word, in the task spec.
 
+### The four newest stability rules, by id
+
+The four newest stability rules are the ones operators meet most when a
+flagged script still fails after the first two rules are handled. All four
+are `block`-severity, and each finding names the **script path**, the **rule
+id** and the specific offending flag or text.
+
+| Rule id | What fault it catches | How to fix the flagged script |
+|---|---|---|
+| `artefact_files_allowed` | the script refuses any changed file not on its own list, and does not exempt the daemon-generated artefact folders — `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` — and `CHANGELOG.md`; it then fails when the daemon writes those artefacts after the script last passed | exclude those four paths from the script's changed-file set (for example `grep -v -e docs/plans/drafts/ -e docs/plans/parity-issues/ -e docs/plans/reports/ -e CHANGELOG.md`), or check only the files this task adds — either way the daemon's artefacts no longer trip the set |
+| `final_gate_artefact_allowed` | a final-gate script asserts the **whole** changed-file set against a finite allow-list, with no guard for the final gate rerunning it on the cumulative tree, where every earlier task's files appear | guard the set check so it skips while the final gate runs it (an env var or argument the gate sets), or change the check to look only at the files this task adds |
+| `verify_script_unknown_flag` | the script passes a long flag to a command — or one of its subcommands — that the installed binary's own `--help` output does not list, so the assertion cannot hold on the machine that will run it | validate the flags against the binary's help (`<command> --help`, or the subcommand's help), keep only the flags the installed binary actually accepts, and drop or rephrase any that do not; commands the environment cannot find are skipped by the rule, never guessed at |
+| `verify_script_text_not_in_spec` | the script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec — an expectation stated nowhere is unverifiable, and the check fails the moment the wording differs | state the **exact heading** being checked (or the exact phrase and format) in the task spec, word for word, so the check asserts against a contract that exists in the plan |
+
+The finding is a pointer at the script, not a verdict on the work: edit the
+script as the column says, then confirm with a dry run of the Automaton's
+stored plan (`lint dry-run <id>`) that the finding is gone. If the task
+exists already rather than being mid-decompose, you can also swap the flagged
+script for a corrected one with the task editor (see
+[Correcting a script after decompose](#correcting-a-script-after-decompose))
+— the corrected file still has to satisfy the rule, which reads the script's
+current contents.
+
 They use seven match predicates (below): `verification_script_task_files_only`,
 `verification_script_docs_without_sync`, `verification_script_artefact_files`,
 `verification_script_final_gate_rerun`, `verification_script_reason_empty`
