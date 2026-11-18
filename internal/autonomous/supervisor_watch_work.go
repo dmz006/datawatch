@@ -370,6 +370,8 @@ func (w *SupervisorWatchWork) CheckPriorityStall(now time.Time, cfg SupervisorWa
 			Subject: p.ID,
 			Text: SupervisorWatchPriorityStallText(p.ID, p.Priority, age,
 				cfg.EffectiveStallThresholdMinutes(), cfg.EffectivePriorityFloor(), btext, action),
+			BlockerText: btext,
+			Action:      action,
 		})
 	}
 	w.markRaised(out)
