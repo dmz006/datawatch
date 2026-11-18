@@ -133,6 +133,11 @@ type SupervisorWatchConfig struct {
 	// explicit 0 (no floor) must survive a round trip.
 	PriorityFloor *int `yaml:"priority_floor,omitempty" json:"priority_floor,omitempty"`
 
+	// StallWake is a *bool on purpose: an unset key (nil) reads on, while an
+	// explicit false must survive a round trip. It enables the priority_stall
+	// wake event; the finding is raised either way.
+	StallWake *bool `yaml:"stall_wake,omitempty" json:"stall_wake,omitempty"`
+
 	// PollSeconds is the configured coordinator poll interval (whole
 	// seconds). 0 is unset and reads DefaultSupervisorWatchPollSeconds
 	// (60) via EffectivePollSeconds; an explicitly set value below
@@ -201,6 +206,15 @@ func (c SupervisorWatchConfig) EffectiveStallThresholdMinutes() int {
 	return *c.StallThresholdMinutes
 }
 
+// EffectiveStallWake reports whether the priority_stall wake is on: an
+// unset (nil) value reads true.
+func (c SupervisorWatchConfig) EffectiveStallWake() bool {
+	if c.StallWake == nil {
+		return true
+	}
+	return *c.StallWake
+}
+
 // EffectivePriorityFloor returns the priority floor in effect: an unset
 // (nil) value reads DefaultSupervisorWatchPriorityFloor (80), and an
 // explicit 0 keeps the floor at zero (no floor). Negative values are
@@ -246,12 +260,14 @@ func DefaultSupervisorWatchConfig() SupervisorWatchConfig {
 	silent := DefaultSupervisorWatchSilentMinutes
 	stall := DefaultSupervisorWatchStallThresholdMinutes
 	floor := DefaultSupervisorWatchPriorityFloor
+	wake := true
 	return SupervisorWatchConfig{
 		Mode:                  SupervisorWatchModeShadow,
 		AlertMinutes:          &alert,
 		SilentMinutes:         &silent,
 		StallThresholdMinutes: &stall,
 		PriorityFloor:         &floor,
+		StallWake:             &wake,
 		PollSeconds:           DefaultSupervisorWatchPollSeconds,
 	}
 }

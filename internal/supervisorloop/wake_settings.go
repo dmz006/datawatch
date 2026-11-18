@@ -63,6 +63,7 @@ func DefaultWakeKinds() []string {
 		"automaton.stuck_running",
 		"task.capacity_wait_too_long",
 		"burn_guard.rung_changed",
+		"priority_stall",
 	}
 }
 

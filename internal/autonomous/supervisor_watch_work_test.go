@@ -456,7 +456,7 @@ func TestSupervisorWatchWorkPriorityStall(t *testing.T) {
 			name:     "waiting above floor and past threshold raises",
 			prd:      workTestQueuePRD("stalled-1", PRDApproved, 90, long),
 			wantKind: SupervisorWatchPriorityStall,
-			wantText: SupervisorWatchPriorityStallText("stalled-1", 90, 45, 30, 80),
+			wantText: SupervisorWatchPriorityStallText("stalled-1", 90, 45, 30, 80, "", ""),
 		},
 		{
 			name:     "at the floor raises",
@@ -501,7 +501,7 @@ func TestSupervisorWatchWorkPriorityStall(t *testing.T) {
 				if got[0].Kind != SupervisorWatchPriorityStall || got[0].Subject != tc.prd.ID {
 					t.Errorf("wrong kind/subject: %+v", got[0])
 				}
-				want := SupervisorWatchPriorityStallText(tc.prd.ID, tc.prd.Priority, 45, 30, 80)
+				want := SupervisorWatchPriorityStallText(tc.prd.ID, tc.prd.Priority, 45, 30, 80, "", "")
 				if got[0].Text != want {
 					t.Errorf("text = %q, want %q", got[0].Text, want)
 				}

@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -160,12 +161,30 @@ func (d *StallDetector) Scan(prds []*PRD, cfg SupervisorWatchConfig, now time.Ti
 	}
 	d.mu.Unlock()
 
-	if d.sink != nil {
+	if d.sink != nil && cfg.EffectiveStallWake() {
 		for _, s := range wake {
 			d.sink.Wake(s)
 		}
 	}
 	return stalls
+}
+
+// LifecycleWakeSink publishes each stall as a priority_stall lifecycle event,
+// which the supervisor wake set delivers to the supervisor session.
+type LifecycleWakeSink struct {
+	Emit func(LifecycleEvent)
+}
+
+// Wake emits the stall: NewStatus is the blocker code, Details the JSON payload.
+func (s LifecycleWakeSink) Wake(st PriorityStall) {
+	if s.Emit == nil {
+		return
+	}
+	b, _ := json.Marshal(st)
+	s.Emit(LifecycleEvent{
+		Kind: KindPriorityStall, Level: LevelPRD, PRDID: st.AutomatonID,
+		NewStatus: st.BlockerCode, Details: string(b),
+	})
 }
 
 // Text renders the stall as one plain sentence.
