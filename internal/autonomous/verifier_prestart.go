@@ -102,6 +102,10 @@ func (m *Manager) gateVerifierPrestart(prd *PRD, t *Task, taskDir string) error 
 	if pol.PreStartVerifier == config.ChecksModeOff {
 		return nil
 	}
+	// Reconstruct the verification script from the verbatim block in the
+	// stored spec before the check, so a first start and a restart after
+	// the .datawatch/verify folder was removed both find a runnable file.
+	m.materializeVerifierScript(prd, t, taskDir)
 	res := CheckVerifierPrestart(taskDir, t.VerificationScript)
 	if res.Outcome != PrestartProblem {
 		return nil
