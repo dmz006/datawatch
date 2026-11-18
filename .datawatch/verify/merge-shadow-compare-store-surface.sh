@@ -5,7 +5,7 @@
 # can surface instead of silence.
 set -euo pipefail
 
-cd /home/dmz/.datawatch/prd-worktrees/f31d0001
+cd "$(git rev-parse --show-toplevel)"
 
 env -u TMUX -u TMUX_TMPDIR bash -c '
 set -euo pipefail
