@@ -108,7 +108,7 @@ func (m *Manager) supervisorWatchPRDs() []*PRD {
 // set of findings, so the pass's own bookkeeping is testable without
 // shelling out; the shell probes' behavior is the probes' own tests'
 // job.
-func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
+func (m *Manager) supervisorWatchRawFindings(now time.Time, cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding {
 	m.mu.Lock()
 	probe := m.supervisorWatchProbe
 	nodes := m.supervisorWatchNodes
@@ -143,8 +143,8 @@ func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*
 	out = append(out, work.CheckIdleLane()...)
 	out = append(out, work.CheckCIRed()...)
 	out = append(out, work.CheckCISTuck()...)
-	out = append(out, work.CheckPriorityStall(time.Now(), cfg)...)
-	out = append(out, work.CheckBacklog(time.Now())...)
+	out = append(out, work.CheckPriorityStall(now, cfg)...)
+	out = append(out, work.CheckBacklog(now)...)
 
 	if baseRepo != "" {
 		wt := NewSupervisorWatchWorktree(
@@ -243,7 +243,7 @@ func (m *Manager) supervisorWatchPoll(now time.Time, cfg SupervisorWatchConfig) 
 		return nil
 	}
 	prds := m.supervisorWatchPRDs()
-	raw := m.supervisorWatchRawFindings(cfg, prds)
+	raw := m.supervisorWatchRawFindings(now, cfg, prds)
 	// Cross-check this pass's findings against the oracle script's
 	// record file and record the comparison in the same store
 	// (supervisor_watch_compare.go). A missing, stale or unparseable

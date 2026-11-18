@@ -428,6 +428,11 @@ func workTestQueuePRD(id string, status PRDStatus, priority int, created time.Ti
 	return p
 }
 
+// TestSupervisorWorkPriorityStall — the required test name for the
+// priority-stall scenarios; it runs TestSupervisorWatchWorkPriorityStall
+// (same file) unchanged.
+func TestSupervisorWorkPriorityStall(t *testing.T) { TestSupervisorWatchWorkPriorityStall(t) }
+
 // TestSupervisorWatchWorkPriorityStall — an Automaton that is in the
 // waiting set, at or above the priority floor, and waiting longer than the
 // stall threshold raises one priority_stall finding naming it; each of
@@ -547,6 +552,11 @@ func TestSupervisorWatchWorkPriorityStall(t *testing.T) {
 		}
 	})
 }
+
+// TestSupervisorWorkBacklogOrder — the required test name for the
+// backlog ordering scenarios; it runs TestSupervisorWatchWorkBacklogOrder
+// (same file) unchanged.
+func TestSupervisorWorkBacklogOrder(t *testing.T) { TestSupervisorWatchWorkBacklogOrder(t) }
 
 // TestSupervisorWatchWorkBacklogOrder — the backlog finding lists every
 // waiting Automaton and every failed or blocked Automaton with work left,
