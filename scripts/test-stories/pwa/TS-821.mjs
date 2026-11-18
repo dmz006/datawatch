@@ -79,9 +79,17 @@ async function createTags() {
   await make('sales', 'Browse sales', fixture.tags.work);
 }
 
+// The daemon refuses a project_dir outside its allowed roots; the sandbox data dir's
+// prd-worktrees folder is always allowed (it need not exist for a draft).
+function projectDir() {
+  const dataDir = env.tlsCa ? env.tlsCa.replace(/\/tls\/server\/cert\.pem$/, '') : '';
+  if (!dataDir || dataDir === env.tlsCa) throw new Error('TEST_TLS_CA not set; cannot find the sandbox data dir');
+  return `${dataDir}/prd-worktrees/ts821`;
+}
+
 async function createAutomata() {
   const make = async (key, title) => {
-    const prd = await api('POST', '/api/autonomous/prds', { spec: `${nm(title)}: browse fixture`, project_dir: '/tmp', effort: 'low' });
+    const prd = await api('POST', '/api/autonomous/prds', { spec: `${nm(title)}: browse fixture`, project_dir: projectDir(), effort: 'low' });
     check(prd && prd.id, `automaton create ${title} returned no id`);
     fixture.automata[key] = { id: prd.id, title: nm(title) };
     automataOrder.push(prd.id);

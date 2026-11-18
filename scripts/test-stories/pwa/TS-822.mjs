@@ -98,6 +98,8 @@ async function freshPage(browser, { initScript, blockStream } = {}) {
 async function openAutomationTab(page) {
   await navigateTo(page, 'autonomous');
   await page.evaluate(() => switchAutomataTab('automation'));
+  // The Automation tab opens on its Inbox sub-tab; the tag browser is on Automations.
+  await page.evaluate(() => switchAutomationSubtab('automations'));
   await page.waitForFunction(
     () => document.querySelector('#automationPanel .tag-view-switch .tag-view-btn'),
     null,
@@ -157,9 +159,15 @@ await runStory(async (page) => {
   const child = await api('POST', '/api/autonomous/tags', { name: CHILD_NAME, parent_id: root.id });
   created.tagIds.push(child.id);
 
-  const p1 = await api('POST', '/api/autonomous/prds', { spec: `attention fixture one ${SFX}`, project_dir: '/tmp', effort: 'low' });
+  // The daemon refuses a project_dir outside its allowed roots; the sandbox data dir's
+  // prd-worktrees folder is always allowed (it need not exist for a draft).
+  const dataDir = env.tlsCa ? env.tlsCa.replace(/\/tls\/server\/cert\.pem$/, '') : '';
+  assert(dataDir && dataDir !== env.tlsCa, 'TEST_TLS_CA not set; cannot find the sandbox data dir');
+  const projectDir = `${dataDir}/prd-worktrees/${ROOT_NAME}`;
+
+  const p1 = await api('POST', '/api/autonomous/prds', { spec: `attention fixture one ${SFX}`, project_dir: projectDir, effort: 'low' });
   created.prdIds.push(p1.id);
-  const p2 = await api('POST', '/api/autonomous/prds', { spec: `attention fixture two ${SFX}`, project_dir: '/tmp', effort: 'low' });
+  const p2 = await api('POST', '/api/autonomous/prds', { spec: `attention fixture two ${SFX}`, project_dir: projectDir, effort: 'low' });
   created.prdIds.push(p2.id);
   await api('POST', `/api/autonomous/prds/${p1.id}/set_tags`, { tag_ids: [child.id], primary_tag_id: child.id });
 
