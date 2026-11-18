@@ -13,9 +13,9 @@ package workerprofile
 
 // Scopes an InForceEntry can report.
 const (
-	ScopeRole         = "role"           // the entry is for a worker role
-	ScopeKind         = "kind"           // the entry is for a task kind
-	ScopeSessionKind  = "session_kind"   // the entry is for a session kind
+	ScopeRole        = "role"         // the entry is for a worker role
+	ScopeKind        = "kind"         // the entry is for a task kind
+	ScopeSessionKind = "session_kind" // the entry is for a session kind
 )
 
 // Tiers an InForceEntry can report. Layer names from resolve.go are also
