@@ -13770,7 +13770,7 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 
 func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole)
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
 	if err != nil {
 		return err
 	}
