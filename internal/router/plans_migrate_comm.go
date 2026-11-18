@@ -25,6 +25,7 @@ type planMigrateWire struct {
 		WouldLink        []planMigrateItem `json:"would_link"`
 		SkippedExisting  []planMigrateItem `json:"skipped_existing"`
 		Conflicts        []planMigrateItem `json:"conflicts"`
+		HistoryNoAuto    []planMigrateItem `json:"history_without_automaton"`
 		TitlesDerived    int               `json:"titles_derived"`
 		TitlesFromLinked int               `json:"titles_from_linked"`
 		TitlesFellBack   int               `json:"titles_fell_back"`
@@ -81,6 +82,16 @@ func planMigrateText(body string) string {
 			break
 		}
 		lines = append(lines, "conflict: "+strings.Join(strings.Fields(c.Title), " ")+" — "+c.Reason)
+	}
+	if len(rs.HistoryNoAuto) > 0 {
+		lines = append(lines, fmt.Sprintf("History without an Automaton (%d, not made into plans):", len(rs.HistoryNoAuto)))
+		for i, h := range rs.HistoryNoAuto {
+			if i >= planRecordsMaxLines {
+				lines = append(lines, fmt.Sprintf("… and %d more", len(rs.HistoryNoAuto)-i))
+				break
+			}
+			lines = append(lines, "  "+strings.Join(strings.Fields(h.Title), " "))
+		}
 	}
 	if !rs.Applied {
 		lines = append(lines, "To write these plans send: autonomous plan-migrate apply")
