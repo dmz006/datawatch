@@ -96,7 +96,10 @@ func (r Runner) Run(ctx context.Context, in Input) (*MergePlan, error) {
 	}
 	gates := r.Gates
 	if gates == nil {
-		gates = RunGates
+		dataDir := in.DataDir
+		gates = func(ctx context.Context, dir string, timeout time.Duration) []GateResult {
+			return RunGatesWithDataDir(ctx, dir, timeout, dataDir)
+		}
 	}
 	now := r.now().UTC()
 	timeout := in.GateTimeout

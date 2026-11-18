@@ -72,13 +72,19 @@ const gateWaitDelay = 5 * time.Second
 // A gate whose target the Makefile does not define is reported as skipped.
 // The make command is resolved by name from PATH.
 func RunGates(ctx context.Context, dir string, timeout time.Duration) []GateResult {
+	return RunGatesWithDataDir(ctx, dir, timeout, "")
+}
+
+// RunGatesWithDataDir is RunGates with the daemon data directory, whose tools
+// folder holds the pinned golangci-lint the lint gate runs.
+func RunGatesWithDataDir(ctx context.Context, dir string, timeout time.Duration, dataDir string) []GateResult {
 	results := make([]GateResult, 0, len(gateNames))
 	for _, name := range gateNames {
 		if name == rerunGateName {
-			results = append(results, RunGateWithRerun(ctx, dir, name, timeout, RerunOptions{}))
+			results = append(results, RunGateWithRerun(ctx, dir, name, timeout, RerunOptions{DataDir: dataDir}))
 			continue
 		}
-		results = append(results, RunGate(ctx, dir, name, timeout))
+		results = append(results, runGate(ctx, dir, name, timeout, nil, dataDir))
 	}
 	return results
 }
@@ -86,12 +92,12 @@ func RunGates(ctx context.Context, dir string, timeout time.Duration) []GateResu
 // RunGate runs one gate, the make target name, in dir with the given timeout
 // and returns its GateResult. A target missing from the Makefile is skipped.
 func RunGate(ctx context.Context, dir, name string, timeout time.Duration) GateResult {
-	return runGate(ctx, dir, name, timeout, nil)
+	return runGate(ctx, dir, name, timeout, nil, "")
 }
 
 // runGate is RunGate with extra environment variables appended to the
 // inherited environment. A nil extraEnv leaves the environment unchanged.
-func runGate(ctx context.Context, dir, name string, timeout time.Duration, extraEnv []string) GateResult {
+func runGate(ctx context.Context, dir, name string, timeout time.Duration, extraEnv []string, dataDir string) GateResult {
 	res := GateResult{Name: name}
 	if !makefileHasGateTarget(dir, name) {
 		res.Status = GateSkipped
@@ -108,6 +114,22 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, extra
 
 	gateCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// The lint gate runs the golangci-lint the CI workflow pins: its
+	// directory goes first on PATH for the make command.
+	var lintTool LintTool
+	var lintErr error
+	lintPinned := ""
+	if name == "lint" {
+		if p, perr := ReadPinnedGolangciLintVersion(dir); perr == nil && p != "" {
+			lintPinned = p
+			lintTool, lintErr = ResolveLintTool(ctx, dataDir, p, LintToolOptions{})
+			if lintErr == nil {
+				extraEnv = append(append([]string{}, extraEnv...),
+					"PATH="+lintTool.Dir()+string(os.PathListSeparator)+os.Getenv("PATH"))
+			}
+		}
+	}
 
 	var out bytes.Buffer
 	cmd := exec.CommandContext(gateCtx, makeBin, name)
@@ -139,8 +161,12 @@ func runGate(ctx context.Context, dir, name string, timeout time.Duration, extra
 	}
 
 	if name == "lint" {
-		localLine, localVersion := golangciLintVersion(ctx)
-		res = applyLintVersionPin(res, dir, localLine, localVersion)
+		if lintPinned != "" {
+			res = applyResolvedLint(res, lintPinned, lintTool, lintErr)
+		} else {
+			localLine, localVersion := golangciLintVersion(ctx)
+			res = applyLintVersionPin(res, dir, localLine, localVersion)
+		}
 	}
 	return res
 }

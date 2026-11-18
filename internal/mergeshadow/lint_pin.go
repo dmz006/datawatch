@@ -1,6 +1,7 @@
 package mergeshadow
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,6 +137,35 @@ func applyLintVersionPin(res GateResult, trialDir, localLine, localVersion strin
 		"CI pins golangci-lint "+pinned))
 	findings := CheckLintVersionPin(pinned, localVersion)
 	if len(findings) > 0 {
+		res.Status = GateFail
+		res.Findings = append(res.Findings, findings...)
+	}
+	return res
+}
+
+// applyResolvedLint records the resolved golangci-lint in the gate Detail and
+// applies the pin. An install failure raises a blocking lint_tool_unavailable
+// finding with the reason; lint_version_mismatch is raised only when the
+// resolved binary still differs from the pin.
+func applyResolvedLint(res GateResult, pinned string, tool LintTool, err error) GateResult {
+	var te *LintToolError
+	if err != nil {
+		reason := err.Error()
+		if errors.As(err, &te) {
+			reason = te.Reason
+		}
+		res.Detail = joinDetail(res.Detail, "CI pins golangci-lint "+pinned+"; "+err.Error())
+		res.Status = GateFail
+		res.Findings = append(res.Findings, Finding{
+			Code:     LintToolUnavailableCode,
+			Message:  fmt.Sprintf("pinned golangci-lint %s is unavailable: %s", pinned, reason),
+			Blocking: true,
+		})
+		return res
+	}
+	res.Detail = joinDetail(res.Detail, fmt.Sprintf("CI pins golangci-lint %s; used %s (%s) from %s",
+		pinned, tool.Path, tool.Version, tool.Source))
+	if findings := CheckLintVersionPin(pinned, tool.Version); len(findings) > 0 {
 		res.Status = GateFail
 		res.Findings = append(res.Findings, findings...)
 	}
