@@ -199,13 +199,17 @@ const (
 
 // isDaemonToolingFile reports whether f is a new file the daemon itself wrote
 // into the project directory for a session: the per-session MCP discovery file
-// and the skills it injects. They are never the task's work. Only an untracked
-// file counts, so a project that tracks .mcp.json still sees a change to it.
+// and the skills it injects, plus the two root launcher files the session
+// launcher writes when it starts (see launcherToolingFiles). They are never
+// the task's work. Only an untracked file counts, so a project that tracks one
+// of these files still sees a change to it.
 func isDaemonToolingFile(f UncommittedFile) bool {
 	if f.Status != "??" {
 		return false
 	}
-	return f.Path == daemonMCPConfigFile || strings.HasPrefix(f.Path, daemonSkillsDir)
+	return f.Path == daemonMCPConfigFile ||
+		strings.HasPrefix(f.Path, daemonSkillsDir) ||
+		isLauncherToolingFile(f.Path)
 }
 
 // isIgnoreFileName reports whether p is one of the ignore files the daemon
@@ -248,10 +252,18 @@ func ignoreFileLines(text string) map[string]bool {
 // compared with an empty one. Any other change, including one the worker made,
 // is not the daemon's.
 func isDaemonIgnoreChange(ctx context.Context, dir, rel string, run driftGitRunner) bool {
-	// Containment — lexical ('..' / absolute / NUL) and against the resolved
-	// base, so a symlink pointing outside dir is refused — is checked once
-	// in repoFileInside, and the returned path is what gets read.
-	curPath, err := repoFileInside(dir, rel)
+	// Containment, checked inline on rel before any file call: reject empty,
+	// NUL-byte, absolute, '.' and any '..' escape; the cleaned local form is
+	// what is joined and read. The resolved-base check (a symlink pointing
+	// outside dir) follows in repoFileInside.
+	if rel == "" || strings.ContainsRune(rel, 0) || filepath.IsAbs(rel) {
+		return false
+	}
+	relClean := filepath.Clean(filepath.FromSlash(rel))
+	if relClean == "." || !filepath.IsLocal(relClean) {
+		return false
+	}
+	curPath, err := repoFileInside(dir, filepath.ToSlash(relClean))
 	if err != nil {
 		return false
 	}
@@ -418,12 +430,17 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 	// git error surfaces at add.
 	ignoreSet := ignoredUntrackedPaths(ctx, dir, files)
 	for _, p := range files {
-		if strings.ContainsRune(p, 0) {
+		if p == "" || strings.ContainsRune(p, 0) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)
 			continue
 		}
 		clean := filepath.Clean(p)
+		if clean == "." {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
 		if filepath.IsAbs(clean) {
 			add = append(add, p)
 			pathspec = append(pathspec, p)

@@ -179,9 +179,9 @@ func loadAndAttach() (NetProbe, error) {
 // pointer cast to uint64 — opaque to userspace; a future patch may
 // resolve it back to the 4-tuple via tcp_connect kfunc.
 type ConnAttribution struct {
-	Sock  uint64
-	PID   uint32
-	TsNs  uint64
+	Sock uint64
+	PID  uint32
+	TsNs uint64
 }
 
 // ReadConnAttribution (BL180 Phase 2 v5.13.0) iterates the

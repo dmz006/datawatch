@@ -454,7 +454,7 @@ The operator asked for a cheap check often and the full procedure hourly (2026-1
 hourly change but want something small every 20"). The cron texts are now short pointers; this section is
 the single source for what each run does.
 
-**Watch, every 20 minutes** (cron `3,23,43 * * * *`). Run `python3 scripts/supervisor-watch.py`. It prints
+**Watch, every 30 minutes** (cron `3,33 * * * *`; changed from every 20 minutes on 2026-11-16). Run `python3 scripts/supervisor-watch.py`. It prints
 `OK <lane summary>` or `ATTENTION` plus one line per finding. On OK, reply with that one line and stop. On
 ATTENTION, handle each finding: a restarted tmux server (section 11, tmux-loss check), a down daemon or a
 missing model, a newly failed or review-needed task (section 5), a finished PRD to merge (section 7), an
@@ -464,10 +464,10 @@ The watch does not run merges beyond a MERGE READY finding, the registry audit, 
 budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script with the reason in the registry.
 
 **Full tick, hourly** (cron `17 * * * *`; the old separate backstop is folded in). In order:
-0. CronList: both jobs present (watch `3,23,43 * * * *`, full tick `17 * * * *`); recreate from this section if missing.
+0. CronList: all three jobs present (watch `3,33 * * * *`, window guard `6,36 * * * *`, full tick `17 * * * *`); recreate them from `supervisor-scratch/restart-prompt.md` if missing. The window guard is its own cron with its own prompt (restart prompt, "The three crons").
 1. Run the watch script and read its findings first.
 2. Budget: estimate Claude use against the pace line before filling any Claude lane. Pace line = days since the
-   Sunday 08:00 reset / 7 x 100. Last operator reading is the newest entry in
+   Sunday 07:00 reset / 7 x 100 (the reset is Sunday 07:00 since 2026-11-16). Last operator reading is the newest entry in
    `docs/plans/2026-10-14-concurrency-and-budget-design.md`. Lead the report with an over-pace warning when the
    estimate or the reading is above the line; ask for a fresh reading. The lane count is the operator's decision.
 3. Every non-terminal PRD including blocked and failed ones. Held `review_needed` task: retry with

@@ -1440,8 +1440,8 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `autonomous.auto_tags.kind_template` | string | `kind:{kind}` | Template for the kind tag. `{kind}` renders as the kind's label from `autonomous.auto_tags.kind_labels`. Same surfaces as `autonomous.auto_tags.enabled`. |
 | Template placeholders | — | — | Any of the three templates may reference only the placeholders `{automation}`, `{stage}` and `{kind}` — any other `{name}` is refused with a message naming the placeholder (`autonomous.auto_tags.<field>: placeholder {owner} is not one of {automation}, {stage}, {kind}`). The template must not be empty, must contain no newline, and must render to a non-empty name. |
 | `autonomous.auto_tags.kind_labels` | map | `{feature: feature, bug: bug, other: maintenance}` | What `{kind}` renders as per Automaton kind (`internal/autonomous/auto_tags.go`): the kind's own label from `feature`, `bug`, `other`, then the default vocabulary (`feature` → `feature`, `bug` → `bug`, `other` → `maintenance`), then the kind itself as a last resort. Rename a label (e.g. `other: support`) to change what kind tags say. Shipped as a map in the config file and accepted as `kind:label` pairs in the CLI/comm surfaces (for example `datawatch config set autonomous.auto_tags.kind_labels other:support`). kind_labels are daemon-global: a per-Automation override cannot carry its own. |
-| `autonomous.housekeeping_repairs.task_chain` | string | `report` | Mode of the housekeeping repair for an Automation chain whose next step is waiting and was not started: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for stuck task chains (a dependent reset, a docs mirror sync for a final gate, removal of one untracked leaked file), each retried at most once (`internal/autonomous/housekeeping_repair_task_chain.go`); the daemon does not start them yet. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
-| `autonomous.housekeeping_repairs.advance_judge` | string | `report` | Mode of the housekeeping repair for a task held after infrastructure retries ran out: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for finished and review-blocked Automata (an advance of a running Automaton whose tasks are all finished, one repair task made once from the rules review findings, and a merge-wait/merge-ready report that never merges) (`internal/autonomous/housekeeping_repair_advance.go`); the daemon does not start them yet. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.task_chain` | string | `report` | Mode of the housekeeping repair for an Automation chain whose next step is waiting and was not started: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for stuck task chains (a dependent reset, a docs mirror sync for a final gate, removal of one untracked leaked file), each retried at most once (`internal/autonomous/housekeeping_repair_task_chain.go`); the daemon runs them when the group is `on`, and in `report` (the default) they record what they would do. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.advance_judge` | string | `report` | Mode of the housekeeping repair for a task held after infrastructure retries ran out: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for finished and review-blocked Automata (an advance of a running Automaton whose tasks are all finished, one repair task made once from the rules review findings, and a merge-wait/merge-ready report that never merges) (`internal/autonomous/housekeeping_repair_advance.go`); the daemon runs the pass, making at most one finding per Automaton from a single state check; the group's `report` default records what it would do. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
 | `autonomous.housekeeping_repairs.lane_fill` | string | `report` | Mode of the housekeeping repair for a running lane count that differs from the wanted count inside its bounds: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds a lane fill repair that starts the next eligible Automaton on an idle lane through the normal run path, never changing a model or backend (`internal/autonomous/housekeeping_repair_lanes.go`); the daemon does not start it yet. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
 | `autonomous.housekeeping_repairs.leftovers` | string | `report` | Mode of the housekeeping repair for leftover disk state that crossed the cleanup alert threshold: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
 | `autonomous.housekeeping_repairs.grace_seconds` | int | `300` | Seconds a stuck state must persist before it is reported or repaired; 0 means no grace. Same surfaces as the group modes. |
@@ -1936,6 +1936,12 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   order is deterministic. The first candidate is the recorded sender. This
   is what stops an unrelated same-host process from being attributed as
   the stop sender in a full `go test` run.
+- **Process source seam:** the procscan reads the process table through a
+  small internal `procSource` interface (`pids`, `cmdline`, `identity`).
+  The default `liveProcSource` reads the live proc filesystem, so daemon
+  behavior is unchanged; only tests install another source
+  (`installProcSource` / `resetProcSource`). There is no config key, API
+  field or `source` value for it.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1963,6 +1969,14 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   the test binary in its cmdline, and the captured cause must not point at
   some other process. Skips with a message on non-Linux; signals only its
   own process via the child it started.
+- **Hermetic scope:** after the child has signalled, the test installs a
+  process source limited to the test process's own descendants
+  (`scopeProcScanToDescendants`, in `scope_linux_test.go`), so an unrelated
+  host process (for example a service-stop command on a shared machine) can
+  never be picked up as the sender. The scope is restored at test cleanup.
+  `proctable_linux_test.go` (`TestProcScanFakeTable`) drives candidate
+  scanning and ranking against a fully in-memory fake process table, with
+  no dependence on the live host.
 
 ---
 
@@ -2714,15 +2728,18 @@ section above) — no new config key is introduced here.
 - **Stable generated scripts:** the planning prompt carries a shared helper
   text (`internal/autonomous/verification_script_helpers.go`): docs sync
   first, a cumulative allowed-file list, a merge-base comparison and no
-  package-wide formatter run. Three block-severity lint rules enforce it
+  package-wide formatter run. Seven block-severity lint rules enforce it
   (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
-  `final_gate_without_script`, via the `verification_script_task_files_only`,
-  `verification_script_docs_without_sync` and `verification_script_reason_empty`
-  /`kind` match predicates in `internal/autonomous/decompose_lint_verify_script.go`).
+  `artefact_files_allowed`, `final_gate_artefact_allowed`,
+  `script_invokes_known_flag`, `check_matches_spec_text`,
+  `final_gate_without_script`, via the `verification_script_*` match
+  predicates in `internal/autonomous/decompose_lint_verify_script.go`,
+  `decompose_lint_script_help.go` and `decompose_lint_spec_text.go`).
   A planner-written final gate off the last story is rejected by the plan check
   (`verification_script_coverage.go`).
-- **Still to review (operator):** the three stability rules ship at `block`
-  severity (operator decision 2026-11-12, option 2); whether `shadow` should
+- **Still to review (operator):** the seven stability rules ship at `block`
+  severity (the first three by operator decision 2026-11-12, option 2; the
+  four added 2026-11-17 ship `block` as well); whether `shadow` should
   precede `enforce`, and a live run confirming planners write stable scripts
   first try, are not settled by this tree. See
   [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).

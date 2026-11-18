@@ -33,19 +33,32 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 		return false
 	}
 	rel = normalizeDriftPath(rel)
-	if _, ok := localRelPath(rel); !ok {
+	if rel == "" || strings.ContainsRune(rel, 0) || strings.ContainsRune(dir, 0) || dir == "" {
+		return false
+	}
+	relOS := filepath.Clean(filepath.FromSlash(rel))
+	if !filepath.IsLocal(relOS) {
 		return false
 	}
 	if ctx.Err() != nil {
 		return false
 	}
-	// Containment is validated once, against the resolved base (symlinks
-	// included), and the returned path is what gets read.
-	curPath, err := repoFileInside(dir, rel)
+	// Containment is checked inline against the symlink-resolved base: the
+	// resolved target must sit under the base plus the separator, so a
+	// sibling directory named like the base is refused.
+	realBase, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return false
 	}
-	cur, err := os.ReadFile(curPath)
+	realBase = filepath.Clean(realBase)
+	curPath, err := filepath.EvalSymlinks(filepath.Join(realBase, relOS))
+	if err != nil {
+		return false
+	}
+	if !strings.HasPrefix(curPath, realBase+string(filepath.Separator)) {
+		return false
+	}
+	cur, err := os.ReadFile(curPath) // #nosec G304 -- curPath is cleaned, local and resolved inside the resolved base above
 	if err != nil {
 		return false
 	}
@@ -77,17 +90,26 @@ func daemonSectionsOnlyUntracked(ctx context.Context, dir, rel string) bool {
 		return false
 	}
 	rel = normalizeDriftPath(rel)
-	if _, ok := localRelPath(rel); !ok {
+	if rel == "" || strings.ContainsRune(rel, 0) || strings.ContainsRune(dir, 0) || dir == "" {
 		return false
 	}
-	if strings.ContainsRune(rel, 0) {
-		return false
-	}
-	relOS := filepath.FromSlash(rel)
+	relOS := filepath.Clean(filepath.FromSlash(rel))
 	if !filepath.IsLocal(relOS) {
 		return false
 	}
-	cur, err := os.ReadFile(filepath.Join(dir, relOS)) // #nosec G304 -- relOS is a lexically local path and dir is the Automaton's own project directory
+	realBase, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	realBase = filepath.Clean(realBase)
+	curPath, err := filepath.EvalSymlinks(filepath.Join(realBase, relOS))
+	if err != nil {
+		return false
+	}
+	if !strings.HasPrefix(curPath, realBase+string(filepath.Separator)) {
+		return false
+	}
+	cur, err := os.ReadFile(curPath) // #nosec G304 -- curPath is cleaned, local and resolved inside the resolved base above
 	if err != nil {
 		return false
 	}
@@ -115,19 +137,24 @@ func filterDaemonOnlyPorcelain(ctx context.Context, dir string, porcelain string
 }
 
 // ignoreDaemonOnlyPorcelainLine judges one line of `git status --porcelain`
-// ("XY path"). Only an unstaged modification of a tracked file (" M") is a
-// candidate: the daemon writes its marked blocks into the working copy and
-// never stages. Every other record — staged, deleted, untracked, renamed, or
-// a quoted/unparseable path — is kept, and a " M" line is dropped only when
-// daemonSectionsOnlyChange positively establishes it as daemon-only. Fails
-// closed: any doubt keeps the line.
+// ("XY path"). Two records may be dropped: an untracked file ("??") that is
+// one of the launcher's own root files (isLauncherToolingFile), and an
+// unstaged modification of a tracked file (" M") that differs from HEAD only
+// by the daemon's marked blocks (daemonSectionsOnlyChange). Every other
+// record — other untracked paths, staged, deleted, renamed, or a
+// quoted/unparseable path — is kept. Fails closed: any doubt keeps the line.
 func ignoreDaemonOnlyPorcelainLine(ctx context.Context, dir, line string, run driftGitRunner) bool {
-	if len(line) < 4 || line[2] != ' ' || line[:2] != " M" {
+	if len(line) < 4 || line[2] != ' ' {
 		return false
 	}
-	p := line[3:]
-	if p == "" || p[0] == '"' {
+	if p := line[3:]; p == "" || p[0] == '"' {
 		return false // quoted paths carry git's C-style escapes; do not interpret them here
 	}
-	return daemonSectionsOnlyChange(ctx, dir, p, run)
+	if line[:2] == "??" {
+		return isLauncherToolingFile(line[3:])
+	}
+	if line[:2] != " M" {
+		return false
+	}
+	return daemonSectionsOnlyChange(ctx, dir, line[3:], run)
 }

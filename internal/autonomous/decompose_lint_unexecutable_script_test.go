@@ -3,6 +3,7 @@ package autonomous
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -69,6 +70,28 @@ func TestDecomposeLintUnexecutableVerificationScript(t *testing.T) {
 	for _, f := range LintTasksIn("", applied, DefaultDecomposeLintRules()) {
 		if f.Severity == config.DecomposeLintSeverityBlock {
 			t.Errorf("block finding on template task %s: rule %s", f.Task, f.RuleID)
+		}
+	}
+
+	// A missing script states which start-time case applies.
+	verb := "Write it VERBATIM to new.sh\n```bash\n#!/bin/sh\nexit 0\n```\n"
+	reasonCases := []struct {
+		name, spec, want, notWant string
+	}{
+		{"verbatim block", verb, "daemon will write the verbatim block", "task creates it"},
+		{"task creates it", "Create the script at new.sh and make it executable.", "task creates it and it is checked after the task writes it", "daemon will write"},
+		{"neither", "Do the work.", "does not exist", "daemon will write"},
+		{"verbatim block for another path", "Write it VERBATIM to other.sh\n```bash\nexit 0\n```\n", "does not exist", "daemon will write"},
+	}
+	for _, c := range reasonCases {
+		got := LintTasksIn(dir, []Story{mkDecomposeLintStory("s", Task{ID: "t", VerificationScript: "new.sh", Spec: c.spec})}, []Rule{rule})
+		if len(got) != 1 {
+			t.Errorf("%s: %d findings, want 1", c.name, len(got))
+			continue
+		}
+		reason := unexecutableVerificationScriptReason(dir, Task{ID: "t", VerificationScript: "new.sh", Spec: c.spec})
+		if !strings.Contains(reason, c.want) || strings.Contains(reason, c.notWant) {
+			t.Errorf("%s: reason %q, want it to contain %q and not %q", c.name, reason, c.want, c.notWant)
 		}
 	}
 }

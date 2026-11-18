@@ -28,10 +28,10 @@ import (
 
 // PeerMessage is the structured payload of a P2P send.
 type PeerMessage struct {
-	From      string    `json:"from"`              // sender's agent ID
-	To        string    `json:"to"`                // recipient's agent ID (per-recipient copy)
-	Topic     string    `json:"topic,omitempty"`   // operator-defined channel name
-	Body      string    `json:"body"`              // free-form payload (JSON-as-string is fine)
+	From      string    `json:"from"`            // sender's agent ID
+	To        string    `json:"to"`              // recipient's agent ID (per-recipient copy)
+	Topic     string    `json:"topic,omitempty"` // operator-defined channel name
+	Body      string    `json:"body"`            // free-form payload (JSON-as-string is fine)
 	Timestamp time.Time `json:"timestamp"`
 }
 
@@ -63,10 +63,10 @@ func NewPeerBroker(m *Manager, maxInbox int) *PeerBroker {
 }
 
 // Send delivers a copy of msg to each recipient in `to`. Order:
-//   1. Sender's profile must have AllowPeerMessaging=true
-//   2. Each recipient must be a tracked agent in non-terminal state
-//   3. Each recipient's inbox must have room (else that recipient is
-//      dropped + the dropped count returned for partial-failure handling)
+//  1. Sender's profile must have AllowPeerMessaging=true
+//  2. Each recipient must be a tracked agent in non-terminal state
+//  3. Each recipient's inbox must have room (else that recipient is
+//     dropped + the dropped count returned for partial-failure handling)
 //
 // Returns (deliveredCount, undeliveredRecipients, error).
 // error is non-nil only on validation failure (sender not allowed,

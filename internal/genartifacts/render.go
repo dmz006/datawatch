@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -197,13 +198,53 @@ type costView struct {
 	WindowNote, UnknownNote                                            string
 }
 
+// bareSessionID removes any host-name prefix from a session id. Ids have the
+// form <host>-<id> or <host>:<id>, and a host name may itself contain
+// separators or look like hex, so only the final segment after the last '-'
+// or ':' is kept. Ids with no separator are returned unchanged; an id that
+// ends in a separator has no bare part and yields "".
+func bareSessionID(id string) string {
+	i := strings.LastIndexAny(id, "-:")
+	if i < 0 {
+		return id
+	}
+	return id[i+1:]
+}
+
+func bareSessionIDs(ids []string) []string {
+	if ids == nil {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if b := bareSessionID(id); b != "" {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+var notePathRe = regexp.MustCompile(`/(?:[^\s/"'` + "`" + `,;()]+/)+([^\s/"'` + "`" + `,;()]*)`)
+
+// scrubNote reduces absolute paths anywhere in a free-text ledger note
+// (including quoted or embedded ones) to their final element, and masks the
+// local host name, so a note cannot carry machine-specific names.
+func scrubNote(s string) string {
+	s = notePathRe.ReplaceAllString(s, "$1")
+	if h, err := os.Hostname(); err == nil && len(h) >= 3 {
+		s = strings.ReplaceAll(s, h, "host")
+	}
+	return s
+}
+
 func costOf(c *changerecord.CostSummary) *costView {
 	if c == nil {
 		return nil
 	}
 	v := &costView{Sessions: c.Sessions, TokensIn: c.TokensIn, TokensOut: c.TokensOut,
 		CacheRead: c.CacheRead, CacheCreation: c.CacheCreation, ToolCalls: c.ToolCalls,
-		SessionIDs: c.SessionIDs, Span: (time.Duration(c.SpanSeconds) * time.Second).String(), WindowNote: c.WindowNote, UnknownNote: c.UnknownNote}
+		SessionIDs: bareSessionIDs(c.SessionIDs), Span: (time.Duration(c.SpanSeconds) * time.Second).String(),
+		WindowNote: scrubNote(c.WindowNote), UnknownNote: scrubNote(c.UnknownNote)}
 	if c.APIEquivalentUSD != nil {
 		v.Estimate = fmt.Sprintf("$%.2f", *c.APIEquivalentUSD)
 		v.Label = c.USDLabel

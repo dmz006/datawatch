@@ -199,11 +199,11 @@ func TestWorkerQuestionGuardrail(t *testing.T) {
 			t.Error("guardrail lost the needs-input marker")
 		}
 		for _, want := range []string{
-			"nice -n 19",            // run it niced
-			"quarter of the cores",  // at most a quarter of the cores
-			"nproc/4",               // the worker-count cap
-			"hard timeout",          // its own hard timeout
-			"trap on EXIT INT TERM", // clean up children with a trap
+			"nice -n 19",                    // run it niced
+			"quarter of the cores",          // at most a quarter of the cores
+			"nproc/4",                       // the worker-count cap
+			"hard timeout",                  // its own hard timeout
+			"trap on EXIT INT TERM",         // clean up children with a trap
 			"never outlive its owning task", // dies with the task
 		} {
 			if !strings.Contains(text, want) {

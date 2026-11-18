@@ -79,6 +79,17 @@ suppressed. The same plan also says "wire it into
 `internal/scheduler/daily.go`, which does not exist and no task creates" —
 that finding still shows up and still fails the report.
 
+**One shape this filter cannot rescue.** The matching works over *names*,
+exactly as written — and a name is one piece, up to the first space. A
+path written severed or broken across a line (`docs/plans/2026-11-16-re`)
+is a different name from the full path the plan's tasks declare: the
+file-list match needs the exact name, so a fragment is not treated as the
+plan's own output, and a missing-file finding shows up for the fragment
+even when a task creates the full file elsewhere in the plan. The
+planning prompts carry the **full-file-path rule** to keep plans from
+being written that way in the first place — see
+[the decompose-lint how-to](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too).
+
 ### Filter 2 — only scoped sentences count as requirements
 
 `autonomous.plan_coverage_scoped_requirements` (on by default).
@@ -217,6 +228,19 @@ A suppressed finding is not hidden — it is **counted**. Read the record and:
   the four filter values pinned at decompose time; if the panel still looks
   like it has noise, confirm those values are the ones you expect before
   concluding a filter is off.
+- **A name cut at a space reads as a different file.** If the spec mentions a
+  file name **cut at a space** — a truncated fragment such as
+  `docs/plans/2026-11-16-re` or a report path written as prose — the
+  structural check extracts the leading fragment as a file name on its own
+  and reports a finding like "names file … which exists neither in the
+  project tree…" even though the real file exists and was planned under its
+  full name. That is a false missing-file finding: the match is by exact
+  name, and the fragment is not a name anything wrote. The plan now pins the
+  planner to **full file paths verbatim** at decompose time — see
+  [the full-file-path rule](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too)
+  — so the symptom is prevented where the plan is written. If you do meet
+  one, the fix is to put the complete path back into the task's spec and
+  files list, not to hunt the tree for the fragment.
 
 See also:
 
