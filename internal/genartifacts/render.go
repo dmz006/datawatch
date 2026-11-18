@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -197,56 +198,43 @@ type costView struct {
 	WindowNote, UnknownNote                                            string
 }
 
-// bareSessionID removes a leading host-name prefix: the text before the
-// first '-' or ':' separator when the id has the form <host>-<id> or
-// <host>:<id>. A prefix is only removed when something follows it, and ids
-// with no separator are returned unchanged. A ':' separator wins when it
-// comes first; a plain id that is itself hyphenated is only trimmed when a
-// ':' form is not present and the prefix is not a hex fragment.
+// bareSessionID removes any host-name prefix from a session id. Ids have the
+// form <host>-<id> or <host>:<id>, and a host name may itself contain
+// separators or look like hex, so only the final segment after the last '-'
+// or ':' is kept. Ids with no separator are returned unchanged; an id that
+// ends in a separator has no bare part and yields "".
 func bareSessionID(id string) string {
-	i := strings.IndexAny(id, "-:")
-	if i <= 0 || i == len(id)-1 {
+	i := strings.LastIndexAny(id, "-:")
+	if i < 0 {
 		return id
 	}
-	if id[i] == '-' && isHex(id[:i]) {
-		return id // already a bare id such as 1a2b-3c4d
-	}
 	return id[i+1:]
-}
-
-func isHex(s string) bool {
-	for _, r := range s {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return s != ""
 }
 
 func bareSessionIDs(ids []string) []string {
 	if ids == nil {
 		return nil
 	}
-	out := make([]string, len(ids))
-	for i, id := range ids {
-		out[i] = bareSessionID(id)
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if b := bareSessionID(id); b != "" {
+			out = append(out, b)
+		}
 	}
 	return out
 }
 
-// scrubNote reduces absolute paths in free-text ledger notes to their final
-// element, so a note cannot carry directory names from the local machine.
+var notePathRe = regexp.MustCompile(`/(?:[^\s/"'` + "`" + `,;()]+/)+([^\s/"'` + "`" + `,;()]*)`)
+
+// scrubNote reduces absolute paths anywhere in a free-text ledger note
+// (including quoted or embedded ones) to their final element, and masks the
+// local host name, so a note cannot carry machine-specific names.
 func scrubNote(s string) string {
-	if !strings.Contains(s, "/") {
-		return s
+	s = notePathRe.ReplaceAllString(s, "$1")
+	if h, err := os.Hostname(); err == nil && len(h) >= 3 {
+		s = strings.ReplaceAll(s, h, "host")
 	}
-	f := strings.Split(s, " ")
-	for i, w := range f {
-		if strings.HasPrefix(w, "/") && strings.Count(w, "/") > 1 {
-			f[i] = path.Base(w)
-		}
-	}
-	return strings.Join(f, " ")
+	return s
 }
 
 func costOf(c *changerecord.CostSummary) *costView {
