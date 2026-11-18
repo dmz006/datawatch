@@ -53122,12 +53122,32 @@ function renderStatsData(el, data) {
         ['stats_supervisor_watch_poll_age', 'Last poll (s ago)', (data.supervisor_watch_last_poll_age_seconds || 0) < 0 ? '-' : (data.supervisor_watch_last_poll_age_seconds || 0)],
         ['stats_supervisor_watch_agreed_days', 'Days of full agreement', data.supervisor_watch_agreed_days || 0],
       ];
+      // Per-band wait stats: one row per band that actually waits an
+      // Automaton (its waiting count, its oldest wait in minutes, its
+      // stalled share); a band that waits nothing is left out of the card
+      // entirely, and so is the whole section when the daemon reports no
+      // band rows at all. A stalled share tints the row like the alert
+      // rows above it.
+      const swBandKeys = { high: 'stats_supervisor_watch_band_high', medium: 'stats_supervisor_watch_band_medium', low: 'stats_supervisor_watch_band_low' };
+      const swBands = Array.isArray(data.supervisor_watch_priority_bands)
+        ? data.supervisor_watch_priority_bands.filter(b => b && (b.waiting || 0) > 0)
+        : [];
+      const swBandLines = swBands.map(b => {
+        const label = t(swBandKeys[b.band] || ('stats_supervisor_watch_band_' + (b.band || '')));
+        const name = (label && label.indexOf('stats_supervisor_watch_band_') !== 0) ? label : ('Band ' + (b.band || ''));
+        const row = t('stats_supervisor_watch_band_row', [b.waiting || 0, b.oldest_waiting_minutes || 0, b.stalled || 0]);
+        const value = (row && row.indexOf('%1') === -1)
+          ? row
+          : ((b.waiting || 0) + ' waiting (oldest ' + (b.oldest_waiting_minutes || 0) + ' min, ' + (b.stalled || 0) + ' stalled)');
+        const warn = (b.stalled || 0) > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(name)}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(value)}</span></div>`;
+      }).join('');
       const swLines = swRows.map(r => {
         const warn = (r[0] === 'stats_supervisor_watch_alerted' || r[0] === 'stats_supervisor_watch_would_alert') && r[2] > 0;
         return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
-        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}${swBandLines}</div></div>`;
     }
     // Supervisor loop card: whether the loop is on, the jobs enabled, the stored
     // runs by outcome, the retries used and the age of the last run. Left out

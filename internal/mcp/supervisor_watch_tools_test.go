@@ -180,3 +180,58 @@ func TestSupervisorWatchStatsMCPTool(t *testing.T) {
 		t.Fatalf("a 503 must come back as a tool error: err=%v res=%+v", err, res)
 	}
 }
+
+// TestSupervisorWatchToolsPriorityBands — the per-band wait stats ride
+// through both read tools: both responses carry the priority_bands key
+// (an empty list where no band waits anything) and the populated rows
+// come back byte-for-byte, high before medium before low.
+func TestSupervisorWatchToolsPriorityBands(t *testing.T) {
+	const high = `{"band":"high","priority_from":80,"priority_to":100,"waiting":2,"oldest_waiting_minutes":41,"stalled":1}`
+	const low = `{"band":"low","priority_from":0,"priority_to":49,"waiting":1,"oldest_waiting_minutes":5,"stalled":0}`
+
+	// supervisor_watch_list: the status object carries priority_bands
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"mode":"shadow","findings":[],"priority_bands":[` + high + `,` + low + `]}`))
+	})
+	res, err := s.handleSupervisorWatchList(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("list: err=%v res=%+v", err, res)
+	}
+	text := automationText(t, res)
+	for _, want := range []string{`"priority_bands":[`, high, low} {
+		if !strings.Contains(text, want) {
+			t.Errorf("supervisor_watch_list result lost %s: %s", want, text)
+		}
+	}
+
+	// an empty band list still carries the key, so a caller always gets
+	// a list, never the absence of one
+	s = capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"mode":"shadow","findings":[],"priority_bands":[]}`))
+	})
+	res, err = s.handleSupervisorWatchList(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("list (empty bands): err=%v res=%+v", err, res)
+	}
+	if text := automationText(t, res); !strings.Contains(text, `"priority_bands":[]`) {
+		t.Errorf("an empty band list must keep its key: %s", text)
+	}
+
+	// supervisor_watch_stats: the numeric view carries the same key and
+	// rows
+	statsBody := `{"mode":"shadow","last_poll_age_seconds":5,"findings_open":1,"priority_bands":[` + high + `]}`
+	s = capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(statsBody))
+	})
+	res, err = s.handleSupervisorWatchStats(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("stats: err=%v res=%+v", err, res)
+	}
+	text = automationText(t, res)
+	if !strings.Contains(text, `"priority_bands":[`) || !strings.Contains(text, high) {
+		t.Errorf("supervisor_watch_stats result lost the bands: %s", text)
+	}
+	if text != statsBody {
+		t.Errorf("result differs from the daemon body: %s", text)
+	}
+}

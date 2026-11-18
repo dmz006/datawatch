@@ -97,6 +97,28 @@ Every surface words a finding's standing the same way:
 | `alerted` | `on` mode only: the alert for this episode was raised. |
 | `resolved` | The check stopped reporting it. |
 
+## Per-band wait stats
+
+The queue findings are per-Automaton, which is right for triage but hard to
+read as a trend. The read surfaces therefore also carry **per-band wait
+stats**: the waiting Automata grouped into three fixed bands by priority,
+
+| Band | Priority range |
+|---|---|
+| `high` | 80 or more |
+| `medium` | 50 through 79 |
+| `low` | below 50 |
+
+Each band row carries the band's name and range, how many of its Automata are
+in one of the waiting statuses (`waiting`), the band's oldest wait in whole
+minutes (`oldest_waiting_minutes`) and how many of the band's waiters also
+satisfy the watch's priority-stall rule (`stalled`) — the same rule a
+`priority_stall` finding names one-by-one. The bands are fixed; they cannot be
+reconfigured. Bands appear in `high`, `medium`, `low` order, and a band that
+waits nothing is omitted, so an empty list means no Automaton is waiting in
+any band. The stats are derived from the same waiting set the findings use, in
+the same pass; they change nothing and raise no alert.
+
 ## Shadow mode first — and how to compare it with the script
 
 **Shadow** is where the watch starts. On every poll it runs all the checks,
@@ -189,11 +211,11 @@ an alert.
 
 | Surface | Read the state | Notes |
 |---|---|---|
-| REST | `GET /api/autonomous/supervisor-watch` | Body: `mode`, `last_poll_at`, `findings`, `comparison`. Takes no parameters; any other method is a 405; 503 while the autonomous engine is disabled. A federated peer needs the autonomous read capability. |
+| REST | `GET /api/autonomous/supervisor-watch` | Body: `mode`, `last_poll_at`, `findings`, `comparison`, `priority_bands` (see Per-band wait stats). Takes no parameters; any other method is a 405; 503 while the autonomous engine is disabled. A federated peer needs the autonomous read capability. |
 | MCP | `supervisor_watch_list` (read-only) | The same body as the GET route. Takes no arguments; any argument is refused rather than ignored. |
-| CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line) and the comparison summary; `--json` prints the body untouched. |
+| CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line), one line per band that waits something, and the comparison summary; `--json` prints the body untouched. |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | The same lines as the CLI, in the same order. The read takes no arguments. |
-| PWA | Automation view → Inbox sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
+| PWA | Automation view → Inbox sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), one line per band that waits something, and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
 
 ### Monitoring
 
@@ -202,9 +224,9 @@ you can graph or alert on them without reading the whole finding list:
 
 | Where | What |
 |---|---|
-| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` |
+| REST | `GET /api/autonomous/supervisor-watch/stats` — `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days`, `priority_bands` (the same band rows) |
 | MCP | `supervisor_watch_stats` (read-only, no arguments) — the same object |
-| Web UI | Settings → Monitor → the **Supervisor watch** card (mode, open findings, would alert, alerted, last poll age, days of full agreement), live over the stats broadcast |
+| Web UI | Settings → Monitor → the **Supervisor watch** card (mode, open findings, would alert, alerted, last poll age, days of full agreement, and one row per band that waits something), live over the stats broadcast |
 | Prometheus | `GET /metrics` → `datawatch_supervisor_watch_findings{state="open"|"would_alert"|"alerted"}`, `datawatch_supervisor_watch_agreed_days`, `datawatch_supervisor_watch_last_poll_age_seconds` |
 | Comm channel | `autonomous supervisor-watch` already answers the status question from chat; there is no separate stats verb |
 

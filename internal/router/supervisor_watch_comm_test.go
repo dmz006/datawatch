@@ -121,6 +121,38 @@ func TestSupervisorWatchComm_VerbOutput(t *testing.T) {
 	}
 }
 
+func TestSupervisorWatchComm_BandLinesMatchTheCLI(t *testing.T) {
+	body := `{
+  "mode": "shadow",
+  "last_poll_at": "2026-10-29T10:15:00Z",
+  "findings": [],
+  "priority_bands": [
+    {"band": "high", "priority_from": 80, "priority_to": 100, "waiting": 2, "oldest_waiting_minutes": 41, "stalled": 1},
+    {"band": "medium", "priority_from": 50, "priority_to": 79, "waiting": 1, "oldest_waiting_minutes": 22, "stalled": 0}
+  ],
+  "comparison": {"last": null, "agreed_days": 0, "only_watch": [], "only_script": []}
+}`
+	_, port := laneFillCommDaemon(t, http.StatusOK, body)
+	r := setupPeerRouter(t, port)
+	lines := supervisorWatchCommLines(t, r, "autonomous supervisor-watch")
+	want := supervisorWatchCLILines(t, body)
+	if !slices.Equal(lines, want) {
+		t.Fatalf("comm lines differ from the CLI renderer:\n got: %q\nwant: %q", lines, want)
+	}
+	got := strings.Join(lines, "\n")
+	for _, frag := range []string{
+		"priority band high: 2 waiting (oldest 41 min, 1 stalled)",
+		"priority band medium: 1 waiting (oldest 22 min, 0 stalled)",
+	} {
+		if !strings.Contains(got, frag) {
+			t.Errorf("band reply lacks %q:\n%s", frag, got)
+		}
+	}
+	if strings.Contains(got, "priority band low") {
+		t.Errorf("a band that waits nothing must not get a line:\n%s", got)
+	}
+}
+
 func TestSupervisorWatchComm_Empty(t *testing.T) {
 	_, port := laneFillCommDaemon(t, http.StatusOK,
 		`{"mode":"shadow","last_poll_at":"0001-01-01T00:00:00Z","findings":[],"comparison":{"last":null,"agreed_days":0,"only_watch":[],"only_script":[]}}`)
