@@ -12633,20 +12633,8 @@ function _loadSessionSchedules(sessionId, force) {
         el.style.display = 'none';
         return;
       }
-      el.style.display = 'block';
-      const rows = items.map(sc => {
-        const when = _fmtScheduleTime(sc.run_at);
-        const extras = [];
-        if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
-        if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
-        const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
-        return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
-          <span style="color:var(--text2);">${escHtml(when)}</span>
-          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
-          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
-        </div>`;
-      }).join('');
-      el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
+      _schedLastItems.set(sessionId, items);
+      _renderSessionSchedules(sessionId);
     })
     .catch(() => { el.style.display = 'none'; })
     .finally(() => {
@@ -12659,6 +12647,40 @@ function _loadSessionSchedules(sessionId, force) {
         _loadSessionSchedules(sessionId, true);
       }
     });
+}
+
+// Last pending schedule list per session so a rollup toggle repaints without a refetch.
+const _schedLastItems = new Map();
+
+function _renderSessionSchedules(sessionId) {
+  const el = document.getElementById('sessionSchedules');
+  const items = _schedLastItems.get(sessionId);
+  if (!el || !items || items.length === 0) { if (el) el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const rows = items.map(sc => {
+    const when = _fmtScheduleTime(sc.run_at);
+    const extras = [];
+    if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
+    if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
+    const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
+    return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
+          <span style="color:var(--text2);">${escHtml(when)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
+        </div>`;
+  }).join('');
+  const head = _stx('session_detail_scheduled_summary', 'Scheduled');
+  if (!_sessionsPhoneWidth()) {
+    el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">${escHtml(head)} (${items.length})</div>${rows}`;
+    return;
+  }
+  const open = _sessionDetailRollupOpen(sessionId, 'scheduled');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = `${head} (${items.length}) · ${_stx('session_detail_next_run', 'Next run')} ${_fmtScheduleTime(items[0].run_at)}`;
+  const idArg = escHtml(encodeURIComponent(String(sessionId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-scheduled-rollup" onclick="_sessionDetailRollupToggle('${idArg}','scheduled')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? rows : ''}`;
 }
 
 function showScheduleInputPopup(sessionId) {
@@ -61776,10 +61798,38 @@ function _sessionFind(fullId) {
 function _renderSessionDetailTagRow(sess) {
   const el = document.getElementById('sessionDetailTagRow');
   if (!el || !sess) return;
-  const chips = _sessionTagChipsHTML(sess);
-  el.innerHTML = chips || '';
-  el.style.display = chips ? 'flex' : 'none';
+  const list = _sessionTagChipList(sess);
+  const chips = list.join('');
+  if (!chips) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  if (!_sessionsPhoneWidth()) { el.innerHTML = chips; el.style.display = 'flex'; return; }
+  const fullId = sess.full_id || sess.id;
+  const open = _sessionDetailRollupOpen(fullId, 'tags');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = _stx('session_detail_tags_summary', 'Tags') + ' (' + list.length + ')';
+  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-tags-rollup" onclick="_sessionDetailRollupToggle('${idArg}','tags')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? '<div class="session-detail-rollup-body" style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">' + chips + '</div>' : ''}`;
+  el.style.display = 'flex';
 }
+
+// Phone-width rollup state: in memory only, per session full id and section.
+function _sessionDetailRollupOpen(fullId, kind) {
+  const b = state._sessionDetailRollup && state._sessionDetailRollup[fullId];
+  return !!(b && b[kind]);
+}
+
+function _sessionDetailRollupToggle(idEnc, kind) {
+  let id = '';
+  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
+  if (!id) return;
+  if (!state._sessionDetailRollup) state._sessionDetailRollup = {};
+  const b = state._sessionDetailRollup[id] || (state._sessionDetailRollup[id] = {});
+  b[kind] = !b[kind];
+  if (kind === 'tags') _renderSessionDetailTagRow(_sessionFind(id));
+  else _renderSessionSchedules(id);
+}
+window._sessionDetailRollupToggle = _sessionDetailRollupToggle;
 
 window.openSessionTagsModal = function(fullId) {
   _tagsLoad().then(() => {

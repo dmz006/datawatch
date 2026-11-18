@@ -12,11 +12,11 @@ func TestEstimateTokens(t *testing.T) {
 		text string
 		want int
 	}{
-		{"", 0},                    // the empty context: zero tokens
-		{"a", 1},                   // rounded up to one token
-		{"abc", 1},                 // three bytes, one token
-		{"abcd", 1},                // exactly four bytes, one token
-		{"abcde", 2},               // five bytes, two tokens
+		{"", 0},      // the empty context: zero tokens
+		{"a", 1},     // rounded up to one token
+		{"abc", 1},   // three bytes, one token
+		{"abcd", 1},  // exactly four bytes, one token
+		{"abcde", 2}, // five bytes, two tokens
 		{strings.Repeat("x", 8), 2},
 		{strings.Repeat("x", 9), 3},
 		{strings.Repeat("x", 32), 8},

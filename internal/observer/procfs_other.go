@@ -12,9 +12,9 @@ func walkProc() ([]ProcRecord, error) {
 }
 
 func readHostFields() (os_, kernel, arch string) { return "", "", "" }
-func readLoadavg() (l1, l5, l15 float64)          { return 0, 0, 0 }
-func readMemInfo() Mem                            { return Mem{} }
-func readUptimeSeconds() int64                    { return 0 }
+func readLoadavg() (l1, l5, l15 float64)         { return 0, 0, 0 }
+func readMemInfo() Mem                           { return Mem{} }
+func readUptimeSeconds() int64                   { return 0 }
 
 // runtimeNumCPU returns the core count; non-Linux falls back to
 // the generic runtime.NumCPU() path.

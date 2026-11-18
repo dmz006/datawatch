@@ -8,7 +8,7 @@ import (
 
 // ServerAdapter implements server.MemoryAPI for the REST endpoints.
 type ServerAdapter struct {
-	retriever *Retriever
+	retriever      *Retriever
 	defaultProject string
 }
 
@@ -32,7 +32,7 @@ func (a *ServerAdapter) Stats() map[string]interface{} {
 		// v5.27.0 — surface schema_version so the PWA + operator
 		// tooling can verify which migration the active backend
 		// has been brought up to.
-		"schema_version":  a.SchemaVersion(),
+		"schema_version": a.SchemaVersion(),
 	}
 }
 
@@ -265,24 +265,24 @@ func convertToMaps(memories []Memory) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(memories))
 	for i, m := range memories {
 		result[i] = map[string]interface{}{
-			"id":         m.ID,
-			"session_id": m.SessionID,
+			"id":          m.ID,
+			"session_id":  m.SessionID,
 			"project_dir": m.ProjectDir,
-			"content":    m.Content,
-			"summary":    m.Summary,
-			"role":       m.Role,
-			"wing":       m.Wing,
-			"room":       m.Room,
-			"hall":       m.Hall,
-			"floor":      m.Floor,
-			"shelf":      m.Shelf,
-			"box":        m.Box,
-			"source":     m.Source,
+			"content":     m.Content,
+			"summary":     m.Summary,
+			"role":        m.Role,
+			"wing":        m.Wing,
+			"room":        m.Room,
+			"hall":        m.Hall,
+			"floor":       m.Floor,
+			"shelf":       m.Shelf,
+			"box":         m.Box,
+			"source":      m.Source,
 			"last_hit_at": m.LastHitAt,
-			"pinned":     m.Pinned,
-			"tags":       m.Tags, // GH#192 D78a
-			"created_at": m.CreatedAt,
-			"similarity": m.Similarity,
+			"pinned":      m.Pinned,
+			"tags":        m.Tags, // GH#192 D78a
+			"created_at":  m.CreatedAt,
+			"similarity":  m.Similarity,
 		}
 	}
 	return result

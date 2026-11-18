@@ -2040,9 +2040,12 @@ seeded sessions, the PWA's `GET /api/schedules` fetches stay coalesced (≤ 5,
 independent of session count) and the browser never sees
 `net::ERR_INSUFFICIENT_RESOURCES`. Run against **two origins**: (A) the
 untrusted self-signed TLS origin, (B) a trusted TLS origin (service worker
-controlled). `make test-e2e-pwa` is the local, non-docker route
-(`scripts/e2e-pwa.sh`: isolated daemon + `npm ci` + `node schedule-flood.mjs`);
-exit code = story's (0 pass / 1 fail / 2 skip).
+controlled). The local, non-docker route is `bash scripts/e2e-pwa.sh
+schedule-flood` (isolated 127.0.0.1 daemon + `npm ci` + `node
+schedule-flood.mjs`); exit code = story's code (0 pass / 1 fail / 2 skip).
+`make test-e2e-pwa` is the docker-compose route that runs the **full** story
+suite in the `playwright` container (`docs/testing/docker-compose.test.yml`),
+not this local single-story run.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|

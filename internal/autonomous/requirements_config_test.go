@@ -13,8 +13,8 @@ import (
 // illegal ones, naming the offending capability and value.
 func TestValidateMinOllamaOverrides(t *testing.T) {
 	valid := []map[string]string{
-		{},                                     // empty clears all overrides
-		nil,                                    // nil is equivalent
+		{},  // empty clears all overrides
+		nil, // nil is equivalent
 		{"classification_verdict": "0.9.1"},
 		{"classification_verdict": "  0.35.0 "}, // whitespace-trimmed
 		{"classification_verdict": ""},          // empty clears the floor

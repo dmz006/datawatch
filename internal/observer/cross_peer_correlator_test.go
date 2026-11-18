@@ -31,7 +31,7 @@ func TestCorrelateAcrossPeers_HappyPath(t *testing.T) {
 	}}
 
 	byPeer := map[string][]Envelope{
-		"workstation-2":   hostA,
+		"workstation-2":    hostA,
 		"k8s-cluster-prod": hostB,
 	}
 	CorrelateAcrossPeers(byPeer, "primary")
