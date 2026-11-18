@@ -75,7 +75,7 @@ still a loud failure, exactly as before.
 The four paths above are the *autonomous* launch paths, and on them a model-
 less `claude-code` entry resolves to the daemon default (`sonnet`, or `haiku`
 for a mechanical task). A **direct** start — the CLI `session new`, a chat
-`new:` command, a REST `POST /api/sessions/start`, an MCP `session_start`, or
+`new:` command, a REST `POST /api/sessions/start`, an MCP `start_session`, or
 a start from the PWA — names no model when the operator gave none, and the
 policy covers that case with a refusal instead of a guess:
 
