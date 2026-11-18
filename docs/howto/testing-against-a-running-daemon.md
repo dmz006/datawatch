@@ -233,6 +233,20 @@ interactive shell.
 
 The process-scan and sender-attribution tests in `internal/shutdowncause` are hermetic: their candidate scan runs against an injectable process source restricted to the test's own child processes (descendants), so an unrelated host process with a matching command line can never be selected as the signal sender.
 
+### Running the process-scan tests
+
+`TestSignalChildProcScan` (and the other signal-child cases in `internal/shutdowncause`) need no running daemon, token or `DW_BASE`. Run them directly:
+
+```bash
+env -u TMUX -u TMUX_TMPDIR go test ./internal/shutdowncause/ -run 'TestSignalChildProcScan|TestScanCandidates' -count=1
+```
+
+- The scan is scoped to the test's own descendants (Linux; on other platforms the scoping helper is a no-op and the signal-child tests are skipped or use the platform stubs).
+- A failure message lists every scan candidate and which one was selected as sender; a sender that is not the test's own child now indicates a real attribution defect, not host noise. Do not retry or blame load.
+- `TMUX` and `TMUX_TMPDIR` are unset so a test can never touch the dedicated session socket.
+
+**Operator review:** confirm the scoped process source is also what you want for any future process-scan test added to this package, and that the non-Linux skip behavior is acceptable.
+
 ## See also
 
 - [daemon-operations.md](daemon-operations.md) — general daemon lifecycle (start/stop/restart)
