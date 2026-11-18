@@ -5,6 +5,7 @@
 //	datawatch supervisor-loop stats [--json]
 //	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--format json]
 //	datawatch supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
+//	datawatch supervisor-loop wake [--enabled=BOOL] [--kinds A,B] [--coalesce-seconds N] [--fallback-interval-minutes N] [--json]
 //
 // Thin REST proxies: the jobs and runs reads render the daemon's bodies,
 // and run triggers one job run now (404 for an unknown job name).
@@ -36,6 +37,9 @@ func newSupervisorLoopCmd() *cobra.Command {
           --limit)
   run     run one job now (an unknown job name fails with the daemon's
           "unknown job" error)
+  wake    show the event wake settings and when the supervisor last woke;
+          with --enabled, --kinds, --coalesce-seconds or
+          --fallback-interval-minutes, set those supervisor_loop.wake.* values
 
 The reads print the daemon's text rendering; --json prints the raw REST
 body untouched.`,
@@ -44,6 +48,7 @@ body untouched.`,
 	c.AddCommand(newSupervisorLoopStatsCmd())
 	c.AddCommand(newSupervisorLoopRunsCmd())
 	c.AddCommand(newSupervisorLoopRunCmd())
+	c.AddCommand(newSupervisorLoopWakeCmd())
 	c.AddCommand(newSupervisorLoopEvalCmd())
 	return c
 }
@@ -228,4 +233,104 @@ list, for the model jobs that choose among candidates (repeatable).
 	c.Flags().StringVar(&input, "input", "", "text handed to the job as its input")
 	c.Flags().StringArrayVar(&candidates, "candidates", nil, "a candidate, for the model jobs that choose among candidates (repeatable)")
 	return c
+}
+
+// supervisorWakeBody is the GET /api/supervisor-loop/wake body.
+type supervisorWakeBody struct {
+	Enabled                 bool     `json:"enabled"`
+	Kinds                   []string `json:"kinds"`
+	CoalesceSeconds         int      `json:"coalesce_seconds"`
+	FallbackIntervalMinutes int      `json:"fallback_interval_minutes"`
+	LastEvent               string   `json:"last_event"`
+	LastScheduledCheck      string   `json:"last_scheduled_check"`
+	EventCount              int      `json:"event_count"`
+	ScheduledCount          int      `json:"scheduled_count"`
+	EventsSilentFor         string   `json:"events_silent_for"`
+}
+
+func newSupervisorLoopWakeCmd() *cobra.Command {
+	var asJSON, enabled bool
+	var kinds string
+	var coalesce, fallback int
+	c := &cobra.Command{
+		Use:   "wake",
+		Short: "Show or set the supervisor's event wake settings",
+		Long: "With no flags, show the wake settings in effect (on or off, the event " +
+			"kinds, the quiet window, the fallback interval) and when the supervisor " +
+			"last woke for an event and last ran a scheduled check. A read.\n\n" +
+			"With one or more of --enabled, --kinds, --coalesce-seconds and " +
+			"--fallback-interval-minutes, set those supervisor_loop.wake.* values " +
+			"through the config endpoint in one request, then show the result. " +
+			"--kinds is a comma list of event kinds (an unknown kind is refused by " +
+			"the daemon); --coalesce-seconds is 0..3600 (0 wakes on every event); " +
+			"--fallback-interval-minutes is 1..1440. The wake is off by default.\n\n" +
+			"--json prints the raw response untouched.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			patch := map[string]any{}
+			f := cmd.Flags()
+			if f.Changed("enabled") {
+				patch[supervisorloop.KeyWakeEnabled] = enabled
+			}
+			if f.Changed("kinds") {
+				list := []string{}
+				for _, k := range strings.Split(kinds, ",") {
+					if k = strings.TrimSpace(k); k != "" {
+						list = append(list, k)
+					}
+				}
+				patch[supervisorloop.KeyWakeKinds] = list
+			}
+			if f.Changed("coalesce-seconds") {
+				patch[supervisorloop.KeyWakeCoalesceSeconds] = coalesce
+			}
+			if f.Changed("fallback-interval-minutes") {
+				patch[supervisorloop.KeyWakeFallbackIntervalMinutes] = fallback
+			}
+			if len(patch) > 0 {
+				if _, err := daemonJSONBody("PUT", "/api/config", patch); err != nil {
+					return err
+				}
+			}
+			body, err := progressGet("/api/supervisor-loop/wake", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			var w supervisorWakeBody
+			if err := json.Unmarshal(body, &w); err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			state := "off"
+			if w.Enabled {
+				state = "on"
+			}
+			_, _ = fmt.Fprintf(out, "wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\n",
+				state, strings.Join(w.Kinds, ", "), w.CoalesceSeconds, w.FallbackIntervalMinutes)
+			_, _ = fmt.Fprintf(out, "last event: %s (%d events)\nlast scheduled check: %s (%d checks)\n",
+				wakeTime(w.LastEvent), w.EventCount, wakeTime(w.LastScheduledCheck), w.ScheduledCount)
+			if w.EventsSilentFor != "" {
+				_, _ = fmt.Fprintf(out, "events silent for: %s\n", w.EventsSilentFor)
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	c.Flags().BoolVar(&enabled, "enabled", false, "turn the event wake on or off (--enabled=true|false)")
+	c.Flags().StringVar(&kinds, "kinds", "", "comma list of event kinds that wake the supervisor")
+	c.Flags().IntVar(&coalesce, "coalesce-seconds", 0, "quiet window in seconds, 0..3600 (0 wakes on every event)")
+	c.Flags().IntVar(&fallback, "fallback-interval-minutes", 0, "scheduled check interval in minutes, 1..1440")
+	return c
+}
+
+// wakeTime shows an RFC 3339 instant, or "never" for empty or the zero time.
+func wakeTime(s string) string {
+	if s == "" || strings.HasPrefix(s, "0001-01-01") {
+		return "never"
+	}
+	return s
 }

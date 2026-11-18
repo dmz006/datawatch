@@ -54,7 +54,9 @@ type SessionTagCounter interface {
 const AttentionStatusesKey = "autonomous.tags.attention_statuses"
 
 // DefaultAttentionStatuses are the Automaton statuses that put an Automaton in
-// the attention group when the setting is absent.
+// the attention group when the setting is absent. A held Automaton is waiting
+// by the operator's decision and is never in the attention group, whatever
+// the setting lists.
 var DefaultAttentionStatuses = []string{"blocked", "needs_review", "paused"}
 
 // SettingLookup reads one autonomous setting, given as a list of strings, by

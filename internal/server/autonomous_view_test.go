@@ -604,6 +604,14 @@ func stripBranchRefreshState(t *testing.T, m map[string]any) {
 	}
 }
 
+// stripProjectLink drops the read-only effective project fields the read view
+// adds: project (the effective project, which equals the stored link only when
+// the link wins) and project_source.
+func stripProjectLink(m map[string]any) {
+	delete(m, "project")
+	delete(m, "project_source")
+}
+
 func TestPRDRESTDefaultUnchanged(t *testing.T) {
 	const specText = "task spec text"
 
@@ -632,8 +640,10 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		stripReviewState(t, wantMap)
 		stripBranchRefreshState(t, got)
 		stripBranchRefreshState(t, wantMap)
+		stripProjectLink(got)
+		stripProjectLink(wantMap)
 		if !reflect.DeepEqual(got, wantMap) {
-			t.Errorf("default GET body differs from stored PRD (notify_events_effective, review_state and branch refresh state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
+			t.Errorf("default GET body differs from stored PRD (notify_events_effective, review_state, branch refresh state and project link aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 		if !strings.Contains(rec.Body.String(), specText) {
 			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())

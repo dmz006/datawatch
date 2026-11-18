@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -35,6 +36,12 @@ type unlandedWorkOps interface {
 	CommitUncommittedWork(ctx context.Context, worktree, message string) (string, error)
 	FixPermissions(paths []string) (int, error)
 }
+
+// Compile-time proof: the exact object cmd/datawatch wires into the server
+// (*autonomous.API, the wrapper around *Manager) satisfies the gate. If the
+// wrapper ever loses one of these methods this package fails to build instead
+// of the live routes silently answering 503 at runtime.
+var _ unlandedWorkOps = (*autonomous.API)(nil)
 
 // housekeepingGate checks the method, that Automata are enabled, the
 // federation capability and the Manager surface. It returns nil when the
@@ -102,10 +109,7 @@ func (s *Server) handleUnlandedWork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if list == nil {
-		list = []autonomous.UnlandedBranch{}
-	}
-	writeJSONOK(w, map[string]any{"branches": list})
+	writeJSONOK(w, autonomous.NewUnlandedWorkList(list, time.Now()))
 }
 
 // handleUnlandedAction serves the three POST actions on a listed branch.

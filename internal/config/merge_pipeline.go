@@ -93,6 +93,11 @@ const (
 	PostShipHookBuiltinTag = "tag"
 	// PostShipHookBuiltinNotify sends a message (target: notify_template).
 	PostShipHookBuiltinNotify = "notify"
+	// PostShipHookBuiltinMarkCompleted marks the Automaton whose branch the
+	// run merged Completed (no target setting). It never cancels anything.
+	// It is not in any default hook list: the hook list is operator-set and
+	// no default list is enumerated in code, so there is nothing to add it to.
+	PostShipHookBuiltinMarkCompleted = "mark_completed"
 )
 
 // PostShipMaxHooks bounds the hook list so a project cannot configure an
@@ -102,10 +107,12 @@ const PostShipMaxHooks = 20
 const (
 	// MergePipelineDefaultFileName is the pipeline file looked for in a project.
 	MergePipelineDefaultFileName = ".datawatch/merge-pipeline.yaml"
-	// MergePipelineDefaultConflictModel is the strong model that proposes a
-	// conflict resolution unless the operator names another. It is a name in
-	// the LLM registry.
-	MergePipelineDefaultConflictModel = "claude-opus-5-5"
+	// MergePipelineDefaultConflictModel is the daemon-default model that
+	// proposes a conflict resolution when the operator names none: the
+	// non-Opus daemon default, a name in the LLM registry. An operator who
+	// wants a premium model on the merge line pins one (conflict_model) and
+	// that value always passes through untouched.
+	MergePipelineDefaultConflictModel = "sonnet"
 )
 
 // Release sizing. A release size is the step a merge adds to the version; the
@@ -620,7 +627,7 @@ func (s PostShipConfig) EffectiveNotifyTemplate() string { return s.NotifyTempla
 
 func validPostShipBuiltin(v string) bool {
 	switch v {
-	case PostShipHookBuiltinRegistryRow, PostShipHookBuiltinParityIssue, PostShipHookBuiltinTag, PostShipHookBuiltinNotify:
+	case PostShipHookBuiltinRegistryRow, PostShipHookBuiltinParityIssue, PostShipHookBuiltinTag, PostShipHookBuiltinNotify, PostShipHookBuiltinMarkCompleted:
 		return true
 	}
 	return false
@@ -653,9 +660,9 @@ func (s PostShipConfig) Validate() error {
 			return fmt.Errorf("%s: set either builtin or command", k)
 		}
 		if h.Builtin != "" && !validPostShipBuiltin(h.Builtin) {
-			return fmt.Errorf("%s.builtin: %q is unknown; use %q, %q, %q or %q", k, h.Builtin,
+			return fmt.Errorf("%s.builtin: %q is unknown; use %q, %q, %q, %q or %q", k, h.Builtin,
 				PostShipHookBuiltinRegistryRow, PostShipHookBuiltinParityIssue, PostShipHookBuiltinTag,
-				PostShipHookBuiltinNotify)
+				PostShipHookBuiltinNotify, PostShipHookBuiltinMarkCompleted)
 		}
 		if !h.Enabled || h.Builtin == "" {
 			continue

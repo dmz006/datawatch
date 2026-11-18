@@ -30,6 +30,9 @@ type ProgressSnapshotSettings struct {
 	GapHours      float64   // 0 = 3
 	Since         time.Time // zero = the first record's creation date
 	BacklogPath   string    // resolved path; empty or unreadable = no backlog rows
+	// Projects maps configured project names to directories, so the by-project
+	// grouping uses the membership resolver. Nil keeps the ProjectKey grouping.
+	Projects map[string]string
 }
 
 // ProgressComputeFunc computes the current metrics.
@@ -150,7 +153,7 @@ func NewProgressCompute(src ProgressSource, settings func() ProgressSnapshotSett
 				rows = loaded
 			}
 		}
-		opts := ProgressOptions{Since: s.Since, Lanes: s.Lanes, GapHours: s.GapHours}
+		opts := ProgressOptions{Since: s.Since, Lanes: s.Lanes, GapHours: s.GapHours, Projects: s.Projects}
 		return CollectProgress(src, rows, nil, opts), nil
 	}
 }

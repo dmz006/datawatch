@@ -176,11 +176,13 @@ func TestSelectVerifierLLM_SessionOverrideUsesOverrideModel(t *testing.T) {
 		t.Errorf("effort/source = %q/%q", sel.Effort, sel.Source)
 	}
 
-	// Override without a model: the backend's registry default, as today.
+	// Override without a model: the explicit-model policy names the daemon
+	// default (sonnet) explicitly, so the session starts with that model
+	// rather than the backend's implicit registry default.
 	task.VerificationModel = ""
 	sel = selectVerifierLLM(selectInputFor(prd, task, cfg), nil, resolve, compatible, fakeIsSessionKind)
-	if !sel.UseSession || sel.Model != "registry-default" {
-		t.Errorf("model-less override got %+v, want registry-default session", sel)
+	if !sel.UseSession || sel.Model != autonomouspkg.DefaultClaudeModel {
+		t.Errorf("model-less override got %+v, want %q session", sel, autonomouspkg.DefaultClaudeModel)
 	}
 }
 

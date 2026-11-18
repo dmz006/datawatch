@@ -27,7 +27,12 @@ following it when you resize (wide: Tiles, mid: Compact, narrow: List). Once
 you press a button, that choice wins on this device and the window width no
 longer changes it.
 
-The Sessions list has no mode toggle; it keeps its own card layout.
+The Sessions list carries the same three modes, chosen from the **view
+mode select** in its one-line toolbar (a dropdown showing the mode in use,
+replacing the former three-button toggle). Its viewport default is **List**
+under 600 px and **Tiles** at 600 px and wider, and once you pick a mode it
+wins on that device under the same per-device rule. See [Sessions tiles,
+grouping and saved views](sessions-tiles-and-grouping.md#view-modes).
 
 ## Group the list
 
@@ -65,11 +70,12 @@ the **Group by** choice starts every group back at 50.
 
 ## Sessions: group by placement
 
-The Sessions list groups by **placement tag** instead: use **Group by
-placement** to pick an axis, and the sessions fall under the tag they carry on
-that axis (their own system tags, plus tags inherited from the Automaton that
-started them). Sessions with no tag on that axis fall under **No <axis> tag**;
-that header is shown only when the list also has tagged groups.
+The Sessions list groups by **placement tag** instead: use the **Group by**
+dropdown in the Sessions **Filters** sheet to pick an axis, and the sessions
+fall under the value they carry on that axis (their own system tags, plus
+tags inherited from the Automaton that started them). Sessions with no value
+on that axis fall under the **Ungrouped** group (worded **Not part of an
+Automaton** under the automaton axis).
 
 Sessions use the same group header, collapse toggle, count, state mix and
 **Show more** paging as the other two lists. Each tagged group also has an

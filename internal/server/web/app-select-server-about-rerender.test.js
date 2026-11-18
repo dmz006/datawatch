@@ -75,33 +75,31 @@ function loadApp() {
   return sandbox;
 }
 
-// Returns the bar/button markup for the peer's chip, as written into the view.
-function peerChipMarkup(sandbox) {
-  const all = sandbox.__written.join('\n');
-  const re = new RegExp(`<button[^>]*data-server-name="${PEER}"[^>]*>`, 'g');
-  const tags = all.match(re) || [];
-  return tags;
+// Renders the header dropdown as the app would (the same _serverPickerBar
+// markup _initServerDropdown/renderServerDropdown write to #serverDropdown
+// in index.html) -- the test harness has no header DOM, so inspect the
+// markup directly. Returns the peer's <option> tag.
+function peerOptionMarkup(sandbox) {
+  const all = sandbox._serverPickerBar({});
+  const re = new RegExp(`<option value="${PEER}"[^>]*>`, 'g');
+  return all.match(re) || [];
 }
 
-test('selectServer re-renders the About view with the peer chip active and proxies the version read', async () => {
+test('selectServer re-renders the About view with the peer selected and proxies the version read', async () => {
   const sandbox = loadApp();
 
   vm.runInContext(`selectServer(${JSON.stringify(PEER)})`, sandbox);
   await flushAsync(30);
 
-  // The About view was re-rendered: the Settings render wrote the About tab
-  // and the picker bar was injected again.
+  // The About view was re-rendered: the Settings render wrote the About tab.
   assert.ok(sandbox.__written.some(h => typeof h === 'string' && h.includes('settings-section')),
     'About view (Settings render) must be re-rendered after the switch');
 
-  // The peer's chip carries the active highlight (accent background, bold).
-  const tags = peerChipMarkup(sandbox);
-  assert.ok(tags.length > 0, `peer chip for ${PEER} must be rendered`);
-  const chipHtml = sandbox.__written.join('\n');
-  const idx = chipHtml.lastIndexOf(`data-server-name="${PEER}"`);
-  const chip = chipHtml.slice(idx, chipHtml.indexOf('</button>', idx));
-  assert.ok(chip.includes('background:var(--accent2,#4f8)'), `peer chip must be highlighted as active: ${chip}`);
-  assert.ok(chip.includes('font-weight:600'), 'active peer chip must be bold');
+  // The peer's dropdown option carries the selection.
+  const tags = peerOptionMarkup(sandbox);
+  assert.ok(tags.length > 0, `peer option for ${PEER} must be rendered`);
+  assert.ok(tags[0].includes('selected'), `peer option must be marked selected: ${tags[0]}`);
+  assert.ok(tags[0].includes('aria-current="true"'), 'active peer option must be aria-current');
 
   // The About version read goes through the host-aware path for the peer.
   assert.equal(vm.runInContext('state.activeServer', sandbox), PEER);

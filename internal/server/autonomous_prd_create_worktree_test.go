@@ -22,6 +22,10 @@ type createPRDSpy struct {
 	projectDir string
 }
 
+func (s *createPRDSpy) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return s.CreatePRD("", "", "", "", "")
+}
+
 func (s *createPRDSpy) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
 	s.called = true
 	s.projectDir = projectDir

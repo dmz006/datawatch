@@ -226,9 +226,17 @@ func TestDiskAlertAboveThreshold(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// The temp path is a real hermetic directory with one folder in
+			// it, and the liveness probe is faked: the alert body then names
+			// that folder without touching a real disk or /proc.
+			tmpDir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(tmpDir, "held"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			r, _ := pinnedClockRecorder(t, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
-			r.stat = fakeStatser{"/base/repo": tc.base, "/tmp": tc.tmp}
-			due, st := r.DiskCheck(85, "/base/repo", "/tmp")
+			r.stat = fakeStatser{"/base/repo": tc.base, tmpDir: tc.tmp}
+			r.liveness = func(path string) (bool, bool) { return path == filepath.Join(tmpDir, "held"), true }
+			due, st := r.DiskCheck(85, "/base/repo", tmpDir)
 			if due != tc.want {
 				t.Fatalf("due = %v, want %v", due, tc.want)
 			}
@@ -241,11 +249,121 @@ func TestDiskAlertAboveThreshold(t *testing.T) {
 			if st.TempDisk == nil || st.TempDisk.Alert != tc.temp {
 				t.Fatalf("temp disk = %+v, want alert=%v", st.TempDisk, tc.temp)
 			}
+			if tc.temp {
+				// The temp folder's disk is checked against the fixed 80%
+				// even though the configured percent is 85.
+				if st.TempDisk.Threshold != tempDiskAlertPercent {
+					t.Fatalf("temp disk threshold = %d, want %d", st.TempDisk.Threshold, tempDiskAlertPercent)
+				}
+				if len(st.BiggestTempFolders) != 1 || st.BiggestTempFolders[0].Path != filepath.Join(tmpDir, "held") {
+					t.Fatalf("biggest temp folders = %+v, want the one held folder", st.BiggestTempFolders)
+				}
+				if !st.BiggestTempFolders[0].Held || !st.BiggestTempFolders[0].Liveness {
+					t.Fatalf("folder liveness = %+v, want held and known", st.BiggestTempFolders[0])
+				}
+				body := CleanupDiskAlertBody(st)
+				for _, w := range []string{"threshold 80%", filepath.Join(tmpDir, "held"), "held by a running process"} {
+					if !strings.Contains(body, w) {
+						t.Fatalf("alert body missing %q: %s", w, body)
+					}
+				}
+			}
 			if tc.want && st.LastDiskAlertAt == nil {
 				t.Fatalf("LastDiskAlertAt is nil after the alert fired")
 			}
 		})
 	}
+}
+
+// testTempFolderTree builds a hermetic temp-folder tree: two folders of
+// known sizes (big held, small free) plus a stray file that the alert
+// must not name (it names folders, not files).
+func testTempFolderTree(t *testing.T) (dir, big, small string) {
+	t.Helper()
+	dir = t.TempDir()
+	write := func(p string, size int) {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, size), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	big = filepath.Join(dir, "big")
+	small = filepath.Join(dir, "small")
+	write(filepath.Join(big, "blob"), 3*1024*1024)
+	write(filepath.Join(small, "x"), 16)
+	write(filepath.Join(dir, "stray.txt"), 1024)
+	return dir, big, small
+}
+
+func TestTempDiskFixed80Threshold(t *testing.T) {
+	mk := func(usedPercent int) (*cleanupStatusRecorder, string) {
+		r, _ := pinnedClockRecorder(t, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+		dir, big, _ := testTempFolderTree(t)
+		blocks := uint64(100000)
+		bavail := blocks * uint64(100-usedPercent) / 100
+		r.stat = fakeStatser{"/base/repo": {Blocks: blocks, Bavail: blocks * 80 / 100}, dir: {Blocks: blocks, Bavail: bavail}}
+		r.liveness = func(path string) (bool, bool) { return path == big, true }
+		return r, dir
+	}
+
+	t.Run("82 percent alerts against the fixed 80 even though configured is 85", func(t *testing.T) {
+		r, dir := mk(82)
+		due, st := r.DiskCheck(85, "/base/repo", dir)
+		if !due || !st.DiskAlert {
+			t.Fatalf("due=%v alert=%v at temp 82%% against the fixed 80, want alert due", due, st.DiskAlert)
+		}
+		if st.TempDisk == nil || !st.TempDisk.Alert || st.TempDisk.Threshold != 80 {
+			t.Fatalf("temp disk = %+v, want alert at threshold 80", st.TempDisk)
+		}
+		if st.WorktreeDisk == nil || st.WorktreeDisk.Alert { // worktree is at 20%
+			t.Fatalf("under-threshold worktree disk must not be blamed: %+v", st.WorktreeDisk)
+		}
+		body := CleanupDiskAlertBody(st)
+		if strings.Contains(body, "/base/repo") {
+			t.Fatalf("body blames the quiet worktree disk: %s", body)
+		}
+		for _, w := range []string{"82%", "threshold 80%"} {
+			if !strings.Contains(body, w) {
+				t.Fatalf("body missing %q: %s", w, body)
+			}
+		}
+	})
+
+	t.Run("79 percent does not alert and is not named", func(t *testing.T) {
+		r, dir := mk(79)
+		due, st := r.DiskCheck(85, "/base/repo", dir)
+		if due || st.DiskAlert {
+			t.Fatalf("79%% is below the fixed 80: due=%v alert=%v", due, st.DiskAlert)
+		}
+		if st.TempDisk == nil || st.TempDisk.Alert || st.TempDisk.Threshold != 80 {
+			t.Fatalf("temp disk = %+v, want no alert at threshold 80", st.TempDisk)
+		}
+		if len(st.BiggestTempFolders) > 0 {
+			t.Fatalf("folder report present below the threshold: %+v", st.BiggestTempFolders)
+		}
+	})
+
+	t.Run("exactly 80 percent alerts", func(t *testing.T) {
+		r, dir := mk(80)
+		due, st := r.DiskCheck(85, "/base/repo", dir)
+		if !due || st.TempDisk == nil || !st.TempDisk.Alert {
+			t.Fatalf("at exactly the 80%% boundary: due=%v temp=%+v, want alert", due, st.TempDisk)
+		}
+	})
+
+	t.Run("a configured percent below 80 still wins", func(t *testing.T) {
+		// The fixed threshold LOWERS the temp disk to 80 when the
+		// configured percent is higher; it never raises either disk. A
+		// stricter configured percent (70) still alerts a 75% temp disk
+		// earlier, checked against 70.
+		r, dir := mk(75)
+		due, st := r.DiskCheck(70, "/base/repo", dir)
+		if !due || st.TempDisk == nil || !st.TempDisk.Alert || st.TempDisk.Threshold != 70 {
+			t.Fatalf("configured 70 must win over the fixed 80: due=%v temp=%+v, want alert at threshold 70", due, st.TempDisk)
+		}
+	})
 }
 
 func TestDiskAlertRateLimit(t *testing.T) {
@@ -367,5 +485,156 @@ func TestCleanupStatusSkippedByReason(t *testing.T) {
 	r2 := newCleanupStatusRecorder(filepath.Dir(r.path))
 	if r2.Snapshot().Worktrees.SkippedByReason["weird"] != 1 || !strings.Contains(RenderCleanupStatus(r2.Snapshot()), "weird 1") {
 		t.Fatal("round trip failed")
+	}
+}
+
+func TestTempFolderReportOrderCapAndLiveness(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, size int) {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name, "f"), make([]byte, size), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 6 folders: the report caps at 5, biggest first.
+	names := []string{"a", "b", "c", "d", "e", "f"}
+	// sizes: e biggest, a second ... f smallest (dropped by the cap).
+	sizes := []int{10 * 1024, 5 * 1024, 15 * 1024, 20 * 1024, 100 * 1024, 1 * 1024}
+	for i, n := range names {
+		write(n, sizes[i])
+	}
+	r, _ := pinnedClockRecorder(t, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	r.stat = fakeStatser{dir: {Blocks: 100000, Bavail: 500}} // 99.5%: over the fixed 80
+	// e and a are held; b, c, d are known-free; the cap drops f (unknown is exercised there).
+	r.liveness = func(path string) (bool, bool) {
+		switch {
+		case strings.HasSuffix(path, "/e"), strings.HasSuffix(path, "/a"):
+			return true, true
+		case strings.HasSuffix(path, "/f"):
+			return false, false
+		default:
+			return false, true
+		}
+	}
+	due, st := r.DiskCheck(85, "", dir)
+	if !due || st.TempDisk == nil || !st.TempDisk.Alert {
+		t.Fatalf("temp disk alert did not fire: due=%v temp=%+v", due, st.TempDisk)
+	}
+	got := st.BiggestTempFolders
+	if len(got) != tempFolderReportTop {
+		t.Fatalf("report length = %d, want the %d-cap", len(got), tempFolderReportTop)
+	}
+	wantOrder := []string{"e", "d", "c", "a", "b"}
+	for i, name := range wantOrder {
+		wantPath := filepath.Join(dir, name)
+		if got[i].Path != wantPath {
+			t.Fatalf("report[%d].path = %s, want %s (order %+v)", i, got[i].Path, wantPath, got)
+		}
+		if got[i].Size <= 0 {
+			t.Fatalf("report[%d].size = %d, want > 0", i, got[i].Size)
+		}
+	}
+	byName := map[string]TempFolderInfo{}
+	for _, g := range got {
+		byName[filepath.Base(g.Path)] = g
+	}
+	if !byName["e"].Held || !byName["e"].Liveness {
+		t.Fatalf("e should be held and known: %+v", byName["e"])
+	}
+	if !byName["a"].Held {
+		t.Fatalf("a should be held: %+v", byName["a"])
+	}
+	for _, n := range []string{"b", "c", "d"} {
+		if byName[n].Held || !byName[n].Liveness {
+			t.Fatalf("%s should be known-free: %+v", n, byName[n])
+		}
+	}
+
+	body := CleanupDiskAlertBody(st)
+	for _, w := range []string{
+		"the disk holding the daemon's temp folder",
+		"is at 99%",
+		"threshold 80%",
+		"biggest folders inside the temp folder",
+		"about 100 KiB",
+		"held by a running process",
+		"no running process holds it",
+		"never removes anything",
+	} {
+		if !strings.Contains(body, w) {
+			t.Fatalf("body missing %q:\n%s", w, body)
+		}
+	}
+	// The unknown-liveness folder (f) is beyond the cap: force it into the
+	// report to pin the wording.
+	r.st.BiggestTempFolders = []TempFolderInfo{{Path: filepath.Join(dir, "f"), Size: 1024, Held: false, Liveness: false}}
+	body = CleanupDiskAlertBody(r.Snapshot())
+	for _, w := range []string{"could not tell whether a running process holds it", "treat it as held"} {
+		if !strings.Contains(body, w) {
+			t.Fatalf("body missing %q:\n%s", w, body)
+		}
+	}
+}
+
+func TestTempFolderReportSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "big"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big", "blob"), make([]byte, 2*1024*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	r1 := newCleanupStatusRecorder(filepath.Dir(dir))
+	now := base
+	r1.now = func() time.Time { return now }
+	r1.stat = fakeStatser{dir: {Blocks: 100000, Bavail: 900}} // 99.1%
+	r1.liveness = func(path string) (bool, bool) { return false, true }
+	if _, st := r1.DiskCheck(85, "", dir); !st.DiskAlert || len(st.BiggestTempFolders) != 1 {
+		t.Fatalf("first recorder: alert=%v folders=%+v, want alert with one folder", st.DiskAlert, st.BiggestTempFolders)
+	}
+
+	// A fresh recorder reads the record back — including the folder report.
+	r2 := newCleanupStatusRecorder(filepath.Dir(dir))
+	st := r2.Snapshot()
+	if !st.DiskAlert || st.LastDiskAlertAt == nil || !st.LastDiskAlertAt.Equal(base) {
+		t.Fatalf("alert after reload = %+v at %v", st.DiskAlert, st.LastDiskAlertAt)
+	}
+	if len(st.BiggestTempFolders) != 1 || st.BiggestTempFolders[0].Path != filepath.Join(dir, "big") || st.BiggestTempFolders[0].Size != 2*1024*1024 {
+		t.Fatalf("folder report after reload = %+v, want one 2 MiB folder", st.BiggestTempFolders)
+	}
+	// Snapshot is a copy: a mutation does not leak back into the record.
+	st.BiggestTempFolders[0].Size = 0
+	if got := r2.Snapshot().BiggestTempFolders[0].Size; got != 2*1024*1024 {
+		t.Fatalf("snapshot shares the folder slice (size now %d)", got)
+	}
+
+	// Once the disk recovers below its threshold, the stale report clears.
+	r1.stat = fakeStatser{dir: {Blocks: 100000, Bavail: 50000}} // 50%
+	if _, st := r1.DiskCheck(85, "", dir); len(st.BiggestTempFolders) != 0 {
+		t.Fatalf("stale folder report kept after the disk recovered: %+v", st.BiggestTempFolders)
+	}
+}
+
+func TestTempDiskUnreadableFolderDir(t *testing.T) {
+	r, _ := pinnedClockRecorder(t, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	r.stat = fakeStatser{missing: {Blocks: 100000, Bavail: 1000}} // 99%
+	r.liveness = func(path string) (bool, bool) {
+		t.Fatalf("liveness must not run on an unlistable dir")
+		return false, true
+	}
+	due, st := r.DiskCheck(85, "", missing)
+	if !due || st.TempDisk == nil || !st.TempDisk.Alert {
+		t.Fatalf("alert must still fire without the folder detail: due=%v temp=%+v", due, st.TempDisk)
+	}
+	if len(st.BiggestTempFolders) != 0 {
+		t.Fatalf("folder report on an unlistable dir: %+v", st.BiggestTempFolders)
+	}
+	body := CleanupDiskAlertBody(st)
+	if !strings.Contains(body, "is at 99%") || strings.Contains(body, "biggest folders") {
+		t.Fatalf("body must name the disk but not the folder list:\n%s", body)
 	}
 }

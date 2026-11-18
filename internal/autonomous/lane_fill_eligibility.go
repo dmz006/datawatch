@@ -37,6 +37,18 @@ const (
 	// that is gone, has no .git entry, or is not in the registered worktree
 	// list of its repository.
 	LaneFillReasonWorktreeInvalid = "worktree_invalid"
+	// LaneFillReasonOperatorHold: the Automaton is on hold by an operator
+	// decision (status held). It is not the same as LaneFillReasonHeld, which
+	// means a HOLD line or a similar phrase in the spec. Nothing starts a held
+	// Automaton until the operator releases the hold.
+	LaneFillReasonOperatorHold = "operator_hold"
+	// LaneFillReasonPlanCoverageBlocked: a needs_review candidate whose
+	// stored plan coverage record fails in block mode without a covering
+	// acknowledgment — the plan coverage gate refuses approval; lane fill
+	// never acknowledges on the operator's behalf, the remedy is an explicit
+	// AcknowledgePlanCoverage with a non-empty note, or a re-decompose with a
+	// covering plan.
+	LaneFillReasonPlanCoverageBlocked = "plan_coverage_blocked"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -104,6 +116,9 @@ func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
 // it. The title and the spec are searched, as data, with regular expressions
 // only: nothing in them is ever run. A hold is any of:
 //
+//   - an Automaton whose status is held, by operator decision (code
+//     operator_hold); this is checked first and the text names the hold reason
+//     and the look-again time, or says no date is set;
 //   - a judge that timed out on every backend, while the PRD needs review
 //     (code held);
 //   - a completion rules review block that no corrective task is fixing,
@@ -120,6 +135,9 @@ func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
 func PRDHoldCode(prd *PRD, lookup PRDRefLookup) (code, text string) {
 	if prd == nil {
 		return "", ""
+	}
+	if NormalizePRDStatus(prd.Status) == PRDHeld {
+		return LaneFillReasonOperatorHold, operatorHoldText(prd.Hold)
 	}
 	if judgeHoldHeld(prd) {
 		return LaneFillReasonHeld, "its judge timed out on every backend and it needs review"
@@ -151,6 +169,23 @@ func PRDHoldCode(prd *PRD, lookup PRDRefLookup) (code, text string) {
 		}
 	}
 	return "", ""
+}
+
+// operatorHoldText words an operator hold for the refusal: the hold reason
+// and the look-again time, or that no date is set. A held Automaton with no
+// hold record still gets a text, so the refusal is never silent.
+func operatorHoldText(h *HoldState) string {
+	reason := "no reason recorded"
+	when := "no date set"
+	if h != nil {
+		if r := strings.TrimSpace(h.Reason); r != "" {
+			reason = r
+		}
+		if h.Until != nil {
+			when = h.Until.UTC().Format(time.RFC3339)
+		}
+	}
+	return fmt.Sprintf("on hold by the operator: %s; look again at %s", reason, when)
 }
 
 // cleanHoldRef trims a captured reference: surrounding space, a leading
@@ -201,6 +236,9 @@ func laneFillQueuedStatus(s PRDStatus) bool {
 // field a candidate carries when it was built without the evaluator), else
 // none. Only queued work is ever refused.
 func laneFillCandidateRefusal(c LaneFillCandidate) LaneFillRefusal {
+	if NormalizePRDStatus(c.Status) == PRDHeld {
+		return laneFillOperatorHoldRefusal(c)
+	}
 	if !laneFillQueuedStatus(c.Status) {
 		return LaneFillRefusal{}
 	}
@@ -217,11 +255,28 @@ func laneFillCandidateRefusal(c LaneFillCandidate) LaneFillRefusal {
 	return LaneFillRefusal{}
 }
 
+// laneFillOperatorHoldRefusal is the refusal for a candidate whose status is
+// held: the one the snapshot filled in, else one built from HoldReason, else
+// the plain operator hold text. A held Automaton is always refused.
+func laneFillOperatorHoldRefusal(c LaneFillCandidate) LaneFillRefusal {
+	if c.Refusal.Refused() {
+		return c.Refusal
+	}
+	text := c.HoldReason
+	if text == "" {
+		text = operatorHoldText(nil)
+	}
+	return LaneFillRefusal{Code: LaneFillReasonOperatorHold, Text: text}
+}
+
 // laneFillExcludedText words the exclusion of a refused candidate for the
 // idle lane blocker.
 func laneFillExcludedText(id string, r LaneFillRefusal) string {
 	if r.Code == LaneFillReasonProposalNotConfirmed || r.Code == LaneFillReasonProposalMissing {
 		return r.Text // these texts already name the Automaton
+	}
+	if r.Code == LaneFillReasonOperatorHold {
+		return fmt.Sprintf("Automaton %s: %s", id, r.Text) // the text already says it is on hold
 	}
 	if r.Code == LaneFillReasonHeld || r.Code == LaneFillReasonSequencedAfterUnshipped {
 		return fmt.Sprintf("Automaton %s: held: %s", id, r.Text)
@@ -232,7 +287,8 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 // EvaluateLaneFillEligibility applies the refusal rules to one candidate, in a
 // fixed order, and returns the code and text of the first that refuses it, or
 // two empty strings when the candidate is eligible. It is pure: the clock is
-// the now argument. The rules, in order:
+// the now argument. An Automaton whose status is held is refused first, with
+// code operator_hold, whatever else is true of it. The rules, in order:
 //
 //  1. held: the candidate carries a hold (HOLD line, do not run, sequenced
 //     last, a judge time-out, or sequenced after an unshipped Automaton);
@@ -244,10 +300,18 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 //  4. main_carries_work: the base branch already carries the work (only when
 //     check_main_carries is on);
 //  5. worktree_invalid: a recorded worktree that is missing, has no .git
-//     entry or is not registered (only when require_worktree is on).
+//     entry or is not registered (only when require_worktree is on);
+//  6. plan_coverage_blocked: a needs_review candidate whose stored
+//     plan coverage record fails the Approve gate in block mode with no
+//     covering acknowledgment (the coverage gate blocks approval; lane fill
+//     never acknowledges on the operator's behalf).
 //
 // Work that is not queued (running, finished, cancelled) is never refused.
 func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) (code, text string) {
+	if NormalizePRDStatus(c.Status) == PRDHeld {
+		r := laneFillOperatorHoldRefusal(c)
+		return r.Code, r.Text
+	}
 	if !laneFillQueuedStatus(c.Status) {
 		return "", ""
 	}
@@ -275,6 +339,9 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 		if code, text := laneFillWorktreeRefusal(c); code != "" {
 			return code, text
 		}
+	}
+	if c.CoverageGateBlocked && NormalizePRDStatus(c.Status) == PRDNeedsReview {
+		return LaneFillReasonPlanCoverageBlocked, "the plan coverage gate blocks approval (stored record failing in block mode, no covering acknowledgment); remedy is to re-decompose with a covering plan or to acknowledge exactly this failure surface"
 	}
 	return "", ""
 }
@@ -314,6 +381,11 @@ func laneFillStaleText(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) s
 //   - Source 3 (draft): status draft, not refused, not a member of an
 //     Automation.
 func ClassifyLaneFillCandidate(c LaneFillCandidate) (source LaneFillSource, excluded string) {
+	if NormalizePRDStatus(c.Status) == PRDHeld {
+		// A held Automaton is never ready, a draft to decompose or a merge to
+		// report; it is kept out and the refusal says why.
+		return LaneFillSourceNone, laneFillExcludedText(c.ID, laneFillOperatorHoldRefusal(c))
+	}
 	if c.AllTasksDone && c.NeedsMergeFlag {
 		return LaneFillSourceMerge, ""
 	}

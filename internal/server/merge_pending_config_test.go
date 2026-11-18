@@ -80,20 +80,85 @@ func TestMergePendingConfigRejectsNegativeMinutes(t *testing.T) {
 	}
 }
 
+// mergePendingIncludeTerminal reads the include-terminal key from GET /api/config.
+func mergePendingIncludeTerminal(t *testing.T, s *Server) bool {
+	t.Helper()
+	var a struct {
+		IncludeTerminal *bool `json:"merge_pending_include_terminal"`
+	}
+	if err := json.Unmarshal(getAutonomousConfigMap(t, s)["automation"], &a); err != nil {
+		t.Fatalf("decode automation: %v", err)
+	}
+	if a.IncludeTerminal == nil {
+		t.Fatal("GET /api/config dropped merge_pending_include_terminal")
+	}
+	return *a.IncludeTerminal
+}
+
+func TestMergePendingConfigIncludeTerminalUnsetReadsTrue(t *testing.T) {
+	s, _, _ := newActivateServer(t, false)
+	s.cfg.Autonomous.Automation.MergePendingIncludeTerminal = nil
+	if got := mergePendingIncludeTerminal(t, s); got != true {
+		t.Fatalf("unset key reads %v, want true (the default when unset)", got)
+	}
+}
+
+func TestMergePendingConfigIncludeTerminalExplicitFalseSurvives(t *testing.T) {
+	s, _, _ := newActivateServer(t, false)
+	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.merge_pending_include_terminal": false})
+	if got := mergePendingIncludeTerminal(t, s); got != false {
+		t.Fatalf("after PUT false /api/config: %v, want false", got)
+	}
+	// And on the dedicated autonomous surface: an explicit true, then false.
+	pcPutOK(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"merge_pending_include_terminal": true}})
+	if got := mergePendingIncludeTerminal(t, s); got != true {
+		t.Fatalf("after autonomous PUT true: %v, want true", got)
+	}
+	pcPutOK(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"merge_pending_include_terminal": false}})
+	if got := mergePendingIncludeTerminal(t, s); got != false {
+		t.Fatalf("after autonomous PUT false: %v, want false", got)
+	}
+}
+
+func TestMergePendingConfigIncludeTerminalRejectsNonBool(t *testing.T) {
+	s, _, _ := newActivateServer(t, false)
+	for _, bad := range []any{"on", "off", 1} {
+		pcPutBad(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.merge_pending_include_terminal": bad})
+	}
+	pcPutBad(t, s.handleAutonomousConfig, "/api/autonomous/config", map[string]any{"automation": map[string]any{"merge_pending_include_terminal": "off"}})
+	if got := mergePendingIncludeTerminal(t, s); got != true {
+		t.Fatalf("rejected PUT changed the value to %v, want the unset read (true)", got)
+	}
+}
+
 func TestMergePendingConfigPutThenGetRoundTrip(t *testing.T) {
 	s, mgr, _ := newActivateServer(t, false)
 	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]any{
-		"autonomous.automation.merge_pending_mode":          "shadow",
-		"autonomous.automation.merge_pending_alert_minutes": 45,
+		"autonomous.automation.merge_pending_mode":             "shadow",
+		"autonomous.automation.merge_pending_alert_minutes":    45,
+		"autonomous.automation.merge_pending_include_terminal": false,
 	})
 	if mode, minutes := mergePendingSurface(t, s); mode != "shadow" || minutes != 45 {
 		t.Fatalf("GET after PUT = (%q, %d), want (shadow, 45)", mode, minutes)
+	}
+	if got := mergePendingIncludeTerminal(t, s); got != false {
+		t.Fatalf("GET after PUT: include_terminal = %v, want false", got)
+	}
+	// An explicit false must survive as a stored value, not read back as the
+	// on default.
+	if s.cfg.Autonomous.Automation.MergePendingIncludeTerminal == nil || *s.cfg.Autonomous.Automation.MergePendingIncludeTerminal != false {
+		t.Fatal("an explicit false was stored as unset")
+	}
+	if got := mgr.Config().Automation.EffectiveMergePendingIncludeTerminal(); got != false {
+		t.Fatalf("live manager merge_pending_include_terminal = %v, want false", got)
 	}
 	pcPutOK(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.automation.merge_pending_mode": "on"})
 	if mode, minutes := mergePendingSurface(t, s); mode != "on" || minutes != 45 {
 		t.Fatalf("GET after mode-only PUT = (%q, %d), want (on, 45)", mode, minutes)
 	}
-	// The live manager reads the same values the config surface reports.
+	if got := mergePendingIncludeTerminal(t, s); got != false {
+		t.Fatalf("mode-only PUT clobbered include_terminal to %v, want false", got)
+	}
 	if got := mgr.Config().Automation.EffectiveMergePendingMode(); got != "on" {
 		t.Fatalf("live manager merge_pending_mode = %q, want on", got)
 	}

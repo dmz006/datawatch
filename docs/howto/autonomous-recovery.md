@@ -124,6 +124,70 @@ autonomous_prd_cancel_story(id="<prd_id>", story_id="<story_id>", reason="...")
 autonomous_prd_cancel_task(id="<prd_id>", task_id="<task_id>", reason="...")
 ```
 
+## Cancelled tasks at completion
+
+A cancelled task is a deliberate final outcome: you stopped it on purpose, so
+the Automaton skips it instead of waiting for it. A cancelled task no longer
+keeps an Automaton in `running`.
+
+- **When the review runs.** When every task is completed or cancelled and at
+  least one is completed, the completion review runs and the Automaton
+  completes or blocks on its verdict.
+- **The decision log names the skipped tasks.** The review records one
+  `cancelled_tasks_skipped` decision that lists the cancelled tasks by title
+  (once, even if the rollup is re-fired).
+- **A story of only cancelled tasks is skipped.** It shows as cancelled
+  (skipped) and does not fail the Automaton.
+- **A story whose other tasks are completed is completed.** The cancelled
+  task inside it is left out of the roll-up. A story with any failed task is
+  still failed.
+- **Every task cancelled means nothing to judge.** The Automaton is neither
+  judged nor completed: reset a task, remove the cancelled ones, or cancel the
+  Automaton.
+- **A stuck Automaton is advanced for you.** An Automaton that was already
+  sitting in `running` this way is advanced by the
+  [stuck-running watchdog](#stuck-running-watchdog) after its grace period,
+  the setting `autonomous.stuck_running_seconds` (default `900`, 15 minutes).
+  The decision it records is `stuck_running_cancelled_advance`. If the
+  Automaton is blocked instead, the reason names the cancelled tasks (see
+  [the supervisor watch](automation-supervisor-watch.md#the-stuck-running-message)).
+- **Removing a cancelled task.** While the Automaton is running, a task that
+  is not running and not queued can be removed, on every surface: the web
+  page (the task's Remove control), REST
+  (`POST /api/autonomous/prds/{id}/remove_task`), MCP
+  (`autonomous_prd_remove_task`), the CLI
+  (`datawatch autonomous prd-remove-task`) and the messaging channel
+  (`autonomous remove-task <id> <story-id> <task-id>`). Other tasks stop
+  depending on the removed one. A running, queued or waiting task is refused
+  with an error naming its state.
+
+## Dependents that failed behind a dependency need no manual reset
+
+When a dependency fails or is cancelled, the executor fails the tasks that
+depend on it, with the error naming that dependency. A dependent whose only
+failure is that one — with no content or scope fault of its own — no longer
+needs a manual `reset_task`: the moment the dependency it failed behind
+reaches `completed`, the executor requeues the dependent in the same step,
+whether the dependency's own failure was an infrastructure one or a content
+or scope one. A dependency that is reset back to a state where it can still
+complete releases its dependents with it.
+
+One caveat to review: while the Automaton itself is `held` — for example
+the root task is parked for its infrastructure-retry review — the executor
+defers this requeue, and the dependent returns to `pending` in the step the
+Automaton is running again and the dependency it failed behind is no longer
+failed, cancelled, blocked or held. Reviewing that hold is still the
+operator's job; the dependent never is.
+
+Manual `reset_task` remains the right tool for a dependent that failed for
+its own reasons — its own content, its own file scope — or that still waits
+on another dependency that is failed, cancelled, blocked or held. You never
+have to walk a failed chain and reset every dependent one by one.
+
+The executor records a `dependents_recovered` decision for the requeue. The
+infrastructure-flavoured marking that sits on top of this rule is in
+[infrastructure-retry.md](infrastructure-retry.md#dependents-that-failed-behind-it-recover-on-their-own).
+
 ## Repairing a failed Automaton in place
 
 Cancelling a failed Automaton to fix it is no longer needed, and it used to
@@ -131,6 +195,11 @@ race with automatic archiving. A failed Automaton now accepts the same
 structural edits as one in `needs_review`: add or remove a task, add, remove
 or edit a story, repair dependencies, or request a revision. Completed task
 specs stay immutable.
+
+A running Automaton also lets you remove one task that is not running and not
+queued (cancelled, completed, failed, blocked or never started). Other tasks
+stop depending on it. A running, queued or waiting task is refused with an
+error naming its state.
 
 1. Read the Automaton (`autonomous_prd_get`) and note the failed task and the
    gate's findings.
@@ -155,10 +224,13 @@ guardrail to run again — as a fresh judgment — without resetting or retrying
 any task:
 
 - The Automaton must be `blocked`; re-judging one that isn't is refused.
-- **Every task in every story must be `completed`.** If any task is pending,
-  running, failed, or cancelled, the call is refused and names the first such
-  task and its status — fix that one first (`reset_task` above) and re-judge
-  once the genuine work is done.
+- **Every task in every story must be `completed` or `cancelled`, with at
+  least one `completed`.** A cancelled task is skipped, not a blocker. If any
+  task is pending, running or failed, or if every task is cancelled, the call
+  is refused and names the first such task and its status — fix that one first
+  (`reset_task` above) and re-judge once the genuine work is done. When
+  cancelled tasks were skipped, the rejudge records a `cancelled_tasks_skipped`
+  decision naming them.
 - It never resets anything: no task goes back to pending, no story reopens.
 
 A rejudge is a fresh completion review, not a lookup of the old answer. When
@@ -331,6 +403,8 @@ What happens next:
 
 Each decision is an entry in `Status().BootResume` with an `outcome` of `resumed`, `parked` or `resumed_by_operator`, the age in seconds and a reason. A `parked` entry that also has `live_sessions` means the Automaton was parked (for example its project directory was missing, or auto-resume is off) while a worker session was still alive. Nothing was killed: resuming it re-adopts those sessions instead of starting new ones. A `resumed_by_operator` entry records your resume action and lists the sessions that were adopted.
 
+A `backoff_restored` entry (no Automaton id) records a usage back-off flag that was saved before the restart and is still in force. Work for that backend waits in the capacity queue until it clears; nothing running is touched. See [Across a daemon restart](automata-capacity.md#across-a-daemon-restart).
+
 Old failed Automata are therefore no longer re-launched at every restart.
 
 ## Restarting the daemon while a task is in progress
@@ -390,6 +464,13 @@ order, stopping at the first hit:
   time, so it ends on time even across the restart.
 - **The script ended while the daemon was down and its exit code is on disk,
   not yet delivered** → the result is used once, as the script result.
+- **A final gate task was running** → it goes back to `pending` with no
+  failure and no retry counted, and its gate re-attaches to its own run record
+  (waits on a live gate, or takes a finished result once). If the gate is then
+  killed by a signal within five minutes of the daemon starting, it is rerun
+  once, outside the retry budget; a second kill is a real failure. The shipped
+  systemd unit uses `KillMode=process` so a stop of the service leaves the gate
+  running.
 - **Nothing usable survives** → the old behaviour resumes: a finished worker
   is re-verified once; a task with no worker result and no usable verdict is
   reset to `pending` and relaunched.
@@ -497,7 +578,14 @@ a restart.
    starts the clock. After one full bound the watchdog records a
    `stuck_running_refire` note in the Automaton's decision history and re-runs
    the completion rollup once, the same way boot resume does. The clock
-   restarts. The re-fire is an ordinary completion review: if the branch head
+   restarts. When every task is completed or cancelled (at least one of each),
+   this step is an advance instead: the note is a
+   `stuck_running_cancelled_advance` decision that names the skipped cancelled
+   tasks, and the completion review runs without ending, signalling or
+   touching any session. An Automaton whose tasks are all cancelled is never
+   advanced this way, because there is no work to review; it follows step 2.
+
+   The re-fire is an ordinary completion review: if the branch head
    moved since the stored verdict was made (for example a fix was committed
    while the Automaton was held), the judge runs again on the new head, and a
    `pass` or `warn` completes the Automaton instead of leaving it for the
@@ -516,8 +604,8 @@ a restart.
 
 The clock starts over whenever the state stops holding: a session starts, a
 task is reset to pending, or the Automaton leaves `running`. To clear a blocked
-Automaton, use `rejudge` (above) when every task completed, or `reset_task`
-for a task that did not.
+Automaton, use `rejudge` (above) when every task is completed or cancelled
+(at least one completed), or `reset_task` for a task that did not.
 
 Set the bound on the PWA Settings Automata card ("Stuck Automaton timeout"),
 with `datawatch config set autonomous.stuck_running_seconds <n>`, through

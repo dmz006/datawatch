@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/supervisorloop"
@@ -24,7 +25,7 @@ const (
 	// supervisorLoopUsage is the usage for the supervisor loop comm verbs.
 	// jobs and runs take no positional arguments; the run verb takes its
 	// options as key=value pairs.
-	supervisorLoopUsage = "usage: supervisor jobs | supervisor stats | supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | supervisor run job=NAME [input=TEXT] [candidates=A,B]"
+	supervisorLoopUsage = "usage: supervisor jobs | supervisor stats | supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | supervisor wake [status|set key=value ...] | supervisor run job=NAME [input=TEXT] [candidates=A,B]"
 )
 
 // SupervisorLoopCommVerbs lists the supervisor loop comm verbs for the
@@ -50,6 +51,8 @@ func (r *Router) handleSupervisorLoopVerb(verb string, args []string) {
 		r.replySupervisorLoopRuns(rest[1:])
 	case "run":
 		r.replySupervisorLoopRun(rest[1:])
+	case "wake":
+		r.replySupervisorLoopWake(rest[1:])
 	default:
 		r.reply("autonomous supervisor-loop failed",
 			"unknown sub-verb "+rest[0]+"\n"+supervisorLoopUsage)
@@ -204,4 +207,107 @@ func (r *Router) replySupervisorLoopRun(args []string) {
 		text += "\n" + parsed.Result
 	}
 	r.reply("autonomous supervisor-loop run", text)
+}
+
+// supervisorWakeKeys maps the short setting names the wake verb accepts to
+// the supervisor_loop.wake.* config keys.
+var supervisorWakeKeys = map[string]string{
+	"enabled":                   supervisorloop.KeyWakeEnabled,
+	"kinds":                     supervisorloop.KeyWakeKinds,
+	"coalesce_seconds":          supervisorloop.KeyWakeCoalesceSeconds,
+	"fallback_interval_minutes": supervisorloop.KeyWakeFallbackIntervalMinutes,
+}
+
+// replySupervisorLoopWake answers "supervisor wake [status]" (a read) and
+// "supervisor wake set key=value ..." (one config write, then the status).
+func (r *Router) replySupervisorLoopWake(args []string) {
+	const label = "autonomous supervisor-loop wake"
+	fail := func(msg string) { r.reply("autonomous supervisor-loop failed", msg+"\n"+supervisorLoopUsage) }
+	if len(args) > 0 && args[0] == "status" {
+		args = args[1:]
+		if len(args) > 0 {
+			fail("unknown argument " + strings.Join(args, " "))
+			return
+		}
+	} else if len(args) > 0 {
+		if args[0] != "set" || len(args) == 1 {
+			fail("wake takes status or set key=value")
+			return
+		}
+		patch := map[string]any{}
+		for _, a := range args[1:] {
+			key, value, ok := strings.Cut(a, "=")
+			if !ok {
+				fail("unknown argument " + a)
+				return
+			}
+			full, known := supervisorWakeKeys[strings.TrimPrefix(key, "supervisor_loop.wake.")]
+			if !known {
+				fail("unknown wake setting " + key)
+				return
+			}
+			value = strings.TrimSpace(value)
+			switch full {
+			case supervisorloop.KeyWakeEnabled:
+				b, err := strconv.ParseBool(value)
+				if err != nil {
+					fail("enabled must be true or false")
+					return
+				}
+				patch[full] = b
+			case supervisorloop.KeyWakeKinds:
+				list := []string{}
+				for _, k := range strings.Split(value, ",") {
+					if k = strings.TrimSpace(k); k != "" {
+						list = append(list, k)
+					}
+				}
+				patch[full] = list
+			default:
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					fail(key + " must be a whole number")
+					return
+				}
+				patch[full] = n
+			}
+		}
+		raw, _ := json.Marshal(patch)
+		if _, err := r.commJSON("PUT", "/api/config", string(raw)); err != nil {
+			r.reply("autonomous supervisor-loop wake set failed", err.Error())
+			return
+		}
+	}
+	out, err := r.commGet("/api/supervisor-loop/wake", nil)
+	if err != nil {
+		r.reply("autonomous supervisor-loop failed", err.Error())
+		return
+	}
+	var w struct {
+		Enabled                 bool     `json:"enabled"`
+		Kinds                   []string `json:"kinds"`
+		CoalesceSeconds         int      `json:"coalesce_seconds"`
+		FallbackIntervalMinutes int      `json:"fallback_interval_minutes"`
+		LastEvent               string   `json:"last_event"`
+		LastScheduledCheck      string   `json:"last_scheduled_check"`
+		EventCount              int      `json:"event_count"`
+		ScheduledCount          int      `json:"scheduled_count"`
+	}
+	if err := json.Unmarshal([]byte(out), &w); err != nil {
+		r.reply("autonomous supervisor-loop failed", "unparseable wake body: "+err.Error())
+		return
+	}
+	never := func(s string) string {
+		if s == "" || strings.HasPrefix(s, "0001-01-01") {
+			return "never"
+		}
+		return s
+	}
+	state := "off"
+	if w.Enabled {
+		state = "on"
+	}
+	r.reply(label, fmt.Sprintf("wake: %s\nkinds: %s\ncoalesce: %ds\nfallback interval: %d min\nlast event: %s (%d events)\nlast scheduled check: %s (%d checks)",
+		state, strings.Join(w.Kinds, ", "), w.CoalesceSeconds, w.FallbackIntervalMinutes,
+		never(w.LastEvent), w.EventCount, never(w.LastScheduledCheck), w.ScheduledCount))
 }

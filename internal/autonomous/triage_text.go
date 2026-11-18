@@ -14,10 +14,13 @@ import (
 
 // TriageList is the body of the triage read route: the stored triage
 // records, newest first (already sorted by the daemon), alongside the
-// alert threshold in effect as whole minutes (0 = alert off).
+// alert threshold in effect as whole minutes (0 = alert off), and the held
+// group: the Automata on hold by operator decision, shown beside the failed
+// and blocked ones and never counted among them.
 type TriageList struct {
 	Records      []*TriageRecord `json:"records"`
 	AlertMinutes int             `json:"alert_minutes"`
+	Held         HeldGroup       `json:"held"`
 }
 
 // ParseTriageList reads the body of GET /api/autonomous/triage.
@@ -28,6 +31,9 @@ func ParseTriageList(body []byte) (TriageList, error) {
 	}
 	if tl.Records == nil {
 		tl.Records = []*TriageRecord{}
+	}
+	if tl.Held.Held == nil {
+		tl.Held.Held = []HeldView{}
 	}
 	return tl, nil
 }
@@ -47,6 +53,9 @@ func RenderTriageText(tl TriageList) string {
 	var b strings.Builder
 	if len(tl.Records) == 0 {
 		fmt.Fprintf(&b, "No failed or blocked Automata to triage. (Triage alert threshold: %s)\n", triageThresholdText(tl.AlertMinutes))
+		if held := renderHeldGroupLines(tl.Held); held != "" {
+			b.WriteString("\n" + held)
+		}
 		return b.String()
 	}
 	fmt.Fprintf(&b, "Triage: %d Automat%s waiting for the operator (alert threshold: %s), newest first:\n\n",
@@ -58,6 +67,9 @@ func RenderTriageText(tl TriageList) string {
 		b.WriteString(RenderTriageRecord(rec))
 	}
 	b.WriteString("\n")
+	if held := renderHeldGroupLines(tl.Held); held != "" {
+		b.WriteString("\n" + held)
+	}
 	return b.String()
 }
 

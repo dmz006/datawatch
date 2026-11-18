@@ -65,40 +65,56 @@ function hist() {
 // page draws one sub-tab of the project page (Overview by default).
 function page(sb, roll = ROLLUP, sub = 'overview') {
   vm.runInContext(`_projectsState.subtab = ${JSON.stringify(sub)}`, sb);
+  vm.runInContext(`_projectsSummary = { name: ${JSON.stringify(FULL.name)}, error: '', data: { header: {}, progress: { automata: { done: 0, total: 0, percent: 0 }, points: 0 }, active_plans: [], next: null, counts: {} } }`, sb);
   return sb._projectPageHTML(FULL, roll, '', hist());
 }
 
-function svgOf(html) {
-  const m = /<svg class="project-gantt-svg"[\s\S]*?<\/svg>/.exec(html);
-  assert.ok(m, 'the Gantt SVG is drawn');
-  return m[0];
+// seedGantt gives the selected project a Gantt state with two arc rows, as if
+// the timeline's first page had arrived.
+function seedGantt(sb) {
+  const now = Date.now();
+  const rows = [
+    { kind: 'arc', id: 'auto-a', title: 'Login', state: 'done', first: iso(now - 5 * DAY), last: iso(now - 3 * DAY), running: false, has_children: true, children_count: 1 },
+    { kind: 'arc', id: 'auto-b', title: 'Cart', state: 'active', first: iso(now - 2 * DAY), last: null, running: true, has_children: true, children_count: 1 },
+  ];
+  vm.runInContext(`_projectsState.selected = 'acme'; _projectsState.gantt = { name: 'acme', rows: ${JSON.stringify(rows)}, next: '', error: '', loading: false, kids: {}, preset: 'all', view: null, expanded: {} }`, sb);
+}
+
+function chartOf(html) {
+  const i = html.indexOf('<div class="project-gantt-scroll">');
+  assert.ok(i >= 0, 'the Gantt chart is drawn');
+  const j = html.indexOf('id="projectSection-', i);
+  return html.slice(i, j < 0 ? undefined : j);
 }
 
 // ---- size cap (inside the Gantt sub-tab) ----
 
-test('the Gantt SVG is capped by a class rule and carries no viewport-relative unit', () => {
+test('the Gantt chart is capped by a class rule and carries no viewport-relative unit', () => {
   const { sb } = load();
-  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
-  assert.ok((svg.match(/<rect /g) || []).length >= 2, 'at least two bars');
-  assert.match(svg, /^<svg class="project-gantt-svg"/);
+  seedGantt(sb);
+  const chart = chartOf(page(sb, ROLLUP, 'gantt'));
+  assert.ok((chart.match(/class="project-gantt-bar/g) || []).length >= 2, 'at least two bars');
+  assert.match(chart, /^<div class="project-gantt-scroll">/);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  const rule = /\.project-gantt-svg\s*\{([^}]*)\}/.exec(css);
-  assert.ok(rule, 'a .project-gantt-svg rule exists in style.css');
+  const rule = /\.project-gantt-chart\s*\{([^}]*)\}/.exec(css);
+  assert.ok(rule, 'a .project-gantt-chart rule exists in style.css');
   const mw = /max-width:\s*(\d+)px/.exec(rule[1]);
-  assert.ok(mw && Number(mw[1]) > 0, 'the rule sets a fixed pixel max-width');
+  assert.ok(mw && Number(mw[1]) === 720, 'the rule sets the 720px max-width');
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(rule[1]), 'the rule has no viewport-relative unit');
-  assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(svg), 'the SVG markup has no viewport-relative unit');
-  const section = page(sb, ROLLUP, 'gantt').match(/id="projectGantt"[\s\S]*?<\/svg>/)[0];
+  assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(chart), 'the chart markup has no viewport-relative unit');
+  const section = page(sb, ROLLUP, 'gantt').match(/id="projectGantt"[\s\S]*?project-gantt-chart/)[0];
   assert.ok(!/\b\d*\.?\d+\s*(vw|vh|vmin|vmax)\b/.test(section), 'the Gantt block has no viewport-relative unit');
 });
 
-test('SVG font sizes are fixed numbers', () => {
-  const { sb } = load();
-  const svg = svgOf(page(sb, ROLLUP, 'gantt'));
-  const sizes = svg.match(/font-size="[^"]*"/g) || [];
-  assert.ok(sizes.length >= 3, 'text elements carry font-size');
-  for (const s of sizes) assert.match(s, /^font-size="\d+(\.\d+)?"$/, s + ' is a plain number');
-  assert.doesNotMatch(svg, /font-size:/, 'no inline font-size style');
+test('Gantt text sizes are fixed pixels in style.css and the labels are sticky', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
+  for (const cls of ['project-gantt-label', 'project-gantt-tick', 'project-gantt-now', 'project-gantt-planned']) {
+    const rule = new RegExp('\\.' + cls + '\\s*\\{([^}]*)\\}').exec(css);
+    assert.ok(rule, cls + ' has a rule');
+    const fs1 = /font-size:\s*([^;]+);/.exec(rule[1]);
+    assert.ok(fs1 && /^\d+(\.\d+)?px$/.test(fs1[1].trim()), cls + ' font-size is plain px');
+  }
+  assert.match(css, /\.project-gantt-label\s*\{[^}]*position:\s*sticky;\s*left:\s*0/);
 });
 
 // ---- order ----
@@ -119,8 +135,10 @@ test('the sub-tab strip puts Gantt before Unassigned, and Unassigned before Hist
 
 // ---- collapse memory (cards only where a sub-tab holds more than one block) ----
 
-const CARD_TABS = { overview: ['progress'], policy: ['policy', 'merge'], events: ['events', 'stream'] };
-const BARE_TABS = ['arcs', 'gantt', 'unassigned', 'history'];
+// The Policy sub-tab is gone: that address (or choice) now renders the
+// Overview body, whose card is overview.
+const CARD_TABS = { overview: ['overview'], plans: ['progress'], policy: ['overview'], events: ['events', 'stream'] };
+const BARE_TABS = ['gantt', 'unassigned', 'history'];
 
 test('multi-block sub-tabs draw cards with a toggle; single-block sub-tabs draw none', () => {
   const { sb } = load({ showEmpty: true });
@@ -170,28 +188,28 @@ function wireCards(sb, html) {
 test('collapsing stores a per-section value; a fresh render draws only that section collapsed; expanding clears it', () => {
   const storage = memStorage();
   const a = load({ storage, showEmpty: true });
-  const cards = wireCards(a.sb, page(a.sb, ROLLUP, 'policy'));
-  a.sb.projectsToggleSection('merge');
-  assert.equal(cards.merge.body.hidden, true, 'body hidden in place');
-  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_merge'], 'one per-section key');
-  assert.equal(storage.getItem('cs_projects_section_collapsed_merge'), '1');
+  const cards = wireCards(a.sb, page(a.sb, ROLLUP_NO_UNASSIGNED, 'events'));
+  a.sb.projectsToggleSection('stream');
+  assert.equal(cards.stream.body.hidden, true, 'body hidden in place');
+  assert.deepEqual(storage.keys(), ['cs_projects_section_collapsed_stream'], 'one per-section key');
+  assert.equal(storage.getItem('cs_projects_section_collapsed_stream'), '1');
 
   const b = load({ storage, showEmpty: true });
-  const html = page(b.sb, ROLLUP, 'policy');
+  const html = page(b.sb, ROLLUP_NO_UNASSIGNED, 'events');
   const card = id => new RegExp(`<div class="project-section-card( collapsed)?" id="projectSection-${id}"`).exec(html);
-  assert.equal(card('merge')[1], ' collapsed', 'merge drawn collapsed');
-  assert.equal(card('policy')[1], undefined, 'policy stays expanded');
-  const mergeCard = html.slice(html.indexOf('id="projectSection-merge"'));
-  assert.match(mergeCard, /aria-expanded="false"/);
-  assert.match(mergeCard, /project-section-body" hidden>/);
-  assert.match(mergeCard, /aria-label="Expand /);
+  assert.equal(card('stream')[1], ' collapsed', 'stream drawn collapsed');
+  assert.equal(card('events')[1], undefined, 'events stays expanded');
+  const streamCard = html.slice(html.indexOf('id="projectSection-stream"'));
+  assert.match(streamCard, /aria-expanded="false"/);
+  assert.match(streamCard, /project-section-body" hidden>/);
+  assert.match(streamCard, /aria-label="Expand /);
 
   const cards2 = wireCards(b.sb, html);
-  b.sb.projectsToggleSection('merge');
-  assert.equal(cards2.merge.body.hidden, false, 'expanded in place');
-  assert.notEqual(storage.getItem('cs_projects_section_collapsed_merge'), '1', 'expanding clears the stored collapse');
+  b.sb.projectsToggleSection('stream');
+  assert.equal(cards2.stream.body.hidden, false, 'expanded in place');
+  assert.notEqual(storage.getItem('cs_projects_section_collapsed_stream'), '1', 'expanding clears the stored collapse');
   const c = load({ storage, showEmpty: true });
-  assert.doesNotMatch(page(c.sb, ROLLUP, 'policy'), /project-section-card collapsed/, 'fresh render has nothing collapsed');
+  assert.doesNotMatch(page(c.sb, ROLLUP_NO_UNASSIGNED, 'events'), /project-section-card collapsed/, 'fresh render has nothing collapsed');
 });
 
 test('a localStorage that throws still renders every section expanded without an error', () => {
@@ -204,29 +222,29 @@ test('a localStorage that throws still renders every section expanded without an
     assert.doesNotMatch(html, /project-section-card collapsed/);
     assert.doesNotMatch(html, /project-section-body" hidden/);
   }
-  const cards = wireCards(sb, page(sb, ROLLUP_NO_UNASSIGNED, 'policy'));
-  assert.doesNotThrow(() => sb.projectsToggleSection('merge'));
-  assert.ok(cards.merge, 'card present');
+  const cards = wireCards(sb, page(sb, ROLLUP_NO_UNASSIGNED, 'events'));
+  assert.doesNotThrow(() => sb.projectsToggleSection('stream'));
+  assert.ok(cards.stream, 'card present');
 });
 
 test('the Projects view paints the cards through the real render path', async () => {
   const storage = memStorage();
-  storage.setItem('cs_projects_section_collapsed_merge', '1');
+  storage.setItem('cs_projects_section_collapsed_stream', '1');
   const { sb, out } = load({ storage, showEmpty: true });
   sb.fetch = (url) => {
     const u = String(url);
     const ok = body => Promise.resolve({ ok: true, status: 200, statusText: '', json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body)) });
     if (u.includes('/history')) return ok(hist());
-    if (u.includes('/rollup')) return ok(ROLLUP);
+    if (u.includes('/rollup')) return ok(ROLLUP_NO_UNASSIGNED);
     if (u.includes('/api/projects')) return ok([FULL]);
     return ok([]);
   };
-  sb.location.hash = '#projects/acme/policy';
+  sb.location.hash = '#projects/acme/events';
   vm.runInContext("_projectsState.selected = 'acme'", sb);
   sb.renderProjectsView();
   await flushAsync();
-  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-merge"/);
-  assert.match(out.view, /id="projectSection-policy"/);
+  assert.match(out.view, /class="project-section-card collapsed" id="projectSection-stream"/);
+  assert.match(out.view, /id="projectSection-events"/);
 
   sb.location.hash = '#projects/acme/gantt';
   sb.renderProjectsView();
@@ -239,7 +257,7 @@ test('the Projects view paints the cards through the real render path', async ()
 
 test('no control hides or moves a card', () => {
   const { sb } = load({ showEmpty: true });
-  for (const sub of ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
+  for (const sub of ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events']) {
     const html = page(sb, ROLLUP, sub);
     assert.doesNotMatch(html, /draggable/i);
     assert.doesNotMatch(html, /ondrag|ondrop/i);
@@ -249,7 +267,7 @@ test('no control hides or moves a card', () => {
       assert.match(m[1], /^projectsToggleSection\('[a-z]+'\)$/, 'a toggle only collapses or expands');
     }
     const ids = new Set(Array.from(html.matchAll(/data-section="([^"]+)"/g)).map(m => m[1]));
-    for (const id of ids) assert.ok(['progress', 'stream', 'policy', 'merge', 'events'].includes(id), id + ' is a known section');
+    for (const id of ids) assert.ok(['overview', 'progress', 'stream', 'events'].includes(id), id + ' is a known section');
   }
 });
 

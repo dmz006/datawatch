@@ -393,6 +393,19 @@ func waitResetsAt(cause WaitCause, reason string, bo *Backoff, cooldownFn func()
 			return nil
 		}
 		name := between(reason, backoffPrefix, backoffInfix)
+		if name == "" {
+			// A review-reserve refusal ("pool llm:<backend> backpressure:
+			// back-off, review reserve in use") names no "backend … backed
+			// off"; only the pool names the backend.
+			if i := strings.Index(reason, "llm:"); i >= 0 {
+				rest := reason[i+len("llm:"):]
+				if j := strings.IndexAny(rest, " ,"); j >= 0 {
+					name = rest[:j]
+				} else {
+					name = rest
+				}
+			}
+		}
 		for _, e := range bo.Live() {
 			if e.Backend == name && e.ResetKnown {
 				until := e.Until

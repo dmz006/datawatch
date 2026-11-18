@@ -26,7 +26,7 @@ func TestLifecycleSubscriptionForm_KindListMatchesKnownEventKinds(t *testing.T) 
 	// Kinds are prd.<status>, task.<status> or a bare kind (opt-in
 	// warning, session, question); the group label keys (lifecycle_sub_form_*)
 	// share the quoted shape and are skipped.
-	for _, m := range regexp.MustCompile(`'((?:(?:prd|task|question)\.)?[a-z_]+)'`).FindAllSubmatch(block[1], -1) {
+	for _, m := range regexp.MustCompile(`'((?:(?:prd|task|question|automaton|burn_guard|judge)\.)?[a-z_]+)'`).FindAllSubmatch(block[1], -1) {
 		if strings.HasPrefix(string(m[1]), "lifecycle_sub_form_") {
 			continue
 		}

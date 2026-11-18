@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -217,7 +218,7 @@ func (s *Server) handleSupervisorLoopEval(_ context.Context, req mcpsdk.CallTool
 
 func (s *Server) toolSupervisorLoopStats() mcpsdk.Tool {
 	return mcpsdk.NewTool("supervisor_loop_stats",
-		mcpsdk.WithDescription(`Read the supervisor loop's numbers: whether the loop is enabled, how many jobs it has and how many are enabled, the stored run count and its split by outcome (ok, validator_failed, escalated, error), the retries used, and the seconds since the last run (-1 when none has run). Takes no arguments; any argument is refused. Read-only; the same object as GET /api/supervisor-loop/stats.`),
+		mcpsdk.WithDescription(`Read the supervisor loop's numbers: whether the loop is enabled, how many jobs it has and how many are enabled, the stored run count and its split by outcome (ok, validator_failed, escalated, error), the retries used, and the seconds since the last run (-1 when none has run), plus a \"wake\" object: the wake settings in effect (enabled, kinds, coalesce_seconds, fallback_interval_minutes) with the last event, the last scheduled check, their counts and how long events have been silent. Takes no arguments; any argument is refused. Read-only; the stats object is GET /api/supervisor-loop/stats and the wake object is GET /api/supervisor-loop/wake.`),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
@@ -234,5 +235,24 @@ func (s *Server) handleSupervisorLoopStats(_ context.Context, req mcpsdk.CallToo
 	if err != nil {
 		return toolError("supervisor_loop_stats", err), nil
 	}
-	return textOK(string(out)), nil
+	return textOK(s.withWakeStatus(out)), nil
+}
+
+// withWakeStatus adds the daemon's wake record to the stats object under
+// "wake". When the wake record cannot be read, the stats come back unchanged.
+func (s *Server) withWakeStatus(stats []byte) string {
+	wake, err := s.proxyGet("/api/supervisor-loop/wake", nil)
+	if err != nil {
+		return string(stats)
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(stats, &obj) != nil || !json.Valid(wake) {
+		return string(stats)
+	}
+	obj["wake"] = json.RawMessage(wake)
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return string(stats)
+	}
+	return string(merged)
 }

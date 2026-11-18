@@ -10,6 +10,775 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 
+## v9.182.23 — Session-kind profiles: lean starts for every session kind
+
+### Changed
+
+- Session-kind profiles: lean starts for every session kind.
+
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
+## v9.182.20 — Keep the operator host name out of generated reports
+
+### Changed
+
+- Keep the operator host name out of generated reports.
+
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
+## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
+
+### Changed
+
+- Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi.
+
+## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
+
+### Changed
+
+- Requeue dependents whose only failure was a dependency-failed error once the dependency co.
+
+## v9.182.12 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
+## v9.182.11 — Keep full file paths in decomposed task specs (no names cut at a space or a length limit)
+
+### Changed
+
+- Keep full file paths in decomposed task specs (no names cut at a space or a length limit).
+
+## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
+
+### Changed
+
+- Stop the read-only task check from counting launcher files as tree changes.
+
+## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
+
+### Changed
+
+- Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e.
+
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.7 — 3e500001
+
+### Changed
+
+- 3e500001.
+
+## v9.182.6 — 12480001
+
+### Changed
+
+- 12480001.
+
+## v9.182.5 — a46d0001
+
+### Changed
+
+- a46d0001.
+
+## v9.182.4 — Pack workflow graphs: research note with grounded answers
+
+### Changed
+
+- Pack workflow graphs: research note with grounded answers.
+
+## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
+
+### Changed
+
+- Fix the shutdowncause child process scan flake in the full test run.
+
+## v9.182.2 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
+
+### Changed
+
+- Fix the peer-down recovery test that fails in the full package run.
+
+## v9.182.0 — Build-host toolchain freshness check
+
+### Changed
+
+- Build-host toolchain freshness check.
+
+## v9.181.0 — Remember the header server dropdown choice per browser
+
+### Changed
+
+- Remember the header server dropdown choice per browser.
+
+## v9.180.2 — Two data races found by the race detector
+
+### Fixed
+
+- **A model pull answered with a record that its own background pull was still updating.** The compute node model pull handler registered the pull task, started the goroutine that updates it, then encoded the same record into the response. The response is now a copy taken before the goroutine starts. The race detector reported it in `TestModelPullAllowedByModelEntry` and `TestModelPullAllowedByPublisher`.
+- **The observer pull test ticker helper was not safe for the several collector workers that ask it for a ticker at once.** It now holds a lock, which removes the race and the occasional failure of `TestHandleObserverPull_FailedPeerIsStaleWithReason`.
+
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
+## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
+
+### Changed
+
+- Merge-pending sweep covers every terminal state and leaves shadow mode.
+
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
+## v9.176.2 — Quick replies answer the pending operator question
+
+### Changed
+
+- Quick replies answer the pending operator question.
+
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
+
+## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
+
+### Changed
+
+- Multi-select state filters on Automata, Projects and Plans.
+
+## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
+
+### Changed
+
+- Give the agent-aider image Python 3.11.5 or newer for soupsieve 4.
+
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
+### Fixed
+
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
+## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
+
+### Fixed
+
+- A test helper assigned a map lookup to the blank identifier, which the CI lint version flags; it now reads the value directly.
+
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
+## v9.175.2 — Stop writing the instance-level server token into project files
+
+### Changed
+
+- Stop writing the instance-level server token into project files.
+
+## v9.175.1 — Fix: a saved project description is stored, returned and shown on every surface
+
+### Changed
+
+- Fix: a saved project description is stored, returned and shown on every surface.
+
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
+## v9.174.0 — Usage back-off must not block verification, judging and planning
+
+### Changed
+
+- Usage back-off must not block verification, judging and planning.
+
+## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
+
+### Added
+
+- **Pool fall-through now has alternates to fall through to.** With `autonomous.capacity_fallthrough` on, a worker whose requested pool is full is offered, in order, the other lane fill backend (the Claude lane backend or the GPU lane backend, on its default model) and then every LLM entry marked as an allowed fall-through target. An alternate whose backend is disabled, already at its in-flight cap or unable to serve the model is skipped, and verifiers, judges and planners never fall through.
+- **New LLM entry setting `fallthrough_target`** (default false) marks an entry as an allowed fall-through target. Set it with `datawatch llm add|update --fallthrough-target`, MCP `llm_add` / `llm_update`, comm `llm update <name> fallthrough_target=true`, `PUT /api/llms/{name}`, `fallthrough_target: true` in the `llms:` list, or the **Allowed fall-through target** switch in the web app LLM settings. Omitting it on an update keeps the stored value. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+
+### Fixed
+
+- **Turning on pool fall-through now reaches tasks that are already waiting.** A task decided about fall-through once, when it was queued, so a task waiting on a full pool stayed there after `autonomous.capacity_fallthrough` was switched on until it was re-queued or the daemon restarted. A waiting worker now re-reads the setting and asks for an idle alternate on every wait pass, keeping its queue place and wait timeout. The fall-through audit entry (`autonomous_capacity_admitted` with `fall_through`, `from_pools`, `to_pools` and a note) says when the task's backend was set explicitly (`explicit backend; fall-through setting on`), and an explicit-backend task still falls through only while the setting is on. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+- **A task of an Automaton that prefers the Claude lane no longer asks for the daemon default's capacity pool.** When no task, story, PRD or Automaton worker was named, the worker fell back to the daemon default (often pi-prompt) and the task queued on `pool llm:pi-prompt` even though its lane preference was Claude. The lane preference is now a level of the worker order: task, story, PRD, Automaton, lane preference, then the daemon default. A `claude` preference falls back to the Claude lane backend, a `gpu` preference to the GPU lane backend, and `any` or none keeps the default. Lane fill and lane utilization read the same order.
+
+## v9.173.5 — Projects page phone overflow and empty Events grouping
+
+### Fixed
+
+- **The Projects page no longer scrolls sideways on a phone.** At 600 px or less only the page sub-tab strip scrolls horizontally; the picker row wraps, long event, card and directory text wraps, and wide `pre` and table content scrolls inside its own box. First seen on the Events page sub-tab of a project.
+- **Empty notes on a project's Events page are grouped.** Notes that only say something is empty or has never happened are collapsed into one summary line with a count while **Show empty lines and sections** is off; tick it to list them one per line. Notes that report something real are always listed.
+
+## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
+
+### Fixed
+
+- **The daemon no longer aborts at start on a typed-nil model-use source.** `internal/server/plugin_models.go` now passes a true nil interface, never a nil pointer wrapped in one, when no default model-use source exists, and the default source is safe on a nil receiver. Regression tests cover the typed-nil case and the node-event path.
+- **The release smoke's shared-navigation section honors the section filter.** With a section filter such as `SMOKE_ONLY=1,2,3,4` the section is skipped, the probe receives its four environment variables, and a run with no browser available skips instead of failing. A new shell test covers the section; the how-tos on navigation fit and on testing against a running daemon describe the behavior.
+- **The test daemon helper cleans up on HUP, INT and TERM even when the signal arrives ignored.** `scripts/test-daemon-lib.sh` now reruns the script with those signals reset to their defaults, so `tests/ci` daemon cleanup works when the shell started the script with SIGHUP ignored (a background job or `nohup`). Two new tests in `tests/ci/daemon_cleanup_test.go` cover it.
+- **The release smoke no longer aborts on an undefined counter.** A stray increment of a variable that was never defined ended the priority-source section and aborted the whole run with "unbound variable" even when the section was skipped. It is removed, and a new shell test fails if the script increments a counter it does not initialise.
+
+## v9.173.3 — Projects cards and Gantt fix
+
+### Fixed
+
+- The Projects view draws its project list and its Unassigned and History boards as cards, with a Cards, Tiles and Compact switch that is remembered in the browser; a phone width starts in Compact.
+- The Unassigned board now has Assign (set the project from the card), Open and Dismiss per Automaton, with an Undo link. Dismiss hides the card in this browser only; the daemon keeps tracking the Automaton.
+- The Policy page was removed from a project's sub-tabs. The link next to the project name opens the policy in Settings, and an old stored or addressed `policy` choice opens Overview.
+- The Projects Gantt now draws an Automaton from its first task start to its last task end, and a shipped Automaton always reads completed, whatever its record says.
+
+## v9.173.2 — Workers stop writing rules-file checkpoints
+
+### Fixed
+
+- **Automaton workers no longer write checkpoint entries into the rules file.** Workers often appended a progress note to `AGENT.md`, a protected path, so almost every task raised a protected-path question. Every worker prompt that carries the rules block now also carries a short rule: do not add, edit or remove checkpoint entries in `AGENT.md`, `CLAUDE.md` or the configured rules file, and write progress notes to `CHECKPOINT.md` at the root of the working directory instead.
+- **A checkpoint-only change to the rules file is reverted automatically.** When a worker appends a checkpoint entry anyway and that entry is the file's entire change since the base commit, the protected-paths gate strips it out, records a `protected_paths_checkpoint_reverted` decision and does not hold the task. A change that goes beyond the entry is still caught by the gate.
+- The how-tos on protected paths and rules and context, the operations guide and the glossary describe the new rule and the revert.
+
+## v9.173.1 — Dashboard phone layout fix
+
+### Fixed
+
+- **Dashboard on a phone.** At 600px or less the stat bar now wraps onto a second row so the **+ Card** and **Edit** buttons stay on screen, and the Dashboard scrolls as one page (the card grid grows to fit its cards instead of clipping inside a short nested scroll box). Layout only: no setting, API, MCP or CLI change. Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`; see [howto/dashboard.md](docs/howto/dashboard.md#on-a-phone).
+
+## v9.173.0 — Local pre-tag run replaces the slow CI checks
+
+### Added
+
+- **`make pre-tag` runs the release gates locally before the tag.** `scripts/pre-tag.sh` runs the checks CI would otherwise find after the tag, in CI order, and stops at the first failure: lint, the Go test suite, the security and release-build steps, and an opt-in slow step (tmp guard, cross build of the release targets, perf rollup and busy-loop checks, each niced and time-limited). A step whose tool is missing prints `SKIP [step]: <tool> not found` and does not fail the run. Every run appends a line to the git-ignored `.datawatch/pre-tag-record` (`PRE_TAG_RECORD_FILE` overrides it; a dry run writes nothing). `tests/test-pre-tag.sh` covers the runner and runs in `make test`.
+
+### Changed
+
+- **CI no longer runs the Go test suite.** The `go test` step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build`. The pre-tag run is the only gate that runs the suite, so run it before every tag. AGENT.md, CONTRIBUTING.md, the release checklist, the push-and-tag how-to, the testing page, the operations page and the glossary describe the rule.
+
+## v9.172.14 — Accept the second soupsieve finding on the aider image
+
+### Security
+
+- **CVE-2026-126191 on the aider image is accepted for 30 days.** The release scan lists a second HIGH finding on soupsieve 2.10 (exponential ReDoS in selector compilation, fixed in 3.0.2). Every soupsieve release from 3.0.2 requires Python >=3.11.5 and the aider image runs Python 3.11.2, so it cannot be upgraded. Aider calls no selector, a finding reused from the CVE-2026-126190 trace and not re-traced, so the entry is untraced. It clears when the aider venv moves to Python >=3.11.5 (Automaton 66dd0001).
+
+## v9.172.13 — Burn script counts helper agents
+
+### Changed
+
+- **The usage burn script now counts helper agents.** `scripts/claude-burn.py` read only the top-level session transcripts and left out the subagent transcripts that Claude Code keeps for helper agents, so merge, repair and audit helpers did not show in the usage totals. It now counts them and prints them as their own line, and it joins the other supervisor tools (`supervisor-watch.py`, `v10-status.py`) in the version-bump check's exempt list.
+
+## v9.172.12 — Encryption audit: the encryption docs match the code
+
+### Documentation
+
+- **The encryption page and the pages that repeat it now match the code.** `docs/encryption.md` was rewritten against the 2026-11-13 encryption audit: it names the current config format and key settings, the real file names (session records under `sessions.d/`, `schedule.json`, `output.log.enc`), and states that memory encryption follows `--secure` (there is no memory encryption setting). It now lists what `--secure` covers, what is still plain, what cannot be encrypted, that there is no password-change or key-rotation command, that `export --all` misses the current session records and the schedule store, and that the vault key file sits beside the vault. The operations, setup, memory, secrets and cross-agent memory pages, the glossary and the README no longer say that all data is encrypted. No behavior changed.
+- **Three more encryption claims corrected.** The secrets how-to no longer tells operators to run `datawatch secrets export` and `secrets import <file>` (neither exists); it describes moving values with `secrets get` and `secrets set`, and separates `secrets migrate`. The devices API page no longer says `devices.json` is encrypted through a `secrets.encryption_enabled` setting (there is none; the file is plain). The profiles page links the encryption page.
+
+## v9.172.11 — Email empty-recipient test is instant and deterministic
+
+### Fixed
+
+- **The email empty-recipient test is instant and deterministic.** The test that a send with no recipient falls back to the configured `email.to` address used to connect to a non-routable host and wait for a network timeout, and it could not tell a refused address from a slow network. It now sends to a local fake mail server, so it finishes at once, and it checks that the message is addressed to the configured fallback. Test-only change: the email backend's behavior is unchanged. The comm channels how-to, the messaging backends reference, the operations guide and the glossary state the behavior: a send with no recipient goes to the configured address, and a recipient or sender containing a newline is refused before any connection is opened.
+
+## v9.172.10 — A pasted message with attachments is now submitted
+
+### Fixed
+
+- **A message sent to a session with attachments is now submitted.** A message pasted into a Claude Code session (for example from the web app with attachments) could land in the input box without being submitted, because Enter was pressed before the session had accepted the paste. The daemon now waits up to 1.5 seconds for the pasted text or its `[Pasted text #N]` placeholder to show in the pane, presses Enter once, and, for pasted, multi-line or long input, presses Enter again at most twice while the text is still unsent. The delivery sequence is covered by tests over a fake terminal. No new setting, endpoint or field.
+
+### Documentation
+
+- **Sending a message to a session is documented as wait, Enter, verify.** The Sessions deep-dive how-to gains "How a sent message is submitted", the operations guide gains "Message submission to a session", and the glossary gains a "Message submission" entry. The `schedule_settle_ms` comments, `datawatch session send` and the sessions API page point to it.
+
+## v9.172.9 — Projects Overview sub-tabs respond and use the Projects look
+
+### Fixed
+
+- **The Projects Overview sub-tabs respond to a click or tap.** Under Overview on the Projects page the in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) did nothing when chosen. Choosing one now shows its body, marks it selected, and keeps the Inbox count live.
+- **The Overview sub-tabs use the Projects look.** The strip now matches the project page sub-tabs instead of the Automation view's second row, and the choice is remembered in this browser (the same stored value as the project page sub-tabs) and restored on refresh. A remembered value that does not belong to the Overview strip is ignored and Inbox opens. The strip has no address of its own, so the address stays `#projects`.
+- The Projects tab how-to and the glossary describe the Overview sub-tabs, with tests for the clicks, classes and memory. This is a display rule of the web app only: no setting and no REST, MCP, CLI or chat change.
+
+## v9.172.8 — Two slow tests behind opt-in make targets
+
+### Fixed
+
+- **Two slow non-unit tests no longer run in a plain `go test ./...`.** The release-target cross-build check and the temporary-folder leak guard each start nested builds or test runs and made the regular run slow. Both now skip with a message naming their target unless asked for, and two opt-in `make` targets run them: `make test-cross-build` (sets `DW_RUN_CROSS_BUILD=1`) and `make test-tmp-guard` (sets `DW_RUN_TMP_GUARD=1`). `make help` lists both, a test guards that the plain run skips them and the targets run them, and the contributor guide and testing guide say to run both before tagging a release. Whether CI and the release workflow run them is decided separately.
+
+## v9.172.7 — Automata list and get: notes off standard output
+
+### Fixed
+
+- **`datawatch autonomous list` and `get` print one JSON document on standard output.** The plain-text notes they add (for example a "planning failed" line for an Automaton, or a skipped-tag note) went to standard output after the JSON, so a script that parsed the output failed. The notes now go to standard error, and a test guards that standard output holds exactly one JSON document. The planning failures how-to, the API reference and the glossary describe the split.
+
+## v9.172.6 — Soupsieve CVE accepted for the aider image
+
+### Security
+
+- **CVE-2026-126190 (soupsieve 2.10, HIGH) in the aider image is accepted for 30 days.** It is a denial of service that needs an attacker to control a CSS selector passed to soupsieve; aider scrapes pages with beautifulsoup4 but its own code never calls select, so no selector reaches it. The fix (soupsieve 4.0.0) needs Python 3.11.5 or newer and the image has Python 3.11.2, so it cannot be installed yet. It clears when the aider venv moves to a newer Python, which is a separate follow-up; the entry expires 2026-12-13.
+
+## v9.172.5 — Sessions deep-dive how-to corrections
+
+### Fixed
+
+- **The Sessions deep-dive how-to now states three things correctly.** The Fold all icon is described as showing only while a grouping is active and the list has groups to fold, and the search count is written as "N of M sessions" (for example "3 of 21 sessions"), matching the web app. Documentation only: no code or setting changed.
+
+## v9.172.4 — Plans migration: untitled rows take the linked Automaton's title
+
+### Fixed
+
+- **Registry rows with no title of their own now take the title of the Automaton they name.** After v9.172.3 about 70 rows still became `Plan: (untitled row N)` and plans are never renamed afterwards. A row with no usable title now takes the title of the Automaton (or Automation) it names, on one line, at most 100 characters with `Plan: ` included; only a row with neither is still named `(untitled row N)`. The preview line now ends `titles derived N, from linked Automaton K, fell back M` on the CLI, chat and REST (`titles_from_linked`), and the MCP text, both OpenAPI files and the Plans how-to say so.
+
+
+## v9.172.3 — Plans migration uses the real row title
+
+### Fixed
+
+- **The plans migration names each plan from its row's real title.** Registry rows whose title cell held a status note (for example `done, shipped in 9.5.92 (PRD 332c0001)`) used to become plans titled with that note. The migration now takes the title from the row's title or description text, drops leading status words, keeps one line of at most 100 characters, and names a row with no real title `Plan: (untitled row N)`. The row's status still becomes the plan's status, a plan that already exists is never renamed, and a second apply changes nothing. The preview line on the CLI, chat and REST now ends with `titles derived N, fell back M`, and the Plans how-to explains it.
+
+## v9.172.2 — Two unfixed git CVEs accepted for agent-base
+
+### Security
+
+- **CVE-2026-111760 and CVE-2026-114466 in git and git-man are accepted for 30 days.** Both are HIGH, affect the agent-base image (Debian git 1:2.39.5-0+deb12u3) and have no fix in any Debian suite yet; they were blocking the Release image scan. CVE-2026-111760 can run attacker code during a recursive clone of a hostile repository, and CVE-2026-114466 lets an untrusted git fast-import stream read or write files. Datawatch's own worker bootstrap does a plain non-recursive clone and never uses fast-import, but an agent session inside the image could still run a recursive clone of an untrusted repository, so the risk is not removed. The entries are untraced and expire 2026-12-13; the image's package upgrade picks up a Debian fix when one ships, and near expiry the acceptance is renewed or git is built from source.
+
+## v9.172.1 — Task-type routing table: release gaps closed
+
+### Fixed
+
+- **The task-type routing table's release gaps are closed.** The routing settings (`autonomous.task_routing.*`) now apply on every surface: a key that was missing on a path (the configure command, chat, or the config write route) is fixed and each surface has a test. A routing table that names an unknown model is refused with the same message everywhere, and the flag that allows Opus or Fable rows is honoured on REST, MCP, the CLI, chat and the web app.
+- **Routing never overwrites work already in place.** Tests now guard that a hand-set LLM survives routing, add-task and re-decompose, and that switching the active routing profile leaves running tasks and tasks already routed as they are.
+- **The Settings routing editor shows all its text in every language.** Missing routing strings in the five locale files are filled in, and duplicate card ids and routes in the editor are fixed.
+- A browser story and a release smoke section now cover the Settings routing editor, and the task routing how-to states the routing guarantees.
+
+## v9.172.0 — Plans replace Arcs, with an ordered Plans browser
+
+### Added
+
+- The Projects tab Records sub-tab now browses every registry row and finding of the project, with search, kind and state filters, paging, and links from each row to its plan and Automata that open the Plans sub-tab with the plan expanded. The Registry and findings card moved there.
+- Plan records can now link down to Automations, Automata and findings, and carry a goal and a priority order. A plan is a record of its own kind; a finding attaches to a plan or to an Automaton. An Automaton or Automation already linked to a different plan is refused rather than moved, and the store can show an Automaton's plan from its summary index without reading full records. Plans can be reordered, and so can the Automata inside a plan. A plan with no Automaton is the backlog. Title search covers plans, Automata, Automations, registry rows and findings, with a state filter. Older records load unchanged.
+- Plans can now be ordered and linked from every surface. `POST /api/plans` creates a plan, `PUT /api/plans/order` reorders plans, `PUT /api/plans/{ref}/automata/order` reorders the Automata in a plan, and `POST /api/plans/{ref}/attach` and `/detach` link an Automaton, an Automation or a finding (kind `automaton`, `automation` or `finding`). The same controls are the `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach` MCP tools, `datawatch plans list|create|reorder|reorder-automata|attach|detach`, and the chat verbs `autonomous plan list|new|move|attach|detach`. Ids are checked first, a link held elsewhere is refused with its holder named and never overwritten, and the next marker after an Automata reorder skips blocked and held Automata. `datawatch projects arcs`, the `project_set_arcs` tool and the chat verb `arcs` stay as deprecated aliases.
+- `datawatch plans migrate [--apply]` (also `POST /api/plans/migrate`, the `plan_migrate` MCP tool and the `autonomous plan-migrate [apply]` chat verb) builds plans from the project arcs and the registry rows. Each arc becomes a plan linked to its Automation; each registry row that names an Automaton or Automation becomes a plan linked to it; each open row that names none becomes a backlog plan ordered by its old row number. It previews by default, never changes a plan or link that already exists (a second apply changes nothing), deletes no arc or config key, and audit-logs an apply.
+- The plans read API: `GET /api/projects/{name}/plans` (plans in order with goal, state, progress, points, Automation ids and a next marker, plus a Backlog group), `GET /api/projects/{name}/overview-summary` (header, progress, one line per active plan, what is next, record counts), `GET /api/plans/{ref}/automata` (a plan's Automata in run order: completed first by completion time, then running, then next, then blocked and held, which are shown but skipped by the next marker), `GET /api/plans/{ref}/tasks` (read when a plan is expanded) and `GET /api/plan-records/browse` (all registry rows and findings, with search, kind and state filters and links to plans and Automata). Every list is paged with `limit` and `offset` and answers from the plan-record summary index, never from full records; a test holds each read to about a second against a large fixture.
+- `GET /api/projects/{name}/arcs` and the roll-up `arcs` field are deprecated: they keep returning the same arcs data, now with a `plans` list beside it. Use the plans route.
+- The Plans sub-tab of a project page is now a plans browser. Plans appear in priority order with goal, state, progress and points, with up and down buttons that reorder them. Opening a plan shows its Automations, its Automata in run order (with the next marker and reorder buttons), a Tasks section that loads one page at a time, and the findings and registry rows linked to it. A Backlog group holds plans with no Automaton. A search box covers plan, Automaton, registry row and finding titles, a state filter narrows the list, and which plans are open is remembered in this browser. You can create a plan and attach an Automaton, an Automation or a finding from the page. All data comes from the paged plans read API. Labels are translated in German, Spanish, French and Japanese.
+
+## v9.171.1 — Release scan passes again
+
+### Security
+
+- **The container scan accepts one unfixed `git` finding in the agent image.** CVE-2026-105437 (a heap overflow in git's three-way merge, no fixed Debian package yet) was failing the blocking scan of the agent image and with it every release build. It is recorded as an accepted risk that expires in 30 days, marked untraced, with the reasoning for why the image only clones and pushes written into the entry.
+
+## v9.171.0 — Stable verification scripts by default
+
+### Added
+
+- **Verification scripts are stable by default.** The planner's prompt now carries five habits for the verification script of every file-changing task: run `make sync-docs` first in any docs check, build the allowed-file list from everything the whole Automaton may touch (a cumulative allowed-file helper snippet the planner is given), and compare against the merge base instead of only the task's own files. A script that passed the day it was written no longer fails once other tasks of the same Automaton land.
+- **New decompose lint rules for verification scripts.** The rule pack grows to thirteen rules, nine of them blocking. New findings cover a task with no verification script and no stated reason (`verification_script_reason_empty`), a script that compares only against the task's own files (`verification_script_task_files_only`), and a docs check that does not run `make sync-docs` first (`verification_script_docs_without_sync`). Each finding names the script and the rule, and a custom rule can match on the task kind.
+- **One final gate per Automaton, and it always has a script.** The plan check requires the final gate to carry a usable verification script, or a stated exemption reason when the project's own gate command is the closing check.
+- **A task's verification script and its exemption reason can be edited.** The task edit path on REST, MCP, the CLI, chat and the web app task editor takes `verification_script` and `verification_script_reason`, and an omitted field stays unchanged.
+- A new how-to, "Write verification scripts that stay stable", and updates to the decompose lint and planning how-tos, the operations guide, the API reference and the glossary. New labels are translated in all five languages.
+
+## v9.170.1 — Gantt focus test date fix
+
+### Docs
+
+- The Projects focus-view docs (howto, operations and the Focus view glossary entry) now state that the "First task … – last task …" header prints the two ends of the displayed range — the first and last task each extended by the 2 percent margin — rather than the exact first and last task dates; each can read up to a day off. The Gantt focus test that asserted against a hand-picked instant was corrected to expect the page's own range ends. No behavior, endpoint or setting changed.
+
+## v9.170.0 — Show finished Automata as Completed and restore cancelled-after-merge Automata
+
+### Changed
+
+- **Finished Automata show as Completed.** An Automaton whose work was merged now displays as Completed everywhere, in counts, list and detail views, the web app chip, the legend and the filter badges, and in the CLI and chat text output, instead of a separate Shipped status word. A record that carries a shipped record counts under Completed together with the Automata that completed normally, and never under Cancelled. The merge commit, release and merge time stay available as detail fields, and `status=shipped` is still accepted on the list as a way to select records that carry a shipped record.
+- **The merge pipeline marks merged Automata Completed.** A new built-in post-ship step, `mark_completed`, sets the Automaton's status to Completed after its merge instead of cancelling it, and the supervisor merge helper script records the same.
+
+### Added
+
+- **A migration restores Automata that were cancelled after their merge.** `datawatch autonomous completed-migrate`, the matching REST route, the `autonomous_completed_migrate` MCP tool and the chat verb find Automata that were cancelled only because their work had merged, and set their status to Completed. It also covers Automations, takes `--dry-run` to list what would change without writing, and leaves an Automaton cancelled without merged work alone.
+- A new how-to, "Show finished Automata as Completed", updates to the Shipped status how-to, the post-ship hooks how-to, the API reference, the operations guide and the glossary. New labels are translated in all five languages.
+
+## v9.169.0 — Visible and self-correcting Automaton planning failures
+
+### Added
+
+- **Planning failures are visible instead of silent.** An Automaton whose planning failed no longer sits as a draft with zero stories and no explanation. The failure is recorded with its reason, its category, the rule that fired, the phrases involved and its retry counts and budget, and it shows on the Automaton detail, as a "Planning failed" badge in the list, and through the REST, MCP, CLI and chat reads. An alert is raised once, and a question waits for you with the choices "Fix the wording and plan again" or "Leave it".
+- **A spec check runs when you create or revise an Automaton.** The spec text is linted for wording the planner may copy into task titles, such as fixed release numbers, tracker identifiers, private addresses and home paths. Each finding is reported with its phrase and a suggested rewording, flagged when the daemon can fix it itself. It is a warning only and never blocks the request. It is available on REST, MCP, CLI, chat and the web app.
+- **The daemon corrects a fixed release number by itself.** When a fixed release number is the only problem in a draft's spec, the daemon rewords it and plans again, and the planner prompt now lists the wording to avoid.
+- **A planning group in the housekeeping repairs.** Draft Automata with no stories whose planning failed for a reason that retrying will not change are re-planned the way the question's fix answer does when every finding is one the daemon can reword; otherwise they are reported once with an alert and left alone. The new setting is `planning` under the housekeeping repairs (`off`, `report` or `on`, default `report`).
+- A new how-to, "Planning failures, the spec check and self-correction", and updates to the operations guide, the decompose lint how-to, the housekeeping repairs how-to, the API reference and the glossary. New labels are translated in all five languages.
+
+## v9.168.0 — The Sessions page controls sit on one tight line
+
+### Added
+
+- **The Sessions page controls sit on one tight line.** The main controls of the Sessions page now share a single toolbar line that never wraps into several rows, at every width: a server select (the same shared picker as the header server dropdown, so choosing a server in one updates the other), the search box taking the free width, the Filters button with its badge, a Fold all icon that appears while a grouping is active, and a view mode select for List, Tiles and Compact. The chosen view is remembered on this device. The Tree and History buttons, and the back-to-local indicator while a federated server is active, move to a line directly below the toolbar.
+- **The same one-line rule applies to the Alerts, Automata, Observer and Dashboard pages** where it fits, so their controls no longer split across rows.
+- **Documentation and help text** for the Sessions how-tos, the Automata list controls and the glossary describe the one-line toolbar, the view mode select and the Fold all icon, and the new `sessions_view_dropdown` label is translated in all five languages.
+
+## v9.167.1 — Pull collector tests are deterministic
+
+### Fixed
+
+- **Pull collector tests are deterministic.** The observer pull collector's unit tests read each target's recorded state (`Last`) immediately after the fetch signal, but the collector records the result only after that signal — a scheduling delay let a test see the previous value and the suite flapped. The tests no longer read the state immediately: a `waitForLast` helper polls every 5 ms inside a loop that is itself bounded by a 5-second deadline, and on timeout takes one final read of the recorded state so a failing test reports the latest value. The collector tests are now stable. Test-only change: the collector's behavior, `observer.pull` settings, staleness reasons and every read surface are unchanged.
+
+## v9.167.0 — Match Automata to a project by explicit link first, directory as fallback
+
+The Projects page now decides which project an Automaton belongs to by an explicit link first, and by its directory only as the last fallback.
+
+- Membership order: the Automaton's own project link, then its Automation's project, then its parent's, then a directory match, where a worktree is mapped back to its repository.
+- Automata that match nothing are listed once in a separate Automata without a project group, shown on the Projects page under the unassigned Automata, so none is ever hidden. The group is not counted in any project total.
+- The link is editable on every surface: the Automaton detail in the web app, a `set_project` REST route, the `autonomous_prd_set_project` MCP tool, the `datawatch autonomous prd-set-project` command, and the `autonomous project` chat command. A name that is not a configured project is refused.
+- A backfill links the Automata that have no link yet from their Automation, parent or repository. It is a dry run that only reports unless `autonomous.project_link_backfill_apply` is on; REST, the `autonomous_project_link_backfill` MCP tool, `datawatch autonomous project-link-backfill` and the `autonomous project-backfill` chat command run one pass.
+- Throughput on the project roll-up counts shipped work: an Automaton that completed, or was merged and archived, is counted once.
+- Operator documentation covers the membership order, the without-project group, the link and the backfill.
+
+## v9.166.0 — A daemon restart no longer kills a running final gate
+
+### Fixed
+
+- A daemon restart no longer kills a running final gate. Gate and verifier child processes start in their own process group and survive a restart. The daemon re-attaches to a still-running gate at the next start, or reads its result file when the gate already finished, and counts no failure or retry. A gate killed by a signal within five minutes of the daemon starting is retried once without using the content budget.
+
+### Added
+
+- `autonomous.gate_drain_minutes` (default 10, 0 = do not wait): a graceful restart or stop waits up to this many minutes for running gates before exiting. The wait is bounded and kills nothing; unfinished gates re-attach at the next start. Settable through `PUT /api/config`, MCP `config_set`, comm `configure`, `datawatch config set` and Settings.
+- The restart answer reports `gates_waited` and `gates_interrupted`, and the interruption report carries `running_gates` and `running_gate_count`.
+
+### Changed
+
+- Docs: the restart how-to, the operations guide and the glossary now describe the graceful-restart wait for running final gates (`autonomous.gate_drain_minutes`, default 10, 0 = do not wait), the `running_gates` / `running_gate_count` fields of the interruption report, and the `gates_waited` / `gates_interrupted` fields of the `POST /api/restart` answer. The wait is bounded and kills nothing; unfinished gates re-attach at the next start.
+- Docs: the restart how-tos, the operations guide and the glossary now describe the final gate surviving a daemon restart: its own durable run record, re-attach at boot with no failure or retry counted, the shipped systemd unit's `KillMode=process`, and the one restart retry for a gate killed by a signal within five minutes of the daemon starting.
+
+## v9.165.0 — Task-type routing table for Automaton tasks
+
+### Added
+
+- **A task-type routing table for Automaton tasks.** An editable table maps each task type (for example code, test, docs, review, mechanical) to a worker backend and model and a verification backend and model, with an optional effort and a second choice. The planner and add-task classify each new task by type and apply the active profile to that task's own LLM and verification LLM. The shipped defaults route mechanical types to `pi-prompt` with the Qwen model and code types to `claude-code` with Sonnet; no row names Opus or Fable unless an operator adds one, and an unknown backend or model is refused when the table is saved.
+- **A hand-set LLM is never overwritten.** A model set on a task, a story or the Automaton always wins over the table, and switching the active profile changes only tasks created afterwards.
+- **Named profiles.** Save the table as a profile, switch the active profile, delete one, and export or import a profile as JSON to move it between servers. The decision log records which row decided each task's LLM, or why no row did.
+- **A dry run.** Preview what a profile would assign to each task of a draft Automaton; nothing is written, logged or run.
+- **Every surface.** `GET`/`PUT /api/autonomous/task-routing` and its profile, export, import, per-Automaton and dry-run routes, the `task_routing_*` MCP tools, `datawatch autonomous task-routing`, the `autonomous task-routing` chat verb and a Task routing section in Settings, Automata. The routing settings read and write through `PUT /api/config`, MCP `config_set`, the chat `configure` verb, `datawatch config set` and Settings.
+
+### Documentation
+
+- A how-to, `docs/howto/automata-task-routing.md`, plus the config reference, MCP and Cursor MCP references, the API to MCP mapping, the operations guide and the glossary.
+
+## v9.164.0 — Daemon repairs of basic stuck states
+
+### Added
+
+- **Housekeeping repairs for basic stuck states.** The daemon now notices and can repair four kinds of stuck state: task chains, an Automaton that did not advance or whose judge step is blocked, idle lanes while work waits, and leftover leases, worktrees and names left by finished work. Each group has its own setting, `autonomous.housekeeping_repairs.<group>` (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`), set to `off`, `report` or `on`; the default for every group is `report`, which only records what a repair would do. A repair never merges, ships, ends a session, changes a model or backend, or touches a security workflow.
+- **Read the repairs on every surface.** `GET /api/autonomous/housekeeping-repairs`, the `housekeeping_repairs` MCP tool, `datawatch autonomous housekeeping-repairs`, the `autonomous housekeeping-repairs` chat verb and a Housekeeping card on the Automata page show each group's mode, what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe.
+
+### Fixed
+
+- **The housekeeping repairs now run in the daemon.** They existed only as library code. The daemon start-up path now builds the repairer (`NewHousekeepingRepairer`), installs it on the Automata manager and on the coordinator, and runs it on the supervisor loop's idle tick, right after the loop's own steps. `GET /api/autonomous/housekeeping-repairs`, the `housekeeping_repairs` MCP tool, `datawatch autonomous housekeeping-repairs`, the chat verb and the Housekeeping card now return what the live repairer recorded. In the daemon the task chain and advance groups use the Automaton-store-backed repairs, and the lane fill and leftovers groups use the supervisor-step repairs; the default mode for every group is still `report`.
+- **`autonomous.housekeeping_repairs.*` can be read and changed on every configuration surface.** `PUT /api/config`, MCP `config_set`, the chat `configure` verb, `datawatch config set` and the Settings select fields now read and set each group's mode (`off`, `report`, `on`) and `grace_seconds`. A bad value is refused with one message on every surface and nothing is written; a change applies on the next pass without a restart.
+
+### Documentation
+
+- The new block is in the config reference; the testing tracker has a section for the endpoint contract and the wiring; the release smoke script checks the endpoint and a mode round trip; the MCP and Cursor MCP references and the API to MCP mapping list the `housekeeping_repairs` tool; the new locale keys are in the must-have list of the locale test.
+
+### Live check
+
+- A live smoke was **not** run against a daemon built from this change. The only running daemon reachable from this session is the operator's own, at v9.163.3, built before this change; `GET /api/autonomous/housekeeping-repairs` answers 404 there, as expected, and the repairs were not touched. The release smoke section was syntax-checked (`bash -n`) only; the functional test of the daemon wiring (report, on and off modes with fakes) and the per-surface config tests pass. Run `scripts/release-smoke.sh` on an isolated test daemon at release time.
+
+## v9.163.3 — Session detail page fills the window with no blank band
+
+### Fixed
+
+- **Session detail fills the whole page, no blank band under the input.** The session page (Tmux/Channel/Status tabs, opened from a local session or a peer's) used to render the terminal and the input row inside a shorter box, leaving a blank strip as tall as the list-page footer clearance under the input row. The page is now one flex column that fills from the header to the keyboard-aware bottom (same for iOS safe areas, and it still shrinks above the software keyboard via the existing visualViewport handling), with no extra space reserved. Resizing the window or zooming the browser re-fits the terminal pane with the existing resize handlers, and no new timers were added.
+
+## v9.163.2 — Accurate Projects Gantt
+
+### Fixed
+
+- **The Projects Gantt is accurate.** An Automaton bar now runs from its created time to its completion time, a task bar from its start to its completion, and an arc bar from the earliest Automaton start to the latest Automaton end; work still running is drawn to now. The default **All time** axis fits the rows that are showing (expanded Automata and tasks included) with a 2 percent margin at each end instead of a wide empty range. Rows are ordered by completion, then running and waiting work by start, with a dependency above its dependent, and a finished or shipped Automaton reads **Completed**.
+
+### Added
+
+- **Dependency edges on the Gantt.** Thin arrows run from the end of a task to the start of each task that waits for it, and between the Automata of an Automation that follow one another. Hovering or tabbing to a bar lights its own edges and dims the rest; an **Edges** toggle turns the arrows off and **All edges** lifts the cap of 120 drawn edges. The choice is remembered in the browser only.
+- **New timeline fields on `GET /api/projects/{name}/timeline`:** `start`, `end`, `status` and, on task rows, `depends_on`, plus `edges` on Automata-level and focus replies. The MCP tool `project_timeline`, the CLI `datawatch projects timeline` and the chat verb `project timeline` pass the same fields through unchanged. The read stays read-only and never signals, stops or restarts a session.
+- Docs: the Projects how-to (Gantt row and the project timeline section), the API and MCP mapping, the commands reference and the OpenAPI description now describe the span rules, axis, edges, row order and fields.
+
+## v9.163.1 — Remember the header server dropdown choice per browser
+
+### Added
+
+- Docs: the multi-servers how-to ("Switch between servers (header dropdown)") now describes the remembered choice and the stale-peer fallback.
+
+### Changed
+
+- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage, key `dw_server_choice`), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting. Mobile parity for this persisted choice is tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482).
+
+### Fixed
+
+- **The remembered server choice is no longer overwritten by the settle bound once boot has settled.** The boot settle step's fallback timer (which turns an unvalidatable saved choice into **All servers** when the server list cannot be fetched in time) was never cleared when another path settled, and its callback saved **All servers** unconditionally — so a page open longer than the bound could have its validated saved choice, or a choice the operator picked in the meantime, silently overwritten with "all" in local storage. Each now-settle path (validated peer, stale fallback, the bound) commits through one guarded finish: the first to settle wins and clears the pending bound, and the "all" save only runs through that guard. New PWA tests fire the bound's callback after a validated restore and pin that the stored choice — and a choice made after boot — do not change.
+
+## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
+
+### Added
+
+- **Two labelled placement facts on every session tile and card.** Each shows **Runs on**, the real name of the host the session runs on (never the word “local”; a federated session names its peer), and **Model on**, where its model is served: the compute node for pi and Ollama, or “Anthropic cloud” for a Claude session. The model line is left out when it cannot be named, and each fact has a hover tip saying what it means. This is a display change on the PWA; no setting, endpoint, command or record field was added.
+- **A “Model node” grouping and filter.** Alongside State, Node, Project, Tag and Automaton, the Sessions page can group by the node that serves the model: pi and Ollama sessions gather under their compute node, Claude sessions under “Anthropic cloud”, and sessions with no known model sit in the Ungrouped bucket.
+- Strings for the new labels and tips in English, German, Spanish, French and Japanese, including a translated hover tip for the Alerts heading, which was English only.
+
+### Changed
+
+- **The Status and Backend chips in the Sessions Filters sheet are multi-select.** Pick any number of states or backends, tap an active chip again to remove just that one, and the **All** chip clears the group. The two groups apply together, the Backend group never touches the search box, and the picked chips also show as removable chips above the list with a **Clear all**.
+- **Every filter chip and picker leads with a name.** Tags, projects, nodes and Automata show their readable name with the id as small secondary text, or “unnamed” with the id when no name is known, so a bare id is never the primary text. A session card's Automaton chip reads “Automaton” without the id, and the full tag stays in its tooltip.
+- **The Compute node filter lists each node once under its real name.** A node is never listed as “local” or “all”, aliases of one host merge into one entry, and a federated peer appears under the name it is registered with.
+- **One Group by dropdown.** The labelled **Group by** picker in the Filters sheet is the only grouping control, and tag-prefix entries that duplicate a built-in axis are listed once.
+
+### Fixed
+
+- **The Sessions Filters sheet no longer re-renders while it is open.** Refreshes (the presence heartbeat, live updates, the stale-banner flip, “show more” paging, saved-view renames) used to redraw the sheet and destroy the open Group by dropdown, the focused search box, scroll positions and any open picker. The repaint now keeps the live control nodes, with the same value, focus and scroll, and refreshes counts and text in place. A change that would touch a focused control waits and is applied once when the control is released.
+
+### Documentation
+
+- **Sessions tiles and grouping how-to.** Covers the Runs on and Model on facts, the Model node grouping, the multi-select chip groups, name-first chips and the stable Filters sheet.
+
+## v9.162.3 — Tidy the Alerts page on a phone
+
+### Fixed
+
+- **Alert cards no longer clip on a phone.** At 320 to 390 px wide, a long session name or a long alert line ran under the card edge. The card header now wraps, and long unbroken words and alert bodies break inside the card instead of being cut off.
+- **The Alerts counts agree.** The tab buttons, the "N alerts" heading, the category chips and the row badges now come from one categorisation and one counting helper. The tab buttons say what they count: sessions on the two session tabs, alerts on the System tab. The "alert" and "alerts" word in the heading uses the translated strings.
+
+### Changed
+
+- **The Alerts list now treats 2 minutes as “stale”, and its ↻ refresh button really refetches.** The stale marker on Alerts (the `Data may be out of date` row) now shows when the last refresh failed or the data is older than a fixed 2 minutes, instead of the list-wide default of 5 minutes — a short, fixed window that is independent of Alerts' own 30-second poll, so a normally-refreshing list never carries the marker. The other list cards (Sessions, Automata, Automations, …) keep the 5-minute rule. The ↻ button in the Alerts toolbar now triggers one immediate loader refetch of the visible server's Alerts — the card repaints in place (cached rows stay, the fetch runs behind them) — instead of only repainting what was on screen; if no loader for that server exists yet it falls back to the full render. There is no new endpoint and no new setting. There is also no new locale key: the button's `alerts_refresh_btn` label was already in the English, German, Spanish, French, and Japanese bundles.
+- **The Alerts tab "?" now lives in the shared header, like every other view.** The help glyph on the Alerts tab moved out of the list's meta row into the header help link next to the search icon: on the Alerts tab it points at the Alerts how-to with the tab's own help tooltip ("Open the Alerts howto — explains alert rules, quick replies, and notifications"), and on every other view the header link keeps its generic "Open documentation for this view" tooltip. There is no longer a second "?" inside the Alerts content.
+
+### Removed
+
+- **The ticking “Last updated N s ago” line on the list cards.** The PWA's list cards (Sessions, Alerts, the Automata and Automation tabs, and every other card that loads a list) no longer show a last-updated line that counts up every second, and the one-second refresh timer behind it is gone. The row above a list now appears only when it has something to say: the `Cached` badge, the small `Loading…` while a refresh runs, or the `Data may be out of date` marker. The stale marker now shows when the last refresh failed or the data is older than 5 minutes, and the Sessions progress card's stale banner lost its age text with it. The removed label (`last_updated_ago`) is out of the English, German, Spanish, French and Japanese bundles. The tabs' own polling intervals are unchanged.
+
+## v9.162.2 — Usage back-off flags survive a daemon restart
+
+### Fixed
+
+- **Usage back-off flags survive a daemon restart.** A back-off flag (rate-limit, operator or burn-guard) is now saved to the daemon data folder and reinstalled at daemon start, with expired flags dropped, so a restart no longer clears a pause and lets work run against a backend that is out of quota. Boot-time resume starts no new sessions for a paused backend, and sessions already alive are never ended or signalled. The restore is recorded in the decision log, an alert and an audit event.
+
+### Documentation
+
+- **Usage back-off how-to.** A new how-to, `usage-backoff`, explains the back-off flag (rate-limit, operator and burn-guard flags; backend, until, reason, source), how to set, check and clear one on MCP, REST, the CLI and the comm channel, that flags are saved to the daemon data folder and restored at start with expired ones dropped, that boot-time resume starts no new sessions for a backed-off backend while sessions already alive are never ended or signalled, and where the restore shows (decision log, alert, audit).
+- **Back-off review checklist.** The usage back-off how-to gains a short *What to review after a restart* section: compare restored `until` times with the usage page, clear stale flags by hand, and re-check burn-guard flags after a config change.
+- **Back-off flags across a restart.** The capacity how-to, operations guide, glossary, restart how-tos and audit lists now describe the saved back-off flag: it is written to disk, reinstalled at daemon start, recorded as a boot-resume entry, an alert and a restored audit event, and never touches a running session. Operator review notes are in `docs/operations.md`.
+
+## v9.162.1 — Cancelled tasks are skipped, not blocking
+
+### Fixed
+
+- **An Automaton no longer sits in running forever because one of its tasks was cancelled.** A cancelled task is now a skipped, final outcome: when every task is completed or cancelled and at least one is completed, the completion review runs, and the decision log names the skipped tasks. A story of only cancelled tasks is skipped, and a story with its other tasks completed is completed. The stuck-running check advances such an Automaton after its grace period (`autonomous.stuck_running_seconds`, default 900), and its watch message names the cancelled tasks. A task that is not running and not queued can be removed while the Automaton is running, on the web page, REST, MCP, CLI and messaging channel.
+- Docs: the recovery how-to has a Cancelled tasks section, the supervisor watch how-to has the new message, and the definitions list Skipped story and Cancelled task.
+
+## v9.162.0 — Registry rows and findings as datawatch records
+
+### Added
+
+- **Registry rows and findings are now datawatch records.** A plan record is one registry row or one finding, kept by the daemon (one file per record under the data directory) with a title that is unique inside its project, a short readable id, a permanent identifier, a state, a body, links and older titles that still find it, and the Automaton that shipped or raised it. Every create and update is written to the audit log with the actor. Records are read and changed on every surface: REST `/api/plan-records/...`, six MCP tools (`plan_record_list`, `plan_record_get`, `plan_record_search`, `plan_record_create`, `plan_record_update`, `plan_record_import`), the `datawatch plan-record` CLI, the chat verbs `autonomous plan-records` and `autonomous plan-record`, and a **Plan records** section on the Projects page in the web app (list, search, filter, open, create, change and import).
+- **Import of the plans README rows and the findings files.** One call (preview by default on the CLI) reads the registry table and the findings files into records for a registered project, with a conflict policy of `suffix`, `rename` or `skip`, and flags a record `needs_review` when a conflict was settled for you. A second run changes nothing.
+- **Settings `autonomous.plan_records.enabled`** (on by default; off answers every route with 404 and hides the section), **`autonomous.plan_records.write_through`** (off by default; when on, the post-ship step records the shipped row as a plan record) and **`autonomous.plan_records.import_conflict_policy`** (`suffix` by default), in `GET` and `PUT /api/config`, comm `configure`, and Settings, Automata.
+- **A `project` field on Automata and Automations**, derived from the project link and shown read-only in the detail view and in reads.
+- Strings for the new section and settings in English, German, Spanish, French and Japanese.
+- Docs: how-to `plan-records`, the operations manual section, the definitions entries and the docs indexes.
+
+## v9.161.0 — Child Automata inherit their parent's context
+
+### Added
+
+- **A child Automaton starts from its parent's setup.** An Automaton that has a parent (one a running Automaton spawns for a task, a fix Automaton filed from a scan, or a defect filed against a parent) now copies, where its creation gave no value of its own: the project link and the project's repository directory (never a worktree path), the parent's Automation (it joins right after the parent through the normal member insert), backend and model as a pair, verification backend and model, tags and priority. An explicit value always wins, a model never travels without its backend, and a child of a Sonnet or Haiku parent is never put on an Opus or Fable model by inheritance. It runs once per child, never fails a creation and leaves one `child_inherit` entry in the child's decisions naming what was inherited, clamped or skipped.
+- **New setting `autonomous.automation.child_inherit`** (true or false, on by default; an unset key reads true, `false` restores the earlier behavior; any other value is refused with 400). It is read when each child is created, so a change needs no restart. It is in `GET` and `PUT /api/config`, the MCP `autonomous_config_set` argument `automation_child_inherit`, comm `configure`, and Settings, Automata in the web app.
+- **Every creation surface takes an optional parent Automaton id:** REST `parent_prd_id` on `POST /api/autonomous/prds` (an unknown parent is a 404), MCP `autonomous_prd_create` `parent_prd_id`, CLI `datawatch autonomous prd-create --parent <id>`, comm `autonomous create <spec> --parent <id>`, and a *Parent Automaton (optional)* field on the new Automaton form. Four strings were added in English, German, Spanish, French and Japanese.
+- Docs: how-to `automaton-child-inheritance`, the operations manual section, and the definitions entries.
+
+## v9.160.1 — Header server dropdown and Filters sheet fixes
+
+### Fixed
+
+- **The Sessions page has one Group by control again.** The Filters sheet's **Group by** dropdown is the single control — the toolbar's second placement dropdown (⚙️) is removed — and it now offers the placement axes already visible on the loaded sessions (`compute:`, `peer:`, …) as `Tag (prefix)` entries alongside the tag-registry prefixes, so grouping by a placement axis is a first-class option. The existing saved choice (one shared field, per device) is preserved.
+- **The floating start-session button no longer covers open sheets and modals.** While a sheet or modal is open (the Sessions Filters sheet, the new-session modal, confirm and detail modals, the peer snapshot, the mic popup, the backend config, the update progress card, the Automata side drawer, the dashboard add-card panel, the phone tag filter) the button is hidden, so its row and the last chips of the sheet are fully visible and tappable. Long pages (Sessions list, Automata, Projects, Alerts, Observer, Dashboard, Settings, detail views) get extra padding under the last card so nothing hides behind the button; the button itself keeps its size and position on pages without an open sheet.
+- Docs: the Sessions how-to's toolbar diagram, group-by paragraph, Filters-sheet item and troubleshooting now describe the single Group by control and the start-session button's clearance from sheets and long pages.
+
+### Changed
+
+- **The phone/PWA server selector is now one header dropdown instead of a per-view chip row.** The fixed app header carries a single native dropdown on every page (the three-finger swipe sheet and the toolbar "back to this server" indicator are unchanged): **All servers**, this server (labelled with the daemon's hostname, never the word "Local"), and one entry per enabled peer. Unreachable peers stay listed and selectable with an "(unreachable)" hint. Choosing an entry re-renders the page you are on in place; the Observer and Settings views keep showing the single server whose data they last rendered while **All servers** is active. The five locales gained the dropdown labels.
+- Docs: the multi-servers how-to ("Switch between servers (header dropdown)"), the operations manual's multi-machine section, the definitions entry, the Sessions how-to toolbar description and the docs index now describe the header dropdown; the released versions' changelog entries keep their original wording as dated records.
+
+## v9.160.0 — Projects Gantt as one expandable timeline with a Focus view
+
+### Added
+
+- **The Projects Gantt is one expandable timeline.** On a project's Gantt sub-tab the chart now opens with one row per arc and a bar from the arc's first to its last task, coloured by state; work still running is drawn to now. Click a row's arrow to open the Automata under an arc and an Automaton's arrow to open its tasks. Automata that no arc holds sit in an **Automata with no arc** group at the foot, and an arc with no activity yet reads **Planned** with no bar. The range selector defaults to **All time** and also offers 90, 30 and 7 days; the mouse wheel zooms and a drag pans. A level draws at most 40 rows and has **Load more** for a longer one. Which rows are open is remembered per project in the browser.
+- **A Focus view for one Automation.** A **Focus** button on an arc's Gantt row, on an arc card and in the header of the Automation page opens that Automation's own timeline: every Automaton and task, with the range running from its first task to its last, and **Back** returns. An Automation with no Automata or tasks yet shows that it is planned.
+- **A paged project timeline read.** `GET /api/projects/{name}/timeline` returns when each arc, Automaton and task of a project started and finished, one level at a time (`level`, `parent`, `automaton`, `limit`, `cursor`), or one Automation in a single reply with `focus=<arc id>`. The same read is the MCP tool `project_timeline`, the CLI command `datawatch projects timeline <name>` (flags `--level`, `--parent`, `--automaton`, `--focus`, `--limit`, `--cursor`) and the chat verb `project timeline <project-name>` with the same options. It is read-only.
+
+### Changed
+
+- **The project Gantt no longer has the fixed 7, 30 and 90 day window or the history rows.** `GET /api/projects/{name}/history` still returns its `gantt` rows for other clients. The 720 pixel width cap on a wide browser stays.
+
+## v9.159.1 — Automata page phone layout and project-scoped Inbox counter
+
+### Fixed
+
+- **The Automata page fits a phone.** The Automata sub-tab bar, its action buttons, the second row under Automation (Inbox, Automations, Resources and the rest), the Projects bar and the Templates sub-tabs now stay on one line and scroll sideways instead of wrapping or being cut off. The header title uses a shorter form on a narrow screen.
+- **The Inbox counter and list follow the selected project.** With a project picked on the Projects sub-tab, the Inbox badge and every card under it (open questions, held questions, Triage, security failures, supervisor watch findings) show only that project's items; the Overview counts everything waiting on you across all projects. The scope is a display rule of the web app; REST, MCP, the CLI and the chat channel still return every item.
+- **Other tab strips scroll sideways the same way.** The Settings tabs, the Observer tabs, the Dashboard tabs, the session detail tabs and the Automaton detail tabs use one shared scrolling strip style.
+- Docs: the Automation tab, Projects tab and mobile fit how-tos describe the phone layout and what the Inbox counts under a project and under Overview.
+
+## v9.159.0 — Event-driven supervisor and subscribable events
+
+### Added
+
+- **Settings for waking the supervisor on events, off by default.** The supervisor loop block gains `supervisor_loop.wake.enabled` (default `false`), `supervisor_loop.wake.kinds` (the lifecycle event kinds that wake a pass; the default list is a blocked Automaton, a task needing review, a failed task or final gate, every judge verdict, all tasks done or cancelled, an Automaton stuck running, a long capacity wait and a burn guard rung change), `supervisor_loop.wake.coalesce_seconds` (0 to 3600, default 30) and `supervisor_loop.wake.fallback_interval_minutes` (1 to 1440, default 20, the same as the scheduled check, so behaviour is unchanged until the wake is switched on). A kind must be one a subscription can filter on; an unknown or duplicate kind is refused and a hand-edited config with one falls back to the default list. The settings are on the config file, REST config, CLI, comm channel, MCP and the PWA Settings supervisor loop group in all five languages, each with a help entry in the definitions.
+
+- **The supervisor wake now runs on a live daemon.** Turning `supervisor_loop.wake.enabled` on registers the built-in `supervisor-wake` set within a few seconds, with no restart, and the daemon keeps it in step with the kinds and quiet window. Each matching event runs one supervisor loop pass at once and, when a session tagged `role:supervisor` is running, types a `supervisor wake:` line into it. Turning the setting off removes the set and an event does nothing. The wake status (`GET /api/supervisor-loop/wake`, `datawatch supervisor-loop wake`, the `wake` object of `supervisor_loop_stats`) now fills in: the event wake time and count, and the scheduled check time and count.
+- **The scheduled check reads `supervisor_loop.wake.fallback_interval_minutes`.** While the wake is on, the idle loop's scheduled check runs a pass only when that many minutes have passed since its last pass, so it is the fallback behind the events; each scheduled pass is recorded once in the wake status. With the wake off it runs on every tick, as before. The interval is read live.
+- **A daemon can start, stop and read the peer event subscriber.** The new setting `autonomous.notify.forwarding.peer_events` (default `false`; needs `autonomous.notify.forwarding.enabled`) on the config file, REST config, `config_set`, `datawatch config set`, `configure` and a web toggle in Settings → Comms → Notifications. The routes `GET /api/autonomous/peer-events`, `POST /api/autonomous/peer-events/start` and `POST /api/autonomous/peer-events/stop`, the CLI `datawatch autonomous peer-events status|start|stop`, the comm verb `autonomous peer-events`, and the MCP tools `autonomous_peer_events` (read, `autonomous:read`) and `autonomous_peer_events_control` (start or stop, `autonomous:write`). A read lasts until stopped or the daemon restarts.
+- **A daemon can read a federated peer's lifecycle events.** The new peer event subscription (`internal/autonomous/lifecycle_peer_subscription.go`) reads a registered peer's pending-events queue (`GET /api/autonomous/events`) with the peer's stored bearer token and feeds each event into local dispatch with `peer` set to the registered name, so any local subscription can use it. A peer that does not grant `autonomous:read` is refused before any request is made (one audit record, one alert). Each peer runs in its own goroutine with a per-read timeout and the shared retry backoff. Only lifecycle events are read; session output, secrets and configuration are never read, and an event the peer itself received as forwarded is dropped so two peers cannot echo events back and forth. It follows `autonomous.notify.forwarding.enabled` and adds no setting and no event kind.
+- **A forwarded event names the peer it came from.** An event a federation peer forwards to this daemon now carries `peer`, the registered name of the sending peer. The receiver sets it from the authenticated peer identity of the request, never from the payload, so a `peer` value in the body is ignored. Local events and forwards delivered by an admin caller have no `peer`. A subscription filter gains an optional `peer` field (also the `peer` query parameter of the MCP lifecycle events resource) that selects events forwarded by that peer; a local event never matches it.
+- **MCP resource subscriptions for lifecycle events, off by default.** The new setting `mcp.resource_subscriptions` (default `false`; restart to apply) lets an MCP client call `resources/subscribe` on `datawatch://events/lifecycle?kinds=…&level=…` and receive `notifications/resources/updated` when a matching Automata event fires. The filter, the event kinds and the delivery gate are the same ones a persisted subscription uses, and the subscription is one more consumer of the existing dispatcher: nothing is stored and no sink or subscription format changes. With the setting off the server advertises and behaves exactly as before. Set it in the `mcp:` block, Settings → General → MCP Server, `PUT /api/config`, `datawatch config set`, comm `configure` or `config_set`; see [docs/mcp.md](docs/mcp.md#resource-subscriptions).
+
+### Fixed
+
+- **The subscription preview counts lifecycle kinds.** `POST /api/autonomous/subscriptions/preview` accepted only the Events log's own kinds and refused the lifecycle kinds the subscription picker lists with a `400`, so the form's "Would have matched in the last day" line could not show a count for them. It now accepts every kind `GET /api/autonomous/event-kinds` lists as well as the Events log kinds, and counts lifecycle kinds from the lifecycle events the daemon has recorded in memory since it started; the answer's `lifecycle_since` says when recording began. A kind that is neither is still a `400`.
+
+### Changed
+
+- **Docs for subscribable events brought in line with what shipped.** The event kind listing (REST, MCP, CLI, comm channel, web subscription form), the subscription preview route and the MCP resource subscription path are now described in the subscriptions how-to, the operations guide, the definitions, the autonomous API reference, the comm command reference, the API-to-MCP mapping and the OpenAPI reference. The statements that no REST, CLI or comm surface lists the kinds, and that every picker carries a built-in copy, were removed. The how-to and definitions now state that the preview route accepts only the Events log's kinds, so the web form's last-day count does not work for lifecycle kinds yet.
+
+- **Docs for the peer name, the peer filter and peer-down behavior.** The subscriptions how-to, the lifecycle webhooks and peer forwarding how-to, the definitions, the operations guide, the autonomous API reference and the OpenAPI reference now describe the `peer` field on a forwarded event, the `peer` subscription filter (set through REST and the MCP lifecycle events resource; the CLI, comm verb, `autonomous_subscribe` tool and web form do not have it yet), and the guarantee that a peer that hangs or refuses connections never blocks local delivery.
+
+- **New how-to: the event-driven supervisor.** `docs/howto/automaton-event-driven-supervisor.md` walks through the wake settings (`supervisor_loop.wake.enabled`, `.kinds`, `.coalesce_seconds`, `.fallback_interval_minutes`), choosing events in the picker, subscribing to a peer, adding an event kind or sink through the extension registration, MCP resource subscriptions (`mcp.resource_subscriptions`) and what is and is not forwarded across a peer, with every setting on the config file, REST, MCP, CLI, messaging channel and web settings. It is added to the curated how-to set, the how-to indexes and the API-to-MCP mapping, and the definitions gain entries for event kind, subscription, sink, wake, coalesce, fallback check and peer event. The how-to walks each setup through to a working result: turning the wake on registers it within a few seconds, a matching event runs a supervisor pass at once, the scheduled check runs at the fallback interval, and a peer's events are read with the peer-events command.
+
+- **The event-driven supervisor how-to lists what the operator must still review.** A new "Open items for the operator" section in `docs/howto/automaton-event-driven-supervisor.md` gathers five points in one place: the wake ignores the notify set, a peer read does not survive a daemon restart, the `peer` filter is set through REST and the MCP resource URI only, a registered sink type is not delivered to, and mobile parity is tracked separately.
+
+## v9.158.1 — Completion marker no longer raises an uncommitted-work question
+
+### Fixed
+
+- **An Automaton no longer asks about its own completion marker file.** A worker writes `DATAWATCH_COMPLETE` at the root of its worktree to say it is done, and that file used to show up as uncommitted work, so the check held the Automaton with a commit, discard or retry question about a file nobody should commit. The daemon now treats `DATAWATCH_COMPLETE`, `CHECKPOINT.md` and the advisory tree lock as its own marker files: new worktrees exclude the marker through the worktree's own exclude file (the repository `.gitignore` lists it too), both uncommitted-work checks skip the marker files and say so in the question text and blocked reason, and just before the finished check the daemon deletes the regular marker file at the root of a finished Automaton's worktree. A worktree holding only a marker is not held; a marker plus a real file is held for the real file only; a same-named file in a subfolder is ordinary work.
+- **Older open questions that list only marker files answer themselves.** At daemon start, every open uncommitted-work question whose files are all marker files is answered `ignore` by the daemon (actor `autonomous`) and a decision is recorded on the Automaton; `ignore` touches no file and only clears the hold. A question that lists any real file is left for you.
+
+### Documentation
+
+- The uncommitted-work how-to, the operations guide, the command reference and the definitions describe the marker handling and the start-up sweep. No new setting, endpoint, command or tool is involved.
+
+## v9.158.0 — Lane utilization view
+
+### Added
+
+- **Lane utilization view.** A read-only report of how busy each execution lane was over a window that ends now (1 hour to 30 days, default 24 hours): busy and idle share per lane, the runs on each lane, how long work waited for a lane, the backend mix, a flag on a lane that sat idle while eligible work existed (naming the first item it could have taken), the lane fill mode with its newest decisions, and plan usage in points and tokens, never dollars. Nothing is stored; each read works the figures out from the Automata records. It is on REST (`GET /api/autonomous/lane-utilization`), MCP (`autonomous_lane_utilization`), the CLI (`datawatch autonomous lane-utilization`) and the chat verb `autonomous lane-utilization`. There is no new setting.
+- **A Lane utilization detail card on the Dashboard.** It has a window picker, a stacked graph of each lane's busy share, a table per lane, the backend mix, the lane fill decisions and the plan usage line. It sits beside the existing Lane utilization series card, which keeps its own id; it reloads every 30 seconds.
+- **A Lane utilization layer on the dashboard Gantt.** One row per lane with a bar for each run in the Gantt window, from the same data; a lane with no run still gets a row.
+- Thirty new strings in English, German, Spanish, French and Japanese.
+
+### Documentation
+
+- **Lane utilization howto.** A new how-to, `lane-utilization`, explains the view of how busy each lane was over a window: busy and idle share, queue wait, backend mix, the idle-while-eligible flag, the lane fill mode and decisions, and plan usage in points and tokens (never dollars, because plans are flat-rate). It covers the window choices and how to reach the view from REST, MCP, the CLI, the comm channel, the dashboard card and the Gantt view. It is linked from the how-to and docs indexes, with a parity row, a companion-app issue note and testing entries.
+
+## v9.157.1 — Sessions page tag filter and view modes
+
+### Fixed
+
+- **The Sessions page tag filter is usable with many tags.** The Filters sheet no longer draws one chip per tag. It has a tag search box and chips grouped under Kind, Role, Lane, Compute node, Project, Your tags and Other headers (six chips per group, then Show all), with counts taken from the sessions in the current list. Automaton, stage, task and story tags get no chips; a Find an Automaton picker (title first, id second) takes their place. The selected tags show above the session list as removable chips with a Clear all control.
+- **The List, Tiles and Compact buttons work with no grouping.** A saved lineage-tree choice used to override every mode while its toggle was hidden. The tree now shows only in List mode, and clicking a view mode button clears it.
+- The state-count line above the session list is removed; the state filter stays in the Filters sheet.
+- Eighteen new strings in English, German, Spanish, French and Japanese; no setting, endpoint or command changed.
+- Docs: the Sessions tiles and grouping how-to covers the tag filter and the view modes.
+
 ## v9.157.0 — Projects view sub-tabs
 
 ### Added

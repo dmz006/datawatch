@@ -315,7 +315,7 @@ function daemonTaskKeysUsedInApp() {
 
 test('every daemon task label, help and option key exists in all five locale bundles', () => {
   const keys = daemonTaskKeysUsedInApp();
-  assert.equal(keys.length, 19, 'the daemon task key set changed size: ' + keys.join(', '));
+  assert.equal(keys.length, 21, 'the daemon task key set changed size: ' + keys.join(', '));
   for (const l of LOCALES) {
     const b = bundle(l);
     for (const k of keys) {

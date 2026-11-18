@@ -80,7 +80,7 @@ func TestNotifyConfigYAMLKeyNamesAreTheProposalKeys(t *testing.T) {
 	forwarding, _ := raw["forwarding"].(map[string]any)
 	wantWebhook := []string{"enabled", "allow_hosts", "max_attempts", "backoff_seconds", "jitter_percent",
 		"attempt_timeout_seconds", "max_body_bytes", "signature_tolerance_seconds"}
-	wantForwarding := []string{"enabled", "max_hops", "max_attempts", "backoff_seconds", "jitter_percent",
+	wantForwarding := []string{"enabled", "peer_events", "max_hops", "max_attempts", "backoff_seconds", "jitter_percent",
 		"attempt_timeout_seconds"}
 	for _, k := range wantWebhook {
 		if _, ok := webhook[k]; !ok {

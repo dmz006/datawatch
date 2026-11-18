@@ -17,6 +17,22 @@ const (
 	// ActionUsageBackoffPatternsRechecked — an operator recorded the current
 	// rate-limit pattern fingerprint as rechecked. Details: patterns_version.
 	ActionUsageBackoffPatternsRechecked = "autonomous_usage_backoff_patterns_rechecked"
+	// ActionUsageBackoffRestored — at daemon start an unexpired back-off flag
+	// was read back from disk and reinstalled, so the Automata that wait on
+	// that backend keep waiting after the restart. Subject: the backend.
+	// Details: backend, until (RFC 3339), source.
+	ActionUsageBackoffRestored = "autonomous_usage_backoff_restored"
+	// ActionUsageBackoffReserveAdmitted — a review-role session (guardrail
+	// judge, verifier or planning) was admitted on a backend that is in
+	// back-off, through that backend's review reserve. Subject: the backend.
+	// Details: backend, role, slots, used_slots, tokens_used, token_cap.
+	ActionUsageBackoffReserveAdmitted = "autonomous_usage_backoff_reserve_admitted"
+	// ActionUsageBackoffReserveRefused — a session request was refused on a
+	// backend that is in back-off: a worker (the reserve is never granted to
+	// them) or a review role whose request hit a full slot count, a spent
+	// one-hour token budget, or a disabled reserve. Subject: the backend.
+	// Details: backend, role, slots, used_slots, tokens_used, token_cap.
+	ActionUsageBackoffReserveRefused = "autonomous_usage_backoff_reserve_refused"
 
 	// ActionResourceCeilingKill — a run was stopped for using more memory than
 	// its ceiling, or started with no ceiling because the host has neither a
@@ -120,7 +136,9 @@ const (
 	// (fixed text: never the body, the token or the signature), event_id,
 	// event_kind, origin_host, sender_host, hops, peer (the registered peer name,
 	// empty for an admin caller) and the actor. The signature header is never
-	// recorded.
+	// recorded. The peer event subscription also writes it for each event it
+	// reads from a peer and for each refusal or stop, with direction "read"
+	// and the peer's queue name.
 	ActionLifecycleForwardReceive = "autonomous_lifecycle_forward_receive"
 
 	// Operator question channel — the lifecycle of one question, subjected
@@ -407,4 +425,25 @@ const (
 	// event: the policy or the node state worked. Details: node, model,
 	// policy, reason.
 	ActionPlacementRefused = "placement_refused"
+
+	// ActionPlanRecordCreated — a plan record (a registry row or a finding) was
+	// created, by a request or an import. Subject: the record title. Details:
+	// uid, id, kind, project, actor.
+	ActionPlanRecordCreated = "plan_record_created"
+	// ActionPlanRecordUpdated — a plan record changed (fields, state or a
+	// rename). Subject: the record title. Details: uid, id, kind, project,
+	// actor, and the changed fields.
+	ActionPlanRecordUpdated = "plan_record_updated"
+	// ActionPlanRecordImported — a plan-records import ran for real (a dry run
+	// is not audited). Subject: the project alias. Details: project, source,
+	// policy, created, unchanged, changed, conflicts, skipped, actor.
+	ActionPlanRecordImported = "plan_record_imported"
+	// ActionPlanRecordArchived — a plan was archived: taken out of the default
+	// lists, search and counts, with its file and links kept. Subject: the plan
+	// title. Details: uid, id, kind, project, actor, reason, automata_held, order.
+	ActionPlanRecordArchived = "plan_record_archived"
+	// ActionPlanRecordRestored — an archived plan was restored to the lists in
+	// its old order. Subject: the plan title. Details: uid, id, kind, project,
+	// actor, automata_held, order.
+	ActionPlanRecordRestored = "plan_record_restored"
 )

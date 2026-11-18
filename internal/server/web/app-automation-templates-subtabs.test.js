@@ -1,6 +1,6 @@
 // The Templates tab's sub-tabs: the registry drives the sub-tab bar
 // (one button per entry), the currently selected key persists under
-// `automata_templates_subtab` and both the Automaton templates sub-tab
+// `automata_templates_subtab` and both the Templates sub-tab
 // (default) and the standard tasks sub-tab show their own content.
 
 const test = require('node:test');
@@ -38,7 +38,7 @@ function tmplSubtabButtons(html) {
     .map(m => ({ key: m[3], active: !!m[1], selected: m[2] === 'true' }));
 }
 
-test('both sub-tabs render in order: Automaton templates first (active by default), standard tasks second', () => {
+test('both sub-tabs render in order: Templates first (active by default), standard tasks second', () => {
   const { sb } = freshSandbox();
   const row = tmplSubtabButtons(sb._templatesSubtabsBarHTML());
   assert.deepEqual(row.map(b => b.key), ['automaton', 'standard'], 'the bar has exactly two buttons in registry order');
@@ -57,19 +57,19 @@ test('switching changes the body and remembers the choice', async () => {
   assert.match(panel.innerHTML, /loading-eye-block/, 'standard tasks renderer shows the loading state');
   assert.equal(sb.localStorage.getItem('automata_templates_subtab'), 'standard', 'the standard tasks choice is persisted');
   sb.switchTemplatesSubtab('automaton');
-  assert.equal(sb.localStorage.getItem('automata_templates_subtab'), 'automaton', 'switching back to Automaton templates persists again');
+  assert.equal(sb.localStorage.getItem('automata_templates_subtab'), 'automaton', 'switching back to Templates persists again');
   // The automaton entry's loader fetches, then re-renders; let the
   // stubbed fetch settle.
   await flushAsync();
-  assert.match(panel.innerHTML, /oninput="_automataOnTmplSearch\(this\.value\)"/, 'Automaton templates body rendered by its real renderer');
+  assert.match(panel.innerHTML, /oninput="_automataOnTmplSearch\(this\.value\)"/, 'Templates body rendered by its real renderer');
   assert.notEqual(panel.innerHTML, before, 'body changed after switching back');
 });
 
-test('a fresh load (nothing stored) defaults to Automaton templates', () => {
+test('a fresh load (nothing stored) defaults to Templates', () => {
   const { sb } = freshSandbox();
   assert.equal(sb.localStorage.getItem('automata_templates_subtab'), null, 'nothing has been stored yet');
   const row = tmplSubtabButtons(sb._templatesSubtabsBarHTML());
-  assert.equal(row[0].active, true, 'Automaton templates is active');
+  assert.equal(row[0].active, true, 'Templates is active');
   assert.equal(row[1].active, false, 'standard tasks is not active');
 
   // A corrupt stored value falls back to the default instead of
@@ -110,11 +110,11 @@ test('each sub-tab shows its empty text when its list is empty', async () => {
   const { sb, panel } = freshSandbox();
   vm.runInContext('_automataState.tab = "templates"', sb);
 
-  // Automaton templates: the default sub-tab, with an empty list from the stubbed fetch.
+  // Templates: the default sub-tab, with an empty list from the stubbed fetch.
   sb.switchTemplatesSubtab('automaton');
   await flushAsync();
-  assert.match(panel.innerHTML, /No Automaton templates yet\. An Automaton template is a reusable Automaton definition you can instantiate/, 'the Automaton templates empty text says what a template is');
-  assert.match(panel.innerHTML, /save an Automaton as a template, or create one from the template store/, 'the Automaton templates empty text says how to add one');
+  assert.match(panel.innerHTML, /No Automaton templates yet\. An Automaton template is a reusable Automaton definition you can instantiate/, 'the Templates empty text says what a template is');
+  assert.match(panel.innerHTML, /save an Automaton as a template, or create one from the template store/, 'the Templates empty text says how to add one');
 
   // Standard tasks: an empty list shows the explanation instead of a bare table.
   sb.switchTemplatesSubtab('standard');
@@ -122,4 +122,19 @@ test('each sub-tab shows its empty text when its list is empty', async () => {
   assert.match(panel.innerHTML, /No standard tasks yet\. Standard tasks are the tasks the decomposer adds to every story/, 'the standard tasks empty text says what they are');
   assert.match(panel.innerHTML, /When autonomous\.task_templates\.enabled is on, the decomposer adds each standard task to every story/, 'the standard tasks empty text names the enabling setting');
   assert.ok(!panel.innerHTML.includes('class="automata-standard-tasks"'), 'no table is drawn over an empty list');
+});
+
+test('the first sub-tab is labelled "Templates" on every locale, and the key and deep link are unchanged', () => {
+  const { sb } = freshSandbox();
+  const html = sb._templatesSubtabsBarHTML();
+  assert.match(html, /data-tmplsubtab="automaton"[^>]*>\s*Templates\s*</, 'the English sub-tab button reads Templates');
+  assert.doesNotMatch(html, /Automaton templates/, 'the old label is gone from the strip');
+  for (const l of ['en', 'fr', 'es', 'de', 'ja']) {
+    const b = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', l + '.json'), 'utf8'));
+    assert.equal(b.automata_templates_subtab_automaton, 'Templates', l + ' sub-tab label');
+    assert.equal(b.automata_tab_templates, 'Templates', l + ' tab label');
+  }
+  // The route stays: the stored key is still "automaton" and still selects it.
+  const s2 = freshSandbox({ preStore: { automata_templates_subtab: 'automaton' } });
+  assert.equal(tmplSubtabButtons(s2.sb._templatesSubtabsBarHTML())[0].active, true, 'stored key "automaton" still selects the sub-tab');
 });

@@ -18,8 +18,9 @@ func TestInForceListsEveryRoleAndKind(t *testing.T) {
 	entries := InForce(InForceInput{})
 	wantRoles := []string{"worker", "verifier", "judge"}
 	wantKinds := []string{"implementation", "docs", "note", "final_gate"}
-	if len(entries) != len(wantRoles)+len(wantKinds) {
-		t.Fatalf("got %d entries, want %d", len(entries), len(wantRoles)+len(wantKinds))
+	wantSessionKinds := []string{KindSupervisor, KindOperator, KindScheduled, KindPlanner, KindOneShot, KindReview}
+	if len(entries) != len(wantRoles)+len(wantKinds)+len(wantSessionKinds) {
+		t.Fatalf("got %d entries, want %d", len(entries), len(wantRoles)+len(wantKinds)+len(wantSessionKinds))
 	}
 	for i, role := range wantRoles {
 		if entries[i].Scope != ScopeRole || entries[i].Key != role {
@@ -30,6 +31,13 @@ func TestInForceListsEveryRoleAndKind(t *testing.T) {
 		e := entries[len(wantRoles)+i]
 		if e.Scope != ScopeKind || e.Key != kind {
 			t.Errorf("entry %d = %s/%s, want kind/%s", len(wantRoles)+i, e.Scope, e.Key, kind)
+		}
+	}
+	offset := len(wantRoles) + len(wantKinds)
+	for i, kind := range wantSessionKinds {
+		e := entries[offset+i]
+		if e.Scope != ScopeSessionKind || e.Key != kind {
+			t.Errorf("entry %d = %s/%s, want session_kind/%s", offset+i, e.Scope, e.Key, kind)
 		}
 	}
 }
@@ -76,6 +84,20 @@ func TestInForceConfiguredKindShowsKindTier(t *testing.T) {
 	}
 	if role := findEntry(t, entries, ScopeRole, "worker"); role.Tier != TierNone {
 		t.Errorf("worker tier = %q, want %q", role.Tier, TierNone)
+	}
+}
+
+func TestInForceConfiguredSessionKindShowsKindTier(t *testing.T) {
+	entries := InForce(InForceInput{KindDefaults: map[string]string{KindSupervisor: "minimal"}})
+	e := findEntry(t, entries, ScopeSessionKind, KindSupervisor)
+	if e.Tier != "kind" {
+		t.Errorf("supervisor tier = %q, want kind", e.Tier)
+	}
+	if e.Profile != "minimal" {
+		t.Errorf("supervisor profile = %q, want minimal", e.Profile)
+	}
+	if other := findEntry(t, entries, ScopeSessionKind, KindOneShot); other.Tier != TierNone {
+		t.Errorf("one_shot tier = %q, want %q", other.Tier, TierNone)
 	}
 }
 

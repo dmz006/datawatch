@@ -276,6 +276,36 @@ for (const [lang, file] of Object.entries(LOCALES)) {
   });
 }
 
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.child_inherit is a toggle with label and help keys', async (t) => {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  const field = autonomous.fields.find((f) => f.key === 'autonomous.automation.child_inherit');
+  assert.ok(field, 'autonomous.automation.child_inherit field is declared');
+  assert.equal(field.type, 'toggle');
+  assert.equal(field.labelKey, 'settings_automation_child_inherit');
+  assert.equal(field.helpKey, 'settings_automation_child_inherit_help');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+});
+
+for (const key of ['settings_automation_child_inherit', 'settings_automation_child_inherit_help', 'prd_new_parent_label', 'prd_new_parent_help']) {
+  for (const [lang, file] of Object.entries(LOCALES)) {
+    test(`locales: ${lang} defines ${key}`, (t) => {
+      const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));
+      const v = bundle[key];
+      assert.ok(typeof v === 'string' && v.trim().length > 0, `${lang} key present and non-empty`);
+      assert.ok(!/\bPRDs?\b/.test(v), 'says Automaton or Automata, never PRD');
+      assert.ok(!/\b((?:BL|F|B|S)\d{1,6})\b/.test(v), 'no tracker IDs in the string');
+    });
+  }
+}
+
+test('create form: the parent selector posts parent_prd_id', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  assert.ok(src.includes('id="prdNewParent"'), 'parent select present');
+  assert.ok(src.includes('body.parent_prd_id = parentPrdId'), 'selected parent is posted as parent_prd_id');
+});
+
 test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_mode is an off, shadow or on select defaulting to off', async (t) => {
   const sandbox = boot();
   const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
@@ -302,7 +332,20 @@ test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_alert_minutes i
   assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
 });
 
-for (const key of ['settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes']) {
+test('GENERAL_CONFIG_FIELDS: autonomous.automation.merge_pending_include_terminal is a toggle beside the alert field', async (t) => {
+  const sandbox = boot();
+  const fields = vm.runInContext('GENERAL_CONFIG_FIELDS', sandbox, { filename: 'app.js' });
+  const autonomous = fields.find((sec) => sec.id === 'autonomous');
+  const field = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_include_terminal');
+  assert.ok(field, 'autonomous.automation.merge_pending_include_terminal field is declared');
+  assert.equal(field.type, 'toggle', 'a boolean setting is a toggle');
+  assert.equal(field.labelKey, 'settings_automation_merge_pending_include_terminal');
+  assert.ok(field.label && field.label.length > 0, 'hardcoded fallback label non-empty');
+  const alert = autonomous.fields.find((f) => f.key === 'autonomous.automation.merge_pending_alert_minutes');
+  assert.ok(Math.abs(autonomous.fields.indexOf(field) - autonomous.fields.indexOf(alert)) <= 1, 'sits beside the merge_pending_alert_minutes field');
+});
+
+for (const key of ['settings_automation_merge_pending_mode', 'settings_automation_merge_pending_alert_minutes', 'settings_automation_merge_pending_include_terminal', 'merge_shadow_decisions_counts']) {
   for (const [lang, file] of Object.entries(LOCALES)) {
     test(`locales: ${lang} defines ${key}`, (t) => {
       const bundle = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf8'));

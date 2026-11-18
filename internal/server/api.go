@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/planrecords"
 	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/trace"
 	"io"
@@ -65,6 +66,7 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/supervisorloop"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 	"github.com/dmz006/datawatch/internal/vision"
@@ -205,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.157.0"
+var Version = "9.182.23"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -403,6 +405,10 @@ type Server struct {
 	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// backoffReserve is the review-reserve gate (nil = not wired); the usage
+	// back-off status uses it to report the per-hour reserve usage per
+	// backed-off backend.
+	backoffReserve *autonomous.BackoffReserve
 	// budgetLedger is the per-LLM dollar budget ledger (nil = not wired).
 	budgetLedger *autonomous.BudgetLedger
 	// capacityAdmit gates an interactive (non-autonomous) session start on
@@ -600,6 +606,22 @@ type Server struct {
 	// /api/autonomous/decision-records; wired by main.go via
 	// SetDecisionRecords; nil (default) makes the routes return 503.
 	decisionRecords DecisionRecordsAPI
+
+	// planRecords — the plans-and-backlog record store behind
+	// /api/plan-records. Nil answers 503.
+	planRecords *planrecords.Store
+	// planPoints caches per-Automaton points for the plans read API;
+	// planPointsSource and planTasksSource replace the daemon reads in tests.
+	planPoints       planPointsCache
+	planPointsSource func() map[string]float64
+	planTasksSource  func(automatonID string) ([]planTaskRow, bool)
+	// planItemSource replaces the Automaton/Automation lookup of the plans
+	// write API in tests.
+	planItemSource func(id string) (planrecords.MigrateRef, bool)
+	// planFactsSource replaces the read of every Automaton and Automation
+	// (title, state, project, tags, release, held) the release plans API
+	// works from, in tests.
+	planFactsSource func() ([]planItemFact, error)
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).
@@ -622,6 +644,10 @@ type Server struct {
 	autonomousEvents PendingEventsAPI
 	// supervisorLoop serves the supervisor-loop run history and manual runs.
 	supervisorLoop SupervisorLoopControl
+	// peerEvents backs /api/autonomous/peer-events (nil: 503).
+	peerEvents PeerEventControl
+	// supervisorWake is the record behind GET /api/supervisor-loop/wake.
+	supervisorWake *supervisorloop.WakeRecord
 	// BL427 phase 5 — receiving side of peer forwarding for
 	// /api/autonomous/events/forward; nil → 503.
 	autonomousFwd ForwardedEventsAPI
@@ -712,6 +738,10 @@ type Server struct {
 	// Nil when not wired; handleBL312Servers falls back to the legacy
 	// static-list handler in that case.
 	serverStore *multiserver.Store
+	// tlsPeerWarn — dedupes the warn-level system alert for peers whose
+	// certificate is not verified (see TLSPeerWarnTracker). Nil until
+	// wired from main.go; handlers remain warning-free of panics.
+	tlsPeerWarn *TLSPeerWarnTracker
 
 	// BL316 — custom federation capability groups store.
 	// Nil when not wired; group endpoints return builtin-only lists.
@@ -851,11 +881,34 @@ func (s *Server) RegisterNativePlugin(p NativePlugin) {
 // internal/autonomous.Manager. Defining it as an interface keeps
 // server-package tests free of a hard dependency on the autonomous
 // package and lets us swap in a fake.
+// automatonHolder is the optional AutonomousAPI extension for the operator
+// hold: put an Automaton on hold, change the hold, release it. Fakes that do
+// not hold anything simply do not implement it.
+type automatonHolder interface {
+	Hold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ExtendHold(id string, req autonomous.HoldRequest, actor string) (any, error)
+	ReleaseHold(id, actor, note string) (any, error)
+}
+
+// heldGroupReader is the optional extension that returns the held group.
+type heldGroupReader interface {
+	HeldAutomata() autonomous.HeldGroup
+}
+
+// holdMigrator is the optional extension that lists look-alike blocked or
+// failed Automata and holds the chosen ones.
+type holdMigrator interface {
+	MigrateToHold(opts autonomous.HoldMigrationOpts) (autonomous.HoldMigrationReport, error)
+}
+
 type AutonomousAPI interface {
 	Config() any
 	SetConfig(any) error
 	Status() any
 	CreatePRD(spec, projectDir, backend, model, effort string) (any, error)
+	// CreatePRDWithParent is CreatePRD for an Automaton with a parent id; the
+	// child inherits from the parent and explicit values win.
+	CreatePRDWithParent(spec, projectDir, backend, model, effort, parentPRDID string) (any, error)
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
@@ -889,8 +942,9 @@ type AutonomousAPI interface {
 	RequestRevision(id, actor, note string) (any, error)
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
 	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
-	// empty newSpec = spec unchanged).
-	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error)
+	// empty newSpec = spec unchanged), the report path, the verification
+	// script and the script exemption reason (each empty = unchanged).
+	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason, actor string) (any, error)
 	// v8.23.0 — reset a failed, blocked or waiting-for-capacity task to
 	// pending for retry (a waiting task needs no force — it is re-admitted
 	// with a fresh wait budget). BL382 — force=true also requeues
@@ -1039,6 +1093,8 @@ type AutonomousAPI interface {
 	SetPRDLanePreference(prdID, pref string) (any, error)
 	// Lane fill status: mode, lanes, evidence, decisions and alerts.
 	LaneFillStatus(limit int) autonomous.LaneFillStatus
+	// Lane utilization: how the lanes were used over a window ending at now.
+	LaneUtilization(window time.Duration, buckets int, now time.Time) autonomous.LaneUtilization
 
 	// BL367 — per-PRD quality gate config.
 	SetPRDQualityGates(prdID string, enabled bool, testCommand string, timeout int, blockOnRegression bool, scope string, smokePackages []string) (any, error)
@@ -1092,6 +1148,13 @@ type AutonomousAPI interface {
 	// ShippedBackfillReport. dryRun scans and computes the report without
 	// writing any shipped record.
 	ShippedBackfillOnce(dryRun bool) (any, error)
+
+	// MigrateCompleted moves cancelled Automata and Automations whose work is
+	// merged to status Completed, returning the manager's
+	// CompletedMigrationReport. dryRun reports without writing; limit caps the
+	// records changed (0 = no limit); id restricts the pass to one record. It
+	// returns autonomous.ErrCompletedMigrationBusy while a final gate runs.
+	MigrateCompleted(dryRun bool, limit int, id string) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -5024,6 +5087,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// this one launch (claude-code only; ignored by other backends).
 		// Absent = the plain, non-profile launch.
 		WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
+		// WorkerProfileName names a profile (built-in or user-defined) for
+		// this launch, for every session kind. Unknown = full harness, with
+		// the reason recorded on the session record.
+		WorkerProfileName string `json:"worker_profile_name,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -5465,10 +5532,19 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var profileFallbackReason string
+	if req.WorkerProfile == nil || req.WorkerProfile.Name == "" {
+		kind := sessionKindForLaunch(req.LaunchRole, req.LaunchKind, req.OneShot)
+		if p, reason := resolveStartWorkerProfile(s.cfg, req.WorkerProfileName, kind); p != nil {
+			req.WorkerProfile = p
+		} else if reason != "" {
+			profileFallbackReason = reason
+		}
+	}
 	workerProfileLaunchFn := s.workerProfileLaunchFn(req.WorkerProfile, req.Backend, &profileFallbackReason)
 
 	opts := &session.StartOptions{
 		LaunchFn:              workerProfileLaunchFn,
+		WorkerProfile:         startWorkerProfileValue(req.WorkerProfile),
 		Name:                  req.Name,
 		Backend:               req.Backend,
 		ResumeID:              req.ResumeID,
@@ -5580,7 +5656,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		grantedNode, aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
-			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
+			jsonError(w, http.StatusServiceUnavailable, capacityRefusalMessage(aerr, resolvedLLMRef, req.Model, resolvedComputeNodeRef, waitSecs))
 			return
 		}
 		capacityHolder = holder
@@ -5612,7 +5688,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The launch ran inside Start, so the fallback reason (if any) is already set.
-	sess.ProfileFallbackReason = profileFallbackReason
+	if profileFallbackReason != "" {
+		sess.ProfileFallbackReason = profileFallbackReason
+	}
 	if capacityHolder != "" && s.capacityBind != nil {
 		s.capacityBind(capacityHolder, sess.FullID)
 	}
@@ -6438,6 +6516,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"allow_sensitive_writes":   s.cfg.MCP.SensitiveWritesEnabled(),
 			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
 			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
+			// Lifecycle events resource subscriptions (a restart applies a change).
+			"resource_subscriptions": s.cfg.MCP.ResourceSubscriptions,
 		},
 		"detection": map[string]interface{}{
 			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
@@ -6632,7 +6712,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"retry_resume_max_context_tokens":       s.cfg.Autonomous.RetryResumeMaxContextTokens,
 			// Between-task branch refresh: off by default; the behind limit's
 			// 0 reads as 5 (config.AutonomousConfig.BranchRefreshLimit).
-			"branch_refresh_enabled":      s.cfg.Autonomous.BranchRefreshEnabled,
+			"branch_refresh_enabled": s.cfg.Autonomous.BranchRefreshEnabled,
+			// One-time project link backfill at start: false = dry-run report
+			// only, true = apply once, then a done marker stops re-runs.
+			"project_link_backfill_apply": s.cfg.Autonomous.ProjectLinkBackfillApply,
 			"branch_refresh_behind_limit": s.cfg.Autonomous.BranchRefreshBehindLimit,
 			// Snapshot-never-stage list (path patterns the autonomous
 			// snapshot must never `git add`): nil (unset) reads the built-in
@@ -6659,7 +6742,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_profiles":         workerProfilesForDisplay(s.cfg.Autonomous.WorkerProfiles),
 			"worker_profile_defaults": workerProfileDefaultsForDisplay(s.cfg.Autonomous.WorkerProfileDefaults),
 			"worker_profile":          s.cfg.Autonomous.WorkerProfile,
-			// in_force: the profile each worker role and task kind starts with,
+			// in_force: the profile each worker role, task kind and session kind
+			// starts with,
 			// from the live values (read-only; see workerProfileInForceForDisplay).
 			"in_force": workerProfileInForceForDisplay(s.cfg.Autonomous),
 			// Host load check: effective mode, multiple and minutes.
@@ -6691,13 +6775,18 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// unset block shows its defaults. Validated by ValidateTagSetting.
 			"tags":      tagSettingsForDisplay(s.cfg.Autonomous.Tags),
 			"auto_tags": autoTagsSettingsForDisplay(s.cfg.Autonomous.AutoTags),
+			// Housekeeping repairs (autonomous.housekeeping_repairs) — the effective
+			// mode per group (off|report|on) and the grace seconds.
+			"housekeeping_repairs": housekeepingRepairsSettingsForDisplay(s.cfg.Autonomous.HousekeepingRepairs),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
-			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
-			"backoff_max_wait_minutes": usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
+			"usage_backoff":                   usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
+			"backoff_max_wait_minutes":        usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
+			"backoff_reserve_for_review":      usageBackoffReserveForReviewDisplay(s.cfg.Autonomous.BackoffReserveForReview),
+			"backoff_reserve_tokens_per_hour": usageBackoffReserveTokensPerHourDisplay(s.cfg.Autonomous.BackoffReserveTokensPerHour),
 			// tier -> max-inflight table; a nil table renders as an empty
 			// object (rather than null) so clients treat "absent tier" and
 			// "empty table" the same way: kind defaults apply.
@@ -6737,7 +6826,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
-			"loop_detect_turns":                    config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			"loop_detect_turns": config.LoopDetectTurnsEffective(s.cfg.Autonomous.LoopDetectTurns),
+			// Daily pending-branch alert: effective values (unset reads on
+			// and 3), so the keys are never absent from the read surface.
+			"unlanded_alert_enabled":               config.UnlandedAlertEnabledEffective(s.cfg.Autonomous.UnlandedAlertEnabled),
+			"unlanded_alert_threshold":             config.UnlandedAlertThresholdEffective(s.cfg.Autonomous.UnlandedAlertThreshold),
 			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
@@ -6803,11 +6896,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_diff_max_bytes":         s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
+			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
 			"planning_routing":                s.cfg.Autonomous.PlanningRouting,
+			"task_routing":                    s.cfg.Autonomous.TaskRouting,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -6882,10 +6978,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// second default and an unset command stays empty, both via the
 			// Effective* accessors.
 			"script_gate_timeout_seconds": s.cfg.Autonomous.ScriptGateTimeoutSeconds,
+			"gate_drain_minutes":          config.NormalizeGateDrainMinutes(s.cfg.Autonomous.GateDrainMinutes),
 			"project_gate_command":        s.cfg.Autonomous.ProjectGateCommand,
 			// Decision record keys: effective values (the shipped defaults when a
 			// key is absent).
-			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
+			"decisions":    decisionRecordSurface(s.cfg.Autonomous.Decisions),
+			"plan_records": planRecordsSurface(s.cfg.Autonomous.PlanRecords),
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -6893,9 +6991,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"triage_alert_minutes": s.cfg.Autonomous.Automation.EffectiveTriageAlertMinutes(),
 				// Merge-pending check: the mode reads off when unset, the alert
 				// minutes read the 30-minute default when unset and an explicit
-				// 0 stays 0 (the merge-pending alert off).
-				"merge_pending_mode":          s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
-				"merge_pending_alert_minutes": s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				// 0 stays 0 (the merge-pending alert off). include_terminal reads
+				// true (on) when unset and an explicit false stays false.
+				"child_inherit":                  s.cfg.Autonomous.Automation.EffectiveChildInherit(),
+				"merge_pending_mode":             s.cfg.Autonomous.Automation.EffectiveMergePendingMode(),
+				"merge_pending_alert_minutes":    s.cfg.Autonomous.Automation.EffectiveMergePendingAlertMinutes(),
+				"merge_pending_include_terminal": s.cfg.Autonomous.Automation.EffectiveMergePendingIncludeTerminal(),
 				// Effective, not raw: an empty value reads the "completed"
 				// default via the accessor.
 				"merged_member_policy": s.cfg.Autonomous.Automation.EffectiveMergedMemberPolicy(),
@@ -7163,6 +7264,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
+	// Housekeeping repairs (autonomous.housekeeping_repairs.*): same shared
+	// validator, so a bad mode rejects the whole PUT with one message on every
+	// surface and nothing is written.
+	if verr := firstHousekeepingRepairsSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// v9.5.5 — validate task_override_statuses before anything is applied,
 	// so a bad name rejects the whole PUT instead of storing a partial one.
 	// Accepts the array form and the comma-separated string form the CLI
@@ -7327,6 +7435,20 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The reserve knobs must be whole non-negative numbers; a negative or
+	// fractional value is rejected before anything is applied.
+	if v, ok := patch["autonomous.backoff_reserve_for_review"]; ok {
+		if _, verr := parseBackoffReserveForReview(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.backoff_reserve_tokens_per_hour"]; ok {
+		if _, verr := parseBackoffReserveTokensPerHour(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Usage calculator keys: any invalid value (unknown variant or policy,
 	// out-of-range number, bad clock, unknown or fixed-offset zone) rejects
 	// the whole PUT.
@@ -7401,9 +7523,24 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Child inherit: a boolean. Any other type rejects the whole PUT.
+	if v, ok := patch["autonomous.automation.child_inherit"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.child_inherit: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	// Merge-pending mode: off | shadow | on. Any other value rejects the whole
 	// PUT. The alert threshold is whole minutes >= 0; unset reads the 30-minute
 	// default and an explicit 0 turns the merge-pending alert off.
+	// include_terminal is a plain boolean: unset reads true (the check covers
+	// terminal Automata beside completed) and an explicit false is preserved.
+	if v, ok := patch["autonomous.automation.merge_pending_include_terminal"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.automation.merge_pending_include_terminal: must be true or false", http.StatusBadRequest)
+			return
+		}
+	}
 	if v, ok := patch["autonomous.automation.merge_pending_mode"]; ok {
 		if verr := validateMergePendingMode(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
@@ -7876,6 +8013,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The gate drain wait (autonomous.gate_drain_minutes) is a whole number
+	// of minutes >= 0 (0 = do not wait). A negative or non-whole value
+	// rejects the whole PUT by the same rule the config file load uses.
+	if v, ok := patch["autonomous.gate_drain_minutes"]; ok {
+		if _, verr := config.ParseGateDrainMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// The project gate command (autonomous.project_gate_command) is a single
 	// line of shell text (empty = unset). Same whole-PUT rejection, by the
 	// same rule the config file load uses (ValidateProjectGateCommand).
@@ -7919,6 +8065,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The decision record keys: a bad value rejects the whole PUT before
 	// anything is applied, by the same rules the config file load uses.
 	if err := validateDecisionRecordPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The plan-records keys, same rule.
+	if err := validatePlanRecordsPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8111,6 +8262,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
+			return
+		}
+	}
 	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -8194,6 +8351,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Daily pending-branch alert: a non-boolean enabled or a negative or
+	// non-whole threshold refuses the whole PUT (unlanded_alert_config.go).
+	if err := validateUnlandedAlertPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// Release approval modes go through SetReleaseApprovalMode, which stores
 	// them with an audit event and a decision record, so they are taken out of
 	// the patch here and never reach applyConfigPatch.
@@ -8209,7 +8372,25 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// A task routing block is checked against the live LLM registry before it
+	// is applied, so a row naming an unknown backend is refused and the reply
+	// names the row. applyConfigPatch repeats the registry-free checks.
+	var routingProblems []string
+	routingRefused := false
+	if raw, ok := patch["autonomous.task_routing"]; ok {
+		var in config.TaskRoutingConfig
+		if b, err := json.Marshal(raw); err == nil && json.Unmarshal(b, &in) == nil {
+			if errs := config.ValidateTaskRouting(in, s.taskRoutingChecks()); len(errs) > 0 {
+				routingProblems = taskRoutingProblems(errs)
+				routingRefused = true
+				delete(patch, "autonomous.task_routing")
+			}
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	if routingRefused {
+		skipped = append(skipped, "autonomous.task_routing")
+	}
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
 	autonomous.SetChecksConfig(s.cfg.Autonomous.Checks)
@@ -8446,7 +8627,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		// server.token/mcp.token through the generic patch path finds out
 		// immediately rather than assuming it took effect.
 		resp["skipped"] = skipped
-		resp["skipped_reason"] = "use POST /api/auth/rotate-token to change the admin bearer token"
+		reason := "use POST /api/auth/rotate-token to change the admin bearer token"
+		if allTaskRoutingKeys(skipped) {
+			reason = "not stored: the active profile must name an existing profile, and the task routing block must pass validation"
+		}
+		resp["skipped_reason"] = reason
+		if len(routingProblems) > 0 {
+			resp["skipped_problems"] = routingProblems
+		}
 	}
 	if _, ok := patch["autonomous.max_parallel_tasks"]; ok {
 		resp["deprecated_fields"] = map[string]string{
@@ -9080,6 +9268,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			}
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
+		case "mcp.resource_subscriptions":
+			cfg.MCP.ResourceSubscriptions = toBool(v)
 		case "mcp.tls_enabled":
 			cfg.MCP.TLSEnabled = toBool(v)
 		case "mcp.tls_auto_generate":
@@ -9694,12 +9884,35 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		case "autonomous.project_link_backfill_apply":
+			cfg.Autonomous.ProjectLinkBackfillApply = toBool(v)
 		// Planning routing switches; the rules, ladders and classes go
 		// through PUT /api/autonomous/planning-routing.
 		case "autonomous.planning_routing.enabled":
 			cfg.Autonomous.PlanningRouting.Enabled = toBool(v)
 		case "autonomous.planning_routing.shadow":
 			cfg.Autonomous.PlanningRouting.Shadow = toBool(v)
+		// Task routing table: the on switch, the active profile (it must
+		// exist; a name that does not is skipped) and the whole block
+		// (checked before it replaces the live one).
+		case "autonomous.task_routing.enabled":
+			cfg.Autonomous.TaskRouting.Enabled = toBool(v)
+		case "autonomous.task_routing.active_profile":
+			if name := toString(v); name != "" {
+				if _, ok := cfg.Autonomous.TaskRouting.Profiles[name]; ok {
+					cfg.Autonomous.TaskRouting.ActiveProfile = name
+				} else {
+					skipped = append(skipped, k)
+				}
+			}
+		case "autonomous.task_routing":
+			var in config.TaskRoutingConfig
+			if b, err := json.Marshal(v); err == nil && json.Unmarshal(b, &in) == nil &&
+				len(config.ValidateTaskRouting(in, autonomous.TaskRoutingChecksFor(nil))) == 0 {
+				cfg.Autonomous.TaskRouting = in
+			} else {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.poll_interval_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PollIntervalSeconds = n
@@ -9851,6 +10064,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs; Set stores the
 			// normalized value and leaves the block unchanged on a refusal.
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.housekeeping_repairs.task_chain", "autonomous.housekeeping_repairs.advance_judge",
+			"autonomous.housekeeping_repairs.lane_fill", "autonomous.housekeeping_repairs.leftovers",
+			"autonomous.housekeeping_repairs.planning",
+			"autonomous.housekeeping_repairs.grace_seconds":
+			// Validated in handlePutConfig before this runs. The Repairer reads
+			// the block live through its Settings hook, so no restart is needed.
+			applyHousekeepingRepairsKey(cfg, k, v)
 		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
 			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
 			"autonomous.auto_tags.kind_labels":
@@ -9955,6 +10175,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
 				cfg.Autonomous.BackoffMaxWaitMinutes = n
 			}
+		case "autonomous.backoff_reserve_for_review":
+			// Validated in handlePutConfig. Stored as a pointer so an explicit
+			// 0 (no slot reserve) survives the unset-defaults path.
+			if n, err := parseBackoffReserveForReview(v); err == nil {
+				cfg.Autonomous.BackoffReserveForReview = &n
+			}
+		case "autonomous.backoff_reserve_tokens_per_hour":
+			// Validated in handlePutConfig; 0 = no per-hour token budget.
+			if n, err := parseBackoffReserveTokensPerHour(v); err == nil {
+				cfg.Autonomous.BackoffReserveTokensPerHour = n
+			}
 		case "autonomous.verifier_policy.mode", "autonomous.verifier_policy.backends",
 			"autonomous.verifier_policy.claude_session_cap", "autonomous.verifier_policy.claude_cap_window_minutes",
 			"autonomous.verifier_policy.force_stronger_on_retry", "autonomous.verifier_policy.final_gate_stronger",
@@ -9985,6 +10216,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.TriageAlertMinutes = &n
 			}
+		case "autonomous.automation.child_inherit":
+			// Validated above in handlePutConfig; a non-bool is left unchanged.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.ChildInherit = &b
+			}
 		case "autonomous.automation.merge_pending_mode":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -9996,6 +10232,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// safety, and an explicit 0 (merge-pending alert off) is preserved.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.MergePendingAlertMinutes = &n
+			}
+		case "autonomous.automation.merge_pending_include_terminal":
+			// Validated above in handlePutConfig as a JSON boolean; a value
+			// that is not one is left unchanged. An explicit false (terminal
+			// states excluded) is preserved by the pointer.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Automation.MergePendingIncludeTerminal = &b
 			}
 		case "autonomous.automation.merged_member_policy":
 			// Validated above in handlePutConfig; a value that fails the
@@ -10225,7 +10468,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			"autonomous.notify.webhook.max_attempts", "autonomous.notify.webhook.backoff_seconds",
 			"autonomous.notify.webhook.jitter_percent", "autonomous.notify.webhook.attempt_timeout_seconds",
 			"autonomous.notify.webhook.max_body_bytes", "autonomous.notify.webhook.signature_tolerance_seconds",
-			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.max_hops",
+			"autonomous.notify.forwarding.enabled", "autonomous.notify.forwarding.peer_events", "autonomous.notify.forwarding.max_hops",
 			"autonomous.notify.forwarding.max_attempts", "autonomous.notify.forwarding.backoff_seconds",
 			"autonomous.notify.forwarding.jitter_percent", "autonomous.notify.forwarding.attempt_timeout_seconds":
 			// Validated in handlePutConfig (validateLifecycleNotifyPatch). The
@@ -10317,6 +10560,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, verr := parseProgressWhole("autonomous.script_gate_timeout_seconds", v); verr == nil {
 				cfg.Autonomous.ScriptGateTimeoutSeconds = n
 			}
+		// The gate drain wait in whole minutes (0 = do not wait). Validated
+		// in handlePutConfig by config.ParseGateDrainMinutes.
+		case "autonomous.gate_drain_minutes":
+			if n, verr := config.ParseGateDrainMinutes(v); verr == nil {
+				cfg.Autonomous.GateDrainMinutes = n
+			}
 		// The project gate command: a single line of shell text (empty =
 		// unset). Validated in handlePutConfig by the shared load-time rule;
 		// a value that fails here is left unchanged.
@@ -10367,6 +10616,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.decisions.enabled", "autonomous.decisions.folder", "autonomous.decisions.folder_glob", "autonomous.decisions.front_matter_delimiter", "autonomous.decisions.front_matter_separator", "autonomous.decisions.front_matter_field_separator", "autonomous.decisions.front_matter_keys", "autonomous.decisions.folder_withdraw_on_delete", "autonomous.decisions.clarity_mode", "autonomous.decisions.clarity_min_text_chars", "autonomous.decisions.clarity_require_tradeoffs", "autonomous.decisions.clarity_require_label", "autonomous.decisions.clarity_tracker_id_pattern", "autonomous.decisions.doc_root", "autonomous.decisions.doc_status_mode", "autonomous.decisions.doc_status_pattern", "autonomous.decisions.doc_status_template", "autonomous.decisions.follow_ups":
 			// Validated in handlePutConfig (validateDecisionRecordPatch).
 			applyDecisionRecordKey(&cfg.Autonomous.Decisions, k, v)
+		case "autonomous.plan_records.enabled", "autonomous.plan_records.write_through", "autonomous.plan_records.import_conflict_policy":
+			// Validated in handlePutConfig (validatePlanRecordsPatch).
+			applyPlanRecordsKey(&cfg.Autonomous.PlanRecords, k, v)
 		case "resource_limits.memory_share_percent":
 			// Validated in handlePutConfig (validateResourceLimitsPatch).
 			if n, ok := toInt(v); ok {
@@ -10702,14 +10954,44 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
 			}
+		case "autonomous.reaped_branch_backup_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.ReapedBranchBackupDays = n
+			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		case "autonomous.security_scan_extensions":
+			// File extensions the security scan covers (e.g. ".py").
+			// Same dual-form handling as snapshot_never_stage above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// and the PWA badge input send CSV). Entries are trimmed and
+			// blank ones dropped; an empty result leaves the scanner's
+			// built-in defaults (.py, .pyw) in effect.
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, e := range arr {
+					if t := strings.TrimSpace(e); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SecurityScanExtensions = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SecurityScanExtensions = splitCSV(s)
+			}
 		case "autonomous.per_story_approval":
 			// Phase 3 (v5.26.61) — toggles the per-story approval gate.
 			// When set to true, PRD-level approval transitions stories
 			// to "awaiting_approval"; the runner skips those until the
 			// operator approves each via POST .../approve_story.
 			cfg.Autonomous.PerStoryApproval = toBool(v)
+		case unlandedAlertEnabledKey, unlandedAlertThresholdKey:
+			// Daily pending-branch alert (unlanded_alert_config.go):
+			// handlePutConfig refuses a bad value first; one that reaches
+			// here is skipped.
+			if _, applied := applyUnlandedAlertConfigKey(cfg, k, v); !applied {
+				skipped = append(skipped, k)
+			}
 		case branchRefreshEnabledKey, branchRefreshLimitKey:
 			// Between-task branch refresh (branch_refresh_api.go): handlePutConfig
 			// refuses a bad value first; one that reaches here is skipped.
@@ -13312,7 +13594,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
 
-	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)
+	client := multiserver.PeerHTTPClient(remote.TLSSkipVerify, remote.TLSCertFingerprint, 30*time.Second)
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
@@ -14547,6 +14829,16 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	if hasRep {
 		// What this restart interrupts, counted before the restart policy runs.
 		resp["interrupts"] = rep
+		// The wait for running gates happens after this answer, in the restart
+		// function. Report what it will wait for, or leave running at once.
+		waited, left := 0, 0
+		if s.cfg != nil && config.NormalizeGateDrainMinutes(s.cfg.Autonomous.GateDrainMinutes) > 0 {
+			waited = rep.RunningGateCnt
+		} else {
+			left = rep.RunningGateCnt
+		}
+		resp["gates_waited"] = waited
+		resp["gates_interrupted"] = left
 	}
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})
@@ -15777,4 +16069,57 @@ func effectiveReleasePath(v string) string {
 		return config.ReleasePathDirectPush
 	}
 	return v
+}
+
+// validatePlanRecordsPatch checks the autonomous.plan_records keys in a PUT
+// /api/config body. A bad value rejects the whole PUT before anything is
+// applied, by the same rules the config file load uses; each refusal names the
+// key and the valid values.
+func validatePlanRecordsPatch(patch map[string]interface{}) error {
+	for _, k := range []string{"autonomous.plan_records.enabled", "autonomous.plan_records.write_through"} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				return fmt.Errorf("%s: must be a boolean (true or false)", k)
+			}
+		}
+	}
+	if v, ok := patch["autonomous.plan_records.import_conflict_policy"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("autonomous.plan_records.import_conflict_policy: %v is invalid; use \"suffix\", \"rename\" or \"skip\"", v)
+		}
+		if err := config.ValidatePlanRecordsImportConflictPolicy(str); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyPlanRecordsKey stores one validated autonomous.plan_records key as a
+// pointer, so an explicit false or empty text is told apart from an absent key.
+func applyPlanRecordsKey(p *config.AutonomousPlanRecordsConfig, k string, v interface{}) {
+	switch k {
+	case "autonomous.plan_records.enabled":
+		if b, ok := v.(bool); ok {
+			p.Enabled = &b
+		}
+	case "autonomous.plan_records.write_through":
+		if b, ok := v.(bool); ok {
+			p.WriteThrough = &b
+		}
+	case "autonomous.plan_records.import_conflict_policy":
+		if s, ok := v.(string); ok {
+			p.ImportConflictPolicy = &s
+		}
+	}
+}
+
+// planRecordsSurface is the effective autonomous.plan_records values GET
+// /api/config returns.
+func planRecordsSurface(p config.AutonomousPlanRecordsConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":                p.EffectiveEnabled(),
+		"write_through":          p.EffectiveWriteThrough(),
+		"import_conflict_policy": p.EffectiveImportConflictPolicy(),
+	}
 }

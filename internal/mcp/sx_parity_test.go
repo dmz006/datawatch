@@ -23,6 +23,7 @@ func TestSx_MCP_ToolNames(t *testing.T) {
 		{"project_alias_delete", s.toolProjectAliasDelete().Name},
 		{"project_rollup", s.toolProjectRollup().Name},
 		{"project_history", s.toolProjectHistory().Name},
+		{"project_timeline", s.toolProjectTimeline().Name},
 		{"project_set_arcs", s.toolProjectSetArcs().Name},
 		{"session_rollback", s.toolSessionRollback().Name},
 		{"cooldown_status", s.toolCooldownStatus().Name},

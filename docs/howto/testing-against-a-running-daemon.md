@@ -220,6 +220,8 @@ Observer states today:
 | `1` | findings present — release failure |
 | `2` | browser or environment unavailable — `SKIP:` line on stderr; the release smoke records this as a skip, not a failure |
 
+The shared navigation bar is the same story one section over: `scripts/release-smoke.sh` section 79a ("Shared navigation bar fits phone widths in light and dark") runs the shared-nav scenario group (`node run-all.mjs --group shared-nav`) against the smoke daemon — the daemon at `DW_BASE` when it is set. `TEST_TOKEN` may be empty (the probe's no-auth default), `PROBE_OUT_DIR` and `PROBE_CHROME_PROFILE` are throwaway dirs the section removes on every path, `TMUX`/`TMUX_TMPDIR` are scrubbed, and the run is bounded by `SMOKE_SHARED_NAV_TIMEOUT` (default 600 s). A nav layout finding is a failure; no browser or daemon is a skip. `SMOKE_ONLY=79a` runs that section alone. Details and the report layout are in [howto/navigation-mobile-fit.md](navigation-mobile-fit.md#release-smoke).
+
 ## For other agents and integrations
 
 Both mechanisms are safe to drive from outside a human terminal — an
@@ -228,6 +230,22 @@ that needs to functionally verify a daemon it (or something else)
 already stood up. Set the env vars documented above and invoke the
 script exactly as shown; nothing about either mechanism assumes an
 interactive shell.
+
+The process-scan and sender-attribution tests in `internal/shutdowncause` are hermetic: their candidate scan runs against an injectable process source restricted to the test's own child processes (descendants), so an unrelated host process with a matching command line can never be selected as the signal sender.
+
+### Running the process-scan tests
+
+`TestSignalChildProcScan` (and the other signal-child cases in `internal/shutdowncause`) need no running daemon, token or `DW_BASE`. Run them directly:
+
+```bash
+env -u TMUX -u TMUX_TMPDIR go test ./internal/shutdowncause/ -run 'TestSignalChildProcScan|TestScanCandidates' -count=1
+```
+
+- The scan is scoped to the test's own descendants (Linux; on other platforms the scoping helper is a no-op and the signal-child tests are skipped or use the platform stubs).
+- A failure message lists every scan candidate and which one was selected as sender; a sender that is not the test's own child now indicates a real attribution defect, not host noise. Do not retry or blame load.
+- `TMUX` and `TMUX_TMPDIR` are unset so a test can never touch the dedicated session socket.
+
+**Operator review:** confirm the scoped process source is also what you want for any future process-scan test added to this package, and that the non-Linux skip behavior is acceptable.
 
 ## See also
 

@@ -295,6 +295,25 @@ func (m *Manager) recordBootResume(entry BootResumeEntry) {
 	m.bootResumeReport = append(m.bootResumeReport, entry)
 }
 
+// bootBackoffNote returns a sentence for a boot-resume decision when backend
+// is backed off right now, or "". The flag is not acted on here: the next
+// session start for the backend goes through the same capacity admission as
+// for a flag set during this run, so it waits there (waiting_capacity, reason
+// "backoff: ...") instead of starting. Sessions already alive on the backend
+// are adopted as always and never killed or restarted.
+func (m *Manager) bootBackoffNote(backend string) string {
+	m.mu.Lock()
+	bo := m.backoff
+	m.mu.Unlock()
+	if bo == nil || backend == "" {
+		return ""
+	}
+	if blocked, why := bo.Blocked(backend); blocked {
+		return fmt.Sprintf("; backend %s is backed off (%s), so new session starts for it wait in the capacity queue and live sessions are left alone", backend, why)
+	}
+	return ""
+}
+
 // parkPRDForBootResume applies the park outcome: status PRDBlocked +
 // reason, persisted, status event emitted, operator alert raised. prior is
 // the status the PRD held before the park (PRDRunning or PRDFailed) and is

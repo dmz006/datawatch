@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "per-tab picker", "switching servers", "Showing:"]
+  topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy, "header dropdown", "switching servers", "Showing:"]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
   - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
@@ -23,13 +23,13 @@ them — or select "All" to see aggregated data from every server at once.
 
 ## What it is
 
-Five surfaces added in v7.2.0:
+Five surfaces, all added in v7.2.0 — the PWA selector shipped then as a per-view chip row and was replaced, in [v9.160.1](../../CHANGELOG.md), by the one header dropdown in the fixed app header:
 
 | Surface | What was added |
 |---------|---------------|
-| PWA Settings → Comms → Servers | Add / edit / delete / test remote server connections |
-| PWA per-tab picker | Server chip bar on Sessions, Alerts, Automata, Observer, Dashboard |
-| REST | `POST/GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
+| PWA Settings → Comms → **Remote Servers** card | Add / edit / delete / test remote server connections |
+| PWA header dropdown | One server selector in the fixed app header, present on every page; it also remembers the entry this browser picked (see [Switch between servers (header dropdown)](#switch-between-servers-header-dropdown), below) |
+| REST | `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{name}`, `POST /api/servers/{name}/test` |
 | MCP | `server_list`, `server_add`, `server_delete`, `server_test` tools |
 | CLI | `datawatch server {list,add,delete,test}` |
 
@@ -52,7 +52,8 @@ Five surfaces added in v7.2.0:
 | **Use case** | Operate across hosts from one browser tab | Aggregate process/GPU/net telemetry |
 | **Auth** | Bearer token per server | Push token per peer |
 
-You can use both simultaneously: register a server for per-tab switching AND
+You can use both simultaneously: register a server for picking it in the
+header dropdown AND
 configure it as a federated peer for push stats.
 
 ## Register a remote server
@@ -68,8 +69,8 @@ configure it as a federated peer for push stats.
 4. Click **Test** to verify connectivity — a green toast confirms the version.
 5. Click **Save**.
 
-The server appears in the list immediately and is available in the per-tab
-picker on all views.
+The server appears in the list immediately and is available in the
+header dropdown on every view.
 
 ### REST
 
@@ -135,41 +136,96 @@ servers:
 `${secret:nas-token}` resolves from the secrets store at startup so you don't
 store raw tokens in config files.
 
-## Switch between servers (per-tab picker)
+## Peer TLS (verified by default)
 
-Every main view (Sessions, Alerts, Automata, Observer, Settings, Dashboard)
-has a **server chip bar** injected at the top. The chips are:
+When a remote's `url` is `https://`, the daemon **verifies the remote's
+certificate against the system trust store by default**. The daemon makes
+the proxy calls itself (`/api/proxy/{name}/...`, health probes, the Test
+button's probe), so trusting the CA in the *browser* is not enough for them
+— a self-signed or private-CA remote needs one of the two per-peer options
+below, or the requests fail the TLS handshake.
 
-| Chip | Behaviour |
+| Option | Effect |
+|--------|--------|
+| `tls_cert_fingerprint` (recommended for self-signed remotes) | Pins the remote's **leaf certificate**: the SHA-256 of that one certificate, 64 hex characters (colons and spaces ignored). With a pin, the chain is **not** checked and the leaf must match. Derive it by saving the leaf with `openssl s_client -connect <host:port>` and running `openssl x509 -noout -fingerprint -sha256 -in <leaf.pem>`. A malformed value is **rejected when saved** (REST `400` / CLI error). The pin **wins over** `tls_skip_verify` — the two cannot both be set. When the remote's leaf later changes (renewal, re-issue) the pin stops matching and the peer goes unreachable until you update it. |
+| `tls_skip_verify: true` | Turns certificate verification off **for this peer only** — every other peer keeps full verification. For a self-signed/local-dev peer on a trusted network, never a production posture. Saving such a peer announces it: the create/update response carries a `warnings` array, and the daemon emits a warn-level system alert titled **Peer certificate not verified** (at most once per peer per daemon run) with the one line `<name>: this peer's certificate is not verified (tls_skip_verify is set); set tls_cert_fingerprint to pin its leaf certificate instead` (also logged). |
+
+**Where to set it (all surfaces agree):**
+
+| Surface | How |
+|---------|-----|
+| **PWA** | Settings → Comms → Servers, Add/Edit form: the **Skip TLS certificate verification** checkbox (shows the line "TLS certificate verification is disabled for this server — use only on a trusted network.") and the **Certificate fingerprint (pin)** field; the form keeps the two mutually exclusive. The Observer → Federation Peers card's add/edit peer form carries the same pair. |
+| **CLI** | `datawatch server add --tls-cert-fingerprint <64-hex>` or `--tls-skip-verify` (same flags on `datawatch server update <name>`; there, omitting `--tls-cert-fingerprint` leaves the pin unchanged). `datawatch federation peer add/update` take the same flags — `--tls-cert-fingerprint` is unrelated to `--fingerprint-sync`, which opts the peer into the resource-fingerprint exchange. |
+| **REST** | `tls_cert_fingerprint` / `tls_skip_verify` in the `POST`/`PUT` body on `/api/servers` (and `/api/federation/peers`); create/update responses carry the `warnings` array when applicable, and `POST /api/servers/{name}/test` surfaces it after the probe. Pin + skip together, or a malformed pin, is a `400`. |
+| **YAML** | `tls_cert_fingerprint: <64-hex>` (or `tls_skip_verify: true`) on the `servers:` entry — daemon restart required (YAML entries are read-only builtins). |
+
+**Operator review:** an `https://` remote you reached before by trusting its
+CA only in the browser now needs that CA in the daemon's system trust store,
+a leaf pin, or the explicit skip — and the skip is warned. Prefer the pin
+(or a trusted CA) over `tls_skip_verify`; if you used the skip, watch for
+the **Peer certificate not verified** alert and replace it with a pin once
+the peer's certificate is stable.
+
+## Switch between servers (header dropdown)
+
+Every page has a **server dropdown** in the fixed app header — a native
+`\<select\>` with `id="serverDropdown"`; on a phone it truncates long names
+with an ellipsis rather than wrapping a row of chips. The entries are:
+
+| Entry | Behaviour |
 |------|-----------|
-| **All** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
-| **Local** (labelled with this daemon's hostname — never the word "Local") | Show only this daemon's data (default) |
+| **All servers** | Fetch from all servers via aggregated endpoints; WebSocket stays on local |
+| **This server** (labelled with this daemon's real hostname once `/api/health` resolves it; the generic **This server** word until then — never the word "Local") | Show only this daemon's data (the boot default only while this browser has no saved choice) |
 | **\<name\>** | Proxy to the named remote server; REST calls go via `/api/proxy/{name}/...` |
 
-Observer and Settings are the two tabs whose picker offers no **All** chip
-at all — only the local and federated chips.
+The dropdown is shared by all pages, so **All servers** can be chosen
+anywhere — but the **Observer** and **Settings** views are the two that have
+no "all servers" form: while **All servers** is the active entry they are
+deliberately not re-rendered, so they keep showing the single server whose
+data they last rendered (operator decision, 2026-10-07).
 
-The active chip persists in `state.activeServer` for the duration of the
-session.
+The active entry is remembered by the browser, per device (this browser's
+local storage): the dropdown follows you as you navigate between pages, and
+when you reload the page or come back later the same entry is already
+selected — the boot round of data fetches runs against it, so restoring the
+choice costs no second refresh. A saved peer name is validated against the
+server list before the app commits to it: if that peer has since been
+removed or disabled, the PWA starts on **All servers** instead and keeps
+that, so the stale choice does not survive the next reload. If the choice
+cannot be validated against the list within a short bound at boot (this
+daemon's `/api/servers` is down or slow), the PWA also starts on
+**All servers** rather than holding the page open, and keeps that. (With
+local storage blocked the choice simply lives in memory for the page's
+lifetime, as it did before the choice was saved.) It works with any number
+of registered peers — one native entry list, not a chip row, so a roster of
+two or of two hundred is the same control, with long names truncating to an
+ellipsis instead of wrapping the header. Being a native selection control,
+it is fully keyboard-operable (focus it, move through the entries with the
+arrow keys, pick with Enter) and readable by a screen reader, which
+announces it as a dropdown with the current entry and each option,
+including the ` (unreachable)` marker on a peer that is not answering.
 
-**Selecting a chip acts on the page you are on, immediately.** Choosing a
+### Switch in place
+
+Selecting an entry acts on the page you are on, immediately. Choosing a
 federated host re-renders the tab you are currently looking at — Sessions,
 Alerts, Automata, Observer, Settings or Dashboard — in place, against that
 server:
 the **Showing: \<name\>** line above the view updates to the host you
 picked and the list/content becomes that host's data, without you leaving
-and re-opening the view. Picking **Local** or **All** takes the same page
+and re-opening the view. Picking **This server** or **All servers** takes the same page
 back to that view the same way.
 
 On the **Dashboard** the switch is per panel rather than one list: each
 panel re-fetches for the active host. Only the **Automata** and **Cost**
-panels aggregate under **All** (`/api/autonomous/prds/aggregated`,
+panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 `/api/cost/aggregated`); the other panels have no aggregated variant.
 
 > **Confirm this on your setup before relying on it.** The in-place switch
-> is recorded under **[Unreleased] → Fixed** in the
-> [changelog](../../CHANGELOG.md) (found 2026-11-08), and its entry records
-> that no live verification had been run when it was recorded. It is
+> is recorded under **v9.112.9 — “Switch the page to the chosen
+> federated host from the server picker”** (### Fixed, “Found
+> 2026-11-08”) in the [changelog](../../CHANGELOG.md), and that entry
+> records that no live verification had been run when it was recorded. It is
 > implemented in this tree's `internal/server/web/app.js` — `selectServer`
 > re-renders the tab you're on, and the **Automata** re-render spans the
 > whole tab, **Automation** sub-tab included — with PWA tests for the
@@ -179,27 +235,40 @@ panels aggregate under **All** (`/api/autonomous/prds/aggregated`,
 
 Behaviours worth knowing:
 
-- **Re-selecting the active server is a no-op.** Tapping the chip that is
+- **Re-selecting the active server is a no-op.** Choosing the entry that is
   already active does not reload the view, refetch data or reset scroll
   position and filters.
 - **A real switch clears the previous server's data first.** On any
   genuine picker switch (not a no-op re-selection), the old server's
   session list is dropped before the view redraws — the tab cannot keep
-  showing the previous server's sessions. Sub-pages that carry no chip
-  bar at all (session detail, the New session form) are not re-rendered
-  by a switch; they keep their contents until you leave them.
+  showing the previous server's sessions. Sub-pages (session detail, the
+  New session form) are not re-rendered by a switch; they keep their
+  contents until you leave them.
+- **\<label\> (unreachable).** A peer whose background reachability check
+  failed (a 4-second-capped `/api/proxy/\<name\>/api/health` probe) keeps its
+  entry, suffixed ** (unreachable)** — the entry stays listed and selectable,
+  and choosing it is exactly how the authoritative error surfaces. The marker
+  patches the single entry in place (it never re-renders the whole dropdown
+  mid-interaction).
 - **Back to \<hostname\>.** Extra one-tap ways to return to local data
   (where \<hostname\> is this daemon's own name), in addition to the
-  always-present **Local** chip — they all perform the same "go back to
+  always-present **This server** entry — they all perform the same "go back
+to
   local" action:
   - the error panel, when a remote server cannot be reached and no
     sessions are loaded, offers an explicit **Back to \<hostname\>**
     button;
-  - a clickable **🌐 \<name\>** indicator on the **Sessions toolbar** —
-    it appears while a remote server is the active one and clicking it
-    returns you to local data; it is the `.server-indicator` chip in
-    `renderSessionsView` in `internal/server/web/app.js`
-    (`onclick="selectServer(null)"`), covered by the PWA test
+  - the **Sessions toolbar** now carries a **server select** in its one-line
+    top bar (an **All servers** entry, **This server**, one entry per
+    peer) — picking **This server** (or any other entry) goes through the
+    same `selectServer()` path as the header dropdown;
+  - a clickable **🌐 \<name\>** indicator on the line below the Sessions toolbar,
+    next to **Tree** and **History** (it lives on the Sessions page
+    toolbar, not the one-line top bar) — it appears while a remote server
+    is the active one and clicking it returns you to local data; it is the
+    `.server-indicator` chip in `renderSessionsView` in
+    `internal/server/web/app.js` (`onclick="selectServer(null)"`), covered
+    by the PWA test
     `internal/server/web/app-select-server-controls.test.js`;
   - on the **Servers card** under Settings → Comms → Remote Servers, the
     row for the active remote server carries a **Back to \<hostname\>**
@@ -222,8 +291,11 @@ Selecting **All** uses two dedicated endpoints that fan out in parallel:
 Each item in the response carries a `server` field (e.g. `"server":"nas"`)
 identifying its origin. The PWA renders a **[nas]** tag on each card.
 
-The Observer and Settings pickers offer no **All** chip at all (only the
-local and federated chips). On the Dashboard, **All** aggregates per panel:
+The **Observer** and **Settings** views are the two for which selecting
+**All servers** has no effect — they have no aggregated variant, so the
+in-place re-render is deliberately skipped for them and they keep showing
+the single server whose data they last rendered (operator decision,
+2026-10-07). On the Dashboard, **All servers** aggregates per panel:
 the Automata and Cost panels use the aggregated endpoints above
 (`/api/autonomous/prds/aggregated`, `/api/cost/aggregated`); the other
 Dashboard panels have no aggregated variant and show the selected server's
@@ -231,7 +303,8 @@ data.
 
 ## Proxy mode (specific server)
 
-When you select a named server chip, the PWA routes through the local
+When you select a named server in the header dropdown, the PWA routes
+through the local
 daemon's proxy:
 
 ```
@@ -293,7 +366,11 @@ the About tab sees two matching builds.
 **Test button returns red / error toast**
 - Verify the URL is reachable from the browser (not just from the daemon host).
 - Check that the remote bearer token matches what the remote daemon is configured with.
-- If TLS: ensure the remote's CA cert is trusted by the browser.
+- If using TLS: the daemon verifies the remote's certificate against its
+  system trust store (browser trust does not cover the daemon's proxy
+calls) — trust the CA on the daemon host, pin the leaf with
+  `tls_cert_fingerprint`, or explicitly set `tls_skip_verify: true`
+  (announced with a warning); see [Peer TLS (verified by default)](#peer-tls-verified-by-default).
 
 **[remote] badge missing on aggregated cards**
 - The remote server may be offline; the aggregated endpoint skips unreachable
@@ -310,6 +387,7 @@ the About tab sees two matching builds.
 ## See also
 
 - [`howto/federated-observer.md`](federated-observer.md) — push-based peer stats aggregation
+- [`howto/federation-fingerprint.md`](federation-fingerprint.md) — the `fingerprint-sync` per-peer flag (distinct from the `tls_cert_fingerprint` pin)
 - [`howto/secrets-manager.md`](secrets-manager.md) — store remote bearer tokens as `${secret:...}` refs
 - [`howto/daemon-operations.md`](daemon-operations.md) — start / configure remote instances
 - [`architecture-overview.md`](../architecture-overview.md) — how proxy routing and server store fit together

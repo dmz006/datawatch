@@ -16,11 +16,11 @@
  *      and the helpers behave: axis parsing, canonical axis order, tag names
  *      grouped by axis (unknown shapes skipped), and the dashboard's "axis:*"
  *      whole-axis match;
- *   3. the sessions view: when the daemon's sessions carry placement tags the
- *      toolbar shows the "group by placement axis" control, and grouping
- *      renders one header per tag plus the untagged group (restored to
- *      ungrouped afterwards); when none carry them the control is absent and
- *      nothing is shown;
+ *   3. the sessions view: the single labelled "Group by" select (the old
+ *      gear placement control and its handler are gone) is the only grouping
+ *      control, and grouping by a placement axis renders one header per tag
+ *      plus the untagged group (restored to ungrouped afterwards; axes that
+ *      duplicate a built-in — node, project — group by that axis);
  *   4. settings: the autonomous-config section renders the Placement tags
  *      group with one toggle and one template per axis;
  *   5. dashboard: the placement filter select is in the header, keeps its
@@ -98,12 +98,16 @@ await runPerfStory(async (page) => {
         axisOrder: typeof window._placementAxisOrder === 'function',
         tagName: typeof window._placementTagName === 'function',
         tagsByAxis: typeof window._placementTagsByAxis === 'function',
-        groupControl: typeof window._sessionsGroupControl === 'function',
+        groupPicker: typeof window.renderSessionsGroupPicker === 'function',
         groupCards: typeof window._sessionsGroupCards === 'function',
-        setGroup: typeof window.setSessionsGroupAxis === 'function',
+        setGroup: typeof window.setSessionGroupBy === 'function',
         dashMatch: typeof window._dashPlacementSessionMatch === 'function',
         dashSelect: typeof window.dashSetPlacementTag === 'function',
         groupClick: typeof window._sessionGroupTagClick === 'function',
+      },
+      oneControl: {
+        gearSetterGone: typeof window.setSessionsGroupAxis !== 'function',
+        gearControlGone: typeof window._sessionsGroupControl !== 'function',
       },
       order: (typeof window._placementAxisOrder === 'function') ? window._placementAxisOrder(['lane', 'zzz', 'compute']) : null,
       axisOf: (typeof window._placementAxisOf === 'function')
@@ -117,6 +121,8 @@ await runPerfStory(async (page) => {
         : null,
     }));
     check(Object.values(surface.funcs).every(Boolean), `every placement helper is on the page, saw ${JSON.stringify(surface.funcs)}`);
+    check(surface.oneControl.gearSetterGone === true && surface.oneControl.gearControlGone === true,
+      `the old gear grouping control and its handler are gone, saw ${JSON.stringify(surface.oneControl)}`);
     check(JSON.stringify(surface.order) === JSON.stringify(['compute', 'lane', 'zzz']),
       `canonical axis order with custom axes last, saw ${JSON.stringify(surface.order)}`);
     check(!!surface.axisOf && surface.axisOf.on === 'compute' && surface.axisOf.off === '',
@@ -130,7 +136,8 @@ await runPerfStory(async (page) => {
     const bundle = await p.evaluate(() => (window._i18n && window._i18n.bundle) || {});
     const missingKeys = BUNDLE_KEYS.filter((k) => !bundle[k]);
     check(missingKeys.length === 0, `the English bundle carries the placement strings, missing ${missingKeys.join(', ') || 'none'}`);
-    evidence.surface = { funcs: surface.funcs, order: surface.order, axisOf: surface.axisOf, byAxis: surface.byAxis, missingKeys };
+    evidence.surface = { funcs: surface.funcs, oneControl: surface.oneControl, order: surface.order, axisOf: surface.axisOf, byAxis: surface.byAxis, missingKeys };
+
 
     // The dashboard's whole-axis ("axis:*") session match.
     const dashMatch = await p.evaluate(() => {
@@ -156,7 +163,7 @@ await runPerfStory(async (page) => {
     evidence.dashMatch = dashMatch;
     await screenshot(p, '01-helpers');
 
-    // --- 3. the sessions view: the group-by-axis control and grouped render --
+    // --- 3. the sessions view: one "Group by" select and the grouped render --
     const sessions = await p.evaluate(() => {
       if (typeof _placementTagsByAxis !== 'function') return { axes: [], sessions: 0 };
       const list = state.sessions || [];
@@ -165,33 +172,45 @@ await runPerfStory(async (page) => {
     evidence.sessions = sessions;
     const hadAxis = sessions.axes.length > 0;
     const groupUi = await p.evaluate((want) => {
-      if (typeof _sessionsGroupControl !== 'function') return null;
+      if (typeof renderSessionsGroupPicker !== 'function') return null;
       navigate('sessions');
+      // The "Group by" select lives in the Filters sheet — open it.
+      if (typeof sessionsFiltersOpen === 'function') sessionsFiltersOpen();
+      else if (state) state._sessionsSheetOpen = true;
       const render = () => { if (typeof renderSessionsView === 'function') renderSessionsView(); };
       render();
-      const before = { control: !!document.querySelector('.group-axis-control') };
-      if (!want) {
-        return { ...before, grouped: null };
-      }
-      const axis = Object.keys(_placementTagsByAxis(state.sessions || []))[0];
-      if (typeof setSessionsGroupAxis !== 'function') return { ...before, grouped: null };
-      setSessionsGroupAxis(axis);
+      const gear = !!document.querySelector('.group-axis-control');
+      const picker = !!document.querySelector('#sessions-group-select');
+      const selectCount = document.querySelectorAll('#sessions-group-select').length;
+      if (!want) return { picker, gear, selectCount, grouped: null };
+      const axes0 = Object.keys(_placementTagsByAxis(state.sessions || []));
+      // A placement axis that duplicates a built-in (node, project) keeps one
+      // grouping one name: group by the built-in axis, not the tag prefix.
+      const axis = axes0.find((a) => a !== 'node' && a !== 'project') || axes0[0] || null;
+      if (!axis || typeof setSessionGroupBy !== 'function') return { picker, gear, selectCount, grouped: null };
+      setSessionGroupBy(axis === 'node' || axis === 'project' ? axis : ('tag|' + axis + ':'));
       render();
       const headers = [...document.querySelectorAll('.sessions-group-header')].map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim());
-      const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_sessions_group_axis') : null;
-      setSessionsGroupAxis('');
+      const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_sessions_group_by') : null;
+      setSessionGroupBy('');
       render();
-      return { ...before, axis, headers, stored, restoredStored: (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_sessions_group_axis') : null };
+      return { picker, gear, selectCount, axis, headers, stored, restoredStored: (typeof localStorage !== 'undefined') ? localStorage.getItem('dw_sessions_group_by') : null };
     }, hadAxis);
-    if (hadAxis) {
-      check(!!groupUi && groupUi.control === true, 'with placement tags present, the sessions toolbar shows the group-by-axis control');
-      check(!!groupUi && Array.isArray(groupUi.headers) && groupUi.headers.length >= 1
-        && groupUi.headers.some((h) => h.includes(groupUi.axis ? `${groupUi.axis}:` : '')),
-        `grouping renders a header per tag under "${groupUi && groupUi.axis}", saw ${JSON.stringify(groupUi && groupUi.headers)}`);
-      check(!!groupUi && groupUi.stored === groupUi.axis, `the chosen axis is persisted, stored=${groupUi && groupUi.stored}`);
-      check(!!groupUi && (groupUi.restoredStored === '' || groupUi.restoredStored === null), 'grouping is restored to ungrouped, stored=' + JSON.stringify(groupUi && groupUi.restoredStored));
-    } else {
-      check(!!groupUi && groupUi.control === false, 'without placement tags on any session, the group-by-axis control stays hidden');
+    check(!!groupUi && groupUi.picker === true && groupUi.gear === false && groupUi.selectCount === 1,
+      `the labelled "Group by" select is the only grouping control on the sessions page, saw ${JSON.stringify(groupUi)}`);
+    if (hadAxis && groupUi && groupUi.axis) {
+      check(Array.isArray(groupUi.headers) && groupUi.headers.length >= 1,
+        `grouping renders at least one group header, saw ${JSON.stringify(groupUi.headers)}`);
+      let storedObj = null; try { storedObj = JSON.parse(groupUi.stored); } catch { /* stored is reported in the next line */ }
+      const wantObj = (groupUi.axis === 'node' || groupUi.axis === 'project')
+        ? { axis: groupUi.axis, tagPrefix: '' }
+        : { axis: 'tag', tagPrefix: groupUi.axis + ':' };
+      check(JSON.stringify(storedObj) === JSON.stringify(wantObj),
+        `the chosen grouping is persisted under the shared key, stored=${groupUi.stored}, want ${JSON.stringify(wantObj)}`);
+      check(!!groupUi && (groupUi.restoredStored === '' || groupUi.restoredStored === null),
+        'grouping is restored to ungrouped, stored=' + JSON.stringify(groupUi.restoredStored));
+    } else if (hadAxis) {
+      check(false, 'placement axes are present but the story could not group by one, saw ' + JSON.stringify(groupUi));
     }
     evidence.groupUi = groupUi;
     await screenshot(p, '02-sessions-grouping');

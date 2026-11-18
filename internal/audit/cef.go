@@ -160,6 +160,12 @@ func cefSignature(action string) (int, string, int) {
 		return 33, "AutonomousUsageBackoffAutoCleared", 2
 	case ActionUsageBackoffPatternsRechecked:
 		return 34, "AutonomousUsageBackoffPatternsRechecked", 3
+	case ActionUsageBackoffRestored:
+		return 93, "AutonomousUsageBackoffRestored", 3
+	case ActionUsageBackoffReserveAdmitted:
+		return 96, "AutonomousUsageBackoffReserveAdmitted", 3
+	case ActionUsageBackoffReserveRefused:
+		return 97, "AutonomousUsageBackoffReserveRefused", 4
 	case ActionBudgetCeilingWait:
 		return 35, "AutonomousBudgetCeilingWait", 4
 	case ActionBudgetWindowResumed:
@@ -280,6 +286,16 @@ func cefSignature(action string) (int, string, int) {
 		return 91, "PlacementLoaded", 2
 	case ActionPlacementRefused:
 		return 92, "PlacementRefused", 5
+	case ActionPlanRecordCreated:
+		return 93, "PlanRecordCreated", 3
+	case ActionPlanRecordUpdated:
+		return 94, "PlanRecordUpdated", 3
+	case ActionPlanRecordImported:
+		return 95, "PlanRecordImported", 3
+	case ActionPlanRecordArchived:
+		return 96, "PlanRecordArchived", 3
+	case ActionPlanRecordRestored:
+		return 97, "PlanRecordRestored", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

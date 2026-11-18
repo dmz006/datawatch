@@ -53,6 +53,13 @@ func TestKindDefaults(t *testing.T) {
 		"docs":           "digest",
 		"note":           "minimal",
 		"final_gate":     "digest",
+
+		"supervisor":           "datawatch-tools",
+		"operator_interactive": "digest",
+		"scheduled_command":    "minimal",
+		"planner":              "full",
+		"one_shot":             "minimal",
+		"review":               "minimal",
 	}
 	if !reflect.DeepEqual(kindDefaults, want) {
 		t.Errorf("kindDefaults = %v, want %v", kindDefaults, want)
@@ -388,4 +395,79 @@ func TestNilOverridesMatchBuiltinResult(t *testing.T) {
 func isKnownRole(role string) bool {
 	_, ok := roleDefaults[role]
 	return ok
+}
+
+func TestResolveSessionKindDefaults(t *testing.T) {
+	cases := map[string]string{
+		KindSupervisor: "datawatch-tools",
+		KindOperator:   "digest",
+		KindScheduled:  "minimal",
+		KindPlanner:    "full",
+		KindOneShot:    "minimal",
+		KindReview:     "minimal",
+	}
+	for kind, want := range cases {
+		p, d := Resolve(ResolveInput{Role: "worker", Kind: kind})
+		if p.Name != want || d.Layer != string(LayerKind) {
+			t.Errorf("kind %q: got %q at %q, want %q at kind", kind, p.Name, d.Layer, want)
+		}
+	}
+}
+
+func TestResolveSupervisorDefaultIsLean(t *testing.T) {
+	p, _ := Resolve(ResolveInput{Role: "worker", Kind: KindSupervisor})
+	if p.Skills || p.Context == ContextFull {
+		t.Errorf("supervisor default is not lean: %+v", p)
+	}
+	if p.Name != "datawatch-tools" {
+		t.Errorf("supervisor default = %q", p.Name)
+	}
+}
+
+func TestResolveActivitySelectsKindDefault(t *testing.T) {
+	for act, kind := range ActivityKinds() {
+		want, _ := Resolve(ResolveInput{Role: "worker", Kind: kind})
+		got, d := Resolve(ResolveInput{Role: "worker", Activity: act})
+		if got.Name != want.Name || d.Layer != string(LayerKind) {
+			t.Errorf("activity %q: got %q at %q, want %q", act, got.Name, d.Layer, want.Name)
+		}
+	}
+	// A kind with its own default wins over the activity.
+	p, _ := Resolve(ResolveInput{Role: "worker", Kind: KindScheduled, Activity: ActivitySupervising})
+	if p.Name != "minimal" {
+		t.Errorf("kind should beat activity, got %q", p.Name)
+	}
+}
+
+func TestResolveSessionKindNamedScopes(t *testing.T) {
+	lookup := userLookup(map[string]WorkerProfile{
+		"a": customProfile("a"), "b": customProfile("b"), "c": customProfile("c"), "d": customProfile("d"),
+	})
+	base := ResolveInput{Role: "worker", Kind: KindSupervisor, Lookup: lookup}
+	in := base
+	in.GlobalName = "d"
+	if p, _ := Resolve(in); p.Name != "d" {
+		t.Errorf("global: %q", p.Name)
+	}
+	in.ProjectName = "c"
+	if p, _ := Resolve(in); p.Name != "c" {
+		t.Errorf("project: %q", p.Name)
+	}
+	in.AutomatonName = "b"
+	if p, _ := Resolve(in); p.Name != "b" {
+		t.Errorf("automaton: %q", p.Name)
+	}
+	in.TaskName = "a"
+	if p, d := Resolve(in); p.Name != "a" || d.Layer != string(LayerTask) {
+		t.Errorf("task: %q %q", p.Name, d.Layer)
+	}
+}
+
+func TestResolveUnknownKindFallsToRoleDefault(t *testing.T) {
+	for role, want := range roleDefaults {
+		p, d := Resolve(ResolveInput{Role: role, Kind: "no_such_kind", Activity: "no_such_activity"})
+		if p.Name != want || d.Layer != string(LayerRole) {
+			t.Errorf("role %q: got %q at %q, want %q at role", role, p.Name, d.Layer, want)
+		}
+	}
 }

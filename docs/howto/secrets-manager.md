@@ -152,12 +152,19 @@ datawatch secrets get GITHUB_TOKEN
 # 7. Delete.
 datawatch secrets delete OLD_TOKEN
 
-# 8. Migrate to a new backend.
-datawatch secrets export ~/secrets-backup.json
-# Edit datawatch.yaml; switch backend; restart.
-datawatch secrets import ~/secrets-backup.json
-shred -u ~/secrets-backup.json    # the export was plaintext
+# 8. Move to a new backend. There is no export command, so read each
+#    value and set it again in the new backend. Do this yourself in a
+#    terminal, not through an agent; every read is audit-logged.
+datawatch secrets list                        # note each name, its tags and scopes
+datawatch secrets get GITHUB_TOKEN            # read the value
+# Set secrets.backend to the new backend in the config; restart.
+datawatch secrets set GITHUB_TOKEN "ghp_..."  # repeat for each name, with its tags and scopes
 ```
+
+(`datawatch secrets migrate` is a different job: it moves plaintext
+credentials out of `config.yaml` into the secrets store and leaves
+`${secret:name}` references behind. It does not move secrets between
+backends.)
 
 ### 4c. External services (GH#203)
 
@@ -442,17 +449,23 @@ cloud-LLM setup.
 
 - **Secret in commit history.** If you've committed a value and only
   THEN moved it into the manager, rotate the secret first.
-- **Native backend on a shared host.** The encryption key is derived
-  from the machine ID; anyone with shell access can read the DB. For
-  shared hosts use KeePass / 1Password with the unlock cred in env-only.
+- **Native backend on a shared host.** The vault key is a random key file
+  (`secrets.key`) kept next to `secrets.db`, or the `DATAWATCH_SECRETS_KEY`
+  environment variable. Anyone who can read the data directory can read both,
+  so a copy of the directory carries the secrets. For shared hosts use KeePass
+  / 1Password with the unlock cred in env-only, or keep the key in the
+  environment variable outside the data directory. See
+  [encryption](../encryption.md#secrets-vault-secretsdb).
 - **Unscoped secrets in a multi-plugin setup.** Default scope is `*`;
   if you have plugins you don't fully trust, scope per-plugin.
 - **Backend creds with `${secret:...}`.** Won't work — the daemon
   needs to UNLOCK the secrets backend before it can resolve refs from
   it. Use `${env:...}` for KeePass / 1Password unlock creds.
-- **`shred` on the export file.** The `secrets export` JSON is
-  plaintext; `rm` leaves it recoverable on most filesystems. Use
-  `shred -u` (or equivalent) to actually destroy.
+- **Values copied by hand stay in your terminal.** When you move secrets
+  between backends with `secrets get` and `secrets set`, the values land in
+  your shell history and scrollback. Clear both afterwards, and never paste
+  them into a file. There is no export file to destroy because datawatch
+  writes none.
 
 ## Linked references
 

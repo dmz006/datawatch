@@ -65,40 +65,21 @@ const SinkActionSendInput = "send_input"
 const SubscriptionActionTextLimit = 4096
 
 // KnownEventKinds is the closed set of event kinds a subscription may
-// filter on: every PRD/task status-change kind plus the non-status
-// lifecycle kinds.
+// filter on, derived from the event kind registry
+// (lifecycle_event_registry.go).
 var KnownEventKinds = func() map[string]bool {
-	m := map[string]bool{
-		KindTaskSessionStarted: true,
-		KindTaskSessionCleared: true,
-		KindScopeWarning:       true,
-		KindGuardrailWarn:      true,
-		KindPRDUpdated:         true,
-		// The operator-question kinds are subscribable but never in the
-		// default set: a subscriber lists them explicitly.
-		KindQuestionAnswered:  true,
-		KindQuestionWithdrawn: true,
-	}
-	for _, s := range []PRDStatus{
-		PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked,
-		PRDActive, PRDRunning, PRDCompleted, PRDRejected, PRDCancelled,
-		PRDArchived, PRDBlocked, PRDFailed, PRDPaused,
-	} {
-		m[PRDStatusKind(s)] = true
-	}
-	for _, s := range []TaskStatus{
-		TaskPending, TaskQueued, TaskInProgress, TaskRunningTests,
-		TaskVerifying, TaskCompleted, TaskFailed, TaskBlocked,
-		TaskCancelled, TaskWaitingCapacity, TaskAwaitingApproval, TaskReviewNeeded,
-	} {
-		m[TaskStatusKind(s)] = true
+	m := make(map[string]bool, len(eventKindRegistry))
+	for _, e := range eventKindRegistry {
+		if !notSubscribableKinds[e.Kind] {
+			m[e.Kind] = true
+		}
 	}
 	return m
 }()
 
 // IsKnownEventKind reports whether k is a kind a subscription may
 // filter on.
-func IsKnownEventKind(k string) bool { return KnownEventKinds[k] }
+func IsKnownEventKind(k string) bool { return KnownEventKinds[k] || isExtensionEventKind(k) }
 
 // SubscriptionSink is where a matching event is delivered.
 type SubscriptionSink struct {
@@ -167,6 +148,11 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 			return fmt.Errorf("filter kind %q is not a known event kind", k)
 		}
 	}
+	if sub.Filter.Peer != "" {
+		if err := ValidatePeerName(sub.Filter.Peer); err != nil {
+			return fmt.Errorf("filter peer: %w", err)
+		}
+	}
 	if strings.TrimSpace(sub.Sink.Type) == "" {
 		return fmt.Errorf("sink type is required")
 	}
@@ -198,10 +184,17 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 			return err
 		}
 	default:
+		found, err := validateExtensionSink(sub.Sink)
+		if err != nil {
+			return err
+		}
+		if found {
+			break
+		}
 		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q, %q, %q)",
 			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue, SinkWebhook, SinkPeer)
 	}
-	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" {
+	if sub.Sink.Type != SinkWebhook && sub.Sink.SecretRef != "" && !isExtensionSink(sub.Sink.Type) {
 		return fmt.Errorf("sink secret_ref is only valid with a webhook sink (got %q)", sub.Sink.Type)
 	}
 	if strings.TrimSpace(sub.Sink.Target) == "" {

@@ -97,11 +97,13 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 
 	scope := m.effectiveUncommittedWorkScope(prd)
 	writeDirs := EffectiveTaskWriteDirs(prd, t)
+	var skippedMarkers []string
 	detect := func() ([]UncommittedFile, error) {
-		files, derr := DetectUncommittedWork(ctx, dir, m.driftGit)
+		files, skipped, derr := DetectUncommittedWorkSkipping(ctx, dir, m.driftGit)
 		if derr != nil {
 			return nil, derr
 		}
+		skippedMarkers = skipped
 		return ScopeUncommittedFiles(files, t, writeDirs, dir, scope), nil
 	}
 
@@ -154,6 +156,9 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	}
 	if skippedNote != "" {
 		cause += "; " + skippedNote
+	}
+	if note := skippedMarkerFilesNote(skippedMarkers); note != "" {
+		cause += "; " + note
 	}
 
 	if policy == config.UncommittedWorkPolicyWarn {

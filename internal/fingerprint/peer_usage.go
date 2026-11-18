@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
 const (
@@ -30,7 +32,7 @@ type peerUsageEntry struct {
 // the cache mutex is never held across a network call.
 type PeerUsageCache struct {
 	Peers  func() []PeerRef
-	Client *http.Client  // nil = a client with a 3-second timeout
+	Client *http.Client  // optional shared override for every peer (test seam); nil = per-peer clients
 	TTL    time.Duration // zero = 10 seconds
 	MaxAge time.Duration // zero = 5 times TTL; older entries count as missing
 	Now    func() time.Time
@@ -39,6 +41,13 @@ type PeerUsageCache struct {
 	entries     map[string]peerUsageEntry
 	inflight    map[string]bool
 	unreachable map[string]bool // peers currently in a failure episode
+	clients     map[string]usageClient
+}
+
+type usageClient struct {
+	skipVerify bool
+	pin        string
+	client     *http.Client
 }
 
 func (c *PeerUsageCache) now() time.Time {
@@ -62,14 +71,26 @@ func (c *PeerUsageCache) maxAge() time.Duration {
 	return 5 * c.ttl()
 }
 
-func (c *PeerUsageCache) client() *http.Client {
+// clientFor returns the client for peer's fetch. An injected Client wins
+// (the shared test seam); otherwise one client per peer is built from the
+// entry's tls_skip_verify and pinned certificate fingerprint through the
+// same shared builder as every other peer call, and reused until either
+// setting changes.
+func (c *PeerUsageCache) clientFor(peer PeerRef) *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	// Follow-up: this fallback ignores the peer's tls_skip_verify. PeerRef
-	// carries no such field, so honouring it needs a new PeerRef field (and
-	// wiring), which is outside this fix.
-	return &http.Client{Timeout: defaultPeerUsageTimeout}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cc, ok := c.clients[peer.Name]; ok && cc.skipVerify == peer.TLSSkipVerify && cc.pin == peer.TLSCertFingerprint {
+		return cc.client
+	}
+	if c.clients == nil {
+		c.clients = map[string]usageClient{}
+	}
+	cl := multiserver.PeerHTTPClient(peer.TLSSkipVerify, peer.TLSCertFingerprint, defaultPeerUsageTimeout)
+	c.clients[peer.Name] = usageClient{skipVerify: peer.TLSSkipVerify, pin: peer.TLSCertFingerprint, client: cl}
+	return cl
 }
 
 // Held returns the cached held count of pool on peer. It is a pure
@@ -153,7 +174,7 @@ func (c *PeerUsageCache) get(ctx context.Context, peer PeerRef) (map[string]int,
 	if peer.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+peer.Token)
 	}
-	resp, err := c.client().Do(req)
+	resp, err := c.clientFor(peer).Do(req)
 	if err != nil {
 		return nil, err
 	}

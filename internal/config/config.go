@@ -41,6 +41,13 @@ type RemoteServerConfig struct {
 	// false. OK for a self-signed/local-dev peer on a trusted network only;
 	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
 	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
+	// TLSCertFingerprint pins the peer's leaf certificate to the hex
+	// SHA-256 of its DER bytes. It is the recommended alternative to
+	// TLSSkipVerify for a self-signed peer: the peer's identity is still
+	// checked, only the CA chain is not. When set it wins over
+	// TLSSkipVerify. Same convention as the compute node
+	// tls_cert_fingerprint.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty"`
 	// FingerprintSync opts THIS peer into the resource-fingerprint exchange.
 	// Opt-in per peer, default false — the operator decision recorded in
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
@@ -1096,8 +1103,9 @@ type ComputeNodeYAML struct {
 	// node usage probes and the supervisor watch probe. Default false =
 	// verify. Cannot be combined with TLSCAFile or TLSCertFingerprint.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
-	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
-	// against the system roots. Default false.
+	// VerifyTLS used to switch model-pull certificate verification on.
+	// Pulls now always verify, so the field is kept for configuration
+	// compatibility and no longer changes behavior.
 	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
 	// system roots when the node serves a certificate from a private CA.
@@ -2342,6 +2350,16 @@ type MCPConfig struct {
 	// Prompts controls the MCP prompts surface (BL302 S4).
 	Prompts MCPPromptsConfig `yaml:"prompts" json:"prompts"`
 
+	// ResourceSubscriptions lets an MCP client subscribe to the lifecycle
+	// events resource (datawatch://events/lifecycle) with resources/subscribe
+	// and receive notifications/resources/updated when a matching event
+	// fires. It uses the same event filter and event kinds as a persisted
+	// subscription. Default false: the server then does not advertise
+	// subscribe and refuses resources/subscribe, exactly as before.
+	// Changing it needs a daemon restart (the capability is advertised once,
+	// at startup).
+	ResourceSubscriptions bool `yaml:"resource_subscriptions" json:"resource_subscriptions"`
+
 	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
 	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
 	SSEEnabled bool `yaml:"sse_enabled"`
@@ -3134,6 +3152,14 @@ type AutonomousConfig struct {
 	// BranchRefreshBehindLimit is how many commits behind the base a branch
 	// may be before it is refreshed. Zero reads as 5; see BranchRefreshLimit.
 	BranchRefreshBehindLimit int `yaml:"branch_refresh_behind_limit" json:"branch_refresh_behind_limit"`
+	// ProjectLinkBackfillApply controls the one-time project link backfill at
+	// daemon start. false (default): only a dry-run report is produced, and
+	// nothing is changed. true: the backfill is applied once, linking
+	// Automata that have no project link and match the datawatch project by
+	// Automation, parent or repository directory; the daemon then writes a
+	// durable done marker and does not re-run it. Automata that already carry
+	// a link are never changed.
+	ProjectLinkBackfillApply bool `yaml:"project_link_backfill_apply" json:"project_link_backfill_apply"`
 	// PollIntervalSeconds is the loop tick (default 30).
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
 	// MaxParallelTasks is deprecated and read by nothing: it never
@@ -3230,8 +3256,13 @@ type AutonomousConfig struct {
 	// false); Shadow computes/records the routed decision but keeps the
 	// planner unchanged. Not applied by applyDefaults — an existing
 	// config without the block loads unchanged.
-	PlanningRouting   PlanningRoutingConfig `yaml:"planning_routing,omitempty" json:"planning_routing,omitempty"`
-	VerificationModel string                `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	PlanningRouting PlanningRoutingConfig `yaml:"planning_routing,omitempty" json:"planning_routing,omitempty"`
+	// TaskRouting (autonomous.task_routing) maps a task type to the
+	// worker and verification LLM a newly created task starts with; see
+	// internal/config/task_routing.go. Off by default. A config without
+	// the block gets the shipped "default" profile on load.
+	TaskRouting       TaskRoutingConfig `yaml:"task_routing,omitempty" json:"task_routing,omitempty"`
+	VerificationModel string            `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for the guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (see
@@ -3510,6 +3541,15 @@ type AutonomousConfig struct {
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
 	// rejected — see loop_detect_turns.go.
 	LoopDetectTurns *int `yaml:"loop_detect_turns,omitempty" json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled turns the daily pending-branch alert on or off.
+	// *bool: nil = unset → on (DefaultUnlandedAlertEnabled); see
+	// unlanded_alert.go.
+	UnlandedAlertEnabled *bool `yaml:"unlanded_alert_enabled,omitempty" json:"unlanded_alert_enabled,omitempty"`
+	// UnlandedAlertThreshold is how many pending Automaton branches are
+	// allowed before the daily alert fires (it fires when the count is
+	// strictly above). *int: nil = unset → 3; 0 = alert on any pending
+	// branch. Negative values are rejected — see unlanded_alert.go.
+	UnlandedAlertThreshold *int `yaml:"unlanded_alert_threshold,omitempty" json:"unlanded_alert_threshold,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -3521,6 +3561,18 @@ type AutonomousConfig struct {
 	// BackoffMaxWaitMinutes caps the back-off applied when a rate limit
 	// carries no parseable reset time. Unset => 60; values < 1 clamp to 60.
 	BackoffMaxWaitMinutes int `yaml:"backoff_max_wait_minutes,omitempty" json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview is the number of live session slots a backed-off
+	// backend keeps for the work that reviews it — guardrail judges and
+	// verifiers (planning roles of rank 0) and decompose/planning sessions
+	// (rank 2) — while worker sessions are held. A pointer, so an explicit 0
+	// (no reserve at all: a backed-off backend then refuses every new
+	// autonomous session) survives omitempty; unset reads as 1 through the
+	// default. Negative values clamp to 0 (reserve off).
+	BackoffReserveForReview *int `yaml:"backoff_reserve_for_review,omitempty" json:"backoff_reserve_for_review,omitempty"`
+	// BackoffReserveTokensPerHour caps the review work a backed-off backend
+	// takes through that gate: a rolling one-hour token budget. 0 (unset) or
+	// negative reads as no cap.
+	BackoffReserveTokensPerHour int64 `yaml:"backoff_reserve_tokens_per_hour,omitempty" json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// RoleScanIntervalSeconds is how often the daemon re-checks LLM role
 	// tags for contention (two entries claiming one role, or two roles
 	// converging on one entry). Unset or < 1 => 300. Warnings only.
@@ -3594,7 +3646,9 @@ type AutonomousConfig struct {
 	// StuckRunningSeconds — default 900 seconds. How long a PRD may sit in
 	// running with every task terminal, no live session and no live executor
 	// before the stuck-running watchdog re-fires the completion rollup once;
-	// a second full bound in the same state moves it to blocked. A zero or
+	// a second full bound in the same state moves it to blocked. When every
+	// task is completed or cancelled (at least one completed) the first step
+	// advances it to the completion review, skipping the cancelled tasks. A zero or
 	// negative value uses the default (see NormalizeStuckRunningSeconds).
 	StuckRunningSeconds int `yaml:"stuck_running_seconds,omitempty" json:"stuck_running_seconds,omitempty"`
 	// TaskMaxAttemptSeconds is the wall-clock cap on one task attempt. 0 (the
@@ -3633,9 +3687,21 @@ type AutonomousConfig struct {
 	// gates. 0 or unset means the default of 24 hours; a negative value is
 	// a config error. Read through EffectiveVerifierHeadroomMaxAge.
 	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
+	// ReapedBranchBackupDays is how many whole days the backup ref kept for
+	// a reaped Automaton branch stays before it is pruned. 0 or unset means
+	// the default of 30 days; a negative value is a config error. Read
+	// through EffectiveReapedBranchBackupDays.
+	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers (e.g. ".py"). Unset (nil) or an explicitly empty list means
+	// the scanner's built-in defaults (.py, .pyw); a non-empty list scans
+	// exactly those extensions and no others. The scan is warn-only. No
+	// `omitempty`, deliberately, same JSON round-trip reason as
+	// SnapshotNeverStage below.
+	SecurityScanExtensions []string `yaml:"security_scan_extensions" json:"security_scan_extensions"`
 	// SnapshotNeverStage lists path patterns the autonomous snapshot and
 	// automatic-staging paths (the refs/datawatch/attempts attempt snapshots
 	// and the other automatic commits) must never stage: an entry ending in
@@ -3872,10 +3938,12 @@ type AutonomousConfig struct {
 	// skills, context, model, effort). A value's name, when set, must match
 	// its key. Empty (default) = no user profiles; built-ins still apply.
 	//
-	// worker_profile_defaults: the profile each role and task kind starts
-	// with when no profile is named. role keys: planner, worker, verifier,
-	// judge. kind keys: implementation, docs, note, final_gate. Values are
-	// built-in or user profile names. Empty (default) = built-in defaults.
+	// worker_profile_defaults: the profile each role, task kind and session
+	// kind starts with when no profile is named. role keys: planner, worker,
+	// verifier, judge. kind keys: implementation, docs, note, final_gate (task
+	// kinds) and supervisor, operator_interactive, scheduled_command, planner,
+	// one_shot, review (session kinds). Values are built-in or user profile
+	// names. Empty (default) = built-in defaults.
 	//
 	// worker_profile: the global-layer profile name, used when no task,
 	// automaton or project names one. Empty = the role default.
@@ -3915,6 +3983,10 @@ type AutonomousConfig struct {
 	// Decisions — the decision record keys (autonomous.decisions.*). See
 	// AutonomousDecisionsConfig below.
 	Decisions AutonomousDecisionsConfig `yaml:"decisions" json:"decisions"`
+
+	// PlanRecords — the plans-and-backlog record keys
+	// (autonomous.plan_records.*). See AutonomousPlanRecordsConfig below.
+	PlanRecords AutonomousPlanRecordsConfig `yaml:"plan_records" json:"plan_records"`
 
 	// MergeShadow — the shadow merge plan knobs (autonomous.merge_shadow).
 	// See MergeShadowConfig in merge_shadow.go.
@@ -3992,6 +4064,13 @@ type AutonomousConfig struct {
 	// script_gate.go.
 	ScriptGateTimeoutSeconds int `yaml:"script_gate_timeout_seconds" json:"script_gate_timeout_seconds"`
 
+	// GateDrainMinutes is how many minutes a graceful restart waits for
+	// running final gates before it exits. Default DefaultGateDrainMinutes
+	// (10). 0 means do not wait; a negative value is refused at load time.
+	// No omitempty, so an explicit 0 survives a round trip. See
+	// EffectiveGateDrain in gate_drain.go.
+	GateDrainMinutes int `yaml:"gate_drain_minutes" json:"gate_drain_minutes"`
+
 	// ProjectGateCommand is the project's own build-and-test command the
 	// gate runs (autonomous.project_gate_command). Empty means unset. It is
 	// not tied to any language. Trimmed, at most 1024 bytes, no NUL or
@@ -4036,6 +4115,11 @@ type AutonomousConfig struct {
 	// enabled is on unless set to false. See AutoTagsConfig and
 	// ValidateAutoTagsSetting in auto_tags_settings.go.
 	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
+
+	// HousekeepingRepairs — one off|report|on mode per repair group
+	// (task_chain, advance_judge, lane_fill, leftovers, planning; default report) and
+	// the grace seconds. See housekeeping_repairs.go.
+	HousekeepingRepairs HousekeepingRepairsConfig `yaml:"housekeeping_repairs" json:"housekeeping_repairs"`
 
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
@@ -4271,6 +4355,20 @@ func (a AutonomousConfig) BranchRefreshLimit() int {
 // than this many hours is stale for the verifier cap gates.
 const VerifierHeadroomMaxAgeHoursDefault = 24
 
+// ReapedBranchBackupDaysDefault is the default of
+// autonomous.reaped_branch_backup_days: the backup ref of a reaped Automaton
+// branch is kept this many days.
+const ReapedBranchBackupDaysDefault = 30
+
+// EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
+// with 0, unset or a non-positive value reading the default of 30 days.
+func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
+	if a.ReapedBranchBackupDays <= 0 {
+		return ReapedBranchBackupDaysDefault
+	}
+	return a.ReapedBranchBackupDays
+}
+
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
 // gates use: autonomous.verifier_min_free_mem_mb when set (0 = check off),
 // otherwise the default of 1024. It delegates to
@@ -4409,11 +4507,23 @@ type AutonomousAutomationConfig struct {
 	RepoCIWatch RepoCIWatchConfig `yaml:"repo_ci_watch" json:"repo_ci_watch"`
 	// DependencyUpdate — the weekly dependency update Automation knobs
 	// (autonomous.automation.dependency_update.*). See DependencyUpdateConfig.
-	DependencyUpdate         DependencyUpdateConfig `yaml:"dependency_update" json:"dependency_update"`
-	MergePendingMode         string                 `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
-	MergePendingAlertMinutes *int                   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string                 `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string                 `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	DependencyUpdate DependencyUpdateConfig `yaml:"dependency_update" json:"dependency_update"`
+	// ChildInherit is the autonomous.automation.child_inherit setting. It is
+	// ON by default: unset reads true via EffectiveChildInherit, so an
+	// existing config file keeps the new behaviour, and an explicit false
+	// restores the old behaviour.
+	ChildInherit             *bool  `yaml:"child_inherit,omitempty" json:"child_inherit,omitempty"`
+	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
+	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
+	// MergePendingIncludeTerminal is the
+	// autonomous.automation.merge_pending_include_terminal setting: when true
+	// (the default when unset, read through EffectiveMergePendingIncludeTerminal)
+	// the merge-pending pass also checks the work branches of archived,
+	// needs_review, blocked and failed Automata; an explicit false keeps the
+	// pass to completed Automata only.
+	MergePendingIncludeTerminal *bool  `yaml:"merge_pending_include_terminal,omitempty" json:"merge_pending_include_terminal,omitempty"`
+	MergedMemberPolicy          string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy           string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -6034,6 +6144,32 @@ func ValidateMergePendingMode(mode string) error {
 		mode, MergePendingModeOff, MergePendingModeShadow, MergePendingModeOn)
 }
 
+// DefaultChildInherit is the autonomous.automation.child_inherit default (on).
+const DefaultChildInherit = true
+
+// EffectiveChildInherit returns whether child Automata inherit from their
+// parent: true when unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveChildInherit() bool {
+	if c.ChildInherit == nil {
+		return DefaultChildInherit
+	}
+	return *c.ChildInherit
+}
+
+// DefaultMergePendingIncludeTerminal is the
+// autonomous.automation.merge_pending_include_terminal default (on).
+const DefaultMergePendingIncludeTerminal = true
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending pass
+// also checks archived, needs_review, blocked and failed Automata: true when
+// unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
+}
+
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
 // value reads as MergePendingModeOff.
 func (c AutonomousAutomationConfig) EffectiveMergePendingMode() string {
@@ -6511,6 +6647,70 @@ func (q AutonomousQuestionsConfig) EffectiveReturnPath() bool {
 	return q.ReturnPath == nil || *q.ReturnPath
 }
 
+// AutonomousPlanRecordsConfig is autonomous.plan_records, the keys that tune
+// the plans-and-backlog records (registry rows and findings kept by the
+// daemon). Enabled and ImportConflictPolicy are pointers because their
+// defaults are not the zero value: nil means the key is absent and the
+// Effective* helper returns the default. WriteThrough defaults to off, so a
+// pointer is used only to tell an explicit false from an absent key. No field
+// carries omitempty, so an explicit false survives a round trip and a PUT.
+type AutonomousPlanRecordsConfig struct {
+	// Enabled is the master switch for the plan-records routes (default true).
+	Enabled *bool `yaml:"enabled" json:"enabled"`
+	// WriteThrough mirrors record changes back into the docs (default false).
+	WriteThrough *bool `yaml:"write_through" json:"write_through"`
+	// ImportConflictPolicy is suffix, rename or skip (default suffix): what an
+	// import does with a title or row number that is already taken.
+	ImportConflictPolicy *string `yaml:"import_conflict_policy" json:"import_conflict_policy"`
+}
+
+// Plan-records import conflict policies and defaults.
+const (
+	PlanRecordsPolicySuffix = "suffix"
+	PlanRecordsPolicyRename = "rename"
+	PlanRecordsPolicySkip   = "skip"
+
+	DefaultPlanRecordsEnabled              = true
+	DefaultPlanRecordsWriteThrough         = false
+	DefaultPlanRecordsImportConflictPolicy = PlanRecordsPolicySuffix
+)
+
+// EffectiveEnabled reports whether the plan-records routes are on. Absent is on.
+func (p AutonomousPlanRecordsConfig) EffectiveEnabled() bool {
+	return decisionBool(p.Enabled, DefaultPlanRecordsEnabled)
+}
+
+// EffectiveWriteThrough reports whether write-through is on. Absent is off.
+func (p AutonomousPlanRecordsConfig) EffectiveWriteThrough() bool {
+	return decisionBool(p.WriteThrough, DefaultPlanRecordsWriteThrough)
+}
+
+// EffectiveImportConflictPolicy returns the import conflict policy; "suffix"
+// when absent or empty.
+func (p AutonomousPlanRecordsConfig) EffectiveImportConflictPolicy() string {
+	return decisionString(p.ImportConflictPolicy, DefaultPlanRecordsImportConflictPolicy)
+}
+
+// ValidatePlanRecordsImportConflictPolicy refuses a policy other than suffix,
+// rename or skip (empty reads as suffix).
+func ValidatePlanRecordsImportConflictPolicy(policy string) error {
+	switch policy {
+	case "", PlanRecordsPolicySuffix, PlanRecordsPolicyRename, PlanRecordsPolicySkip:
+		return nil
+	}
+	return fmt.Errorf("autonomous.plan_records.import_conflict_policy: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		policy, PlanRecordsPolicySuffix, PlanRecordsPolicyRename, PlanRecordsPolicySkip, DefaultPlanRecordsImportConflictPolicy)
+}
+
+// validate refuses any autonomous.plan_records value outside its valid range.
+// The config file load and every surface that rides it share this rule.
+func (p AutonomousPlanRecordsConfig) validate() error {
+	if p.ImportConflictPolicy != nil {
+		return ValidatePlanRecordsImportConflictPolicy(*p.ImportConflictPolicy)
+	}
+	return nil
+}
+
 // AutonomousDecisionsConfig is autonomous.decisions, the keys that tune the
 // decision record (a structured record of one operator decision: title,
 // situation, options with their tradeoffs, a recommendation and a forced
@@ -6977,6 +7177,13 @@ type AutonomousNotifyWebhookConfig struct {
 // independent of the webhook sink's, with the same default values.
 type AutonomousNotifyForwardingConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
+	// PeerEvents turns on the peer event subscriber: this daemon reading the
+	// lifecycle events of a registered federation peer and feeding them into
+	// its own local dispatch. While false no subscriber runs and the start
+	// command is refused. It needs Enabled as well: Enabled is the one switch
+	// for federation event exchange, and a running read stays armed and reads
+	// nothing while it is off.
+	PeerEvents bool `yaml:"peer_events" json:"peer_events"`
 	// MaxHops is the hop cap of a forwarded event. Values below 1 mean the default.
 	MaxHops int `yaml:"max_hops" json:"max_hops"`
 	// MaxAttempts is the total attempts per forwarded event. Values below 1 mean the default.
@@ -7920,12 +8127,16 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			ReleasePath:                              "direct_push",
-			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
-			AutoFixRetries:                           1,
-			MaxConcurrentTasks:                       1,
-			UsageBackoff:                             UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
+			ReleasePath:              "direct_push",
+			ScriptGateTimeoutSeconds: DefaultScriptGateTimeoutSeconds,
+			GateDrainMinutes:         DefaultGateDrainMinutes,
+			AutoFixRetries:           1,
+			MaxConcurrentTasks:       1,
+			UsageBackoff:             UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:    BackoffMaxWaitDefaultMinutes,
+			// BackoffReserveForReview is a pointer so an explicit 0 (reserves
+			// off) survives omitempty; the default keeps one slot per backend.
+			BackoffReserveForReview:                  intPtr(DefaultBackoffReserveForReview),
 			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:                      3600,
 			FirstAttemptEscalateAfterFailures:        DefaultFirstAttemptEscalateAfterFailures,
@@ -8417,6 +8628,7 @@ func applyDefaults(cfg *Config) {
 	}
 	// BL304 — migrate legacy decomposition_* YAML keys → planning_* Go fields.
 	// Old configs that set decomposition_backend/effort/model still work.
+	cfg.Autonomous.TaskRouting = TaskRoutingWithDefaults(cfg.Autonomous.TaskRouting)
 	if cfg.Autonomous.PlanningBackend == "" && cfg.Autonomous.DecompositionBackendLegacy != "" {
 		cfg.Autonomous.PlanningBackend = cfg.Autonomous.DecompositionBackendLegacy
 	}
@@ -8539,8 +8751,14 @@ func validateLoaded(cfg *Config) error {
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
 	}
+	if err := ValidateUnlandedAlertThreshold(cfg.Autonomous.UnlandedAlertThreshold); err != nil {
+		return err
+	}
 	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
 		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
+		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
@@ -8667,6 +8885,9 @@ func validateLoaded(cfg *Config) error {
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {
 		return err
 	}
+	if err := validateGateDrainMinutes(cfg.Autonomous.GateDrainMinutes); err != nil {
+		return err
+	}
 	if err := ValidateProjectGateCommand("autonomous", cfg.Autonomous.ProjectGateCommand); err != nil {
 		return err
 	}
@@ -8683,6 +8904,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Decisions.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.PlanRecords.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {
@@ -8783,21 +9007,25 @@ func validateGateScope(v string) error {
 	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
 }
 
-// WorkerProfileDefaultsConfig maps a worker role or a task kind to the name of
-// the worker profile it starts with when no profile is named at a more
-// specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
+// WorkerProfileDefaultsConfig maps a worker role, task kind or session kind to
+// the name of the worker profile it starts with when no profile is named at a
+// more specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
 type WorkerProfileDefaultsConfig struct {
 	// Role maps planner, worker, verifier or judge to a profile name.
 	Role map[string]string `yaml:"role" json:"role"`
-	// Kind maps implementation, docs, note or final_gate to a profile name.
+	// Kind maps a task kind (implementation, docs, note, final_gate) or a
+	// session kind (supervisor, operator_interactive, scheduled_command,
+	// planner, one_shot, review) to a profile name.
 	Kind map[string]string `yaml:"kind" json:"kind"`
 }
 
 // workerProfileRoleKeys lists the role keys worker_profile_defaults.role accepts.
 var workerProfileRoleKeys = []string{"planner", "worker", "verifier", "judge"}
 
-// workerProfileKindKeys lists the task-kind keys worker_profile_defaults.kind accepts.
-var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate"}
+// workerProfileKindKeys lists the kind keys worker_profile_defaults.kind
+// accepts: the task kinds and the session kinds (workerprofile.Kind*) the
+// daemon resolves at launch.
+var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate", "supervisor", "operator_interactive", "scheduled_command", "planner", "one_shot", "review"}
 
 // ValidateWorkerProfileConfig checks the worker session profile settings in
 // cfg.Autonomous and returns the first problem found, or nil. It refuses:
@@ -8805,8 +9033,8 @@ var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_ga
 //   - a user profile that workerprofile.Validate rejects;
 //   - a worker_profile_defaults value, or the worker_profile global name, that
 //     names no built-in and no user-defined profile;
-//   - an unknown role key in worker_profile_defaults.role, or an unknown task
-//     kind key in worker_profile_defaults.kind.
+//   - an unknown role key in worker_profile_defaults.role, or an unknown
+//     task- or session-kind key in worker_profile_defaults.kind.
 //
 // The config load paths call it, and every write surface that changes these
 // settings should call it before it persists them. Keys are checked in sorted
@@ -8955,6 +9183,9 @@ func Load(path string) (*Config, error) {
 	if err := loadAutoTags(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadHousekeepingRepairs(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -9014,6 +9245,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadAutoTags(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadHousekeepingRepairs(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)
@@ -9234,7 +9468,8 @@ type AutonomousParallelConfig struct {
 	// means the default (see autonomous.EffectiveMergeConflictPolicy).
 	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
 	// MergeConflictModel: model that resolves a merge conflict. Empty
-	// means the strongest configured planning model.
+	// reads the non-Opus daemon default (config.MergePipelineDefaultConflictModel);
+	// an operator-named model, an Opus model included, is used as written.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
 	// MergeRetrySeconds: whole seconds between timed merge retry passes.
 	// Pointer so an explicit 0 (timer off) survives; nil means the default

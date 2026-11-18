@@ -39,7 +39,7 @@ test('loading visible immediately, before the request resolves', () => {
   assert.match(e.innerHTML, /Loading/);
 });
 
-test('cached data renders at once with cached badge and age', async () => {
+test('cached data renders at once with the cached badge', async () => {
   const { sandbox, clock, el, make } = setup();
   sandbox.localStorage.setItem('cs_list_c1', JSON.stringify({ t: clock.t - 5000, data: ['old'] }));
   const e = el(); const d = defer();
@@ -47,8 +47,8 @@ test('cached data renders at once with cached badge and age', async () => {
   l.load();
   assert.match(e.innerHTML, /list-state-cached/);
   assert.match(e.innerHTML, /old/);
-  assert.match(e.innerHTML, /5 s ago/);
   assert.doesNotMatch(e.innerHTML, /list-state-stale/, 'no stale while first load in flight');
+  assert.doesNotMatch(e.innerHTML, /list-state-age/, 'no age counter line');
   d.res(['new']); await tick(); await tick();
   assert.match(e.innerHTML, /new/);
   assert.doesNotMatch(e.innerHTML, /list-state-cached/);
@@ -105,16 +105,39 @@ test('superseded response is ignored and its request aborted', async () => {
   assert.doesNotMatch(e.innerHTML, /older/);
 });
 
-test('stale warning only after the polling interval', async () => {
-  const { clock, advance, el, make } = setup();
+test('stale marker: absent while fresh, up once the data is five minutes old', async () => {
+  const { clock, el, make } = setup();
   const e = el();
-  const l = make({ key: 'st1', el: e, url: '/x', pollMs: 30000, fetch: () => Promise.resolve(['a']) });
+  const l = make({ key: 'st1', el: e, url: '/x', fetch: () => Promise.resolve(['a']) });
   await l.load();
   assert.equal(l.isStale(), false);
-  clock.t += 29000; assert.equal(l.isStale(), false);
-  clock.t += 2000; assert.equal(l.isStale(), true);
-  // a new in-flight load suppresses the warning
-  l.state.loading = true; assert.equal(l.isStale(), false);
+  clock.t += 4 * 60 * 1000; assert.equal(l.isStale(), false);
+  clock.t += 60 * 1000 + 1; assert.equal(l.isStale(), true);
+  l.paint();
+  assert.match(e.innerHTML, /list-state-stale/);
+});
+
+test('stale marker is up while the last refresh failed, down after a good retry', async () => {
+  const { el, make } = setup();
+  const e = el();
+  let fail = false;
+  const l = make({ key: 'st2', el: e, url: '/x', fetch: () => fail ? Promise.reject(new Error('boom')) : Promise.resolve(['a']) });
+  await l.load();
+  assert.equal(l.isStale(), false);
+  // A failed refresh keeps the rows but raises the stale marker.
+  fail = true;
+  await l.load();
+  assert.equal(l.isStale(), true);
+  l.paint();
+  assert.match(e.innerHTML, /list-state-stale/);
+  assert.match(e.innerHTML, /list-state-failed/, 'the failed banner still shows the error');
+  assert.match(e.innerHTML, /a/, 'the previous rows stay on screen');
+  // A good retry clears both the error and the stale marker.
+  fail = false;
+  await l.retry();
+  assert.equal(l.isStale(), false);
+  l.paint();
+  assert.doesNotMatch(e.innerHTML, /list-state-stale/);
 });
 
 test('parallel loaders are isolated: one failure does not blank the others', async () => {

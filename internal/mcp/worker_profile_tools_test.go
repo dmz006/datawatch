@@ -122,7 +122,7 @@ func TestWorkerProfileStatus_InForce(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Content[0].(mcpsdk.TextContent).Text), &out); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	wantKeys := []string{"worker", "verifier", "judge", "implementation", "docs", "note", "final_gate"}
+	wantKeys := []string{"worker", "verifier", "judge", "implementation", "docs", "note", "final_gate", "supervisor", "operator_interactive", "scheduled_command", "planner", "one_shot", "review"}
 	if len(out.InForce) != len(wantKeys) {
 		t.Fatalf("in_force has %d entries, want %d: %+v", len(out.InForce), len(wantKeys), out.InForce)
 	}
@@ -131,7 +131,7 @@ func TestWorkerProfileStatus_InForce(t *testing.T) {
 			t.Errorf("in_force[%d].key = %q, want %q", i, out.InForce[i].Key, k)
 		}
 	}
-	if out.InForce[0].Scope != workerprofile.ScopeRole || out.InForce[3].Scope != workerprofile.ScopeKind {
+	if out.InForce[0].Scope != workerprofile.ScopeRole || out.InForce[3].Scope != workerprofile.ScopeKind || out.InForce[7].Scope != workerprofile.ScopeSessionKind {
 		t.Errorf("scopes out of order: %+v", out.InForce)
 	}
 	if out.InForce[0].Profile != "full" || out.InForce[0].Tier != string(workerprofile.LayerRole) {

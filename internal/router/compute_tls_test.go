@@ -155,8 +155,11 @@ func TestComputeNodeTLSSkipVerifyIsBoolInBody(t *testing.T) {
 	if d.body["tls_insecure_skip_verify"] != true {
 		t.Fatalf("tls_insecure_skip_verify = %#v, want bool true", d.body["tls_insecure_skip_verify"])
 	}
-	if got := lastReply(t, replies); !strings.Contains(got, "tls: verification OFF") {
-		t.Errorf("reply lacks the verification OFF line: %s", got)
+	if got := lastReply(t, replies); !strings.Contains(got, "tls: probe verification OFF") {
+		t.Errorf("reply lacks the probe-verification-OFF line: %s", got)
+	}
+	if got := lastReply(t, replies); !strings.Contains(got, "model pulls always verify certificate") {
+		t.Errorf("reply must say pulls always verify: %s", got)
 	}
 }
 
@@ -184,11 +187,11 @@ func TestComputeNodeTLSValidationErrorsSurfaceUnchanged(t *testing.T) {
 // its own summary line under `compute node get`.
 func TestComputeNodeTLSGetShowsSummaryLine(t *testing.T) {
 	cases := []struct{ name, node, want string }{
-		{"default verifies", `{"name":"gpu-1","kind":"ollama"}`, "tls: verify"},
-		{"ca file", `{"name":"gpu-1","tls_ca_file":"/ca.pem"}`, "tls: ca file"},
-		{"pinned", `{"name":"gpu-1","tls_cert_fingerprint":"` + strings.Repeat("ab", 32) + `"}`, "tls: pinned"},
-		{"ca file and pinned", `{"name":"gpu-1","tls_ca_file":"/ca.pem","tls_cert_fingerprint":"` + strings.Repeat("ab", 32) + `"}`, "tls: ca file + pinned"},
-		{"skip verify", `{"name":"gpu-1","tls_insecure_skip_verify":true}`, "tls: verification OFF"},
+		{"default verifies", `{"name":"gpu-1","kind":"ollama"}`, "tls: verify; model pulls always verify certificate"},
+		{"ca file", `{"name":"gpu-1","tls_ca_file":"/ca.pem"}`, "tls: ca file; model pulls always verify certificate"},
+		{"pinned", `{"name":"gpu-1","tls_cert_fingerprint":"` + strings.Repeat("ab", 32) + `"}`, "tls: pinned; model pulls always verify certificate"},
+		{"ca file and pinned", `{"name":"gpu-1","tls_ca_file":"/ca.pem","tls_cert_fingerprint":"` + strings.Repeat("ab", 32) + `"}`, "tls: ca file + pinned; model pulls always verify certificate"},
+		{"skip verify", `{"name":"gpu-1","tls_insecure_skip_verify":true}`, "tls: probe verification OFF; model pulls always verify certificate"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

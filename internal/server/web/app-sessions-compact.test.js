@@ -26,7 +26,7 @@ function memStorage() {
 function viewElement(slot) {
   const box = { html: '' };
   const el = {
-    querySelector: (sel) => (sel === '.sessions-topbar-servers' ? (slot || null) : null),
+    querySelector: () => null,
     querySelectorAll: () => [],
     insertBefore() {},
   };
@@ -250,30 +250,34 @@ test('the Filters button shows a badge for grouping or a status chip and none wi
   assert.ok(!html.includes('sessionsFiltersBadge'));
 });
 
-// ── (3) status count row ────────────────────────────────────────────────
-test('the status row has one chip per state with counts, and a tap filters then clears', () => {
+// ── (3) no state count line ─────────────────────────────────────────────
+function assertNoCountLine(html, label) {
+  assert.ok(!html.includes('sessions-summary'), label + ': no state count line');
+  assert.ok(!/sessions 320</.test(html), label + ': no total in a count line');
+  assert.ok(!/Running \d+ · /.test(html), label + ': no "Running N · ..." text');
+}
+
+test('the Sessions page draws no state count line in list, tiles and compact, grouped or not', () => {
+  for (const mode of ['list', 'tiles', 'compact']) {
+    for (const group of [null, 'state']) {
+      const sb = loadApp();
+      seed(sb, `state.sessionsViewMode = '${mode}'; state.sessionGroupBy = ${group ? `{ axis: '${group}' }` : 'null'};`);
+      const html = render(sb);
+      assert.ok(html.length > 0);
+      assertNoCountLine(html, mode + (group ? ' grouped' : ' ungrouped'));
+    }
+  }
+});
+
+test('the state filter still works and no count line appears while it is set', () => {
   const sb = loadApp();
   seed(sb);
-  let html = render(sb);
-  const bar = html.slice(html.indexOf('sessions-summary-bar'));
-  const chips = bar.match(/<button type="button" class="sessions-summary-chip[^"]*"[^>]*data-state="([a-z_]+)"[^>]*>[^<]*<span class="sessions-summary-count">(\d+)<\/span>/g) || [];
-  assert.equal(chips.length, 4);
-  STATES.forEach(st => {
-    assert.match(bar, new RegExp(`data-state="${st}"[^>]*>[^<]*<span class="sessions-summary-count">80<`));
-  });
-  assert.match(bar, />sessions 320</);
-
   sb.setSessionStateChip('waiting_input');
-  html = sb.__box.html;
+  const html = sb.__box.html;
   assert.equal(countOf(html, /class="session-card /g), 60, 'first page of the 80 waiting sessions');
-  assert.match(html, />sessions 80</);
-  assert.match(html, /aria-pressed="true" data-state="waiting_input"/);
-  assert.match(html, /setSessionStateChip\('all'\)/, 'the active chip taps back to all');
-
+  assertNoCountLine(html, 'filtered');
+  assert.equal(vm.runInContext('state.sessionStateChip', sb), 'waiting_input', 'the state filter is applied');
   sb.setSessionStateChip('all');
-  html = sb.__box.html;
-  assert.match(html, />sessions 320</);
-  assert.match(html, /aria-pressed="false" data-state="waiting_input"/);
   assert.equal(vm.runInContext('state.sessionStateChip', sb), 'all');
 });
 
@@ -314,13 +318,13 @@ test('fold-all folds every group and unfold-all opens them again', () => {
   const sb = loadApp({ storage });
   seed(sb, `state.sessionGroupBy = { axis: 'state' };`);
   let html = render(sb);
-  assert.match(html, /class="btn-secondary sessions-fold-all"[^>]*>Fold all</);
+  assert.match(html, /class="sessions-fold-all"[^>]*title="Fold every group"[^>]*aria-pressed="false"/);
 
   sb._sessionsFoldAllToggle();
   html = sb.__box.html;
   assert.equal(countOf(html, /sessions-group collapsed"/g), 4);
   assert.equal(countOf(html, /class="session-card /g), 0);
-  assert.match(html, /sessions-fold-all"[^>]*>Unfold all</);
+  assert.match(html, /class="sessions-fold-all"[^>]*title="Unfold every group"[^>]*aria-pressed="true"/);
 
   const fresh = loadApp({ storage });
   seed(fresh, `state.sessionGroupBy = { axis: 'state' };`);
@@ -329,7 +333,7 @@ test('fold-all folds every group and unfold-all opens them again', () => {
   fresh._sessionsFoldAllToggle();
   html = fresh.__box.html;
   assert.equal(countOf(html, /sessions-group collapsed"/g), 0);
-  assert.match(html, /sessions-fold-all"[^>]*>Fold all</);
+  assert.match(html, /class="sessions-fold-all"[^>]*title="Fold every group"[^>]*aria-pressed="false"/);
 });
 
 // ── (5) phone width cards ───────────────────────────────────────────────
@@ -376,52 +380,58 @@ test('at wide width every tag chip stays and there is no +N chip', () => {
   assert.ok(!h.includes('session-tags-more-chip'));
 });
 
-// ── (6) phone toolbar in one row ────────────────────────────────────────
-test('the toolbar markup puts servers, search, Filters and the three view buttons in one row', () => {
-  const slot = { id: 'slot', querySelector: () => null, insertBefore() {}, querySelectorAll: () => [] };
-  const sb = loadApp({ phone: true, view: viewElement(slot) });
+// ── (6) one-line toolbar ────────────────────────────────────────────────────
+test('the one-line toolbar holds server, search, Filters, fold-all and view mode in one row', () => {
+  const sb = loadApp({ phone: true });
   seed(sb);
+  vm.runInContext("state.sessionGroupBy = { axis: 'state' };", sb); // grouping active → the fold control is in the row
   const html = render(sb);
   const start = html.indexOf('<div class="sessions-topbar">');
   assert.ok(start >= 0);
   const top = html.slice(start, html.indexOf('<div class="session-list">'));
-  const order = ['sessions-topbar-servers', 'sessions-search-row', 'id="sessionFilterInput"', 'id="sessionsFiltersSlot"',
-    'id="sessionsFiltersBtn"', 'sessions-mode-toggle'].map(k => top.indexOf(k));
+  const order = ['id="sessionsServerDropdown"', 'sessions-search-row', 'id="sessionFilterInput"',
+    'class="sessions-filters-slot"', 'id="sessionsFiltersBtn"', 'sessions-fold-all', 'id="sessionsViewSelect"']
+    .map(k => top.indexOf(k));
   assert.ok(order.every(i => i >= 0), 'all toolbar parts are inside the top row');
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.equal(countOf(top, /class="sessions-mode-btn/g), 3);
-  ['List', 'Tiles', 'Compact'].forEach(l => assert.ok(top.includes('aria-label="' + l + '"'), l));
+  // The server control is the toolbar's own instance of the shared picker —
+  // same options body, same onchange → selectServer() mutation path.
+  assert.match(top, /onchange="onServerDropdownChange\(this\.value\)"/);
+  // The view control is one native select carrying the three modes.
+  assert.match(top, /<select id="sessionsViewSelect"[\s\S]*onchange="_sessionsSetViewMode\(this\.value\)"[\s\S]*<\/select>/);
+  for (const m of ['list', 'tiles', 'compact']) {
+    assert.match(top, new RegExp('<option value="' + m + '"'), `view select offers ${m}`);
+  }
+  // fold-all is the compact icon button with tooltip + aria text.
+  assert.match(top, /class="sessions-fold-all"[\s\S]*title="Fold every group"[\s\S]*aria-pressed/);
   assert.equal(countOf(top, /class="sessions-search-row"/g), 1);
-  assert.equal(countOf(top, /class="sessions-topbar-servers"/g), 1);
-  // Server chips go into the shared row at phone width, into the page top otherwise.
-  assert.equal(sb._sessionsPickerHost(sb.document.getElementById('view')), slot);
-  const wide = loadApp({ phone: false, view: viewElement(slot) });
-  const v = wide.document.getElementById('view');
-  assert.equal(wide._sessionsPickerHost(v), v);
+  // The old server-chip slot is gone: server switching lives in the header
+  // dropdown (#serverDropdown) plus this toolbar's own instance.
+  assert.ok(!top.includes('sessions-topbar-servers'), 'no server-chip slot in the topbar');
 });
 
-test('the phone media query lays the toolbar out as a single non-wrapping row', () => {
+test('the toolbar is laid out as a single non-wrapping row at every width', () => {
+  const rule = (sel) => {
+    const r = new RegExp('(?:^|\\n)\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}');
+    const x = CSS.match(r);
+    assert.ok(x, 'base rule for ' + sel);
+    return x[1];
+  };
+  const top = rule('.sessions-topbar');
+  assert.match(top, /display:\s*flex/);
+  assert.match(top, /flex-wrap:\s*nowrap/); // non-wrapping in the base rule, not just a media query
+  const search = rule('.sessions-topbar .sessions-search-row');
+  assert.match(search, /flex:\s*1 1 auto/);
+  assert.match(search, /min-width:\s*0/); // the only flexible member, so it absorbs the slack
+  assert.match(rule('.sessions-topbar .sessions-fold-all'), /flex:\s*0 0 auto/);
+  assert.match(CSS, /\.sessions-topbar \.sessions-fold-all\[aria-pressed="true"\]/); // pressed style
+  assert.match(CSS, /\.sessions-topbar \.sessions-view-select \{/);
+  // The phone media block still exists for the tighter gaps, not the layout.
   const blocks = [];
   const re = /@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g;
   let m;
   while ((m = re.exec(CSS))) blocks.push(m[1]);
   const phone = blocks.join('\n');
-  const rule = (sel) => {
-    const r = new RegExp('(?:^|\\n)\\s*' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}');
-    const x = phone.match(r);
-    assert.ok(x, 'phone rule for ' + sel);
-    return x[1];
-  };
-  const top = rule('.sessions-topbar');
-  assert.match(top, /display:\s*flex/);
-  assert.match(top, /flex-wrap:\s*nowrap/);
-  assert.match(rule('.sessions-topbar-servers'), /overflow-x:\s*auto/);
-  assert.match(rule('.sessions-topbar-servers'), /max-width:\s*\d+%/);
-  assert.match(rule('.sessions-search-row'), /flex:\s*1 1 auto/);
-  assert.match(rule('.sessions-search-row'), /min-width:\s*0/);
-  assert.match(rule('.sessions-topbar .sessions-mode-toggle'), /flex:\s*0 0 auto/);
-  assert.match(rule('.sessions-topbar .sessions-mode-btn'), /font-size:\s*0/);
+  assert.match(phone, /\.sessions-topbar \.sessions-server-select \{[^}]*max-width/);
   assert.match(phone, /\.sessions-filters-label \{ display: none; \}/);
-  // Outside the phone query the top block stacks normally.
-  assert.match(CSS, /\n\.sessions-topbar \{ display: block; \}/);
 });

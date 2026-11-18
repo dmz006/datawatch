@@ -54,6 +54,11 @@ type Backoff struct {
 
 	mu      sync.Mutex
 	entries map[string]Entry
+
+	// persistPath, when set (see backoff_persist.go), is the JSON file every
+	// mutation is written to; saveErr is the last write error.
+	persistPath string
+	saveErr     error
 }
 
 // NewBackoff returns an empty registry using the wall clock.
@@ -99,6 +104,7 @@ func (b *Backoff) SetWithRung(backend string, until time.Time, reason string, so
 		b.entries = map[string]Entry{}
 	}
 	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung}
+	_ = b.saveLocked() // the error is kept in saveErr for the status read
 }
 
 // Clear removes the flag for backend and reports whether one existed.
@@ -107,6 +113,9 @@ func (b *Backoff) Clear(backend string) bool {
 	defer b.mu.Unlock()
 	_, ok := b.entries[backend]
 	delete(b.entries, backend)
+	if ok {
+		_ = b.saveLocked() // the error is kept in saveErr for the status read
+	}
 	return ok
 }
 
@@ -116,6 +125,7 @@ func (b *Backoff) ClearAll() int {
 	defer b.mu.Unlock()
 	n := len(b.entries)
 	b.entries = map[string]Entry{}
+	_ = b.saveLocked() // the error is kept in saveErr for the status read
 	return n
 }
 
@@ -161,6 +171,9 @@ func (b *Backoff) SweepExpired(now time.Time) []Entry {
 		}
 	}
 	sort.Slice(cleared, func(i, j int) bool { return cleared[i].Backend < cleared[j].Backend })
+	if len(cleared) > 0 {
+		_ = b.saveLocked() // the error is kept in saveErr for the status read
+	}
 	return cleared
 }
 
@@ -194,8 +207,17 @@ func (b *Backoff) Live() []Entry {
 
 // UsageBackoffConfig is the config half of the usage back-off status.
 type UsageBackoffConfig struct {
-	Mode           string `json:"mode"`
-	MaxWaitMinutes int    `json:"max_wait_minutes"`
+	Mode                 string `json:"mode"`
+	MaxWaitMinutes       int    `json:"max_wait_minutes"`
+	ReserveForReview     int    `json:"reserve_for_review"`
+	ReserveTokensPerHour int64  `json:"reserve_tokens_per_hour"`
+}
+
+// ReserveUsage is how much of the review-reserve per-hour token budget one
+// backed-off backend has already spent in the current window.
+type ReserveUsage struct {
+	Backend    string `json:"backend"`
+	TokensUsed int64  `json:"tokens_used"`
 }
 
 // UsageBackoffStatus is the body shared by GET /api/usage-backoff and the
@@ -203,6 +225,10 @@ type UsageBackoffConfig struct {
 type UsageBackoffStatus struct {
 	Active []Entry            `json:"active"`
 	Config UsageBackoffConfig `json:"config"`
+	// Reserve carries the live per-hour reserve usage per backed-off
+	// backend; it is present only when the daemon runs the review-reserve
+	// gate and at least one flag is live.
+	Reserve []ReserveUsage `json:"reserve,omitempty"`
 	// PatternsVersion is the short fingerprint of the effective rate-limit
 	// detection patterns; PatternsStale is true when it differs from the one
 	// an operator last rechecked (pattern-drift guard). ClaudeCLIVersion is
@@ -222,10 +248,10 @@ type PatternsStatusFunc func() (version, claudeCLIVersion string, stale bool)
 type BudgetsStatusFunc func() []BudgetStatus
 
 // BuildUsageBackoffStatus snapshots the live flags of b (nil = none) with
-// the effective mode and maximum back-off. Active is never nil, so it
-// always marshals as an array.
-func BuildUsageBackoffStatus(b *Backoff, mode string, maxWaitMinutes int) UsageBackoffStatus {
-	st := UsageBackoffStatus{Active: []Entry{}, Config: UsageBackoffConfig{Mode: mode, MaxWaitMinutes: maxWaitMinutes}}
+// the effective back-off config. Active is never nil, so it always
+// marshals as an array.
+func BuildUsageBackoffStatus(b *Backoff, cfg UsageBackoffConfig) UsageBackoffStatus {
+	st := UsageBackoffStatus{Active: []Entry{}, Config: cfg}
 	if b != nil {
 		st.Active = b.Live()
 	}

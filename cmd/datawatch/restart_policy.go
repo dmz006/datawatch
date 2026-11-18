@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
@@ -90,7 +91,40 @@ func guardRestartForce(restart func(force bool), mgrFn func() restartPolicyManag
 			fmt.Printf("[restart] not restarting: %s\n", dec.Reason)
 			return
 		}
+		drainGatesBeforeExit(context.Background(), mgrFn(), autonomous.RealClock(), logf)
 		restart(force)
+	}
+}
+
+// gateDrainer is the slice of the autonomous manager the exit-time gate wait
+// needs. The restart route and the stop path both go through
+// drainGatesBeforeExit.
+type gateDrainer interface {
+	DrainGates(ctx context.Context, clk autonomous.Clock, logf func(string, ...any)) autonomous.GateDrainResult
+}
+
+// drainGatesBeforeExit waits for running gates (bounded by
+// autonomous.gate_drain_minutes) before the daemon exits or restarts, and
+// returns how many it waited for and how many were still running. It never
+// blocks the exit past the configured wait and never ends a gate or session.
+// A nil manager, or one without the wait, returns the zero result.
+func drainGatesBeforeExit(ctx context.Context, mgr restartPolicyManager, clk autonomous.Clock, logf func(string, ...any)) autonomous.GateDrainResult {
+	d, ok := mgr.(gateDrainer)
+	if !ok || mgr == nil {
+		return autonomous.GateDrainResult{}
+	}
+	return d.DrainGates(ctx, clk, logf)
+}
+
+// stopGateDrain is the gate wait the SIGTERM/SIGINT path runs before it
+// cancels the daemon. It is set once the autonomous manager exists; until
+// then there are no gates to wait for.
+var stopGateDrain atomic.Pointer[func()]
+
+// runStopGateDrain runs the registered stop-path gate wait, if any.
+func runStopGateDrain() {
+	if fn := stopGateDrain.Load(); fn != nil {
+		(*fn)()
 	}
 }
 
@@ -122,6 +156,10 @@ func restartGuardReportWith(rep autonomous.RestartInterruption, howToForce strin
 	fmt.Fprintf(&b, "  running tasks (%d):\n", len(rep.RunningTasks))
 	for _, t := range rep.RunningTasks {
 		fmt.Fprintf(&b, "    - %s/%s status=%s session=%s\n", t.PRDID, t.TaskID, t.Status, t.SessionID)
+	}
+	fmt.Fprintf(&b, "  running gates (%d):\n", len(rep.RunningGates))
+	for _, g := range rep.RunningGates {
+		fmt.Fprintf(&b, "    - %s\n", autonomous.RunningGateLine(g))
 	}
 	fmt.Fprintf(&b, "  live sessions (%d): %s\n", len(rep.LiveSessions), strings.Join(rep.LiveSessions, ", "))
 	fmt.Fprintf(&b, "  to restart anyway: %s\n", howToForce)

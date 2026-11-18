@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/dmz006/datawatch/internal/config"
 	"io"
 	"net/http"
@@ -279,5 +280,64 @@ func TestSupervisorLoopCLIArchiveGraceKey(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), refusal) {
 		t.Errorf("negative value: error %v does not carry %q", err, refusal)
+	}
+}
+
+const supervisorWakeBodyJSON = `{"enabled":true,"kinds":["task.failed","prd.blocked"],"coalesce_seconds":45,"fallback_interval_minutes":10,"last_event":"0001-01-01T00:00:00Z","last_scheduled_check":"2026-11-01T10:00:00Z","event_count":0,"scheduled_count":3}`
+
+func TestSupervisorWakeStatusText(t *testing.T) {
+	method, path, _, _ := supervisorLoopDaemon(t, 200, supervisorWakeBodyJSON)
+	out, err := runSupervisorLoopCmd(t, "wake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method() != "GET" || path() != "/api/supervisor-loop/wake" {
+		t.Errorf("request = %s %s", method(), path())
+	}
+	for _, want := range []string{"wake: on", "task.failed, prd.blocked", "45s", "10 min", "last event: never", "2026-11-01T10:00:00Z"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSupervisorWakeSetPatchBody(t *testing.T) {
+	var got map[string]any
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" {
+			gotMethod, gotPath = r.Method, r.URL.Path
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &got)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		_, _ = w.Write([]byte(supervisorWakeBodyJSON))
+	}))
+	defer srv.Close()
+	prev := serverURL
+	serverURL = srv.URL
+	defer func() { serverURL = prev }()
+	if _, err := runSupervisorLoopCmd(t, "wake", "--enabled=true", "--kinds", "task.failed, prd.blocked", "--coalesce-seconds", "0"); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != "PUT" || gotPath != "/api/config" {
+		t.Fatalf("patch request = %s %s", gotMethod, gotPath)
+	}
+	want := map[string]any{
+		"supervisor_loop.wake.enabled":          true,
+		"supervisor_loop.wake.kinds":            []any{"task.failed", "prd.blocked"},
+		"supervisor_loop.wake.coalesce_seconds": float64(0),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("patch = %#v, want %#v", got, want)
+	}
+}
+
+func TestSupervisorWakeSetRefusalShown(t *testing.T) {
+	supervisorLoopDaemon(t, 400, `unknown event kind "x"`)
+	_, err := runSupervisorLoopCmd(t, "wake", "--kinds", "x")
+	if err == nil || !strings.Contains(err.Error(), "unknown event kind") {
+		t.Errorf("err = %v, want the daemon's refusal", err)
 	}
 }

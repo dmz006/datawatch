@@ -35,6 +35,8 @@ func daemonTaskKeysSetOptions() []mcpsdk.ToolOption {
 				"The entries are merged onto the stored map; an id that is not given keeps its stored mode.")),
 		mcpsdk.WithNumber("script_gate_timeout_seconds", mcpsdk.Description(
 			"autonomous.script_gate_timeout_seconds — the time cap, in whole seconds, on one script gate run (default 900; 0 = no cap). Negative or fractional values are refused.")),
+		mcpsdk.WithNumber("gate_drain_minutes", mcpsdk.Description(
+			"autonomous.gate_drain_minutes — the minutes a graceful restart waits for running final gates before it exits (default 10; 0 = do not wait). Negative or fractional values are refused.")),
 		mcpsdk.WithString("project_gate_command", mcpsdk.Description(
 			"autonomous.project_gate_command — the project gate command run as one line of shell text (empty = unset). Multi-line values and values over 1024 bytes are refused.")),
 	}
@@ -44,12 +46,13 @@ func daemonTaskKeysSetOptions() []mcpsdk.ToolOption {
 // description: it names the three keys and the allowed mode values.
 const daemonTaskKeysGetDescription = "autonomous.task_templates.mode (a map of template id to mode: llm, daemon or off), " +
 	"autonomous.script_gate_timeout_seconds (whole seconds, 0 = no cap, default 900) and autonomous.project_gate_command (one line of shell text, empty = unset) " +
-	"are included in this response. Set them with the task_templates_mode, script_gate_timeout_seconds and project_gate_command arguments of autonomous_config_set. "
+	"and autonomous.gate_drain_minutes (whole minutes, 0 = do not wait, default 10) are included in this response. Set them with the task_templates_mode, script_gate_timeout_seconds and project_gate_command arguments of autonomous_config_set. "
 
 // daemonTaskKeysSetDescription is appended to the autonomous_config_set
 // description: it names the three keys and the allowed mode values.
 const daemonTaskKeysSetDescription = "task_templates_mode sets autonomous.task_templates.mode per template id (llm, daemon or off; daemon only for daemon-capable ids, never final_gate). " +
 	"script_gate_timeout_seconds sets autonomous.script_gate_timeout_seconds (whole seconds >= 0, 0 = no cap). " +
+	"gate_drain_minutes sets autonomous.gate_drain_minutes (whole minutes >= 0, 0 = do not wait). " +
 	"project_gate_command sets autonomous.project_gate_command (one line, empty = unset). " +
 	"A refused value is returned as a tool error and nothing is stored. "
 
@@ -62,7 +65,7 @@ func mergeDaemonTaskSettings(autoCfg []byte, daemon map[string]json.RawMessage) 
 	if err := json.Unmarshal(autoCfg, &merged); err != nil {
 		return nil, fmt.Errorf("decode /api/autonomous/config: %w", err)
 	}
-	for _, k := range []string{"script_gate_timeout_seconds", "project_gate_command"} {
+	for _, k := range []string{"script_gate_timeout_seconds", "gate_drain_minutes", "project_gate_command"} {
 		if v, ok := daemon[k]; ok {
 			merged[k] = v
 		}
@@ -111,6 +114,13 @@ func daemonTaskKeysPatch(req mcpsdk.CallToolRequest) (map[string]any, error) {
 			return nil, fmt.Errorf("autonomous.script_gate_timeout_seconds: must be a whole number of seconds >= 0 (0 = no cap)")
 		}
 		patch["autonomous.script_gate_timeout_seconds"] = int(f)
+	}
+	if raw, ok := args["gate_drain_minutes"]; ok {
+		f, isNum := raw.(float64)
+		if !isNum || f != math.Trunc(f) || f < 0 {
+			return nil, fmt.Errorf("autonomous.gate_drain_minutes: must be a whole number of minutes >= 0 (0 = do not wait)")
+		}
+		patch["autonomous.gate_drain_minutes"] = int(f)
 	}
 	if raw, ok := args["project_gate_command"]; ok {
 		cmd, isStr := raw.(string)

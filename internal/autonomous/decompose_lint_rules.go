@@ -26,12 +26,19 @@ import (
 // copy rule values, and the match engine reads the flag only).
 var decomposeLintRO = true
 
+// trackerIDPattern is the tracker-id shape the names_tracker_id rule
+// matches; the spec lint (spec_lint.go) compiles the same string so the
+// two never drift.
+const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"
+
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Nine rules, in the order findings should surface them: the six
-// block-severity rules (tasks that cross a hard boundary) first, then
-// the three warn-severity hygiene rules.
+// Seventeen rules, in the order findings should surface them: the
+// thirteen block-severity rules (tasks that cross a hard boundary, plus
+// the seven verification-script stability rules that follow
+// read_only_unverifiable)
+// first, then the four warn-severity hygiene rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -94,6 +101,68 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "verify_script_task_files_only",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_task_files_only: the task's verification script compares only against the task's own files (a literal allowed-file list or a diff of HEAD, the working tree or main) and never against the merge base, so it fails once earlier tasks land; compare against `git merge-base` (directly or via a sourced helper) so the check is cumulative.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptTaskFilesOnly: true,
+			},
+		},
+		{
+			ID:       "verify_script_docs_without_sync",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_docs_without_sync: the task's verification script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`, so it fails on a stale embedded copy; run `make sync-docs` first (directly or via a sourced helper).",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptDocsWithoutSync: true,
+			},
+		},
+		{
+			ID:       "artefact_files_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton: the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail - exclude docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and CHANGELOG.md from the unexpected-files computation (rule artefact_files_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptArtefactFilesAllowed: true,
+			},
+		},
+		{
+			ID:       "final_gate_artefact_allowed",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree: check only the files this task adds, or skip the file-set check when the final gate re-runs the script (rule final_gate_artefact_allowed)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptFinalGateArtefactAllowed: true,
+			},
+		},
+		{
+			ID:       "script_invokes_known_flag",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "script invokes a command with a flag that the command's own help does not list: validate every command and flag a script uses against the real binary's help before the script is accepted (rule script_invokes_known_flag)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptInvokesUnknownFlag: true,
+			},
+		},
+		{
+			ID:       "check_matches_spec_text",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verification script asserts a heading or output format the task spec does not name: state the exact heading and format the script checks in the task spec that asks for it (rule check_matches_spec_text)",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptSpecUnanchored: true,
+			},
+		},
+		{
+			ID:       "final_gate_without_script",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "final_gate_without_script: a final_gate task declares no verification script, no verification_script_reason and no usable report path; the end-to-end gate must be verifiable, so give it a script, a report path under .datawatch/reports/, or state why it has none.",
+			Match: config.DecomposeLintMatch{
+				Kind:                          TaskKindFinalGate,
+				VerificationScriptEmpty:       true,
+				VerificationScriptReasonEmpty: true,
+				// A usable report path is a verification surface (the
+				// built-in final-gate template relies on it), as in
+				// read_only_unverifiable.
+				ReportPathEmpty: true,
+			},
+		},
+		{
 			ID:       "no_verification_script",
 			Severity: config.DecomposeLintSeverityWarning,
 			Message:  "Task has no verification script; every decomposed task should declare one so its result can be checked.",
@@ -117,8 +186,8 @@ func DefaultDecomposeLintRules() []Rule {
 				// spec-or-title (any_of): a bare spec_regex+title_regex
 				// pair would AND the two fields instead of OR-ing them.
 				AnyOf: []config.DecomposeLintMatch{
-					{SpecRegex: "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"},
-					{TitleRegex: "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|\\b#\\d{3,}\\b"},
+					{SpecRegex: trackerIDPattern},
+					{TitleRegex: trackerIDPattern},
 				},
 			},
 		},

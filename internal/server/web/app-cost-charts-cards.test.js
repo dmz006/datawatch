@@ -379,10 +379,9 @@ test('mounting the Progress tab loads the cards and leaving it drops a load in f
 
 // ── source rules ────────────────────────────────────────────────────────────
 test('a code comment marks the existing helper that was extended', () => {
-  assert.match(APP_SRC, /Helper extended: the Projects Gantt helpers\. _costChartsLinesSVG and\n\/\/ _costChartsBarsSVG extend _projectGanttSVG/);
+  assert.match(APP_SRC, /Helper extended: the Projects Gantt helpers\. _costChartsLinesSVG and\n\/\/ _costChartsBarsSVG extend _projectGanttPalette/);
   const { sb } = load();
-  assert.equal(typeof run(sb, '_projectGanttSVG'), 'function', 'the helper named in the comment exists');
-  assert.equal(typeof run(sb, '_projectGanttPalette'), 'function');
+  assert.equal(typeof run(sb, '_projectGanttPalette'), 'function', 'the helper named in the comment exists');
 });
 
 test('operator-facing text says Automaton, Automata and Automation, never PRD, and carries no tracker identifier', () => {

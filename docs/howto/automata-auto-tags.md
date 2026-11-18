@@ -436,8 +436,10 @@ curl 'https://<host>/api/sessions?tag=4f5e6d7c&tag_match=any' \
   -H 'Authorization: Bearer <token>'
 ```
 
-Web/PWA: the session list's tag filter — pick the chip under its family
-heading, ANY or ALL, done.
+Web/PWA: the session list's tag filter — open **Filters**, pick the chip
+under its group heading (or search for it), ANY or ALL, done. An Automaton
+has no chip: pick it from the **Find an Automaton** picker. Stage tags have
+no chip either; use the session grouping by stage.
 
 ### The Automata list
 

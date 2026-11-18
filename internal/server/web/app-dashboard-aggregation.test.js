@@ -26,7 +26,7 @@ function loadAppJS() {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
-  for (const fn of ['_dashFetchPRDs', '_dashFetchCost', '_serverPickerBar', '_injectServerPickerBar']) {
+  for (const fn of ['_dashFetchPRDs', '_dashFetchCost', '_serverPickerBar', '_initServerDropdown']) {
     assert.equal(vm.runInContext(`typeof ${fn}`, sandbox), 'function', `${fn} is not defined -- did it get renamed?`);
   }
   return sandbox;
@@ -107,21 +107,21 @@ test('_dashFetchCost in all-servers mode tolerates a non-array response (e.g. a 
   assert.equal(cost.sessions, 0);
 });
 
-test('_serverPickerBar includes the "All" chip by default', () => {
+test('_serverPickerBar includes the "All" option by default', () => {
   const sandbox = loadAppJS();
   setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
   const html = vm.runInContext('_serverPickerBar()', sandbox);
-  assert.ok(/selectServer\(&quot;all&quot;\)/.test(html), 'expected a selectServer("all") chip');
+  assert.ok(html.includes('<option value="all"'), 'expected an "All servers" option');
 });
 
-test('_serverPickerBar({hideAll:true}) omits the "All" chip (Observer)', () => {
+test('_serverPickerBar({hideAll:true}) omits the "All" option (Observer)', () => {
   const sandbox = loadAppJS();
   setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
   sandbox.__opts = { hideAll: true };
   const html = vm.runInContext('_serverPickerBar(__opts)', sandbox);
   delete sandbox.__opts;
-  assert.ok(!html.includes('>' + 'All' + '<') && !/selectServer\(&quot;all&quot;\)/.test(html), 'expected no selectServer("all") chip when hideAll is set');
-  assert.ok(html.includes('pi-node'), 'other chips should still render normally');
+  assert.ok(!html.includes('<option value="all"'), 'expected no "All servers" option when hideAll is set');
+  assert.ok(html.includes('pi-node'), 'other options should still render normally');
 });
 
 test('_serverPickerBar still returns empty string with hideAll when there are no configured servers at all', () => {
@@ -133,36 +133,30 @@ test('_serverPickerBar still returns empty string with hideAll when there are no
 });
 
 // Operator-reported (2026-10-07): a real federated peer named "Apple
-// Testing Sandbox" made every chip's onclick throw "Unexpected end of
-// input" on click -- JSON.stringify(c.name) wraps the name in raw `"`
-// characters that collided with the onclick attribute's own `"`
-// delimiter, truncating the attribute value at the first embedded quote
-// and leaving an incomplete `selectServer(` as the actual handler. This
-// broke every named chip unconditionally (not just names with unusual
-// characters -- ANY JSON.stringify-quoted value collides), including the
-// "All" chip itself. Fixed by escHtml()-wrapping the whole onclick
-// expression, same pattern loadServersList()'s testServerEntry button
-// already used correctly.
-test('a server name does not truncate its chip\'s onclick attribute (regression)', () => {
+// Testing Sandbox" broke every chip's onclick on click -- the name was
+// inline-built into each chip's onclick="..." and collided with the
+// attribute's own quote delimiter, truncating it and leaving an
+// incomplete `selectServer(` as the actual handler. That broke every
+// named chip unconditionally (not just names with unusual characters --
+// ANY quoted value collides), including the "All" chip itself.
+//
+// The header dropdown eliminates this class of bug structurally: there
+// is exactly ONE static, inline-built handler on the select --
+// onchange="onServerDropdownChange(this.value)" -- and each server's
+// name travels in its OWN option's value attribute (escHtml-escaped,
+// read back via this.value). The regression this pins now: the full
+// name must remain an intact option value, the handler must stay the
+// single generic one, and no per-name inline handler may exist at all.
+test('a server name does not break the dropdown (regression)', () => {
   const sandbox = loadAppJS();
   setState(sandbox, { servers: { servers: [{ name: 'Apple Testing Sandbox', enabled: true }] } });
   const html = vm.runInContext('_serverPickerBar()', sandbox);
 
-  // The old bug produced a raw, unescaped `"` immediately after
-  // `selectServer(` -- which prematurely closes the onclick="..."
-  // attribute value one character in. Assert that specific collision is
-  // gone: no bare `"` appears between `onclick="` and the matching chip's
-  // closing `"`, only its escaped form.
-  assert.ok(!/onclick="selectServer\("/.test(html), 'onclick attribute value must not contain a raw, unescaped double quote');
-  assert.ok(/onclick="selectServer\(&quot;Apple Testing Sandbox&quot;\)"/.test(html), 'expected the escaped form of selectServer("Apple Testing Sandbox")');
+  assert.ok(!/onclick="selectServer\(/.test(html), 'no per-server inline selectServer( handler may exist anymore');
+  assert.ok(html.includes('<option value="Apple Testing Sandbox"'), 'expected the full, intact name in the option value');
 
-  // Simulate what the browser's HTML attribute parser actually does for
-  // EVERY chip: extract each onclick="..." value and decode entities,
-  // confirming each is a complete, valid JS call -- not truncated
-  // mid-string -- and that our server's specific chip is among them.
-  const matches = [...html.matchAll(/onclick="([^"]*)"/g)];
-  assert.ok(matches.length >= 2, 'expected at least the Local and Apple Testing Sandbox chips');
-  const decode = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-  const decoded = matches.map(m => decode(m[1]));
-  assert.ok(decoded.includes('selectServer("Apple Testing Sandbox")'), `expected one chip to decode to the full call, got: ${decoded.join(' | ')}`);
+  // Exactly ONE change handler for the whole dropdown -- the generic one.
+  const handlers = [...html.matchAll(/onchange="([^"]*)"/g)].map(m => m[1]);
+  assert.equal(handlers.length, 1, 'exactly one change handler on the select');
+  assert.equal(handlers[0], 'onServerDropdownChange(this.value)', 'the handler must be the generic one, never inline-built per name');
 });

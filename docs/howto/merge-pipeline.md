@@ -176,9 +176,16 @@ the model cannot be reached; the show output says so.
 ## Choose the conflict model
 
 `autonomous.merge_pipeline.conflict_model` names an entry in your LLM registry.
-Leave it unset to use the built-in default name; set it to an empty string for
-no model. The setting never adds, edits or removes a registry entry, so make
-sure the name you give exists. If you run a model of your own, name that one.
+Leave it unset to use the built-in default name, which is the non-Opus daemon
+default (`sonnet`); set it to an empty string for no model. A model the
+operator names is always used as written — an operator who wants a premium
+(Opus-class) model on the merge line pins one here. The setting never adds,
+edits or removes a registry entry, so make sure the name you give exists. If
+you run a model of your own, name that one.
+
+See also [Explicit model policy](explicit-model-policy.md) — the daemon-wide
+rule that a `claude-code` model is always one that was named, never the
+backend's built-in (account) default.
 
 ## Conflict classes
 
@@ -453,13 +460,13 @@ a set size does not change what a ship bumps (see the note at the top of
 | Layer | What decides it |
 |---|---|
 | Explicit | The Automaton's own `release_size` (`patch`, `minor`, `major` or `none`). An explicit major applies under any `major_trigger`. |
-| Milestone | The Automaton's Automation (arc) is marked `milestone`, its members are complete, and the project's `major_trigger` is `milestone`: the release steps major. |
+| Milestone | The Automaton's Automation (plan) is marked `milestone`, its members are complete, and the project's `major_trigger` is `milestone`: the release steps major. |
 | Kind map | The `release_size_map` entry for the Automaton's kind (the daemon labels Automata `feature`, `bug` or another kind of its own). A `major` entry is stored but never used: a major is never inferred from a kind. |
 | Default | kind `feature` steps minor, kind `bug` steps patch, any other kind steps no version. |
 
 The resolution never reads the diff and never infers a major: a major step
 comes from an explicit `release_size: major`, or from a completed
-`milestone` arc while `major_trigger` is `milestone`, or it does not
+`milestone` plan while `major_trigger` is `milestone`, or it does not
 happen.
 
 Separately from the size, an Automaton marked `breaking_change` is reported
@@ -893,7 +900,7 @@ project under `autonomous.merge_pipeline.projects.<project>.<key>`.
 | `source_order` | `file, record` | the sources tried, first to last |
 | `fallback_on_bad_file` | `record` | what is used when the file exists but cannot be used |
 | `conflict_policy` | `mechanical_and_model` | what happens when a merge conflicts |
-| `conflict_model` | the built-in default model name | the model a policy that needs one asks for the rest of a conflict |
+| `conflict_model` | the non-Opus daemon default name (`sonnet`) | the model a policy that needs one asks for the rest of a conflict |
 | `conflict_mode` | `shadow` | `shadow` records a model proposal and never applies it; `on` applies a passing proposal, after confirmation for the first N |
 | `conflict_confirm_first_n` | `5` | how many of a project's first applied model conflicts wait for your confirmation; `0` turns confirmation off |
 | `version_files` | none; a pipeline that bumps the version fails that step until you name the files that carry the version line | the project files the release-version step sets |

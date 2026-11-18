@@ -179,8 +179,11 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	default:
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD or a PRDNeedsReview PRD held by a rules-review retries-spent or auto-fix-disabled decision", prd.ID, prd.Status)
 	}
-	if storyID, taskID, status := firstNonCompletedTask(prd); taskID != "" {
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s task %s (story %s) is %s, not completed; every task must be completed before the completion guardrail can be re-run", prd.ID, taskID, storyID, status)
+	if storyID, taskID, status := firstBlockingTask(prd); taskID != "" {
+		return nil, fmt.Errorf("rejudge completion guardrail: prd %s task %s (story %s) is %s, not completed; every task must be completed or cancelled, with at least one completed, before the completion guardrail can be re-run", prd.ID, taskID, storyID, status)
+	}
+	if m.recordCancelledTasksSkipped(prd) {
+		_ = m.savePRDOwn(prd)
 	}
 
 	// No-verdict path (the judge errored, or returned an empty outcome):

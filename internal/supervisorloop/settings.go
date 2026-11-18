@@ -52,6 +52,9 @@ type Settings struct {
 	// nothing.
 	LaneMin int
 	LaneMax int
+	// Wake is the supervisor_loop.wake block (wake_settings.go): the event
+	// kinds that start a pass at once, with the schedule as fallback.
+	Wake WakeSettings
 }
 
 // DefaultSettings returns the documented defaults.
@@ -59,6 +62,7 @@ func DefaultSettings() Settings {
 	s := Settings{
 		Enabled: true, Steps: map[string]bool{}, Jobs: map[string]JobSetting{},
 		ValidatorRetries: 2, EscalateAfter: 2, RunRetention: 500, ArchiveCancelledAfterMinutes: 60,
+		Wake: DefaultWakeSettings(),
 	}
 	for _, n := range StepNames {
 		s.Steps[n] = true
@@ -95,7 +99,7 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("%s%s%s: must be oneshot or session, got %q", settingsPrefix, n, keyJobSuffixStyle, j.Style)
 		}
 	}
-	return nil
+	return s.Wake.validate()
 }
 
 // Set applies one key/value, returning an error naming the key when the key is
@@ -122,6 +126,7 @@ func (s Settings) clone() Settings {
 	for k, v := range s.Jobs {
 		c.Jobs[k] = v
 	}
+	c.Wake = s.Wake.clone()
 	return c
 }
 
@@ -141,6 +146,9 @@ func toInt(v any) (int, bool) {
 
 func (s *Settings) apply(key string, v any) error {
 	bad := func(want string) error { return fmt.Errorf("%s: want %s, got %v", key, want, v) }
+	if handled, err := s.Wake.apply(key, v); handled {
+		return err
+	}
 	switch key {
 	case KeyEnabled:
 		b, ok := v.(bool)
@@ -228,7 +236,8 @@ func Keys() []string {
 		p := settingsPrefix + n
 		keys = append(keys, p+keyJobSuffixStyle, p+keyJobSuffixBackend, p+keyJobSuffixModel)
 	}
-	return append(keys, KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyArchiveCancelledAfterMinutes, KeyLaneMin, KeyLaneMax)
+	keys = append(keys, KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyArchiveCancelledAfterMinutes, KeyLaneMin, KeyLaneMax)
+	return append(keys, WakeKeys()...)
 }
 
 // Flat returns the settings in effect as a flat map keyed like Keys.
@@ -250,6 +259,7 @@ func (s Settings) Flat() map[string]any {
 		p := settingsPrefix + n
 		out[p+keyJobSuffixStyle], out[p+keyJobSuffixBackend], out[p+keyJobSuffixModel] = string(style), j.Backend, j.Model
 	}
+	s.Wake.flat(out)
 	return out
 }
 

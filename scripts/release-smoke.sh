@@ -4847,7 +4847,9 @@ H "79. Web UI slow-network load scenarios - cold load, empty, failed, stale, off
 # the run is bounded by SMOKE_LOAD_TIMEOUT (default 900s) through the
 # `timeout` command when it is available, with a plain run as fallback.
 PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
-if ! command -v node >/dev/null 2>&1; then
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
+elif ! command -v node >/dev/null 2>&1; then
   skip "load scenarios: node not found on PATH — cannot run scripts/test-stories/pwa"
 elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
   skip "load scenarios: Playwright install missing (scripts/test-stories/pwa/node_modules) — run: (cd scripts/test-stories/pwa && npm ci)"
@@ -4885,45 +4887,64 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-H "Shared navigation bar fits phone widths in light and dark"
+H "79a. Shared navigation bar fits phone widths in light and dark"
 # Runs the shared-nav scenario (scripts/test-stories/pwa/shared-nav-mobile-fit.mjs)
 # through the PWA runner's shared-nav group (`node run-all.mjs --group shared-nav`),
 # same helper pattern as the load section above: this smoke daemon only
 # ($BASE/$TOK), TMUX scrubbed, bounded by SMOKE_SHARED_NAV_TIMEOUT (default 600s)
 # through `timeout` when available. Unlike the load section, a navigation layout
-# finding at phone widths is a failure (ko), never a skip. The section SKIPs only
-# when the scenario reports that no browser or daemon is available: it exits 2,
-# which the runner counts as skipped, so the run ends with 0 passed and 0 failed.
-PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
-NAV_EVD="$TMPD/shared-nav-evidence.$$"
-rm -rf "$NAV_EVD"
-mkdir -p "$NAV_EVD"
-NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
-NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
-if [[ -n "$NAV_TO_BIN" ]]; then
-  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-    "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+# finding at phone widths is a failure (ko), never a skip. The section SKIPs when
+# node is missing, or when the scenario exits 2 (no browser at DW_CHROME_PATH or
+# no daemon answers at $BASE): the runner counts an exit-2 story as skipped, so
+# the run ends with 0 passed and 0 failed, which the section records as a skip —
+# never a ko. The probe's required variables are passed in full: TEST_TLS/
+# TEST_TOKEN from $BASE/$TOK (the test daemon starts with no auth token, so
+# TEST_TOKEN is empty and the probe's empty-token default applies), PROBE_OUT_DIR
+# the evidence dir and PROBE_CHROME_PROFILE a throwaway profile under $TMPD, both
+# removed again on every path.
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
 else
-  env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$NAV_EVD" \
-    node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
-fi
-NAV_RC=$?
-tail -20 "$NAV_OUT_FILE"
-NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
-NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
-NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
-if [[ "$NAV_RC" -eq 0 ]]; then
-  if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
-    skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+  PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
+  if ! command -v node >/dev/null 2>&1; then
+    skip "shared navigation: node not found on PATH — cannot run scripts/test-stories/pwa"
   else
-    ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+    NAV_EVD="$TMPD/shared-nav-evidence.$$"
+    NAV_PROFILE="$TMPD/shared-nav-chrome-profile.$$"
+    rm -rf "$NAV_EVD" "$NAV_PROFILE"
+    mkdir -p "$NAV_EVD"
+    NAV_OUT_FILE="$TMPD/shared-nav-out.$$"
+    NAV_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+    if [[ -n "$NAV_TO_BIN" ]]; then
+      env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" \
+        EVIDENCE_DIR="$NAV_EVD" PROBE_OUT_DIR="$NAV_EVD" PROBE_CHROME_PROFILE="$NAV_PROFILE" \
+        "$NAV_TO_BIN" "${SMOKE_SHARED_NAV_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+    else
+      env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" \
+        EVIDENCE_DIR="$NAV_EVD" PROBE_OUT_DIR="$NAV_EVD" PROBE_CHROME_PROFILE="$NAV_PROFILE" \
+        node "$PWA_DIR/run-all.mjs" --group shared-nav >"$NAV_OUT_FILE" 2>&1
+    fi
+    NAV_RC=$?
+    tail -20 "$NAV_OUT_FILE"
+    NAV_SUMMARY="$(grep -E '^summary: ' "$NAV_OUT_FILE" | tail -1)"
+    NAV_PASSED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $2}')"
+    NAV_FAILED="$(printf '%s' "$NAV_SUMMARY" | awk '{print $4}')"
+    if [[ "$NAV_RC" -eq 0 ]]; then
+      if [[ "${NAV_PASSED:-""}" == "0" && "${NAV_FAILED:-0}" == "0" ]]; then
+        skip "shared navigation: scenario skipped, no browser or daemon available ($NAV_SUMMARY)"
+      else
+        ok "shared navigation fits phone widths: ${NAV_SUMMARY#summary: }"
+      fi
+    elif [[ "$NAV_RC" -eq 2 ]]; then
+      skip "shared navigation: runner exited 2 ("$(tail -1 "$NAV_OUT_FILE")")"
+    elif [[ "$NAV_RC" -eq 124 ]]; then
+      ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
+    else
+      ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+    fi
+    rm -rf "$NAV_EVD" "$NAV_PROFILE"
   fi
-elif [[ "$NAV_RC" -eq 124 ]]; then
-  ko "shared navigation timed out after ${SMOKE_SHARED_NAV_TIMEOUT:-600}s: $(tail -1 "$NAV_OUT_FILE")"
-else
-  ko "shared navigation layout findings at phone widths (run-all.mjs rc=$NAV_RC): $(tail -5 "$NAV_OUT_FILE" | tr '\n' ' ' | head -c 400)"
 fi
-rm -rf "$NAV_EVD"
 
 # ---------------------------------------------------------------------------
 H "79b. Autonomous priority-by-kind + defect-intake settings (PWA)"
@@ -4958,9 +4979,11 @@ if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; the
   PSRC_TO_BIN="$(command -v timeout 2>/dev/null || true)"
   PSRC_RESULT="ok"
   if [[ -n "$PSRC_TO_BIN" ]]; then
-    env -u TMUX -u TMUX_TMPDIR "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$PSRC_EVD" \
+      "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
   else
-    env -u TMUX -u TMUX_TMPDIR node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+    env -u TMUX -u TMUX_TMPDIR TEST_HTTP="$BASE" TEST_TLS="$BASE" TEST_TOKEN="$TOK" EVIDENCE_DIR="$PSRC_EVD" \
+      node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
   fi
   PSRC_RC=$?
   if [[ $PSRC_RC -eq 0 ]]; then
@@ -4970,7 +4993,6 @@ if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; the
   fi
 fi
 rm -rf "$PSRC_EVD"
-SMOKE_PASS=$((SMOKE_PASS+1))
 
 # ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
@@ -7091,6 +7113,205 @@ assert "branch refresh:" in j and "stopped by a conflict:" in j, j[:200]' 2>/dev
   ok "branch refresh: chat 'autonomous branch-refresh-stats' replies with the numbers"
 else
   ko "branch refresh: chat 'autonomous branch-refresh-stats' did not reply with the numbers"
+fi
+
+# ---------------------------------------------------------------------------
+H "Housekeeping repairs — GET /api/autonomous/housekeeping-repairs and autonomous.housekeeping_repairs.*"
+# The read lists four groups (task_chain, advance_judge, lane_fill, leftovers),
+# each with a mode in off|report|on and the would/did/failed/skipped_unsafe
+# lists. It is read only. A bad mode is refused with a 400 naming the key and
+# stores nothing. On a scratch daemon only, a group set to report reads back
+# and the original value is restored. It never sets a mode to on, so no repair
+# runs here.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  HK_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null || true)
+  HK_CODE=$(echo "$HK_BODY" | tail -n1)
+  HK_JSON=$(echo "$HK_BODY" | sed '$d')
+  if [[ "$HK_CODE" == "200" ]] && echo "$HK_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["grace_seconds"], int) and d["grace_seconds"] >= 0, d["grace_seconds"]
+names=[g["group"] for g in d["groups"]]
+assert names==["task_chain","advance_judge","lane_fill","leftovers"], names
+for g in d["groups"]:
+    assert g["mode"] in ("off","report","on"), g["mode"]
+    for k in ("would","did","failed","skipped_unsafe"):
+        assert isinstance(g[k], list), (g["group"], k)
+' 2>/dev/null; then
+    ok "housekeeping repairs: GET answers 200 with the four groups, their modes and the four record lists"
+  else
+    ko "housekeeping repairs: read returned HTTP $HK_CODE or a malformed body: $(echo "$HK_JSON" | head -c 300)"
+  fi
+
+  HK_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null || true)
+  if [[ "$HK_POST" == "405" ]]; then
+    ok "housekeeping repairs: the route is read only (POST answers 405)"
+  else
+    ko "housekeeping repairs: POST answered HTTP $HK_POST, expected 405"
+  fi
+
+  HK_BAD=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.housekeeping_repairs.task_chain":"sometimes"}' "$BASE/api/config" 2>/dev/null || true)
+  HK_BAD_CODE=$(echo "$HK_BAD" | tail -n1)
+  if [[ "$HK_BAD_CODE" == "400" ]] && echo "$HK_BAD" | grep -q "autonomous.housekeeping_repairs.task_chain"; then
+    ok "housekeeping repairs: a bad mode is refused with a 400 that names the key"
+  else
+    ko "housekeeping repairs: bad mode answered HTTP $HK_BAD_CODE, expected 400 naming the key: $(echo "$HK_BAD" | head -c 200)"
+  fi
+
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "housekeeping repairs: external daemon (DW_BASE set); the mode round trip is not run"
+  else
+    HK_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("housekeeping_repairs",{}).get("leftovers","report"))' 2>/dev/null || echo "report")
+    HK_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.housekeeping_repairs.leftovers":"report"}' "$BASE/api/config" 2>/dev/null || echo "000")
+    HK_MODE=$(curl "${curl_args[@]}" "$BASE/api/autonomous/housekeeping-repairs" 2>/dev/null | python3 -c 'import json,sys;print([g["mode"] for g in json.load(sys.stdin)["groups"] if g["group"]=="leftovers"][0])' 2>/dev/null || echo "?")
+    if [[ "$HK_SET" == "200" && "$HK_MODE" == "report" ]]; then
+      ok "housekeeping repairs: leftovers set to report reads back in the repairs read"
+    else
+      ko "housekeeping repairs: leftovers PUT answered HTTP $HK_SET and the read shows '$HK_MODE' (expected 200 and report)"
+    fi
+    curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"autonomous.housekeeping_repairs.leftovers\":\"$HK_ORIG\"}" "$BASE/api/config" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "Task routing — /api/autonomous/task-routing, its profiles and the per-Automaton dry run"
+# Reads the routing table and the profile list, dry-runs an Automaton, and checks
+# that a row naming an unknown backend, or a premium model without
+# allow_premium_model, is refused with a 400 that names the row. The refusals
+# store nothing; if one were ever accepted the throwaway profile is deleted at
+# once. On a scratch daemon only, one throwaway profile is saved and deleted and
+# the active profile is checked and restored. It never starts a task, merges,
+# ships, signals a session, or changes the model settings of running work. The
+# dry run writes nothing.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  TR_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/task-routing" 2>/dev/null || true)
+  TR_CODE=$(echo "$TR_BODY" | tail -n1)
+  TR_JSON=$(echo "$TR_BODY" | sed '$d')
+  TR_TYPE=""
+  TR_ACTIVE=""
+  if [[ "$TR_CODE" == "503" ]]; then
+    skip "task routing: autonomous is disabled on this daemon"
+  elif [[ "$TR_CODE" == "200" ]] && echo "$TR_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["enabled"], bool), d
+assert isinstance(d["task_types"], list) and d["task_types"], d
+assert isinstance(d["profiles"], dict), d
+assert isinstance(d["validation"]["valid"], bool), d
+' 2>/dev/null; then
+    ok "task routing: GET the table answers 200 with enabled, profiles, task types and validation"
+    TR_TYPE=$(echo "$TR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin)["task_types"][0])' 2>/dev/null || true)
+    TR_ACTIVE=$(echo "$TR_JSON" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("active_profile",""))' 2>/dev/null || true)
+  else
+    ko "task routing: table read returned HTTP $TR_CODE or a malformed body: $(echo "$TR_JSON" | head -c 300)"
+  fi
+
+  if [[ "$TR_CODE" == "200" ]]; then
+    TR_PL=$(curl "${curl_args[@]}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d["active_profile"], str), d
+assert isinstance(d["profiles"], list), d
+print("ok")' 2>/dev/null || echo "")
+    if [[ "$TR_PL" == "ok" ]]; then
+      ok "task routing: GET the profile list returns the active profile and the profile names"
+    else
+      ko "task routing: profile list did not return active_profile and profiles"
+    fi
+
+    TR_PUT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/autonomous/task-routing" 2>/dev/null || true)
+    if [[ "$TR_PUT" == "405" ]]; then
+      ok "task routing: an unsupported method on the table route answers 405"
+    else
+      ko "task routing: DELETE on the table route answered HTTP $TR_PUT, expected 405"
+    fi
+
+    # Dry run: pick any existing Automaton; it only reads and writes nothing.
+    TR_ID=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+l=d if isinstance(d,list) else (d.get("prds") or d.get("automata") or [])
+print(l[0]["id"] if l else "")' 2>/dev/null || true)
+    if [[ -z "$TR_ID" ]]; then
+      skip "task routing: no Automaton exists on this daemon, so the dry run is not run"
+    else
+      TR_DRY=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/$TR_ID/task-routing/dry-run" 2>/dev/null || true)
+      TR_DRY_CODE=$(echo "$TR_DRY" | tail -n1)
+      if [[ "$TR_DRY_CODE" == "200" ]] && echo "$TR_DRY" | sed '$d' | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert "automaton_id" in d and isinstance(d["entries"], list), d' 2>/dev/null; then
+        ok "task routing: dry run for an Automaton answers 200 with an entries list"
+      else
+        ko "task routing: dry run answered HTTP $TR_DRY_CODE or a malformed body: $(echo "$TR_DRY" | sed '$d' | head -c 200)"
+      fi
+    fi
+    TR_DRY404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/smoke-no-such-automaton/task-routing/dry-run" 2>/dev/null || echo "000")
+    if [[ "$TR_DRY404" == "404" ]]; then
+      ok "task routing: dry run for an unknown Automaton answers 404"
+    else
+      ko "task routing: dry run for an unknown Automaton answered HTTP $TR_DRY404, expected 404"
+    fi
+
+    # Refused rows. Saving a profile validates the whole table first, so a bad
+    # row is refused with every problem listed and nothing is stored.
+    if [[ -n "$TR_TYPE" ]]; then
+      TR_BADB=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
+        -d "{\"name\":\"smoke-routing-refused\",\"rows\":{\"$TR_TYPE\":{\"worker_backend\":\"smoke-no-such-backend\"}}}" \
+        "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null || true)
+      TR_BADB_CODE=$(echo "$TR_BADB" | tail -n1)
+      if [[ "$TR_BADB_CODE" == "400" ]] && echo "$TR_BADB" | grep -q "smoke-no-such-backend" && echo "$TR_BADB" | grep -q "row.*$TR_TYPE"; then
+        ok "task routing: a row naming an unknown backend is refused with a 400 that names the row"
+      else
+        ko "task routing: unknown backend row answered HTTP $TR_BADB_CODE, expected 400 naming the row: $(echo "$TR_BADB" | head -c 300)"
+        [[ "$TR_BADB_CODE" == "200" ]] && curl "${curl_args[@]}" -o /dev/null -X DELETE "$BASE/api/autonomous/task-routing/profiles/smoke-routing-refused" 2>/dev/null || true
+      fi
+
+      TR_BADM=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
+        -d "{\"name\":\"smoke-routing-refused\",\"rows\":{\"$TR_TYPE\":{\"worker_backend\":\"claude-code\",\"worker_model\":\"claude-opus-5-5\"}}}" \
+        "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null || true)
+      TR_BADM_CODE=$(echo "$TR_BADM" | tail -n1)
+      if [[ "$TR_BADM_CODE" == "400" ]] && echo "$TR_BADM" | grep -q "allow_premium_model" && echo "$TR_BADM" | grep -q "row.*$TR_TYPE"; then
+        ok "task routing: a premium-model row without allow_premium_model is refused with a 400 that names the row"
+      else
+        ko "task routing: premium model row answered HTTP $TR_BADM_CODE, expected 400 naming allow_premium_model and the row: $(echo "$TR_BADM" | head -c 300)"
+        [[ "$TR_BADM_CODE" == "200" ]] && curl "${curl_args[@]}" -o /dev/null -X DELETE "$BASE/api/autonomous/task-routing/profiles/smoke-routing-refused" 2>/dev/null || true
+      fi
+    else
+      skip "task routing: no task type was read, so the refused-row checks are not run"
+    fi
+
+    # Scratch daemon only: save and delete one throwaway profile (a copy of the
+    # active profile's rows), then confirm the active profile did not change.
+    if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+      skip "task routing: external daemon (DW_BASE set); the throwaway profile save and delete is not run"
+    else
+      TR_NAME="smoke-routing-throwaway"
+      TR_SAVE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d "{\"name\":\"$TR_NAME\"}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null || echo "000")
+      TR_HAS=$(curl "${curl_args[@]}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null | python3 -c '
+import json,sys
+print("yes" if "'"$TR_NAME"'" in json.load(sys.stdin)["profiles"] else "no")' 2>/dev/null || echo "?")
+      if [[ "$TR_SAVE" == "200" && "$TR_HAS" == "yes" ]]; then
+        ok "task routing: a throwaway profile saved and appears in the profile list"
+      else
+        ko "task routing: throwaway save answered HTTP $TR_SAVE and the list shows has=$TR_HAS (expected 200 and yes)"
+      fi
+      TR_DEL=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/autonomous/task-routing/profiles/$TR_NAME" 2>/dev/null || echo "000")
+      TR_NOW=$(curl "${curl_args[@]}" "$BASE/api/autonomous/task-routing/profiles" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(("gone" if "'"$TR_NAME"'" not in d["profiles"] else "present") + ":" + d["active_profile"])' 2>/dev/null || echo "?")
+      if [[ "$TR_DEL" == "200" && "$TR_NOW" == "gone:$TR_ACTIVE" ]]; then
+        ok "task routing: the throwaway profile deleted and the active profile is unchanged"
+      else
+        ko "task routing: throwaway delete answered HTTP $TR_DEL and the list shows '$TR_NOW' (expected 200 and gone:$TR_ACTIVE)"
+        # Restore the original active profile if it moved.
+        if [[ -n "$TR_ACTIVE" ]]; then
+          curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"name\":\"$TR_ACTIVE\"}" "$BASE/api/autonomous/task-routing/active-profile" 2>/dev/null || true
+        fi
+      fi
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -32,8 +32,8 @@ to its tab without changing the other tabs.
 
 | Sub-tab | What is on it |
 |---|---|
-| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting. |
-| **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
+| **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release plan and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
 | **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
 | **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
 | *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
@@ -52,6 +52,14 @@ The bottom navigation has no Automation button of its own. Inside the Automata
 tab, the sub-tab bar reads **Projects**, **Automation**, **Automata**, **Events**, **Templates**. The
 Automata sub-tab lists single Automata; the Automation sub-tab lists the chains
 that connect them.
+
+On a phone, the top bar (the five sub-tabs and the action buttons) and the second
+row under the Automation sub-tab each stay on one row and scroll sideways. A soft
+fade on the left or right edge shows that more tabs are hidden on that side, and the
+active tab is scrolled into view when you open the page by link or switch tabs.
+Every tab keeps a 40 px tap target. In the header, the Projects sub-tab is titled
+with its short name so the title fits one line. See
+[Tab strips at phone width](navigation-mobile-fit.md#tab-strips-at-phone-width).
 
 ## Opening it, the remembered sub-tab and saved links
 
@@ -91,6 +99,30 @@ that connect them.
 
 On the Automations sub-tab, one card per Automation, ordered by status (active,
 blocked, paused, draft, completed, cancelled) and then by name.
+
+### What the Inbox counts
+
+The badge on the Inbox tab and the lists under it always agree, because both are cut
+by the same scope. The scope follows the **Project** picker on the Projects sub-tab:
+
+- **Overview, or any other sub-tab.** Nothing is cut. The badge counts everything
+  waiting on you in every project, and its tooltip and screen-reader label read
+  *N waiting on you across all projects*.
+- **One project selected on the Projects sub-tab.** The badge and each card (open
+  questions, held questions, Triage, security failure report and the supervisor
+  watch findings) keep only the items that belong to that project, and the label
+  reads *N waiting on you*. Changing the picker, or the `#projects` address,
+  recounts from the data already loaded; nothing is fetched again.
+
+An item belongs to a project by its link first: a `project:<name>` system tag on the
+item, or on the Automaton the item names. Only when no such tag exists is the
+directory used: the item's own project directory, the Automaton's, or, for a
+security failure, the repository name matched against the project directory's name.
+An item with neither a link nor a directory belongs to no project, so it shows only
+in Overview. If a selected project has nothing waiting, the badge is hidden.
+
+This is a display rule of the web app only. REST, MCP, the CLI and the comm channel
+still return every item, unfiltered.
 
 ### The needs-attention card
 
@@ -188,7 +220,7 @@ When a task finishes, its work is merged into the Automaton branch before the ne
 
 ### Reading the merge state and the safe-to-delete report
 
-A finished Automaton can look done while its work is still only on its own branch. When the merge-pending check is turned on, the Automation view tells you which finished Automata still have commits that are not on `main`. The check is **off by default**; switch it on in Settings (**Automaton merge-pending check**: `off`, `shadow` or `on`). It only reads: nothing here merges, deletes or pushes.
+A finished Automaton can look done while its work is still only on its own branch. When the merge-pending check is turned on, the Automation view tells you which finished Automata still have commits that are not on `main`. Finished here means completed and, unless `autonomous.automation.merge_pending_include_terminal` is set to `false`, also archived, needs_review, blocked and failed. The check is **off by default**; switch it on in Settings (**Automaton merge-pending check**: `off`, `shadow` or `on`). It only reads: nothing here merges, deletes or pushes.
 
 **The merge badge.** On a finished Automaton's detail view, and on its Automation's card in the list, a badge appears when the Automaton needs you:
 
@@ -199,7 +231,7 @@ No badge means the Automaton is merged, has nothing ahead of `main`, or has not 
 
 **Why "needs a look" and not "merge pending".** A commit whose patch changed while it was merged shows as needs a look, not as merge pending. The check recognises merged work by matching each commit's patch and its subject line against `main`. If a commit was merged but the patch that landed is not the patch on the branch (a conflict fixed by hand, an edit on the way in), the subject line matches and the patch does not, and the check will not guess either way. Treat the badge as a request: compare the branch and `main`, then merge it or clear it up yourself. Needs a look raises no alert.
 
-**Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
+**Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The same read gives `shadow_decisions_total` and `shadow_decisions_false`; a window where `shadow_decisions_false` stays at 0 is the clean shadow window to look for before switching. The switch is yours to make; the default stays `off`. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
 
 **The safe-to-delete report.** Under the stream on the Events tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
 
@@ -595,7 +627,7 @@ there too.
 ## Related
 
 - [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
-  the Automata view (left of Automation), which groups an Automation under its project as an arc, with the project's
+  the Automata view (left of Automation), which groups an Automation under its project as a plan, with the project's
   Automata, sessions, progress, history and policy on one page
 - [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears

@@ -104,6 +104,28 @@ test('the other row shows once it is non-zero', () => {
   assert.ok(html.includes('>Other<'));
 });
 
+test('Held column hidden while no Automaton is held', () => {
+  const html = render({ status: 'ok', data: metrics(), trend: null });
+  assert.ok(!html.includes('>Held<'), 'no Held column without held counts');
+});
+
+test('Held column appears with one cell per row once an Automaton is held', () => {
+  const data = metrics();
+  data.groups.feature = Object.assign(group(), { held: 1 });
+  data.groups.bug = Object.assign(group({ prds: 1, done: 1 }), { held: 2 });
+  data.totals = Object.assign(group({ prds: 5, done: 3 }), { held: 3 });
+  const html = render({ status: 'ok', data, trend: null });
+  assert.ok(html.includes('>Held<'), 'Held column header');
+  const trs = Array.from(html.matchAll(/<tr>.*?<\/tr>/g)).map(m => m[0]);
+  const feature = trs.find(tr => tr.includes('>Feature<'));
+  const bug = trs.find(tr => tr.includes('>Bug<'));
+  const total = trs[trs.length - 1];
+  assert.ok(feature.includes('>1<'), 'feature held cell');
+  assert.ok(bug.includes('>2<'), 'bug held cell');
+  assert.ok(total.includes('>3<'), 'total held cell');
+});
+
+
 test('remaining block keeps known and estimated apart and labels the sum an estimate', () => {
   const html = render({ status: 'ok', data: metrics(), trend: null });
   assert.ok(html.includes('Known (these Automata exist)'));
@@ -166,12 +188,12 @@ test('nulls render as not measured and never as 0', () => {
   assert.ok(/Tasks per Automaton, mean:<\/span> not measured/.test(html), 'a mean with no samples is not measured');
 });
 
-test('stale after a failed refresh keeps the old data and shows the age', () => {
+test('stale after a failed refresh keeps the old data and shows the stale marker', () => {
   const html = render({ status: 'stale', data: metrics(), error: 'timeout (15 s)', fetchedAt: NOW - 125000, trend: null });
   assert.ok(html.includes('progress-card-stale'), html);
   assert.ok(html.includes('data-progress-status="stale"'));
   assert.ok(html.includes('Out of date'));
-  assert.ok(html.includes('Last updated 120 s ago'), html);
+  assert.ok(!html.includes('Last updated'), 'no ticking age line: ' + html);
   assert.ok(html.includes('timeout (15 s)'));
   assert.ok(html.includes('<table'), 'old data stays visible');
   assert.ok(!html.includes('progress-card-retry'), 'retry shows only with no data');
@@ -180,7 +202,7 @@ test('stale after a failed refresh keeps the old data and shows the age', () => 
 test('data generated more than five minutes ago counts as stale even when the fetch worked', () => {
   const html = render({ status: 'ok', data: metrics({ generated_at: '2026-10-23T11:50:00Z' }), error: '', fetchedAt: NOW, trend: null });
   assert.ok(html.includes('progress-card-stale'), html);
-  assert.ok(html.includes('Last updated 600 s ago'), html);
+  assert.ok(!html.includes('Last updated'), 'no ticking age line: ' + html);
   const fresh = render({ status: 'ok', data: metrics({ generated_at: '2026-10-23T11:55:30Z' }), trend: null });
   assert.ok(!fresh.includes('progress-card-stale'), 'under five minutes is fresh');
 });

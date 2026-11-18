@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -150,8 +152,11 @@ type Config struct {
 	PlanningBackend string `json:"planning_backend,omitempty"`
 	// PlanningRouting is the autonomous.planning_routing block: routes the
 	// decompose call to a rule-chosen planner and ladder. Off by default.
-	PlanningRouting     config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
-	VerificationBackend string                       `json:"verification_backend,omitempty"`
+	PlanningRouting config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
+	// TaskRouting is the autonomous.task_routing block: the task-type
+	// routing table and its profiles. Off by default.
+	TaskRouting         config.TaskRoutingConfig `json:"task_routing,omitempty"`
+	VerificationBackend string                   `json:"verification_backend,omitempty"`
 	// ExecutionBackend is the fallback backend used when a task and its
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
@@ -230,6 +235,16 @@ type Config struct {
 	// unset mirror must not overwrite the value held in config.Config.
 	UsageBackoff          string `json:"usage_backoff,omitempty"`
 	BackoffMaxWaitMinutes int    `json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview and BackoffReserveTokensPerHour mirror the
+	// review-reserve knobs (autonomous.backoff_reserve_for_review,
+	// autonomous.backoff_reserve_tokens_per_hour) so both autonomous config
+	// surfaces agree and handleAutonomousConfig's round-trip into
+	// config.AutonomousConfig keeps them. The gate itself reads config.Config
+	// through the daemon's wiring (cmd/datawatch/capacity_backoff_reserve.go).
+	// The pointer field exists so an explicit 0 (no slot reserve) survives
+	// the unset-defaults path; omitempty, deliberately, like the pair above.
+	BackoffReserveForReview     *int  `json:"backoff_reserve_for_review,omitempty"`
+	BackoffReserveTokensPerHour int64 `json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// PlanTierMaxInflight mirrors the tier -> max-inflight table
 	// (autonomous.plan_tier_max_inflight) so the two autonomous config
 	// surfaces (/api/config and /api/autonomous/config) agree. The manager
@@ -268,6 +283,10 @@ type Config struct {
 	// round-trip as 0.
 	ScriptGateTimeoutSeconds int    `json:"script_gate_timeout_seconds"`
 	ProjectGateCommand       string `json:"project_gate_command,omitempty"`
+	// GateDrainMinutes mirrors autonomous.gate_drain_minutes in config: the
+	// minutes a graceful restart waits for running final gates. No omitempty:
+	// an explicit 0 (do not wait) must round-trip as 0.
+	GateDrainMinutes int `json:"gate_drain_minutes"`
 	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
 	// the strong judge backend a large diff is routed to first, empty = the
 	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
@@ -385,6 +404,14 @@ type Config struct {
 	// handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	LoopDetectTurns *int `json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled and UnlandedAlertThreshold mirror
+	// autonomous.unlanded_alert_enabled / unlanded_alert_threshold: the daily
+	// pending-branch alert (unlanded_alert.go). nil reads the defaults (on,
+	// threshold 3) through config.UnlandedAlertEnabledEffective /
+	// config.UnlandedAlertThresholdEffective; the check reads this Config on
+	// every tick, so a runtime config set applies without a restart.
+	UnlandedAlertEnabled   *bool `json:"unlanded_alert_enabled,omitempty"`
+	UnlandedAlertThreshold *int  `json:"unlanded_alert_threshold,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -501,6 +528,10 @@ type Config struct {
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
 	SecurityScan         bool `json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers; unset or empty = the scanner's built-in defaults (.py, .pyw),
+	// non-empty = exactly those extensions.
+	SecurityScanExtensions []string `json:"security_scan_extensions"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRD knobs. MaxRecursionDepth
 	// caps the parent→child PRD chain length (default 5; 0 disables
@@ -787,6 +818,13 @@ type AutomationConfig struct {
 	// turns the alert off and survives a merge round trip.
 	MergePendingAlertMinutes *int `json:"merge_pending_alert_minutes,omitempty"`
 
+	// MergePendingIncludeTerminal: whether the merge-pending check also
+	// covers archived, needs_review, blocked and failed Automata. Pointer:
+	// unset (nil) reads config.DefaultMergePendingIncludeTerminal (true), an
+	// explicit false keeps the check to completed Automata. Mirrors
+	// autonomous.automation.merge_pending_include_terminal.
+	MergePendingIncludeTerminal *bool `json:"merge_pending_include_terminal,omitempty"`
+
 	// MergedMemberPolicy: completed | manual | block (empty reads as
 	// completed). Mirrors autonomous.automation.merged_member_policy.
 	MergedMemberPolicy string `json:"merged_member_policy,omitempty"`
@@ -813,6 +851,12 @@ type AutomationConfig struct {
 	// (autonomous.automation.dependency_update.*). Defaults live in the
 	// Effective* accessors of the config type.
 	DependencyUpdate config.DependencyUpdateConfig `json:"dependency_update"`
+
+	// ChildInherit mirrors autonomous.automation.child_inherit. Pointer on
+	// purpose: unset (nil) reads the default (on) via EffectiveChildInherit,
+	// and an explicit false survives a merge round trip. When on, a child
+	// Automaton inherits from its parent at creation (child_inherit.go).
+	ChildInherit *bool `json:"child_inherit,omitempty"`
 
 	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
 	// agent insert a member directly; PolicyRequireOperator holds an agent's
@@ -924,6 +968,15 @@ func (c AutomationConfig) EffectiveCreateSearchThreshold() float64 {
 	return *c.CreateSearchThreshold
 }
 
+// EffectiveChildInherit returns whether a child Automaton inherits from its
+// parent: true when unset, the explicit value otherwise.
+func (c AutomationConfig) EffectiveChildInherit() bool {
+	if c.ChildInherit == nil {
+		return config.DefaultChildInherit
+	}
+	return *c.ChildInherit
+}
+
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
 // value reads as off.
 func (c AutomationConfig) EffectiveMergePendingMode() string {
@@ -931,6 +984,16 @@ func (c AutomationConfig) EffectiveMergePendingMode() string {
 		return config.MergePendingModeOff
 	}
 	return c.MergePendingMode
+}
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending
+// check covers archived, needs_review, blocked and failed Automata as well as
+// completed ones: true when unset, the explicit value otherwise.
+func (c AutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return config.DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergedMemberPolicy returns the merged-member policy in effect: an
@@ -1090,6 +1153,7 @@ func DefaultConfig() Config {
 		MaxConcurrentTasks:       1,
 		MaxEnginesPerNode:        1,
 		ScriptGateTimeoutSeconds: config.DefaultScriptGateTimeoutSeconds,
+		GateDrainMinutes:         config.DefaultGateDrainMinutes,
 		GateDisagreement:         "warn",
 		FailureEscalation:        defaultFailureEscalationPolicy(),
 		AutoFixRetries:           1,
@@ -1351,7 +1415,15 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu sync.Mutex
+	// taskRoutingBackendKnown reports whether an LLM backend is known to the
+	// registry; nil skips the check (SetTaskRoutingBackendCheck).
+	taskRoutingBackendKnown func(backend string) bool
+	mu                      sync.Mutex
+	// housekeepingRepairer feeds the housekeeping repairs read view. Guarded by mu.
+	housekeepingRepairer *Repairer
+	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
+	// Guarded by mu; nil means no usage is reported.
+	laneUtilUsage LaneUtilizationUsageSource
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
 	resourceLimits   *config.ResourceLimitsConfig
@@ -1375,6 +1447,8 @@ type Manager struct {
 	cfg          Config
 	store        *Store
 	automations  *AutomationStore
+	// projectLink is the project link backfill state (project_link_backfill.go).
+	projectLink projectLinkBackfillState
 	// Capability minimum-version enforcement (capability_requirements.go):
 	// per-capability -> per-node enablement and flag state. Guarded by mu;
 	// nil until EnableCapability/RecheckCapability first touch it.
@@ -1500,6 +1574,13 @@ type Manager struct {
 	// nil only for hand-rolled test Managers.
 	cleanupStatus *cleanupStatusRecorder
 
+	// Daily pending-branch alert (unlanded_alert.go) — the persisted
+	// last-alerted day. Owns its own lock; created in NewManager; nil only
+	// for hand-rolled test Managers. unlandedAlertList replaces the branch
+	// listing in tests (nil = UnlandedWork).
+	unlandedAlert     *unlandedAlerter
+	unlandedAlertList func(context.Context) ([]UnlandedBranch, error)
+
 	// safeDeleteCache is the short-lived cache in front of
 	// MergeSafeToDelete (merge_safe_delete_cache.go). Guarded by mu;
 	// created lazily on first use, or wired directly in tests.
@@ -1536,6 +1617,9 @@ type Manager struct {
 	lifecycle     *lifecycleDispatcher
 	lifecycleHost string
 	lifecycleOnce sync.Once
+	// lifeHistory records recent lifecycle events for the subscription
+	// preview (lifecycle_history.go).
+	lifeHistory lifecycleHistory
 	// BL427 (phase 5) — receiving side of peer forwarding; nil until
 	// SetForwardReceive. Read on every forwarded envelope (lifecycle_forward_receive.go).
 	forwardRecv atomic.Pointer[ForwardReceiveConfig]
@@ -1666,6 +1750,9 @@ type Manager struct {
 	// the door of executeOne, so a restart drain lets running tasks finish
 	// without new ones starting. See restart_policy.go.
 	launchDraining atomic.Bool
+	// runningGates is the set of final gate checks running now; see
+	// running_gates.go.
+	runningGates runningGateRegistry
 	// worktreeDirtyFn — the worktree guard's uncommitted-changes check.
 	worktreeDirtyFn func(dir string) (bool, error)
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
@@ -1847,6 +1934,14 @@ type Manager struct {
 	stuckRefireFn   func(prdID string) (started bool, err error)
 	stuckExecLiveFn func(prdID string) bool
 
+	// condActive records which condition events (lifecycle_emit_condition.go)
+	// currently hold, keyed by kind and Automaton, so a condition that stays
+	// true emits once. Guarded by condMu.
+	condMu     sync.Mutex
+	condActive map[string]bool
+	// capWaits holds the current capacity-wait episodes (lifecycle_emit_capacity_burn.go), guarded by condMu.
+	capWaits map[string]*capacityWaitEpisode
+
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
 	sessionContinueFn func(sessionID string) error
@@ -1894,6 +1989,10 @@ type Manager struct {
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
 
+	// planningFailure holds the planning failure alert and question state
+	// (planning_failure.go); its zero value is ready to use.
+	planningFailure planningFailureState
+
 	// branchRefreshGitRunner replaces the production git runner of the
 	// between-task branch refresh (branch_refresh.go); nil uses git.
 	// Guarded by mu.
@@ -1915,6 +2014,10 @@ type Manager struct {
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
+
+	// now — the time source for operator holds (hold.go). Nil reads the
+	// wall clock; tests inject a fake so hold times are exact.
+	now func() time.Time
 
 	// synthesizeFn — test seam for the rules review rollup's corrective
 	// work creation. Nil uses synthesizeCorrectiveWork.
@@ -1948,6 +2051,10 @@ type Manager struct {
 	// genArt — change-record and generated-artefact wiring
 	// (generated_artefacts.go). The zero value is dormant.
 	genArt generatedArtefactState
+
+	// startedAt is when this Manager (the daemon) was constructed; the gate
+	// path uses it to tell a restart-killed gate from a real failure.
+	startedAt time.Time
 
 	// taskCommit — commits a task's leftover files when the uncommitted-work
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
@@ -2698,6 +2805,21 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
 			prevStatus := t.Status
+			if t.Kind == TaskKindFinalGate && (prevStatus == TaskInProgress || prevStatus == TaskVerifying || prevStatus == TaskRunningTests) && m.holdFinalGateForRecord(prd, t) {
+				// The final gate outlived the daemon (or finished while it was
+				// down): put the task back to pending without a failure or a
+				// retry. The gate run re-attaches to its record and takes its
+				// result once, so the gate is neither failed nor restarted.
+				m.releaseCapacity(t.ID)
+				m.store.WithLock(func() {
+					t.Status = TaskPending
+					t.Error = ""
+					t.UpdatedAt = time.Now()
+				})
+				reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+				log.Printf("[autonomous] boot-resume: prd=%s final gate task %s keeps its running gate: the run re-attaches to its record, no failure, no retry counted", prd.ID, t.ID)
+				continue
+			}
 			switch t.Status {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.
@@ -3102,6 +3224,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
 	m := &Manager{
+		startedAt:              time.Now().UTC(),
 		cfg:                    cfg,
 		store:                  st,
 		automations:            automs,
@@ -3119,6 +3242,9 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		// keeps the last run and does not re-alert an already-alerted
 		// disk (cleanup_status.go).
 		cleanupStatus: newCleanupStatusRecorder(st.dir),
+		// daily pending-branch alert — the last-alerted day persists in
+		// the same folder so a restart does not repeat today's alert.
+		unlandedAlert: newUnlandedAlerter(st.dir),
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -3277,6 +3403,9 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 	// Release-version gate and verification-script scope gate: restored
 	// here from main (they were duplicated in both decompose twins, and the
 	// shared tail must enforce them for both paths).
+	// Self-correction: when the release-version gate is the only content
+	// failure, reword the fixed numbers instead of failing the plan.
+	m.tryCorrectReleaseVersions(prd, s)
 	if err := validateNoFixedReleaseVersion(s); err != nil {
 		if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
 			return decomposeAttemptRetry, nil
@@ -3374,6 +3503,9 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		})
 		prd.ScopeWarnings = scopeWarnings
 	})
+	// Task-type routing: every task the planner materialized gets the active
+	// profile's row (a no-op while routing is off), before approval.
+	m.ApplyTaskRoutingToPRD(prd)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -3422,8 +3554,30 @@ func (m *Manager) AutomationStore() *AutomationStore { return m.automations }
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
 func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effort) (*PRD, error) {
+	return m.createPRD(spec, projectDir, backend, model, effort, "")
+}
+
+// CreatePRDWithParent is CreatePRD for an Automaton that has a parent: it
+// records the parent link and depth, then lets the child inherit from the
+// parent (inheritFromParent, autonomous.automation.child_inherit). A non-empty
+// projectDir, backend or model is explicit and wins over inheritance. An empty
+// parentPRDID is plain CreatePRD; an unknown parent is refused.
+func (m *Manager) CreatePRDWithParent(spec, projectDir, backend, model string, effort Effort, parentPRDID string) (*PRD, error) {
+	return m.createPRD(spec, projectDir, backend, model, effort, strings.TrimSpace(parentPRDID))
+}
+
+// createPRD is the body of CreatePRD and CreatePRDWithParent.
+func (m *Manager) createPRD(spec, projectDir, backend, model string, effort Effort, parentPRDID string) (*PRD, error) {
 	if err := m.checkInjectionGuard("prd spec", spec); err != nil {
 		return nil, err
+	}
+	var parent *PRD
+	if parentPRDID != "" {
+		p, ok := m.store.GetPRD(parentPRDID)
+		if !ok {
+			return nil, fmt.Errorf("create prd: parent prd %q not found", parentPRDID)
+		}
+		parent = p
 	}
 	if err := validateModelForBackend(backend, model); err != nil {
 		return nil, fmt.Errorf("create prd: %w", err)
@@ -3463,6 +3617,22 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 			})
 			_ = m.store.SavePRD(prd)
 		}
+	}
+	// A child starts from its parent's setup (child_inherit.go). It runs after
+	// the defaults above so inherited values replace them, and before defect
+	// intake so a child that joined its parent's Automation is not offered
+	// elsewhere.
+	if parent != nil {
+		m.store.WithLock(func() {
+			prd.ParentPRDID = parent.ID
+			prd.Depth = parent.Depth + 1
+		})
+		_ = m.store.SavePRD(prd)
+		m.inheritFromParent(prd, parent, childExplicit{
+			ProjectDir: projectDir != "",
+			Backend:    backend != "",
+			Model:      model != "",
+		})
 	}
 	// Defect intake (defect_intake.go): an Automaton filed with kind bug is
 	// offered to the Automation named by autonomous.defect_intake_automation
@@ -3533,6 +3703,9 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 	}
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
+	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	// BL407 Phase 1 extension (found live 2026-10-11 creating BL404's
 	// own PRD): session-based decompose needs a real project_dir, same
@@ -3744,6 +3917,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	if prd.IsTemplate {
 		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	// BL407 Phase 1 extension — see Decompose()'s identical call for
 	// the full explanation. decomposeStreamingCore is a drifted
 	// duplicate of Decompose() by design history (see this function's
@@ -3915,12 +4091,43 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 	}
 }
 
+// refuseHeld returns an error when the Automaton is on hold, and nil
+// otherwise. Every path that starts or advances work calls it first: a held
+// Automaton waits by operator decision, so nothing runs, approves, decomposes,
+// resets or requeues it until the operator releases the hold. The error names
+// the hold reason. It reads the record under the store lock, so call it with
+// no store lock held.
+func (m *Manager) refuseHeld(prd *PRD) error {
+	if prd == nil {
+		return nil
+	}
+	var held bool
+	var reason string
+	m.store.WithLock(func() {
+		if NormalizePRDStatus(prd.Status) != PRDHeld {
+			return
+		}
+		held = true
+		reason = "no reason recorded"
+		if prd.Hold != nil && strings.TrimSpace(prd.Hold.Reason) != "" {
+			reason = strings.TrimSpace(prd.Hold.Reason)
+		}
+	})
+	if !held {
+		return nil
+	}
+	return fmt.Errorf("automaton %q is held (%s); release the hold first", prd.ID, reason)
+}
+
 // Approve transitions a PRD from needs_review → approved so the loop /
 // Manager.Run is allowed to start workers. BL191 Q1.
 func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
 		return nil, fmt.Errorf("prd %q status %q is not approvable", prdID, prd.Status)
@@ -4129,6 +4336,11 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	if prd.Status == PRDArchived {
 		return prd, nil // idempotent
 	}
+	var pendingBranch string
+	m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
+	if pendingBranch != "" {
+		return nil, fmt.Errorf("automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
+	}
 	now := time.Now()
 	var old PRDStatus
 	m.store.WithLock(func() {
@@ -4296,21 +4508,34 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // be corrected and retried without widening PRD dirs or recreating the PRD.
 // Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
-	return m.EditTask(prdID, taskID, newSpec, nil, "", actor)
+	return m.EditTask(prdID, taskID, newSpec, nil, "", "", "", actor)
 }
 
-// EditTask is EditTaskSpec plus the read_only flag and the report path:
-// newSpec == "" leaves the spec unchanged, readOnly == nil leaves the flag
-// unchanged, and reportPath == "" leaves the path unchanged. A non-empty
-// reportPath is validated with validateReportPath and only accepted when the
-// task ends up read_only (already flagged, or flagged by this same edit).
-// The same PRD and task status gates apply to all fields.
-func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (*PRD, error) {
-	if newSpec == "" && readOnly == nil && reportPath == "" {
-		return nil, fmt.Errorf("nothing to edit: pass a new spec, a read_only flag, and/or a report_path")
+// EditTask is EditTaskSpec plus the read_only flag, the report path, the
+// verification script and the script exemption reason: newSpec == "" leaves
+// the spec unchanged, readOnly == nil leaves the flag unchanged, and an empty
+// reportPath, verificationScript or verificationScriptReason leaves that
+// field unchanged. A non-empty reportPath is validated with
+// validateReportPath and only accepted when the task ends up read_only
+// (already flagged, or flagged by this same edit). A non-empty
+// verificationScript must be one repo-relative script file (see
+// validateEditVerificationScript); it is also added to the task's
+// FilesGenerated when not yet listed, so the plan stays consistent. A
+// non-empty verificationScriptReason is the stated exemption for a task that
+// carries no script; it is stored as given and clears nothing else, so it can
+// be set with or without a script. The same PRD and task status gates apply
+// to all fields.
+func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason, actor string) (*PRD, error) {
+	if newSpec == "" && readOnly == nil && reportPath == "" && verificationScript == "" && verificationScriptReason == "" {
+		return nil, fmt.Errorf("nothing to edit: pass a new spec, a read_only flag, a report_path, a verification_script and/or a verification_script_reason")
 	}
 	if newSpec != "" {
 		if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
+			return nil, err
+		}
+	}
+	if verificationScriptReason != "" {
+		if err := m.checkInjectionGuard("task verification script reason edit", verificationScriptReason); err != nil {
 			return nil, err
 		}
 	}
@@ -4318,6 +4543,9 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 		if err := validateReportPath(reportPath); err != nil {
 			return nil, err
 		}
+	}
+	if err := validateEditVerificationScript(verificationScript); err != nil {
+		return nil, err
 	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -4369,6 +4597,16 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 					if reportPath != "" {
 						prd.Story[si].Tasks[ti].ReportPath = reportPath
 					}
+					if verificationScript != "" {
+						t := &prd.Story[si].Tasks[ti]
+						t.VerificationScript = verificationScript
+						if !slices.Contains(t.FilesGenerated, verificationScript) {
+							t.FilesGenerated = append(t.FilesGenerated, verificationScript)
+						}
+					}
+					if verificationScriptReason != "" {
+						prd.Story[si].Tasks[ti].VerificationScriptReason = verificationScriptReason
+					}
 					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 					found = true
 					break
@@ -4389,7 +4627,7 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 		prd.UpdatedAt = time.Now()
 		prd.Decisions = append(prd.Decisions, Decision{
 			At: time.Now(), Kind: "edit_task", Actor: actor,
-			Note: editTaskNote(taskID, newSpec, readOnly, reportPath),
+			Note: editTaskNote(taskID, newSpec, readOnly, reportPath, verificationScript, verificationScriptReason),
 		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
@@ -4485,8 +4723,9 @@ func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart boo
 	}
 	// The task is back in play, so the dependents failed behind it for an
 	// infrastructure reason return to pending with it, whether the operator
-	// reset it or retried it after review.
-	if len(m.recoverInfraDependents(out)) > 0 {
+	// reset it or retried it after review — and so do the dependents failed
+	// behind it for any other reason.
+	if len(m.recoverInfraDependents(out))+len(m.recoverDependencyDependents(out)) > 0 {
 		out, _ = m.store.GetPRD(prdID)
 	}
 	return out, nil
@@ -4498,6 +4737,11 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	// A held Automaton is refused before anything else: its tasks keep their
+	// state until the operator releases the hold.
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	// PRDBlocked included: a guardrail block or (default) story-failure halt
 	// both leave the PRD blocked with no other way to retry the offending
@@ -4724,7 +4968,7 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	if wasWaiting {
 		if up, ok := m.store.GetPRD(prdID); ok {
 			if tk, story := findTaskInPRD(up, taskID); tk != nil {
-				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), m.cfg.ExecutionBackend); backend != "" {
+				if backend, model := resolveTaskBackendModel(tk, story, up, m.AutomationForPRD(up), executionFallbackBackend(m.cfg, up)); backend != "" {
 					m.requeueQueuedCapacity(up, tk, backend, model)
 				}
 				m.resetCapacityWait(tk.ID)
@@ -5050,7 +5294,7 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 }
 
 // editTaskNote renders the decision note for a task edit.
-func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath string) string {
+func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath, verificationScript, verificationScriptReason string) string {
 	note := fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec))
 	if readOnly != nil {
 		note += fmt.Sprintf(" read_only=%t", *readOnly)
@@ -5058,7 +5302,31 @@ func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath string) str
 	if reportPath != "" {
 		note += fmt.Sprintf(" report_path=%s", reportPath)
 	}
+	if verificationScript != "" {
+		note += fmt.Sprintf(" verification_script=%s", verificationScript)
+	}
+	if verificationScriptReason != "" {
+		note += fmt.Sprintf(" verification_script_reason=%q", verificationScriptReason)
+	}
 	return note
+}
+
+// validateEditVerificationScript checks the verification script an edit sets.
+// Empty is valid (the script is left unchanged). A non-empty value must be one
+// repo-relative script file: not a command string, not absolute, no .. segment,
+// not the project root, and already clean (path.Clean(p) == p) so the same
+// file is never listed twice under two spellings.
+func validateEditVerificationScript(p string) error {
+	if p == "" {
+		return nil
+	}
+	if verificationScriptLooksLikeCommand(p) {
+		return fmt.Errorf("verification_script %q must be one repo-relative script file (for example scripts/verify.sh), not a command string, an absolute path, a path with a .. segment or the project root", p)
+	}
+	if path.Clean(p) != p {
+		return fmt.Errorf("verification_script %q must be clean (path.Clean(p) == p), for example scripts/verify.sh", p)
+	}
+	return nil
 }
 
 // AddTask appends a new task to an existing story.
@@ -5110,6 +5378,9 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 			}
 		})
 	}
+	// Task-type routing: a new task starts with the active profile's row
+	// unless an LLM is set above it. Existing tasks are never re-routed.
+	m.ApplyTaskRouting(prd, task)
 	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
 	if len(dependsOn) > 0 {
 		note += fmt.Sprintf(" depends_on=%v", dependsOn)
@@ -5133,6 +5404,18 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	return updated, nil
 }
 
+// taskRemovableWhileRunning reports whether a task may be removed while its
+// Automaton is running: it must not be running, queued, waiting or live.
+func taskRemovableWhileRunning(t *Task) bool {
+	switch t.Status {
+	case TaskCancelled, TaskCompleted, TaskFailed, TaskBlocked:
+		return true
+	case TaskPending:
+		return t.SessionID == ""
+	}
+	return false
+}
+
 // RemoveTask deletes one task from a story (structural edit — distinct
 // from CancelTask, which stops a task that's already running/queued
 // without removing it from the PRD).
@@ -5141,14 +5424,67 @@ func (m *Manager) RemoveTask(prdID, storyID, taskID, actor string) (*PRD, error)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if !statusAcceptsStructuralEdits(prd.Status) {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits", prdID, prd.Status)
+	running := prd.Status == PRDRunning
+	if !running && !statusAcceptsStructuralEdits(prd.Status) {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / failed accept structural edits (a running Automaton accepts removal of a task that is not running and not queued)", prdID, prd.Status)
+	}
+	if running {
+		var refuse error
+		m.store.WithLock(func() {
+			for si := range prd.Story {
+				if prd.Story[si].ID != storyID {
+					continue
+				}
+				for ti := range prd.Story[si].Tasks {
+					t := &prd.Story[si].Tasks[ti]
+					if t.ID == taskID && !taskRemovableWhileRunning(t) {
+						refuse = fmt.Errorf("task %q is %q; while the Automaton is running only a task that is not running and not queued (cancelled, completed, failed, blocked, or never started) can be removed", taskID, t.Status)
+					}
+				}
+			}
+		})
+		if refuse != nil {
+			return nil, refuse
+		}
 	}
 	if err := m.store.RemoveTask(prdID, storyID, taskID); err != nil {
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
 	m.store.WithLock(func() {
+		if running {
+			// Nothing may wait forever on the deleted task, and the story
+			// status follows the same rollup the executor uses.
+			for si := range prd.Story {
+				for ti := range prd.Story[si].Tasks {
+					t := &prd.Story[si].Tasks[ti]
+					kept := t.DependsOn[:0]
+					for _, d := range t.DependsOn {
+						if d != taskID {
+							kept = append(kept, d)
+						}
+					}
+					t.DependsOn = kept
+				}
+			}
+			for si := range prd.Story {
+				st := &prd.Story[si]
+				if st.ID != storyID {
+					continue
+				}
+				allTerminal := true
+				for _, t := range st.Tasks {
+					if !isTaskTerminal(t.Status) {
+						allTerminal = false
+					}
+				}
+				// Re-fire/stuck-running detection advances the Automaton; the
+				// story status is only recomputed once every task is terminal.
+				if allTerminal {
+					st.Status = storyRollupStatus(st)
+				}
+			}
+		}
 		prd.Decisions = append(prd.Decisions, Decision{
 			At: time.Now(), Kind: "remove_task", Actor: actor,
 			Note: fmt.Sprintf("story=%s task=%s", storyID, taskID),
@@ -5264,6 +5600,9 @@ func (m *Manager) ApproveStory(prdID, storyID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
 		return nil, fmt.Errorf("prd %q status %q does not accept per-story approval; PRD must be approved or running first", prdID, prd.Status)
 	}
@@ -5315,6 +5654,9 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
 	}
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning && prd.Status != PRDBlocked {
 		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved, running, or blocked first", prdID, prd.Status)
@@ -6237,6 +6579,9 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
+	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
 	if prd.Status != PRDPaused {
 		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
 	}
@@ -6509,10 +6854,10 @@ var taskOverrideStatusesKnown = []string{
 	string(PRDDraft), string(PRDPlanning), string(PRDNeedsReview), string(PRDApproved),
 	string(PRDRevisionsAsked), string(PRDActive), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
 	string(PRDCancelled), string(PRDArchived), string(PRDBlocked), string(PRDFailed),
-	string(PRDPaused),
+	string(PRDPaused), string(PRDHeld),
 }
 
-// TaskOverrideStatusesKnown returns the 14 PRD status names a
+// TaskOverrideStatusesKnown returns the 15 PRD status names a
 // task_override_statuses list may name (the models.go status constants).
 func TaskOverrideStatusesKnown() []string {
 	return append([]string(nil), taskOverrideStatusesKnown...)
@@ -6968,6 +7313,10 @@ func (m *Manager) Status() LoopStatus {
 		if p.Status == PRDBlocked {
 			st.BlockedPRDs++
 		}
+		if p.Status == PRDHeld {
+			// A hold is the operator's decision, not a stuck Automaton.
+			st.HeldPRDs++
+		}
 		// The Automaton overrides the global notify tier when its resolved
 		// set comes from the automaton or profile tier; finished Automata
 		// no longer running and never count as overrides.
@@ -7011,7 +7360,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
+					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), executionFallbackBackend(m.cfg, p))
 					if backend == "" {
 						backend = "unknown"
 					}
@@ -7294,6 +7643,7 @@ func (m *Manager) run(ctx context.Context) {
 	// start cannot fail because of a cleanup.
 	m.CleanupWorktreesPass()
 	m.SweepDaemonTempPass()
+	m.SweepCacheFoldersPass()
 	// One-shot migration re-run as an idempotent no-op thereafter: strip the
 	// platform context block (owned by the daemon, re-appended at delivery)
 	// from the rules files of the stored Automations' project directories.
@@ -7303,6 +7653,9 @@ func (m *Manager) run(ctx context.Context) {
 	if due, st := m.CleanupDiskPass(); due {
 		m.alertCleanupDisk(st)
 	}
+	// Daily pending-branch alert: checked at start and on every tick; it
+	// raises at most one alert per calendar day (unlanded_alert.go).
+	m.startUnlandedAlertCheck(ctx)
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {
@@ -7323,7 +7676,13 @@ func (m *Manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			m.sweepOrphanSessions()
 			m.sweepStuckRunning()
+			// One hold-expiry pass on the same tick: an expired hold-until time
+			// marks the hold, records one decision and raises exactly one
+			// alert; it never changes the status or starts the Automaton.
+			m.ExpireHolds(m.holdNow())
+			m.sweepCapacityWaits()
 			m.sweepPlatformContextMigration()
+			m.startUnlandedAlertCheck(ctx)
 		}
 	}
 }
@@ -7461,6 +7820,9 @@ func (m *Manager) CreateFixPRD(prdID string) (*PRD, error) {
 	if err := m.store.SavePRD(child); err != nil {
 		return nil, err
 	}
+	// The fix child starts from the scanned Automaton's setup; its project
+	// directory becomes the repository directory, never a worktree path.
+	m.inheritFromParent(child, prd, childExplicit{})
 	return child, nil
 }
 

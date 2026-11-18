@@ -67,6 +67,10 @@ func (l *laneSpy) GetPRD(id string) (any, bool) {
 	return map[string]any{"id": id, "lane_preference": l.setPref}, true
 }
 
+func (l *laneSpy) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return l.CreatePRD("", "", "", "", "")
+}
+
 func (l *laneSpy) CreatePRD(string, string, string, string, string) (any, error) {
 	l.createCall++
 	l.known["new1"] = true

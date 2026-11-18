@@ -48,6 +48,24 @@ func (u unavailableMergeLocks) Acquire(string, autonomous.MergeLockHolder) (auto
 // Release implements mergepipeline.MergeLocker; nothing is ever held.
 func (unavailableMergeLocks) Release(string, string) error { return nil }
 
+// prdCompleter is the optional Manager surface behind the mark_completed
+// built-in: *autonomous.Manager's MarkPRDCompleted. A Manager without it
+// leaves the Runner's Completer unwired, so the hook fails by name.
+type prdCompleter interface {
+	MarkPRDCompleted(id, release string, mergedAt time.Time, commit, actor, reason string) (*autonomous.PRD, error)
+}
+
+// mergeCompleter adapts prdCompleter to mergepipeline.Completer. It exposes
+// no cancel or session call.
+type mergeCompleter struct{ m prdCompleter }
+
+// MarkCompleted implements mergepipeline.Completer. MarkPRDCompleted is
+// already a no-op for an Automaton that is completed.
+func (c mergeCompleter) MarkCompleted(_ context.Context, id, release, commit string, mergedAt time.Time) error {
+	_, err := c.m.MarkPRDCompleted(id, release, mergedAt, commit, "merge_pipeline", "the post-ship mark_completed hook")
+	return err
+}
+
 // mergeRunner is the Manager surface the run route needs.
 type mergeRunner interface {
 	autonomous.MergeRunRecorder
@@ -86,7 +104,7 @@ var mergeRunMu sync.Mutex
 // and pipeline sources are autonomous.merge_pipeline settings. dataDir is the
 // daemon data directory the record store lives under, resolved by the caller
 // (Server.statePath on the request path).
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project, dataDir string, ship mergepipeline.ShipRunner) *mergepipeline.Runner {
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project, dataDir string, ship mergepipeline.ShipRunner, opts ...mergeRunnerOption) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
 	if rs, err := mergepipeline.NewRecordStore(dataDir); err == nil {
 		records = rs
@@ -121,6 +139,9 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 			s.ConfirmFirstN = cfg.EffectiveConflictConfirmFirstN(project)
 			return s
 		},
+	}
+	if pc, ok := mr.(prdCompleter); ok {
+		runner.Completer = mergeCompleter{m: pc}
 	}
 	if name := cfg.EffectiveConflictModel(project); name != "" {
 		runner.Model = newConflictModel(mr, name)
@@ -163,6 +184,12 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 		} else {
 			runner.Locks = locks
 		}
+	}
+	for _, o := range opts {
+		if o == nil {
+			continue
+		}
+		o(runner)
 	}
 	return runner
 }
@@ -211,7 +238,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner()).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner(), s.planRecordsOption()).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
 	if err == nil && body.Automaton != "" {

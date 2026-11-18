@@ -240,21 +240,22 @@ test('_probePickerReachability: does not re-probe a server already resolved this
   assert.equal(callCount, 1, 'a second probe call for the same already-resolved host should be a no-op');
 });
 
-test('_serverPickerBar: an unreachable server renders dimmed with a warning marker, but the onclick is unchanged (still fully clickable)', () => {
+test('_serverPickerBar: an unreachable server is marked in its option text, but stays a plain selectable option (fully clickable)', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`
     state.servers = { servers: [{ name: 'host-down', enabled: true }] };
     _serverReachability['host-down'] = false;
   `, sandbox);
   const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.match(html, /opacity:0\.45/, 'unreachable chip should be visually dimmed');
-  assert.match(html, /⚠/, 'unreachable chip should carry a warning marker');
-  assert.match(html, /selectServer\(/, 'the chip must still be clickable -- the probe result can be stale, and clicking is how the real error surfaces');
+  assert.match(html, /data-reachability="down"/, 'unreachable option should be visibly marked');
+  assert.match(html, /server_dropdown_unreachable/, 'unreachable option should carry a marker in its text');
+  assert.match(html, /onchange="onServerDropdownChange\(this\.value\)"/, 'the select must keep its change handler -- the probe result can be stale, and choosing is how the real error surfaces');
 });
 
-test('_serverPickerBar: a server with no known reachability state (not yet probed) renders normally, not dimmed', () => {
+test('_serverPickerBar: a server with no known reachability state (not yet probed) renders normally, unmarked', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`state.servers = { servers: [{ name: 'host-unknown', enabled: true }] };`, sandbox);
   const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.ok(!html.includes('opacity:0.45'), 'a never-probed server should not be dimmed by default');
+  assert.ok(!html.includes('server_dropdown_unreachable'), 'a never-probed server should not be marked unreachable by default');
+  assert.ok(!html.includes('data-reachability="down"'), 'a never-probed server should not be flagged down');
 });

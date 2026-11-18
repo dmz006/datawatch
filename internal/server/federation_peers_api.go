@@ -130,6 +130,30 @@ func (s *Server) fedPeerGet(w http.ResponseWriter, name string) {
 	writeJSONOK(w, e.Redacted())
 }
 
+// peerEntryWithWarnings is the create/update response shape for
+// federation peer entries: the redacted entry plus a `warnings` array
+// when the peer's certificate is not verified (tls_skip_verify set, no
+// tls_cert_fingerprint pin), so the warning appears exactly where the
+// operator is configuring the peer.
+type peerEntryWithWarnings struct {
+	*multiserver.Entry
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// peerEntryResponse wraps the stored entry for a create/update
+// response: redacted (token never echoed) plus the non-verification
+// warning when applicable. Nil-safe (degrades to warnings only).
+func peerEntryResponse(e *multiserver.Entry) *peerEntryWithWarnings {
+	if e == nil {
+		e = &multiserver.Entry{}
+	}
+	out := &peerEntryWithWarnings{Entry: e.Redacted()}
+	if warn := peerTLSWarning(e); warn != "" {
+		out.Warnings = []string{warn}
+	}
+	return out
+}
+
 func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 	var body multiserver.Entry
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -165,9 +189,10 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 		"url":          body.URL,
 		"capabilities": body.Capabilities,
 	})
+	s.tlsPeerWarn.Notify(e)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(e.Redacted())
+	_ = json.NewEncoder(w).Encode(peerEntryResponse(e))
 }
 
 func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name string) {
@@ -208,7 +233,8 @@ func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name stri
 	// Observer pull protocol — the store changed; reconcile the collector's
 	// target set (no-op until the collector is wired).
 	s.syncObserverPullTargets()
-	writeJSONOK(w, e.Redacted())
+	s.tlsPeerWarn.Notify(e)
+	writeJSONOK(w, peerEntryResponse(e))
 }
 
 func (s *Server) fedPeerDelete(w http.ResponseWriter, r *http.Request, name string) {
@@ -240,11 +266,16 @@ func (s *Server) fedPeerTest(w http.ResponseWriter, r *http.Request, name string
 		})
 		return
 	}
-	writeJSONOK(w, map[string]any{
+	entry, _ := s.serverStore.Get(name)
+	res := map[string]any{
 		"ok":         true,
 		"latency_ms": latencyMs,
 		"version":    version,
-	})
+	}
+	if warn := peerTLSWarning(entry); warn != "" {
+		res["warnings"] = []string{warn}
+	}
+	writeJSONOK(w, res)
 }
 
 // -------------------------------------------------------------------------

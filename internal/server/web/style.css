@@ -179,6 +179,33 @@ body {
   padding-top: env(safe-area-inset-top, 0);
 }
 
+/* BL312 S3 (2026-11-12) — header server dropdown (successor to the per-panel
+   .server-picker-bar chip row + the Sessions topbar slot). Fits the fixed
+   flex header on every width: compact, truncates long peer names instead of
+   wrapping, and hands keyboard/selection to the native control. */
+.server-dropdown {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  width: auto;
+  height: calc(var(--header-h) - 14px);
+  max-height: 34px;
+  padding: 0 26px 0 10px;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  appearance: auto;
+}
+.server-dropdown:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+
 .header-title {
   flex: 1;
   min-width: 0;
@@ -590,9 +617,24 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* FAB clearance for every long page (Sessions list, Automata, Projects,
+     Alerts, Observer, Dashboard, Settings, detail views all scroll in
+     this one box): keep the last card/card-rows clear of the fixed
+     56px start-session button and its 16px gap. */
+  padding-bottom: calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
 }
 .view.view-full {
   bottom: var(--keyboard-h, 0px);
+  /* Session detail is a fill-the-viewport layout, not a scrolling list:
+     drop the FAB-clearance padding (it used to shrink the content box and
+     leave a blank band under the input row), disable page scroll, and
+     stretch the single .session-detail child from header to the
+     keyboard-aware bottom. Pure flex/percent sizing — nothing with a fixed
+     pixel height — so window resize and browser zoom keep it filled. */
+  padding-bottom: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .view-content {
@@ -664,6 +706,9 @@ body {
 .prd-card-status-approved      { border-left-color: var(--accent); }
 .prd-card-status-running       { border-left-color: var(--success); }
 .prd-card-status-paused        { border-left-color: var(--warning); }
+/* Held is a deliberate pause by decision, not a block: neutral colour,
+   distinct from running (green), paused (amber) and blocked (red). */
+.prd-card-status-held          { border-left-color: var(--text2); }
 .prd-card-status-completed     { border-left-color: var(--text2); }
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
@@ -742,23 +787,29 @@ body {
    would overflow, the action buttons wrap onto a second row when they do not
    fit beside them, and every tab and action button keeps a 40 px tap target. */
 @media (max-width: 600px), (pointer: coarse) {
-  .automata-tabs-bar {
-    flex-wrap: wrap;
-    overflow: visible;
+  .automata-tabs-bar,
+  .projects-tabs-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
     box-sizing: border-box;
     max-width: 100%;
-    row-gap: 4px;
   }
-  .automata-tabs-bar .output-tab {
-    flex: 0 1 auto;
-    min-width: 0;
+  .automata-tabs-bar::-webkit-scrollbar,
+  .projects-tabs-bar::-webkit-scrollbar { display: none; }
+  .automata-tabs-bar .output-tab,
+  .projects-tabs-bar .output-tab {
+    flex: 0 0 auto;
     min-height: 40px;
-    padding: 6px 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 6px 10px;
+    white-space: nowrap;
     box-sizing: border-box;
   }
-  .automata-tabs-bar > div:empty { flex: 1 1 0; min-width: 0; }
+  /* The spacer collapses so the action buttons sit in the same scrolling row. */
+  .automata-tabs-bar > div:empty { flex: 0 0 4px; min-width: 0; }
   .automata-tabs-bar .automata-action-btn {
     min-width: 40px;
     min-height: 40px;
@@ -766,8 +817,30 @@ body {
   }
   .automata-tabs-bar .btn-primary {
     min-height: 40px;
+    flex: 0 0 auto;
     box-sizing: border-box;
   }
+  /* Edge fade: shown only on the side that still hides tabs (classes are set
+     by _tabStripFade), so the reader sees more tabs exist. */
+  .automata-tabs-bar.tabs-more-right,
+  .automation-subtabs.tabs-more-right,
+  .projects-tabs-bar.tabs-more-right {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .automata-tabs-bar.tabs-more-left,
+  .automation-subtabs.tabs-more-left,
+  .projects-tabs-bar.tabs-more-left {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  }
+  .automata-tabs-bar.tabs-more-left.tabs-more-right,
+  .automation-subtabs.tabs-more-left.tabs-more-right,
+  .projects-tabs-bar.tabs-more-left.tabs-more-right {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  }
+  .header-title { font-size: 14px; letter-spacing: -0.2px; }
 }
 
 /* Second row of sub-tabs — sits directly below the first sub-tab bar and
@@ -970,7 +1043,7 @@ body {
 .work-tile.prd-card-status-paused .work-tile-dot,
 .work-tile.prd-card-status-revisions_asked .work-tile-dot { background: var(--warning); }
 .work-tile.prd-card-status-approved .work-tile-dot { background: var(--accent); }
-
+.work-tile.prd-card-status-held .work-tile-dot { background: var(--text2); }
 /* compact: one column of two-line rows (420px to 719px). Line one is the title,
    the status chip and the count; line two is the backend, the tag count and the
    last activity. Actions move into the overflow menu. */
@@ -1262,7 +1335,9 @@ body {
     background: var(--bg);
     border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0;
-    padding: 12px 16px 20px 16px;
+    /* Bottom padding keeps the last filters clear of the start-session
+       FAB zone on a phone (FAB itself is hidden while this opens). */
+    padding: 12px 16px calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px)) 16px;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
   }
   .tag-filter-sheet.is-open { display: flex; }
@@ -2991,6 +3066,36 @@ a.prd-file-chip-dl:hover { opacity: 1; }
 /* While the select bar is visible, dim/hide the new-session FAB so it
    doesn't compete for the same touchable region. */
 body:has(.select-bar-fixed) .new-session-fab { display: none; }
+
+/* FAB sheet/modal audit — floating start-session button was covering the
+   last rows of sheets (e.g. the Status chips and below in the Sessions
+   Filters sheet) and could sit on the bottom-right of open modals. While
+   any of these overlays is in the DOM, hide the FAB so it can never cover
+   their rows or steal a tap. Audited overlays (grep `position:fixed`,
+   the full fixed-element list):
+     .sessions-sheet-backdrop  — Sessions Filters sheet (bottom sheet on phone)
+     .confirm-modal-overlay    — shared modal overlay (new-session modal #newSessionModal,
+                                 file viewer, remote PWA viewer, confirm + generic modals)
+     .new-session-modal        — full-screen create-session slide-over
+     .observer-snapshot-modal  — observer peer snapshot modal
+     .voice-recording-overlay — mic recording popup
+     .backend-config-overlay  — backend config popup
+     .update-progress-overlay — self-update progress card
+     .automation-drawer       — Automata member / triage side drawer
+     .dboard-add-panel        — dashboard add-card panel
+     .tag-filter-sheet.is-open — tag filter sheet (phone)
+   (`.prd-edit-menu` and `.lifecycle-overflow-menu` are transient right-
+   click / hover flyouts, not sheets or modals — left out on purpose.) */
+body:has(.sessions-sheet-backdrop) .new-session-fab,
+body:has(.confirm-modal-overlay) .new-session-fab,
+body:has(.new-session-modal) .new-session-fab,
+body:has(.observer-snapshot-modal) .new-session-fab,
+body:has(.voice-recording-overlay) .new-session-fab,
+body:has(.backend-config-overlay) .new-session-fab,
+body:has(.update-progress-overlay) .new-session-fab,
+body:has(.automation-drawer) .new-session-fab,
+body:has(.dboard-add-panel) .new-session-fab,
+body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 .select-bar-btn {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -3086,6 +3191,42 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 }
 .alert-session-group {
   margin-bottom: 10px;
+}
+
+/* Alert card + session-header clipping fix: at 320–390 px viewports a
+   single-line flex row with a long session id (60+ chars, no spaces)
+   clipped ("la 12"). Headers wrap, and every text child may break long
+   unbreakable tokens so nothing runs under the card edge. */
+.alert-card {
+  min-width: 0;
+}
+.card.alert-card {
+  overflow: hidden;
+}
+.alert-session-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.alert-session-head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-session-label,
+.alert-row-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+.alert-row-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .session-card:active {
@@ -3203,6 +3344,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .state-badge-running { animation: none; opacity: 1; }
 }
+
+/* The hold record slot (detail view + card): a left neutral border marks
+   the deliberate pause; the look-again/expired line is the action cue. */
+.automaton-hold-record { border-left: 3px solid var(--text2); }
+.automaton-hold-record .automaton-hold-lookagain { font-weight: 600; color: var(--text); }
 
 /* GH#186 — animated-eye content-loading state, parity with the apps'
    DatawatchLoadingContent / CardSkeleton (operator 2026-10-06). The
@@ -3328,6 +3474,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+/* Held: a neutral status pill — no pulse animation (deliberate pause,
+   not a running state). */
+.state-badge-held { background: rgba(140,140,160,0.15); color: var(--text2); }
 .state-badge-stalled { background: rgba(239,68,68,0.1); color: var(--error); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
@@ -3424,7 +3573,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .session-detail {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Stretches to fill .view.view-full (fixed top/bottom offsets = its full
+     height). No percentage height: percent resolved against the content
+     box, which used to exclude .view's padding — the blank band bug. */
+  flex: 1;
+  min-height: 0;   /* allow the flex child to shrink so overflow:hidden works */
   overflow: hidden;  /* prevent session detail from scrolling — xterm handles its own scroll */
 }
 
@@ -4476,6 +4629,57 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
   flex-shrink: 0;
+}
+
+/* Shared horizontally scrolling tab strip (.tab-strip-scroll).
+   Strips audited at 320 and 360 px:
+   - Settings (.settings-tabs-bar): already scrolled; gains fade and reveal.
+   - Session detail (.output-tabs, Tmux/Channel/Status plus controls): was cut
+     off with no scroll; now scrolls.
+   - Automata templates sub-tabs (.automata-templates-subtabs): wrapped; now
+     scrolls.
+   - Automaton detail (.prd-detail-tabs.output-tabs): already scrolled; gains
+     fade and reveal.
+   - Automata, Automation and Projects strips: already use the same pattern
+     above (.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar).
+   - Observer and Dashboard views have no tab strip.
+   The strip never wraps, hides its scrollbar, fades the side that still hides
+   tabs (classes set by _tabStripFade) and keeps 40 px tap targets. */
+.tab-strip-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.tab-strip-scroll::-webkit-scrollbar { display: none; }
+.tab-strip-scroll > .output-tab,
+.tab-strip-scroll > .settings-tab-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.tab-strip-scroll.tabs-more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.tab-strip-scroll.tabs-more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+.tab-strip-scroll.tabs-more-left.tabs-more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .tab-strip-scroll > .output-tab,
+  .tab-strip-scroll > .settings-tab-btn {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
 }
 
 /* Settings sub-tab nav bar — sticky at top, scrolls horizontally on narrow viewports */
@@ -5758,6 +5962,23 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   background: var(--accent2);
   color: #fff;
 }
+/* ── Shared multi-select state chip set (createStateChipSet, app.js) ──
+   Same row geometry as the Sessions status-filter chips (gap 4px, chip
+   family .backend-filter-badge): flex-wrap is the phone guarantee — the row
+   wraps onto more lines at narrow widths instead of overflowing, and a
+   single overlong label is bounded to the container instead of stretching the
+   page. The chips themselves stay single-line (white-space: nowrap above). */
+.state-chip-set { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 4px; width: 100%; box-sizing: border-box; }
+.state-chip-set .backend-filter-badge { max-width: 100%; }
+.state-chip-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 4px 4px; font-size: 11px; color: var(--text2); width: 100%; box-sizing: border-box; }
+.state-chip-summary .state-chip-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.state-chip-clear-all { background: transparent; border: 0; color: var(--accent2, var(--text2)); font-size: 11px; cursor: pointer; padding: 2px 4px; white-space: nowrap; }
+.state-chip-clear-all:hover { color: var(--accent2); }
+@media (max-width: 599px) {
+  .state-chip-set { padding: 2px 0; gap: 3px; }
+  .state-chip-set .backend-filter-badge { max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+  .state-chip-summary { padding: 0 0 4px; }
+}
 .session-filter-wrap {
   flex: 1;
   position: relative;
@@ -6365,6 +6586,16 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 @media (max-width:600px) {
   .dboard-card-grid { grid-template-columns:repeat(2,1fr); grid-auto-rows:160px; gap:6px; padding:6px; }
   .dboard-card[data-cs] { grid-column:span 2; }
+  /* Phone: the Dashboard scrolls as one page inside .view (which keeps its
+     FAB-clearance padding-bottom) instead of a short nested scroll box.
+     The wrapper grows with its content and the grid no longer clips or
+     scrolls on its own, so every built card is reachable. */
+  .dboard-cards { height:auto; min-height:100%; overflow:visible; }
+  .dboard-card-grid { flex:none; overflow:visible; }
+  /* Stat bar wraps on a phone so the + Card and Edit buttons never fall off-screen. */
+  .dboard-stat-bar { flex-wrap:wrap; row-gap:4px; min-width:0; }
+  .dboard-stat-bar #dashAddCardBtn,
+  .dboard-stat-bar #dashEditBtn { flex-shrink:0; }
 }
 @media (max-width:480px) {
   .dboard-card-grid { grid-template-columns:1fr; grid-auto-rows:160px; gap:6px; padding:6px; }
@@ -7146,10 +7377,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   /* Touch: a link inside the metaExtra row keeps a >=40x40px tap target
      (mobile-fit TAP_MIN=40), same form as the #statsPanel link rule. */
   .list-state-meta-row a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
-  /* The alerts help link ("?") rides the alerts loader's metaExtra row; the
-     class is what guarantees the 40px tap target even if the row markup
-     changes. */
-  a.alerts-help-link { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
 }
 .list-state-cached {
   display: inline-block; padding: 0 6px; border-radius: 999px;
@@ -7394,12 +7621,87 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .metric-trend-flat { color: var(--text2); }
 
 /* Projects page sub-tab strip: scrolls sideways on a phone, never the page. */
-.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; }
+.projects-subtabs { display: flex; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 10px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+/* Projects page containment: nothing on the page may be wider than the viewport.
+   The page, toolbar, selector and every card shrink (min-width: 0), long text
+   wraps, and pre / table content scrolls inside its own box. */
+.projects-view, .project-detail-card, .project-section-card, .project-section-body, .project-cards, .project-card, .project-card-card, .project-card-tile, .project-automaton, .project-arc, .project-overview-summary { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-view { overflow-wrap: anywhere; }
+.projects-toolbar { flex-wrap: wrap; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.projects-picker { min-width: 0; box-sizing: border-box; }
+.projects-show-empty { white-space: nowrap; min-width: 0; max-width: 100%; }
+.project-detail-card #projectsSubtabBody { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.project-event-line, .project-card-detail, .project-overview-dir { overflow-wrap: anywhere; min-width: 0; }
+.project-detail-card pre, .projects-view pre { max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+.project-detail-card table, .projects-view table { display: block; max-width: 100%; overflow-x: auto; box-sizing: border-box; }
+#projectsManageForm, #projectsManageForm > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .projects-subtabs button { flex-shrink: 0; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); padding: 8px 12px; font-size: 13px; cursor: pointer; }
 .projects-subtabs button.active, .projects-subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent, #3b82f6); font-weight: 600; }
+/* Projects Overview summary */
+.project-overview-summary { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.project-overview-dir { color: var(--text2); font-size: 12px; overflow-wrap: anywhere; }
+.project-overview-heading { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.project-overview-track { flex: 1; min-width: 60px; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.project-overview-fill { height: 100%; background: var(--accent, #3b82f6); }
+.project-overview-barlabel, .project-overview-points, .project-overview-plan-state, .project-overview-next-plan, .project-overview-empty { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.project-overview-empty { white-space: normal; }
+.project-overview-plan { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.project-overview-plan-title { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.project-overview-plan-bar { flex: 1 1 160px; min-width: 140px; }
+.project-overview-counts > div { font-size: 13px; margin: 2px 0; }
+.project-overview-link { color: var(--accent, #3b82f6); }
 
+
+
+/* Unlanded work counts block (Housekeeping card) */
+.unlanded-counts { padding: 4px 0 6px; font-size: 12px; min-width: 0; }
+.unlanded-counts-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 2px 0; }
+.unlanded-counts-label { color: var(--text2, #888); }
+.unlanded-counts-chip { padding: 1px 6px; border-radius: 8px; background: rgba(128,128,128,.15); white-space: nowrap; }
+.unlanded-counts-oldest { margin-top: 2px; overflow-wrap: anywhere; }
+.unlanded-counts-over { margin-top: 2px; color: var(--error, #e5534b); font-weight: 600; }
 
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
+/* ── Projects cards: shared Cards / Tiles / Compact renderer (app.js) ─────
+   The three-mode switch reuses the Sessions .sessions-mode-toggle /
+   .sessions-mode-btn rules; only the card bodies are new. */
+.project-cards { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.project-cards-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.project-cards-compact { gap: 0; }
+.project-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel, #111114); }
+.project-card-title { font-size: 14px; font-weight: 600; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-title:hover { color: var(--accent2); text-decoration: underline; }
+.project-card-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.project-card-badge { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; line-height: 1.5; background: var(--border); color: var(--text2); white-space: nowrap; }
+.project-card-badge-info { background: rgba(59,130,246,.15); color: #2563eb; }
+.project-card-badge-ok { background: rgba(34,197,94,.15); color: #16a34a; }
+.project-card-badge-warn { background: rgba(245,158,11,.18); color: #b45309; }
+.project-card-badge-error { background: rgba(239,68,68,.15); color: #dc2626; }
+.project-card-badge-neutral { background: var(--border); color: var(--text2); }
+.project-card-badge-cancelled { background: rgba(148,163,184,.25); color: var(--text2); text-decoration: line-through; }
+.project-card-age { margin-left: auto; color: var(--text2); font-size: 11px; white-space: nowrap; }
+.project-card-details { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.project-card-detail { font-size: 12px; color: var(--text2); word-break: break-all; min-width: 0; }
+.project-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.project-card-action { border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.project-card-action:hover { border-color: var(--accent2); color: var(--accent2); }
+.project-card-card .project-card-card-actions { margin-top: 8px; }
+.project-card-tile .project-card-tile-line { display: flex; align-items: baseline; gap: 6px; }
+.project-card-tile .project-card-tile-age { margin-top: 4px; }
+.project-card-tile .project-card-tile-details { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.project-card-tile .project-card-detail-inline { font-size: 11px; color: var(--text2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-tile .project-card-detail-more { font-size: 11px; color: var(--text2); }
+.project-card-tile .project-card-tile-actions { margin-top: 6px; }
+.project-card-tile .project-card-action { padding: 1px 7px; font-size: 11px; }
+.project-cards-compact .project-card { display: flex; align-items: center; gap: 8px; border-left: none; border-right: none; border-radius: 0; padding: 4px 10px; }
+.project-cards-compact .project-card-title { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+/* Phone width: declared after the base .project-cards-tiles / .project-card-title
+   rules above so these overrides win the cascade (same specificity, later wins). */
+@media (max-width: 600px) {
+  .projects-show-empty { white-space: normal; flex: 1 1 100%; }
+  .project-cards-tiles { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
+  .project-card-title { max-width: 100%; }
+}
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
 .obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }
@@ -7415,10 +7717,39 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .obs-kg-triple { overflow-wrap: anywhere; }
 .obs-sched-meta { flex-shrink: 0; }
 
-/* Project Gantt: the SVG viewBox is 640 wide, so capping at 720px keeps its
-   text at the authored size on wide screens; below the cap it fills the
-   container. Left-aligned (block, no auto margins). */
-.project-gantt-svg { width: 100%; max-width: 720px; }
+/* Project Gantt: one expandable timeline. The chart is capped at 720px on a
+   wide browser, left-aligned. On a phone the chart keeps a minimum width inside
+   an overflow-x:auto wrapper and the label column stays visible (sticky). */
+.project-gantt-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; margin-bottom: 6px; }
+.project-gantt-range-label { color: var(--text2); }
+.project-gantt-preset { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 12px; padding: 2px 8px; }
+.project-gantt-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.project-gantt-range { color: var(--text2); margin-left: auto; }
+.project-gantt-scroll { overflow-x: auto; max-width: 720px; -webkit-overflow-scrolling: touch; }
+.project-gantt-chart { position: relative; min-width: 520px; max-width: 720px; cursor: grab; touch-action: pan-y; user-select: none; }
+.project-gantt-row { display: flex; align-items: center; height: 22px; }
+.project-gantt-label { position: sticky; left: 0; z-index: 1; flex: 0 0 170px; width: 170px; box-sizing: border-box; background: var(--bg, var(--card, #0f1117)); display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.project-gantt-label-text { overflow: hidden; text-overflow: ellipsis; }
+.project-gantt-toggle { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 12px; padding: 0 2px; width: 16px; }
+.project-gantt-toggle-spacer { display: inline-block; width: 16px; }
+.project-gantt-track { position: relative; flex: 1 1 auto; height: 14px; border-bottom: 1px dotted var(--border); }
+.project-gantt-axis .project-gantt-track { height: 16px; border-bottom: 1px solid var(--border); }
+.project-gantt-tick { position: absolute; top: 0; font-size: 9px; color: var(--text2); white-space: nowrap; }
+.project-gantt-bar { position: absolute; top: 1px; height: 12px; border-radius: 3px; }
+.project-gantt-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-gantt-edges { position: absolute; left: 170px; right: 0; top: 22px; width: calc(100% - 170px); pointer-events: none; overflow: visible; }
+.project-gantt-edge path { stroke: var(--text2); stroke-width: 1px; opacity: 0.7; }
+.project-gantt-edge .project-gantt-edge-tip { fill: var(--text2); stroke: none; }
+.project-gantt-edge.extra { display: none; }
+.project-gantt-edges.has-focus .project-gantt-edge { opacity: 0.25; }
+.project-gantt-edges.has-focus .project-gantt-edge.hl { display: inline; opacity: 1; }
+.project-gantt-edge.hl path { stroke: var(--accent); stroke-width: 2.5px; opacity: 1; }
+.project-gantt-edge.hl .project-gantt-edge-tip { fill: var(--accent); }
+.project-gantt-now { position: absolute; top: -1px; font-size: 9px; color: var(--text2); }
+.project-gantt-focus { flex: 0 0 auto; font-size: 10px; line-height: 1.4; padding: 0 6px; margin-left: 4px; }
+.project-focus .project-gantt-scroll { max-width: 100%; }
+.project-focus .project-gantt-chart { max-width: none; }
+.project-gantt-planned { position: absolute; left: 4px; top: 0; font-size: 10px; color: var(--text2); font-style: italic; }
 
 /* Project page: collapsible section cards */
 .project-section-card { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
@@ -7518,11 +7849,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
 
-/* Templates tab sub-tab bar (Automaton templates | Standard tasks). It wraps
+/* Templates tab sub-tab bar (Templates | Standard tasks). It wraps
    inside its own container, so a long sub-tab list never widens the page. */
 .automata-templates-subtabs {
-  flex-wrap: wrap;
-  row-gap: 4px;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -7583,19 +7912,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 /* ── Sessions view modes: list / tiles / compact ─────────────────────────
    The tile + compact variants are the shared .work-tile-grid (drawn by the
    same renderWorkTile as the Automata/Automation cards); these rules only
-   wrap the mode toggle, the per-state summary bar and the Show-more page
-   control that the sessions view adds around the grid. */
-.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
-.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
-.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
-.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.sessions-summary-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
-.sessions-summary-chip { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 11px; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer; }
-.sessions-summary-chip:hover { color: var(--text); border-color: var(--accent2); }
-.sessions-summary-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-.sessions-summary-dot { font-size: 9px; line-height: 1; }
-.sessions-summary-count { font-weight: 700; font-variant-numeric: tabular-nums; }
-.sessions-summary-total { margin-left: auto; font-size: 11px; color: var(--text2); white-space: nowrap; }
+   wrap the per-state summary bar and the Show-more page control that the
+   sessions view adds around the grid. (The view-mode control itself is the
+   native select in the one-line toolbar — .sessions-view-select below.) */
 .sessions-show-more { text-align: center; padding: 10px 0 14px; }
 .session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
 .session-tile-grid .work-tile { padding: var(--session-tile-pad); }
@@ -7615,7 +7934,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .session-tile-grid-compact .work-tile-tags > * { padding-top: 0; padding-bottom: 0; line-height: 1.3; }
 .session-tile-grid-compact .work-tile-progress { height: 3px; }
 @media (prefers-reduced-motion: reduce) {
-  .sessions-mode-btn, .sessions-summary-chip { transition: none; }
+  .sessions-fold-all { transition: none; }
 }
 
 /* ── Sessions: group axes, Automaton → story nesting, saved views ──── */
@@ -7764,16 +8083,49 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .sessions-sheet { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: min(560px, 92vw); max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
 .sessions-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .sessions-sheet-close { background: transparent; border: 0; color: var(--text2); font-size: 16px; cursor: pointer; padding: 4px 8px; }
-.sessions-sheet-body { overflow-y: auto; padding: 4px 0 12px; }
+.sessions-sheet-body {
+  overflow-y: auto;
+  /* Bottom padding so the last section (Status chips and below) stays out
+     of the start-session FAB zone when the sheet docks beside the bottom
+     nav on a phone. */
+  padding: 4px 0 calc(56px + var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px));
+}
 .sessions-sheet-sec { padding: 6px 0; }
 .sessions-sheet-sec h4 { margin: 6px 14px 2px; font-size: 11px; text-transform: uppercase; color: var(--text2); }
 .sessions-sheet-sub { margin: 6px 14px 2px; font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
 .sessions-sheet-chips, .sessions-sheet .tag-filter-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 14px; }
+.sessions-sheet .tag-filter-chips.sessions-tag-wrap { display: block; padding: 0; }
+.sessions-tag-panel { padding: 2px 14px; display: flex; flex-direction: column; gap: 6px; }
+.sessions-tag-search { width: 100%; box-sizing: border-box; padding: 5px 8px; font-size: 12px; background: var(--bg2, var(--bg)); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+.sessions-tag-scroll { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.sessions-tag-axis-head { display: flex; align-items: center; gap: 6px; width: 100%; background: transparent; border: 0; color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; padding: 3px 0; text-align: left; }
+.sessions-tag-caret { width: 10px; }
+.sessions-tag-axis-name { flex: 1; }
+.sessions-tag-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 4px 16px; }
+.sessions-tag-more { background: transparent; border: 0; color: var(--accent2, var(--text2)); font-size: 11px; cursor: pointer; padding: 2px 4px; }
+.sessions-tag-empty { font-size: 12px; color: var(--text2); padding: 4px 0; }
+.sessions-tag-sub { font-size: 11px; text-transform: uppercase; color: var(--text2); margin-top: 4px; }
+.sessions-tag-picker { max-height: 140px; overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; }
+.sessions-tag-pick { display: flex; align-items: baseline; gap: 6px; background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; text-align: left; padding: 5px 8px; cursor: pointer; }
+.sessions-tag-pick:last-child { border-bottom: 0; }
+.sessions-tag-pick.active { background: var(--accent2, rgba(100,100,255,0.2)); color: var(--bg); }
+.sessions-tag-pick-id { font-size: 10px; color: var(--text2); font-family: var(--mono, monospace); }
+.sessions-tag-pick.active .sessions-tag-pick-id { color: inherit; opacity: 0.8; }
+/* Small secondary id text on a name-first chip: the id never leads. */
+.sessions-chip-id { font-size: 9px; color: var(--text2); font-family: var(--mono, monospace); margin-left: 4px; user-select: text; }
+.sessions-tag-chip.active .sessions-chip-id { color: inherit; opacity: 0.75; }
+.sessions-tag-actions { display: flex; gap: 4px; align-items: center; }
+.sessions-tag-selected { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 2px 12px 6px; }
+.sessions-tag-sel-chip { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; padding: 1px 2px 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2, var(--bg)); max-width: 220px; }
+.sessions-tag-sel-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions-tag-sel-x, .sessions-tag-sel-clear { background: transparent; border: 0; color: var(--text2); cursor: pointer; font-size: 11px; padding: 0 5px; }
+@media (max-width: 599px) {
+  .sessions-tag-panel { padding: 2px 10px; gap: 4px; }
+  .sessions-tag-scroll { max-height: 160px; }
+  .sessions-tag-picker { max-height: 110px; }
+}
+@media (min-width: 900px) { .sessions-tag-scroll { max-height: 260px; } }
 .sessions-sheet .filter-chips-collapse { display: flex; }
-.sessions-summary-bar { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 6px; }
-.sessions-summary-chip { flex: 0 0 auto; border: 0; background: transparent; padding: 2px 4px; border-radius: 6px; font-size: 12px; }
-.sessions-summary-sep { color: var(--text2); flex: 0 0 auto; }
-.sessions-summary-total { flex: 0 0 auto; }
 @media (max-width: 640px) {
   .sessions-filters-label { display: none; }
   .sessions-sheet-backdrop { align-items: flex-end; }
@@ -7782,34 +8134,74 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 @keyframes sessionsSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .sessions-sheet { animation: none !important; } }
 
-/* ── Sessions top row: search box, filters slot, mode buttons ── */
-.sessions-topbar { display: block; }
-.sessions-topbar-servers:empty { display: none; }
-.sessions-search-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px; }
+/* ── Sessions one-line toolbar: one row, never wraps at any width ──────
+   [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode]
+   — display:flex without flex-wrap at every width; the search row is the
+   only flexible member (flex:1, min-width:0) so it absorbs the slack while
+   the four fixed controls keep a usable size (bounded max-widths +
+   shrinking select text). The search + active-filter count stay on their
+   own row below the toolbar. */
+.sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.sessions-topbar .sessions-server-select { flex: 0 0 auto; min-width: 84px; max-width: 40%; font-size: 12px; }
+.sessions-topbar .sessions-search-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
-.sessions-search-row .session-filter-input { padding: 6px 28px 6px 10px; font-size: 13px; }
+.sessions-topbar .sessions-search-row .session-filter-input { padding: 5px 26px 5px 8px; font-size: 12px; }
+.sessions-topbar .sessions-fold-all { flex: 0 0 auto; font-size: 14px; line-height: 1; padding: 2px 7px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text2); cursor: pointer; }
+.sessions-topbar .sessions-fold-all:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-topbar .sessions-fold-all[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-topbar .sessions-view-select { flex: 0 0 auto; max-width: 34%; font-size: 12px; }
 .session-filter-clear[hidden] { display: none; }
 .sessions-filters-slot:empty { display: none; }
-.sessions-search-count { padding: 2px 14px 4px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.sessions-search-count { padding: 4px 12px 6px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
-  .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-  .sessions-topbar-servers { flex: 0 1 auto; min-width: 0; max-width: 38%; overflow-x: auto; white-space: nowrap; }
-  .sessions-topbar-servers .server-picker-bar { flex-wrap: nowrap; padding: 2px 4px; border-bottom: 0; }
-  .sessions-search-row { flex: 1 1 auto; min-width: 0; padding: 0; }
-  .sessions-search-row .session-filter-input { padding: 4px 24px 4px 8px; font-size: 12px; }
-  .sessions-topbar .sessions-mode-toggle { flex: 0 0 auto; padding: 0; border-bottom: 0; gap: 2px; }
-  .sessions-topbar .sessions-mode-btn { font-size: 0; padding: 3px 7px; }
-  .sessions-topbar .sessions-mode-btn::before { content: attr(data-icon); font-size: 14px; line-height: 1; }
+  .sessions-topbar { gap: 4px; padding: 4px 8px; }
+  .sessions-topbar .sessions-server-select { min-width: 64px; max-width: 34%; }
+  .sessions-topbar .sessions-view-select { max-width: 30%; }
 }
 
-/* ── Sessions: fold-all control and phone tag collapse ── */
-.sessions-fold-row { display: flex; justify-content: flex-end; padding: 2px 12px; }
-.sessions-fold-all { font-size: 12px; padding: 3px 10px; }
 .sessions-group-header, .automaton-header, .story-header { min-height: 40px; box-sizing: border-box; }
 .session-card-tags { display: contents; }
 .session-tags-more-chip { font-size: 10px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); cursor: pointer; font-weight: 600; }
 @media (max-width: 640px) {
   .session-card-tags:not(.open) { display: inline-flex; flex-wrap: nowrap; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; }
   .session-card-tags:not(.open) .tag-chip { white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Task routing: Settings card table and the Automaton detail routing column. */
+.task-routing-table-wrap { max-width: 100%; overflow-x: auto; }
+.task-routing-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.task-routing-table th, .task-routing-table td { padding: 3px 4px; text-align: left; vertical-align: top; }
+.task-routing-select { font-size: 12px; max-width: 100%; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; }
+.task-routing-row-invalid { outline: 1px solid var(--error); }
+.task-routing-row-error { color: var(--error); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.task-routing-preview-wrap { max-width: 100%; overflow-x: auto; }
+.prd-task-routing-col { font-size: 10px; color: var(--text2); max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-task-routing-line { display: none; font-size: 11px; color: var(--text2); padding: 0 8px 4px 28px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .task-routing-table thead { display: none; }
+  .task-routing-table, .task-routing-table tbody, .task-routing-table tr, .task-routing-table th, .task-routing-table td { display: block; width: 100%; box-sizing: border-box; }
+  .task-routing-table tr { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; padding: 4px; }
+  .task-routing-table td::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text2); }
+  .task-routing-select { width: 100%; margin-bottom: 2px; }
+}
+@media (max-width: 520px) {
+  .prd-task-routing-col { display: none; }
+  .prd-task-routing-line { display: block; }
+}
+
+/* Phone-width rollup summaries on the session detail page. */
+.session-detail-tags-rollup,
+.session-detail-scheduled-rollup {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 11px;
+  padding: 6px 10px;
+  min-height: 32px;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
 }

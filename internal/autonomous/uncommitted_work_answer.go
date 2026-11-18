@@ -14,6 +14,9 @@
 //	discard  removes exactly the listed files that are still uncommitted, and
 //	         nothing else, then runs the task again or lets the Automaton roll
 //	         up again.
+//	ignore   touches no file and clears the hold: used for a hold that lists
+//	         only the daemon's own marker files, which are not work to commit
+//	         (see sweepMarkerOnlyUncommittedQuestions).
 //	retry    touches no file: the task runs again, or the roll-up looks at the
 //	         worktree again (and holds again when files remain).
 //
@@ -174,7 +177,7 @@ func (m *Manager) resolveUncommittedWork(c QuestionChange) (prdID string, resolv
 	}
 	option := c.Answer.ChosenOptionID
 	switch option {
-	case UncommittedOptionCommit, UncommittedOptionDiscard, UncommittedOptionRetry:
+	case UncommittedOptionCommit, UncommittedOptionDiscard, UncommittedOptionRetry, UncommittedOptionIgnore:
 	default:
 		// The default "hold" (or anything else) keeps the hold as it is.
 		return "", false
@@ -228,6 +231,8 @@ func (m *Manager) resolveUncommittedWork(c QuestionChange) (prdID string, resolv
 		resolved = m.answerUncommittedCommit(ctx, r)
 	case UncommittedOptionDiscard:
 		resolved = m.answerUncommittedDiscard(ctx, r)
+	case UncommittedOptionIgnore:
+		resolved = m.answerUncommittedIgnore(r)
 	default:
 		resolved = m.answerUncommittedRetry(r)
 	}
@@ -462,6 +467,21 @@ func (m *Manager) answerUncommittedRetry(r *uncommittedAnswer) bool {
 		return true
 	}
 	return m.resetHeldTask(r, UncommittedOptionRetry, "the task runs again")
+}
+
+// answerUncommittedIgnore is the ignore answer: it clears the hold and touches
+// nothing else. No file is committed, discarded or deleted. A task hold goes
+// back to pending through resetTask (which drops the hold and keeps the attempt
+// history), so the task runs again and its completion check looks at the tree
+// afresh; an Automaton hold is cleared and the roll-up runs again. It reports
+// whether the hold was resolved.
+func (m *Manager) answerUncommittedIgnore(r *uncommittedAnswer) bool {
+	note := "ignored: the listed files were left as they are; nothing was committed, discarded or deleted"
+	if r.t == nil {
+		m.clearAutomatonUncommittedHold(r, UncommittedOptionIgnore, note)
+		return true
+	}
+	return m.resetHeldTask(r, UncommittedOptionIgnore, note)
 }
 
 // resetHeldTask sends the held task back to pending through resetTask, the path

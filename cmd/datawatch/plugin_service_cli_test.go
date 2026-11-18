@@ -25,7 +25,7 @@ import (
 
 // pluginCalls records every request the fake daemon saw, in order.
 type pluginCalls struct {
-	mu    sync.Mutex
+	mu      sync.Mutex
 	methods []string
 	paths   []string
 	bodies  []any

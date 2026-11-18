@@ -210,4 +210,3 @@ func TestComputePlacement_PutInvalidRejectsWholePatch(t *testing.T) {
 		t.Fatalf("mem_headroom_pct = %v, want the default %d", got["mem_headroom_pct"], config.ComputePlacementDefaultMemHeadroomPct)
 	}
 }
-

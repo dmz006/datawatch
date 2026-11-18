@@ -145,6 +145,9 @@ func (m *Manager) resolveAutoFixSkipApproval(prd *PRD) bool {
 // ceiling summed across every category — before a further auto-retry
 // of any kind is attempted.
 func (m *Manager) retryBudgetRemaining(prd *PRD, category string) bool {
+	if m.prdIsHeld(prd.ID) {
+		return false // no automatic retry for a held Automaton
+	}
 	budget := m.resolveRetryPolicy(prd, category)
 	spent := prd.RetryCountsByCategory[category]
 	if spent >= budget {
@@ -237,7 +240,8 @@ func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail strin
 // recordFailureLearning fires here, at that exact moment, matching
 // every other "genuinely exhausted" Learning write in this package.
 func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail string) bool {
-	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now()}
+	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now(),
+		Phrases: planningFailurePhrases(prd, source, detail)}
 	if m.retryBudgetRemaining(prd, category) {
 		_ = m.consumeRetryBudget(prd, category)
 		reason.Retryable = true
@@ -288,6 +292,7 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 				Source:     source,
 				Retryable:  retryable,
 				OccurredAt: time.Now(),
+				Phrases:    planningFailurePhrases(prd, source, cause.Error()),
 			}
 		})
 	}
@@ -302,6 +307,9 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 		return
 	}
 	m.emitPRDStatus(prd, old, nil, nil)
+	// A non-retryable planning failure raises its one alert and, when the
+	// spec can be reworded by the lint, its one question.
+	m.onPlanningFailureTerminal(prd)
 }
 
 // checkPersistedDecompose re-reads the PRD and its stories from the store
@@ -505,6 +513,9 @@ func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, t
 // attempt number named by the caller, for callers that create the work
 // before consuming the retry budget.
 func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVerdict, targetStoryID string, attempt int) (*Story, *Task, error) {
+	if m.prdIsHeld(prd.ID) {
+		return nil, nil, fmt.Errorf("automaton %s is on hold; no corrective work is added until the hold is released", prd.ID)
+	}
 	title := autoFixTaskTitlePrefix + fmt.Sprintf("%s findings (attempt %d)", verdict.Guardrail, attempt)
 	spec := contentFixHint(verdict)
 
@@ -613,6 +624,9 @@ func consecutiveCeilingFailures(t *Task) int {
 // fewer, it does nothing and the caller retries as usual. The error is from
 // saving the task.
 func (m *Manager) holdAfterCeilingFailures(prd *PRD, t *Task) (held bool, err error) {
+	if m.prdIsHeld(prd.ID) {
+		return false, nil // the tasks of a held Automaton keep their state
+	}
 	var count int
 	m.store.WithLock(func() { count = consecutiveCeilingFailures(t) })
 	if count < ceilingReviewThreshold {

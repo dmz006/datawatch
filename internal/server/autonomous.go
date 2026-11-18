@@ -17,6 +17,8 @@
 //   GET    /api/autonomous/prds/{id}/plan_coverage
 //                                                 read the stored plan coverage record + the filters in effect now
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
+//   POST   /api/autonomous/completed/migrate [?dry_run=&limit=&id=]
+//                                                 move cancelled, merged Automata to Completed
 //   POST   /api/autonomous/shipped/backfill [?dry_run=true]
 //                                                 shipped-state backfill pass over the base repo's main branch
 
@@ -158,6 +160,34 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 			}
+			// Reserve knobs: whole non-negative numbers, same rejection rule as
+			// PUT /api/config. null is absent and passes.
+			if raw, ok := top["backoff_reserve_for_review"]; ok {
+				var n interface{}
+				if json.Unmarshal(raw, &n) != nil {
+					http.Error(w, "autonomous.backoff_reserve_for_review: must be a whole number of slots >= 0", http.StatusBadRequest)
+					return
+				}
+				if n != nil {
+					if _, verr := parseBackoffReserveForReview(n); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
+			if raw, ok := top["backoff_reserve_tokens_per_hour"]; ok {
+				var n interface{}
+				if json.Unmarshal(raw, &n) != nil {
+					http.Error(w, "autonomous.backoff_reserve_tokens_per_hour: must be a whole number of tokens >= 0", http.StatusBadRequest)
+					return
+				}
+				if n != nil {
+					if _, verr := parseBackoffReserveTokensPerHour(n); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
 			// verifier_policy: an unknown mode, an empty backend entry or a
 			// negative cap rejects the whole PUT. null is absent and passes.
 			if raw, ok := top["verifier_policy"]; ok && string(raw) != "null" {
@@ -198,14 +228,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			// alert off and is preserved by the pointer below).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes      *float64 `json:"idle_alert_minutes"`
-					TriageAlertMinutes    *float64 `json:"triage_alert_minutes"`
-					MergePendingMode      *string  `json:"merge_pending_mode"`
-					MergePendingAlert     *float64 `json:"merge_pending_alert_minutes"`
-					MergedMemberPolicy    *string  `json:"merged_member_policy"`
-					AgentInsertPolicy     *string  `json:"agent_insert_policy"`
-					CreateSearchMode      *string  `json:"create_search_mode"`
-					CreateSearchThreshold *float64 `json:"create_search_threshold"`
+					IdleAlertMinutes   *float64 `json:"idle_alert_minutes"`
+					TriageAlertMinutes *float64 `json:"triage_alert_minutes"`
+					MergePendingMode   *string  `json:"merge_pending_mode"`
+					MergePendingAlert  *float64 `json:"merge_pending_alert_minutes"`
+					// MergePendingIncludeTerminal: presence (even false) is what
+					// matters; the unmarshal is the type check (a string in a bool
+					// key rejects the PUT), unset keeps the current value.
+					MergePendingIncludeTerminal *bool    `json:"merge_pending_include_terminal"`
+					MergedMemberPolicy          *string  `json:"merged_member_policy"`
+					AgentInsertPolicy           *string  `json:"agent_insert_policy"`
+					CreateSearchMode            *string  `json:"create_search_mode"`
+					CreateSearchThreshold       *float64 `json:"create_search_threshold"`
 					// Cleanup keys (cleanup_mode, cleanup_retention_hours,
 					// cleanup_max_removals_per_pass, disk_alert_percent).
 					// Declared so a type mismatch (a string in a numeric
@@ -693,6 +727,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				Backend        string   `json:"backend,omitempty"`
 				Model          string   `json:"model,omitempty"`
 				Effort         string   `json:"effort,omitempty"`
+				ParentPRDID    string   `json:"parent_prd_id,omitempty"`   // optional parent Automaton; the child inherits from it
 				Type           string   `json:"type,omitempty"`            // BL221 Phase 4 — automaton type
 				GuidedMode     bool     `json:"guided_mode,omitempty"`     // BL221 Phase 4 — step-by-step operator checkpoints
 				Skills         []string `json:"skills,omitempty"`          // BL221 Phase 4 — skill IDs passed to task sessions
@@ -722,7 +757,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// project_dir = local checkout; project_profile = F10 git
 			// clone (worker side); cluster_profile alone is invalid
 			// because there's no source code to work on.
-			if strings.TrimSpace(req.ProjectDir) == "" && strings.TrimSpace(req.ProjectProfile) == "" {
+			parentID := strings.TrimSpace(req.ParentPRDID)
+			if parentID != "" {
+				if _, ok := s.autonomousMgr.GetPRD(parentID); !ok {
+					http.Error(w, "parent Automaton not found: "+parentID, http.StatusNotFound)
+					return
+				}
+			}
+			// A child inherits its parent's project, so a parent id stands in
+			// for project_dir / project_profile.
+			if parentID == "" && strings.TrimSpace(req.ProjectDir) == "" && strings.TrimSpace(req.ProjectProfile) == "" {
 				// BL407 Phase 1's worktree auto-assignment (Decision 2)
 				// covers exactly this case at Run() time: when no
 				// project_dir/project_profile/cluster_profile is given
@@ -754,7 +798,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, unknownKindMsg(req.Kind), http.StatusBadRequest)
 				return
 			}
-			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
+			var prd any
+			var err error
+			if parentID != "" {
+				prd, err = s.autonomousMgr.CreatePRDWithParent(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort, parentID)
+			} else {
+				prd, err = s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
+			}
 			if err != nil {
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
@@ -843,11 +893,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// Search-before-create: a read-only check on the stored Automaton.
 			// Only on mode adds to the reply; every other case writes the reply
 			// as it always has.
+			// The spec check lints the stored spec and rides on the reply;
+			// it never blocks the create.
+			createExtra := map[string]any{"spec_check": autonomous.SpecCheckFindings(req.Spec)}
 			if warnings := s.createSearchAfterStore(r, prd, prdID); warnings != nil {
-				s.writeCreateReplyWithWarnings(w, r, prd, warnings)
-				return
+				createExtra["overlap_warnings"] = warnings
 			}
-			s.writeAutonomousResult(w, r, prd, "", "", "")
+			s.writeReplyWithFields(w, r, prd, createExtra)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -1273,6 +1325,61 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "reject", "automaton", id, map[string]any{"reason": req.Reason}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Landing state — operator decision on the Automaton's work branch. The
+	// landing record (state, commit, actor, at, reason) already rides on the
+	// PRD read; keep records the branch as kept unmerged on purpose, drop
+	// that the work will not be merged. Both need a non-empty reason and are
+	// refused once the branch has landed.
+	case "landing/keep", "landing_keep":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor, Reason string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		ldr, ok := s.autonomousMgr.(landingDecider)
+		if !ok {
+			http.Error(w, "landing decisions are not supported by this daemon", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ldr.KeepLanding(id, req.Actor, req.Reason)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "landing_keep", "automaton", id, map[string]any{"reason": req.Reason})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+	case "landing/drop":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor, Reason string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		ldr, ok := s.autonomousMgr.(landingDecider)
+		if !ok {
+			http.Error(w, "landing decisions are not supported by this daemon", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ldr.DropLanding(id, req.Actor, req.Reason)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "landing_drop", "automaton", id, map[string]any{"reason": req.Reason})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "reset_to_draft":
 		// v8.20.1 — operator restores a cancelled PRD to draft for re-decompose + re-run.
 		if r.Method != http.MethodPost {
@@ -1352,7 +1459,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "request_revision", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
-		s.writeAutonomousResult(w, r, updated, "", "", "")
+		s.writeReplyWithFields(w, r, updated, map[string]any{"spec_check": autonomous.SpecCheckFindings(prdSpecText(updated) + "\n" + req.Note)})
 	case "edit_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1366,14 +1473,19 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			NewSpec    string `json:"new_spec"`
 			ReadOnly   *bool  `json:"read_only,omitempty"`
 			ReportPath string `json:"report_path,omitempty"`
-			Actor      string `json:"actor"`
+			// VerificationScript is one repo-relative script file;
+			// VerificationScriptReason is the stated exemption for a task
+			// with no script. Empty leaves each unchanged.
+			VerificationScript       string `json:"verification_script,omitempty"`
+			VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+			Actor                    string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil && req.ReportPath == "") {
-			http.Error(w, "task_id and at least one of new_spec / read_only / report_path required", http.StatusBadRequest)
+		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil && req.ReportPath == "" && req.VerificationScript == "" && req.VerificationScriptReason == "") {
+			http.Error(w, "task_id and at least one of new_spec / read_only / report_path / verification_script / verification_script_reason required", http.StatusBadRequest)
 			return
 		}
 		if msg, refuse := truncationRefusal("new_spec", req.NewSpec); refuse {
@@ -1383,12 +1495,16 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.ReportPath, req.Actor)
+		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.ReportPath, req.VerificationScript, req.VerificationScriptReason, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "edit_task", "automaton", id, map[string]any{"task_id": req.TaskID}) // GH#201 Phase 4
+		s.audit(r.Context(), "edit_task", "automaton", id, map[string]any{ // GH#201 Phase 4
+			"task_id":                    req.TaskID,
+			"verification_script":        req.VerificationScript,
+			"verification_script_reason": req.VerificationScriptReason,
+		})
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "edit_story":
@@ -2640,6 +2756,17 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Per-Automaton project link: a configured project name (empty clears).
+	case "set_project":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		s.handleSetPRDProject(w, r, id)
+
 	// Per-Automaton kind: feature, bug, other or maintenance (empty = derive again).
 	case "set_kind":
 		if r.Method != http.MethodPost {
@@ -3308,6 +3435,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "resume", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
+
+	// Operator hold: wait by decision. A second hold call on a held
+	// Automaton extends the hold.
+	case "hold":
+		s.handleAutomatonHold(w, r, id)
+
+	case "release_hold":
+		s.handleAutomatonReleaseHold(w, r, id)
 
 	// BL303 S2 T06 — per-Automaton guardrail override.
 	case "guardrails":
@@ -4227,7 +4362,7 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, a)
+		writeJSONOK(w, s.withAutomationProject(a))
 	case http.MethodPut:
 		var req automationReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -4527,9 +4662,17 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	tagSel, projectWanted := splitProjectFilter(r, tagSel)
 	shipWanted, shipSet, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
 	if err != nil {
 		return nil, err
+	}
+	aliasRes := autonomous.NewProjectAliasResolver(s.projectAliasMap())
+	withProject := func(x any) any {
+		if a := rawAutomationOf(x); a != nil {
+			return withProjectField(x, aliasRes.Resolve("", a.ProjectDir))
+		}
+		return x
 	}
 	// With no tag selection the shipped rule is the existing behavior:
 	// the shipped filter is active only when shipSet and the shipped surface
@@ -4537,8 +4680,12 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 	// When a tag selection is present it is always active — it filters the
 	// whole list on top of whatever the shipped rule says.
 	shipActive := shipSet && ship.EffectiveEnabled()
-	if len(tagSel.Tags) == 0 && !shipActive {
-		return list, nil
+	if len(tagSel.Tags) == 0 && projectWanted == "" && !shipActive {
+		out := make([]any, len(list))
+		for i, x := range list {
+			out[i] = withProject(x)
+		}
+		return out, nil
 	}
 	kept := make([]any, 0, len(list))
 	for _, x := range list {
@@ -4546,10 +4693,13 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 		if len(tagSel.Tags) > 0 && !tagSel.MatchesObjectTags(a.SystemTags, nil) {
 			continue
 		}
+		if projectWanted != "" && !projectFilterMatches(projectWanted, aliasRes.Resolve("", a.ProjectDir), a.SystemTags) {
+			continue
+		}
 		if shipActive && !autonomous.AutomationShippedMatch(a, true, shipWanted) {
 			continue
 		}
-		kept = append(kept, x)
+		kept = append(kept, withProject(x))
 	}
 	return kept, nil
 }
@@ -4558,8 +4708,8 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 // the per-state count pair across the whole stored PRD list and Automation
 // list under the in-force autonomous.shipped surface (shipped.go): one
 // count per displayed status. A PRD cancelled without its work landing
-// counts as "cancelled"; a PRD whose work landed counts as "shipped", the
-// two separated while enabled + count_separately hold. Read-only.
+// counts as "cancelled"; a PRD whose work landed counts as "completed" with
+// the stored-completed PRDs while the shipped surface is enabled. Read-only.
 func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
@@ -4573,7 +4723,7 @@ func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Re
 		return
 	}
 	ship := s.shippedSettings()
-	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	sep := ship.EffectiveEnabled()
 	shippedByDay := shippedDayCounts{}
 	prds := map[string]int{}
 	for _, raw := range s.autonomousMgr.ListPRDs() {
@@ -4642,6 +4792,86 @@ func (s *Server) handleAutonomousShippedBackfill(w http.ResponseWriter, r *http.
 	}
 	s.audit(r.Context(), "shipped_backfill", "autonomous", "",
 		map[string]any{"dry_run": dryRun, "report": report})
+	writeJSONOK(w, report)
+}
+
+// handleAutonomousCompletedMigrate serves POST
+// /api/autonomous/completed/migrate. It moves cancelled Automata and
+// Automations whose work is merged to status Completed and never kills a
+// session. Parameters come from the query string or a JSON body (the query
+// wins): dry_run (bool; reports without writing), limit (non-negative int;
+// the most records one run changes, 0 = no limit) and id (optional single
+// record). A bad dry_run or limit is a 400; a run refused because a final
+// gate is running is a 409; the response is the manager's report.
+func (s *Server) handleAutonomousCompletedMigrate(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		DryRun json.RawMessage `json:"dry_run"`
+		Limit  json.RawMessage `json:"limit"`
+		ID     string          `json:"id"`
+	}
+	if r.Body != nil {
+		if raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20)); len(bytes.TrimSpace(raw)) > 0 {
+			if err := json.Unmarshal(raw, &body); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	q := r.URL.Query()
+	dryStr := strings.Trim(strings.TrimSpace(string(body.DryRun)), `"`)
+	if dryStr == "null" {
+		dryStr = ""
+	}
+	if v := q.Get("dry_run"); v != "" {
+		dryStr = v
+	}
+	limStr := strings.Trim(strings.TrimSpace(string(body.Limit)), `"`)
+	if limStr == "null" {
+		limStr = ""
+	}
+	if v := q.Get("limit"); v != "" {
+		limStr = v
+	}
+	id := strings.TrimSpace(body.ID)
+	if v := strings.TrimSpace(q.Get("id")); v != "" {
+		id = v
+	}
+	dryRun := false
+	if dryStr != "" {
+		d, err := strconv.ParseBool(dryStr)
+		if err != nil {
+			http.Error(w, "dry_run must be a boolean ('true' or 'false')", http.StatusBadRequest)
+			return
+		}
+		dryRun = d
+	}
+	limit := 0
+	if limStr != "" {
+		n, err := strconv.Atoi(limStr)
+		if err != nil || n < 0 {
+			http.Error(w, "limit must be a non-negative integer", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+	report, err := s.autonomousMgr.MigrateCompleted(dryRun, limit, id)
+	if err != nil {
+		if errors.Is(err, autonomous.ErrCompletedMigrationBusy) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "completed_migrate", "autonomous", id,
+		map[string]any{"dry_run": dryRun, "limit": limit, "report": report})
 	writeJSONOK(w, report)
 }
 
@@ -5086,6 +5316,211 @@ func addGuardrailAuditDetail(detail map[string]any, backend, model *string) {
 func writeJSONOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// holdUntilForms names the values the hold-until field accepts, for a 400.
+const holdUntilForms = "an RFC 3339 time such as 2026-12-01T09:00:00Z, a date such as 2026-12-01 (the end of that day in UTC) or a duration such as 72h"
+
+// parseHoldUntil reads the hold-until field. Empty means no look-again time.
+// A date is the end of that day in UTC; a duration counts from now.
+func parseHoldUntil(raw string, now time.Time) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t, nil
+	}
+	if d, err := time.Parse("2006-01-02", raw); err == nil {
+		t := d.Add(24*time.Hour - time.Second).UTC()
+		return &t, nil
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		t := now.Add(d)
+		return &t, nil
+	}
+	return nil, fmt.Errorf("bad until %q: use %s", raw, holdUntilForms)
+}
+
+// handleAutomatonHold serves POST /api/autonomous/prds/{id}/hold. Body
+// {reason, condition, until, actor}. A held Automaton's hold is extended.
+func (s *Server) handleAutomatonHold(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	h, ok := s.autonomousMgr.(automatonHolder)
+	if !ok {
+		http.Error(w, "hold is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		Reason    string `json:"reason"`
+		Condition string `json:"condition"`
+		Until     string `json:"until"`
+		Actor     string `json:"actor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	until, err := parseHoldUntil(req.Until, time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	hr := autonomous.HoldRequest{Reason: req.Reason, Condition: req.Condition, Until: until}
+	extend := false
+	if cur, found := s.autonomousMgr.GetPRD(id); found {
+		if p, isPRD := cur.(*autonomous.PRD); isPRD && p.Status == autonomous.PRDHeld {
+			extend = true
+		}
+	}
+	if !extend && strings.TrimSpace(req.Reason) == "" {
+		http.Error(w, "a hold needs a reason; say why the Automaton is waiting", http.StatusBadRequest)
+		return
+	}
+	var updated any
+	action := "hold"
+	if extend {
+		updated, err = h.ExtendHold(id, hr, req.Actor)
+		action = "hold_extend"
+	} else {
+		updated, err = h.Hold(id, hr, req.Actor)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "hold", "automaton", id, map[string]any{
+		"reason": req.Reason, "condition": req.Condition, "until": req.Until, "extended": extend, "kind": action,
+	})
+	writeJSONOK(w, updated)
+}
+
+// handleAutomatonReleaseHold serves POST /api/autonomous/prds/{id}/release_hold.
+// Body {actor, note}. The Automaton returns to the status it had.
+func (s *Server) handleAutomatonReleaseHold(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	h, ok := s.autonomousMgr.(automatonHolder)
+	if !ok {
+		http.Error(w, "hold is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		Actor string `json:"actor"`
+		Note  string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	updated, err := h.ReleaseHold(id, req.Actor, req.Note)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "release_hold", "automaton", id, map[string]any{"note": req.Note})
+	writeJSONOK(w, updated)
+}
+
+// handleAutonomousHeld serves GET /api/autonomous/held: the held group.
+func (s *Server) handleAutonomousHeld(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	hr, ok := s.autonomousMgr.(heldGroupReader)
+	if !ok {
+		http.Error(w, "held group is not available", http.StatusNotImplemented)
+		return
+	}
+	writeJSONOK(w, hr.HeldAutomata())
+}
+
+// handleAutonomousHeldMigrate serves POST /api/autonomous/held/migrate. Body
+// {dry_run, ids, reason, condition, until, actor}. dry_run defaults to true
+// when ids is empty; a real run needs ids and a reason. 409 while a final
+// gate is running.
+func (s *Server) handleAutonomousHeldMigrate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	hm, ok := s.autonomousMgr.(holdMigrator)
+	if !ok {
+		http.Error(w, "hold migration is not available", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		DryRun    *bool    `json:"dry_run"`
+		IDs       []string `json:"ids"`
+		Reason    string   `json:"reason"`
+		Condition string   `json:"condition"`
+		Until     string   `json:"until"`
+		Actor     string   `json:"actor"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	dryRun := len(req.IDs) == 0
+	if req.DryRun != nil {
+		dryRun = *req.DryRun
+	}
+	if !dryRun {
+		if len(req.IDs) == 0 {
+			http.Error(w, "a real run needs ids; send dry_run true to list the candidates", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Reason) == "" {
+			http.Error(w, "a real run needs a reason from the operator", http.StatusBadRequest)
+			return
+		}
+	}
+	until, err := parseHoldUntil(req.Until, time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	report, err := hm.MigrateToHold(autonomous.HoldMigrationOpts{
+		DryRun: dryRun, IDs: req.IDs, Reason: req.Reason, Condition: req.Condition, Until: until, Actor: req.Actor,
+	})
+	if err != nil {
+		if errors.Is(err, autonomous.ErrHoldMigrationBusy) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "hold_migrate", "autonomous", "",
+		map[string]any{"dry_run": dryRun, "ids": req.IDs, "report": report})
+	writeJSONOK(w, report)
 }
 
 // parkedResumer is the optional AutonomousAPI extension that resumes a PRD

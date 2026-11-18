@@ -43,7 +43,15 @@ func configureRequestBody(key, value string) string {
 		if json.Unmarshal([]byte(value), &m) == nil && m != nil {
 			val = m
 		}
-	} else if key == "autonomous.worker_profile" {
+	} else if key == "autonomous.task_routing" {
+		// The whole routing block is a JSON object. Text that is one goes out
+		// as an object; anything else goes out as a string, which the daemon
+		// skips and reports (the block is checked before it replaces the live one).
+		var m map[string]any
+		if json.Unmarshal([]byte(value), &m) == nil && m != nil {
+			val = m
+		}
+	} else if key == "autonomous.task_routing.active_profile" || key == "autonomous.worker_profile" {
 		// A profile name is always a string, even when it looks like a number.
 		val = value
 	} else if value == "true" || value == "false" {

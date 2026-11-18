@@ -49,7 +49,7 @@ reference is in [operations.md](../operations.md).
 
 | Check | Setting | What it looks at |
 |---|---|---|
-| Pre-start verifier | `autonomous.checks.pre_start_verifier` | A task's verification script exists, is executable and starts with a shebang line, before the task starts |
+| Pre-start verifier | `autonomous.checks.pre_start_verifier` | A task's verification script exists, is executable and starts with a shebang line, before the task starts. A missing script the spec supplies as a verbatim block is written first, and one the spec tells the worker to create is accepted at start (see [verification scripts](automaton-verification-scripts.md#a-script-that-does-not-exist-yet)) |
 | Plan rules | `autonomous.checks.plan_rules` | A plan with a feature but no test, a tracker id in a new name, or a fixed release version |
 | After-done checklist | `autonomous.checks.after_done` | A completed Automaton: version files, change log, configuration reference, parity issue, registry row |
 | Registry check | `autonomous.checks.registry_readme` | The registry table against the plan documents |

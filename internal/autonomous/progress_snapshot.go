@@ -257,6 +257,7 @@ type ProgressProjectPoint struct {
 	Running   int     `json:"running"`
 	Waiting   int     `json:"waiting"`
 	Blocked   int     `json:"blocked"`
+	Held      int     `json:"held"` // a snapshot saved before holds existed reads as zero
 	Tasks     int     `json:"tasks"`
 	TasksDone int     `json:"tasks_done"`
 	TasksLeft int     `json:"tasks_left"`
@@ -315,7 +316,7 @@ func Trend(snaps []ProgressSnapshot, project string) ProgressTrend {
 			g := s.Grouped.ByProject[project]
 			t.ProjectPoints = append(t.ProjectPoints, ProgressProjectPoint{
 				Date: s.Date, Reason: s.Reason,
-				PRDs: g.PRDs, Done: g.Done, Running: g.Running, Waiting: g.Waiting, Blocked: g.Blocked,
+				PRDs: g.PRDs, Done: g.Done, Running: g.Running, Waiting: g.Waiting, Blocked: g.Blocked, Held: g.Held,
 				Tasks: g.Tasks, TasksDone: g.TasksDone, TasksLeft: g.TasksLeft, WorkHours: g.WorkHours,
 			})
 		}

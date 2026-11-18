@@ -708,23 +708,25 @@ export DATAWATCH_SECURE_PASSWORD="your-passphrase"
 datawatch --secure start
 ```
 
-When `--secure` is set, **all data files** in `~/.datawatch/` are encrypted, not just `config.yaml`:
+When `--secure` is set, `config.yaml` **and a defined set of data files** in `~/.datawatch/` are encrypted. This is not every file in the folder; the complete list, and the files that stay plain, are in [encryption.md](encryption.md). The main ones:
 
 | File | Contents |
 |---|---|
 | `config.yaml` | Bot tokens, API keys, credentials |
-| `sessions.json` | Session metadata and task descriptions |
+| `sessions.d/` (session records) and `sessions-archive.jsonl` | Session metadata and task descriptions (the legacy `sessions.json` is read only for migration) |
 | `schedule.json` | Scheduled commands |
 | `commands.json` | Saved command library |
 | `filters.json` | Output filter rules |
 | `alerts.json` | System alert history |
+| `sessions/<id>/output.log.enc` | Session output |
 
+Not covered: token and credential files, the Automaton store, spend files, most tracker files, audit and trace logs and TLS private keys. Use disk-level encryption for those.
 **How it works:**
-- The config file is encrypted with XChaCha20-Poly1305 using Argon2id key derivation (64 MB, 4 threads, run once). The salt is embedded in the config file header.
-- A 32-byte data key is derived from the same password + salt — this avoids re-running the expensive KDF on every session state update.
+- The config file is encrypted with XChaCha20-Poly1305 using Argon2id key derivation (512 MiB, 4 threads, time 4). The salt is embedded in the config file header.
+- A 32-byte data key is derived from the same password + salt with a lighter Argon2id setting (64 MiB) — this avoids re-running the expensive KDF on every session state update.
 - All data store writes use XChaCha20-Poly1305 with a fresh random nonce per write.
 - Session output logs use streaming block encryption (DWLOG1 format) via FIFO.
-- On first `--secure` start, existing plaintext files are automatically migrated to encrypted.
+- On first `--secure` start, a fixed list of existing plaintext files is migrated to encrypted; other stores convert the next time they are saved.
 
 ### Important Warnings
 

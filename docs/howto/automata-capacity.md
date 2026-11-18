@@ -310,6 +310,14 @@ pool set than the worker's, the hand-off is refused and the verifier is
 admitted separately with its own lease; a second slot is never stacked on
 top of the first.
 
+The guardrail judge takes the same hand-off: when a task's judge starts it
+inherits the task's own worker lease (holder `judge:<task>`) instead of
+acquiring a fresh slot, so it can never queue behind the very lease it was
+about to inherit. On a node with a verifier pool the worker lease is simply
+released and the judge takes a `node-verify:<node>` slot; otherwise the
+lease is re-keyed to `judge:<task>` in place — no fresh slot, no window
+in which a sibling can take it, and the task is never counted twice.
+
 ## An idle verifier is the verifier's own incident
 
 When a task moves to verification and the verifier session goes idle — no
@@ -352,18 +360,101 @@ unstarted or paused Automaton, a tree lock) does not use up the timeout.
 
 ### Pool fall-through
 
+> **Operator review:** fall-through is off by default. Before turning it on, review which LLM entries you mark as **Allowed fall-through target**, since a waiting worker may then run on any of them. The glossary entries are in [glossary.md](../glossary.md#pool-fall-through).
+
 By default a task always waits for its own pool, explicit backend or not.
 Turn on `autonomous.capacity_fallthrough` (default off) and a worker task
 whose requested pool cannot be granted right now is admitted on another
 allowed backend and model that has room, instead of waiting. The first
 alternate the ledger would grant wins, in preference order. If the
 requested pool has room, or no alternate does, nothing changes and the task
-waits as usual. Only worker tasks fall through; verifiers do not.
+waits as usual. Only worker tasks fall through; verifiers, judges and
+planners do not.
+
+The requested pool is the one the task's **effective backend** maps to. The
+backend is resolved in this order: task, story, PRD, Automaton, the
+Automaton's lane preference (the Claude or GPU lane backend), then the
+daemon default (`execution_backend`). A task that falls back to its lane
+preference is judged against that lane's pool, not the daemon default's.
+
+The alternates for a task requested on a backend and model, in order:
+
+1. **The lane fill pair.** The other of the Claude lane backend and the GPU
+   lane backend from `autonomous.lane_fill` (`claude_backend`,
+   `gpu_backend`), on that backend's default model. For the GPU lanes that
+   is `autonomous.lane_fill.gpu_model` when set, otherwise the entry's own
+   model. A task on neither lane backend has no lane fill pair.
+2. **Entries you marked.** Every LLM entry with **Allowed fall-through
+   target** switched on, in name order. The task keeps its model when the
+   entry serves it; otherwise it runs on the entry's default model. An entry
+   is never a target until you mark it.
+
+The ledger is asked about the alternates in that order and the first one
+it would grant wins, so a lane fill pair with room is always preferred to a
+marked entry. An alternate is skipped when:
+
+- its backend is **disabled**,
+- it is already at its **in-flight cap**, or
+- it **cannot serve the model** it would run.
+
+The requested backend and model are never their own alternate. Only a worker
+task falls through: a **verifier never falls through** (nor does a judge or
+a planner), because it must run on the backend it was resolved to. A worker
+pinned to a compute node does not fall through either, since the alternate
+would be placed without the pin.
+
+Mark an entry as a target on any surface:
+
+| Method | How |
+|--------|-----|
+| **YAML** | `fallthrough_target: true` on the entry in the `llms:` list |
+| **CLI** | `datawatch llm update <name> --fallthrough-target` (`--fallthrough-target=false` clears it; leaving the flag off keeps the stored value) |
+| **Web UI** | Settings, LLM, edit an entry, **Allowed fall-through target** |
+| **REST API** | `PUT /api/llms/<name>` with `{"fallthrough_target": true}` (omit to keep the stored value) |
+| **MCP** | `llm_update` or `llm_add` with `fallthrough_target=true` |
+| **Comm channel** | `llm update <name> fallthrough_target=true` |
+
+#### Tasks that are already waiting
+
+A task that is already waiting looks again on every wait pass (about once a
+second), reading the setting from the live config each time. Turning
+`autonomous.capacity_fallthrough` on therefore admits the tasks that are
+waiting now, with no restart and no re-queue, as soon as an alternate has
+room; the task keeps its place and its wait timeout. Marking an LLM entry as
+a target, or changing the lane fill backends, is picked up the same way on
+the next pass. Turning the setting off stops further fall-throughs; a task
+already admitted on an alternate keeps it.
+
+#### Explicit backends
+
+A backend set explicitly on the task, story, PRD or Automaton is not
+protected from fall-through. It is held to the same rule as every other
+worker: it waits for its own pool while the setting is off, and falls
+through only while the setting is on. Check the audit note to see whether it
+happened: an explicit backend that fell through has a note ending
+`; explicit backend; fall-through setting on`. A task whose backend came
+from the Automaton's lane preference or the daemon default is not explicit,
+and its note has no such ending.
+
+#### Audit fields
 
 A task that fell through leaves an `autonomous_capacity_admitted` audit
-entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as
-`fell through from claude-code/sonnet to ollama/qwen: requested pool full,
-alternate idle`.
+entry for the task, and the daemon log carries the same note on one line.
+The entry has these fields:
+
+| Field | Meaning |
+|---|---|
+| `fall_through` | `true`; this is what tells a fall-through entry from a plain admission |
+| `from_pools` | the pools the task asked for (sorted), for example `llm:claude-code` |
+| `to_pools` | the pools the task was admitted on (sorted), for example `llm:ollama`, `node:gpu-1` |
+| `note` | what happened in one sentence, for example `fell through from claude-code/sonnet to ollama/qwen: requested pool full, alternate idle` |
+
+The entry also carries `pools` (the same as `to_pools`), `task_id`,
+`task_title`, `prd_id` and `prd_title`. A task that had waited first also
+gets the usual plain `autonomous_capacity_admitted` entry with
+`waited_seconds` beside it. List the fall-throughs with
+`audit_query` for `autonomous_capacity_admitted` and look for
+`fall_through`.
 
 Set it on any surface:
 
@@ -498,18 +589,22 @@ An alert is raised when a task has waited 30 minutes.
 ## Reactive usage backoff
 
 When a backend runs out of usage (a rate limit or a weekly cap), starting
-more autonomous work on it only burns retries. A usage back-off flag holds
-autonomous dispatch to that one backend until the limit lifts. The flag is
-in memory and per backend: it is lost on a daemon restart, and backing off
+more autonomous worker work on it only burns retries. A usage back-off flag
+holds new **worker** sessions on that one backend until the limit lifts. The
+flag is per backend, and it survives a daemon restart (see
+[Across a daemon restart](#across-a-daemon-restart)); backing off
 `claude-code` never affects `pi` or `ollama`. The implementation lives in
 `internal/autonomous/backoff.go`; the design is in
 `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
 
-The flag only pauses autonomous dispatch. It never blocks an interactive
-session start, so you can still open a session on a backed-off backend by
-hand. While a flag is active, tasks and decompose runs that would use that
+The flag only pauses autonomous worker dispatch. It never blocks an
+interactive session start, so you can still open a session on a backed-off
+backend by hand. While a flag is active, new worker tasks that would use that
 backend wait with a visible wait reason (like any capacity wait) instead of
-failing or burning their retry budget, and they resume when it clears.
+failing or burning their retry budget, and they resume when it clears. The
+review roles — guardrail judges, verifiers and decompose/planning sessions —
+are a separate matter: they may still be admitted on that backend through the
+[review reserve](#the-review-reserve), unless the reserve is full.
 
 ### Automatic set and clear
 
@@ -539,6 +634,38 @@ retry storm. If you know the real reset time, set the flag yourself with
 `until` or an exact number of minutes (below) instead of waiting for the
 maximum to expire.
 
+### The review reserve
+
+A back-off is a worker-side hold, not a total blackout. While the flag is up,
+the review roles — **guardrail judges, verifiers, and decompose/planning
+sessions** — may still be admitted on the held backend through its
+**review reserve**: a bounded number of live session slots, plus optionally a
+rolling one-hour token budget, decided at admission time by
+`internal/autonomous/backoff_reserve.go` (installed on the capacity ledger as
+the role-aware back-pressure gate). Two keys bound it:
+
+- `autonomous.backoff_reserve_for_review` — the reserve's live slots. Default
+  `1`. `0` disables the reserve: every new session on the held backend, review
+  roles included, is refused (the pre-reserve behavior).
+- `autonomous.backoff_reserve_tokens_per_hour` — a rolling one-hour token
+  budget for reserve admissions on that backend. Default `0` (no token
+  budget); enforced only when token usage is reported.
+
+A live verifier or planner session on the backend already holds one of the
+reserve's slots. A review request that cannot get a slot waits with
+`pool llm:<backend> backpressure: back-off, review reserve in use` —
+classified as a back-off wait, so it shows the flag's reset time — and starts
+when the flag clears. Every admission and refusal is audited as
+`autonomous_usage_backoff_reserve_admitted` /
+`autonomous_usage_backoff_reserve_refused` (see [Audit trail](#audit-trail)).
+Both keys are read live at decision time, so a change needs no restart, and
+they are settable from every config surface (YAML, REST `PUT /api/config` with
+the dotted keys, MCP `autonomous_config_set`, CLI
+`datawatch config set autonomous.backoff_reserve_for_review=…`, comm
+`configure autonomous.backoff_reserve_for_review=…`, and the two *Usage
+back-off review reserve* fields in PWA Settings) — see [Usage
+back-off](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve).
+
 ### Manual set, clear and status
 
 The same four operations exist on every surface, with the same names and
@@ -554,12 +681,43 @@ arguments:
   `datawatch usage-backoff set <backend> <minutes|until> [--reason text]`,
   `datawatch usage-backoff clear [backend|all]`.
 - Comm channels: `usage_backoff status`,
-  `usage_backoff set <backend> <minutes> [reason]`, `usage_backoff clear`.
+  `usage_backoff set <backend> <minutes|until> [reason]`, `usage_backoff clear`.
 
 Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
 maximum wait. The capacity status (`datawatch capacity`, the PWA Capacity
 card) shows the same flags as the wait reason on blocked tasks.
+
+### Across a daemon restart
+
+A flag is written to disk every time it is set, cleared or expires, in
+`backoff.json` under the `autonomous` folder of the data directory (mode 0600),
+and written once more when the daemon shuts down or restarts. When the daemon
+starts it reads the file back and reinstalls every flag whose time has not
+passed, before the first Automaton dispatch, so a restart no longer makes
+work run straight into a limit that is still in force. Flags that expired
+while the daemon was down are dropped. A missing file is normal; an
+unreadable one is logged and the registry starts empty.
+
+Each restored flag is recorded three ways so you can see why work is waiting:
+
+- a boot-resume entry with outcome `backoff_restored` (read it as described in
+  [Reading the recorded decision](restart-with-work-running.md#reading-the-recorded-decision));
+- an alert titled **Back-off restored after restart** naming the backend and
+  the time it lifts;
+- an `autonomous_usage_backoff_restored` audit event (see
+  [Audit trail](#audit-trail)).
+
+New worker work for a restored backend waits in the capacity queue with the
+usual `backoff: ...` wait reason and starts by itself when the flag clears.
+A boot-resume decision for an Automaton on that backend carries a sentence
+saying so. Review roles keep their [review reserve](#the-review-reserve)
+path while the restored flag is up; the reserve's own state (the rolling
+token stamps) is in memory and does not survive the restart. Sessions
+already running on the backend are adopted as always; restoring a flag never
+ends, restarts or signals one. Because the flag lives in the registry,
+clearing it by hand (any surface above) also removes it from the file, so a
+cleared flag does not come back on the next restart.
 
 ### Pattern staleness and manual recheck
 
@@ -876,6 +1034,8 @@ of the wait is known, the time it ends.
 | Node busy | `waiting for node gpu-1: 1/1 engines in use, held by t-3f9a1c` | Every engine on the compute node is in use. |
 | Back-off, reset time known | `backend claude-code backed off until 14:30 UTC (resets in 42m)` | The backend ran out of usage and told datawatch when it lifts. |
 | Back-off, reset time unknown | `backend claude-code backed off until 15:12 UTC (reset time unknown; next attempt allowed then, in 1h)` | The backend gave no reset time, so datawatch holds it for the maximum back-off and then lets one attempt through. |
+| Back-off, review reserve in use | `pool llm:claude-code backpressure: back-off, review reserve in use` | The backend is backed off and a review role (judge, verifier or planning session) asked for its review reserve: the live slot is held by another review session, the one-hour token budget is spent, or `autonomous.backoff_reserve_for_review` is `0`. New worker sessions on that backend wait on the back-off itself. |
+| Last slot held for queued worker(s) | `pool llm:claude-code: last slot held for queued worker(s) t-3f9a1c` | A pool's last free slot is reserved for a worker queued on the same pool, so a verifier asking for that pool must let the worker go first. The verifier is admitted when the worker drains, or via its own `node-verify:<node>` pool or the review reserve. |
 | Budget window full | `budget window full: claude-code spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
 | Global cooldown | `global cooldown until 14:30 UTC (in 12m)` | The daemon-wide rate-limit cooldown is active. When its end is not known the text is `global cooldown active`. |
 | Awaiting external | `await_external: CI run on the branch` | The worker parked itself on an outside condition (see "Park on an external condition"). A bare `await_external` means it gave no condition. A long condition is cut at 400 characters. |
@@ -1075,10 +1235,12 @@ the cause changes.
 | Action | Actor | Subject | Values |
 |---|---|---|---|
 | `autonomous_capacity_wait` | `autonomous` | the task id | `prd_id`, `cause`, `reason` (the full wait text), `pools` (sorted) |
-| `autonomous_capacity_admitted` | `autonomous` | the task id | `waited_seconds`, `pools` |
+| `autonomous_capacity_admitted` | `autonomous` | the task id | `waited_seconds`, `pools`; for a fall-through also `fall_through`, `from_pools`, `to_pools`, `note` (see [Pool fall-through](#pool-fall-through)) |
 | `autonomous_usage_backoff_set` | `autonomous` for a rate limit, `operator` (or the caller's own actor) for a flag set by hand | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`) |
 | `autonomous_usage_backoff_cleared` | `operator` (or the caller's own actor) | the backend, or `all` | `backend` |
 | `autonomous_usage_backoff_auto_cleared` | `autonomous` | the backend | `backend`, `until` (RFC 3339) |
+| `autonomous_usage_backoff_restored` | `autonomous` | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`); written at daemon start for each flag read back from disk |
+| `autonomous_usage_backoff_reserve_admitted` / `autonomous_usage_backoff_reserve_refused` | `autonomous` | the backend | one entry per review-reserve verdict (admission or refusal); `backend`, `role` (`verifier` or `planner`), `slots`, `used_slots`, `tokens_used`, `token_cap`, `at` (RFC 3339) |
 | `autonomous_budget_ceiling_wait` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd`, `rolls_over_at` (RFC 3339, only when known) |
 | `autonomous_budget_window_resumed` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd` |
 | `autonomous_budget_window_rollover` | `autonomous` | the LLM | `previous_spend_usd`, `ceiling_usd`, `new_window_start` (RFC 3339) |

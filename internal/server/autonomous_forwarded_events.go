@@ -51,7 +51,7 @@ const forwardAuditFieldMax = 255
 // satisfies it; tests may substitute a fake.
 type ForwardedEventsAPI interface {
 	ForwardReceiveEnabled() bool
-	ReceiveForwardedEvent(env autonomous.ForwardedEnvelope) error
+	ReceiveForwardedEventFrom(peer string, env autonomous.ForwardedEnvelope) error
 }
 
 // SetAutonomousForwardedEvents wires the receiving side of peer forwarding for
@@ -154,7 +154,7 @@ func (s *Server) handleAutonomousForwardedEvents(w http.ResponseWriter, r *http.
 		rec.hops = env.Forward.Hops
 	}
 
-	if err := s.autonomousFwd.ReceiveForwardedEvent(env); err != nil {
+	if err := s.autonomousFwd.ReceiveForwardedEventFrom(rec.peer, env); err != nil {
 		switch {
 		case errors.Is(err, autonomous.ErrForwardReceiveDisabled):
 			refuse(http.StatusServiceUnavailable, err.Error())

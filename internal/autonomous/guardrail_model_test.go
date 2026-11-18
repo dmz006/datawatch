@@ -21,7 +21,8 @@ import (
 )
 
 // TestResolveGuardrailModel_Coverage pins every precedence tier, the
-// empty-everywhere failure, the pairing skips, and the claude-code
+// pi empty-everywhere failure, the claude-code empty-everywhere daemon
+// default, the pairing skips, and the claude-code
 // non-regression for ResolveGuardrailModel.
 //
 // Precedence tiers (first match wins), for a pi-family backend:
@@ -171,10 +172,9 @@ func TestResolveGuardrailModel_Coverage(t *testing.T) {
 			errSubstr: []string{"pi-specific global, skipped on the claude-code backend"},
 		},
 		{
-			name:      "claude-code backend empty-everywhere fails loudly, never a backend default",
+			name:      "claude-code backend empty-everywhere resolves to the daemon default sonnet (the explicit-model policy), never the backend's built-in default",
 			backend:   claudeCodeBackendName,
-			wantErr:   true,
-			errSubstr: []string{"configured"},
+			wantModel: DefaultClaudeModel,
 		},
 	}
 

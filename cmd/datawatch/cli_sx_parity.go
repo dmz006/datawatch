@@ -226,13 +226,19 @@ func daemonJSONBody(method, path string, body any) ([]byte, error) {
 
 // prettyPrint emits indented JSON when body parses as JSON, raw otherwise.
 func prettyPrint(body []byte) {
+	prettyPrintTo(os.Stdout, body)
+}
+
+// prettyPrintTo is prettyPrint with an explicit destination, so a command
+// can send the JSON to its own output writer.
+func prettyPrintTo(w io.Writer, body []byte) {
 	var v any
 	if err := json.Unmarshal(body, &v); err == nil {
 		out, _ := json.MarshalIndent(v, "", "  ")
-		fmt.Println(string(out))
+		_, _ = fmt.Fprintln(w, string(out))
 		return
 	}
-	_, _ = os.Stdout.Write(body)
+	_, _ = w.Write(body)
 }
 
 // ----- BL34 ask ------------------------------------------------------------
@@ -370,11 +376,29 @@ func newProjectsUpsertCmd() *cobra.Command {
 		Use:   "upsert <name>",
 		Short: "Register or update a project alias",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodPost, "/api/projects", map[string]any{
-				"name": args[0], "dir": dir, "default_backend": backend,
-				"description": description,
-			})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// A flag that was not passed stays out of the body; when the daemon
+			// does not have a stored value for it, the readback 404s and the
+			// field is simply absent (a new registration). An empty string that
+			// WAS passed still clears it.
+			body := map[string]any{"name": args[0], "dir": dir}
+			if cmd.Flags().Changed("backend") {
+				body["default_backend"] = backend
+			}
+			if cmd.Flags().Changed("description") {
+				body["description"] = description
+			}
+			if !cmd.Flags().Changed("backend") || !cmd.Flags().Changed("description") {
+				if rec, err := fetchProjectRecord(args[0]); err == nil {
+					if !cmd.Flags().Changed("description") {
+						body["description"] = rec.Description
+					}
+					if !cmd.Flags().Changed("backend") {
+						body["default_backend"] = rec.DefaultBackend
+					}
+				}
+			}
+			return daemonJSON(http.MethodPost, "/api/projects", body)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "Absolute directory (required)")

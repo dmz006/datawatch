@@ -115,24 +115,85 @@ datawatch alerts --mark-all-read
 
 4. **Alerts tab.** Navigate to the **Alerts** page from the sidebar.
    This is the full-screen alert manager:
-   - A meta row above the list: the list's state text on the left
-     (`Cached` badge when the list came from this browser's storage,
-     `Last updated N s ago`, a small `Loading…` while a refresh runs)
-     and, at the right edge of the **same row**, the round `?` help
-     link. It opens this howto in a new tab — same destination, tooltip
-     and accessible name (`Help`) as before — and gets a 40 × 40 px
-     minimum tap target on touch devices. It no longer sits in its own
-     top-right row above the list; that separate row mis-rendered on
-     narrow touch viewports (reported with a screenshot from Chrome on
-     Android), which is why the link moved onto the meta row.
-   - Three tabs: **Active**, **Historical**, **System**
-   - Filter chips: all / prompts / errors / warn / info
+   - **Help** — the shared header's `?` link (next to the search
+     icon), like every other view. On the Alerts tab it points at this
+     howto and opens it in a new tab, with the tooltip "Open the
+     Alerts howto — explains alert rules, quick replies, and
+     notifications"; on other views it keeps its generic "Open
+     documentation for this view" destination. The tab no longer
+     carries a `?` of its own — the standalone row at the top-right
+     first, then the list's meta row, both mis-rendered on a narrow
+     phone viewport (reported with a screenshot from Chrome on Android),
+     so the link now lives with the rest of the view's controls.
+   - A **state row** above the list, shown only when it has something
+     to say: a `Cached` badge when the list came from this browser's
+     storage, a small `Loading…` while a refresh runs, and the
+     `Data may be out of date` marker when the data is older than
+     2 minutes (Alerts polls every 30 s, so it uses a short fixed
+     2-minute window — other list cards use 5 minutes). There is no
+     "Last updated N s ago" counter.
+   - **Refresh failed.** When a refetch errors, the card keeps the
+     cached rows it already has and shows a small failure banner with
+     a `Retry` button instead of an empty list or a rebuilt page,
+     with the `Data may be out of date` marker joining it. A failed
+     *first* load (nothing cached) shows the banner and `Retry`
+     alone — there is no cached data to be stale about.
+   - Three tabs labelled by what their number counts: **Active
+     sessions** (N) where N is the number of active sessions in the
+     tab, **Historical sessions** (N) where N is the number of ended
+     sessions that have alerts, and **System alerts** (N) where N is
+     the number of system alerts. In other words the first two buttons
+     count *sessions* and the third counts *alerts*. The heading
+     above the list always counts the *alerts* in the selected tab
+     (e.g. "5 alerts in 3 active sessions"), and it matches the `all`
+     filter chip because both read the same total — and the four
+     category chips (prompts / errors / warn / info) sum to it.
+   - Filter chips: all / prompts / errors / warn / info — each
+     chip carries its own count (e.g. `all ×7  prompts ×2  errors
+     ×1  warn ×1  info ×3`), and the chip counts count the alerts
+     in the currently selected tab, so switching tabs changes the
+     numbers (the `all` chip always matches the heading)
    - Search bar (searches title + body)
    - Sort toggle: by-session (sessions waiting for input shown first)
      or chronological (newest-first flat list)
+   - Rows wrap on narrow viewports: long session names, titles and
+     messages break within the card instead of clipping past the
+     phone screen. The wrapping is pure CSS (flex-wrap +
+     overflow-wrap on the card and session header), so the full text
+     is always rendered — a 128-character unbroken session id or a
+     300-character message still fits — and the markup is
+     width-agnostic: the same rows render at 360 px and 390 px with
+     no viewport-specific branching
    - Sessions sorted: `waiting_input` → `running` → `completed`
-   - Prompt alerts include a **Quick reply** dropdown for saved commands
-   - `✕ all` dismisses everything; `🔕` mutes for the session; `↻` refreshes
+   - Prompt alerts include a **Quick reply** dropdown for saved commands.
+     Every quick reply on the web app — this dropdown, the session-detail
+     Yes/No/Stop chips, the session quick commands, and the card quick
+     commands — first goes through an **open-question gate**:
+     - The session has an open question and the reply matches one of its
+       options (option id or label, case-insensitive, plus the
+       approve/yes and reject/no synonyms) → the reply **answers that
+       question** through the same path as answering from the question
+       card (`POST /api/questions/{id}/answer`, surface `pwa`), so the
+       question is marked answered and the session resumes. Nothing is
+       typed into the session's terminal — typing the reply left the
+       question open.
+     - The session has an open question but the reply matches none of its
+       options → the reply is **refused** with a message naming the
+       pressed label and the question's options; nothing is sent anywhere.
+     - The session has more than one open question → the reply is refused
+       and points you to the Questions card in the Automation view.
+     - The session has **no** open question → the reply is typed into the
+       session as before (session input; for this dropdown, the
+       `send <id>: <text>` command), exactly the pre-fix behavior.
+     No setting, endpoint, or REST/CLI/comm surface changes; the three
+     toast strings ship in the five web-app locales.
+     *Operator review:* the same quick-reply behavior is not yet in the
+     Android and iPhone apps — track it in datawatch-app; and confirm the
+     answered/refused toasts read well on a real device.
+   - `✕ all` dismisses everything; `🔕` mutes for the session; `↻`
+     triggers one immediate refetch through the Alerts list loader —
+     the card repaints in place (cached rows stay, the fetch runs
+     behind them) instead of rebuilding the whole page
 
 5. **Mute and un-mute.** Click `🔕` to suppress all incoming alerts
    for the current browser tab. The badge shifts to `🔕 muted` style.
@@ -146,8 +207,9 @@ datawatch alerts --mark-all-read
 
 The datawatch mobile app (Android / Wear OS) receives push
 notifications for `waiting_input` and `error`-level alerts via the
-push-token registry. The Alerts screen on mobile mirrors the Active +
-Historical + System tabs. Wear OS support is a separate planned effort
+push-token registry. The Alerts screen on mobile mirrors the Active
+sessions + Historical sessions + System alerts tabs. Wear OS support is a
+separate planned effort
 — see the datawatch-app issue tracker.
 
 ### 5b. REST
@@ -423,14 +485,14 @@ tool, and Settings > Detection timing in the PWA.
   Settings → Devices. Push only fires for `waiting_input` and `error`
   level events; `info` and `warn` are not pushed to mobile by default.
 
-- **The `?` help link still shows in its own top-right row above the
-  list, or mis-renders on a phone.** That is the pre-fix layout. The
-  PWA is embedded in the daemon binary, so a rebuilt daemon is needed
-  for the new layout to be served: `go build -o bin/datawatch
-  ./cmd/datawatch/`, restart, then hard-refresh the PWA tab. After the
-  fix the link sits at the right edge of the list's meta row (beside
-  the `Last updated` text) and has a 40 × 40 px tap target on touch
-  devices.
+- **The `?` help link still appears in its own top-right row or in
+  the list's meta row, or the state row shows a ticking "Last updated
+  N s ago" text.** That is the pre-fix layout. The PWA is embedded in
+  the daemon binary, so a rebuilt daemon is needed for the new layout
+  to be served: `go build -o bin/datawatch ./cmd/datawatch/`, restart,
+  then hard-refresh the PWA tab. After the fix the help link is the
+  shared header's `?` (next to the search icon) and the state row
+  shows only `Cached`, `Loading…`, and `Data may be out of date`.
 
 ## Linked references
 
@@ -454,10 +516,17 @@ tool, and Settings > Detection timing in the PWA.
 
 - [ ] Header badge in global nav bar: count = 0 (dimmed), count = 3 (full-color), muted state
 - [ ] Dock panel open with mixed error/warn/info cards (expanded, showing ×N coalesce and ▸ more toggle)
-- [ ] Alerts tab — Active sub-tab with prompt card highlighted yellow and quick-reply dropdown
-- [ ] Alerts tab — System sub-tab with pipeline failure alert
-- [ ] Alerts tab — header meta row at a 390 px phone viewport: the age text and the round `?` help link on one row, link to the right of the age text, no horizontal overflow (covered by the story `scripts/test-stories/alerts-header-row.sh`; add a screenshot of the post-fix row)
+- [ ] Alerts tab — Active sessions sub-tab with prompt card highlighted yellow and quick-reply dropdown
+- [ ] Alerts tab — System alerts sub-tab with pipeline failure alert
+- [ ] Alerts tab at a 390 px phone viewport: header `?` help link present (no help link inside the list), state row a single line when shown, long session names and alert messages wrapping inside their cards with no horizontal overflow (add a screenshot of the post-tidy view)
+- [ ] Failed-refresh state on the phone: cached rows kept, failure banner with `Retry` visible (optional — needs a dropped network connection to trigger)
 - [ ] Mobile app Alerts screen (Android) — Active tab with waiting_input push badge
+
+**Still needs operator review** — the code-level behavior above is
+covered by the PWA test suite (all 28 Alerts-tab tests pass), but none
+of it has been confirmed on a real device yet: the 390 px screenshot,
+the rebuild/restart of the daemon so the new layout is served, and a
+hard-refresh of the PWA tab on the phone.
 
 ---
 
@@ -470,3 +539,42 @@ tool, and Settings > Detection timing in the PWA.
 - [howto/audit-logging](audit-logging.md)
 - [howto/automaton-lifecycle-subscriptions](automaton-lifecycle-subscriptions.md) — Automaton warnings (a task touching files outside its scope, a guardrail `warn` verdict) also arrive as opt-in notify events, `scope_warning` and `guardrail_warn`, deliverable to queues, sessions, alerts and comm sinks; off by default
 - [datawatch-definitions](../datawatch-definitions.md)
+
+## Messaging channel quick replies
+
+A quick reply sent from a messaging channel (Signal, Slack, Telegram,
+Matrix, email and the other comm backends) goes through the same
+open-question gate as the web app.
+
+**Alert hint.** When a session is waiting for input, its alert ends with a
+reply hint. If the session has exactly one open question the hint lists
+that question's answers:
+
+```
+Reply: send <id>: <answer>  answers: Approve | Reject
+```
+
+Otherwise it lists the saved command names, as before
+(`Reply: send <id>: !<cmd>  options: ...`).
+
+**`send <id>: <text>`.** The text counts as a quick reply when it is a
+saved command (`!name` or `/name`), an approve/reject word (`yes`,
+`approve`, `approved`, `no`, `reject`, `rejected`), or an option id or
+label of the session's open question (case-insensitive). Then:
+
+- One open question and the reply matches exactly one option → the
+  question is **answered** (`POST /api/questions/{id}/answer`, surface
+  `comm:<channel>`, actor = the sender's comm identity). The channel
+  replies `question answered` with the question, option and the text you
+  sent. Nothing is typed into the session.
+- One open question and no single option matches (or several do) →
+  `quick reply refused`, listing the options and the
+  `question answer <id> <option>` command. Nothing is sent.
+- More than one open question → `quick reply refused`, listing each
+  question id and label. Nothing is sent; answer with
+  `question answer <id> <option>`.
+- No open question, the daemon's questions API unreachable, or ordinary
+  text that is not a quick reply → typed into the session exactly as
+  before.
+
+No setting, endpoint or command is added.

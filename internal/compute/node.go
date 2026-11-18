@@ -236,10 +236,9 @@ type Node struct {
 	// certificate is self-signed.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
 
-	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
-	// against the system roots. Default false = pulls skip verification (the
-	// node is operator-registered on a private network). Independent of the
-	// probe settings above.
+	// VerifyTLS used to switch model-pull certificate verification on.
+	// Pulls now always verify (see PullHTTPClient), so the field is kept
+	// only for configuration compatibility and no longer changes behavior.
 	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
 
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the

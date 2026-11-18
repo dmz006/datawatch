@@ -266,6 +266,24 @@ threshold, a `poll_seconds` below 60, a non-text path or model name — and noth
 is written. Until `working_model` is set, the `model_not_resident` check stays off
 and the other thirteen are unaffected.
 
+## The stuck-running message
+
+When an Automaton sits in `running` with every task finished, the stuck-running
+watchdog (see [Stuck-running watchdog](autonomous-recovery.md#stuck-running-watchdog))
+acts after `autonomous.stuck_running_seconds` (default `900`). If cancelled
+tasks are the only thing in the way, the watch reads one line that names them:
+
+> stuck running: every task terminal for 15m0s, blocked by 2 cancelled tasks:
+> Task A, Task B; cancelled tasks are skipped, the Automaton advances to its
+> completion review after the grace period, and a cancelled task can be removed
+> while the Automaton is running
+
+It means a cancelled task is a deliberate outcome, not a fault. Nothing needs
+fixing: the Automaton goes on to its completion review by itself. To clear it
+sooner, remove the cancelled task (any surface, while the Automaton is running),
+or reset it. An Automaton whose tasks are all cancelled is never advanced; see
+[Cancelled tasks at completion](autonomous-recovery.md#cancelled-tasks-at-completion).
+
 ## What the watch never does
 
 It never calls a model. It never merges, never starts, holds, cancels or retries

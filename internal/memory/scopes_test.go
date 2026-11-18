@@ -21,10 +21,10 @@ func newScopeTestStore(t *testing.T) Backend {
 
 func TestScopeRef_Resolve(t *testing.T) {
 	cases := []struct {
-		ref   ScopeRef
-		dir   string
-		role  string
-		sess  string
+		ref  ScopeRef
+		dir  string
+		role string
+		sess string
 	}{
 		{ScopeRef{Scope: ScopeSessionLocal, Project: "proj1", SessionID: "sess1"}, "proj1", "", "sess1"},
 		{ScopeRef{Scope: ScopeProjectShared, Project: "proj1"}, "proj1", "", ""},

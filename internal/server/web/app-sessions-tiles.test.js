@@ -220,32 +220,17 @@ test('the summary counts group by state in a fixed order and keep unknown states
   assert.deepEqual(plain(sb._sessionsSummaryCounts([])), []);
 });
 
-test('the summary bar renders one chip per present state with the live counts and the total', () => {
-  const sb = loadApp();
-  const sessions = makeSessions(300);
-  const html = sb.renderSessionsSummaryBar(sessions);
-  assert.match(html, /sessions-summary-bar/);
-  for (const name of ['running', 'waiting_input', 'complete', 'failed', 'killed']) {
-    assert.ok(html.includes("setSessionStateChip('" + name + "')"), name + ' chip switches to its state filter');
-    assert.match(html, new RegExp(`${name}[\\s\\S]*<span class="sessions-summary-count">60</span>`), `${name} chip carries its count`);
-  }
-  assert.equal((html.match(/sessions-summary-chip/g) || []).length, 5, 'only states that exist get a chip');
-  assert.match(html, /sessions-summary-total/);
-  assert.match(html, />sessions 300</);
-  assert.equal(sb.renderSessionsSummaryBar([]), '', 'no sessions, no bar');
-});
-
 // ── mode toggle ─────────────────────────────────────────────────────────────
 
-test('the toggle offers all three modes with the current one active', () => {
+test('the view select offers all three modes with the current one selected', () => {
   const sb = loadApp();
-  const html = sb.renderSessionsModeToggle('tiles');
-  assert.match(html, /sessions-mode-toggle/);
+  const html = sb._sessionsViewSelectHTML('tiles');
+  assert.match(html, /<select id="sessionsViewSelect"/);
   for (const m of ['list', 'tiles', 'compact']) {
-    assert.match(html, new RegExp(`onclick="_sessionsSetViewMode\\('${m}'\\)"`), `renders a switcher for ${m}`);
+    assert.match(html, new RegExp('<option value="' + m + '"'), `offers ${m}`);
   }
-  assert.match(html, /sessions-mode-btn active[^>]*>[^<]*Tiles/);
-  assert.ok(!/sessions-mode-btn[^"]*active[^>]*>[^<]*List/.test(html));
+  assert.match(html, /<option value="tiles" selected>/);
+  assert.match(html, /onchange="_sessionsSetViewMode\(this\.value\)"/);
   for (const k of ['sessions_view_toggle', 'sessions_view_list', 'sessions_view_tiles', 'sessions_view_compact']) {
     assert.equal(html.includes(k), false, `the rendered labels never expose the raw i18n key ${k}`);
   }
@@ -258,7 +243,7 @@ test('the toggle offers all three modes with the current one active', () => {
 test('missing locale keys fall back to the English label, never the raw key', () => {
   const sb = loadApp();
   assert.equal(sb._stx('sessions_no_such_key_x', 'Fallback'), 'Fallback');
-  assert.match(sb.renderSessionsModeToggle('list'), /Compact/);
+  assert.match(sb._sessionsViewSelectHTML('list'), /Compact/);
 });
 
 test('session tile progress is lifecycle based', () => {
@@ -280,13 +265,20 @@ test('a tile carries name, state chip, backend · model, node, tags and activity
   assert.match(html, /alpha job 0/);
   assert.match(html, /state-badge-running/);
   assert.match(html, /claude-code · opus/);
-  assert.match(html, /class="session-tile-node">node-0/);
+  // Two labelled placement facts, not one guessed node: where it runs (node-0)
+  // and where its model is served (Anthropic cloud for a claude-code session).
+  assert.match(html, /class="session-tile-node session-tile-facts"/);
+  assert.match(html, /session-tile-fact-label">Runs on<\/span> node-0/);
+  assert.match(html, /session-tile-fact-label">Model on<\/span> Anthropic cloud/);
+  // Each fact carries a hover title explaining it.
+  assert.match(html, /class="session-tile-fact" title="[^"]*peer name when the session is federated"/);
+  assert.match(html, /class="session-tile-fact" title="[^"]*compute node serving the model of this session[^"]*"/, 'the Model fact is hover-titled');
   assert.match(html, /class="tag-chip"/);
   assert.match(html, /work-tile-tags-more/, 'five tags fold past the three visible into the +N chip');
   assert.match(html, />just now<\/?span>/, 'the last-activity line is the locale age string');
 });
 
-test('a session with no node or tags still draws a complete tile', () => {
+test('a session with no hostname and no model still draws a complete tile', () => {
   const sb = loadApp();
   const s = { id: 'x1', full_id: 'local/x1', name: 'Plain', state: 'failed', backend_family: 'shell', updated_at: new Date(NOW - 3600e3).toISOString() };
   const html = sb.renderSessionTile(s, NOW);
@@ -294,6 +286,82 @@ test('a session with no node or tags still draws a complete tile', () => {
   assert.ok(!html.includes('session-tile-node'));
   assert.match(html, /1h ago/);
   assert.match(html, /shell/);
+});
+
+// ── the two placement facts: runs-on and model-on, on tile AND card ───────
+//
+// The tile and card must both show two labelled facts, each hover-titled:
+//   Runs on  — the host's real name (never the word "local"), or the peer's
+//              name for a federated session.
+//   Model on — the compute node for pi/Ollama, "Anthropic cloud" for Claude,
+//              and nothing when unknown.
+// Each scenario below is checked in the tile and in the compact/list card.
+
+test('a pi session on a compute node shows the node under Runs on and Model on', () => {
+  const sb = loadApp();
+  const pi = { id: 'pi1', full_id: 'local/pi1', name: 'Pi job', state: 'running',
+    hostname: 'devbox', backend_family: 'pi-prompt', compute_node_ref: 'pi-node-a',
+    llm_ref: 'qwen3', updated_at: new Date(NOW - 60e3).toISOString() };
+  const tile = sb.renderSessionTile(pi, NOW);
+  assert.match(tile, /session-tile-fact-label">Runs on<\/span> devbox/, 'tile runs on the real host name');
+  assert.match(tile, /session-tile-fact-label">Model on<\/span> pi-node-a/, 'tile names the compute node, not Anthropic cloud');
+  const card = sb.sessionCard(pi, 0, 1);
+  assert.match(card, /card-fact-label">Runs on<\/span> devbox/, 'card runs on the real host name');
+  assert.match(card, /card-fact-label">Model on<\/span> pi-node-a/, 'card names the compute node, not Anthropic cloud');
+});
+
+test('a Claude session points Model on at Anthropic cloud', () => {
+  const sb = loadApp();
+  const cc = { id: 'cc1', full_id: 'local/cc1', name: 'Claude job', state: 'running',
+    hostname: 'devbox', backend_family: 'claude-code',
+    llm_ref: 'claude-opus-4', updated_at: new Date(NOW - 60e3).toISOString() };
+  const tile = sb.renderSessionTile(cc, NOW);
+  assert.match(tile, /session-tile-fact-label">Runs on<\/span> devbox/);
+  assert.match(tile, /session-tile-fact-label">Model on<\/span> Anthropic cloud/, 'tile: Claude model is served by Anthropic cloud');
+  const card = sb.sessionCard(cc, 0, 1);
+  assert.match(card, /card-fact-label">Runs on<\/span> devbox/);
+  assert.match(card, /card-fact-label">Model on<\/span> Anthropic cloud/, 'card: Claude model is served by Anthropic cloud');
+});
+
+test('a local session with no model shows Runs on the host and no Model fact', () => {
+  const sb = loadApp();
+  const loc = { id: 'loc1', full_id: 'local/loc1', name: 'Shell job', state: 'running',
+    hostname: 'my-laptop', backend_family: 'shell', updated_at: new Date(NOW - 60e3).toISOString() };
+  const tile = sb.renderSessionTile(loc, NOW);
+  assert.match(tile, /session-tile-fact-label">Runs on<\/span> my-laptop/, 'runs on the host real name');
+  assert.doesNotMatch(tile, /Model on/, 'unknown model: no second fact on the tile');
+  assert.doesNotMatch(tile, /Anthropic cloud/);
+  const card = sb.sessionCard(loc, 0, 1);
+  assert.match(card, /card-fact-label">Runs on<\/span> my-laptop/, 'card shows Runs on');
+  assert.doesNotMatch(card, /Model on/, 'unknown model: no second fact on the card');
+  assert.doesNotMatch(card, /Anthropic cloud/);
+});
+
+test('a federated peer session shows the peer name under Runs on, never local', () => {
+  const sb = loadApp();
+  const peer = { id: 'fe1', full_id: 'peer-x/fe1', name: 'Remote job', state: 'running',
+    server: 'peer-x', hostname: 'peer-x-machine', backend_family: 'claude-code',
+    llm_ref: 'claude-opus-4', updated_at: new Date(NOW - 60e3).toISOString() };
+  const tile = sb.renderSessionTile(peer, NOW);
+  assert.match(tile, /session-tile-fact-label">Runs on<\/span> peer-x/, 'tile runs on the peer name');
+  assert.doesNotMatch(tile, /">local/);
+  assert.match(tile, /session-tile-fact-label">Model on<\/span> Anthropic cloud/, 'peer Claude session names Anthropic cloud');
+  const card = sb.sessionCard(peer, 0, 1);
+  assert.match(card, /card-fact-label">Runs on<\/span> peer-x/, 'card runs on the peer name');
+  assert.doesNotMatch(card, /card-fact-label">Runs on<\/span> local/);
+  assert.match(card, /card-fact-label">Model on<\/span> Anthropic cloud/);
+});
+
+test('the Runs-on and Model-on facts each carry a hover title on the tile and the card', () => {
+  const sb = loadApp();
+  const cc = { id: 'cc2', full_id: 'local/cc2', name: 'Titled', state: 'running',
+    hostname: 'devbox', backend_family: 'claude-code', updated_at: new Date(NOW - 60e3).toISOString() };
+  const tile = sb.renderSessionTile(cc, NOW);
+  assert.match(tile, /class="session-tile-fact" title="[^"]*peer name when the session is federated"/);
+  assert.match(tile, /class="session-tile-fact" title="[^"]*compute node serving the model of this session[^"]*"/);
+  const card = sb.sessionCard(cc, 0, 1);
+  assert.match(card, /class="card-fact" title="[^"]*peer name when the session is federated"/, 'card Runs-on fact is hover-titled');
+  assert.match(card, /class="card-fact" title="[^"]*compute node serving the model of this session[^"]*"/, 'card Model-on fact is hover-titled');
 });
 
 test('tile actions follow the session state, and all of them live in the overflow menu', () => {
@@ -392,8 +460,8 @@ test('list, tiles and compact all draw the same filtered page of the 300-session
   assert.ok(!html.includes('session-tile-grid-compact'), 'default tiles grid is not the compact variant');
   assert.equal(countTiles(html), 60, 'page one renders 60 tiles');
   assert.match(html, />Show more \(60\/300\)/);
-  assert.match(html, /sessions-mode-toggle/);
-  assert.match(html, /sessions-summary-bar/);
+  assert.match(html, /sessionsViewSelect/, 'the one-line toolbar view select is painted');
+  assert.ok(!html.includes('sessions-summary'), 'no state count line above the tiles');
 
   // Show-more grows the page until the whole pool fits; paging is per-filter-state.
   vm.runInContext('state._sessionsPageLimit = 120;', sb);
@@ -473,9 +541,7 @@ test('a 300-session view stays one paint per page in every mode', () => {
   assert.equal((html.match(/class="session-card /g) || []).length, 60);
   assert.equal(countTiles(html), 0, 'list mode keeps zero tiles');
   assert.match(html, />Show more \(60\/300\)/);
-  // The per-state summary chips reflect the pool behind the page.
-  assert.match(html, /sessions-summary-bar/);
-  assert.match(html, /running[\s\S]*<span class="sessions-summary-count">60<\/span>/);
+  assert.ok(!html.includes('sessions-summary'), 'no state count line above the list');
   vm.runInContext('state.sessionsViewMode = "compact"; state._sessionsPageKey = null; state._sessionsPageLimit = 60;', sb);
   sb.renderSessionsView();
   html = viewEl.capture;

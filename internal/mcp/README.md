@@ -79,3 +79,7 @@ mcp:
 SSE endpoint: https://host:8081/
 Authorization: Bearer <token>
 ```
+
+## Resource subscriptions
+
+`resource_subscriptions.go` serves `resources/subscribe` on `datawatch://events/lifecycle` when `mcp.resource_subscriptions` is on (default off). It registers the URI's filter with the Automata lifecycle dispatcher and sends `notifications/resources/updated`; see `docs/mcp.md#resource-subscriptions`.

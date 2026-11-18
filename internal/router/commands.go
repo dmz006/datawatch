@@ -142,7 +142,7 @@ const (
 	//   "autonomous run <prd-id>"
 	//   "autonomous cancel <prd-id>"
 	//   "autonomous learnings"
-	//   "autonomous create <spec…>"
+	//   "autonomous create <spec…> [--parent <automaton-id>]"
 	// "prd" is also accepted as a shorter alias.
 	CmdAutonomous CommandType = "autonomous"
 
@@ -1426,6 +1426,13 @@ func Parse(text string) Command {
 	case lower == "standard tasks" || lower == "standard-tasks":
 		return Command{Type: CmdAutonomous, Text: "standard-tasks"}
 
+	// "automaton project <id> <name|clear>" and "automaton project-backfill
+	// [apply]" are the project link verbs; they route through the same
+	// handler as "autonomous project ..." and "autonomous project-backfill ...".
+	case strings.HasPrefix(lower, "automaton project ") || strings.HasPrefix(lower, "automaton project-backfill") ||
+		lower == "automaton project":
+		return Command{Type: CmdAutonomous, Text: strings.TrimSpace(text[len("automaton"):])}
+
 	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
 		lower == "prd" || strings.HasPrefix(lower, "prd "):
 		// BL197 — autonomous PRD lifecycle over chat. The verb +
@@ -1981,10 +1988,13 @@ profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
 project policy <name> [automaton]  effective project policy with per-setting sources
+automaton project <id> <name|clear>  link an Automaton to a configured project (clear removes the link)
+automaton project-backfill [apply]  report which unlinked Automata belong to the datawatch project; apply writes the links
 project show <name>             project record (dir, owner, repository, branch, ...)
-project arcs <name>             ordered arc list of the project
+project plans <name>            ordered plan list of the project (arcs is the deprecated old name)
 project set <name> <field> <value>  set one record field (owner, repository, default_branch, description, default_backend, major_trigger, weekly_share, branch_retention_days)
-project progress <name>         roll-up: tasks, points and throughput, total and per arc
+project progress <name>         roll-up: tasks, points and throughput, total and per plan
+project timeline <name> [focus=<automation>] [level=...]  start, end and status of each plan, Automaton and task, with dependencies and Automaton chain edges
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail
@@ -2006,7 +2016,7 @@ trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace ro
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
-usage_backoff                    show per-backend usage back-off flags, config and the patterns_version/patterns_stale/claude_cli_version drift guard
+usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
 usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
@@ -2020,11 +2030,16 @@ stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 audit self-config [limit=N]      query self-config audit log: allowed + denied config-write attempts
 dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
-dashboard arc                    arc summary — stages, lanes, plan usage in points and tokens
+dashboard arc                    plan summary — stages, lanes, plan usage in points and tokens
 dashboard work-map               work map of projects, Automata, tasks and sessions
 dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (window like 6h)
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
+autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
+autonomous hold <id> <reason words> [until=<value>] [condition=<words>]   put an Automaton on hold; until is a time, a date or a duration like 72h; quote a multi-word value
+autonomous release-hold <id> [note]   release a hold; the Automaton returns to the status it had
+autonomous held   the Held group: Automata on hold, with reason, condition and look-again line
+autonomous held-migrate [dry_run=true] [id=<id>]... [reason=<words>]   list blocked or failed look-alikes, or hold the chosen ids (a real run needs id= and reason=)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
@@ -2342,11 +2357,11 @@ func dashboardArcOneLiner(body string) (string, error) {
 		return "", err
 	}
 	if !a.Available {
-		return "arc off (" + a.Reason + ")", nil
+		return "plan off (" + a.Reason + ")", nil
 	}
 	parts := []string{}
 	if a.Arc.Name != "" {
-		parts = append(parts, "arc "+a.Arc.Name)
+		parts = append(parts, "plan "+a.Arc.Name)
 	}
 	for _, s := range a.Arc.Stages {
 		parts = append(parts, fmt.Sprintf("%s %d/%d done (%.1f%%), %d running, %d blocked", s.Stage, s.Done, s.Total, s.Percent, s.Running, s.Blocked))

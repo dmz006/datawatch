@@ -232,7 +232,7 @@ A bad value is refused, and nothing is written. An explicit `0` is kept.
 ## Why lane fill skips an Automaton
 
 Before it hands a lane to a queued Automaton (a draft, an approved one or one
-waiting for review), lane fill checks it against seven rules. The first rule
+waiting for review), lane fill checks it against nine rules. The first rule
 that refuses it gives the **eligibility reason**, a short fixed code with a
 sentence of detail. A refused Automaton is never started in any mode, and it
 does not count as eligible work: not in the queued counts, not in the idle-lane
@@ -243,6 +243,7 @@ The rules run in this order:
 
 | Reason code | What it means | How to clear it |
 |---|---|---|
+| `operator_hold` | The Automaton's status is `held`: an operator put it on hold. The detail reads "on hold by the operator: <reason>; look again at <time>". This is checked first and applies to every status lane fill would otherwise consider. | Release the hold (see [Put an Automaton on hold](automaton-hold.md)). Until then this is the rule working. |
 | `held` | The title or spec has a line that starts with `HOLD`, says "do not run" or "sequenced last", or the judge timed out on every backend while the Automaton needed review. | Remove the line from the spec if the hold is over. If the hold is right, leave it: this is the rule working. |
 | `sequenced_after_unshipped` | The spec says it is "sequenced after" another Automaton, and that one is not completed, or the reference matches no Automaton at all (an unknown reference counts as unfinished). | Finish the other Automaton, or fix the reference so it names the right one (an 8-character id is the most reliable). |
 | `stale` | The Automaton has had no change for longer than `stale_after_hours` (72 by default). Old probes and forgotten drafts end up here. | If it still matters, edit it, which refreshes its last-updated time; if it does not, cancel it. To change the limit, set `stale_after_hours`; `0` turns the rule off. |
@@ -250,17 +251,30 @@ The rules run in this order:
 | `proposal_missing` | An implementation Automaton whose spec names no proposal file, or none of the named files can be read. | Name the proposal file in the spec, or fix its path. A path that is absolute, has a `..` element, or leaves the repository is treated as unreadable. Research, operational and personal Automata are exempt. |
 | `main_carries_work` | The default branch already has the work: a merge or a task commit for this Automaton, or its whole branch is already on the default branch. The detail names the commit. | The work has shipped, so cancel the Automaton. If the match is wrong, set `check_main_carries` to `false`. |
 | `worktree_invalid` | The Automaton has a recorded worktree that is gone, has no `.git` entry, or is not in the repository's registered worktree list. | Restore the worktree, or clear the stale entry in the repository (`git worktree prune`), then let the Automaton make a new one. An Automaton with no worktree yet is fine: it gets one when it runs. |
+| `plan_coverage_blocked` | The Automaton is awaiting review, and its stored plan-coverage record fails the approve gate: the gate mode resolves to `block`, the record is failing (ratio below `plan_coverage_min_ratio`, or a structural finding), and no covering acknowledgment exists. Starting it now would only leave it stuck at Approve, so lane fill refuses the ready slot instead: it never approves the Automaton and never clears the gate on the operator's behalf. | Either re-decompose with a plan that covers the spec, or acknowledge exactly that failing surface with an actor and a non-empty note (`datawatch autonomous prd-ack-coverage <id> --actor you --note "..."`, or the **Acknowledge** control on the PWA coverage panel). In `warn` or `off` mode the gate never blocks approval, so this rule never fires. See [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check). |
 
 Two rules turn their own check on and off: `proposal_not_confirmed` and
 `proposal_missing` need `require_confirmed_proposal`, `main_carries_work` needs
 `check_main_carries`, `worktree_invalid` needs `require_worktree` and `stale`
-needs a non-zero `stale_after_hours`. The `held` and `sequenced_after_unshipped`
-rules have no switch: a hold is a person's instruction.
+needs a non-zero `stale_after_hours`. The `operator_hold`, `held` and `sequenced_after_unshipped`
+rules have no switch: a hold is a person's instruction. `plan_coverage_blocked`
+also has no switch of its own: it mirrors the plan-coverage gate
+(`autonomous.plan_coverage_check`, `block` by default, overridable per
+project) and fires only on a `needs_review` Automaton whose stored record is
+failing without a covering acknowledgment.
+To clear it, read the plan coverage report on the Automaton and either fix the plan or acknowledge the report with a note; the lane then starts the Automaton on its next poll.
 
 If a check cannot be made (git cannot be read, the filesystem view is not
 there), the answer is "unknown" and **never** refuses. The base-branch check
 looks at a few Automata per poll, newest first, and remembers each answer until
 the default branch moves, so a long queue never stalls a poll.
+
+A refused candidate appears as a single `blocked` decision (a re-poll of the
+same candidate folds into that entry's `repeat_count` instead of adding a new
+one), and the lane takes the next eligible ready Automaton or the only draft
+instead, so the refusal is never retried against the same candidate. Clear the
+refusal and the Automaton becomes eligible again on a later poll; it does not
+queue up behind a chain of its own refusals.
 
 ### Where to read the reasons
 
@@ -273,7 +287,7 @@ absent on a decision that is not a refusal.
 | MCP | `autonomous_lane_fill_status`: the same object |
 | CLI | `datawatch autonomous lane-fill`: a decision line reads `blocked <id>: [stale] <sentence>`, the code in brackets |
 | Comm channel | `autonomous lane-fill [limit]`: the same lines, newest five decisions |
-| PWA | The **Lane fill** card: each refused Automaton carries a chip with the reason in plain words. Settings → General → Autonomous has the rows for the seven keys. |
+| PWA | The **Lane fill** card shows the mode, the lanes and their states, the queued work, the evidence and the idle alerts; the decisions (with each refusal's reason) are in the **Events** sub-tab of Automation Resources. Settings → General → Autonomous has the Lane fill fields. |
 | Audit | A change of a lane kind's mode writes a `lane_fill_mode` entry (kind, old mode, new mode). |
 
 ### The lane counts rule
@@ -462,8 +476,11 @@ In `on` mode, each decision goes through the existing start path:
 - A **start** sets the Automaton's worker backend to the lane's backend, if the
   Automaton's current status allows that change. It approves the Automaton if
   it still awaits review, using the same approve call a person would make. The
-  plan-coverage gate and the plan-review gate still apply to that approval. A
-  refused approval is recorded on the decision. Then it runs the
+  plan-coverage gate and the plan-review gate still apply to that approval —
+  and a `needs_review` Automaton whose coverage gate blocks approval is refused
+  as `plan_coverage_blocked` before the lane is handed over, not started and
+  left stuck at the gate: lane fill never acknowledges on the operator's behalf.
+  A refused approval is recorded on the decision. Then it runs the
   Automaton through the normal admission path, so capacity limits, quality gates
   and the stuck-task rules apply exactly as they do to a manual start.
 - A **decompose** or **decompose ahead** starts a decomposition of a draft in the
@@ -480,7 +497,9 @@ Before switching, the operator should have answered these:
 - Whether the routing pattern list in the plan (`docs/plans/2026-10-24-lane-fill-shadow-mode.md`)
   is confirmed or amended.
 - Whether `on` mode may approve a review-pending Automaton through the approve
-  call, as it does now, or may start only Automata that are already approved.
+  call, as it does now (a review-pending Automaton the coverage gate blocks is
+  refused as `plan_coverage_blocked` instead of being started and left stuck),
+  or may start only Automata that are already approved.
 - The default Claude lane count and the default idle alert minutes.
 - Whether an Automaton on a backend that is neither the GPU backend nor the
   Claude backend counts toward lane occupancy.
@@ -496,6 +515,15 @@ work waits for it, lane fill raises one alert:
 - it clears when the lane takes work, so a later idle period alerts again;
 - it goes through the normal alert path, at warning level, and is listed in the
   status under the idle lane alerts.
+
+The reverse also holds: a lane that is idle because **every** Automaton waiting
+for it is refused — for example the only queued one is refused as
+`plan_coverage_blocked` — has no eligible work, so no idle alert fires, and
+the lane's newest decision stays the `blocked <id>: [reason] ...` line. That is
+the refusal rules working, not a stuck lane: the lane starts its first
+eligible Automaton on the next poll once one exists, and clearing the refusal
+is what makes a refused Automaton eligible again (see the `plan_coverage_blocked`
+row in the table above and the troubleshooting row below).
 
 `idle_alert_minutes: 0` turns the alert off. The alert is read live, so a change
 needs no restart.
@@ -543,7 +571,13 @@ needs no restart.
   exempt. A file that cannot be read for any other reason does not refuse the
   Automaton. Set `autonomous.lane_fill.require_confirmed_proposal` to `false`
   to turn the rule off.
-- **It never starts an Automaton it has refused.** The seven eligibility
+- **It never clears the plan-coverage gate on the operator's behalf.** A
+  `needs_review` Automaton whose stored coverage record fails the approve gate
+  in `block` mode without a covering acknowledgment is refused as
+  `plan_coverage_blocked`; only the operator can acknowledge that exact failing
+  surface (with an actor and a non-empty note) or re-decompose with a covering
+  plan.
+- **It never starts an Automaton it has refused.** The nine eligibility
   reasons (see "Why lane fill skips an Automaton") apply in every mode, and a
   refused Automaton is not counted as eligible work anywhere, including the
   supervisor watch's idle-lane finding.
@@ -556,12 +590,19 @@ needs no restart.
 - **It never acts in shadow mode.** Shadow mode starts nothing and approves
   nothing.
 
+## Housekeeping repair for an idle lane
+
+The housekeeping repairs include a lane fill repair (group `lane_fill`, mode `off`, `report` or `on`, default `report`). When a lane is idle and eligible work waits, and the grace period has passed, it starts the next eligible Automaton through the normal run path. It never changes a model or backend. The repair is written and tested, but the daemon does not build it yet, so the group's `on` mode does not start it (the group's lane-count correction does run); see [automaton-housekeeping-repairs.md](automaton-housekeeping-repairs.md) for the full state and the points to review before turning the group to `on`.
+
+It refuses, writes one decision-log line (found, done, how to undo) and raises exactly one alert when no eligible work exists, capacity is full, the lane is at its inflight cap, the usage guard is paused, or the only waiting Automata need a backend the lane may not use. In `report` mode it records what it would start and starts nothing.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
 | Every GPU lane is blocked with `pool evidence unavailable: ...` | A node could not be read and the failure is blocking. The error names the node. If the node holds work, a lane is placed on it, or it has been unreachable for less than `host_down_after_minutes`, it blocks; restore the node, or for a certificate error set the node's own TLS options (see the certificate section above). A node that is switched off and holds no work stops blocking after `host_down_after_minutes` and shows under Degraded hosts instead. If `host_down_after_minutes` is `0` every failure blocks. See the section on a degraded host. |
 | A "Degraded hosts" block shows on the card | A node is unreachable but holds no work. The lanes are judged from the other nodes. It clears on the first successful read. |
+| A lane stays idle and its newest decision is `blocked <id>: [plan_coverage_blocked] ...` | The Automaton is awaiting review and the plan-coverage gate blocks approval (`block` mode, failing stored record, no covering acknowledgment). This is the refusal rule working: the lane does not sit on an Automaton it cannot approve. Acknowledge the exact failing surface with an actor and a note, or re-decompose with a covering plan; lane fill picks it up on the next poll. |
 
 ## See also
 

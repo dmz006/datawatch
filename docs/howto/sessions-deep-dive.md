@@ -95,7 +95,7 @@ No setup beyond having a backend. Sessions spawn on demand.
 A session may only start in a project directory that lies under an allowed
 root. The roots are:
 
-- the PRD worktree base, `autonomous.worktree_dir` (default
+- the Automata worktree base, `autonomous.worktree_dir` (default
   `~/.datawatch/prd-worktrees`);
 - the workspace root: `session.workspace_root` when set, otherwise the default
   workspace folder `~/workspace`;
@@ -175,34 +175,42 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 
 1. PWA → bottom nav **Sessions**. The list shows every session this
    daemon knows about; new sessions go to the top by default.
-2. **Filter bar** — above the session list, three controls left to right:
-   - **LLM (N) ▸** — collapses/expands a badge row showing each
-     backend-family (`claude-code`, `opencode`, `opencode-acp`,
-     `opencode-prompt`, `openwebui`, `ollama`, `shell`,
-     `council-virtual`). Click a badge to filter; button highlights
-     when a filter is active.
-   - **State (N) ▸** — collapses/expands a colored dot rail for every
-     real state (Running 🟢 / Waiting 🟠 / Rate-limited 🔴 / Complete ⚪
-     / Failed 🔴 / Killed ⚪). Click any dot to filter; multiple states
-     can be selected simultaneously.
-   - **Text input** — narrows by session name, task, ID,
-     `llm_ref`, or `compute_node_ref` substrings. Combines with the
-     badge filters.
-   - **Tags** (header icon button) — the session list's **Watched only**
-     toggle and tag filter live in the dropdown behind the Tags icon
-     button in the page header, not in the filter bar. The button is a
-     tag icon with no visible word: a solid tag filled in the theme
-     accent color, with a lighter hole and a subtle darker edge, that
-     reads clearly on both the dark and the light theme. It looks
-     brighter when the dropdown is open or a tag filter is on, it
-     carries a count badge while filters are active, and it shows a
-     visible focus ring for keyboard users. Its tooltip and accessible
-     name read **Tags**. Open it, tick **Watched only** to
-     list only sessions you watch, and tick tags to list only sessions
-     that carry them (**match ANY** by default; the match button
-     switches to **match ALL**). The icon shows a count of the active
-     filters, and **Clear** in the dropdown resets the tag ticks. These
-     combine with the filter bar above. See
+2. **Narrow the list.** One toolbar line sits directly under the page
+   heading, at every width — the control-by-control description is in
+   [sessions-tiles-and-grouping](sessions-tiles-and-grouping.md#the-toolbar-row).
+   In order: a **server select** (the same shared picker as the header
+   dropdown — choosing an entry in one updates the other), a **search
+   box** that takes the free width of the line, a **Filters** button (a
+   badge shows how many filters are active), a **Fold all** icon (only while a
+   grouping is active and the list has groups to fold) and the **List / Tiles / Compact** view-mode
+   select; your view choice is remembered on this device.
+   - **Search** — narrows by a session's name, its id, its backend, its
+     tag text and its state, so `claude`, `a1f2`, `automation:` or
+     `waiting` all work. While a search is active the page shows an
+     **N of M sessions** count (for example `3 of 21 sessions`).
+   - **Filters** — one sheet holds every filter: a **Group by** select
+     (none, or by State, Node, Model, Project, Tag, or Automaton), the
+     **Views** bar (a name field, a **+ New view** button and the saved
+     views as chips), a **Status** chip per real
+     state (multi-select; **All** means no filter), a **watched only**
+     toggle (list only the sessions you watch) and the **Backend** chips
+     (when two or more backends are in use). When any session carries a
+     tag, a **Tags** sub-section adds a tag search, per-tag chips with
+     counts, an **any / all** match mode and a **Clear**. Selected values
+     also show up as removable chips in the compact summary line above
+     the list, together with a **Clear all**.
+   - **Fold all** — folds or unfolds every group at once; it appears
+     while a grouping is active and the visible list has foldable groups.
+   - **Tree / History** — a line below the toolbar carries the **Tree**
+     and **History (N)** buttons, and the 🌐 hostname chip while a remote
+     server is active (click it to return to this server). That line is
+     behind the header's 🔍 *search & filters* button (right side of the
+     header bar): hidden by default, shown after you switch it on for
+     this browser.
+   - **Tags** (header icon button) — a separate surface for tags: its
+     dropdown also carries a **Watched only** tick that drives the same
+     watched-only list, and its **This session** section watches or un-watches
+     the open session. See
      [`automata-tags.md`](automata-tags.md#the-header-tags-dropdown).
 3. Click the **+** FAB → wizard:
    - **LLM** dropdown (populated from `/api/llms`; disabled entries
@@ -231,11 +239,46 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    **This session**, press **Watch this session** (or **Stop watching
    this session**). The same section has **Edit tags of this session**.
 
-   Detail view opens with three tabs:
+   The detail view is a **full-height page**: it fills exactly the space
+   between the header and the keyboard-aware bottom of the screen, and
+   the page itself does not scroll. The tab content takes all the
+   space left above the input bar, and the input bar sits flush at that
+   bottom — nothing is reserved below the input row (the earlier
+   short-box layout left a blank band under it), for your own sessions
+   and for a peer's alike. While
+   the software keyboard is up the page stays above it and shrinks to
+   match; the iOS home-indicator clearance is kept; resizing the window
+   or re-zooming the browser re-fits the terminal to the new height with
+   no refresh.
+
+   **On a phone-width screen** the tag chips and the Scheduled list no
+   longer sit open above the terminal. Each collapses to one summary
+   button: **Tags (N)** shows how many tags the session has, and
+   **Scheduled (N) · next <time>** shows how many schedules are pending
+   and when the earliest one runs. Tap a button (or focus it and press
+   Enter or Space) to open the full chip row or the schedule list (with
+   each entry's cancel control) in place, and tap again to close it; the
+   button's tooltip reads **Show all** or **Show less**. Both summaries
+   are real buttons that expose their open or closed state
+   (`aria-expanded`), so they work from the keyboard and with a screen
+   reader. Both start closed, and the vertical space they free goes to
+   the terminal above the input bar. Whether each is open is kept only
+   in the page's memory, per session: it survives switching tabs or
+   sessions, resets on a reload, and uses no browser storage key and no
+   setting. A session with no tags, or none scheduled, shows nothing.
+   On a wider screen nothing changes: the full chip rows and one row per
+   scheduled job, each with its cancel control, show as before, and the
+   stop, history and notes controls keep their positions.
+
+   It opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands. While the session
      is `waiting_input`, Yes/No/Stop quick-reply chips appear above the
-     input bar — tap one to send that reply without typing.
+     input bar — tap one to reply without typing. If the session has an
+     open question, the chip answers that question's matching option
+     instead of typing (and is refused when it matches no option or more
+     than one question is open); see
+     [`alerts-and-notifications.md`](alerts-and-notifications.md).
    - **Channel** — structured event bubble feed (MCP / ACP /
      chat_message). Native swipe-back through the 1000-entry buffer.
    - **Status** — two sub-tabs:
@@ -502,6 +545,48 @@ readable by the daemon); (2) send order only ever waits *within one
 WebSocket connection*, so multiple clients sending to the same session can
 interleave.
 
+### 5h. How a sent message is submitted
+
+A message sent from the web app (or from REST, MCP, the CLI or a comm
+channel) is typed into the session's terminal and then submitted with
+Enter. A long, multi-line or image-bearing message is not typed
+character by character: Claude Code folds it into a placeholder such as
+`[Pasted text #1 +12 lines]` and needs a moment to take the paste in.
+An Enter that arrives before that can be dropped, which used to leave the
+message sitting in the input box, pasted but not sent. The daemon now
+delivers in this order:
+
+1. **Type the text**, in chunks if it is large, then pause for the settle
+   delay (`session.schedule_settle_ms`, default 200 ms).
+2. **Wait for the paste to show up.** The daemon reads the visible
+   terminal for up to 1.5 seconds, until it sees the pasted placeholder
+   or the end of your text next to the input prompt. If it never appears
+   the daemon stops waiting and sends Enter anyway, so a slow or odd
+   terminal never stalls a send.
+3. **Press Enter once.**
+4. **Check that it was accepted** (only for pasted, multi-line or longer
+   messages). After about 0.4 seconds the daemon reads the terminal again.
+   If the placeholder or your text is still in the input box and the
+   assistant has not started working, it presses Enter again, at most two
+   more times.
+5. **Never press Enter again once it worked.** As soon as the placeholder
+   is gone, or the assistant is active, the daemon stops. A first Enter
+   that was accepted is exactly one submit, never a second empty message.
+
+A short single-line message with no placeholder keeps the fast path: one
+Enter after step 2, with no check afterwards. An empty message is a bare
+Enter. These timings are fixed in the daemon; only the settle delay in
+step 1 is an operator setting. No new setting, endpoint or field was
+added, so the REST, MCP, CLI, comm channel and PWA send paths all behave
+the same and nothing needs to change in how you call them.
+
+**If a message still sits unsent.** After the two extra Enters the daemon
+gives up quietly and the send itself still reports success, because the
+text did reach the terminal. The message stays in the input box. Open the
+session's terminal view and press Enter yourself. If this keeps happening on one backend, raise
+`session.schedule_settle_ms` (for example to 500) and tell the team which
+backend and which message size it affects.
+
 ## Diagram
 
 ```
@@ -671,11 +756,13 @@ sub-tab.
 
 ## Screenshots
 
-![Sessions list with filter bar](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-filter.png)
+![Sessions list with its toolbar](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-filter.png)
 
 ![New-session wizard](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-new-wizard.png)
 
 ![Session detail — Tmux tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-tmux.png)
+
+Note: the Tmux tab is a full-height page. The terminal pane fills the space between the header and the keyboard-aware bottom of the screen, and the saved-commands row (with the tmux shortcut keys) and the “Send command or input…” input row sit flush at that bottom — there is no empty band below them. Resizing the window or zooming the browser re-fits the terminal pane without a reload.
 
 ![Session detail — Status tab (hook board)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
 

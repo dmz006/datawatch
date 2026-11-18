@@ -14,7 +14,8 @@ Profile hosts many Projects.
 Both profiles are reachable via **REST, MCP, CLI, comm channels, and the
 Web UI** — the project rules require every setting to be configurable
 through every channel. Storage is JSON at `~/.datawatch/profiles/*.json`,
-transparently encrypted at rest when the daemon is started with `--secure`.
+transparently encrypted at rest when the daemon is started with `--secure`
+(see [encryption](encryption.md) for everything `--secure` does and does not cover).
 
 ## Quick start
 

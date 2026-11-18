@@ -317,3 +317,109 @@ func TestRegistryLoadRejectsInvalidVerificationMode(t *testing.T) {
 		t.Fatal("load must reject invalid verification_mode")
 	}
 }
+
+func TestLLM_FallthroughTargetDefaultsFalseAndRoundTrips(t *testing.T) {
+	var l LLM
+	if l.FallthroughTarget {
+		t.Fatal("zero value must not be a fall-through target")
+	}
+	raw, err := json.Marshal(LLM{Name: "a", Kind: KindOllama})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "fallthrough_target") {
+		t.Fatalf("unmarked entry should omit the key: %s", raw)
+	}
+	raw, _ = json.Marshal(LLM{Name: "a", Kind: KindOllama, FallthroughTarget: true})
+	var back LLM
+	if err := json.Unmarshal(raw, &back); err != nil || !back.FallthroughTarget {
+		t.Fatalf("json round trip: %v %+v", err, back)
+	}
+	y, err := yaml.Marshal(LLM{Name: "a", Kind: KindOllama, FallthroughTarget: true})
+	if err != nil || !strings.Contains(string(y), "fallthrough_target: true") {
+		t.Fatalf("yaml: %v %s", err, y)
+	}
+}
+
+// The claude-code launcher is a shared backend built exactly once, at daemon
+// start, with the canonical "claude-code" row's binary (or the "claude"
+// default), and it runs that one binary for every claude-code session. A
+// binary saved on any other claude-code row — e.g. a "claude-lean" wrapper an
+// operator expected new sessions to start with — would be dead config, so
+// the set/update path refuses it with the reason instead of pretending it
+// took effect.
+
+func TestLLMClaudeCodeBinaryRefusedOnNonCanonicalRow(t *testing.T) {
+	tests := []struct {
+		name string
+		l    *LLM
+		want bool
+	}{
+		{"canonical row keeps a wrapper binary", &LLM{Name: ClaudeCodeRowName, Kind: KindClaudeCode, Binary: "claude-lean"}, true},
+		{"canonical row keeps the default binary", &LLM{Name: ClaudeCodeRowName, Kind: KindClaudeCode, Binary: "claude"}, true},
+		{"named row with a binary is refused", &LLM{Name: "claude-lean", Kind: KindClaudeCode, Binary: "claude-lean"}, false},
+		{"named row with only the default binary is refused", &LLM{Name: "claude-lean", Kind: KindClaudeCode, Binary: "claude"}, false},
+		{"named row with whitespace binary is saved empty", &LLM{Name: "claude-lean", Kind: KindClaudeCode, Binary: "   "}, true},
+		{"aider row binary is unaffected", &LLM{Name: "my-aider", Kind: KindAider, Binary: "aider-lean"}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.l.Validate()
+			if (err == nil) != tc.want {
+				t.Fatalf("Validate() = %v, want valid=%v", err, tc.want)
+			}
+			if tc.want {
+				if tc.l.Binary != strings.TrimSpace(tc.l.Binary) {
+					t.Fatalf("binary must be trimmed on validate, got %q", tc.l.Binary)
+				}
+				return
+			}
+			msg := err.Error()
+			for _, want := range []string{tc.l.Name, "binary", ClaudeCodeRowName, "claude-code session"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("refusal should explain the reason and mention %q; got: %s", want, msg)
+				}
+			}
+		})
+	}
+}
+
+func TestRegistryClaudeCodeRowBinaryRefused(t *testing.T) {
+	t.Run("add is refused and not stored", func(t *testing.T) {
+		r := NewRegistry()
+		err := r.Add(&LLM{Name: "claude-lean", Kind: KindClaudeCode, Binary: "claude-lean"})
+		if err == nil {
+			t.Fatal("Add must refuse a binary the claude-code launcher will not run")
+		}
+		if r.Exists("claude-lean") {
+			t.Fatal("a refused row must not be stored")
+		}
+	})
+	t.Run("update is refused and the stored row stays clean", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.Add(&LLM{Name: "claude-lean", Kind: KindClaudeCode}); err != nil {
+			t.Fatalf("Add without binary: %v", err)
+		}
+		err := r.Update(&LLM{Name: "claude-lean", Kind: KindClaudeCode, Binary: "claude-lean"})
+		if err == nil {
+			t.Fatal("Update must refuse to add a binary the launcher will not run")
+		}
+		got, getErr := r.Get("claude-lean")
+		if getErr != nil || got == nil {
+			t.Fatalf("row must still exist and be readable: %v", getErr)
+		}
+		if got.Binary != "" {
+			t.Fatalf("stored row must keep an empty binary, got %q", got.Binary)
+		}
+	})
+	t.Run("canonical row accepts the wrapper binary", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.Add(&LLM{Name: ClaudeCodeRowName, Kind: KindClaudeCode, Binary: "claude-lean"}); err != nil {
+			t.Fatalf("the canonical row's binary is what the launcher runs and must save: %v", err)
+		}
+		got, _ := r.Get(ClaudeCodeRowName)
+		if got.Binary != "claude-lean" {
+			t.Fatalf("canonical row binary = %q, want \"claude-lean\"", got.Binary)
+		}
+	})
+}

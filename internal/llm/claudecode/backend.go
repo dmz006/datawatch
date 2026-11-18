@@ -84,6 +84,12 @@ func (b *Backend) SetPermissionMode(mode string) { b.permissionMode = mode }
 // SetModel (v5.27.5) — alias or full name forwarded to `--model`.
 func (b *Backend) SetModel(model string) { b.model = model }
 
+// Model returns the explicit model the backend will pass to the CLI as
+// --model, or "" when none was set (in which case the CLI's own default
+// would apply — datawatch refuses such a launch upstream, see the session
+// manager's explicit-model backstop).
+func (b *Backend) Model() string { return b.model }
+
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 

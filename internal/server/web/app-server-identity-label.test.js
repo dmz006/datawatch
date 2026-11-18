@@ -1,8 +1,8 @@
 // GH#194 (operator decision via datawatch-app): the PWA must never label
 // the connected server "local" to the operator -- everywhere it used to
 // say the literal word "Local" now shows the server's real hostname
-// (from /api/health's own hostname field) instead: the picker chip, the
-// swipe-gesture modal's picker, the "Back to %1$s" button, the
+// (from /api/health's own hostname field) instead: the header server
+// dropdown, the swipe-gesture modal's picker, the "Back to %1$s" button, the
 // connection toast, the Settings server list entry, and Observer's
 // per-system stats grid (which also had a real duplicate-card bug: the
 // local /api/stats card and the server's own synthesized "self" peer
@@ -56,17 +56,17 @@ test('_ensureLocalHostname: does not re-fetch once already resolved', async () =
   assert.equal(calls, 1, 'a second call after the hostname is already known should be a no-op');
 });
 
-// ── _serverPickerBar: local chip never says "Local" ─────────────────────
+// ── _serverPickerBar: local option never says "Local" ─────────────────
 
-test('_serverPickerBar: shows the real hostname for the local chip once known', () => {
+test('_serverPickerBar: shows the real hostname for the local option once known', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`
     state.servers = { servers: [{ name: 'host-a', enabled: true }] };
     _localHostname = 'local-node';
   `, sandbox);
   const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.match(html, /local-node/, `expected the real hostname in the chip; got: ${html}`);
-  assert.doesNotMatch(html, />Local</, 'the literal word "Local" must never appear as a chip label');
+  assert.match(html, /local-node/, `expected the real hostname in the local option; got: ${html}`);
+  assert.doesNotMatch(html, />Local</, 'the literal word "Local" must never appear as an option label');
 });
 
 test('_serverPickerBar: falls back to a generic (never "Local") placeholder before the hostname is known', () => {

@@ -1,10 +1,8 @@
 package main
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -49,17 +47,18 @@ func TestRulesReviewCLIAttentionPrintsBlock(t *testing.T) {
 	old := serverURL
 	serverURL = srv.URL
 	defer func() { serverURL = old }()
-	rd, wr, _ := os.Pipe()
-	stdout := os.Stdout
-	os.Stdout = wr
-	err := newAutonomousAttentionCmd().RunE(nil, nil)
-	os.Stdout = stdout
-	_ = wr.Close()
-	out, _ := io.ReadAll(rd)
-	if err != nil {
+	cmd := newAutonomousAttentionCmd()
+	var stdout, stderr strings.Builder
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatal(err)
 	}
-	got := string(out)
+	// The JSON stays on standard output; the review block is a note on standard error.
+	if strings.Contains(stdout.String(), "Completion review") {
+		t.Errorf("stdout must hold only the JSON: %q", stdout.String())
+	}
+	got := stderr.String()
 	if !strings.Contains(got, "Completion review: fix task failed") || !strings.Contains(got, "  - bad") {
 		t.Errorf("output = %q", got)
 	}

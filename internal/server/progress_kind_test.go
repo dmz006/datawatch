@@ -51,6 +51,10 @@ func (k *kindSpy) GetPRD(id string) (any, bool) {
 	return map[string]any{"id": id, "kind": k.setKind}, true
 }
 
+func (k *kindSpy) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return k.CreatePRD("", "", "", "", "")
+}
+
 func (k *kindSpy) CreatePRD(string, string, string, string, string) (any, error) {
 	k.createCall++
 	k.known["new1"] = true

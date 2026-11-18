@@ -44,6 +44,10 @@ func (f *tmFake) called(m string) bool {
 	return false
 }
 
+func (f *tmFake) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return f.CreatePRD("", "", "", "", "")
+}
+
 func (f *tmFake) CreatePRD(string, string, string, string, string) (any, error) {
 	f.mark("CreatePRD")
 	return nil, nil
@@ -64,7 +68,7 @@ func (f *tmFake) AddTaskReadOnly(string, string, string, string, string, []strin
 	f.mark("AddTaskReadOnly")
 	return nil, nil
 }
-func (f *tmFake) EditTask(string, string, string, *bool, string, string) (any, error) {
+func (f *tmFake) EditTask(string, string, string, *bool, string, string, string, string) (any, error) {
 	f.mark("EditTask")
 	return nil, nil
 }

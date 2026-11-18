@@ -151,8 +151,8 @@ it with two controls. The tag tree and drill-down views do not show it.
   between devices or with other operators. Clearing site data resets them.
 
 The Sessions list uses the same group header, collapse and show-more when you
-group by a placement axis; its tag filter button stays at the right of the
-header. The Sessions list itself has no mode toggle or group-by select from
+group by a placement axis; its tag filter lives in the Filters sheet (see
+[The Tags filter](sessions-tiles-and-grouping.md#the-tags-filter)). The Sessions list itself has no mode toggle or group-by select from
 this change.
 
 #### Selecting tags and the match mode
@@ -552,17 +552,29 @@ tree:
 - **Filter and group, don't edit.** Every surface can filter by a system
   tag or by a whole axis (`compute:*`); the PWA groups them by axis in the
   session list and the dashboard.
-- **One row per tag in the Sessions header Tags menu.** The menu lists each
-  tag exactly once: the placement tags (`axis:value`) appear only in the
-  **Placement tags (system)** section, under their own axis heading; the
-  Tags section beneath it carries the remaining system tags (with the
-  padlock mark) and your operator tags, exactly as before. Ticking a
-  placement tag checks its single row, and the match-mode (any/all) toggle
-  and Clear work as before even with a placement tag selected. The tag
-  filter rows elsewhere (Automata, tasks, facets) are unchanged and still
-  show system tags with the padlock. It is display-only: tags, stored
-  selections and the results of an active tag filter are untouched —
-  refresh the PWA and the menu is correct.
+- **One chip per tag in the Sessions Filters sheet.** On the Sessions page
+  the tag filter is the **Tags** section of the **Filters** sheet. Each tag
+  appears once, as a chip under its axis group (**Kind**, **Role**, **Lane**,
+  **Compute node**, **Project**; your own tags under **Your tags**, anything
+  else under **Other**), with a search box above the groups and a **Show
+  all** control past the first six chips of a group. A chip's main text is
+  the readable name — operator tag name, project or folder name, node name,
+  Automaton title — with the id only as small secondary text, and **unnamed**
+  with the id when no name resolves; a bare id is never the primary text. The
+  **Compute node** group is per node — one entry per local host (its real
+  hostname) or federated peer (its registered peer name), computed from the
+  listed sessions, aliases merged, never "local" or "all". The
+  per-Automaton,
+  per-stage and per-task tags (`automaton:`, `stage:`, `task:`, `story:`)
+  have no chips — pick an Automaton from the **Find an Automaton** picker,
+  and cut by stage or task through the session grouping. Chip counts are the
+  sessions in the current list. Ticking a tag checks its single chip, and
+  the match-mode (any/all) toggle and Clear work as before. The selected
+  tags also show as small removable chips above the list. The tag filter
+  rows elsewhere (Automata, tasks, facets) are unchanged and still show
+  system tags with the padlock. It is display-only: tags, stored selections
+  and the results of an active tag filter are untouched. See
+  [Sessions tiles, grouping and saved views](sessions-tiles-and-grouping.md#the-tags-filter).
 - **Shown on the session card.** The PWA's session list draws each
   session's placement tags as green chips with a small ⚙️ mark, next to its
   own tags (normal chips) and its inherited tags (dashed). The summary rows
@@ -575,6 +587,15 @@ tree:
   the tile without dropping it. A later list row or session update that
   simply omits `system_tags` keeps the chip; only an explicit empty
   `system_tags` removes it.
+- **No card shows a raw id.** An axis whose value is a bare identifier — the
+  per-record axes `automaton:`, `stage:`, `task:` and `story:`, whose value
+  is the record's id instead of a name — is drawn as the axis word alone
+  (the `automaton:1d440001` chip reads **Automaton**), with the full tag
+  name kept in the chip's tooltip in its place. In an inherited tag the chip
+  still carries its inherited mark; the full tag simply rides in the tooltip
+  instead of the inherited hint. A value that already reads as plain words
+  (`lane:gpu`, `kind:research`, `role:reviewer`, `compute:dev box`) renders
+  unchanged, chip text and tooltip alike.
 
 ### Stamping, re-stamping and the startup backfill
 

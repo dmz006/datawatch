@@ -210,8 +210,20 @@ the lock holder. The watched call keeps waiting and returns normally once the lo
 Internal loops (reaper, limit sync) use plain `Snapshot`.
 
 Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
-that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
-Each entry carries `backend`, `until`, `reason` (the free-form text), `source`
+that holds autonomous **worker** dispatch (never interactive starts) after a rate/usage
+limit. The hold has one carve-out: the review roles — guardrail judges, verifiers and
+decompose/planning sessions — are admitted on a held backend through the **review
+reserve** (`internal/autonomous/backoff_reserve.go`, installed on the capacity ledger as
+the role-aware back-pressure gate), bounded by `autonomous.backoff_reserve_for_review`
+(live session slots, default 1; 0 disables the reserve) and optionally
+`autonomous.backoff_reserve_tokens_per_hour` (rolling one-hour token budget, default 0 =
+none). A review request that cannot fit waits with the back-off-classified reason
+`pool llm:<backend> backpressure: back-off, review reserve in use`; new worker requests
+are refused for the whole flag. Each admission and refusal is audited as
+`autonomous_usage_backoff_reserve_admitted` / `autonomous_usage_backoff_reserve_refused`
+(`internal/audit/events.go`). Both keys are read live at decision time and are
+YAML-only configuration (no REST, MCP, CLI, comm or PWA surface). Each flag entry
+carries `backend`, `until`, `reason` (the free-form text), `source`
 (`rate_limit` | `operator` | `burn_guard`) and `reset_known`; a flag set by a ladder
 rung (the burn guard's `hold_claude` hold, via `Backoff.SetWithRung`) additionally
 carries `rung` with the rung's name — omitted in the JSON on plain rate-limit and
@@ -225,7 +237,14 @@ description names `rung` beside `reset_known`. Config: `autonomous.usage_backoff
 path) and `autonomous.backoff_max_wait_minutes`
 (default 60; whole minutes, a value below 1 is treated as 60). Operator surfaces:
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
-`usage_backoff`. See `docs/howto/automata-capacity.md`.
+`usage_backoff`. See `docs/howto/automata-capacity.md` and `docs/howto/usage-backoff.md`.
+
+A related admission fix, in the same area: a task's guardrail judge no longer queues
+behind the task's own worker lease. When a judge starts it inherits that lease (holder
+`judge:<unit>`, `internal/autonomous/judge_capacity.go` `JudgeAdmit.WorkerHolder`): on
+a node with a verifier pool the worker lease is released and the judge takes a
+`node-verify:<node>` slot; otherwise the lease is re-keyed to the judge's holder in
+place. No fresh slot is taken and the task is never counted twice.
 
 Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
 block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),
@@ -608,6 +627,14 @@ text is never flagged in any mode. A failed Automaton accepts a spec edit
 `PUT /api/config` and `GET /api/config`, MCP `autonomous_config_get` /
 `autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
 Settings → Automate → Task scope lint select. See `docs/operations.md`.
+
+### Gate drain (`autonomous.gate_drain_minutes`)
+
+Minutes a graceful restart or stop waits for running final gates before the daemon exits. Default 10; 0 = do not wait; a negative value is rejected on every write path. Parsing lives in `internal/config/gate_drain.go`; the wait and the `running_gates` report are in `internal/autonomous/restart_policy.go` and `internal/autonomous/running_gates.go`. The wait is bounded and signals nothing: unfinished gates keep running and re-attach at the next start. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#waiting-for-running-final-gates).
+
+### Durable gate record, gate registry and restart retry
+
+A final gate runs through the same detached wrapper and run root as verification scripts, with one record per check and project directory (`internal/autonomous/script_gate_record.go`: process id and start time, output and exit files, delivered flag). A restarted daemon re-attaches to the live run, delivers a finished result once, or starts a new run. The Manager keeps a registry of running gates (`internal/autonomous/running_gates.go`) that feeds `running_gates` in the restart report and the exit-time wait. A gate killed by a signal within five minutes of the daemon start is rerun once (`gateRestartRetryDue` in `internal/autonomous/script_gate_task.go`), outside the retry budget, marked by `Task.GateRestartRetryUsed` and recorded in the decision log. See [howto/restart-with-work-running.md](howto/restart-with-work-running.md#verifying-judging-and-verification-scripts). Scenario tests with fakes (temp project, release-file gate script, fake clock, no daemon or service manager) are in `internal/autonomous/gate_restart_scenarios_test.go`: `TestGateSurvivesRestart`, `TestGateDrainWaitsAndTimesOut`, `TestGateRestartRetryOnce`, `TestGateKilledLongAfterRestartIsFailure`.
 
 ### Planning restart policy (`autonomous.planning_restart_policy`)
 
@@ -1254,7 +1281,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `compute_nodes[].tls_insecure_skip_verify` | bool | `false` | Turns off TLS certificate verification for this node: the daemon's node usage probes (loaded models via `/api/ps`, GPU stats from `monitoring_endpoint`) and the supervisor watch probe. Off by default, so certificates are verified. Last resort only; prefer `tls_ca_file` or `tls_cert_fingerprint`. When on, it is reported in the node record, the PWA and the audit log. Cannot be combined with `tls_ca_file` or `tls_cert_fingerprint`: node add and update reject the combination, and a seeded node that sets both has its TLS probes fail instead of falling back to skipping verification. |
 | `compute_nodes[].tls_ca_file` | string | `""` | Path to a PEM CA bundle trusted in addition to the system roots when verifying this node's certificate. Use it when the node serves a certificate from a private CA. May be combined with `tls_cert_fingerprint`; cannot be combined with `tls_insecure_skip_verify`. |
 | `compute_nodes[].tls_cert_fingerprint` | string | `""` | SHA-256 fingerprint of this node's leaf certificate, pinned instead of chain verification. Use it for a single self-signed certificate. Accepts 64 hex characters, case-insensitive, colons optional. May be combined with `tls_ca_file`; cannot be combined with `tls_insecure_skip_verify`. |
-| `compute_nodes[].verify_tls` | bool | `false` | When `true`, model pulls to this node (the compute-node model pull, the marketplace task pull and the model loader's pull) verify the node's `https://` certificate against the system roots, and a failed check fails the pull with an error that names the node and the certificate problem. Off by default, so pulls do not check the certificate. Governs model pulls only; it is separate from `tls_ca_file`, `tls_cert_fingerprint` and `tls_insecure_skip_verify`, which govern the usage and supervisor watch probes, and a pull does not use the CA file or pin. Node update replaces the whole node, so leaving it out turns it off. |
+| `compute_nodes[].verify_tls` | bool | `false` | Kept for configuration compatibility. Model pulls to this node (the compute-node model pull, the marketplace task pull and the model loader's pull) always verify the node's `https://` certificate: against the system roots (plus `tls_ca_file` when set), or the `tls_cert_fingerprint` leaf pin when it is set; a failed check fails the pull with an error that names the node and the certificate problem. There is no per-node off switch — `tls_insecure_skip_verify` governs the usage and supervisor watch probes only and never applies to a pull. Node update still replaces the whole node, so leaving it out leaves it `false`. |
 | `compute_nodes[].scheduling_priority` | int | `50` (when `0` or unset) | Node priority, 0 to 100. When an LLM entry's pool lists two or more nodes, the ledger places a worker on the least-loaded healthy node that has a free slot (pool used count over its limit); priority only breaks a tie between equally loaded nodes, and a remaining tie keeps the order of the entry's list (`internal/capacity/ledger.go`). Set through REST, MCP `compute_node_add`/`compute_node_update`, the CLI `compute node add|update` and the PWA node form. |
 | `llms[].compute_nodes` | list of names | empty | LLM registry entry, not a `config.yaml` key. The list of compute nodes a local-model worker, verifier and judge may run on. Each listed node that is known and serves the model is a candidate, and the request goes to the least loaded candidate (`scheduling_priority` only breaks a tie, then list order); a node that does not serve the model is skipped, and one engine per node still applies. With one node it behaves as before. With two or more candidates it is the pool the ledger picks from, and each worker's model is loaded on the chosen node before it starts; a failed load alerts, releases the lease and tries another node of the list. Set with `--compute-nodes` on `datawatch llm add|update`, REST `PUT /api/llms/{name}` and MCP `llm_add`/`llm_update`. |
 | `compute_nodes[].session_slots` | int | `0` | Operator's worker count for a node that hosts a local engine. `0` derives it from observer data (`compute.NodeSlots`, `internal/compute/slots.go`): one slot per GPU limited by free GPU memory against the served model, or free system memory divided by model size with no GPU data, at least one slot. A positive value wins over the derived count. `max_concurrent_sessions` still caps the result. A negative value is rejected when the config loads (`validateLoaded`, `internal/config/config.go`) and when the node is saved (`Node.Validate`). The same field is on the node record in `internal/compute/node.go`, saved by the registry, and set through REST, MCP, the CLI, the comm channel and the PWA node form. |
@@ -1328,7 +1355,7 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `autonomous.judge_size_threshold_lines` | int | `400` | Changed-line count above which the judges try `claude-code` first; at or below it, and when it is `0`, the judge backends keep their configured order. Lines are added plus deleted on the Automaton branch against its merge base, lock files left out, committed work only, counted by `JudgeDiffLines` in `internal/autonomous/judge_diff_size.go`. The reorder is `judgeSizeRoute` in `cmd/datawatch/judge_size_route.go`: `claude-code` moves to the front when it is in the chain and the rest keep their order, still one attempt per backend; in `balance` mode the load decides and the order only breaks ties. A unit with its own task or PRD guardrail backend override is not reordered, and a failed count keeps the default order. The Automaton decision log names the rule and the line count; a judge that times out on every backend still holds the Automaton. Declared in `internal/config/config.go` (`JudgeSizeThresholdLines`, default `JudgeSizeThresholdDefaultLines`); a negative value is refused. Same surfaces as `autonomous.judge_policy` (CLI `--judge-size-threshold-lines`, comm `judge-policy-set judge_size_threshold_lines=n`, PWA Settings > Automata > Autonomous Automata planning > Judge size threshold). |
 | `autonomous.judge_strong_backend` | string | `""` | Strong judge for size-aware routing: the backend a diff at or above `autonomous.judge_size_threshold_lines` changed lines is routed to first. Empty (the default) resolves to the last backend in `autonomous.judge_policy` (the strong Claude judge under a "local then Claude" chain); a value that is not in `judge_policy` leaves the judge backend order unchanged. Declared in `internal/config/config.go` (`JudgeStrongBackend`), resolved per judge chain by `internal/config/judge_policy.go` (`ResolveJudgeStrongBackend`). Accepts any LLM backend name; the key is not validated against a backend list (a backend name is not required to be one). Same surfaces as `autonomous.judge_policy` (REST `judge_strong_backend` on `GET/PUT /api/autonomous/config`; MCP `autonomous_config_set` `judge_strong_backend`; CLI `autonomous config-set --judge-strong-backend`; comm `autonomous judge-policy-set judge_strong_backend=…` / `configure autonomous.judge_strong_backend=…`; YAML `autonomous.judge_strong_backend`; PWA Settings > Automata > Autonomous Automata planning > Strong judge backend (large-diff reroute) text field). The review-state surface (`timed_out` → `action: reroute`) is documented in `docs/howto/judge-policy.md` → The review state. |
 | `autonomous.judge_verdict_cache_enabled` | bool | unset reads `true` | Per-commit judge verdict cache, on by default. A completed pass, or a block whose category is a real finding (content, or the empty pre-category value), is stored keyed on the triple **(commit sha, judge policy, rules)** — rules = SHA-256 over the guardrail name and the exact inputs the judge saw (its prompt, the unit's title and spec, and the judge model) — and replayed on that triple instead of running the judge again (`internal/autonomous/judge_verdict_cache.go`: `NewJudgeVerdictCache`, `Lookup`, `Store`, `policyKey`, `JudgeVerdictRulesHash`; a pinned backend, the judge chain `judge:a|b`, and an empty chain are different keys). A verdict whose review timed out (the `judge-timeout` category), or one that crashed, or returned unparseable output — `infra`, `invalid-response` and `judge-timeout` categories, or a hard error — is never stored and never replayed as a verdict, so a later infra retry still runs for real; a judged unit with no recorded commit sha bypasses the cache in both directions. Cache file `judge_verdict_cache.json` in the PRD store directory, written atomically; it survives daemon restarts. Declared in `internal/config/config.go` (`JudgeVerdictCacheEnabled`, `*bool`); normalized by `config.NormalizeJudgeVerdictCacheEnabled` (nil → `true`), so an explicit `false` is the only way off, and it re-judges every guardrailed commit. Same surfaces as `autonomous.judge_policy` (REST `judge_verdict_cache_enabled`; MCP `autonomous_config_set` `judge_verdict_cache_enabled`; CLI `autonomous config-set --judge-verdict-cache=false`; comm `autonomous judge-policy-set judge_verdict_cache_enabled=false` / `configure autonomous.judge_verdict_cache_enabled=false`; YAML `autonomous.judge_verdict_cache_enabled`; PWA Settings > Automata > Autonomous Automata planning > Judge verdict cache toggle). How-to: `docs/howto/judge-policy.md` → The per-commit verdict cache. |
-| `autonomous.guardrail_model` | string | `""` | **v9.10.18** — pinned model for the guardrail JUDGE (rules-review, ci-watch, per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier precedence chain implemented in `internal/autonomous/guardrail_model.go` (`ResolveGuardrailModel`): tier 1 PRD `guardrail_model`, tier 2 task `guardrail_model`, tier 3 this field, tier 4 `autonomous.verification_model`, tier 5 `autonomous.planning_model` (tiers 3–5 apply once the resolved judge backend is pi-family). First tier that yields a model the resolved backend can serve (`validateModelForBackend`) wins. If every tier fails (empty or unpairable), the guardrail record gets a loud, non-retried infra-category block (sentinel `ErrNoGuardrailModel`, verdict via `noGuardrailModelVerdict`) — a pi-family judge NEVER silently runs on the backend's built-in default model. The `set_prd_guardrail_llm` / `set_task_guardrail_llm` setters validate the pair (plus full resolution when a model is pinned) before mutating. |
+| `autonomous.guardrail_model` | string | `""` | **v9.10.18** — pinned model for the guardrail JUDGE (rules-review, ci-watch, per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier precedence chain implemented in `internal/autonomous/guardrail_model.go` (`ResolveGuardrailModel`): tier 1 PRD `guardrail_model`, tier 2 task `guardrail_model`, tier 3 this field, tier 4 `autonomous.verification_model`, tier 5 `autonomous.planning_model` (tiers 3–5 apply once the resolved judge backend is pi-family). First tier that yields a model the resolved backend can serve (`validateModelForBackend`) wins. On a pi-family judge, if every tier fails (empty or unpairable), the guardrail record gets a loud, non-retried infra-category block (sentinel `ErrNoGuardrailModel`, verdict via `noGuardrailModelVerdict`) — a pi-family judge NEVER silently runs on the backend's built-in default model. On a `claude-code` judge, the explicit-model policy (`ResolveClaudeModel` in `internal/autonomous/model_policy.go`) takes over at the last tier: a judge whose PRD and task levels name no model resolves to the daemon default `sonnet` (judging is never mechanical work, so `haiku` never applies) instead of the old `ErrNoGuardrailModel` block, and a pin the backend cannot serve is still a loud failure. The `set_prd_guardrail_llm` / `set_task_guardrail_llm` setters validate the pair (plus full resolution when a model is pinned) before mutating. |
 | `autonomous.default_quality_gates.enabled` | bool | `false` | Master toggle for per-PRD test regression gates. When true, the executor captures a test baseline before the first task and re-runs after each task completes. |
 | `autonomous.default_quality_gates.test_command` | string | `""` | ONE shell string run through `sh -c` in the PRD's `project_dir` (`pipeline.RunTests`), so compound commands (`a && b`) work. The baseline is validated at set time and at Automaton start; an unusable one (could not start, timed out, non-zero exit naming no test, no tests found) marks the PRD `quality_gate_status: "invalid"` and the gate then only warns. |
 | `autonomous.default_quality_gates.timeout` | int | `0` | Per-run timeout in seconds for the test command. `0` = no cap. |
@@ -1362,6 +1389,9 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `autonomous.decisions.clarity_min_text_chars` | int | `60` | Fewest characters the situation and deciding text may have; whole number >= 0, an explicit `0` stays `0` (length check off). A negative value is refused. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
 | `autonomous.decisions.clarity_require_tradeoffs` | bool | `true` (when absent) | Every option needs a one-line cost and risk. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
 | `autonomous.decisions.clarity_require_label` | bool | `true` (when absent) | A record needs a short human label. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
+| `autonomous.plan_records.enabled` | bool | `true` (when absent) | Master switch for plan records (registry rows and findings kept by the daemon). While `false` every `/api/plan-records` route answers 404 and the Plan records section of the Projects page hides; records stay on disk. Helper `EffectiveEnabled()`. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; chat `configure`; PWA Settings, Automata. |
+| `autonomous.plan_records.write_through` | bool | `false` (when absent) | When on, the merge pipeline's `registry_row` post-ship hook records a shipped row as a plan record instead of editing `docs/plans/README.md`. Helper `EffectiveWriteThrough()`. Same surfaces as `enabled`. |
+| `autonomous.plan_records.import_conflict_policy` | text | `suffix` | `suffix`, `rename` or `skip`: what an import does with a title or row number that is already taken, when the call names no policy. Any other value is refused. Helper `EffectiveImportConflictPolicy()`. Same surfaces as `enabled`. |
 | `autonomous.decisions.clarity_tracker_id_pattern` | regular expression | empty (the built-in `DefaultQuestionQualityTrackerIDPattern`) | Spots an internal tracker identifier in a record. A pattern that does not compile is refused. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
 | `autonomous.decisions.doc_root` | text | empty (the daemon's working directory) | Folder document paths on a record resolve against and must stay inside. Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
 | `autonomous.decisions.doc_status_mode` | text | `report` | `off`, `report` or `on`: whether an answer is written back to the linked document's status line. Anything else is refused (`ValidateDecisionDocStatusMode`). Surfaces: YAML; REST `GET`/`PUT /api/config`; MCP `config_set` / `get_config`; CLI `datawatch config set`; comm `configure`. Read from `config.AutonomousDecisionsConfig` (`internal/config/config.go`) through its `Effective*` helper; a bad value is refused by the validator the config file load and `PUT /api/config` share. |
@@ -1410,6 +1440,11 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `autonomous.auto_tags.kind_template` | string | `kind:{kind}` | Template for the kind tag. `{kind}` renders as the kind's label from `autonomous.auto_tags.kind_labels`. Same surfaces as `autonomous.auto_tags.enabled`. |
 | Template placeholders | — | — | Any of the three templates may reference only the placeholders `{automation}`, `{stage}` and `{kind}` — any other `{name}` is refused with a message naming the placeholder (`autonomous.auto_tags.<field>: placeholder {owner} is not one of {automation}, {stage}, {kind}`). The template must not be empty, must contain no newline, and must render to a non-empty name. |
 | `autonomous.auto_tags.kind_labels` | map | `{feature: feature, bug: bug, other: maintenance}` | What `{kind}` renders as per Automaton kind (`internal/autonomous/auto_tags.go`): the kind's own label from `feature`, `bug`, `other`, then the default vocabulary (`feature` → `feature`, `bug` → `bug`, `other` → `maintenance`), then the kind itself as a last resort. Rename a label (e.g. `other: support`) to change what kind tags say. Shipped as a map in the config file and accepted as `kind:label` pairs in the CLI/comm surfaces (for example `datawatch config set autonomous.auto_tags.kind_labels other:support`). kind_labels are daemon-global: a per-Automation override cannot carry its own. |
+| `autonomous.housekeeping_repairs.task_chain` | string | `report` | Mode of the housekeeping repair for an Automation chain whose next step is waiting and was not started: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for stuck task chains (a dependent reset, a docs mirror sync for a final gate, removal of one untracked leaked file), each retried at most once (`internal/autonomous/housekeeping_repair_task_chain.go`); the daemon runs them when the group is `on`, and in `report` (the default) they record what they would do. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.advance_judge` | string | `report` | Mode of the housekeeping repair for a task held after infrastructure retries ran out: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds three repairs for finished and review-blocked Automata (an advance of a running Automaton whose tasks are all finished, one repair task made once from the rules review findings, and a merge-wait/merge-ready report that never merges) (`internal/autonomous/housekeeping_repair_advance.go`); the daemon runs the pass, making at most one finding per Automaton from a single state check; the group's `report` default records what it would do. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.lane_fill` | string | `report` | Mode of the housekeeping repair for a running lane count that differs from the wanted count inside its bounds: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. The group also holds a lane fill repair that starts the next eligible Automaton on an idle lane through the normal run path, never changing a model or backend (`internal/autonomous/housekeeping_repair_lanes.go`); the daemon does not start it yet. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.leftovers` | string | `report` | Mode of the housekeeping repair for leftover disk state that crossed the cleanup alert threshold: `off` does nothing, `report` records what it would do and changes nothing, `on` repairs it. Each repair writes one decision-log line (found, done, how to undo) and a case skipped as unsafe raises one alert. Repairs never merge, ship, delete or end a session, change model or backend settings, or touch security workflows (`internal/config/housekeeping_repairs.go`, `internal/autonomous/housekeeping_repairs.go`). Same surfaces and refusal message as `autonomous.auto_tags.enabled`. |
+| `autonomous.housekeeping_repairs.grace_seconds` | int | `300` | Seconds a stuck state must persist before it is reported or repaired; 0 means no grace. Same surfaces as the group modes. |
 | Per-Automation override | — | — | An Automation may carry an `auto_tags` override (`AutoTagsOverride`, set through the same validation) with `enabled` (only an explicit value wins over the daemon's), and any of the three templates (an empty one inherits the daemon's). The override is stored on the Automation and survives an update that does not name it. `ResolveAutoTags(daemonCfg, override)` is the single merge point; `RenderAutoTag` renders one tag and refuses when auto tagging is off or the rendered name is empty. |
 | Sync engine | — | — | The tags are reconciled, not hand-managed: `Manager.syncAutoTags` runs on every membership join or leave, member move, stage rename, Automation rename, kind change, delete, and daemon flip (`SyncAutoTagsAll`), and after a config save that changed the block (REST `PUT /api/config`, MCP `config_set`, CLI `config set`, comm `configure`) (internal/autonomous/auto_tags.go). It gets or creates the engine's system tags (colour-neutral, under the root), renames the record in place when the rendered name changes (tag ID and assignments survive a rename), keeps operator tags and tags of other Automations untouched, strips the engine's own stale tags from a PRD, and reclaims an engine tag record no member carries anymore (an empty stage's stage tag goes; the shared kind vocabulary stays). A tag name an operator tag already owns is refused loudly everywhere the engine would create it — it is never silently renamed or overwritten; a refused create leaves no Automation behind. Sessions read the tags live: a session of a member PRD inherits the three engine tags (`internal/session/InheritedTags`) with no session write. |
 | System tags | — | — | Tags datawatch creates for its own vocabulary (the automation/stage/kind auto tags) carry `Tag.System` (`internal/autonomous/models.go`). `RenameTag`, `SetTagParent` and `DeleteTag` refuse a system tag with `ErrTagSystem` (REST 409) so an operator's rename can never orphan an Automaton's tags, while `SetTagColor` and `SetTagDescription` stay allowed (`internal/autonomous/tags.go`). |
@@ -1836,6 +1871,14 @@ error is returned; retry iterations log at debug level and the final outcome is 
 ONCE at info level. The thread-safe reader `mcp.Server.SSEListenerState()` reports
 `disabled` (never attempted), `retrying`, `listening`, or `failed`.
 
+### MCP resource subscriptions (`mcp.resource_subscriptions`)
+
+`mcp.resource_subscriptions` (bool, default `false`; restart to apply) sets the `subscribe` flag of the resources capability in `internal/mcp/server.go` and, when on, installs the mcp-go subscribe hooks from `internal/mcp/resource_subscriptions.go`. A `resources/subscribe` on `datawatch://events/lifecycle?kinds=…&level=…&prd_id=…&task_id=…&automation_id=…&peer=…` parses the query into an `autonomous.LifecycleFilter`, validates it with `autonomous.ValidateSubscription` (the persisted-subscription rules) and registers it with `Manager.Subscribe`: one more consumer of the existing dispatcher. Each matching event passes `Manager.LifecycleEventDeliverable` (the notify-event set, then the Automation scope; the persisted-subscription engine calls the same method) and is sent as `notifications/resources/updated`. Nothing is stored; no sink type or subscription field is added. Subscriptions end on `resources/unsubscribe` or when the MCP session unregisters; at most 32 per session. Off: no hooks, `subscribe=false`, no events resource. Surfaces: YAML, `GET/PUT /api/config`, `datawatch config set`, comm `configure`, MCP `config_set`, the PWA MCP Server card (label and help in five locales).
+
+### Peer event subscription
+
+`internal/autonomous/lifecycle_peer_subscription.go` is the pull direction of federation. `PeerEventSubscriber.Start` checks a peer (registered, enabled, a federation peer, `autonomous:read` granted, a token, a usable URL) and starts one goroutine for it; a refused peer starts none, writes one `autonomous_lifecycle_forward_receive` audit record (`direction: read`) and raises one alert. The goroutine polls `GET <peer>/api/autonomous/events?queue=&since=&limit=` with the peer's bearer token, the forwarder's timestamped HMAC header and hop-chain header, under the forwarding timeout and the shared `webhookBackoff` curve (a 401 or 403 stops it). Accepted events are published to the Manager's dispatcher with `Peer` set from the registry name and `Forward` set, so they are never forwarded on or written to executor state. Forwarded: lifecycle events only. Not forwarded: session output, secrets, configuration. `ForwardSettings.Enabled` gates it; no setting or event kind is added.
+
 ### Data Files
 
 All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
@@ -1883,6 +1926,22 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   (via contains “restart”), `api-stop`, `unknown`. The file is written
   atomically (temp file + rename) and read back with
   `shutdowncause.ReadLast`.
+- **/proc fallback candidate order:** when the sender is attributed from
+  the process table, candidates are ranked so the most specific evidence
+  comes first: a process whose cmdline names the daemon's own pid as a
+  whole token (for example `kill <pid>` or `pkill --pid=<pid>`) ranks
+  above processes that only name the `datawatch` unit (for example a
+  `systemctl stop datawatch-other` for an unrelated unit whose name merely
+  contains the word). Within each group lower pids come first, so the
+  order is deterministic. The first candidate is the recorded sender. This
+  is what stops an unrelated same-host process from being attributed as
+  the stop sender in a full `go test` run.
+- **Process source seam:** the procscan reads the process table through a
+  small internal `procSource` interface (`pids`, `cmdline`, `identity`).
+  The default `liveProcSource` reads the live proc filesystem, so daemon
+  behavior is unchanged; only tests install another source
+  (`installProcSource` / `resetProcSource`). There is no config key, API
+  field or `source` value for it.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1894,12 +1953,30 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   misreported as an already-shown stop.
 - **Regression test:** `internal/shutdowncause/signal_child_test.go`
   (`TestSignalChildProcScan`) re-executes the test binary as a child
-  (TestMain helper-env pattern); the child sends SIGTERM to the parent by
-  the exact PID it was passed. It asserts `Signal=terminated`; on the siginfo
-  path `SenderPID` must equal the child’s PID, on the /proc fallback the
-  child must appear among `CandidatesFor` results with the test binary in
-  its cmdline. Skips with a message on non-Linux; signals only its own
-  process via the child it started.
+  (TestMain helper-env pattern) with the recognizable stop-sender cmdline
+  `<binary> kill <parent pid>`. The child announces that it is running by
+  printing a `child-started` line to stdout, and only then sends SIGTERM
+  to that exact pid — nothing else, ever. The parent waits for that line
+  (30 second bound) and then polls the child's own `/proc/<pid>/cmdline`
+  until the stop-sender line is visible (10 second bound): explicit
+  readiness signals instead of a scheduling assumption, so the test passes
+  inside a full `go test` run of the module, not only alone. The child
+  stays alive while the parent holds its stdin pipe open (EOF releases it,
+  plus a 120 second safety cap), so it is still present in the process
+  table when the procscan attributes it. It asserts `Signal=terminated`;
+  on the siginfo path `SenderPID` must equal the child's PID, on the
+  /proc fallback the child must appear among `CandidatesFor` results with
+  the test binary in its cmdline, and the captured cause must not point at
+  some other process. Skips with a message on non-Linux; signals only its
+  own process via the child it started.
+- **Hermetic scope:** after the child has signalled, the test installs a
+  process source limited to the test process's own descendants
+  (`scopeProcScanToDescendants`, in `scope_linux_test.go`), so an unrelated
+  host process (for example a service-stop command on a shared machine) can
+  never be picked up as the sender. The scope is restored at test cleanup.
+  `proctable_linux_test.go` (`TestProcScanFakeTable`) drives candidate
+  scanning and ranking against a fully in-memory fake process table, with
+  no dependence on the live host.
 
 ---
 
@@ -2119,6 +2196,12 @@ Response:
 - **`internal/server/autonomous.go`** — `memory-report` route + `handlePRDMemoryReport`
 - **`internal/mcp/memory_scopes.go`** — all four new MCP tools
 
+## Claude model defaults (explicit-model policy)
+
+- **Behaviour:** every launched claude-code command carries an explicit model — `--model` is always passed, so there is no fall-through to the Claude account default and no daemon-initiated upgrade to a more expensive model. When a launch site does not name a model, the daemon names one itself: `sonnet` (`DefaultClaudeModel`) for worker/verifier/judge/planner launches, `haiku` (`MechanicalClaudeModel`) for autonomous mechanical task types (docs, changelog, parity-issue draft, bounded load step, version note, locale strings, formatting cleanup, tests — `mechanicalTaskTypes`). An Opus-class model runs only when an operator-level layer (session, task, story, PRD, automation, config line, judge pin, planner field) names one.
+- **Refusal backstop:** `internal/session/manager.go`, `Start` — a claude-code launch with `opt.Model == ""` is refused up front (before tracker, session record, or tmux pane) with the error `claude-code launch refused: no explicit model set …`; the persisted session record carries exactly the value passed to the CLI as `--model` (`Model` in `internal/session/store.go`), and a restart re-injects it (`SetModel`) instead of re-resolving.
+- **Sources:** `internal/autonomous/model_policy.go` (`DefaultClaudeModel`, `MechanicalClaudeModel`, `mechanicalTaskTypes`), `internal/autonomous/guardrail_model.go`; operators: `docs/howto/claude-model-defaults.md`, `docs/howto/explicit-model-policy.md`, `docs/operations.md` § Claude model defaults.
+
 ## Session idle timeout (autonomous.session_idle_timeout_seconds)
 
 - **Field:** `autonomous.session_idle_timeout_seconds`, default `900` (15 minutes). Bounds one autonomous worker or verifier session that sits in `waiting_input` or `idle` with no live child process.
@@ -2265,7 +2348,7 @@ A compute node runs one verifier by default and needs no measurement for that. A
 
 ## Merge pipeline source and conflict settings (autonomous.merge_pipeline)
 
-- **Config block:** `autonomous.merge_pipeline` (`config.MergePipelineConfig` in `internal/config/merge_pipeline.go`, held as `MergePipeline` on `config.AutonomousConfig`). Keys and defaults: `file_name` (`.datawatch/merge-pipeline.yaml`, relative to the project), `source_order` (`[file, record]`; the built-in pipeline always applies after them), `fallback_on_bad_file` (`record`; also `default` or `none`), `conflict_policy` (`mechanical_and_model`; also `stop_and_ask` or `mechanical`), `conflict_model` (a LLM registry entry name; unset reads the named constant `MergePipelineDefaultConflictModel`, an explicit empty string means no model), `conflict_mode` (`shadow`, the default, runs the model and records its proposal without acting on it; `on` acts on the proposal; `config.MergeConflictModeDefault`, constants `ConflictModeShadow` and `ConflictModeOn`), `conflict_confirm_first_n` (a whole number, default 5 through `config.MergeConflictConfirmFirstNDefault`: how many of a project's first conflict resolutions wait for the operator to confirm them; an explicit 0 turns confirmation off and a negative value is refused), and `projects`, a map of per-project overrides of the same seven keys. The `Effective*` accessors take a project name and return the project value, else the global value, else the default. `Validate` rejects an absolute or escaping file name, an unknown or repeated source, and an unknown fallback or policy, naming the key. The block never adds, edits or deletes a registry entry.
+- **Config block:** `autonomous.merge_pipeline` (`config.MergePipelineConfig` in `internal/config/merge_pipeline.go`, held as `MergePipeline` on `config.AutonomousConfig`). Keys and defaults: `file_name` (`.datawatch/merge-pipeline.yaml`, relative to the project), `source_order` (`[file, record]`; the built-in pipeline always applies after them), `fallback_on_bad_file` (`record`; also `default` or `none`), `conflict_policy` (`mechanical_and_model`; also `stop_and_ask` or `mechanical`), `conflict_model` (a LLM registry entry name; unset reads the named constant `MergePipelineDefaultConflictModel`, the non-Opus daemon default `sonnet`; a model the operator names, an Opus model included, is used as written; an explicit empty string means no model), `conflict_mode` (`shadow`, the default, runs the model and records its proposal without acting on it; `on` acts on the proposal; `config.MergeConflictModeDefault`, constants `ConflictModeShadow` and `ConflictModeOn`), `conflict_confirm_first_n` (a whole number, default 5 through `config.MergeConflictConfirmFirstNDefault`: how many of a project's first conflict resolutions wait for the operator to confirm them; an explicit 0 turns confirmation off and a negative value is refused), and `projects`, a map of per-project overrides of the same seven keys. The `Effective*` accessors take a project name and return the project value, else the global value, else the default. `Validate` rejects an absolute or escaping file name, an unknown or repeated source, and an unknown fallback or policy, naming the key. The block never adds, edits or deletes a registry entry.
 - **Release settings:** the same block and the same per-project overrides carry four release keys (`config.MergePipelineConfig` fields `ReleaseSizeMap`, `MajorTrigger`, `ReleaseCadence`, `VersionScheme`). `release_size_map` maps an Automaton kind to `patch`, `minor`, `major` or `none`; the built-in map (`MergePipelineDefaultReleaseSizeMap`) is `feature` = minor and `bug` = patch, and a project or global entry adds to or overrides it (`EffectiveReleaseSizeMap` returns a copy). A `major` entry is accepted only because the operator wrote it; no built-in kind is major. `major_trigger` is `manual` (`MergePipelineDefaultMajorTrigger`, also `milestone` or `never`). `release_cadence` is `per_merge` (the only accepted value); `batch` and `manual` are refused with "release cadence batch is not available yet" (and the same wording for manual). `version_scheme` is `semver` (the only accepted value); any other name is refused with "version scheme X is not available yet". Each `Effective*` accessor gives the project value, else the global value, else the default. Tests: `internal/config/merge_pipeline_release_test.go`.
 - **Conflict degradation:** `ResolveConflictPolicy` returns the policy to act on. When the policy needs a model and the entry is empty, missing from the registry or disabled, it returns `stop_and_ask` and no model with a plain reason; it never picks a weaker model.
 - **Resolution:** `Resolver.Resolve` in `internal/mergepipeline/resolver.go` returns the definition in effect, its `Source` (`file`, `record` or `default`) and a plain-language reason. The file in the repository wins over the daemon record, the record is the fallback when no file exists, and the built-in default applies when neither does. A malformed, invalid or oversized file is returned in `Resolution.FileError` and is never passed over silently; `fallback_on_bad_file` decides whether the record, the built-in default or nothing stands in (with nothing, `Resolve` returns the error).
@@ -2359,9 +2442,10 @@ The daemon observes the in-flight model request of a worker or verifier session 
 - **Config keys:** both live on `config.AutonomousAutomationConfig` in `internal/config/config.go`.
   - `autonomous.automation.merge_pending_mode`: `off` (default), `shadow` or `on`. An unset key reads `off` via `EffectiveMergePendingMode`. On config load (`validateLoaded` → `ValidateMergePendingMode`) an empty value is accepted as unset and any other unknown word is an error; the write paths (`validateMergePendingMode` in `internal/server/api.go`: `PUT /api/config` and the Automata config object) refuse an empty string and any unknown word with a 400.
   - `autonomous.automation.merge_pending_alert_minutes`: whole minutes >= 0. Unset reads `DefaultAutomationMergePendingAlertMinutes` (30); an explicit 0 turns the alert off and survives a round trip (`MergePendingAlertMinutes` is a `*int`, read through `EffectiveMergePendingAlertMinutes`). A negative value is refused with a 400 on the write paths (`validateMergePendingAlertMinutes`) and with an error on config load.
+  - `autonomous.automation.merge_pending_include_terminal`: bool, default true (`MergePendingIncludeTerminal` is a `*bool`; unset reads `DefaultMergePendingIncludeTerminal` through `EffectiveMergePendingIncludeTerminal`). When true the pass also covers archived, needs_review, blocked and failed Automata with a work branch; false keeps it to completed Automata. It is bridged into the manager's `AutomationConfig` in `cmd/datawatch/main.go`; the REST/CLI/comm/MCP/PWA write paths for this key are not wired yet, so it is set in YAML.
   - Both are read live on every tick, so a change applies to the next tick with no restart. Chat `configure`, MCP `autonomous_config_set` (`automation_merge_pending_mode`, `automation_merge_pending_alert_minutes`) and the PWA Automata settings fields write the same keys.
 - **Comparison:** `internal/autonomous/merge_compare.go` classifies a finished Automaton's `automaton/<id>` branch against `main` with read-only git (`rev-list`, `cherry`, `log`): `merged`, `pending`, `needs_look` (patch and subject line disagree), `empty` or `unknown` (not compared, or a git error). One comparison is bounded by `mergePendingGitTimeout` (30 seconds, `internal/autonomous/merge_pending_pass.go`) and results are cached while the branch tip and the `main` tip are unchanged.
-- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`.
+- **Pass:** `mergePendingCheck` and its helpers (`mergeCompare`, `mergePendingRecord`, `mergePendingClear`) in `internal/autonomous/merge_pending_pass.go`, called from the coordinator's poll in `internal/autonomous/automation_coordinator.go` beside the triage pass. `off` returns before git is called. `shadow` writes shadow decisions only (`internal/autonomous/merge_shadow_record.go`, `merge_shadow_decisions.json`, bounded at 1000 newest first, an identical decision raises `repeat_count` instead of adding a row). `on` writes a `merge_pending` triage record (`internal/autonomous/triage_record.go`, with `branch` and `commits_ahead`) for a `pending` Automaton and raises one `warn` alert per episode once the record has stood for the threshold, stamping `alerted_at`; the record is cleared when the branch leaves `pending`. Archived, needs_review, blocked and failed Automata (while `merge_pending_include_terminal` is on) never get a `merge_pending` record — a failed or blocked one keeps its triage record untouched — so their episode is kept in memory by Automaton id (`mergePendingState.episodes`, pruned with the other maps, seeded from a `merge_pending` record carried over from completed); they raise the same one alert per episode, whose title and body name the Automaton, its state and the branch. An episode ends when the branch is merged, empty or `needs_look`. Shadow decisions carry `automaton_state` and `found_false` (a `would_alert` decision whose episode later ended empty or `needs_look`); `merge_shadow_decisions.json` is an object holding `decisions_total`, `decisions_false` and `decisions` (an older bare list still loads), reported as `shadow_decisions_total` and `shadow_decisions_false` by the merge status read.
 - **Report (batched fetch):** `internal/autonomous/merge_safe_delete.go` builds the safe-to-delete report. It issues no command that changes anything, and keeps git work down: a fixed listing cost (one `for-each-ref` with the ahead-behind atom — falling back to a plain ref listing plus one `rev-list --count` per branch on older git — and one `worktree list`, plus one base subject log only when at least one branch is ahead), then per-branch at most two calls (cherry, branch subject log) plus one status read per safe candidate worktree, run through a bounded worker pool (`safeDeleteGitConcurrency`, 4).
 - **Report (cache):** `merge_safe_delete_cache.go` front-loads that: a per-repository in-memory cache for 60 seconds (`safeDeleteCacheTTL`), cold reads single-flight (concurrent readers share one computation, or its unwrapped error), fresh reads served at once, stale reads served at once with `Stale` set and the original computation time still stamped as `ComputedAt` — plus exactly one background refresh per repository at a time, bounded by `safeDeleteRefreshTimeout` (60 s), whose failure keeps the last good report and logs one line (`[autonomous] safe-to-delete cache refresh: repo ...`).
 - **Report (stats):** `merge_safe_delete_stats.go` records the counters (`Refreshes`, `RefreshFailures`, `SlowReports`, `LastDurationMs`, `LastComputedAt`, `Worktrees`) behind `SafeDeleteStats`, and a computation longer than `safeDeleteSlowWarn` (3 s) is logged exactly once with the duration, threshold and worktree count — never repository, branch or worktree names or paths. `merge_status.go` holds the merge status model, `merge_text.go` the shared CLI/comm/alert wording (including the computed-at line and the stale note, both only when the report carries them).
@@ -2463,11 +2547,29 @@ steps (no model call) and three model jobs, each run recorded. See
   the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
   `validator_retries` (default 2), `escalate_after_failures` (default 2),
   `run_retention` (default 500), `archive_cancelled_after_minutes`
-  (default 60) and `lane_count.min` / `lane_count.max` (default
+  (default 60), `lane_count.min` / `lane_count.max` (default
   0; max 0 means no bounds, so the lane count step moves nothing; max must be at
-  least min). Over `PUT /api/config`, the CLI `config set` and the comm
+  least min), and the event wake block `wake.enabled` (default false),
+  `wake.kinds` (a list of lifecycle event kinds, default the eleven kinds in
+  `supervisorloop.DefaultWakeKinds`), `wake.coalesce_seconds` (0 to 3600,
+  default 30) and `wake.fallback_interval_minutes` (1 to 1440, default 20,
+  the scheduled check's interval). Over `PUT /api/config`, the CLI `config set` and the comm
   `configure` verb the key is `autonomous.supervisor_loop.<key>` without the
   second prefix.
+- **Wake settings:** `internal/supervisorloop/wake_settings.go` holds the
+  `WakeSettings` block (`Settings.Wake`), its keys, defaults, bounds and
+  `Wakes(kind)`. `wake.kinds` accepts a `[]string`, a JSON list, or a comma-,
+  newline- or space-separated string, so YAML, REST, the CLI, the comm channel
+  and the PWA textarea all reach the same list; blanks drop out, duplicates
+  and unknown kinds are refused, and the list may not be empty while the wake
+  is on. The kind check is injected: the package cannot import `autonomous`,
+  so `internal/autonomous/supervisor_loop_wake_kinds.go` installs
+  `IsKnownEventKind` through `supervisorloop.SetEventKindChecker` at start-up,
+  and with no checker only blanks are refused. `Settings.Get(key)` reads one
+  value as `Flat` lists it. Tests: `internal/supervisorloop/wake_settings_test.go`
+  (defaults, off by default, bounds, unknown-kind rejection, the accepted
+  list forms) and `internal/autonomous/supervisor_loop_wake_kinds_test.go`
+  (every default kind is a registered, subscribable kind).
 - **Engine:** `internal/supervisorloop` holds the engine, the validators, the
   model jobs (`jobs_model.go`), the eval harness (`eval.go`), the run store
   (`store.go`, `supervisor_loop_runs.jsonl` in the data directory, trimmed to
@@ -2588,7 +2690,7 @@ Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks
   - `read_only_tasks` — default `true` (`EffectiveReadOnlyTasks`). A task with `read_only` set skips the per-tree write lock (`internal/autonomous/read_only_parallel.go`).
   - `worktree_per_task` — default `true` (`EffectiveWorktreePerTask`). Each parallel task runs in its own worktree and branch (`task_worktree.go`).
   - `merge_conflict_policy` — default `additive_then_model` (`EffectiveMergeConflictPolicy`); valid `additive_then_model`, `block`, `triage`; checked by `config.ValidateMergeConflictPolicy`, which refuses an unknown value on load and on write.
-  - `merge_conflict_model` — default empty (`EffectiveMergeConflictModel`); empty means the strongest configured planning model.
+  - `merge_conflict_model` — default empty (`EffectiveMergeConflictModel`); empty reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written.
 - **Merge back:** task branches merge into the Automaton branch in dependency order, one at a time, under the conflict policy (`internal/autonomous/task_merge.go`). The merge state (`pending`, `merged`, `conflict`, `held`) and the merge commit are fields of the task.
 - **Metrics:** `internal/autonomous/parallel_metrics.go` records total and read-only task counts, concurrent tasks, wall-clock and serial seconds and the speedup when an Automaton completes; they ride on the Automaton read.
 - **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
@@ -2614,6 +2716,38 @@ section above) — no new config key is introduced here.
 - **Where `report_path` is set:** the planner (task decomposition), the
   edit-task surface and the add-task surface all accept `report_path`. A
   rejected edit or add mutates nothing.
+- **Verification script and exemption reason on the edit path:** the
+  edit-task surface (REST `edit_task`, MCP `autonomous_prd_edit_task`, CLI
+  `prd-edit-task`, comm `edit-task`, the PWA task editor) also takes
+  `verification_script` and `verification_script_reason`. The script is
+  validated as one clean repo-relative file that exists in the project and is
+  appended to the task's generated files; the reason is stored as given and
+  independent of the script. An omitted field is unchanged, and a rejected
+  edit mutates nothing. See `internal/autonomous/manager.go` (the edit path)
+  and [the how-to](howto/automaton-verification-scripts.md).
+- **Stable generated scripts:** the planning prompt carries a shared helper
+  text (`internal/autonomous/verification_script_helpers.go`): docs sync
+  first, a cumulative allowed-file list, a merge-base comparison and no
+  package-wide formatter run. Seven block-severity lint rules enforce it
+  (`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+  `artefact_files_allowed`, `final_gate_artefact_allowed`,
+  `script_invokes_known_flag`, `check_matches_spec_text`,
+  `final_gate_without_script`, via the `verification_script_*` match
+  predicates in `internal/autonomous/decompose_lint_verify_script.go`,
+  `decompose_lint_script_help.go` and `decompose_lint_spec_text.go`).
+  A planner-written final gate off the last story is rejected by the plan check
+  (`verification_script_coverage.go`).
+- **Still to review (operator):** the seven stability rules ship at `block`
+  severity (the first three by operator decision 2026-11-12, option 2; the
+  four added 2026-11-17 ship `block` as well); whether `shadow` should
+  precede `enforce`, and a live run confirming planners write stable scripts
+  first try, are not settled by this tree. See
+  [the how-to](howto/automaton-verification-scripts.md#still-to-review-operator).
+- **Gate resolution across the Automaton:** the script gate
+  (`ResolveGateCheckForAutomaton` in `internal/autonomous/script_gate.go`)
+  now resolves, after the task's own script and the project gate command,
+  every other task's script across every story, in story order, skipping
+  standard-task tasks and other final gates.
 - **Gate reports write counts only.** A gate that reports to a path writes
   exactly three lines, `passed=<n>`, `failed=<n>`, `skipped=<n>`, in that
   order, each followed by a newline, and no other text — never the
@@ -2810,6 +2944,19 @@ global default. Web surface: settings card *Pi (worker backend)*
   `DetectLoop` turn window. Web surface: the autonomous settings card
   (`GENERAL_CONFIG_FIELDS`, `internal/server/web/app.js`) with label
   `settings_loop_detect_turns` in all 5 locales.
+- **`autonomous.unlanded_alert_enabled`** / **`autonomous.unlanded_alert_threshold`**
+  (`Autonomous.UnlandedAlertEnabled *bool` / `UnlandedAlertThreshold *int` in
+  `internal/config/config.go`; `internal/config/unlanded_alert.go`: `nil` →
+  on / 3, `0` threshold alerts on any pending branch, negative rejected by
+  `ValidateUnlandedAlertThreshold` at load and every write edge). Mirrored on
+  `autonomous.Config`; the daily check (`internal/autonomous/unlanded_alert.go`,
+  started from the poll loop in `Manager.run`) reads the live manager Config on
+  each tick and persists the last-alerted day in `unlanded_alert.json`. REST
+  keys in `internal/server/unlanded_alert_config.go`; the
+  `/api/autonomous/config` path validates in `autonomous.validateUnlandedAlertPatch`.
+  Web surface: the autonomous settings card with labels
+  `settings_unlanded_alert_enabled` / `settings_unlanded_alert_threshold` in all
+  5 locales.
 
 ### Tests
 
@@ -2907,10 +3054,42 @@ bucket, not a stored status value.
   record the four fields on the matching PRDs (source `backfill`); an
   Automation is recorded once every non-skipped member is shipped, using
   its latest member merge. Idempotent per recorded `merge_commit`.
+- **`internal/autonomous/completed_migration.go`** — the completed migration:
+  moves cancelled Automata and Automations whose work is merged (a shipped
+  record or the read-only merge proof of `automaton/<id>`) to `completed`,
+  with the merge time as the completion time; one `completed_migration`
+  decision-log line per record (what, why, how to undo); idempotent; refused
+  while a final gate runs; `MarkPRDCompleted` is the single-record write the
+  merge pipeline's `mark_completed` post-ship step and the migration share;
+  both paths also record the record's **landing** as `landed` with the merge
+  commit. It never touches a session.
+- **`internal/autonomous/landing.go`** — the per-record **landing record**
+  (`PRD.Landing`, `models.go`): `pending` (set by `markLandingPendingLocked`
+  when the work branch is created — `executor.go`, `worktree.go`), `landed`
+  (`markLandingLandedLocked`, from `MarkPRDCompleted`), `kept` / `dropped`
+  (`KeepLanding` / `DropLanding`, each needing an actor and a non-empty
+  reason, refused when already landed, one `landing_keep` / `landing_drop`
+  decision each). `Archive` (`manager.go`) refuses a `pending` landing, the
+  branch named. `MigrateLanding` (same file) is the one-time backfill:
+  archived, has a branch, no record, git cannot prove merged → `pending`
+  (actor `landing_migration`); idempotent, no status or decision, skips when
+  the default branch is unknown. `RunLandingMigrationOnce` /
+  `StartLandingMigration` (same file) are its only production caller:
+  `cmd/datawatch/main.go` starts it in a goroutine right after `SetAlertFn`;
+  it logs the count, alerts when above zero, and writes
+  `landing_migration.done` after a clean pass. Tests: `landing_test.go`
+  (`TestLandingStates`, `TestLandingKeepDropRequireActorAndReason`,
+  `TestLandingNoBranchNoRecord`, `TestLandingMigration`,
+  `TestLandingMigrationOnceAlertsAndMarksDone`).
 - **`internal/autonomous/manager.go`** — entry points:
   `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
   and `StartShippedBackfill(enabled)` (daemon start, non-blocking
   goroutine when `autonomous.shipped.backfill_on_start` is on).
+- **Post-ship step.** `mark_completed` is the fifth post-ship built-in
+  (`internal/mergepipeline/posthook_builtins.go`); it marks the Automaton
+  Completed and records its landing as `landed`; the merge helper's
+  `completed_mark` step in `scripts/merge-shipped-record.sh` reaches the same
+  result through `completed-migrate --id`.
 - **Surfaces**
   - REST (registered in `internal/server/server.go`):
     `POST /api/autonomous/prds/{id}/shipped` body
@@ -2919,23 +3098,26 @@ bucket, not a stored status value.
     `POST /api/automations/{id}/shipped`;
     `GET /api/autonomous/shipped/counts`;
     `POST /api/autonomous/shipped/backfill` (`?dry_run=true` for the
-    report without writing). The `shipped=true|false` filter on
+    report without writing); `POST /api/autonomous/completed/migrate`
+    (`dry_run`, `limit`, `id`; 409 while a final gate runs). The `shipped=true|false` filter on
     `GET /api/autonomous/prds` and `GET /api/automations` with the
     `filter_default` fallback (see `shippedSelectionFromQuery` in
     `internal/server/autonomous.go`).
   - MCP (`internal/mcp/autonomous.go`, `internal/mcp/automation_tools.go`):
     `autonomous_shipped_record`, `autonomous_shipped_backfill`,
-    `autonomous_shipped_counts`; `shipped` filter on
+    `autonomous_shipped_counts`, `autonomous_completed_migrate`; `shipped` filter on
     `autonomous_prd_list` and `automation_list`.
   - CLI: `cmd/datawatch/cli_autonomous_shipped.go` —
     `datawatch autonomous shipped record|backfill|counts`
     (`--release --commit --at --source --automation --dry-run`);
+    `cmd/datawatch/cli_autonomous_completed.go` —
+    `datawatch autonomous completed-migrate [--dry-run] [--limit N] [--id ID]`;
     `--shipped true|false` on the PRD/Automation list commands;
     `datawatch automation shipped <id>`.
   - Comm channel (`internal/router/sx2_parity.go`): `shipped <id>
     --commit <sha>` (aliases `shipped-record`, `shipped_record`,
-    `record-shipped`, `record_shipped`), `shipped-backfill` and
-    `shipped-counts`.
+    `record-shipped`, `record_shipped`), `shipped-backfill`,
+    `shipped-counts` and `completed-migrate`.
   - Web app: the shipped state is served to the client on the same
     shapes the PWA already reads — the PRD/Automation list entries carry
     the four shipped fields plus the effective display status, the
@@ -2995,6 +3177,17 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+- `internal/autonomous` completed-migration tests,
+  `internal/server/autonomous_completed_migrate_test.go`,
+  `internal/mcp/autonomous_completed_migrate_test.go`,
+  `cmd/datawatch/cli_autonomous_completed_test.go`,
+  `internal/router/sx2_parity_completed_migrate_test.go` and
+  `internal/mergepipeline/mark_completed_test.go` — the migration on every
+  surface and the `mark_completed` step.
+
+## Project link backfill (`autonomous.project_link_backfill_apply`)
+
+`autonomous.project_link_backfill_apply` (bool, default `false`; `docs/config-reference.yaml`, `datawatch config set`, `PUT /api/config`) controls the pass that runs once at daemon start after the stores load. `false` produces only a dry-run report, kept as the latest report for `GET /api/autonomous/project-link-backfill`. `true` applies it: every non-template Automaton with an empty `project` that resolves to the datawatch project through its Automation, its parent or its repository directory gets the link and a `project_link_backfill` decision; when no write failed a `project_link_backfill.done` marker is written to the autonomous data directory and later starts only dry-run. Automata that already carry a link are never changed. The explicit link of one Automaton is set with `POST /api/autonomous/prds/{id}/set_project` (decision kind `project_link_set`, unknown names refused); the effective project and its source are added to the read reply as `project` and `project_source`. Operator-facing behavior: [`docs/howto/projects-tab.md`](howto/projects-tab.md#link-existing-automata-in-one-pass).
 
 ## Secret scan before push (`git.secret_scan`)
 

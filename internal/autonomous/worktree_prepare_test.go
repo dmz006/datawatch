@@ -99,7 +99,6 @@ func TestEnsureDocsIndexPlaceholder_IgnoresForeignRepos(t *testing.T) {
 
 func TestPrepareWorktree_RejectsUnknownRepos(t *testing.T) {
 	dir := scratchGitRepo(t) // no internal/docsindex layout at all
-	excludeBefore, _ := os.ReadFile(filepath.Join(dir, ".git/info/exclude"))
 	if err := prepareWorktree(dir); err != nil {
 		t.Fatalf("prepareWorktree on foreign repo: %v", err)
 	}
@@ -107,8 +106,8 @@ func TestPrepareWorktree_RejectsUnknownRepos(t *testing.T) {
 		t.Fatalf("foreign repo was touched: internal/ exists")
 	}
 	excludeAfter, _ := os.ReadFile(filepath.Join(dir, ".git/info/exclude"))
-	if string(excludeBefore) != string(excludeAfter) {
-		t.Fatalf("foreign repo .git/info/exclude changed: %q", excludeAfter)
+	if strings.Contains(string(excludeAfter), "docs-bm25-index") {
+		t.Fatalf("foreign repo .git/info/exclude got a docs index line: %q", excludeAfter)
 	}
 }
 
@@ -124,8 +123,8 @@ func TestPrepareWorktree_GitIgnoredByRepoGitignore(t *testing.T) {
 	}
 	// Already covered by the repo .gitignore — info/exclude must be untouched.
 	excludeAfter, _ := os.ReadFile(filepath.Join(dir, ".git/info/exclude"))
-	if string(excludeBefore) != string(excludeAfter) {
-		t.Fatalf("info/exclude was needlessly modified: %q", excludeAfter)
+	if string(excludeBefore)+"/DATAWATCH_COMPLETE\n" != string(excludeAfter) {
+		t.Fatalf("info/exclude should only gain the completion marker line: %q", excludeAfter)
 	}
 	cmd := exec.Command("git", "check-ignore", "-q", "internal/docsindex/assets/docs-bm25-index.json")
 	cmd.Dir = dir
@@ -521,4 +520,55 @@ func TestAppendGitExcludeLine_NoTrailingNewline(t *testing.T) {
 	if s := string(data); s != ".something-else\n"+line+"\n" {
 		t.Fatalf("exclude content = %q", s)
 	}
+}
+
+func TestPrepareWorktree_IgnoresCompletionMarker(t *testing.T) {
+	base := scratchGitRepo(t) // plain repo: no internal/docsindex
+	gitignoreBefore, _ := os.ReadFile(filepath.Join(base, ".gitignore"))
+	wt := filepath.Join(t.TempDir(), "wt")
+	if out, err := worktreeGitOut(t, base, "worktree", "add", "-b", "marker-test", wt); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	for i := 0; i < 2; i++ {
+		if err := prepareWorktree(wt); err != nil {
+			t.Fatalf("prepareWorktree call %d: %v", i+1, err)
+		}
+	}
+	excludePath, err := worktreeExcludePath(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(data), "\n/DATAWATCH_COMPLETE\n") + boolInt(strings.HasPrefix(string(data), "/DATAWATCH_COMPLETE\n")); n != 1 {
+		t.Fatalf("want exactly one /DATAWATCH_COMPLETE line, got %d in %q", n, data)
+	}
+	if err := os.WriteFile(filepath.Join(wt, "DATAWATCH_COMPLETE"), []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := worktreeGitOut(t, wt, "status", "--porcelain")
+	if err != nil {
+		t.Fatalf("git status: %v\n%s", err, status)
+	}
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("git status not empty after marker created: %q", status)
+	}
+	gitignoreAfter, _ := os.ReadFile(filepath.Join(base, ".gitignore"))
+	if string(gitignoreBefore) != string(gitignoreAfter) {
+		t.Fatalf("tracked .gitignore changed: %q -> %q", gitignoreBefore, gitignoreAfter)
+	}
+	if _, err := os.Stat(filepath.Join(wt, ".gitignore")); err == nil {
+		if b, _ := os.ReadFile(filepath.Join(wt, ".gitignore")); strings.Contains(string(b), "DATAWATCH_COMPLETE") {
+			t.Fatalf("worktree .gitignore mentions the marker")
+		}
+	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

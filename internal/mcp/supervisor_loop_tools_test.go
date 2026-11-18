@@ -285,7 +285,9 @@ func TestSupervisorLoopStatsMCP(t *testing.T) {
 	var path, method string
 	body := `{"enabled":true,"jobs":11,"jobs_enabled":11,"runs":2,"runs_ok":2,"last_run_age_seconds":5}`
 	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		path, method = r.URL.Path, r.Method
+		if path == "" {
+			path, method = r.URL.Path, r.Method
+		}
 		_, _ = w.Write([]byte(body))
 	})
 	res, err := s.handleSupervisorLoopStats(context.Background(), callReq(nil))
@@ -295,8 +297,8 @@ func TestSupervisorLoopStatsMCP(t *testing.T) {
 	if method != http.MethodGet || path != "/api/supervisor-loop/stats" {
 		t.Errorf("proxied %s %s", method, path)
 	}
-	if text := automationText(t, res); text != body {
-		t.Errorf("result differs from the daemon body: %s", text)
+	if text := automationText(t, res); !strings.Contains(text, `"jobs":11`) {
+		t.Errorf("result lost the daemon stats: %s", text)
 	}
 	res, _ = s.handleSupervisorLoopStats(context.Background(), callReq(map[string]any{"x": 1}))
 	if res == nil || !res.IsError {

@@ -28,7 +28,7 @@ function loadAppJS() {
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
   assert.equal(typeof sandbox.loadServerListEager, 'function', 'loadServerListEager is not defined -- did it get renamed?');
-  assert.equal(typeof sandbox._injectServerPickerBar, 'function', '_injectServerPickerBar is not defined -- did it get renamed?');
+  assert.equal(typeof sandbox._initServerDropdown, 'function', '_initServerDropdown is not defined -- did it get renamed?');
   assert.equal(typeof sandbox._checkFederatedConnection, 'function', '_checkFederatedConnection is not defined -- did it get renamed?');
   return sandbox;
 }
@@ -38,21 +38,20 @@ test('state.servers defaults to undefined, not [] -- the actual root cause of th
   assert.equal(vm.runInContext('state.servers', sandbox), undefined);
 });
 
-test('_injectServerPickerBar kicks off loadServerListEager (not nothing) while state.servers is undefined', () => {
+test('_initServerDropdown kicks off loadServerListEager (not nothing) while state.servers is undefined', () => {
+  // The header dropdown lives in index.html (#serverDropdown) and is
+  // rendered by _initServerDropdown -- no per-panel DOM injection anymore.
   // The stub DOM's innerHTML setter doesn't parse into real child nodes
-  // (no real layout engine), so the tmp.firstChild / insertBefore path
-  // this function uses for DOM insertion isn't directly observable here
-  // -- that's a harness limitation shared with the pre-existing
-  // _serverPickerBar()/_injectServerPickerBar() code, not something new.
+  // (no real layout engine), so the render path isn't directly observable
+  // here -- a harness limitation shared with the pre-existing
+  // _serverPickerBar() code, not something new.
   // What IS observable and is the actual regression this pins: the loader
   // actually starts (state._serversLoading flips true) instead of the old
   // behavior of silently doing nothing because the undefined-check never
   // matched.
   const sandbox = loadAppJS();
-  const container = makeStubElement();
   vm.runInContext('fetch = () => new Promise(() => {})', sandbox); // never resolves -- isolate the "still loading" state
-  sandbox.__container = container;
-  vm.runInContext('_injectServerPickerBar(__container, null)', sandbox);
+  vm.runInContext('_initServerDropdown()', sandbox);
   assert.equal(vm.runInContext('state._serversLoading', sandbox), true, 'the eager loader should have started');
 });
 

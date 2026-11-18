@@ -293,6 +293,12 @@ func TestUncommittedRollupBlockedAutomatonNotMergeReady(t *testing.T) {
 	if got.Status != PRDBlocked {
 		t.Fatalf("status = %s; want blocked", got.Status)
 	}
+	// with merge_pending_include_terminal off the pass and the status keep to
+	// completed Automata, as before
+	cfg := th.h.m.Config()
+	off := false
+	cfg.Automation.MergePendingIncludeTerminal = &off
+	th.h.m.SetConfig(cfg)
 	th.h.c.triagePass()
 
 	ms := th.h.m.MergeStatus()
@@ -305,6 +311,27 @@ func TestUncommittedRollupBlockedAutomatonNotMergeReady(t *testing.T) {
 	}
 	if len(listed) != 1 {
 		t.Errorf("merge status lists %v; want only the completed control Automaton", listed)
+	}
+
+	// with the default (on) the blocked Automaton is listed under its own
+	// state, never as a completed one, and its hold record is left alone
+	cfg.Automation.MergePendingIncludeTerminal = nil
+	th.h.m.SetConfig(cfg)
+	th.h.c.triagePass()
+	found := false
+	for _, e := range th.h.m.MergeStatus().Automata {
+		if e.AutomatonID == got.ID {
+			found = true
+			if e.AutomatonState != string(PRDBlocked) {
+				t.Errorf("blocked Automaton listed with state %q; want blocked", e.AutomatonState)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("blocked Automaton %s is not listed while merge_pending_include_terminal is on", got.ID)
+	}
+	if p, ok := th.h.m.store.GetPRD(got.ID); !ok || p.Status != PRDBlocked {
+		t.Errorf("blocked Automaton changed state: %+v", p)
 	}
 }
 

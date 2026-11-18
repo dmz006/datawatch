@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, uncommitted, worktree, commit, hold, discard, retry, merge ready, policy, scope]
+  topics: [autonomous, automation, automaton, uncommitted, worktree, commit, hold, discard, retry, ignore, marker, DATAWATCH_COMPLETE, marker file, merge ready, policy, scope]
 exec_params: []
 exec_steps:
   - tool: autonomous_uncommitted_work
@@ -17,7 +17,7 @@ exec_steps:
     args: {id: ""}
     read_only: true
   - tool: question_answer
-    description: Answer the held question with commit, discard or retry; the answer is acted on at once
+    description: Answer the held question with commit, discard or retry (a marker-only question is auto-answered ignore); the answer is acted on at once
     args: {}
     read_only: false
   - tool: get_config
@@ -75,6 +75,12 @@ at the worktree with `git status`:
    `task(<short id>): <task title>`. Nothing is staged with `git add -A` or
    `git add .`, and the commit runs the repository's own commit hooks: a failing
    hook is a failed commit.
+   A declared file that git ignores and that is not tracked (for example a file
+   under `.datawatch/`) is skipped rather than staged, because `git add` would
+   refuse it and fail the whole commit; the other declared files are still
+   committed. A tracked file is always staged, even if it matches an ignore
+   rule. If git cannot say which paths it ignores, nothing is skipped and the
+   real git error is reported.
 2. **Look again.** If the worktree is now clean for the task, it is marked
    complete as usual, and the commit is the one its post-verify revision is
    pinned to.
@@ -85,18 +91,82 @@ at the worktree with `git status`:
    task's automatic-retry budget and records no failed attempt, because nothing
    about the work failed; it is waiting for you.
 
-The daemon's own scratch files are never counted: the worker checkpoint note, the
+The daemon's own scratch files are never counted: the worker completion marker
+(`DATAWATCH_COMPLETE`), the worker checkpoint note, the
 decompose output, the advisory tree lock, the session discovery file
 `.mcp.json` and the skills under `.datawatch/skills/` when the daemon wrote them
 (an untracked file only, so a project that tracks `.mcp.json` still sees a change
-to it), the lines the daemon itself adds to an ignore file (a change to
+to it), the two launcher files the session drops into the working directory,
+`worker-mcp.json` and `worker-starting-context.md` (untracked root copies only:
+a tracked launcher-named root file is still a change, and so is a same-named
+file in a subfolder), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
-other change to the file is counted), and anything the daemon's staging guard
-refuses to commit. Files git ignores never show up in `git status`, so they are
-not counted either. Do not confuse this list with the generated artefacts —
+other change to the file is counted — and the ignore file is read only when
+its path is demonstrably inside the worktree, so an ignore-file path that
+escapes it, or that a symlink chain resolves outside it, is not counted as a
+daemon change), and anything the daemon's staging guard
+refuses to commit. Three more kinds of file never enter the list:
+
+- **Ignored, untracked files.** A file the repository's own ignore rules
+  ignore and that the repository does not track is dropped by the check
+  itself, whatever `git status` reports, so it is never the reason for a hold
+  and never appears in the question. A tracked file is still counted even when
+  it matches an ignore rule, and if git cannot answer the ignore question the
+  file is counted anyway — the error goes the way of holding you, not of
+  letting the task go.
+- **A tracked file that holds only the daemon's sections.** When the daemon
+  injects its marked sections into a rules file (the session guardrails
+  header, the memory, RTK, cross-session and platform context blocks), and the
+  file's only difference from the last commit is those sections, the file is
+  not counted. The same file with a real edit outside them is counted.
+- **A file that exists only to carry the daemon's sections.** A newly created
+  file whose whole content is the daemon's marked sections is not counted
+  either — but the moment it carries anything of its own, it is.
+
+The last two rules mean the check does not see a rules file whose content is
+only the daemon's injected sections, on the per-task list and on the
+before-finished list alike. And if you keep notes or evidence under a
+git-ignored path such as `.datawatch/` and wanted the check to hold a task
+that touched them, note that git-ignored, untracked files are outside the
+check's view: they would need to be tracked to be held on.
+
+Do not confuse this list with the generated artefacts —
 the small documents the daemon renders for your work when the Automaton
 finishes: at the finished check they count unless the daemon is the only one
 who wrote them (below).
+
+### The completion marker file
+
+A worker signals that it has finished by writing a file named `DATAWATCH_COMPLETE`
+at the root of its worktree. That file is the daemon's own marker, not work, so
+the check treats it as follows:
+
+- **Ignored in every new worktree.** The daemon adds `/DATAWATCH_COMPLETE` to
+  the worktree's own `info/exclude` file when it prepares the worktree, and the
+  repository's `.gitignore` lists it too. It never shows up in `git status`,
+  and the daemon never stages or commits it.
+- **Removed when the Automaton finishes.** Just before the finished check below,
+  the daemon deletes that one file from the Automaton's worktree. It removes
+  only a regular file with that exact name at the worktree root; a directory or
+  link with that name, or a file of the same name in a subfolder, is left alone.
+- **Skipped by the check, and said so.** The marker files the daemon defines
+  (`DATAWATCH_COMPLETE`, `CHECKPOINT.md` and the advisory tree lock) are left
+  out of both checks even when git reports them. When the check skipped any,
+  the question text and blocked reason end with a sentence such as "Skipped the
+  Automaton marker file DATAWATCH_COMPLETE (the daemon's own file, not work to
+  commit)." A worktree whose only uncommitted file is a marker is therefore not
+  held. A worktree with a marker **and** a real file is still held, and only the
+  real file is listed.
+- **Only exact root-level names.** A file called `DATAWATCH_COMPLETE` inside a
+  subfolder is ordinary work and is counted like any other file.
+- **Open questions that list only marker files are answered for you.** The
+  daemon answers them `ignore` itself and adds a line to the Automaton's
+  decision log saying why: the only listed files were the daemon's own marker
+  files.
+
+What this never does: nothing is committed, no session is stopped, and only the
+daemon's own marker files are ever skipped or removed. A file the worker wrote
+that is not a marker still raises the question.
 
 ### The check before an Automaton is reported finished
 
@@ -214,6 +284,7 @@ count of the rest), and marks the ones outside the declared files. Its options:
 | `commit` | Commit exactly the listed files and carry on |
 | `discard` | Remove the listed changes from the worktree. They cannot be recovered |
 | `retry` | Touch no file: run the task again, or look at the worktree again |
+| `ignore` | Touch no file and clear the hold. It is added only to an older question whose files are all daemon marker files (see below); you do not need to choose it yourself |
 
 The question's default is **hold**: until you answer one of the three options,
 nothing changes. A question that is withdrawn or expires keeps the hold, and so
@@ -228,13 +299,25 @@ the daemon has no question store, the hold still stands and the status shows no
 question; run the task again with the reset task action once you have dealt
 with the files yourself.
 
-### What the three answers do
+### Older questions that list only marker files
+
+Before the check learned to skip marker files, a hold could be raised whose only
+listed file was `DATAWATCH_COMPLETE`. Neither committing nor discarding it helps.
+When the daemon starts, it answers every such **open** question itself with
+`ignore`, as actor `autonomous`, and records a decision on the Automaton. The
+Automaton or task then runs on and its check looks at the worktree afresh. A
+question that lists any real file is left alone for you to answer. The sweep
+never removes a file and never touches a session, and running it again changes
+nothing.
+
+### What the answers do
 
 | Answer | On a held task | On a held Automaton (whole worktree) |
 |---|---|---|
 | `commit` | Looks at the worktree again, stages and commits **exactly** the listed files that are still uncommitted (the outside-the-declared-files ones too, because you chose it), then marks the task complete with its post-verify revision. If files are still uncommitted after that, the task is held again under the current policy | Commits the listed files that are still uncommitted, clears the hold and lets the Automaton roll up again, which checks the worktree once more |
 | `discard` | Restores the listed tracked files to the branch's last commit (index and worktree) and deletes the listed untracked files, then sends the task back to run again with its attempt history kept | Does the same for the listed files, clears the hold and lets the Automaton roll up again |
 | `retry` | Touches no file. Sends the task back to run again, with its attempt history kept | Touches no file. Clears the hold and lets the Automaton roll up again, which holds it again if files remain |
+| `ignore` | Touches no file. Clears the hold and lets the task run on; the daemon uses it for questions that list only marker files | Touches no file. Clears the hold and lets the Automaton roll up again; the daemon uses it for questions that list only marker files |
 
 When the answer is acted on, the Automaton runs on by itself: a running
 Automaton is woken, and one that had gone `blocked` on the worktree check goes
@@ -251,6 +334,7 @@ back to running.
   directory, never follows a path out of the worktree, and if any listed path
   would lie outside the task directory it refuses and deletes nothing at all.
 - **retry** never touches a file, a commit or the branch.
+- **ignore** never touches a file, a commit or the branch. It only clears the hold.
 
 If a commit or a discard cannot be done (a failing hook, a git error, a refused
 path), the hold stays, the reason is recorded, a warning alert is raised and a
@@ -431,4 +515,6 @@ It never commits a file outside a task's declared files by itself, never uses
 `git add -A` or `git add .`, never skips the repository's commit hooks, and
 never pushes or merges. It never discards anything except the exact files in a
 hold that you chose to discard. The status read never runs git and never
-changes anything. In `off` it does not look at the worktree at all.
+changes anything. In `off` it does not look at the worktree at all. The only
+file it ever deletes on its own is the exact `DATAWATCH_COMPLETE` marker at the
+root of a finished Automaton's worktree.

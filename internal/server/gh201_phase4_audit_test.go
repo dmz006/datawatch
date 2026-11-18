@@ -426,6 +426,10 @@ type gh201FakeAutonomousForAudit struct {
 	nextID string
 }
 
+func (f *gh201FakeAutonomousForAudit) CreatePRDWithParent(string, string, string, string, string, string) (any, error) {
+	return f.CreatePRD("", "", "", "", "")
+}
+
 func (f *gh201FakeAutonomousForAudit) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
 	return map[string]any{"id": f.nextID, "spec": spec}, nil
 }

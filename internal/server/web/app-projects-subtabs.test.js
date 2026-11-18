@@ -1,9 +1,12 @@
 // Projects page sub-tabs — order, remembered choice, hidden empty Events,
-// phone layout, picker placement, routes, the Gantt cap and the Policy tab.
+// phone layout, picker placement, routes, the Gantt cap and the old Policy
+// choice falling back to Overview with the policy Settings link in the header.
 //
 // A selected project's page shows one body at a time under a strip of
-// sub-tab buttons: Overview, Arcs, Gantt, Unassigned, History, Policy, Events.
+// sub-tab buttons: Overview, Plans, Records, Gantt, Unassigned, History, Events.
 // Events is only offered while the page has something to say.
+// The former Policy sub-tab is gone; its one Settings link sits by the
+// project name, and a stored or hashed 'policy' value falls back to Overview.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,7 +15,7 @@ const fs = require('fs');
 const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 
 const APP = path.join(__dirname, 'app.js');
-const ORDER = ['overview', 'arcs', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+const ORDER = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'events'];
 const KEY = 'cs_projects_subtab';
 const DAY = 86400000;
 
@@ -23,6 +26,14 @@ const ROLLUP_WITH_CONTENT = {
 // No arcs and nothing unassigned: the page reports both as Events entries.
 const ROLLUP_NO_EVENTS = ROLLUP_WITH_CONTENT;
 const ROLLUP_EVENTS = { arcs: [], unassigned: { automata: [] } };
+
+const SUMMARY = {
+  header: { project: 'acme', dir: '/work/acme' },
+  progress: { automata: { done: 1, total: 2, percent: 50 }, points: 3 },
+  active_plans: [{ title: 'Plan A', id: 'plan-a', state: 'active', progress: { done: 1, total: 2, percent: 50 } }],
+  next: { plan_id: 'plan-a', plan_title: 'Plan A', automaton_id: 'x1', automaton_title: 'Next thing' },
+  counts: { plans: { total: 1, backlog: 0 }, records: { total: 3 }, rows: { total: 2 }, findings: { total: 1 } },
+};
 
 function makeStorage(initial = {}) {
   const m = new Map(Object.entries(initial));
@@ -44,6 +55,7 @@ function load({ hash = '#projects/acme', storage = makeStorage(), rollup = ROLLU
   sandbox.fetch = (url) => {
     const u = String(url);
     if (u.includes('/history')) return ok({ items: [], gantt, next_cursor: '' });
+    if (u.includes('/overview-summary')) return ok(SUMMARY);
     if (u.includes('/rollup')) return ok(rollup);
     if (u.includes('/policy/effective')) return ok({ policy: { merge_mode: { value: 'auto', source: 'default' } } });
     if (u.includes('/merge-pipeline')) return ok({ source: 'file', conflict_policy: 'ask', definition: { steps: [] } });
@@ -92,7 +104,7 @@ function row(kind, autoId, id, title, startAgo, endAgo) {
   return r;
 }
 
-test('the sub-tab buttons are overview, arcs, gantt, unassigned, history, policy, events in that order', async () => {
+test('the sub-tab buttons are overview, plans, records, gantt, unassigned, history, events in that order', async () => {
   const { sb, out } = await open({ rollup: ROLLUP_EVENTS });
   assert.deepEqual(JSON.parse(run(sb, 'JSON.stringify(_PROJECTS_SUBTABS)')), ORDER);
   assert.deepEqual(buttons(out.view), ORDER);
@@ -122,10 +134,10 @@ test('choosing Gantt is remembered, a fresh load restores it, an unknown value m
 test('a localStorage that throws does not break rendering', async () => {
   const { sb, out } = await open({ throwStorage: true });
   assert.equal(sb._projectsActiveSubtab(false), 'overview');
-  assert.deepEqual(buttons(out.view).slice(0, 6), ORDER.slice(0, 6), 'the strip still renders');
+  assert.deepEqual(buttons(out.view), ORDER, 'the strip still renders');
   assert.equal(activeBody(out.view), 'overview');
-  assert.doesNotThrow(() => sb.selectProjectsSubtab('arcs'));
-  assert.equal(activeBody(out.view), 'arcs', 'the choice still applies for this page');
+  assert.doesNotThrow(() => sb.selectProjectsSubtab('plans'));
+  assert.equal(activeBody(out.view), 'plans', 'the choice still applies for this page');
 });
 
 test('Events is hidden while empty and a stored events choice falls back to Overview', async () => {
@@ -149,7 +161,7 @@ test('phone layout: the strip is a tablist that scrolls sideways', async () => {
   assert.ok(sb.matchMedia('(max-width: 600px)').matches, 'the stub viewport is phone width');
   assert.match(out.view, /<div class="projects-subtabs" role="tablist"/);
   assert.equal((out.view.match(/role="tablist"/g) || []).length, 1);
-  assert.equal((out.view.match(/role="tab"/g) || []).length, 7);
+  assert.equal((out.view.match(/role="tab"/g) || []).length, ORDER.length);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
   const rule = css.match(/\.projects-subtabs\s*\{([^}]*)\}/);
   assert.ok(rule, 'style.css has the strip rule');
@@ -179,32 +191,90 @@ test('#projects and #projects/acme both open Overview', async () => {
 });
 
 test('the Gantt sub-tab draws the Gantt alone and keeps the size cap', async () => {
-  const gantt = [];
-  for (let i = 0; i < 30; i++) {
-    gantt.push(row('automaton', 'a' + i, '', 'A' + i, 20 - i * 0.5, 19 - i * 0.5));
-    gantt.push(row('task', 'a' + i, 't' + i, 'T', 20 - i * 0.5, 19 - i * 0.5));
+  const { sb, out } = await open({ hash: '#projects/acme/gantt' });
+  const rows = [];
+  for (let i = 0; i < 60; i++) {
+    rows.push({ kind: 'arc', id: 'a' + i, title: 'A' + i, state: 'active', first: new Date(Date.now() - (20 - i * 0.2) * 86400000).toISOString(), last: new Date(Date.now() - 1000).toISOString(), running: false, has_children: false, children_count: 0 });
   }
-  const { sb, out } = await open({ hash: '#projects/acme/gantt', gantt });
+  run(sb, `_projectsState.selected = 'acme'; _projectsState.gantt = { name: 'acme', rows: ${JSON.stringify(rows)}, next: '', error: '', loading: false, kids: {}, preset: 'all', view: null, expanded: {} }`);
   run(sb, "_projectsState.subtab = 'gantt'");
   sb._projectsPaint();
   assert.equal(activeBody(out.view), 'gantt');
   const body = out.view.slice(out.view.indexOf('id="projectsSubtabBody"'));
   assert.match(body, /id="projectGantt"/);
   assert.doesNotMatch(body, /project-merge-pipeline|project-policy-effective|id="projectEvents"|project-progress/, 'no other section is in the body');
-  assert.match(body, /Showing 40 of 60 rows; the newest are drawn first\./);
-  assert.equal((body.match(/height="12"/g) || []).length, 40, 'at most 40 bars are drawn');
+  assert.match(body, /Showing 40 of 60 rows\./);
+  assert.equal((body.match(/data-kind="arc"/g) || []).length, 40, 'at most 40 rows are drawn');
 });
 
-test('the Policy sub-tab holds the effective policy and the merge pipeline, with Settings links only', async () => {
-  const { sb, out } = await open({ rollup: ROLLUP_EVENTS });
-  sb.selectProjectsSubtab('policy');
+test('there is no Policy sub-tab: a policy choice falls back to Overview and the policy Settings link sits by the project name', async () => {
+  const l = await open({ rollup: ROLLUP_EVENTS });
+  assert.ok(!buttons(l.out.view).includes('policy'), 'no Policy button in the strip');
+  assert.ok(!l.out.view.includes('data-projects-subtab="policy"'), 'no policy button element');
+  l.sb.selectProjectsSubtab('policy');
   await flushAsync(10);
-  assert.equal(activeBody(out.view), 'policy');
+  assert.equal(l.sb._projectsActiveSubtab(true), 'overview', 'a stored policy choice falls back to Overview');
+  assert.equal(activeBody(l.out.view), 'overview');
+  assert.match(l.out.view, /onclick="_projectsOpenSettings\(&quot;project_policy&quot;\);return false;/, 'the policy Settings link is in the header row');
+  assert.match(l.out.view, /class="project-settings-link"/);
+  assert.doesNotMatch(l.out.view, /data-projects-subtab-body="policy"/);
+
+  // A hashed policy address does the same.
+  const hash = load({ hash: '#projects/acme/policy', storage: makeStorage() });
+  await hash.sb.renderProjectsView();
+  await flushAsync(30);
+  assert.equal(activeBody(hash.out.view), 'overview', 'a #projects/acme/policy address opens Overview');
+  assert.match(hash.out.view, /onclick="_projectsOpenSettings\(&quot;project_policy&quot;\);return false;/);
+});
+
+test('the old #arcs deep link and a stored arcs choice open the Plans sub-tab', async () => {
+  const deep = await open({ hash: '#projects/acme/arcs' });
+  assert.equal(run(deep.sb, '_projectsState.subtab'), 'plans', 'the deep link maps to Plans');
+  assert.match(deep.out.view, /id="projectsSubtab_plans"[^>]*aria-selected="true"/);
+  assert.equal(run(deep.sb, "_projectsHashSubtab('#projects/acme/arcs')"), 'plans');
+  const stored = await open({ hash: '', storage: makeStorage({ [KEY]: 'arcs' }) });
+  assert.equal(run(stored.sb, '_projectsActiveSubtab(false)'), 'plans', 'an older remembered value maps to Plans');
+  assert.doesNotThrow(() => stored.sb.selectProjectsSubtab('arcs'));
+  assert.equal(run(stored.sb, '_projectsState.subtab'), 'plans');
+});
+
+test('the Overview is the summary alone: plan lines, next, counts linking to Plans and Records', async () => {
+  const { sb, out } = await open();
   const body = out.view.slice(out.view.indexOf('id="projectsSubtabBody"'));
-  assert.match(body, /class="project-policy-effective"/);
-  assert.match(body, /class="project-merge-pipeline"/);
-  assert.match(body, /merge_mode:/, 'the loaded policy value is shown');
-  assert.equal((body.match(/class="project-settings-link"/g) || []).length, 2, 'a Settings link for each section');
-  assert.doesNotMatch(body, /<input|<select|<textarea|<form|<button/i, 'no edit controls');
-  assert.doesNotMatch(body, /onchange=|onsubmit=/);
+  assert.match(body, /class="project-overview-plan"[^>]*data-plan="plan-a"/);
+  assert.match(body, /Next thing/);
+  assert.match(body, /data-goto="plans"/);
+  assert.match(body, /data-goto="records"/);
+  assert.doesNotMatch(body, /id="planRecordsSlot"|class="project-rollup"/, 'no records card or roll-up on Overview');
+});
+
+test('the Records sub-tab holds the Registry and findings card and a mount point', async () => {
+  const { sb, out } = await open();
+  sb.selectProjectsSubtab('records');
+  assert.equal(activeBody(out.view), 'records');
+  assert.match(out.view, /id="projectRecordsMount"/);
+  assert.match(out.view, /id="planRecordsSlot"/);
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.equal(en.plan_records_title, 'Registry and findings');
+});
+
+test('Projects Overview sub-tabs use the Projects strip, switch on click and survive a refresh', async () => {
+  const ids = ['inbox', 'automations', 'resources', 'progress', 'housekeeping'];
+  const { sb, out, storage } = await open({ hash: '#projects' });
+  assert.match(out.view, /class="projects-subtabs"/);
+  assert.doesNotMatch(out.view, /automation-subtabs/, 'the Automation bar classes are gone from Overview');
+  assert.equal((out.view.match(/class="projects-subtabs"/g) || []).length, 1);
+  assert.deepEqual(buttons(out.view), ids);
+  for (const id of ids) {
+    run(sb, `selectProjectsOverviewSubtab('${id}')`);
+    assert.equal(run(sb, '_automationState.subtab'), id);
+    assert.equal(run(sb, '_automataState.tab'), 'projects');
+    assert.match(out.view, new RegExp(`data-projects-subtab="${id}"[^>]*>`));
+    assert.match(out.view, new RegExp(`class="projects-subtab active" aria-selected="true" data-projects-subtab="${id}"`));
+    assert.equal(storage.getItem(KEY), id, 'the choice is kept in the existing remembered value');
+  }
+  // A fresh page load with the stored value opens the same sub-tab.
+  const again = await open({ hash: '#projects', storage });
+  assert.equal(run(again.sb, '_automationState.subtab'), 'housekeeping');
+  assert.match(again.out.view, /class="projects-subtab active" aria-selected="true" data-projects-subtab="housekeeping"/);
 });

@@ -26,7 +26,7 @@ func daemonJSONWithOutcome(method, path string, body any) error {
 		return err
 	}
 	if line := llmOutcomeReply(resp); line != "" {
-		_, _ = fmt.Fprintln(os.Stdout, line)
+		_, _ = fmt.Fprintln(os.Stderr, line)
 	}
 	if len(resp) > 0 {
 		prettyPrint(resp)

@@ -1,13 +1,12 @@
-// Regression test: the Alerts tab "?" help link moved out of its own
-// top-right flex row and into listLoader's metaExtra option (the link now
-// sits on the alerts loader's meta row and gets its coarse-pointer tap
-// target from the .alerts-help-link rule in style.css).
+// Regression test: the Alerts tab "?" help link moved out of the alerts
+// loader's metaExtra row (the content) and into the shared header help link
+// (#headerHelpLink in index.html). The nav function's anchorMap carries an
+// 'alerts' entry pointing at the Alerts howto, the link's title uses the
+// alerts_help_tip string on the alerts view (the generic index.html title is
+// restored on every other view), and _alertsLoader no longer takes a metaExtra
+// option — no second "?" remains in the Alerts content.
 //
-// These are source-level assertions on app.js: renderAlertsView must no
-// longer emit the standalone justify-content:flex-end row, the loader must
-// be built with a metaExtra option (through the _alertsLoader helper so the
-// per-key cached loader in window._listLoaders carries it too), and the
-// link must keep its href/target/rel, aria-label and tooltip key.
+// These are source-level assertions on app.js and style.css.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,68 +15,57 @@ const path = require('node:path');
 
 const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 
-function blockEnd(fromIdx) {
-  const j = src.indexOf('\n}\n', fromIdx);
-  assert.ok(j > fromIdx, 'function body terminator not found');
-  return j;
+function anchorMapRegion() {
+  const m = src.indexOf('const anchorMap = {');
+  assert.ok(m >= 0, 'nav anchorMap not found in app.js');
+  const end = src.indexOf('renderServerHeaderLine', m);
+  assert.ok(end > m, 'nav help-link block not found after the anchorMap');
+  return src.slice(m, end);
 }
 
-function alertsHelpRegion() {
-  const link = src.indexOf('function _alertsHelpLinkHtml');
-  assert.ok(link >= 0, '_alertsHelpLinkHtml helper not found');
-  const loader = src.indexOf('function _alertsLoader', link);
-  assert.ok(loader > link, '_alertsLoader helper not found');
+function alertsLoaderRegion() {
+  const loader = src.indexOf('function _alertsLoader');
+  assert.ok(loader >= 0, '_alertsLoader helper not found');
   const view = src.indexOf('function renderAlertsView', loader);
   assert.ok(view > loader, 'renderAlertsView not found');
-  return src.slice(link, blockEnd(view) + 3);
+  const j = src.indexOf('\n}\n', view);
+  assert.ok(j > view, 'renderAlertsView body terminator not found');
+  return src.slice(loader, j + 3);
 }
 
-function renderAlertsViewSource() {
-  const view = src.indexOf('function renderAlertsView');
-  assert.ok(view >= 0, 'renderAlertsView not found');
-  return src.slice(view, blockEnd(view) + 3);
-}
-
-test('renderAlertsView no longer renders the standalone flex-end help row', () => {
-  const v = renderAlertsViewSource();
-  assert.ok(!v.includes('justify-content:flex-end'),
-    'renderAlertsView still emits the justify-content:flex-end help row');
-  assert.ok(!v.includes('display:flex;justify-content:flex-end'),
-    'renderAlertsView still emits the flex-end wrapper div');
+test('the header anchorMap carries the alerts view pointing at the Alerts howto', () => {
+  const region = anchorMapRegion();
+  assert.ok(region.includes("'alerts':"), "nav anchorMap missing the 'alerts' entry");
+  assert.ok(region.includes("'/diagrams.html#docs/howto/alerts-and-notifications.md'"),
+    'alerts map entry does not point at the Alerts howto');
 });
 
-test('the alerts loader is built with a metaExtra option via the cached-loader helper', () => {
-  const region = alertsHelpRegion();
-  const loader = region.slice(region.indexOf('function _alertsLoader'));
-  assert.ok(loader.includes('listLoader('), '_alertsLoader does not call listLoader');
-  assert.ok(/metaExtra\s*:/.test(loader),
-    '_alertsLoader does not pass the metaExtra option to listLoader');
-  const v = renderAlertsViewSource();
-  assert.ok(v.includes('_alertsLoader('),
-    'renderAlertsView does not build the loader through _alertsLoader');
-  assert.ok(loader.includes('window._listLoaders'),
+test('the alerts view gets the alerts_help_tip title, other views keep the generic one', () => {
+  const region = anchorMapRegion();
+  assert.ok(region.includes('helpLink.title'), 'nav no longer sets the help link title per view');
+  assert.ok(/view === 'alerts'/.test(region) && region.includes("t('alerts_help_tip')"),
+    'alerts view does not use the alerts_help_tip tooltip');
+  assert.ok(region.includes("'Open documentation for this view'"),
+    'the generic header help title is not restored for the other views');
+});
+
+test('the alerts loader no longer ships a help link in the content', () => {
+  assert.ok(!src.includes('function _alertsHelpLinkHtml'),
+    '_alertsHelpLinkHtml helper still present in app.js');
+  assert.ok(!src.includes('_alertsHelpLinkHtml'),
+    'app.js still references _alertsHelpLinkHtml');
+  const region = alertsLoaderRegion();
+  assert.ok(region.includes('listLoader('), '_alertsLoader does not call listLoader');
+  assert.ok(!/metaExtra\s*:/.test(region),
+    '_alertsLoader still passes a metaExtra option to listLoader');
+  assert.ok(region.includes('window._listLoaders'),
     '_alertsLoader does not return the per-key cached loader from window._listLoaders');
+  assert.ok(region.includes('_alertsLoader('),
+    'renderAlertsView does not build the loader through _alertsLoader');
 });
 
-test('the help link keeps its href, target, rel, aria-label and tooltip key', () => {
-  const region = alertsHelpRegion();
-  assert.ok(region.includes('href="/diagrams.html#docs/howto/alerts-and-notifications.md"'),
-    'help link href changed');
-  assert.ok(region.includes('target="_blank"'), 'help link lost target="_blank"');
-  assert.ok(region.includes('rel="noopener"'), 'help link lost rel="noopener"');
-  assert.ok(region.includes('aria-label="Help"'), 'help link lost aria-label="Help"');
-  assert.ok(region.includes("t('alerts_help_tip')"), 'help link lost the alerts_help_tip tooltip key');
-  assert.ok(region.includes('alerts-help-link'), 'help link lost the alerts-help-link class');
-  assert.ok(/>\?<\/a>/.test(region), 'help link lost the "?" glyph');
-});
-
-test('style.css gives .alerts-help-link a 40px coarse-pointer tap target', () => {
+test('style.css no longer carries the dead .alerts-help-link rule', () => {
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  const i = css.indexOf('a.alerts-help-link');
-  assert.ok(i >= 0, '.alerts-help-link rule missing from style.css');
-  const coarseBlock = css.slice(Math.max(0, i - 800), i + 200);
-  assert.ok(coarseBlock.includes('pointer: coarse'),
-    'a.alerts-help-link rule is not inside a (pointer: coarse) media block');
-  assert.ok(/min-height:\s*40px/.test(css.slice(i, i + 300)),
-    'a.alerts-help-link rule does not set a 40px min-height tap target');
+  assert.ok(!css.includes('alerts-help-link'),
+    'style.css still references the alerts-help-link class');
 });

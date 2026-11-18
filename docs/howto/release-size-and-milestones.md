@@ -62,7 +62,7 @@ also reports which layer it was.
 | # | Layer | What decides it | Example |
 |---|---|---|---|
 | 1 | **Explicit** | The `release_size` set on the Automaton itself: `patch`, `minor`, `major` or `none`. It wins over everything below, including an explicit `none` and an explicit `major` under any major trigger. | You set `release_size: patch` on an Automaton whose kind is `feature`. It resolves to `patch`, from the Automaton. |
-| 2 | **Milestone** | The Automaton belongs to an Automation (an arc) that is marked as a milestone, every member has finished, and the project's `major_trigger` is `milestone`. | The last member of a milestone arc ships while `major_trigger` is `milestone`. It resolves to `major`, from the Automation milestone. |
+| 2 | **Milestone** | The Automaton belongs to an Automation (a plan) that is marked as a milestone, every member has finished, and the project's `major_trigger` is `milestone`. | The last member of a milestone plan ships while `major_trigger` is `milestone`. It resolves to `major`, from the Automation milestone. |
 | 3 | **Project kind map** | The `release_size_map` entry for the Automaton's kind, with the project's entries layered over the daemon-wide ones. | You add `docs: none`. An Automaton of kind `docs` resolves to `none`, from the project map. |
 | 4 | **Built-in default** | Kind `feature` steps `minor`, kind `bug` steps `patch`, and any other kind steps `none`. | A `feature` Automaton with nothing set resolves to `minor`, from the built-in default. |
 
@@ -114,13 +114,13 @@ how a breaking change stays visible to you whatever step it lands on.
 ## The milestone Automation
 
 An [Automation](automation-chains.md) is a named chain of Automata. Mark one as
-a **milestone** when the whole arc is a major piece of work: a big feature grown
+a **milestone** when the whole plan is a major piece of work: a big feature grown
 out of many smaller merges. Marking it does nothing while its members ship. Each
-member resolves its own size by the four layers, so the arc ships as ordinary
+member resolves its own size by the four layers, so the plan ships as ordinary
 minors and patches. When every member has finished, the Automation completes,
 and from then on the milestone layer applies: if the project's `major_trigger`
 is `milestone`, the release raises the **major** step. With any other trigger
-the flag changes nothing, and an Automation without the flag is an ordinary arc.
+the flag changes nothing, and an Automation without the flag is an ordinary plan.
 
 | Surface | How |
 |---|---|
@@ -238,7 +238,7 @@ old engine (`feature`). Nothing about them is special; none of them sets a
 **3. They ship as minors and patches.** When each member merges, its size is
 resolved the same way: the daemon has the layers, but the version step that
 applies the result is not wired yet (see the note at the top), so the table
-below is the intended result, not what a ship bumps today. Before the arc
+below is the intended result, not what a ship bumps today. Before the plan
 completes, the milestone layer has nothing to say, so layer 3 and 4 decide:
 
 | Member | Kind | Resolved size | Layer | Intended version |
@@ -247,14 +247,14 @@ completes, the milestone layer has nothing to say, so layer 3 and 4 decide:
 | Calculation core | feature | minor | project map or built-in | 3.8.0 to 3.9.0 |
 | Rounding fix | bug | patch | project map or built-in | 3.9.0 to 3.9.1 |
 
-The arc is not finished, so nobody has been surprised by a major. Users on 3.x
+The plan is not finished, so nobody has been surprised by a major. Users on 3.x
 keep getting working releases.
 
 **4. The last member completes the Automation.** The switch-over is the last
 member. The Automation is marked as a milestone, every member has now finished,
 and the project's `major_trigger` is `milestone`, so the milestone layer
 decides: the size is **major**, from the Automation milestone. Without the
-trigger it would have resolved to `minor` like its siblings, and the arc would
+trigger it would have resolved to `minor` like its siblings, and the plan would
 never have produced the major you intended.
 
 **5. The major approval mode holds it for you.** A major is the step you do not
@@ -290,6 +290,6 @@ write time with the key named.
 ## See also
 
 - [How-to: Merge pipeline](merge-pipeline.md) for the pipeline these settings apply to.
-- [How-to: Automation chains](automation-chains.md) for building the arc.
+- [How-to: Automation chains](automation-chains.md) for building the plan.
 - [How-to: Post-ship hooks](post-ship-hooks.md) for what runs after a ship.
 - [The definitions](../datawatch-definitions.md#release-size) for the short entry of each term.

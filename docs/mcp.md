@@ -218,6 +218,20 @@ See the operations guide for device-specific cert install instructions.
 
 ---
 
+## Resource subscriptions
+
+With `mcp.resource_subscriptions: true` (default `false`) the server advertises `resources.subscribe` and an MCP client can follow Automata lifecycle events. Call `resources/subscribe` on the lifecycle events resource with the filter in the URI's query, and the server sends `notifications/resources/updated` for that URI each time a matching event fires:
+
+```
+datawatch://events/lifecycle?kinds=task.failed,prd.completed&level=task
+```
+
+The query parameters are `kinds` (comma-separated event kinds), `level` (`prd`, `task` or `automation`), `prd_id`, `task_id`, `automation_id` and `peer` (the registered name of the federation peer that forwarded the event; events that originated on this daemon never match it). The filter is the same one a persisted subscription uses, with the same rules: at least one of `kinds` or `level` is required, and every kind must be one `autonomous_event_kinds` lists. An event is also held back when the Automaton's notify-event set excludes its kind, exactly as for a persisted subscription. The notification carries the subscribed `uri` and a `_meta` object with the event's `event_id`, `kind`, `prd_id` and `task_id`; read the resource (or call `autonomous_event_log`) for the recent events.
+
+A resource subscription belongs to its MCP session: nothing is stored, it ends on `resources/unsubscribe` or when the session closes, and a session may hold at most 32. A URI that is not the lifecycle events resource, names an unknown kind or level, or has no filter is refused with an invalid-params error; the daemon log says why. `resources/unsubscribe` of a URI that was never subscribed is not an error.
+
+With the setting off the server does not advertise `subscribe`, lists no lifecycle events resource and refuses `resources/subscribe`, as before. Changing the setting needs a daemon restart. Set it in the `mcp:` block of `config.yaml`, in Settings → General → MCP Server (**Resource subscriptions**), with `PUT /api/config` and `{"mcp.resource_subscriptions": true}`, `datawatch config set mcp.resource_subscriptions true`, the chat command `configure mcp.resource_subscriptions=true`, or the `config_set` MCP tool.
+
 ## Available Tools
 
 The MCP server exposes **150+ tools** across the surfaces below
@@ -249,13 +263,13 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_unlanded_work`, `autonomous_protected_paths`, `autonomous_standard_tasks`, `planning_routing_get/set/test`, `planning_scorecard`, `task_routing_get/set`, `task_routing_profile_list/save/activate/delete/export/import`, `task_routing_automaton`, `task_routing_dry_run`, `autonomous_request_watch`, `autonomous_timeline`, `autonomous_pending_items`, `autonomous_pending_item_add`, `autonomous_pending_item_attach`, `autonomous_pending_items_refresh`, `security_failure_list`, `dependency_update_status`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_merge_shadow_status`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_completed_migrate`, `autonomous_shipped_counts`, `autonomous_prd_hold`, `autonomous_prd_release_hold`, `autonomous_held`, `autonomous_held_migrate` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set`, `usage_autolanes_status` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
+| Lifecycle subscriptions | `autonomous_peer_events`, `autonomous_peer_events_control`, `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
 | Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -264,7 +278,8 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
-| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs`, `project_rollup`, `project_history`, `project_policy_effective` |
+| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -296,11 +311,16 @@ Compute node tools:
 Autonomous PRD reads and writes:
 
 - **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
+- **`autonomous_prd_get` / `autonomous_prd_list` — `planning_failure`.** An Automaton whose last planning attempt failed carries `planning_failure {reason, category, source, phrases[], retryable, retry_counts{}, retry_budget, occurred_at}` (the rule that tripped, the exact phrases and the retries used against the budget); the key is absent when planning did not fail. See [api/autonomous.md](api/autonomous.md#planning-failure-planning_failure).
   - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
   - `tasks` returns everything in `summary`, plus each task's status, error and verification summary.
   - `full` returns everything, including task specs and logs, and the `foreign_file_drift` field on tasks.
 - **`autonomous_prd_plan_coverage_get`** — read one Automaton's stored plan-requirements coverage report (the plan-coverage gate record): the report for that exact decomposed plan — matched and unmatched numbered requirements, any structural findings, and the overall verdict — plus the operator's acknowledgement, and the counts of findings the plan-coverage filters suppressed from the report (`suppressed.created_files`, `suppressed.requirements`). Read-only: it changes nothing and runs no gate, judge or scan. Takes `id` (required).
 - **Behaviour change for PRD write tools.** `autonomous_prd_reset_task`, `autonomous_prd_run`, `autonomous_prd_approve`, `autonomous_prd_cancel`, and the set, add and edit tools no longer return the whole Automaton. Each write reply is now a small object with the Automaton's `id`, its `status` and `rev`, the id and status of the task or story that changed, and a `message`. To read the full Automaton after a write, call `autonomous_prd_get` with `detail` set to `full`.
+- **`autonomous_prd_hold`** — puts an Automaton on hold on purpose, for example until after a release. A held Automaton waits by operator decision: it is not blocked, not failed, not waiting for review, nothing starts it, and its tasks keep their state. Allowed from `draft`, `needs_review`, `approved`, `revisions_asked`, `paused`, `blocked` and `failed`; refused from `planning`, `running`, `completed`, `rejected`, `cancelled` and `archived`. On an Automaton that is already held the same call **extends** the hold (a field you give replaces the stored one, a field you leave out is kept), so the `reason` is then optional. Parameters: `id` (required), `reason` (required, at most 500 characters), optional `condition` (free text shown to the operator — never evaluated), `until` (an RFC 3339 time, a date such as `2026-12-01` = end of that day UTC, or a duration such as `72h`) and `actor` (defaults to `operator`). Proxies `POST /api/autonomous/prds/{id}/hold`; needs the autonomous write capability.
+- **`autonomous_prd_release_hold`** — releases an Automaton from its operator hold. It returns to the status it had when it was held (a blocked Automaton gets its blocked reason back); releasing does not start anything — the normal paths pick the Automaton up from there. Errors when the Automaton is not held. Parameters: `id` (required), optional `note` and `actor` (defaults to `operator`). Proxies `POST /api/autonomous/prds/{id}/release_hold`; needs the autonomous write capability.
+- **`autonomous_held`** — reads the **Held group**: every Automaton on hold, each with its title, reason, optional condition and look-again line ("looked at again on a date", "no date set", or "hold expired, ready to review"). Expired holds come first, then the soonest look-again time, then the oldest hold. No parameters; read-only, needs the autonomous read capability. Proxies `GET /api/autonomous/held`. Do not confuse it with `autonomous_held_questions`, the held-*question* report of the operator question channel.
+- **`autonomous_held_migrate`** — lists blocked or failed Automata that look like they are waiting on purpose (a failed evaluation run, parked design work, a blocked reason that says hold or "until after the release") and puts the chosen ones on hold. A dry run, or a call with no ids, only lists the candidates and changes nothing — call it dry-run first, then again with the ids you choose. A real run needs `ids` and a `reason` you supply (never generated or defaulted); `condition` and `until` (same three forms as above) apply to every chosen id; `actor` defaults to `operator`. A real run is refused while a final gate is running and skips, with a reason, any id that is missing, already held, or not blocked or failed. Proxies `POST /api/autonomous/held/migrate`; needs the autonomous write capability. How to hold, extend, release and migrate, on every surface: [howto/automaton-hold.md](howto/automaton-hold.md).
 
 Autonomous events (the Events tab of the Automata view) — no MCP tools:
 
@@ -320,7 +340,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_resume`** — resume a PRD the boot-resume gate parked after a daemon restart (also resumes a paused PRD). Takes `id` and an optional `note`; errors if the PRD is in neither state.
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
-- **`autonomous_prd_edit_task`** (v5.9.0+) — edit a task's `spec` while a PRD is in `needs_review`, `revisions_asked`, `cancelled`, or `blocked` (per-task `backend` / `effort` / `model` go through `autonomous_prd_set_task_llm`). On a `blocked` PRD only a `failed`, `blocked` or `review_needed` (held) task can be edited — editing never changes its status; retry a held task with `autonomous_prd_resolve_task_review`, which also accepts `read_only` and `report_path` — and a `completed` task's spec is immutable in every status. Recovery flow for a stuck task: `autonomous_prd_edit_task` to fix the spec, then `autonomous_prd_reset_task` to retry it — completed sibling tasks are left untouched, no re-decompose needed.
+- **`autonomous_prd_edit_task`** (v5.9.0+) — edit a task's `spec` while a PRD is in `needs_review`, `revisions_asked`, `cancelled`, or `blocked` (per-task `backend` / `effort` / `model` go through `autonomous_prd_set_task_llm`). On a `blocked` PRD only a `failed`, `blocked` or `review_needed` (held) task can be edited — editing never changes its status; retry a held task with `autonomous_prd_resolve_task_review`, which also accepts `read_only` and `report_path` — and a `completed` task's spec is immutable in every status. It also takes `verification_script` (one repo-relative script file, never a command string, an absolute path, a `..` path or the project root; the path is added to the task's `files_generated` when not yet listed) and `verification_script_reason` (why the task has no script), each left unchanged when omitted. The same two inputs exist as REST `edit_task` body keys, CLI `prd-edit-task --verification-script` / `--verification-script-reason`, and comm `autonomous edit-task <prd> <task> verification_script=<path> verification_script_reason="<text>"`. Recovery flow for a stuck task: `autonomous_prd_edit_task` to fix the spec, then `autonomous_prd_reset_task` to retry it — completed sibling tasks are left untouched, no re-decompose needed.
 - **`autonomous_prd_edit_story`** — rewrite a story's `title`/`description` while a PRD is in `needs_review` or `revisions_asked`.
 - **`autonomous_prd_add_story`** / **`autonomous_prd_remove_story`** — add a new, empty story, or remove a story (and its tasks), without re-running decompose. Accepted in `needs_review`, `revisions_asked` and `cancelled`. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in `needs_review` for exactly this purpose: add the work, then run it again.
 - **`autonomous_prd_add_task`** / **`autonomous_prd_remove_task`** — add a new task to an existing story, or remove one, without re-running decompose. Accepted in `needs_review`, `revisions_asked` and `cancelled`. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in `needs_review` for exactly this purpose: add the work, then run it again. `remove_task` is distinct from `autonomous_prd_cancel_task`, which stops a running/queued task without deleting it from the PRD.
@@ -401,7 +421,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Needs the autonomous read capability when called by a federated peer; the route answers 503 while autonomous is disabled.
-- **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. A decision that refused an Automaton carries `eligibility_reason` (`stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`); the key is absent when the decision is not a refusal. `lane_counts` gives, for `gpu` and `claude`, the configured count, the effective count the last poll used and its source (`config` or `llm_caps`), and `modes` gives the mode in effect for each lane kind. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
+- **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. A decision that refused an Automaton carries `eligibility_reason` (`operator_hold`, `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work`, `worktree_invalid` or `plan_coverage_blocked`, a `needs_review` Automaton whose stored plan-coverage record fails the approve gate in `block` mode with no covering acknowledgment); the key is absent when the decision is not a refusal. `lane_counts` gives, for `gpu` and `claude`, the configured count, the effective count the last poll used and its source (`config` or `llm_caps`), and `modes` gives the mode in effect for each lane kind. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -413,6 +433,20 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_lane_utilization`** — read how the lanes were used over a window ending now: per-lane busy and idle time in buckets, plus the lane fill status with its newest decisions. Read-only; returns the JSON of `GET /api/autonomous/lane-utilization` unchanged.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `window` | no | Window length as a duration such as `6h`, `24h` or `7d` (default `24h`) |
+  | `bucket` | no | Number of time buckets, a whole number |
+  | `decisions` | no | How many of the newest decisions to return, a whole number |
+
+  ```
+  autonomous_lane_utilization()
+  autonomous_lane_utilization(window="7d", bucket=14, decisions=20)
+  ```
+
+  A value out of range is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
 - **`onboarding_report`** — read the onboarding report: what is configured (backends, models, projects, comm channels, memory, merge pipeline), what is missing, and what to try next with a how-to link for each step. `format` is `text` (the default, rendered by the same function as the REST route, the CLI and the comm verb) or `json` (the REST body). Read-only; says so when `onboarding_report.enabled` is off. Same data as `GET /api/automation/onboarding-report`.
 - **`compute_served_models`** — read which models each compute node serves right now. Without arguments it lists every enabled node with its served models and whether the list could be read. Give `model` (and optionally `node` and `backend`) to also get the answer to "would this node accept this model?" — the same check an Automaton makes when a task or story is pinned to a node, so the two never disagree. A node's list is kept for `autonomous.model_routing.served_models_cache_seconds` (default 300); `refresh=true` reads it from the node again. Read-only. Needs the compute read capability when called by a federated peer.
 
@@ -679,7 +713,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`supervisor_loop_runs`** — read the supervisor loop's run records, newest first. Optional `job` (a job name), `outcome` (`ok`, `validator_failed`, `escalated` or `error`) and `limit` filters; any other argument is refused. Read-only. Returns the same body as `GET /api/supervisor-loop/runs`.
 - **`supervisor_loop_run_job`** — run one supervisor loop job now. Needs `job` (the job name); optional `input` (text) and `candidates` (a comma list, for the model jobs that choose among candidates). An unknown job name comes back as a tool error with the daemon's `unknown job` message. Proxies `POST /api/supervisor-loop/jobs/<job>/run`. The loop's settings are the `supervisor_loop.*` keys, set with `config_set`.
 - **`supervisor_loop_eval`** — compare models on a model job's eval cases. Needs `job` (`draft_spec`, `classify_ci_failure` or `pick_backend`) and `models` (a comma list); optional `cases_dir` (the name of a folder under the default cases folder). Returns per model: cases, passed, validator failures, retries, median and maximum duration, escalations. Fails naming each model when none is reachable. Proxies `POST /api/supervisor-loop/eval`.
-- **`supervisor_loop_stats`** — read the supervisor loop as numbers: `enabled`, `jobs`, `jobs_enabled`, `runs`, the split by outcome (`runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`), `retries` and `last_run_age_seconds` (-1 when no run is stored). Takes no arguments; any argument is refused. Read-only. Returns the same object as `GET /api/supervisor-loop/stats`.
+- **`supervisor_loop_stats`** — read the supervisor loop as numbers: `enabled`, `jobs`, `jobs_enabled`, `runs`, the split by outcome (`runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`), `retries` and `last_run_age_seconds` (-1 when no run is stored). Takes no arguments; any argument is refused. Read-only. Returns the object from `GET /api/supervisor-loop/stats` plus a `wake` object (the wake settings in effect, the last event, the last scheduled check and their counts) from `GET /api/supervisor-loop/wake`. The wake settings are written with `config_set` keys `supervisor_loop.wake.enabled`, `.kinds`, `.coalesce_seconds` and `.fallback_interval_minutes`.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -776,7 +810,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
   autonomous_config_set(host_load_alert_mode="reap", host_load_alert_multiple=2, host_load_alert_minutes=15)
   ```
-- **`autonomous_unlanded_work`** — read the list of archived Automaton branches whose commits are not on the project's default branch: `branches[]`, one entry per branch with the Automaton, title, branch, commits not on the default branch, last activity and a recommendation (`landed`, `superseded` or `needs_decision`). Read-only: keeping, archiving a branch and deleting a worktree (which writes a backup bundle first) are REST, CLI, comm channel and PWA actions, not MCP tools. Returns the same object as `GET /api/autonomous/unlanded-work`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
+- **`housekeeping_repairs`** — read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) the mode in effect (`off`, `report` or `on`), what a report-mode pass would do (`would`), what an on-mode pass did (`did`), and the cases that `failed` or were `skipped_unsafe`; each entry says what was found, what was done and how to undo it. Takes no arguments (one is refused). Read-only: reading never repairs anything, raises an alert or changes a mode. Change a mode with `config_set` and the key `autonomous.housekeeping_repairs.<group>` (`off`, `report` or `on`; default `report`); `autonomous.housekeeping_repairs.grace_seconds` sets the grace (default 300). Returns the same object as `GET /api/autonomous/housekeeping-repairs`.
+- **`autonomous_unlanded_work`** — read the list of archived Automaton branches whose commits are not on the project's default branch: `branches[]`, one entry per branch with the Automaton, title, branch, commits not on the default branch, last activity and a recommendation (`landed`, `superseded` or `needs_decision`), plus `counts` (`total`, `by_state`, `by_age`, `oldest_pending`). Read-only: keeping, archiving a branch and deleting a worktree (which writes a backup bundle first) are REST, CLI, comm channel and PWA actions, not MCP tools. Returns the same object as `GET /api/autonomous/unlanded-work`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
 - **`autonomous_pending_items`**, **`autonomous_pending_item_add`**, **`autonomous_pending_item_attach`**, **`autonomous_pending_items_refresh`** — pending items: named pieces of work that have no Automaton yet. An Automation carries one as a member (`automation_insert_member` with `pending_item_id`) and holds at it until an Automaton is attached. `autonomous_pending_items` is read-only and returns `policy` and `auto_resume` in effect, `source` (the file registry settings), `last_refresh`, `items` and `held`; it takes optional `state` (`waiting`, `attached` or `done`) and `automation_id`. `autonomous_pending_item_add` takes `title` (**required**) and `ref` and returns the new item. `autonomous_pending_item_attach` takes `item_id` and `automaton_id` (both **required**) and converts the waiting members in place; it is refused with `409` when the item is not waiting and `404` for an unknown item or Automaton. `autonomous_pending_items_refresh` reads the file registry now and returns the counts of rows added, updated, done, dropped, kept and skipped, or the error. They return the same objects as `GET` and `POST /api/autonomous/pending-items`, `.../{id}/attach` and `.../refresh`. The nine `autonomous.automation.pending_item_*` settings are set through `config_set` or `autonomous_config_set` (`automation_pending_item_policy`, `automation_pending_item_auto_resume` and `automation_pending_item_source_path`, `_id_pattern`, `_id_column`, `_title_column`, `_state_column`, `_done_values`, `_on_missing_row`). See [howto/automaton-pending-items.md](howto/automaton-pending-items.md).
 
   | Parameter | Tool | Required | Description |
@@ -827,6 +862,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_shipped_record(id="a1b2c3d4", merge_commit="9d8e7f6a", merged_in_release="v1.2.0", source="merge_step")
   autonomous_shipped_record(id="auto77", merge_commit="bead1", merged_in_release="v1.2.0", source="backfill", automation=true)
   ```
+- **`autonomous_completed_migrate`** — moves Automata (and Automations) that were cancelled but whose work is already merged to the base branch to status Completed. It never kills a session and leaves unmerged ones alone. `dry_run=true` lists what would change without writing; `limit` caps the records one run changes (0 or absent: no limit); `id` restricts the run to one record. A real run is refused while a final gate is running. Proxies `POST /api/autonomous/completed/migrate`; needs the autonomous write capability when called by a federated peer.
 - **`autonomous_shipped_backfill`** — one shipped-state backfill pass over the base repository's main branch (`MAIN_BRANCH` when set): it finds merge commits naming an `automaton/<8-hex id>` branch and records shipped state (`source=backfill`) on the matching PRDs, and on every Automation whose non-skipped member PRDs are all shipped; it attributes each one to the first release at or after its merge; and it never touches any status. `dry_run=true` scans and computes the report without writing; false or absent (the default) writes. Returns the report — `prds_scanned`, `prds_marked`, `prds_already_marked`, `automations_marked`, `left_cancelled`, `unmatched_ids`, `errors`. Idempotent per merge commit. Proxies `POST /api/autonomous/shipped/backfill`; needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |
@@ -837,7 +873,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_shipped_backfill(dry_run=true)   # see what would be recorded
   autonomous_shipped_backfill()               # run the pass
   ```
-- **`autonomous_shipped_counts`** — read the per-status shipped counts, the PRD and Automation buckets, computed under the in-force `autonomous.shipped` settings: one count per displayed status, with the shipped bucket separated from cancelled while `enabled` + `count_separately` hold (a PRD cancelled without its work landing counts as cancelled; one whose work landed counts as shipped, while the stored status stays cancelled). The reply also carries the settings it was computed under. Read-only — it never writes a record and touches no status; the same numbers are on the dashboard's shipped card. Proxies `GET /api/autonomous/shipped/counts`; needs the autonomous read capability when called by a federated peer.
+- **`autonomous_shipped_counts`** — read the per-status shipped counts, the PRD and Automation buckets, computed under the in-force `autonomous.shipped` settings: one count per displayed status, with work that landed counted as completed while `enabled` holds (a PRD cancelled without its work landing counts as cancelled; one whose work landed counts under completed with the stored-completed ones, while its stored status stays cancelled; there is no separate shipped bucket). The reply also carries the settings it was computed under. Read-only — it never writes a record and touches no status; the same numbers are on the dashboard's shipped card. Proxies `GET /api/autonomous/shipped/counts`; needs the autonomous read capability when called by a federated peer.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -864,7 +900,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   autonomous_config_set(lane_fill_mode="shadow", lane_fill_claude_lanes=3)
   ```
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
-- **`autonomous_prd_rejudge`** — re-judge the PRD-completion "rules-review" guardrail of a **blocked** Automaton (or of a `needs_review` Automaton held by a rules-review retries-spent or auto-fix-disabled hold) whose work is fully done, on an operator's behalf, without resetting or editing any task. Use it when the guardrail verdict that blocked the Automaton deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused — with a clear error, no side effects on any task — when the Automaton is not `blocked` (a rules-review hold is the one exception, covered in item 3 below), or when any task in any story is not `completed` (the refusal names the first such task and its status; re-run that work with `autonomous_prd_reset_task` first). The identical completion-guardrail invocation the rollup runs is re-executed through the same infra-retry wrapper. Outcome: the outcome is durably recorded on the Automaton's decision log **before** any status change — a new review records a `guardrail_verdict` plus a `guardrail_rejudge` Decision attributed to the acting operator, while a reused stored verdict records only the `guardrail_rejudge` Decision, with `verdict_reused` true, and is not appended to the Automaton's verdicts again; either Decision names the commit judged in `judged_commit_sha` — `pass` clears the blocked reason and completes the Automaton, `block` keeps it `blocked` with the blocked reason set from the new verdict, and no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error. Proxies `POST /api/autonomous/prds/{id}/rejudge` (see [howto/autonomous-recovery.md](howto/autonomous-recovery.md)).
+- **`autonomous_prd_rejudge`** — re-judge the PRD-completion "rules-review" guardrail of a **blocked** Automaton (or of a `needs_review` Automaton held by a rules-review retries-spent or auto-fix-disabled hold) whose work is fully done, on an operator's behalf, without resetting or editing any task. Use it when the guardrail verdict that blocked the Automaton deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused — with a clear error, no side effects on any task — when the Automaton is not `blocked` (a rules-review hold is the one exception, covered in item 3 below), or when any task is `pending`, `running` or `failed`, or when every task is `cancelled` (the refusal names the first blocking task and its status; re-run that work with `autonomous_prd_reset_task` first). A `cancelled` task is skipped, not a blocker: when every task is `completed` or `cancelled` with at least one `completed`, the rejudge proceeds and records one `cancelled_tasks_skipped` Decision naming the cancelled tasks. The identical completion-guardrail invocation the rollup runs is re-executed through the same infra-retry wrapper. Outcome: the outcome is durably recorded on the Automaton's decision log **before** any status change — a new review records a `guardrail_verdict` plus a `guardrail_rejudge` Decision attributed to the acting operator, while a reused stored verdict records only the `guardrail_rejudge` Decision, with `verdict_reused` true, and is not appended to the Automaton's verdicts again; either Decision names the commit judged in `judged_commit_sha` — `pass` clears the blocked reason and completes the Automaton, `block` keeps it `blocked` with the blocked reason set from the new verdict, and no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error. Proxies `POST /api/autonomous/prds/{id}/rejudge` (see [howto/autonomous-recovery.md](howto/autonomous-recovery.md)).
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -883,7 +919,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   3. **Held by a rules-review hold** (`needs_review` after the retries were spent, or after auto-fix was turned off): the rejudge is accepted once new commits have landed on the branch, with no `autonomous_prd_cancel`, `autonomous_prd_add_task` or `autonomous_prd_reset_task` needed. The fresh judge runs on the new head.
   4. **Held by a rules-review hold with the head unchanged:** the rejudge is refused before any judge runs, with the error `branch head "<sha>" is unchanged since the held verdict was made; new commits are needed before a rejudge`. Nothing is recorded and the Automaton stays held. Commit the fix on the Automaton branch first, then rejudge.
 
-  The refusal rules above still apply on every path: a rejudge is refused when the Automaton is neither `blocked` nor a rules-review hold, and when any task is not `completed`.
+  The refusal rules above still apply on every path: a rejudge is refused when the Automaton is neither `blocked` nor a rules-review hold, and when any task is `pending`, `running` or `failed` or every task is `cancelled` (cancelled tasks alongside at least one completed task are skipped).
 - **`autonomous_prd_set_notify_events`** — set the lifecycle event kinds that produce notifications **for this Automaton**, independent of who is subscribed. Parameters:
 
   | Parameter | Required | Description |
@@ -896,7 +932,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   autonomous_prd_set_notify_events(id="a1b2c3d4")   # clear the Automaton-level set (inherit)
   ```
 
-  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The opt-in kinds `task.session_started`, `task.session_cleared` (the session-end kind), `scope_warning` and `guardrail_warn` are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
+  Default set (when unset at this tier): `prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`, `prd.cancelled`. The opt-in kinds `task.session_started`, `task.session_cleared` (the session-end kind), `scope_warning`, `guardrail_warn` and the supervisor kinds (`automaton.stuck_running`, `automaton.merge_ready`, `automaton.tasks_done_or_cancelled`, `task.capacity_wait_too_long`, `burn_guard.rung_changed`, `judge.verdict_block`, `judge.verdict_warn`, `judge.verdict_pass`, `task.final_gate_failed`) are off by default — add them to the list to be notified. Warnings never block or change any work. Precedence: **Automaton > guardrail profile > global default**. A subscription's own event filter can only **narrow** this resolved set, never widen it. Returns the write reply described above (a small summary, not the whole Automaton).
 - **`autonomous_subscribe` / `autonomous_unsubscribe` / `autonomous_subscriptions`** (BL427) — persisted Automaton lifecycle-event subscriptions (design: [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md)). Register, list and remove subscriptions so matching lifecycle events (e.g. `task.session_started`, `task.completed`, `prd.blocked`) are delivered to a sink when they fire.
 
   `autonomous_subscribe` parameters:
@@ -959,6 +995,8 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   `subscription-update` takes the same flags as `subscribe` and replaces the configuration; unlike `subscribe`, `--task` does not imply `--one-shot`. From a comm channel: `autonomous subscription-update <id> key=value...` (keys `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`; unnamed fields keep their stored value) and `autonomous subscription-test <id>`. A channel can only update or test subscriptions it owns; any other id gets the same not-found answer.
 
 - **`autonomous_events_pending`** — poll the pending lifecycle events of a named queue, for a generic MCP client that cannot receive pushes. Create the queue by subscribing with `autonomous_subscribe` using `sink_type` `mcp_queue` and `sink_target` set to the queue name (letters, digits and `. _ : -`); matching events then accumulate there, bounded per queue (`autonomous.notify.pending_events_max`, default 500).
+- **`autonomous_peer_events`** — read the peer event subscriber: `{"enabled":bool,"running":[peer names]}`, where `enabled` is `autonomous.notify.forwarding.peer_events`. Takes no arguments; any argument is refused. Read-only. Returns the body of `GET /api/autonomous/peer-events`.
+- **`autonomous_peer_events_control`** — start or stop reading a federation peer's lifecycle events into this daemon's local dispatch. `action` (`start` or `stop`) and `peer` are required; `start` also needs `queue` (the peer's pending-events queue) and takes an optional `since` cursor. Start needs `autonomous.notify.forwarding.enabled` and `autonomous.notify.forwarding.peer_events` both true and a peer that grants `autonomous:read`; otherwise it is refused with the reason. The read lasts until stopped or the daemon restarts. Calls `POST /api/autonomous/peer-events/start` or `/stop`.
 
   | Parameter | Required | Description |
   |---|---|---|
@@ -967,6 +1005,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `limit` | no | Maximum events (default 50, capped at 200) |
 
   Returns `{"events":[...],"next_cursor":<n>,"dropped":<bool>}`. Pass `next_cursor` back as `since_cursor` on the next call; `dropped` is true when events you had not yet seen were evicted because the queue overflowed. Proxies `GET /api/autonomous/events`. The CLI equivalent is `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]`; over a comm channel it is `autonomous events [queue=<name>] [since=<cursor>]` (the queue defaults to one derived from the calling channel, and a channel can only read queues of its own subscriptions).
+- **`autonomous_event_kinds`** — list every lifecycle event kind a subscription can match, grouped by group. Read-only; takes no parameters. Returns the same object as `GET /api/autonomous/event-kinds`: `{"groups":[{"group":"...","kinds":[{"kind":"task.failed","description":"...","wake_default":true}]}]}`. Built-in kinds and kinds registered by extensions both appear; `wake_default` is true when the kind is in the default set that wakes the supervisor. Use it to choose the `kinds` to pass to `autonomous_subscribe`. Example: `autonomous_event_kinds {}`.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.
@@ -1383,7 +1422,7 @@ returns
 
 ### `worker_profile_status`
 
-Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`) and task kind (`implementation`, `docs`, `note`, `final_gate`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role and task kind (`scope`, `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
+Read-only. Returns the built-in worker profile names (`minimal`, `digest`, `full`, `datawatch-tools`), the built-in default profile for each role (`planner`, `worker`, `verifier`, `judge`), each task kind (`implementation`, `docs`, `note`, `final_gate`) and each session kind (`supervisor`, `operator_interactive`, `scheduled_command`, `planner`, `one_shot`, `review`), and the latest average start-up token size per profile and per role from the stats block (`worker_startup` in `GET /api/stats`). The `in_force` field lists one entry per worker role, task kind and session kind (thirteen in total; `scope` `role`, `kind` or `session_kind`, plus `key`, `profile`, `tier`, `reason`) with the profile each starts with now, built from the live config (`GET /api/config`) by the same rule a launch uses. Takes no parameters.
 
 Configure profiles with `config_set` on `autonomous.worker_profiles`, `autonomous.worker_profile_defaults` and `autonomous.worker_profile`; read them back with `get_config section=autonomous`. A refused value changes nothing.
 
@@ -1753,6 +1792,107 @@ verbs, the PWA automation queue, the answer log and the
 supersession rule — is walked through in
 [`howto/operator-questions-answering.md`](howto/operator-questions-answering.md).
 
+### Plan record tools
+
+A plan record is a registry row (one item of the plans registry) or a finding
+(a problem raised by an Automaton or an operator), kept by the daemon. The first
+six tools proxy the `/api/plan-records` REST surface, six work on plans
+(`plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`,
+`plan_attach`, `plan_detach`, `/api/plans`) and eight work on release plans (a
+plan is a release, with themes inside; see below); all answer with the title
+first and the id second. They need `autonomous:read` (`plan_record_list`,
+`plan_record_get`, `plan_record_search`) or `autonomous:write`
+(`plan_record_create`, `plan_record_update`, `plan_record_import`) when called
+by a federated peer. While `autonomous.plan_records.enabled` is `false` every
+call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
+
+| Tool | What it does | Rest call |
+|---|---|---|
+| `plan_record_create` | Create a registry row or finding in a registered project | `POST /api/plan-records/registry-rows` or `/findings` |
+| `plan_record_list` | List one kind, most recently updated first (read-only) | `GET /api/plan-records/registry-rows` or `/findings` |
+| `plan_record_get` | Read one record by reference (read-only) | `GET /api/plan-records/{kind}/{ref}` |
+| `plan_record_update` | Change a record; a field you leave out is left alone and a rename keeps the old title | `PUT /api/plan-records/{kind}/{ref}` |
+| `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
+| `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
+| `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows (mode `arcs`, the default), or file a project's Automata under release plans and themes (mode `release`: `project`, optional `current_release`, `next_release`, `marks`); previews unless `apply` is `true`, and a release write needs the `preview_id` of the preview | `POST /api/plans/migrate` |
+| `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`; `plan_kind` `release` with a `release` label makes a release plan) | `POST /api/plans` |
+| `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
+| `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
+| `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
+| `plan_detach` | Detach one of them from the plan it is in | `POST /api/plans/{ref}/detach` |
+| `plan_theme_list` | A release plan's themes in order with their items, then the unplaced items (read-only) | `GET /api/plans/{ref}/themes` |
+| `plan_theme_set` | One theme change per call (`action`: `create`, `rename`, `delete`, `place`, `unplace`, `reorder`, `reorder_items`) | `POST /api/plans/{ref}/themes` |
+| `plan_archive` | Archive a plan (a mark only; nothing is deleted); optional `reason` and `protected_plan` | `POST /api/plans/{ref}/archive` |
+| `plan_restore` | Clear a plan's archive mark | `POST /api/plans/{ref}/restore` |
+| `plan_unattributed_list` | The Automata no release plan holds, with the suggested release and theme (read-only) | `GET /api/plans/unattributed` |
+| `plan_attach_bulk` | Attach a list of Automata or Automations (`ids`), optionally into a `theme`; one result per id, a refused id names the holder | `POST /api/plans/{ref}/attach` with `ids` |
+| `plan_row_plan_list` | The plans the plans migration made from registry rows (read-only) | `GET /api/plans/migrate/row-plans` |
+| `plan_row_plan_convert` | Convert them into release plan items; previews unless `apply` is `true`, and a write needs the `preview_id` of the preview | `POST /api/plans/migrate/row-plans` |
+
+`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
+`plan_detach` need `autonomous:write` when called by a federated peer. Of the
+release plan tools, `plan_theme_list`, `plan_unattributed_list` and
+`plan_row_plan_list` need `autonomous:read` and the others `autonomous:write`.
+The release migration (`plan_migrate` with `mode` `release`) and
+`plan_row_plan_convert` preview by default and refuse to write without the
+`preview_id` the preview returned; a stale id is refused by the daemon. Each
+tool's description links the how-to
+[plan-records.md](howto/plan-records.md#release-plans-and-themes).
+`project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
+
+**Release plan tools: every surface side by side.** Each release plan tool
+proxies one REST route, so the answers cannot drift from the CLI, chat and the
+web app.
+
+| Tool | REST route | CLI command | Chat verb | Web app |
+|---|---|---|---|---|
+| `plan_theme_list` | `GET /api/plans/{ref}/themes` | `datawatch plan theme list <plan>` | `autonomous plan themes <plan>` | Themes section of an open release plan |
+| `plan_theme_set` | `POST /api/plans/{ref}/themes` | `datawatch plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | `autonomous plan theme add\|rename\|remove\|place\|unplace\|reorder\|reorder-items` | Add theme, rename, Delete, Place in theme, Unplace, theme arrows |
+| `plan_archive` | `POST /api/plans/{ref}/archive` | `datawatch plan archive <plan> [--reason TEXT] [--protect PLAN]` | `autonomous plan archive <plan> [protect=<plan>] [reason...]` | Archive |
+| `plan_restore` | `POST /api/plans/{ref}/restore` | `datawatch plan restore <plan>` | `autonomous plan restore <plan>` | Restore |
+| `plan_unattributed_list` | `GET /api/plans/unattributed` | `datawatch plan unattributed [--project P]` | `autonomous plan unattributed [project=P] [current=R] [next=R]` | Unattributed chip, Show unattributed |
+| `plan_attach_bulk` | `POST /api/plans/{ref}/attach` with `ids` | `datawatch plan attach <plan> --automaton a1,a2 [--theme T]` | `autonomous plan attach <plan> automaton <id> <id>... [theme=T]` | Attach, Bulk attach |
+| `plan_row_plan_list` | `GET /api/plans/migrate/row-plans` | `datawatch plan row-plans list` | not in chat | the preview of the Row-plans migration panel |
+| `plan_row_plan_convert` | `POST /api/plans/migrate/row-plans` | `datawatch plan row-plans convert [--apply --preview-id ID]` | not in chat | Preview row-plans migration, Approve |
+| `plan_migrate` (`mode` `release`) | `POST /api/plans/migrate` | `datawatch plan migrate --release --project P [--apply --preview-id ID]` | `autonomous plan migrate release project=P` and `... release approve <preview-id> project=P` | Preview migration, Approve migration |
+| `plan_create` (`plan_kind` `release`) | `POST /api/plans` | not in the CLI | not in chat | not in the web app |
+
+Parameters of the release tools (`plan` is a plan id or title; a theme is named
+by id or name):
+
+| Tool | Parameters |
+|---|---|
+| `plan_theme_list` | `plan` (required) |
+| `plan_theme_set` | `plan` and `action` (required): `create` needs `name`; `rename` needs `theme` and `name`; `delete` needs `theme`; `place` needs `theme`, `kind` and `id`; `unplace` needs `kind` and `id`; `reorder` needs `themes` (every theme once); `reorder_items` needs `theme`, `kind` and `items` (every item of that kind once). `kind` is `automaton` or `automation`. Answers the plan's themes after the change |
+| `plan_archive` | `plan` (required), `reason` (at most 1000 characters), `protected_plan` (refused with 409 while it holds Automata) |
+| `plan_restore` | `plan` (required) |
+| `plan_unattributed_list` | `project`, `current_release`, `next_release`, `limit`, `offset` (all optional) |
+| `plan_attach_bulk` | `plan` and `ids` (required, up to 500), `kind` (`automaton` by default), `theme` (must already exist) |
+| `plan_row_plan_list` | `project` (optional) |
+| `plan_row_plan_convert` | `project`, `current_release`, `apply` (default false: preview), `preview_id` (required with `apply`) |
+| `plan_migrate` | `mode` (`arcs` by default, or `release`), `apply`; with `release`: `project` (required), `current_release` (default `10.0`), `next_release` (default `11.0`), `marks` (a JSON object of Automaton id to `{release, theme}`), `preview_id` (required with `apply`) |
+| `plan_create` | `project`, `title` (required), `goal`, `plan_kind` (`ordinary` or `release`), `release` (the label; required with `plan_kind` `release`) |
+
+A release tool that writes many things (`plan_migrate` with `mode` `release`,
+`plan_row_plan_convert`) refuses `apply` without a `preview_id` before the call
+reaches the daemon.
+
+**Parameters.** `kind` is `registry-row` or `finding` (required on create, list,
+get and update). `ref` is an id, a uid, `row <n>`, an exact title, an older
+title or an unambiguous title prefix; an ambiguous title returns the list of
+matches. Create takes `project` (a registered project alias, required) and
+`title`, and optionally `body`, `state`, `legacy_number` (registry rows),
+`legacy_source`, `shipped_by`, `raised_by`, `shipped_version`, `links` (a JSON
+array of `{"kind","ref"}`), `aliases`, `needs_review` and `review_reason`.
+Update takes the same fields except `project`, `kind` and `legacy_number`, which
+cannot change, and `add_aliases` in place of `aliases`. List and search take
+`project`, `state` (one state, or a comma-separated list), `limit` and `offset`;
+list also takes `automaton`, `q` and
+`legacy_number`. The daemon returns 50 records by default and at most 500 per
+call. Import takes `project` (default `datawatch`), `source` (`registry`,
+`findings` or `all`), `conflict_policy` (`suffix`, `rename` or `skip`) and
+`dry_run` (default `true`).
+
 ### Placement tags: sweep and tags in use
 
 - **`autonomous_tag_sweep`** — re-derive the system tags of every existing Automata object (Automata, Automations, tasks, templates, decision records, held questions) and every Automata-owned session under the `tags.placement` settings in effect now, replacing each object's derived system tags with the newly derived set: turning a placement axis off removes its tag, turning it on adds the tag wherever the fact exists. The operator's own tags are a separate list that the sweep never touches, and a second run is a no-op (it changes zero objects and writes nothing). Returns the per-kind tally `{sessions, automata, automations, tasks, templates, decision_records, questions}`, each `{examined, changed, unchanged, failed}`.
@@ -1938,6 +2078,114 @@ Route one input under the current planning routing config and return the decisio
 **Example:**
 ```
 planning_routing_test(kind="feature", tags="security", spec_bytes=12000, files="internal/auth/login.go")
+```
+
+### `task_routing_get`
+
+Read the task routing table: whether routing is on, the active profile, every profile's rows (task type to worker LLM, verification LLM, effort, second choice) and the validation result. Read-only. It proxies `GET /api/autonomous/task-routing`.
+
+**Parameters:** none.
+
+**Reply:** `enabled`, `active_profile`, `profiles`, `task_types` and `validation` (`valid`, and `problems` when it is not valid).
+
+**Example:**
+```
+task_routing_get()
+```
+
+### `task_routing_set`
+
+Update the task routing table. Every field is optional: a field you leave out keeps its current value. The result is validated first and a bad table is refused with every problem listed, nothing applied. Only tasks created afterwards read the new table. It proxies `PUT /api/autonomous/task-routing`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | No | Turn task routing on or off. |
+| `active_profile` | string | No | Name of the profile to make active; it must exist. |
+| `profiles` | string (JSON object) | No | Profiles by name, replacing the current ones: `{"default":{"docs_set":{"worker_backend","worker_model","verification_backend","verification_model","effort","second_choice":{"backend","model"},"allow_premium_model"}}}`. |
+
+**Reply:** the same view as `task_routing_get`.
+
+**Example:**
+```
+task_routing_set(enabled=true)
+```
+
+### `task_routing_profile_list`
+
+List the saved task routing profiles and which one is active. Read-only. It proxies `GET /api/autonomous/task-routing/profiles`.
+
+**Parameters:** none.
+
+### `task_routing_profile_save`
+
+Save a profile under a name. With no `rows` it copies the active profile's current table; a profile of the same name is replaced. The table is validated first. It proxies `POST /api/autonomous/task-routing/profiles`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+| `rows` | string (JSON object) | No | Rows by task type; omit to copy the active profile. |
+
+### `task_routing_profile_activate`
+
+Make a saved profile the active one. Only tasks created afterwards use it; no existing task or session changes. It proxies `PUT /api/autonomous/task-routing/active-profile`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_delete`
+
+Delete a saved profile. The active profile cannot be deleted. It proxies `DELETE /api/autonomous/task-routing/profiles/{name}`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_export`
+
+Export one profile as a JSON document (`format_version`, `name`, `rows`), the same file the web app downloads. Read-only. It proxies `GET /api/autonomous/task-routing/profiles/{name}/export`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Profile name. |
+
+### `task_routing_profile_import`
+
+Import a profile from an exported document. It is validated and refused with every problem listed if it is not valid. An existing profile of the same name is replaced only when `overwrite` is true. It proxies `POST /api/autonomous/task-routing/profiles/import`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `document` | string (JSON) | Yes | The exported profile document. |
+| `name` | string | No | Store it under this name instead of the document's own. |
+| `overwrite` | boolean | No | Replace an existing profile of the same name. |
+
+### `task_routing_automaton`
+
+Per-Automaton task routing read: for every task, its task type, how it was classified, which row decided its LLM (or why none did) and the LLM it will run with. Read-only; writes nothing. It proxies `GET /api/autonomous/prds/{id}/task-routing`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Automaton id. |
+
+**Example:**
+```
+task_routing_automaton(id="<automaton-id>")
+```
+
+### `task_routing_dry_run`
+
+Dry run for a draft Automaton: what the active (or the named) profile would assign to each task. Nothing is written, no decision is logged and no LLM is called. It proxies `POST /api/autonomous/prds/{id}/task-routing/dry-run`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | Automaton id. |
+| `profile` | string | No | Profile name; defaults to the active profile. |
+
+**Example:**
+```
+task_routing_dry_run(id="<automaton-id>", profile="my-profile")
 ```
 
 ### `planning_scorecard`
@@ -2130,7 +2378,7 @@ read tools `config:read`, the write tools `config:write`.
 
 ---
 
-## Project record, arcs and the Projects sub-tab
+## Project record, plans and the Projects sub-tab
 
 The seven project tools read and write the project record behind the web app's
 Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
@@ -2140,23 +2388,24 @@ Projects sub-tab. The same data is on REST (`/api/projects…`), the CLI
 | Tool | Reads or writes | Parameters |
 |---|---|---|
 | `project_list` | read | none |
-| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted record field keeps its stored value) |
-| `project_set_arcs` | write | `name`, `arcs` (required, an array; order is the arc order; `[]` clears) |
+| `project_upsert` | write | `name`, `dir` (required); `default_backend`, `description`, `policy`, `owner`, `repository`, `default_branch`, `arcs`, `target`, `lane_defaults`, `weekly_share`, `branch_retention_days`, `major_trigger` (optional; an omitted field — `description` and `default_backend` included — keeps its stored value, an explicit empty value clears it. `policy` written as sent, absent clears) |
+| `project_set_arcs` | write (deprecated old name and plan list; the registry plan records replace it, see `plan_migrate`) | `name`, `arcs` (required, an array; order is the plan order; `[]` clears) |
 | `project_rollup` | read | `name` (required), `window` (days, 1 to 365, default 7) |
 | `project_history` | read | `name` (required), `limit`, `cursor` |
+| `project_timeline` | read | Returns start, end, status and release per row, `depends_on` on task rows and `edges` (chain between Automata) on Automata-level and focus replies, unchanged from the daemon. Arguments: `name` (required); `level` (`arcs` default, `automata`, `tasks`), `parent` (plan id or `none`, with `automata`), `automaton` (with `tasks`), `focus` (one plan id or `none`, unpaged), `limit`, `cursor` |
 | `project_policy_effective` | read | `name` (required), `automaton` (optional top tier) |
 | `project_alias_delete` | write | `name` (required); the directory is not touched |
 
-Arc objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
+Plan objects are `{"automation_id": "<id>", "priority": <int>, "state": "planned" | "active" | "done"}`.
 `automation_id` is required and must be unique within the project; an empty state means `planned`.
 
-`project_rollup` and `project_history` need the autonomous read capability and the
+`project_rollup`, `project_history` and `project_timeline` need the autonomous read capability and the
 two write tools need the autonomous write capability. Costs in the roll-up are
 usage points, never API dollars. `weekly_share`, `branch_retention_days` and
 `major_trigger` are stored and shown; the scheduler, the worktree cleanup and the
 release decision do not read the project's own values yet (see the howto).
 
-Set the arcs of the `core-api` project:
+Set the plans of the `core-api` project:
 
 ```json
 {

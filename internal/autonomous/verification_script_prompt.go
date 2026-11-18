@@ -56,8 +56,7 @@ func (m *Manager) verificationScriptSuffixFor(prd *PRD, backend string, withDige
 
 func (m *Manager) verificationScriptText(list string) string {
 	return "\n\n--- Verification scripts ---\n" +
-		"Before finalizing your JSON plan, give each task (or story, when a" +
-		" story-level check fits that unit of work better) whose verification" +
+		"Before finalizing your JSON plan, give each task whose verification" +
 		" this project's rules require a real verification script:\n" +
 		"1. Reuse first. Run a real `ls scripts/` and `head`/`grep` the" +
 		" candidates — do not trust a hand-copied list of scripts, it drifts;" +
@@ -85,6 +84,14 @@ func (m *Manager) verificationScriptText(list string) string {
 		" present (Makefile lint/test targets, package.json scripts," +
 		" pyproject.toml, go.mod + standard go tooling, etc.) and script" +
 		" from those.\n" +
+		VerificationScriptHelperText() +
+		"10. Do not generate a per-story gate. Story-level checks are plain" +
+		" task verification. Plan exactly one real final gate for the whole" +
+		" Automaton, as the last task, with kind final_gate.\n" +
+		"11. A final_gate task always carries a verification_script (also" +
+		" listed in files_generated) or an explicit verification_script_reason;" +
+		" never emit one with neither.\n" +
+		"12. Use Automaton wording in user-facing text.\n" +
 		"Do NOT inline any file content (scripts, rules files, source) in" +
 		" your response — only the verification_script path goes in the" +
 		" JSON; write script bodies to disk with your own tools."

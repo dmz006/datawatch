@@ -52,6 +52,7 @@ const (
 	PRDBlocked        PRDStatus = "blocked" // BL191 Q6 — a guardrail returned `block`; awaits operator action
 	PRDFailed         PRDStatus = "failed"  // one or more tasks failed after all retries; PRD did not complete
 	PRDPaused         PRDStatus = "paused"  // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
+	PRDHeld           PRDStatus = "held"    // operator hold — waiting by decision; not blocked, failed or in review, and nothing starts it
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.
@@ -61,6 +62,24 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 		return PRDPlanning
 	}
 	return s
+}
+
+// HoldState is the record of an operator hold on an Automaton (status
+// held). Reason is required; Condition is free text shown to the operator
+// and never evaluated; Until is the optional look-again time. From is the
+// status the Automaton had when it was held, and a release restores it.
+// PriorBlockedReason keeps the blocked reason at hold time, because the
+// store clears BlockedReason whenever the status is not blocked. ExpiredAt
+// is set once when Until passes; expiry never changes the status.
+type HoldState struct {
+	Reason             string     `json:"reason"`
+	Condition          string     `json:"condition,omitempty"`
+	Until              *time.Time `json:"until,omitempty"`
+	HeldAt             time.Time  `json:"held_at"`
+	HeldBy             string     `json:"held_by,omitempty"`
+	From               PRDStatus  `json:"from"`
+	PriorBlockedReason string     `json:"prior_blocked_reason,omitempty"`
+	ExpiredAt          *time.Time `json:"expired_at,omitempty"`
 }
 
 // SessionDecision is one duplicate-session decision on a task: two or more
@@ -78,7 +97,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill | completed_migration | verifier_materialize | hold | hold_extend | hold_release | hold_expired
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -270,6 +289,10 @@ type PRD struct {
 	Spec       string           `json:"spec"` // raw operator input
 	Title      string           `json:"title,omitempty"`
 	ProjectDir string           `json:"project_dir"`
+	// Project is the explicit project link: the name of a configured project.
+	// When set it decides which project this Automaton belongs to, ahead of any
+	// directory match. Empty on older records.
+	Project string `json:"project,omitempty"`
 	// v5.26.19 — operator-reported: "Prd should be based on directory or
 	// profile, should be able to check out repo and do work" + "Prd
 	// should also support using cluster profiles". When ProjectProfile
@@ -374,6 +397,9 @@ type PRD struct {
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// Hold is the operator hold record. Set while Status is held and nil
+	// otherwise; releasing the hold clears it.
+	Hold *HoldState `json:"hold,omitempty"`
 	// RulesReviewOutcome is the structured record of the last completion
 	// rules review that blocked this automaton: the findings, the recovery
 	// action taken and the retry budget. It is set by the completion rollup
@@ -412,6 +438,11 @@ type PRD struct {
 
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
+
+	// Landing says whether the Automaton's branch reached the default
+	// branch: pending, landed, kept or dropped (see landing.go). Nil when
+	// the Automaton never had a branch.
+	Landing *Landing `json:"landing,omitempty"`
 
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
@@ -1214,14 +1245,18 @@ type Task struct {
 	EffortCeiling string `json:"effort_ceiling,omitempty"`
 	// ClaudeRetries counts retries of this task that ran on Claude, for
 	// usage.burn_guard.retry_limit_claude.
-	ClaudeRetries int                 `json:"claude_retries,omitempty"`
-	CreatedAt     time.Time           `json:"created_at"`
-	UpdatedAt     time.Time           `json:"updated_at"`
-	StartedAt     *time.Time          `json:"started_at,omitempty"`
-	CompletedAt   *time.Time          `json:"completed_at,omitempty"`
-	Error         string              `json:"error,omitempty"`
-	Verification  *VerificationResult `json:"verification,omitempty"`
-	RetryCount    int                 `json:"retry_count,omitempty"`
+	// TaskRouting is the recorded result of the task-type routing table for
+	// this task: its type, the profile and row used, and what was chosen (or
+	// why nothing was). Nil until routing has looked at the task.
+	TaskRouting   *TaskRoutingDecision `json:"task_routing,omitempty"`
+	ClaudeRetries int                  `json:"claude_retries,omitempty"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
+	StartedAt     *time.Time           `json:"started_at,omitempty"`
+	CompletedAt   *time.Time           `json:"completed_at,omitempty"`
+	Error         string               `json:"error,omitempty"`
+	Verification  *VerificationResult  `json:"verification,omitempty"`
+	RetryCount    int                  `json:"retry_count,omitempty"`
 	// PriorAttemptCount (v9.2.1) — how many times this task has been reset
 	// and re-queued (ResetTask) for a fresh attempt. Unlike RetryCount
 	// (which ResetTask zeroes to start the next attempt's auto-retry budget
@@ -1300,6 +1335,9 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// GateRestartRetryUsed is true once the Automaton has retried this final
+	// gate after a daemon restart killed it; a second kill is not retried.
+	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under
@@ -1541,6 +1579,18 @@ type Task struct {
 	FilesPlanned   []string `json:"files,omitempty"`
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
+
+	// SecurityFindings — human-readable findings (file:line: detail) from
+	// the daemon's warn-only pre-commit security scan over the task's
+	// worktree, recorded on the task right before its completion commit
+	// by Manager.RecordTaskSecurityFindings. Only the first 20 are stored;
+	// the full volume is on SecurityFindingCount. Warn-only: findings
+	// never change the task's status, and never fail, block or requeue it.
+	SecurityFindings []string `json:"security_findings,omitempty"`
+	// SecurityFindingCount — cumulative number of security-scan findings
+	// recorded on this task (a task that passes the pre-commit scan more
+	// than once accumulates the full count of each pass).
+	SecurityFindingCount int `json:"security_finding_count,omitempty"`
 
 	// SnapshotSkipped — files the session's staging commit (or the attempt
 	// snapshot pass) REFUSED to stage, each with the staging guard's reason
@@ -1931,6 +1981,7 @@ type LoopStatus struct {
 	MaxDepthSeen   int            `json:"max_depth_seen,omitempty"`   // BL191 Q4: max(PRD.Depth) across the store
 	VerdictCounts  map[string]int `json:"verdict_counts,omitempty"`   // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
 	BlockedPRDs    int            `json:"blocked_prds,omitempty"`     // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
+	HeldPRDs       int            `json:"held_prds,omitempty"`        // count of Automata on hold by the operator; never included in BlockedPRDs
 
 	// BL367 — quality gate observability (surfaced via GET /api/autonomous/status + autonomous_status MCP).
 	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`        // tasks with a non-nil QualityGateResult
@@ -2228,4 +2279,39 @@ type BranchRefresh struct {
 	LastResult     string    `json:"last_result"` // clean | conflict | skipped | error
 	LastMainCommit string    `json:"last_main_commit,omitempty"`
 	Stopped        bool      `json:"stopped,omitempty"`
+}
+
+// TaskRoutingResult is the worker and verification LLM the routing table
+// chose for a task.
+type TaskRoutingResult struct {
+	WorkerBackend       string `json:"worker_backend,omitempty"`
+	WorkerModel         string `json:"worker_model,omitempty"`
+	Effort              string `json:"effort,omitempty"`
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	VerificationModel   string `json:"verification_model,omitempty"`
+}
+
+// TaskRoutingDecision is the recorded outcome of the task-type routing table
+// for one task (Task.TaskRouting).
+type TaskRoutingDecision struct {
+	// TaskType is the task type the task was classified as.
+	TaskType string `json:"task_type"`
+	// Profile is the routing profile that was consulted.
+	Profile string `json:"profile,omitempty"`
+	// Row is the task type key of the table row used. Empty when no row
+	// decided the LLM.
+	Row string `json:"row,omitempty"`
+	// ClassifiedBy is how the type was decided: template_kind | title_spec | default.
+	ClassifiedBy string `json:"classified_by"`
+	// Applied is true when the row's choice was written to the task.
+	Applied bool `json:"applied"`
+	// Result is what was chosen. Nil when nothing was applied.
+	Result *TaskRoutingResult `json:"result,omitempty"`
+	// SecondChoiceUsed is true when the row's first choice was refused and
+	// its second choice was applied instead.
+	SecondChoiceUsed bool `json:"second_choice_used,omitempty"`
+	// Reason says why nothing was applied, for example "task LLM set by
+	// operator", "story LLM set", "Automaton LLM set", "routing disabled" or
+	// "hand edited".
+	Reason string `json:"reason,omitempty"`
 }

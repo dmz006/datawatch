@@ -56,6 +56,12 @@ const (
 	AwaitDecisionWaitReason = "await_decision"
 	// AwaitDecisionWaitReasonPrefix is the reason prefix.
 	AwaitDecisionWaitReasonPrefix = "await_decision"
+	// BackoffReserveWaitReason is the bare sub-reason of a request refused
+	// while its backend is in back-off because that backend's review
+	// reserve is in use — a live slot or the rolling one-hour token budget
+	// is taken, or the reserve is disabled. The ledger wraps it as
+	// "pool llm:<backend> backpressure: " + reason;
+	BackoffReserveWaitReason = "back-off, review reserve in use"
 )
 
 // ClassifyWaitReason maps a wait reason produced anywhere in the daemon back
@@ -82,6 +88,8 @@ func ClassifyWaitReason(reason string) WaitCause {
 	case strings.HasPrefix(r, nodeBusyPrefix):
 		return WaitCauseNodeBusy
 	case strings.HasPrefix(r, backoffPrefix) && strings.Contains(r, backoffInfix):
+		return WaitCauseBackoff
+	case r == BackoffReserveWaitReason:
 		return WaitCauseBackoff
 	case strings.HasPrefix(r, poolPrefix):
 		rest := r[len(poolPrefix):]

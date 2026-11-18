@@ -72,13 +72,22 @@ func TestNotifyEventKinds_MatchPWA(t *testing.T) {
 		autonomous.KindTaskSessionCleared,
 		autonomous.KindScopeWarning,
 		autonomous.KindGuardrailWarn,
+		autonomous.KindAutomatonStuckRunning,
+		autonomous.KindAutomatonMergeReady,
+		autonomous.KindAutomatonTasksDone,
+		autonomous.KindCapacityWaitTooLong,
+		autonomous.KindBurnGuardRungChanged,
+		autonomous.KindJudgeVerdictBlock,
+		autonomous.KindJudgeVerdictWarn,
+		autonomous.KindJudgeVerdictPass,
+		autonomous.KindFinalGateFailed,
 	})
 	for _, st := range []autonomous.PRDStatus{
 		autonomous.PRDDraft, autonomous.PRDPlanning, autonomous.PRDNeedsReview,
 		autonomous.PRDApproved, autonomous.PRDRevisionsAsked, autonomous.PRDActive,
 		autonomous.PRDRunning, autonomous.PRDCompleted, autonomous.PRDRejected,
 		autonomous.PRDCancelled, autonomous.PRDArchived, autonomous.PRDBlocked,
-		autonomous.PRDFailed, autonomous.PRDPaused,
+		autonomous.PRDFailed, autonomous.PRDPaused, autonomous.PRDHeld,
 	} {
 		valid[autonomous.PRDStatusKind(st)] = true
 	}

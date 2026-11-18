@@ -11,6 +11,8 @@ Group=datawatch
 WorkingDirectory=/var/lib/datawatch
 ExecStart=/usr/local/bin/datawatch start --config /etc/datawatch/config.yaml
 ExecReload=/bin/kill -HUP $MAINPID
+# Gates and verifiers must outlive a stop: end only the daemon, not its control group.
+KillMode=process
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

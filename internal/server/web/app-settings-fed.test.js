@@ -43,21 +43,33 @@ function fakeResponse(status, body) {
   return { ok: status >= 200 && status < 300, status, text: () => Promise.resolve(body || ''), json: () => Promise.resolve(JSON.parse(body || '{}')) };
 }
 
-test('renderSettingsView: injects the server picker bar (the view had none before this pass)', () => {
+test('Settings: server switching is wired into the view via the server rows (the picker bar itself now lives in the shared header)', async () => {
   const sandbox = loadAppJS();
-  const viewEl = makeStubElement();
-  viewEl.querySelector = () => null; // no existing bar yet
-  sandbox.document.getElementById = (id) => (id === 'view' ? viewEl : makeStubElement());
+  const listEl = makeStubElement();
+  sandbox.document.getElementById = (id) => (id === 'serverStatus' ? listEl : makeStubElement());
   vm.runInContext(`state.servers = { servers: [{ name: 'host-a', enabled: true }] };`, sandbox);
-  let injected = false;
-  const origInject = sandbox._injectServerPickerBar;
-  sandbox._injectServerPickerBar = function (el, fn, opts) {
-    injected = true;
-    assert.equal(opts && opts.hideAll, true, 'Settings should use hideAll, like Observer -- an aggregated "All servers" view of ~45 independent config sections has no coherent meaning');
-    return origInject.apply(this, arguments);
+  sandbox.fetch = (url) => {
+    if (url.includes('/api/servers/health')) return Promise.resolve(fakeResponse(200, '[]'));
+    if (url.includes('/api/config')) return Promise.resolve(fakeResponse(200, '{}'));
+    if (url.includes('/api/servers')) {
+      return Promise.resolve(fakeResponse(200, JSON.stringify([
+        { name: 'host-a', url: 'https://x', enabled: true, hostname: 'host-a' },
+      ])));
+    }
+    return Promise.resolve(fakeResponse(200, '{}'));
   };
-  vm.runInContext('renderSettingsView()', sandbox);
-  assert.equal(injected, true, '_injectServerPickerBar should be called from renderSettingsView');
+  // The server list in the Settings view is loadServers()' output.
+  vm.runInContext('loadServers()', sandbox);
+  await flushAsync();
+  await flushAsync();
+  const html = String(listEl.innerHTML);
+  assert.ok(html.length > 0, 'Settings server list should have rendered');
+  // A Settings server row switches to the peer through selectServer.
+  assert.ok(html.includes(`selectServer('host-a')`), `a Settings server row should call selectServer for the peer; got: ${html}`);
+  // The old chip bar is gone: the picker is the one header <select id="serverDropdown">,
+  // built by _serverPickerBar, and the view never injects it into itself.
+  assert.equal(typeof sandbox._injectServerPickerBar, 'undefined', '_injectServerPickerBar should no longer exist');
+  assert.equal(typeof sandbox._serverPickerBar, 'function', '_serverPickerBar should build the header dropdown');
 });
 
 test('loadConfigStatus: a federated capability error reaches the card, not a generic "Config unavailable"', async () => {

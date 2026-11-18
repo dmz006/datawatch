@@ -112,6 +112,9 @@ type Server struct {
 	elicitationDisp *ElicitationDispatcher
 	// BL302 S4 — prompt server (10 MCP prompts).
 	promptServer *MCPPromptServer
+	// resourceSubs tracks resources/subscribe state for lifecycle events;
+	// nil unless mcp.resource_subscriptions is on (resource_subscriptions.go).
+	resourceSubs *resourceSubscriptions
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
 	// webSearchEnabled and webSearchURL/Engine are used for the web_search_stats tool (BL372).
@@ -378,19 +381,28 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		log.Printf("[warn] [mcp] mcp.token and server.token are both empty — MCP SSE's full tool catalog is open to any caller that can reach it")
 	}
 
-	mcpSrv := server.NewMCPServer(
-		"datawatch",
-		"1.0.0",
+	// mcp.resource_subscriptions (default off) advertises resources subscribe
+	// and installs the hooks that serve it. Off: no hooks, subscribe=false,
+	// exactly the server before the setting existed.
+	serverOpts := []server.ServerOption{
 		server.WithToolCapabilities(true),
 		// BL302 S1 — enable resource + prompt capabilities.
-		// subscribe=false for resources (deferred to v7.2.0 per D1/D9).
+		// subscribe follows mcp.resource_subscriptions (default false).
 		// listChanged=false for prompts (added in S4 when prompts land).
-		server.WithResourceCapabilities(false, false),
+		server.WithResourceCapabilities(cfg.ResourceSubscriptions, false),
 		server.WithPromptCapabilities(false),
 		// mcp-go v1.x refuses RequestSampling/RequestElicitation for clients on
 		// protocol 2026-07-28+ unless this is set; the repo relies on both.
 		server.WithLegacyServerInitiatedRequests(), //nolint:staticcheck // deprecated migration option, kept on purpose until sampling moves to the new request builder
-	)
+	}
+	if cfg.ResourceSubscriptions {
+		s.resourceSubs = newResourceSubscriptions()
+		serverOpts = append(serverOpts, server.WithHooks(s.resourceSubs.hooks()))
+	}
+	mcpSrv := server.NewMCPServer("datawatch", "1.0.0", serverOpts...)
+	if s.resourceSubs != nil {
+		s.resourceSubs.notify = mcpSrv.SendNotificationToSpecificClient
+	}
 
 	// BL302 S3 — enable sampling so connected clients see the capability
 	// in the server's initialize response and can handle createMessage requests.
@@ -600,6 +612,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProjectPolicyEffective(), tracked(s.handleProjectPolicyEffective)) // project policy tier
 	mcpSrv.AddTool(s.toolProjectRollup(), tracked(s.handleProjectRollup))                   // project roll-up: arcs, progress, points, throughput
 	mcpSrv.AddTool(s.toolProjectHistory(), tracked(s.handleProjectHistory))                 // project history: finished Automata, daily progress
+	mcpSrv.AddTool(s.toolProjectTimeline(), tracked(s.handleProjectTimeline))               // project_timeline: first/last per arc, Automaton, task
 	mcpSrv.AddTool(s.toolProjectSetArcs(), tracked(s.handleProjectSetArcs))                 // replace the project's ordered arc list
 	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))               // BL29
 	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))                 // BL30
@@ -708,6 +721,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
+	mcpSrv.AddTool(s.toolAutonomousEventKinds(), tracked(s.handleAutonomousEventKinds))
 	// Operator question channel (proxy /api/questions — internal/server/questions.go).
 	// The trailing comment is the MCP tool name each AddTool registers.
 	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
@@ -723,6 +737,17 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPlanningRoutingSet(), tracked(s.handlePlanningRoutingSet))
 	mcpSrv.AddTool(s.toolPlanningScorecard(), tracked(s.handlePlanningScorecard))
 	mcpSrv.AddTool(s.toolPlanningRoutingTest(), tracked(s.handlePlanningRoutingTest))
+	// Task routing: table, profiles, per-Automaton read and dry run.
+	mcpSrv.AddTool(s.toolTaskRoutingGet(), tracked(s.handleTaskRoutingGet))
+	mcpSrv.AddTool(s.toolTaskRoutingSet(), tracked(s.handleTaskRoutingSet))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileList(), tracked(s.handleTaskRoutingProfileList))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileSave(), tracked(s.handleTaskRoutingProfileSave))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileActivate(), tracked(s.handleTaskRoutingProfileActivate))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileDelete(), tracked(s.handleTaskRoutingProfileDelete))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileExport(), tracked(s.handleTaskRoutingProfileExport))
+	mcpSrv.AddTool(s.toolTaskRoutingProfileImport(), tracked(s.handleTaskRoutingProfileImport))
+	mcpSrv.AddTool(s.toolTaskRoutingAutomaton(), tracked(s.handleTaskRoutingAutomaton))
+	mcpSrv.AddTool(s.toolTaskRoutingDryRun(), tracked(s.handleTaskRoutingDryRun))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigGet(), tracked(s.handleAutonomousScanConfigGet))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigSet(), tracked(s.handleAutonomousScanConfigSet))
 	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
@@ -748,12 +773,19 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSessionSetTags(), tracked(s.handleSessionSetTags))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetPriority(), tracked(s.handleAutonomousPRDSetPriority))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetProject(), tracked(s.handleAutonomousPRDSetProject))
+	mcpSrv.AddTool(s.toolAutonomousProjectLinkBackfill(), tracked(s.handleAutonomousProjectLinkBackfill))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetKind(), tracked(s.handleAutonomousPRDSetKind))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetReleaseSize(), tracked(s.handleAutonomousPRDSetReleaseSize))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetBreakingChange(), tracked(s.handleAutonomousPRDSetBreakingChange))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetWorkerProfile(), tracked(s.handleAutonomousPRDSetWorkerProfile))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
+	mcpSrv.AddTool(s.toolAutonomousCompletedMigrate(), tracked(s.handleAutonomousCompletedMigrate))
+	mcpSrv.AddTool(s.toolAutonomousPRDHold(), tracked(s.handleAutonomousPRDHold))
+	mcpSrv.AddTool(s.toolAutonomousPRDReleaseHold(), tracked(s.handleAutonomousPRDReleaseHold))
+	mcpSrv.AddTool(s.toolAutonomousHeld(), tracked(s.handleAutonomousHeld))
+	mcpSrv.AddTool(s.toolAutonomousHeldMigrate(), tracked(s.handleAutonomousHeldMigrate))
 	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
 	mcpSrv.AddTool(s.toolAutonomousDefectIntake(), tracked(s.handleAutonomousDefectIntake))
 	mcpSrv.AddTool(s.toolAutonomousDefectBatches(), tracked(s.handleAutonomousDefectBatches))
@@ -765,6 +797,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousProgressTrend(), tracked(s.handleAutonomousProgressTrend))
 	mcpSrv.AddTool(s.toolAutonomousTimeline(), tracked(s.handleAutonomousTimeline))
 	mcpSrv.AddTool(s.toolAutonomousLaneFillStatus(), tracked(s.handleAutonomousLaneFillStatus))
+	mcpSrv.AddTool(s.toolAutonomousLaneUtilization(), tracked(s.handleAutonomousLaneUtilization))
 	mcpSrv.AddTool(s.toolAutonomousInfraRetries(), tracked(s.handleAutonomousInfraRetries))
 	mcpSrv.AddTool(s.toolOnboardingReport(), tracked(s.handleOnboardingReport))
 	// Trace views (internal/trace) — read-only proxies of /api/trace/*.
@@ -794,6 +827,26 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDecisionRecordCreate(), tracked(s.handleDecisionRecordCreate))
 	mcpSrv.AddTool(s.toolDecisionRecordUpdate(), tracked(s.handleDecisionRecordUpdate))
 	mcpSrv.AddTool(s.toolDecisionRecordWithdraw(), tracked(s.handleDecisionRecordWithdraw))
+	mcpSrv.AddTool(s.toolPlanRecordList(), tracked(s.handlePlanRecordList))
+	mcpSrv.AddTool(s.toolPlanRecordGet(), tracked(s.handlePlanRecordGet))
+	mcpSrv.AddTool(s.toolPlanRecordCreate(), tracked(s.handlePlanRecordCreate))
+	mcpSrv.AddTool(s.toolPlanRecordUpdate(), tracked(s.handlePlanRecordUpdate))
+	mcpSrv.AddTool(s.toolPlanRecordSearch(), tracked(s.handlePlanRecordSearch))
+	mcpSrv.AddTool(s.toolPlanRecordImport(), tracked(s.handlePlanRecordImport))
+	mcpSrv.AddTool(s.toolPlanMigrate(), tracked(s.handlePlanMigrate))
+	mcpSrv.AddTool(s.toolPlanCreate(), tracked(s.handlePlanCreate))
+	mcpSrv.AddTool(s.toolPlanReorder(), tracked(s.handlePlanReorder))
+	mcpSrv.AddTool(s.toolPlanReorderAutomata(), tracked(s.handlePlanReorderAutomata))
+	mcpSrv.AddTool(s.toolPlanAttach(), tracked(s.handlePlanAttach))
+	mcpSrv.AddTool(s.toolPlanDetach(), tracked(s.handlePlanDetach))
+	mcpSrv.AddTool(s.toolPlanThemeList(), tracked(s.handlePlanThemeList))
+	mcpSrv.AddTool(s.toolPlanThemeSet(), tracked(s.handlePlanThemeSet))
+	mcpSrv.AddTool(s.toolPlanArchive(), tracked(s.handlePlanArchive))
+	mcpSrv.AddTool(s.toolPlanRestore(), tracked(s.handlePlanRestore))
+	mcpSrv.AddTool(s.toolPlanUnattributedList(), tracked(s.handlePlanUnattributedList))
+	mcpSrv.AddTool(s.toolPlanAttachBulk(), tracked(s.handlePlanAttachBulk))
+	mcpSrv.AddTool(s.toolPlanRowPlanList(), tracked(s.handlePlanRowPlanList))
+	mcpSrv.AddTool(s.toolPlanRowPlanConvert(), tracked(s.handlePlanRowPlanConvert))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))
@@ -803,11 +856,18 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousReleaseReadiness(), tracked(s.handleAutonomousReleaseReadiness))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
 	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
+
+	// Branch reaper: the report is read-only; the run and the restore are the operator writes.
+	mcpSrv.AddTool(s.toolAutonomousBranchReap(), tracked(s.handleAutonomousBranchReap))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRun(), tracked(s.handleAutonomousBranchReapRun))
+	mcpSrv.AddTool(s.toolAutonomousBranchReapRestore(), tracked(s.handleAutonomousBranchReapRestore))
 	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
 	mcpSrv.AddTool(s.toolAutonomousUnlandedWork(), tracked(s.handleAutonomousUnlandedWork))       // autonomous_unlanded_work: archived branches with work not on the default branch
+	mcpSrv.AddTool(s.toolAutonomousLandingKeep(), tracked(s.handleAutonomousLandingKeep))         // autonomous_landing_keep: keep the branch unmerged on purpose
+	mcpSrv.AddTool(s.toolAutonomousLandingDrop(), tracked(s.handleAutonomousLandingDrop))         // autonomous_landing_drop: record that the work will not be merged
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations
 	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
 	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
@@ -824,11 +884,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDependencyUpdateStatus(), tracked(s.handleDependencyUpdateStatus))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
 	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
+	mcpSrv.AddTool(s.toolHousekeepingRepairs(), tracked(s.handleHousekeepingRepairs))
 	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))
 	mcpSrv.AddTool(s.toolSupervisorLoopRuns(), tracked(s.handleSupervisorLoopRuns))
 	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))
 	mcpSrv.AddTool(s.toolSupervisorLoopEval(), tracked(s.handleSupervisorLoopEval))
 	mcpSrv.AddTool(s.toolSupervisorLoopStats(), tracked(s.handleSupervisorLoopStats))
+	mcpSrv.AddTool(s.toolAutonomousPeerEvents(), tracked(s.handleAutonomousPeerEvents))
+	mcpSrv.AddTool(s.toolAutonomousPeerEventsControl(), tracked(s.handleAutonomousPeerEventsControl))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))
@@ -1967,6 +2030,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("launch_role",
 			mcpsdk.Description("Optional placement role the session plays: worker | verifier | planner | judge | supervisor. Start the operator's supervisor session with launch_role=supervisor; it then carries the supervisor role tag plus compute, backend, lane and project tags and no automaton tag. Omit for an unchanged plain session."),
 		),
+		mcpsdk.WithString("worker_profile_name",
+			mcpsdk.Description("Optional worker profile name (built-in or user-defined) applied at launch for any session kind: its tool server list, tools, skills and starting context. An unknown name starts the full harness and records the reason on the session record. A launch_role=supervisor session with no name takes the lean supervisor kind default."),
+		),
 		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
 			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
@@ -2503,6 +2569,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 	git := req.GetBool("git", false)
 	launchRole := strings.TrimSpace(req.GetString("launch_role", ""))
+	profileName := strings.TrimSpace(req.GetString("worker_profile_name", ""))
 	priority, hasPriority, perr := priorityFromReq(req)
 	if perr != nil {
 		return toolError("start_session", perr), nil
@@ -2524,7 +2591,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "") && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "" || profileName != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2558,6 +2625,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if launchRole != "" {
 			body["launch_role"] = launchRole
+		}
+		if profileName != "" {
+			body["worker_profile_name"] = profileName
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,

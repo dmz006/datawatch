@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 )
 
 // autonomousBackoff is the daemon-wide per-backend back-off registry
-// (in-memory only; rebuilt from live sessions on start).
+// (persisted under the autonomous data folder and restored on start; the
+// in-flight rebuild from rate-limited sessions adds to it).
 var autonomousBackoff = autonomouspkg.NewBackoff()
 
 // autonomousBudget is the daemon-wide dollar-spend ledger behind the per-LLM
@@ -26,6 +28,45 @@ var autonomousBackoff = autonomouspkg.NewBackoff()
 // persistence file under the daemon data directory; budgetBackpressure and
 // the usage hook both treat nil as "no budgets".
 var autonomousBudget *autonomouspkg.BudgetLedger
+
+// restoredBackoff holds the flags restoreBackoff reinstalled at start, until
+// the Automata manager exists and recordRestoredBackoff writes them down.
+var restoredBackoff []autonomouspkg.Entry
+
+// backoffPersistPath is the registry's file, next to budget-ledger.jsonl.
+func backoffPersistPath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "autonomous", "backoff.json")
+}
+
+// restoreBackoff turns persistence on for bo and reinstalls the unexpired flags
+// saved by the previous run. It runs before the autonomous boot-resume pass is
+// started, so the first dispatch already sees them. A missing file is fine; a
+// corrupt one is logged and the registry starts empty.
+func restoreBackoff(cfg *config.Config, bo *autonomouspkg.Backoff) []autonomouspkg.Entry {
+	bo.SetPersistPath(backoffPersistPath(cfg))
+	entries, err := bo.Load(time.Now())
+	if err != nil {
+		fmt.Printf("[warn] back-off restore: %v\n", err)
+	}
+	for _, e := range entries {
+		fmt.Printf("[backoff] restored: %s paused until %s\n", e.Backend, e.Until.Format(time.RFC3339))
+	}
+	return entries
+}
+
+// recordRestoredBackoff writes the restore down (decision log, operator alert,
+// audit event). It runs once the manager, its alert hook and the audit log exist.
+func recordRestoredBackoff(amgr *autonomouspkg.Manager) {
+	amgr.RecordBackoffRestored(restoredBackoff)
+}
+
+// flushBackoff writes the registry to disk on shutdown. It only writes the
+// file; no session is ended or signalled.
+func flushBackoff(bo *autonomouspkg.Backoff) {
+	if err := bo.Save(); err != nil {
+		fmt.Printf("[warn] back-off flush: %v\n", err)
+	}
+}
 
 // backoffSweepInterval is how often expired back-off flags are cleared.
 const backoffSweepInterval = 15 * time.Second
@@ -122,6 +163,7 @@ func sweepBackoff(bo *autonomouspkg.Backoff, now time.Time, audit backoffAuditFu
 // autonomous.usage_backoff is "pause_backend"), and runs a sweeper tied to
 // ctx that clears expired flags.
 func wireUsageBackoff(ctx context.Context, cfg *config.Config, mgr *session.Manager, bo *autonomouspkg.Backoff) {
+	restoredBackoff = restoreBackoff(cfg, bo)
 	mgr.AddRateLimitListener(rateLimitBackoffHandler(cfg, bo, time.Now, emitBackoffAudit))
 
 	if mode, _ := config.EffectiveUsageBackoff(cfg.Autonomous.UsageBackoff, cfg.Autonomous.BackoffMaxWaitMinutes); mode == config.UsageBackoffPauseBackend {

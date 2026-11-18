@@ -56,6 +56,7 @@ tasks of an Automaton merge into one. It holds:
 | `locale_keys_added` | New locale keys with their English values |
 | `tests_added` | Names of the tests the change added |
 | `commands` | Each command run, its exit code and the tests it passed and failed |
+| `cost` | The ledger-backed cost summary: sessions, token, cache and tool-call counts, the span of time the work spanned, the session ids and — when one exists — the API-equivalent dollar estimate with the label that names it, plus the ledger's window and unknown-spend notes; absent when no ledger reading was attached |
 
 The artefacts are rendered from these fields. The record is data, not prose:
 a task that adds nothing of a kind leaves that list empty and the artefact
@@ -71,7 +72,7 @@ Every generated file starts with this marker line:
 
 | Kind | Default tracked path | Format |
 |---|---|---|
-| `gate_report` | `docs/plans/reports/<automaton-id>-gate.md` | Counts only |
+| `gate_report` | `docs/plans/reports/<automaton-id>-gate.md` | The counts table; plus the ledger-backed cost section when the record carries one |
 | `changelog_draft` | `docs/plans/drafts/<automaton-id>-changelog.md` | Changelog entry draft |
 | `parity_draft` | `docs/plans/parity-issues/<automaton-id>.md` | Mobile app parity issue draft |
 | `tracker_rows` | `docs/plans/drafts/<automaton-id>-tracker-rows.md` | Table rows |
@@ -80,10 +81,11 @@ Every generated file starts with this marker line:
 `<automaton-id>` is replaced with the Automaton id. The paths are relative to
 the project directory, and the daemon creates the folders.
 
-### Gate report: counts only
+### Gate report: the counts, and the cost the ledger knows about
 
-A table of numbers and nothing else, so a reader can see the size of the
-change at a glance and no judgment hides in it:
+The first section is a table of numbers and nothing else, so a reader can see the size of the
+change at a glance and no judgment hides in it. When the record carries a ledger-backed cost
+summary, a second `## Cost` section follows with the same discipline — numbers, and the ledger's caveats as the ledger states them (already scrubbed):
 
 ```
 # Gate report <id>
@@ -101,7 +103,41 @@ change at a glance and no judgment hides in it:
 | Settings added | 7 |
 | Routes added | 4 |
 | Locale keys added | 35 |
+
+## Cost
+
+| Cost | Value |
+|---|---|
+| Sessions | 2 |
+| Tokens in | 1204 |
+| Tokens out | 486 |
+| Cache read | 910 |
+| Cache creation | 132 |
+| Tool calls | 37 |
+| Span | 72 m |
+| API-equivalent estimate, not billed | $0.42 |
+
+Sessions: aa11, bb22
 ```
+
+**The operator's private hostname never reaches a generated document.** The
+session ids listed under the cost are printed bare: an id of the form
+`<host>-<id>` or `<host>:<id>` keeps only the segment after its last `-` or `:`
+(an id with no separator passes through unchanged, and one with nothing after
+the last separator is left out of the list). The ledger's window and
+unknown-spend notes are scrubbed the same way — the local hostname is replaced
+by the word `host` and absolute paths are reduced to their final element — so
+a report drafted for a peer, or one that lands in a merged branch, carries no
+machine-specific name. A test renders every kind from a record whose session
+ids carry a fake host and asserts the host never appears while the bare ids
+still do.
+
+**Operator review:** gate reports written before this stripping was in place —
+already on disk, already on a branch, or already in git history — may still
+carry the private hostname. Regenerating now writes the bare form (where the
+file is still unedited by a person), but committed history keeps what was
+written; decide whether to scrub the old reports or rotate whatever identifies
+the machine.
 
 ### Changelog entry draft
 
@@ -354,7 +390,11 @@ Template placeholders (all kinds): `.ID`, `.Title`, `.Summary`,
 lists `.Settings`, `.Routes`, `.Screens`, `.Bullets`, the locale list
 `.LocaleKeys` (each with `.Key` and `.Value`) and the surface list
 `.Surfaces` (each with `.Feature`, `.Tests`, `.Conditions`, `.Description`,
-`.TestType`, `.Tested`). The function `cell` makes text safe inside one
+`.TestType`, `.Tested`), and — when the record carries a cost summary — the
+`.Cost` block: `.Sessions`, `.TokensIn`, `.TokensOut`, `.CacheRead`,
+`.CacheCreation`, `.ToolCalls`, `.Span`, `.Estimate`, `.Label`, `.SessionIDs`
+(already bare — host prefixes are stripped before templating) and the scrubbed
+`.WindowNote` and `.UnknownNote`. The function `cell` makes text safe inside one
 table cell.
 
 Checklist:
@@ -363,4 +403,6 @@ Checklist:
 - [ ] Target files (`CHANGELOG.md`, tracker, registry) exist
 - [ ] Overrides committed, if any
 - [ ] One Automaton run read through the preview
+- [ ] Where a gate report carries a cost section, its session ids and notes are machine-free (no hostname, no absolute path)
+- [ ] Old gate reports that may still carry the private hostname have been reviewed: scrubbed, or the machine name rotated
 - [ ] Team knows an edited draft is never overwritten

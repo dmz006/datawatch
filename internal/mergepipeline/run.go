@@ -125,9 +125,15 @@ type Runner struct {
 	// enabled hooks run after the pipeline's own steps, in list order, and
 	// never change the run's result.
 	PostShip PostShipSettings
+	// PlanRecords receives the registry_row built-in's shipped row when
+	// PostShip.WriteThrough is set; nil keeps the registry file path.
+	PlanRecords RecordWriter
 	// Notifier receives the notify built-in's message; nil makes that hook
 	// fail rather than drop the notification.
 	Notifier Notifier
+	// Completer marks the Automaton Completed for the mark_completed
+	// built-in; nil makes that hook fail rather than skip silently.
+	Completer Completer
 	// VersionFiles carry `var Version = "X.Y.Z"`; they come from the
 	// operator's autonomous.merge_pipeline.version_files setting. None means
 	// the release-version step fails rather than guess at a path.
@@ -447,10 +453,11 @@ const postShipStepSource = "post_ship"
 // Built-in post-ship hook names, matching the setting vocabulary in
 // internal/config.
 const (
-	builtinRegistryRow = "registry_row"
-	builtinParityIssue = "parity_issue"
-	builtinTag         = "tag"
-	builtinNotify      = "notify"
+	builtinRegistryRow   = "registry_row"
+	builtinParityIssue   = "parity_issue"
+	builtinTag           = "tag"
+	builtinNotify        = "notify"
+	builtinMarkCompleted = "mark_completed"
 )
 
 // runPostShipHooks runs the configured post-ship hooks when the block is on
@@ -509,6 +516,9 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 	project := s.r.Project
 	switch builtin {
 	case builtinRegistryRow:
+		if cfg.WriteThrough && s.r.PlanRecords != nil {
+			return RunRegistryRowWriteThrough(ctx, s.r.PlanRecords, project, s.req.AutomatonID, s.req.Title, version, cfg)
+		}
 		return RunRegistryRow(ctx, dir, project, version, cfg)
 	case builtinParityIssue:
 		return RunParityIssue(ctx, s.r.Ship, dir, project, version, cfg)
@@ -516,6 +526,8 @@ func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version str
 		return RunTag(ctx, s.r.Ship, dir, version)
 	case builtinNotify:
 		return RunNotify(ctx, s.r.Notifier, project, version, cfg)
+	case builtinMarkCompleted:
+		return s.runMarkCompleted(ctx, version)
 	}
 	return "", builtinErr("unknown built-in post-ship hook %q", builtin)
 }

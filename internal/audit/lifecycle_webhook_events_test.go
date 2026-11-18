@@ -74,7 +74,7 @@ func TestLifecycleWebhookEvents_SignatureIDsUnique(t *testing.T) {
 		"send_input", "configure", "rollback", "schedule", "autonomous_file_drift_detected",
 		"config_deprecated_key", "automation_create", "automation_update", "automation_delete",
 		ActionUsageBackoffSet, ActionUsageBackoffCleared, ActionUsageBackoffAutoCleared,
-		ActionUsageBackoffPatternsRechecked, ActionBudgetCeilingWait, ActionBudgetWindowResumed,
+		ActionUsageBackoffPatternsRechecked, ActionUsageBackoffRestored, ActionBudgetCeilingWait, ActionBudgetWindowResumed,
 		ActionAutomationBudgetBreach, ActionAutomationBudgetResumed, ActionCapacityWait,
 		ActionCapacityAdmitted, ActionBudgetWindowRollover, ActionFingerprintMatchConfirmed,
 		ActionFingerprintMatchRejected, ActionAutomationImportGraph,

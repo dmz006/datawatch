@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -152,7 +153,8 @@ func TestSupervisorLoopRunUnknownJob404(t *testing.T) {
 func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 	// A non-default value for every key.
 	want := map[string]any{"enabled": false, "validator_retries": 4, "escalate_after_failures": 3,
-		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6}
+		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6,
+		"wake.enabled": true, "wake.kinds": []any{"task.failed", "prd.blocked"}, "wake.coalesce_seconds": 5, "wake.fallback_interval_minutes": 7}
 	for _, n := range supervisorloop.StepNames {
 		want[n+".enabled"] = false
 	}
@@ -170,11 +172,7 @@ func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(got["supervisor_loop"], &surf); err != nil {
 			t.Fatal(err)
 		}
-		g, w := surf[key], val
-		if f, ok := g.(float64); ok {
-			g = int(f)
-		}
-		if g != w {
+		if g, w := loopSurfaceValue(surf[key]), loopSurfaceValue(val); g != w {
 			t.Errorf("%s: GET after PUT = %v, want %v", key, g, w)
 		}
 		// Every other key still reads its default.
@@ -183,11 +181,8 @@ func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 			if k == key {
 				continue
 			}
-			if f, ok := v.(float64); ok {
-				v = int(f)
-			}
-			if dv := def["supervisor_loop."+k]; dv != v {
-				t.Errorf("PUT %s moved %s: %v, want default %v", key, k, v, dv)
+			if dv, gv := loopSurfaceValue(def["supervisor_loop."+k]), loopSurfaceValue(v); dv != gv {
+				t.Errorf("PUT %s moved %s: %v, want default %v", key, k, gv, dv)
 			}
 		}
 	}
@@ -312,5 +307,94 @@ func TestSupervisorLoopStatsEndpoint(t *testing.T) {
 	s.handleSupervisorLoopStats(rr, httptest.NewRequest(http.MethodPost, "/api/supervisor-loop/stats", nil))
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST code %d", rr.Code)
+	}
+}
+
+// loopSurfaceValue folds a decoded config value into a comparable form: a
+// JSON number to int, a list (the wake kinds) to its joined text.
+func loopSurfaceValue(v any) any {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case []string:
+		return strings.Join(x, ",")
+	case []any:
+		parts := make([]string, len(x))
+		for i, e := range x {
+			parts[i] = fmt.Sprint(e)
+		}
+		return strings.Join(parts, ",")
+	}
+	return v
+}
+
+func TestSupervisorWakeStatusDefaults(t *testing.T) {
+	s, _ := newLoopServer(t)
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodGet, "/api/supervisor-loop/wake", nil))
+	if rr.Code != 200 {
+		t.Fatalf("code %d", rr.Code)
+	}
+	var v supervisorWakeView
+	if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Enabled || v.CoalesceSeconds != 30 || v.FallbackIntervalMinutes != 20 || len(v.Kinds) == 0 {
+		t.Fatalf("defaults wrong: %+v", v)
+	}
+	if !v.LastEvent.IsZero() || !v.LastScheduledCheck.IsZero() {
+		t.Fatalf("times should be empty: %+v", v)
+	}
+}
+
+type wakeTestClock struct{ now time.Time }
+
+func (c wakeTestClock) Now() time.Time { return c.now }
+
+func TestSupervisorWakeStatusReportsRecord(t *testing.T) {
+	s, _ := newLoopServer(t)
+	clk := wakeTestClock{now: time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)}
+	rec := supervisorloop.NewWakeRecord(clk, 0)
+	rec.MarkEvent()
+	rec.MarkScheduledCheck()
+	s.SetSupervisorWake(rec)
+	s.cfg.Autonomous.SupervisorLoop = config.SupervisorLoopConfig{"supervisor_loop.wake.enabled": true}
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodGet, "/api/supervisor-loop/wake", nil))
+	var v supervisorWakeView
+	if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if !v.Enabled || v.EventCount != 1 || v.ScheduledCount != 1 || !v.LastEvent.Equal(clk.now) || !v.LastScheduledCheck.Equal(clk.now) {
+		t.Fatalf("record not reported: %+v", v)
+	}
+}
+
+func TestSupervisorWakeStatusMethodNotAllowed(t *testing.T) {
+	s, _ := newLoopServer(t)
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopWake(rr, httptest.NewRequest(http.MethodPost, "/api/supervisor-loop/wake", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("code %d", rr.Code)
+	}
+}
+
+func TestSupervisorWakeSettingsPatch(t *testing.T) {
+	cur := config.SupervisorLoopConfig{}
+	if err := validateSupervisorLoopPatch(cur, map[string]interface{}{"autonomous.supervisor_loop.wake.coalesce_seconds": 99999}); err == nil {
+		t.Fatal("out-of-range coalesce accepted")
+	}
+	if err := validateSupervisorLoopPatch(cur, map[string]interface{}{"autonomous.supervisor_loop.wake.kinds": []interface{}{"no.such.kind.xyz"}}); err != nil && !strings.Contains(err.Error(), "wake.kinds") {
+		t.Fatalf("error should name the key: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	patch := map[string]interface{}{"autonomous.supervisor_loop.wake.enabled": true, "autonomous.supervisor_loop.wake.coalesce_seconds": float64(45)}
+	if err := validateSupervisorLoopPatch(cfg.Autonomous.SupervisorLoop, patch); err != nil {
+		t.Fatal(err)
+	}
+	applySupervisorLoopPatch(cfg, patch)
+	surf := supervisorLoopConfigSurface(cfg.Autonomous.SupervisorLoop)
+	if surf["wake.enabled"] != true || surf["wake.coalesce_seconds"] != 45 {
+		t.Fatalf("surface %v", surf)
 	}
 }
