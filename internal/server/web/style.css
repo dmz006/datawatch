@@ -8227,18 +8227,39 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .pc-skeleton-bar { animation: none; }
 }
 
-/* Phone-width rollup summaries on the session detail page. */
-.session-detail-tags-rollup,
-.session-detail-scheduled-rollup {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font-size: 11px;
-  padding: 6px 10px;
-  min-height: 32px;
+/* Phone-width header icons (Tags, Scheduled) on the session detail page. */
+.session-detail-header-icons { display: inline-flex; gap: 6px; align-items: center; }
+.session-detail-icon-btn {
+  position: relative;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 16px;
   color: var(--text2);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
+}
+.session-detail-icon-btn.is-active { color: var(--text); background: var(--bg2); }
+.session-detail-icon-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 8px;
+}
+.session-detail-popover {
+  margin: 4px 10px;
+  padding: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
