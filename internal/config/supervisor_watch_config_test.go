@@ -150,4 +150,90 @@ func TestSupervisorWatchConfigPollSecondsLoads(t *testing.T) {
 	}
 }
 
+// TestSupervisorWatchPriorityStallValidation — the config-load rules for
+// the two new supervisor watch keys: a negative value is refused for
+// either key, each error naming the full
+// autonomous.automation.supervisor_watch.<key> path; an explicit 0 and an
+// explicit override load clean and are kept as-is; an unset key stays nil
+// and reads its one default through the accessor.
+func TestSupervisorWatchPriorityStallValidation(t *testing.T) {
+	load := func(t *testing.T, body string) (*Config, error) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write config file: %v", err)
+		}
+		return Load(path)
+	}
+	prefix := "autonomous:\n  automation:\n    supervisor_watch:\n      "
+
+	// A negative value on either key is refused on config load, each error
+	// naming the full autonomous.automation.supervisor_watch.<key> path.
+	for _, key := range []string{"stall_threshold_minutes", "priority_floor"} {
+		_, err := load(t, prefix+key+": -1\n")
+		if err == nil {
+			t.Errorf("Load (%s: -1): accepted, want refused", key)
+			continue
+		}
+		if !strings.Contains(err.Error(), "autonomous.automation.supervisor_watch."+key) {
+			t.Errorf("Load (%s: -1): error %q does not name the full key", key, err.Error())
+		}
+	}
+
+	// An explicit 0 on both keys loads clean and is kept (0 is the
+	// operator saying zero, not unset).
+	cfg, err := load(t, prefix+"stall_threshold_minutes: 0\n      priority_floor: 0\n")
+	if err != nil {
+		t.Fatalf("Load (both keys 0): %v, want accepted", err)
+	}
+	w := cfg.Autonomous.Automation.SupervisorWatch
+	if w.StallThresholdMinutes == nil || *w.StallThresholdMinutes != 0 {
+		t.Errorf("stall_threshold_minutes: 0 → %v, want a kept explicit 0", w.StallThresholdMinutes)
+	}
+	if w.PriorityFloor == nil || *w.PriorityFloor != 0 {
+		t.Errorf("priority_floor: 0 → %v, want a kept explicit 0", w.PriorityFloor)
+	}
+	if got := w.EffectiveStallThresholdMinutes(); got != 0 {
+		t.Errorf("explicit 0 stall: effective = %d, want 0 (not the default)", got)
+	}
+	if got := w.EffectivePriorityFloor(); got != 0 {
+		t.Errorf("explicit 0 floor: effective = %d, want 0 (not the default)", got)
+	}
+
+	// An explicit override is kept too.
+	cfg, err = load(t, prefix+"stall_threshold_minutes: 45\n      priority_floor: 80\n")
+	if err != nil {
+		t.Fatalf("Load (45/80): %v, want accepted", err)
+	}
+	w = cfg.Autonomous.Automation.SupervisorWatch
+	if got := w.EffectiveStallThresholdMinutes(); got != 45 {
+		t.Errorf("stall_threshold_minutes: 45 → effective = %d, want 45", got)
+	}
+	if got := w.EffectivePriorityFloor(); got != 80 {
+		t.Errorf("priority_floor: 80 → effective = %d, want 80", got)
+	}
+
+	// Unset: the pointers stay nil, and the accessors read the one
+	// defaults — 30 for the stall window, 80 for the floor.
+	cfg, err = load(t, "agent:\n  enabled: true\n")
+	if err != nil {
+		t.Fatalf("Load (unset supervisor_watch): %v, want accepted", err)
+	}
+	w = cfg.Autonomous.Automation.SupervisorWatch
+	if w.StallThresholdMinutes != nil {
+		t.Errorf("unset stall_threshold_minutes = %v, want nil (unset)", *w.StallThresholdMinutes)
+	}
+	if w.PriorityFloor != nil {
+		t.Errorf("unset priority_floor = %v, want nil (unset)", *w.PriorityFloor)
+	}
+	if got, want := w.EffectiveStallThresholdMinutes(), DefaultSupervisorWatchStallThresholdMinutes;
+		got != want {
+		t.Errorf("unset stall: effective = %d, want the %d default", got, want)
+	}
+	if got, want := w.EffectivePriorityFloor(), DefaultSupervisorWatchPriorityFloor;
+		got != want {
+		t.Errorf("unset floor: effective = %d, want the %d default", got, want)
+	}
+}
+
 func itoa(v int) string { return fmt.Sprintf("%d", v) }

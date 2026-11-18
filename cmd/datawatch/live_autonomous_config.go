@@ -146,5 +146,13 @@ func supervisorWatchFromYAML(in config.SupervisorWatchConfig) autonomouspkg.Supe
 		silent := *in.SilentMinutes
 		out.SilentMinutes = &silent
 	}
+	if in.StallThresholdMinutes != nil {
+		stall := *in.StallThresholdMinutes
+		out.StallThresholdMinutes = &stall
+	}
+	if in.PriorityFloor != nil {
+		floor := *in.PriorityFloor
+		out.PriorityFloor = &floor
+	}
 	return out
 }
