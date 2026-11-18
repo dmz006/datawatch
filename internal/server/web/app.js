@@ -18236,7 +18236,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
       <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
-      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escJsAttr(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
     </tr>
   `).join('');
   overlay.innerHTML = `
@@ -25854,6 +25854,9 @@ const GENERAL_CONFIG_FIELDS = [
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+    // File extensions the security scan covers. Empty = the scanner's
+    // built-in defaults (.py, .pyw); non-empty = exactly those extensions.
+    { key: 'autonomous.security_scan_extensions', label: 'Security scan extensions (default .py, .pyw)', type: 'text', placeholder: '.py, .pyw', csv: true },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },

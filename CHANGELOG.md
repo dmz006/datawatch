@@ -5,6 +5,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
+## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
+
+### Changed
+
+- Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi.
+
+## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
+
+### Changed
+
+- Requeue dependents whose only failure was a dependency-failed error once the dependency co.
+
+## v9.182.12 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
+## v9.182.11 — Keep full file paths in decomposed task specs (no names cut at a space or a length limit)
+
+### Changed
+
+- Keep full file paths in decomposed task specs (no names cut at a space or a length limit).
+
 ## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
 
 ### Changed

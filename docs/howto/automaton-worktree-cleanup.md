@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders]
+  topics: [autonomous, automation, automaton, cleanup, worktree, branch, temp files, disk space, disk alert, report mode, retention, unlanded, keep, archive, permission denied, read-only files, pending branch alert, unlanded alert threshold, unlanded counts, age band, landing state, branch reaper, branch-reap, branch-reap-run, branch-reap-restore, task sub-branch, backup ref, restore reaped branch, reaped_branch_backup_days, cache folder sweep, go-build, trivy scan-cache, liveness probe, biggest temp folders, live daemon housekeeping routes, autonomous disabled, federation capability]
 exec_steps:
   - tool: autonomous_cleanup_status
     description: Read what the cleanup passes did last, the two disk readings, the disk alert and the biggest temp folders while the temp disk is over threshold
@@ -491,7 +491,11 @@ view), inside the **Cleanup** card, a permission problem that can be fixed shows
 permissions** button. The button posts the affected paths to
 `POST /api/autonomous/cleanup/fix-permissions`. A problem that is `hidden` is not
 shown. The PWA button and that REST route are the surfaces; there is no CLI verb,
-MCP tool or comm verb for the fix.
+MCP tool or comm verb for the fix. This route is one of the seven housekeeping
+routes described in **These routes work on the live daemon** below: with
+Automata enabled the live daemon serves it, and it is refused only while
+Automata are off (**503** `autonomous disabled`) or when a federated peer's
+token lacks the autonomous write capability (**403**).
 
 ## Unlanded branches (finished work that never reached the default branch)
 
@@ -580,6 +584,52 @@ returns the branch, the bundle path and the worktree path it removed. Know what 
 | MCP | `autonomous_unlanded_work`, read-only. The three actions are not MCP tools |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
+### These routes work on the live daemon
+
+The routes on this list pass through one gate in the server:
+
+| Route | Method | Federated peer needs |
+|---|---|---|
+| `/api/autonomous/unlanded-work` | GET | autonomous read |
+| `/api/autonomous/unlanded-work/keep` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/archive-branch` | POST | autonomous write |
+| `/api/autonomous/unlanded-work/delete-worktree` | POST | autonomous write |
+| `/api/autonomous/uncommitted-work/diff` | GET | autonomous read |
+| `/api/autonomous/uncommitted-work/commit` | POST | autonomous write |
+| `/api/autonomous/cleanup/fix-permissions` | POST | autonomous write |
+
+The daemon hands the server a wrapper around the worker manager, and that
+wrapper carries every method the gate needs, so all seven routes answer on the
+live daemon. The server checks this when it is built, against the exact wrapper
+the daemon wires in, so a build whose wrapper lost one of these methods does not
+compile. An empty list still reads empty (no base repository, or nothing
+unlanded) and is never an error.
+
+What you can still see when an action cannot run:
+
+Gate refusals — the request was rejected before the action ran, and nothing
+was touched:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **503** `autonomous disabled` | Automata are off on this daemon | Turn Automata on (`autonomous.enabled`), then retry |
+| **403** `session token lacks capability: ...` | A federated peer called the route without the autonomous read (GET) or write (POST) capability | Grant that capability to the peer, or run the action on the daemon itself |
+| **405** `method not allowed` | The route was called with the wrong method | Use the method in the table above |
+
+The action's own failures — the request passed the gate and the action ran. The message says what failed, and the same failure keeps answering the same way while the cause is not resolved:
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| **400** | Incomplete or invalid input: `branch is required`, `worktree is required`, `confirm is required to delete a worktree`, `no base repository is configured`, `commit message is empty`, `worktree is outside the Automaton worktree base`, `the worktree has no uncommitted files` (an invalid JSON body answers **400** too) | Send the missing field (a delete needs `confirm: true`), configure the base repository, or pick a worktree inside the worktree base that actually has uncommitted files |
+| **404** `branch is not in the unlanded list` | `keep`, `archive-branch` or `delete-worktree` was called for a branch that is not in the current unlanded list (it was archived or deleted, or was never listed) | Read the list again (`GET /api/autonomous/unlanded-work`) and act on a branch it names |
+| **409** | The action's own failure — for example the delete's bundle backup could not be written or verified (in which case nothing was removed), or the working directory refused the archive ref | Read the message for the cause, clear it, then rerun the action |
+
+One operator flag: because the current build proves at build time that the
+wrapper carries every gate method, a daemon answering **503**
+`Housekeeping actions unavailable` on any of the seven routes above is an old
+build from before the fix — upgrade the daemon binary, there is no setting
+that changes that answer.
+
 ### Daily pending-branch alert
 
 A **pending** branch is one the list marks `superseded`: later work replaced it
@@ -635,7 +685,10 @@ worktree, or merge it.
 safe-to-delete report is still undecided; the operator must confirm that. If the
 force-delete of a worktree is not wanted when it hides uncommitted work, the
 debate over Delete worktree is not yet settled; review that action before using
-it. The
+it. An empty **Unlanded work** card means nothing is unlanded, or no base
+repository is set; to tell the two apart, read
+`GET /api/autonomous/unlanded-work` directly (**These routes work on the live
+daemon** above). The
 datawatch-app (Android and iPhone) parity for the Unlanded work card is tracked
 in its own repository and is not part of this change.
 
