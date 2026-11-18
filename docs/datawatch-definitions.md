@@ -315,6 +315,10 @@ If `cron_expr` is set, the spawn reschedules automatically after each fire. Canc
 
 ---
 
+### Hermetic process-scan test
+
+A test that decides which process sent a stop signal by scanning a process table limited to the test's own child processes, so unrelated host processes cannot change the result. `TestSignalChildProcScan` in `internal/shutdowncause` is one. It needs no running daemon. See [Running the process-scan tests](howto/testing-against-a-running-daemon.md#running-the-process-scan-tests) and the stop-sender note in [operations](operations.md).
+
 ### Session zombie detection
 
 Detects when Claude has exited but the shell is still running inside the tmux pane.
