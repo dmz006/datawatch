@@ -22,7 +22,10 @@ import (
 //     becomes a backlog plan ordered by its old row number.
 //
 // It is a dry run unless Apply is set. It never overwrites an existing link
-// and never touches a plan created earlier: each plan it creates carries a
+// A registry row that is shipped, done or closed is history and never becomes
+// a plan: when it names an Automaton it is linked (as a registry row) to the
+// plan that holds that Automaton, and when it names none it is listed under
+// HistoryWithoutAutomaton. It never touches a plan created earlier: each plan it creates carries a
 // "migrated-from" link naming its source, so a second apply finds the plan
 // again and changes nothing. It deletes no arc, row or config key.
 
@@ -115,6 +118,10 @@ type MigrateReport struct {
 	WouldLink       []MigrateItem `json:"would_link"`
 	SkippedExisting []MigrateItem `json:"skipped_existing"`
 	Conflicts       []MigrateItem `json:"conflicts"`
+	// HistoryWithoutAutomaton lists the shipped, done or closed rows that name
+	// no Automaton. They are history, never backlog plans, so they are only
+	// listed (with their titles), in a preview and after an apply alike.
+	HistoryWithoutAutomaton []MigrateItem `json:"history_without_automaton"`
 	// TitlesDerived and TitlesFellBack count the plans made from registry
 	// rows: titles found in the row, and rows with no title that were named
 	// "(untitled row N)". A plan that already exists is counted in neither.
@@ -130,7 +137,8 @@ func (r MigrateReport) Counts() map[string]int {
 	return map[string]int{
 		"would_create": len(r.WouldCreate), "would_link": len(r.WouldLink),
 		"skipped_existing": len(r.SkippedExisting), "conflicts": len(r.Conflicts),
-		"titles_derived": r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
+		"history_without_automaton": len(r.HistoryWithoutAutomaton),
+		"titles_derived":            r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
 	}
 }
 
@@ -144,7 +152,7 @@ func Migrate(opts MigrateOptions) (MigrateReport, error) {
 	rep := MigrateReport{
 		Applied:     opts.Apply,
 		WouldCreate: []MigrateItem{}, WouldLink: []MigrateItem{},
-		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{},
+		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{}, HistoryWithoutAutomaton: []MigrateItem{},
 	}
 	if opts.Store == nil {
 		return rep, errors.New("planrecords: migrate needs a store")
@@ -418,6 +426,10 @@ func (m *migrator) rows() {
 			Source: migrateSourceRow, SourceRef: r.ID, Title: title, Project: r.Project,
 			Order: clampOrder(r.LegacyNumber), TitleSource: titleSource,
 		}
+		if IsClosed(KindRegistryRow, r.State) {
+			m.history(it, r, refs, hasPlan, plan)
+			continue
+		}
 		if len(refs) == 0 {
 			it.Source = migrateSourceRowBacklog
 			switch {
@@ -460,6 +472,56 @@ func (m *migrator) rows() {
 			}
 		}
 	}
+}
+
+// history handles a shipped, done or closed row. It never creates a plan.
+func (m *migrator) history(it MigrateItem, r Record, refs []foundRef, hasPlan bool, plan Record) {
+	if len(refs) == 0 {
+		it.Source = migrateSourceRowBacklog
+		if hasPlan {
+			it.PlanID = plan.ID
+		}
+		it.Reason = "history: the row is closed and names no Automaton"
+		m.rep.HistoryWithoutAutomaton = append(m.rep.HistoryWithoutAutomaton, it)
+		return
+	}
+	for _, ref := range refs {
+		ri := it
+		ri.LinkKind, ri.LinkID = ref.kind, ref.id
+		var holder PlanRef
+		var ok bool
+		if ref.kind == linkAutomation {
+			holder, ok = m.s.PlanOfAutomation(ref.id)
+		} else {
+			holder, ok = m.s.PlanOf(ref.id)
+		}
+		if !ok {
+			m.skip(ri, "history: the Automaton is not on a release plan item yet; no plan was made for the closed row")
+			continue
+		}
+		ri.PlanID = holder.ID
+		if m.rowHeld(holder.UID, r.UID) {
+			m.skip(ri, fmt.Sprintf("the closed row is already linked to the plan %q", holder.Title))
+			continue
+		}
+		if !m.opts.Apply {
+			m.add(&m.rep.WouldLink, ri)
+			continue
+		}
+		if _, err := m.s.AttachRow(holder.UID, r.UID); err != nil {
+			m.conflict(ri, "cannot link the closed row: "+err.Error())
+			continue
+		}
+		m.add(&m.rep.WouldLink, ri)
+	}
+}
+
+// rowHeld reports whether the plan already holds the row as a registry row.
+func (m *migrator) rowHeld(planUID, rowUID string) bool {
+	m.s.mu.RLock()
+	defer m.s.mu.RUnlock()
+	p, ok := m.s.byUID[planUID]
+	return ok && hasLink(p.Links, LinkKindRegistryRow, rowUID)
 }
 
 // heldBy reports whether plan lists the ref.

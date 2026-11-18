@@ -48,8 +48,8 @@ func TestMigrateDryRunWritesNothing(t *testing.T) {
 	if rep.Applied || s.Len() != before {
 		t.Fatalf("dry run wrote: applied=%v len %d -> %d", rep.Applied, before, s.Len())
 	}
-	// 2 arcs + 2 linked rows + 1 backlog row (the shipped row is skipped).
-	if len(rep.WouldCreate) != 5 || len(rep.WouldLink) != 4 || len(rep.SkippedExisting) != 1 || len(rep.Conflicts) != 0 {
+	// 2 arcs + 2 linked rows + 1 backlog row (the shipped row is history, listed only).
+	if len(rep.WouldCreate) != 5 || len(rep.WouldLink) != 4 || len(rep.SkippedExisting) != 0 || len(rep.HistoryWithoutAutomaton) != 1 || len(rep.Conflicts) != 0 {
 		t.Fatalf("report = %+v", rep.Counts())
 	}
 }
@@ -130,5 +130,40 @@ func TestMigrateNeverOverwritesExistingLinkOrPlan(t *testing.T) {
 func TestMigrateNeedsStore(t *testing.T) {
 	if _, err := Migrate(MigrateOptions{}); err == nil {
 		t.Fatal("expected an error without a store")
+	}
+}
+
+func TestMigrateClosedRowsAreHistoryNotPlans(t *testing.T) {
+	s, _, _, _ := newTestStore(t, nil)
+	plan := mustCreate(t, s, Record{Kind: KindPlan, Project: "datawatch", Title: "Release 9", State: StatePlanned})
+	if _, err := s.AttachAutomaton(plan.UID, "aaaa1111", LinkInfo{Title: "Built"}); err != nil {
+		t.Fatal(err)
+	}
+	with := row("Shipped with an Automaton")
+	with.State = StateShipped
+	with.Links = []Link{{Kind: "automaton", Ref: "aaaa1111"}}
+	withRec := mustCreate(t, s, with)
+	without := row("Shipped without one")
+	without.State = StateDone
+	mustCreate(t, s, without)
+	opts := MigrateOptions{Store: s}
+	n := s.Len()
+	prev, err := Migrate(opts)
+	if err != nil || s.Len() != n || len(prev.WouldCreate) != 0 || len(prev.WouldLink) != 1 ||
+		len(prev.HistoryWithoutAutomaton) != 1 || prev.HistoryWithoutAutomaton[0].Title != "Plan: without one" {
+		t.Fatalf("preview: %v %+v %+v", err, prev.Counts(), prev.HistoryWithoutAutomaton)
+	}
+	opts.Apply = true
+	rep, err := Migrate(opts)
+	if err != nil || s.Len() != n || len(rep.WouldCreate) != 0 || len(rep.WouldLink) != 1 || len(rep.HistoryWithoutAutomaton) != 1 {
+		t.Fatalf("apply: %v len %d -> %d %+v", err, n, s.Len(), rep.Counts())
+	}
+	held, err := s.Get(plan.UID)
+	if err != nil || !hasLink(held.Links, LinkKindRegistryRow, withRec.UID) {
+		t.Fatal("the closed row is not linked to the release plan")
+	}
+	again, err := Migrate(opts)
+	if err != nil || len(again.WouldLink) != 0 || len(again.WouldCreate) != 0 || len(again.SkippedExisting) != 1 || len(again.HistoryWithoutAutomaton) != 1 {
+		t.Fatalf("second apply: %v %+v", err, again.Counts())
 	}
 }

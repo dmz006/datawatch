@@ -54,12 +54,12 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 	s, _, _, _ := newTestStore(t, nil)
 	good := row("Persisted subscriptions")
 	good.LegacyNumber = 11
-	good.State = StateDone
+	good.State = StateOpen
 	good.Links = []Link{{Kind: "automaton", Ref: "aaaa1111"}}
 	mustCreate(t, s, good)
 	bad := row("done, shipped in 9.5.92 (PRD 332c0001)")
 	bad.LegacyNumber = 15
-	bad.State = StateDone
+	bad.State = StateOpen
 	bad.Links = []Link{{Kind: "automaton", Ref: "bbbb2222"}}
 	mustCreate(t, s, bad)
 	bad2 := row("PRD d1160001 (Claude); operator decisions Q1 and Q7 recorded")
@@ -79,10 +79,10 @@ func TestMigrateRowTitlesCountedAndKeepStatus(t *testing.T) {
 		t.Fatalf("apply: %v %+v", err, rep.Counts())
 	}
 	p, ok := s.PlanOf("bbbb2222")
-	if !ok || p.Title != "Plan: (untitled row 15)" || p.State != StateDone {
+	if !ok || p.Title != "Plan: (untitled row 15)" || p.State != StateOpen {
 		t.Fatalf("fallback plan = %+v %v", p, ok)
 	}
-	if q, ok := s.PlanOf("aaaa1111"); !ok || q.Title != "Plan: Persisted subscriptions" || q.State != StateDone {
+	if q, ok := s.PlanOf("aaaa1111"); !ok || q.Title != "Plan: Persisted subscriptions" || q.State != StateOpen {
 		t.Fatalf("derived plan = %+v %v", q, ok)
 	}
 	// A plan made earlier is never renamed; a second apply changes nothing
@@ -111,10 +111,10 @@ func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
 		}
 		mustCreate(t, s, r)
 	}
-	mk("done: 3a shipped in 9.5.85 (PRD b3ca0001)", 13, StateDone, "b3ca0001")
-	mk("done, shipped in 9.5.92 (PRD 332c0001)", 15, StateDone, "332c0001")
+	mk("done: 3a shipped in 9.5.85 (PRD b3ca0001)", 13, StateOpen, "b3ca0001")
+	mk("done, shipped in 9.5.92 (PRD 332c0001)", 15, StateOpen, "332c0001")
 	mk("PRD d1160001 (Claude); operator decisions Q1 and Q7 recorded", 20, StateOpen, "d1160001")
-	mk("done, shipped in 9.5.1 (PRD eeee5555)", 21, StateDone, "eeee5555") // linked, no title
+	mk("done, shipped in 9.5.1 (PRD eeee5555)", 21, StateOpen, "eeee5555") // linked, no title
 	mk("Real row title", 22, StateOpen, "ffff6666")
 	titles := map[string]string{
 		"b3ca0001": "Per-LLM budget\nwith a second line",
@@ -144,7 +144,7 @@ func TestMigrateUntitledRowsTakeLinkedTitle(t *testing.T) {
 		}
 	}
 	p, _ := s.PlanOf("332c0001")
-	if n := utf8.RuneCountInString(p.Title); n > 100 || !strings.HasPrefix(p.Title, "Plan: long long") || p.State != StateDone {
+	if n := utf8.RuneCountInString(p.Title); n > 100 || !strings.HasPrefix(p.Title, "Plan: long long") || p.State != StateOpen {
 		t.Fatalf("long linked title = %q (%d) state %s", p.Title, n, p.State)
 	}
 	n := s.Len()
