@@ -81,6 +81,8 @@ What the runner does in local mode (`scripts/e2e-pwa.sh`):
    root.
 2. `npm ci` in `scripts/test-stories/pwa` (falls back to `npm install`
    without a lockfile).
+   It creates a real, gitignored `node_modules` directory there; the old
+   tracked `node_modules` symlink is gone, so a run leaves `git status` clean.
 3. Runs `node <story>.mjs` (or `run-all.mjs --group <group>` for a group)
    with `TEST_HTTP`, `TEST_TLS`, `TEST_TOKEN` (default `dw-e2e-pwa-token`),
    `EVIDENCE_DIR`, `TEST_TLS_CA` (locally: the daemon's own generated cert)
