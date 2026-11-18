@@ -169,6 +169,31 @@ When neither applies, the finding keeps its plain warning that the script does
 not exist: add a verbatim block, tell the worker to create the script, or list
 the script in the task's generated files.
 
+**What happens at task start.** The pre-start verifier no longer refuses a task
+only because its script is missing when the spec says how the file comes to
+exist:
+
+1. **Verbatim block.** Before the check, the daemon writes the block to the
+   script path with mode `0755` and records a `verifier_materialize` decision
+   on the Automaton. It never overwrites a file that already exists, and it
+   refuses an absolute path, a `..` path or a path that is not the task's
+   verification script. This also rebuilds the script on a restart after
+   `.datawatch/verify/` was removed.
+2. **Task creates it.** With no verbatim block and a spec that tells the worker
+   to create the script (`Write it to <path>`, `Create the script at <path>`,
+   `touch <path>`, `chmod +x <path>`), the missing file is accepted, a
+   `verifier_prestart_task_created` decision is recorded and the task starts.
+   The path must be the task's own script (full path or its base name) and
+   directly follow the instruction on the same line.
+3. **Neither.** The task is still refused (or, in `shadow` mode, recorded) as
+   before: the script does not exist.
+
+Only a **missing** script is accepted this way. A script that exists but is not
+executable, has no shebang or lies outside the project is still a problem. The
+check after the task runs the written file and fails the task if it was never
+written, so accepting the start loses no safety. With
+`autonomous.checks.pre_start_verifier` set to `off` none of this runs.
+
 ## 6. Set a task's script or reason with the edit tools
 
 On a task that is still editable (the Automaton is in `needs_review`,
@@ -252,6 +277,10 @@ These points are decisions or checks the docs cannot settle for you:
   repository with pre-existing findings in a touched package blocks until fixed.
 - **Lint version.** The gate uses whatever `golangci-lint` is on `PATH`; it does not
   check the version CI pins (the shadow merge's lint version pin does that).
+- **Spec wording decides the case.** The task-created case is matched on
+  phrases in the spec text. A spec that words the instruction differently is
+  still refused at start; confirm your planner's wording on a dry run before
+  relying on it.
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 
