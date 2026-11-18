@@ -120,7 +120,6 @@ func TestDeriveObjectTags(t *testing.T) {
 	}
 }
 
-
 // TestObjectTagsPerObject pins the per-object facts the Manager derives
 // into each object's SystemTags field (still unwired for writes by this
 // task): an Automaton takes its project, its Automation and itself; a

@@ -90,25 +90,27 @@ func normSeverity(s string) string { return strings.ToLower(strings.TrimSpace(s)
 // one member match and all_of every member. Empty conditions are
 // absent and never restrict.
 type compiledMatch struct {
-	spec          *regexp.Regexp
-	title         *regexp.Regexp
-	files         *regexp.Regexp
-	readOnly      *bool
-	verifEmpty    bool
-	reportEmpt    bool
-	unexecScript  bool
-	reasonEmpty   bool
-	taskFilesOnly bool
-	docsNoSync    bool
-	kind          string
-	anyOf         []compiledMatch
-	allOf         []compiledMatch
+	spec           *regexp.Regexp
+	title          *regexp.Regexp
+	files          *regexp.Regexp
+	readOnly       *bool
+	verifEmpty     bool
+	reportEmpt     bool
+	unexecScript   bool
+	reasonEmpty    bool
+	taskFilesOnly  bool
+	docsNoSync     bool
+	artefactFiles  bool
+	finalGateRerun bool
+	kind           string
+	anyOf          []compiledMatch
+	allOf          []compiledMatch
 }
 
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync {
+	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateRerun {
 		return true
 	}
 	for i := range m.anyOf {
@@ -156,6 +158,16 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.docsNoSync {
 		if _, ok := verifyScriptDocsWithoutSync(dir, t); !ok {
+			return false
+		}
+	}
+	if m.artefactFiles {
+		if _, ok := verifyScriptArtefactFiles(dir, t); !ok {
+			return false
+		}
+	}
+	if m.finalGateRerun {
+		if _, ok := verifyScriptFinalGateRerun(dir, t); !ok {
 			return false
 		}
 	}
@@ -232,7 +244,7 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFiles, finalGateRerun: m.VerificationScriptFinalGateRerun, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -490,6 +502,12 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.docsNoSync {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (checks docs without make sync-docs)")
+	}
+	if m.artefactFiles {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (flags unexpected files without exempting the artefact folders)")
+	}
+	if m.finalGateRerun {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (asserts a finite allow-list with no final-gate rerun guard)")
 	}
 	if len(parts) == 0 {
 		return ""
