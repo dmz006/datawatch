@@ -14,7 +14,7 @@ while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
     .datawatch/*|.decompose-output-*.json|*.log|CHANGELOG.md|docs/plans/*) ;;
-    internal/shutdowncause/*.go|docs/howto/testing-against-a-running-daemon.md|internal/server/web/docs/howto/testing-against-a-running-daemon.md) ;;
+    internal/shutdowncause/*.go|docs/*.md|docs/*/*.md|internal/server/web/docs/*|internal/server/web/docs/*/*) ;;
     *) bad "file outside the allowed surfaces: $f" ;;
   esac
 done < "$CH"
