@@ -21,8 +21,9 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs sixteen checks. Fourteen of them are checks the supervisor script
-(`scripts/supervisor-watch.py`) runs by hand today; two
+call**, it runs sixteen checks — one per finding kind, the
+sixteen (16) finding kinds this howto lists. Fourteen of them are checks the
+supervisor script (`scripts/supervisor-watch.py`) runs by hand today; two
 (`worktree_not_registered` and `verify_script_not_executable`) are new in the
 watch, and the script has several checks of its own the watch does not have yet
 — see "Where the watch and the script differ" below. Each thing it finds is kept
@@ -53,8 +54,9 @@ reloads a model. It reads, it records, it tells you.
 
 ## What the watch reports
 
-The finding kinds are a fixed vocabulary; the names below are exactly what you
-see in the `kind` field on every surface. The **subject** is the stable id the
+The finding kinds are a fixed vocabulary of the sixteen (16) kinds in the
+table below; the names there are exactly what you see in the `kind` field on
+every surface. The **subject** is the stable id the
 finding is about. A kind plus a subject is one finding, so the same problem on
 the same subject is one record that is refreshed, not a new one every poll.
 
