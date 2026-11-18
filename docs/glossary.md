@@ -66,3 +66,7 @@ decompose-lint pass (recorded even in mode `off`; drives the retry in
 `enforce`) and when a task edit sets a verification script; every finding is
 `block`. The dry run does not run it. See
 [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+
+## Priority stall
+
+A high-priority Automaton (at or above the `priority_floor`, default 80) that has waited in the queue longer than `stall_threshold_minutes` (default 30) with a blocker lane fill will not clear: the blocker is one of `lane_full`, `plan_coverage_blocked`, `held`, `stale`, `proposal_not_confirmed`, `judge_timed_out`, `merge_pending` or `other_refusal`. The watch names it as a `priority_stall` finding and the daemon publishes one `priority_stall` event per Automaton per blocker, which can wake the supervisor. The detector only reads; it never approves or acknowledges. See [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md#priority-stall-wakes-the-supervisor).
