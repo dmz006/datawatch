@@ -1337,6 +1337,8 @@ Start a new AI coding session.
 | `llm` | string | No | LLM registry name to use for this session (e.g. `"ollama"`, `"claude"`). Overrides daemon default. |
 | `compute_node` | string | No | ComputeNode registry name. Requires `llm` to be set. |
 | `name` | string | No | Human-readable session name (used by `send_input` name resolution). |
+| `model` | string | No | Model for a `claude-code` session (alias such as `sonnet` or a full name). Omit it and the daemon uses the LLM row's model, then the global planning model; if all are empty the start is refused under the [explicit-model policy](howto/explicit-model-policy.md). |
+| `effort` | string | No | Session effort: `quick`, `normal` or `thorough`. Omit for the default. |
 | `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
 | `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |

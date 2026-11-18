@@ -97,6 +97,7 @@ policy covers that case with a refusal instead of a guess:
   refused. The chain applies only to `claude-code` starts; every other backend
   is untouched. A model found by (2) or (3) is recorded on the session exactly
   as if the operator had named it.
+- **Every direct surface can name the model.** CLI: `datawatch session new --model <name> [--effort quick|normal|thorough]`; MCP: `start_session` with `model`, `effort` and `name`; chat: `new: model=<name>: <task>` (an empty `model=` gets a reply asking for a value); REST: the `model` field of `POST /api/sessions/start`. The CLI and MCP arguments are sent as the same fields REST takes, so all four reach the same fallback chain.
 - **The fix is to name the model.** An alias from the daemon default set or a
   full registry name, given where the surface takes one (the LLM entry / model
   field of the start request, or the backend's model flag). A model named this
