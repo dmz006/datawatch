@@ -93,16 +93,7 @@ When the rerun does not pass, the first failure stands, with the rerun's status
 noted in the detail. It is the daemon's answer to the test that fails only under load: the
 gate names it, and the operator still decides what that test is.
 
-**Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
-the local golangci-lint version against the version the trial merge's CI
-workflow pins — the `version` of a `golangci/golangci-lint-action` step in
-`.github/workflows/ci.yaml`, a `v`-prefix aside. A difference fails the gate
-with one blocking finding; a local version that cannot be determined counts as
-a mismatch. A CI workflow that pins nothing — no workflow, no such step, no
-`version` key — or one that cannot be read, leaves the gate's status unchanged
-and adds only the local version (and, when the pin could not be read, the
-reason) to the gate's detail. It is the answer to the lint that differs between
-local and CI.
+**Lint version pin — `lint_version_mismatch` and `lint_tool_unavailable` (block).** The `lint` gate runs the golangci-lint the trial merge's CI workflow pins — the `version` of a `golangci/golangci-lint-action` step in `.github/workflows/ci.yaml`, a `v`-prefix aside — not whatever happens to be on `PATH`. The daemon resolves that exact version in order: the binary in its own tools folder (`<data dir>/tools/golangci-lint/<version>/`), else the `PATH` binary when it already reports the pinned version, else it installs the pinned version into the tools folder (one install at a time, bounded to ten minutes) and uses that. The resolved binary's folder is put first on the gate's `PATH`, so `make lint` runs the pinned linter, and the gate's detail records the pin, the binary path, its version and where it came from (`tools folder`, `PATH` or `installed`). Because the daemon provides the pinned linter itself, its own merge pipeline no longer fails the lint gate on a host whose installed golangci-lint differs from CI. When the pinned version cannot be provided — no data directory, the install fails or times out, or the installed binary does not report the pinned version — the gate fails with one blocking `lint_tool_unavailable` finding naming the pin and the reason; a resolved binary that still differs from the pin fails with the blocking `lint_version_mismatch`. A CI workflow that pins nothing — no workflow, no such step, no `version` key — or one that cannot be read keeps the earlier behavior: the gate's status is unchanged and only the `PATH` golangci-lint's version (and, when the pin could not be read, the reason) is added to the detail. It is the answer to the lint that differs between local and CI, and to a daemon that could never pass its own lint gate. **Operator review:** the first gate run for a new pin downloads and builds golangci-lint, so it needs network and a Go toolchain on the daemon host and can take minutes; a `lint_tool_unavailable` finding means fixing that host, not the code.
 
 **Plans-link gate — `check-plans-links`.** The gate runner runs the project's
 make target of a given name — build, lint and test are the standard three in
@@ -310,7 +301,7 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   alone is still a test to watch), the failing tests named in a failed `test`
   gate's detail (a stale expected count is a test to fix before the next merge),
   and the blocking `unmerged_task_branch`, `stray_root_file`,
-  `lint_version_mismatch` and `review_stale` findings (a `review_stale` review
+  `lint_version_mismatch`, `lint_tool_unavailable` and `review_stale` findings (a `review_stale` review
   is a verdict on an older commit — the current head is not reviewed yet, so
   review it before the merge lands) (see
   [The plan's checks and gates](#the-plans-checks-and-gates)).
