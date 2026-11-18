@@ -4360,7 +4360,12 @@ autonomous:
   # Worker session profiles: what a worker, verifier or judge session starts
   # with (MCP servers, tools, skills, project context, model, effort). Built-in
   # names: minimal, digest, full, datawatch-tools; a user profile may not reuse
-  # them. Sessions you start yourself always start with the full harness.
+  # them. Sessions you start yourself resolve at their own layer: a profile
+  # named on the start (worker_profile_name) wins, then the daemon-wide name,
+  # then the kind's row for a start with launch facts (launch_role=supervisor
+  # or launch_role=planner, launch_kind=review, or one-shot mode); a plain
+  # start with no name and no launch facts starts with the full harness,
+  # unchanged.
   #   worker_profiles: map of profile name to a profile. Profile fields are
   #     name (must match the key or be empty), mcp {mode: none|datawatch|list,
   #     servers}, tools {mode: all|allow, allow}, skills (bool), context:
