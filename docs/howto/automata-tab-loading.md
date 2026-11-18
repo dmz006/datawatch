@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automata, pwa, loading, performance]
+  topics: [automata, pwa, loading, performance, summary, full records, paged tasks, archive]
 ---
 # How-to: how the Automata tab loads
 
@@ -35,6 +35,12 @@ Next to the list the tab loads the capacity and queue card, the list of LLM
 backends and the tag list. Each one has its own request and its own error
 handling, so a failure in one never blanks the list.
 
+The list is served from the daemon's in-memory summary index, so building a
+page reads no record from disk and a repeat of an unchanged list answers
+**304 Not Modified** before any row is built. The Projects tab reads the same
+index for its roll-up, timeline and History, so it also does not slow down as
+Automata gain spec and task text.
+
 ## Load more
 
 When more Automata match than the 50 shown, a **Load more** button appears
@@ -50,6 +56,46 @@ under the last card with the count, for example **Load more (50/273)**.
 - The button disappears when there is nothing left to load.
 
 The Sessions and Alerts tabs page the same way and use the same control.
+
+## Summaries by default, full records only when asked
+
+The Automata list is **summaries only**. No story text, task text, decision log
+or output is on a list row, whichever surface asks: the web app, the CLI, the
+MCP tool or a script calling REST. The row is built from the daemon's in-memory
+summary index, so its size does not depend on how much an Automaton holds.
+
+The heavy form, whole records for every row, still exists but only behind an
+explicit switch, so nothing gets it by accident:
+
+| Surface | How to ask for whole records |
+|---|---|
+| REST | `GET /api/autonomous/prds?full=true` |
+| CLI | `datawatch autonomous list --full` |
+| MCP | the `full` argument of `autonomous_prd_list` |
+
+Use it with a `limit` (and `cursor`); without one it returns every Automaton in
+full and can be many megabytes. The web app never sends it.
+
+### Tasks are paged per Automaton
+
+The task rows of one Automaton are read one page at a time, never as part of the
+list.
+
+| Surface | How to read a page of one Automaton's tasks |
+|---|---|
+| REST | `GET /api/autonomous/prds/{id}/tasks` with `limit` (default 50, at most 500), `cursor`, `story` and `status` |
+| CLI | `datawatch autonomous tasks <id>` with `--limit`, `--cursor`, `--story` and `--status` |
+| MCP | the `autonomous_prd_tasks` tool with the same arguments |
+
+A page carries each task's identity, state, timing, the sessions that ran it and
+a short error, but no spec, history or verification text. The reply has `total`
+(the tasks that match the filters) and `next_cursor`; pass it back as the cursor
+to read the next page.
+
+The web app uses the same route. **Expanding an Automaton on the Gantt** and
+**opening an Automaton's detail** each load that Automaton's tasks 50 at a time,
+on demand, with a **Load more** control, so a page with hundreds of Automata
+reads task rows only for the ones you open.
 
 ## Loading, cached, stale and failed
 
@@ -94,6 +140,58 @@ shown whole — what you read is what you can save back, and a save that still
 carries a truncation marker is refused (400) because it is a copy, not the
 original. The complete output text is one more request away through the
 outputs route described in the paging guide.
+
+## Opening the tab and the Projects page from the cache
+
+Both pages draw from this browser's saved copy first and refresh behind it, so
+they show something in the first moment instead of waiting on the network.
+
+- **What is kept.** The last good first page of the Automata list, and for each
+  project the last good roll-up (for the one-week window), the project list
+  included. Each copy is stored with the version tag the server sent (its
+  `ETag`). Nothing is stored beyond what the page already showed.
+- **What you see.** A cache-drawn row or card carries a small **Refreshing…**
+  line until the background request settles. It is never shown as current
+  while it is still being checked. The page then asks the server again with
+  `If-None-Match`; when nothing changed the answer is a short "not modified"
+  and nothing is redrawn. When something changed, only the rows or cards
+  whose content differs are redrawn, so an open row or a scrolled Gantt keeps
+  its place.
+- **Cards fail on their own.** On a project page the arc cards, Automata
+  without an arc, Automata without a project, totals, throughput, Gantt and
+  Plan each have a skeleton while they load and their own red error line with
+  a **Retry** button when they fail. A slow or failed card never holds the
+  others back; they all start at once. The Automata list does the same for its
+  rows.
+- **Tasks are paged.** Expanding an Automaton on the Gantt, and opening one in
+  the Automata list, read that Automaton's tasks 50 at a time from
+  `GET /api/autonomous/prds/{id}/tasks`, with a **Load more** control. The
+  list and the roll-up views never ask for full records.
+- **When the copy is dropped.** Changing the selected project drops the cached
+  roll-up of the project you left, and a sign-in change (a new token, or the
+  server answering 401) drops every saved copy. If the browser blocks storage,
+  both pages still work; they simply load on each visit.
+
+There is no setting for this.
+
+## Finished Automata and the archive
+
+A completed, shipped or cancelled Automaton keeps a lot it no longer needs at
+hand: its decision log, each task's session history, long task errors, the
+generated memory report and the raw judge text. The daemon moves those parts
+into one archive file (`<data dir>/autonomous/archive/<id>.json`) once the
+Automaton is older than `autonomous.archive.retention_days` (default 30). The
+live record keeps its identity, status, counts, tags, links and every story and
+task with its title and short fields, so the list, counts, cost and History read
+exactly the same. Nothing is deleted; the archive file is read only when asked
+for, so opening an archived row on the tab is as quick as any other.
+
+Archiving is skipped for an Automaton with a running task, an open session, or
+a completed record whose branch is not merged. Set
+`autonomous.archive.enabled` to `false` to stop the daemon archiving by itself.
+The dry run, the apply run, the verified backup and the per-Automaton read are
+described in [automata-archive.md](automata-archive.md); the settings table is in
+[operations.md](../operations.md) (search "What the archive does").
 
 ## Children
 
@@ -166,7 +264,9 @@ and byte budget each time.
    battery and refreshes when you return. Switching apps on a phone and back
    triggers that one refresh.
 7. **If a page is huge, find the full form.** The only requests that return
-   whole records are `full=1` on the Automata routes and an `/api/sessions`
+   whole records are `full=1` on the Automata routes (and the `--full` flag of
+   `datawatch autonomous list` and `full=true` of the MCP `autonomous_prd_list`
+   tool, which add the same parameter) and an `/api/sessions`
    call with no `view=summary` or `limit`. The web app does not send these.
    A script or an older client that does is the likely cause.
 8. **Clear the saved copy if the tab shows something odd.** The cached list
@@ -189,11 +289,32 @@ connection, holds it down, restores it, and checks that the refresh stays
 inside a small request and byte budget, twice in a row. The same checks run in
 release smoke against the smoke daemon.
 
+## For the operator to review
+
+- **CI wiring of the speed check.** `scripts/perf-rollup-check.sh` and the 700-Automaton
+  limits in `scripts/perf-budget.sh` exist and run by hand, but no step in
+  `.github/workflows/ci.yaml` calls them yet, so a slow regression is not caught
+  automatically. Confirm whether to wire them in.
+- **Time limits are host-dependent.** The targets (roll-up under 300 ms warm and
+  1.5 s cold) were set on one host; confirm them for the slower hosts you run.
+- **Translations.** The new loading, retry and cached-copy strings are in the five
+  locales; a native speaker has not reviewed the four non-English ones.
+- **Mobile parity.** The Android and iPhone apps do not yet open from a cached copy;
+  this is tracked in datawatch-app.
+
 ## Where to go next
 
 - [list-endpoints-and-paging.md](list-endpoints-and-paging.md): the API behind
   the summary list, paging, ETag / 304 and compression.
 - [automation-tab.md](automation-tab.md): the Automation tab that chains
   Automata.
+- [automata-archive.md](automata-archive.md): what the archive moves and what
+  stays in the store, the dry run then apply, the verified backup and how to
+  read an archive.
+- [projects-tab.md](projects-tab.md): the Projects page, which opens from the
+  last good data and refreshes behind it.
+- [operations.md](../operations.md): the archive settings
+  (`autonomous.archive.retention_days`, `autonomous.archive.enabled`), the
+  dry-run and apply commands and the verified backup.
 - [automata-tags.md](automata-tags.md): tagging Automata; the tag filter works
   on the server too.

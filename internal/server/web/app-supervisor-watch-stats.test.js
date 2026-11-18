@@ -23,6 +23,10 @@ const KEYS = [
   'stats_supervisor_watch_alerted',
   'stats_supervisor_watch_poll_age',
   'stats_supervisor_watch_agreed_days',
+  'stats_supervisor_watch_band_high',
+  'stats_supervisor_watch_band_medium',
+  'stats_supervisor_watch_band_low',
+  'stats_supervisor_watch_band_row',
 ];
 
 function renderStats(extra) {
@@ -69,6 +73,27 @@ test('alert counts above zero are warnings, zeros are not, and a never-polled ag
   assert.match(some, /Last poll \(s ago\)<\/span><span[^>]*>-</);
   const none = renderStats({ supervisor_watch_mode: 'shadow' });
   assert.match(none, /Alerted<\/span><span style="color:var\(--text\);">0</);
+});
+
+test('the card shows one row per band that waits, collapsing bands that wait nothing', () => {
+  const html = renderStats({
+    supervisor_watch_mode: 'shadow',
+    supervisor_watch_priority_bands: [
+      { band: 'high', priority_from: 80, priority_to: 100, waiting: 2, oldest_waiting_minutes: 41, stalled: 1 },
+      { band: 'medium', priority_from: 50, priority_to: 79, waiting: 1, oldest_waiting_minutes: 22, stalled: 0 },
+      { band: 'low', priority_from: 0, priority_to: 49, waiting: 0, oldest_waiting_minutes: 0, stalled: 0 },
+    ],
+  });
+  assert.match(html, /Band high \(priority 80 or more\)<\/span><span style="color:var\(--warning\);">2 waiting \(oldest 41 min, 1 stalled\)/, 'high band row (stalled share warns)');
+  assert.match(html, /Band medium \(priority 50 through 79\)<\/span><span style="color:var\(--text\);">1 waiting \(oldest 22 min, 0 stalled\)/, 'medium band row');
+  assert.ok(!/Band low/.test(html), 'a band that waits nothing must not get its own row');
+});
+
+test('the card stays band-free when the daemon reports no band rows at all', () => {
+  const missing = renderStats({ supervisor_watch_mode: 'shadow' });
+  assert.ok(!/Band (high|medium|low)/.test(missing), 'no key: no band rows');
+  const empty = renderStats({ supervisor_watch_mode: 'shadow', supervisor_watch_priority_bands: [] });
+  assert.ok(!/Band (high|medium|low)/.test(empty), 'an empty band list: no band rows');
 });
 
 test('the card labels exist in all five locale bundles', () => {

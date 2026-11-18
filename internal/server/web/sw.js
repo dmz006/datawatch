@@ -24,7 +24,41 @@
 // changes → browser detects an update → install handler fires →
 // activate handler purges old caches AND force-navigates every
 // controlled window. Reload-to-update should Just Work after this.
-const CACHE_NAME = 'datawatch-v7-0-0-alpha-51';
+// Static fallback name for workers registered WITHOUT a release query
+// string (registrations that predate versioned script URLs). Bumped to the
+// last static bump so those installs still work while versioned installs
+// get their own name per release.
+const STATIC_CACHE_NAME = 'datawatch-v7-0-0-alpha-51';
+
+// The cache name carries the running release: the page registers this
+// worker as /sw.js?v=<app version>, so the worker's own location.search
+// tells it which release it is. Two different releases therefore give two
+// different cache names, and the activate handler below purges the stale
+// one (and force-navigates the controlled windows) when an upgrade lands.
+// Without a version (search absent/empty or unreadable) it falls back to
+// the static name above — a pure function of the search string, exported
+// for node:test.
+function cacheNameFromSearch(search) {
+  try {
+    if (typeof search === 'string' && search.length > 0) {
+      const v = new URLSearchParams(search).get('v');
+      if (v && v.trim()) {
+        // Cache names are opaque strings, but keep them tidy: the version
+        // may carry anything the daemon reports, so whitelist the safe set.
+        const slug = v.trim().replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 64);
+        if (slug) return 'datawatch-' + slug;
+      }
+    }
+  } catch (_) { /* fall through to the static name */ }
+  return STATIC_CACHE_NAME;
+}
+// `self.location` is not present in a bare node:test environment that loads
+// this file (sw.test.js stubs `self`; with a `location.search` it sees the
+// versioned name, without it the static fallback) — so guard the read.
+const CACHE_NAME = cacheNameFromSearch(
+  (typeof self !== 'undefined' && self && self.location && self.location.search) || ''
+);
+
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/automata-triage-model.js', '/style.css', '/manifest.json'];
 
 // GATE: navigate-on-activate guard (pure, testable). Return true only when
@@ -146,5 +180,5 @@ self.addEventListener('notificationclick', event => {
 // `module` is undefined in the service-worker global scope, so this is a
 // no-op in the browser.
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { shouldNavigateOnActivate };
+  module.exports = { shouldNavigateOnActivate, cacheNameFromSearch, STATIC_CACHE_NAME };
 }

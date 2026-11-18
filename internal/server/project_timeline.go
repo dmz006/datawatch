@@ -119,15 +119,20 @@ type projectTimeline struct {
 // timelineInput is everything buildProjectTimeline reads. It holds plain
 // records so the levels and paging can be tested without a running daemon.
 type timelineInput struct {
-	Project     string
-	Dir         string
-	Arcs        []config.ProjectArc
-	PRDs        []*autonomous.PRD
+	Project string
+	Dir     string
+	Arcs    []config.ProjectArc
+	// Entries are the Automaton summary-index entries; every level but the
+	// task rows is built from them alone.
+	Entries     []autonomous.SummaryEntry
 	Automations []*autonomous.Automation
-	Level       string // arcs (default), automata or tasks
-	Parent      string // level=automata: an arc's Automation id, or "none"; empty means all
-	Automaton   string // level=tasks: the Automaton id
-	Focus       string // an arc's Automation id (or "none"); overrides Level
+	// Load returns the full record of one Automaton, for the task rows (the
+	// task text lives only there). Nil, or a nil result, reads as no tasks.
+	Load      func(id string) *autonomous.PRD
+	Level     string // arcs (default), automata or tasks
+	Parent    string // level=automata: an arc's Automation id, or "none"; empty means all
+	Automaton string // level=tasks: the Automaton id
+	Focus     string // an arc's Automation id (or "none"); overrides Level
 	// ReleaseHeld says whether a release plan holds an Automaton. One that no
 	// arc holds but a release plan does is attributed, so it is not unassigned.
 	ReleaseHeld func(automatonID string) bool
@@ -178,7 +183,7 @@ func newProjectMembership(arcs []config.ProjectArc, automations []*autonomous.Au
 
 // place returns the arc id that holds p, or unassigned=true when only the
 // directory matches. ok is false for a template or an Automaton of another project.
-func (m projectMembership) place(p *autonomous.PRD) (arc string, unassigned, ok bool) {
+func (m projectMembership) place(p *autonomous.SummaryEntry) (arc string, unassigned, ok bool) {
 	if p == nil || p.IsTemplate {
 		return "", false, false
 	}
@@ -227,7 +232,7 @@ func (s timelineSpan) done() (first, last *time.Time) {
 	return s.first, last
 }
 
-func timelineAutomatonRunning(p *autonomous.PRD) bool {
+func timelineAutomatonRunning(p *autonomous.SummaryEntry) bool {
 	return p.Status == autonomous.PRDRunning || p.Status == autonomous.PRDActive
 }
 
@@ -258,7 +263,7 @@ func timelineTaskStatus(st autonomous.TaskStatus) string {
 // timelineAutomatonStatus maps an Automaton to a timeline status. A shipped
 // Automaton reads as completed no matter its recorded status, including a
 // cancelled or rejected one; an unshipped Automaton maps its status as-is.
-func timelineAutomatonStatus(p *autonomous.PRD) string {
+func timelineAutomatonStatus(p *autonomous.SummaryEntry) string {
 	if p.IsShipped() || p.MergedInRelease != "" {
 		return tlStatusCompleted
 	}
@@ -291,21 +296,21 @@ func timelineTaskRow(t *autonomous.Task) timelineRow {
 }
 
 // timelineAutomatonSpan is the span of an Automaton: its earliest task start
-// to its latest task completion across all of its Story tasks, or now (end
-// null) while it runs. An Automaton with no started task falls back to its
-// created time to its completion time so the row still draws. The span is
-// never shorter in a way that hides real work: it never ends before it starts.
-func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
+// to its latest task completion across all of its tasks, or now (end null)
+// while it runs. An Automaton with no started task falls back to its created
+// time to its completion time so the row still draws. The span is never
+// shorter in a way that hides real work: it never ends before it starts.
+func timelineAutomatonSpan(p *autonomous.SummaryEntry) timelineSpan {
 	running := timelineAutomatonRunning(p)
 	var s timelineSpan
 	anyStarted := false
-	for _, st := range p.Story {
-		for i := range st.Tasks {
-			t := &st.Tasks[i]
-			s.add(t.StartedAt, t.CompletedAt, timelineTaskRunning(t))
-			if t.StartedAt != nil {
-				anyStarted = true
-			}
+	for i := range p.Tasks {
+		t := &p.Tasks[i]
+		tr := t.StartedAt != nil && t.CompletedAt == nil &&
+			(t.Status == autonomous.TaskInProgress || t.Status == autonomous.TaskVerifying)
+		s.add(t.StartedAt, t.CompletedAt, tr)
+		if t.StartedAt != nil {
+			anyStarted = true
 		}
 	}
 	if anyStarted {
@@ -327,18 +332,10 @@ func timelineAutomatonSpan(p *autonomous.PRD) timelineSpan {
 	return s
 }
 
-func timelineTaskCount(p *autonomous.PRD) int {
-	n := 0
-	for _, st := range p.Story {
-		n += len(st.Tasks)
-	}
-	return n
-}
-
-func timelineAutomatonRow(p *autonomous.PRD) timelineRow {
+func timelineAutomatonRow(p *autonomous.SummaryEntry) timelineRow {
 	sp := timelineAutomatonSpan(p)
 	first, last := sp.done()
-	n := timelineTaskCount(p)
+	n := p.TaskCount
 	return timelineRow{Kind: timelineKindAutomaton, ID: p.ID, Title: p.Title, State: string(p.Status),
 		First: first, Last: last, Running: sp.running,
 		HasChildren: n > 0, ChildrenCount: n,
@@ -346,7 +343,7 @@ func timelineAutomatonRow(p *autonomous.PRD) timelineRow {
 }
 
 // timelineArcStatus derives an arc or group status from its members.
-func timelineArcStatus(state string, members []*autonomous.PRD) string {
+func timelineArcStatus(state string, members []*autonomous.SummaryEntry) string {
 	if len(members) == 0 {
 		if state == config.ArcStateDone {
 			return tlStatusCompleted
@@ -560,7 +557,7 @@ func timelineEdgesAmong(autos []*autonomous.Automation, ids map[string]bool) []t
 }
 
 // sortAutomataByStart orders Automata by created time (unknown last), then id.
-func sortAutomataByStart(ps []*autonomous.PRD) {
+func sortAutomataByStart(ps []*autonomous.SummaryEntry) {
 	sort.SliceStable(ps, func(i, j int) bool {
 		si, sj := ps[i].CreatedAt, ps[j].CreatedAt
 		if si.IsZero() != sj.IsZero() {
@@ -584,9 +581,22 @@ func timelineOrderedTasks(p *autonomous.PRD) []timelineRow {
 	return orderTimelineRows(rows, nil)
 }
 
+// timelineTaskRowsOf opens one Automaton and returns its task rows ordered by
+// depends_on. A missing loader or record gives no rows.
+func timelineTaskRowsOf(load func(string) *autonomous.PRD, id string) []timelineRow {
+	if load == nil {
+		return nil
+	}
+	p := load(id)
+	if p == nil {
+		return nil
+	}
+	return timelineOrderedTasks(p)
+}
+
 // timelineOrderedAutomata returns the rows of list ordered inside the arc, and
 // the chain edges among them drawn from the given Automations.
-func timelineOrderedAutomata(list []*autonomous.PRD, autos []*autonomous.Automation) ([]timelineRow, []timelineEdge) {
+func timelineOrderedAutomata(list []*autonomous.SummaryEntry, autos []*autonomous.Automation) ([]timelineRow, []timelineEdge) {
 	rows := make([]timelineRow, 0, len(list))
 	ids := map[string]bool{}
 	for _, p := range list {
@@ -626,9 +636,10 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 
 	mem := newProjectMembership(in.Arcs, in.Automations, in.Dir)
 	mem.held = in.ReleaseHeld
-	byArc := map[string][]*autonomous.PRD{}
-	var unassigned, all []*autonomous.PRD
-	for _, p := range in.PRDs {
+	byArc := map[string][]*autonomous.SummaryEntry{}
+	var unassigned, all []*autonomous.SummaryEntry
+	for i := range in.Entries {
+		p := &in.Entries[i]
 		arc, un, ok := mem.place(p)
 		if !ok {
 			continue
@@ -652,7 +663,7 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 	case in.Focus != "":
 		out.Level = timelineLevelFocus
 		out.Parent = in.Focus
-		var list []*autonomous.PRD
+		var list []*autonomous.SummaryEntry
 		if in.Focus == timelineNone {
 			list = unassigned
 		} else if mem.arcs[in.Focus] {
@@ -660,15 +671,11 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		} else {
 			return out, &timelineError{http.StatusNotFound, "plan not found"}
 		}
-		byID := map[string]*autonomous.PRD{}
-		for _, p := range list {
-			byID[p.ID] = p
-		}
 		autoRows, edges := timelineOrderedAutomata(list, timelineAutomationsFor(in.Focus, mem.arcs, in.Automations))
 		out.Edges = edges
 		for _, ar := range autoRows {
 			rows = append(rows, ar)
-			rows = append(rows, timelineOrderedTasks(byID[ar.ID])...)
+			rows = append(rows, timelineTaskRowsOf(in.Load, ar.ID)...)
 		}
 		paged = false
 	case level == timelineLevelArcs:
@@ -733,17 +740,17 @@ func buildProjectTimeline(in timelineInput) (projectTimeline, *timelineError) {
 		if in.Automaton == "" {
 			return out, &timelineError{http.StatusBadRequest, "automaton is required for level=tasks"}
 		}
-		var found *autonomous.PRD
+		found := false
 		for _, p := range all {
 			if p.ID == in.Automaton {
-				found = p
+				found = true
 				break
 			}
 		}
-		if found == nil {
+		if !found {
 			return out, &timelineError{http.StatusNotFound, "automaton not found"}
 		}
-		rows = timelineOrderedTasks(found)
+		rows = timelineTaskRowsOf(in.Load, in.Automaton)
 	default:
 		return out, &timelineError{http.StatusBadRequest, "level must be arcs (the plans), automata or tasks"}
 	}
@@ -825,7 +832,8 @@ func (s *Server) handleProjectTimeline(w http.ResponseWriter, r *http.Request) {
 		Project:     name,
 		Dir:         entry.Dir,
 		Arcs:        entry.Arcs,
-		PRDs:        mgr.Store().ListPRDs(),
+		Entries:     mgr.Store().SummaryEntries(),
+		Load:        func(id string) *autonomous.PRD { p, _ := mgr.Store().SnapshotPRD(id); return p },
 		Automations: mgr.ListAutomations(),
 		Level:       level,
 		Parent:      q.Get("parent"),

@@ -562,7 +562,7 @@ const heldMigrateUsage = "usage: autonomous held-migrate [dry_run=true] [id=<id>
 
 // autonomousListUsage is the comm-channel usage line for the narrowable PRD
 // list.
-const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; status matches the displayed status, so an Automaton whose work landed shows as completed)"
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>] [limit=N] [cursor=C]   (summary rows; status matches the displayed status, so an Automaton whose work landed shows as completed; pass a reply's next_cursor as cursor to page)"
 
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
@@ -903,12 +903,15 @@ func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
 // handleAutonomousListVerb serves "autonomous list" with optional filters:
 // shipped=true|false keeps only PRDs with / without shipped state (a
 // non-empty merge commit); status takes comma-separated statuses and may
-// include shipped. No filter = the full list (full=1, the original shape).
+// include shipped; limit=N and cursor=C page the list. The reply is always the
+// summary form — the verb never sends full, so chat never receives whole
+// records. There is no sibling verb for one Automaton's task page ("get <id>"
+// is the per-Automaton read here), so the paged tasks route is deliberately not
+// exposed as a comm verb; REST, MCP (autonomous_prd_tasks) and the CLI carry it.
 // Shipped is status-like and orthogonal: it selects on the record's merge
 // commit and never changes the stored status.
 func (r *Router) handleAutonomousListVerb(args []string) {
 	q := url.Values{}
-	sawFilter := false
 	for _, tok := range args[1:] {
 		i := strings.IndexByte(tok, '=')
 		if i <= 0 {
@@ -924,17 +927,24 @@ func (r *Router) handleAutonomousListVerb(args []string) {
 				return
 			}
 			q.Set("shipped", strings.ToLower(v))
-			sawFilter = true
 		case "status":
 			q.Set("status", v)
-			sawFilter = true
+		case "limit":
+			if n, err := strconv.Atoi(v); err != nil || n < 1 {
+				r.reply("autonomous list failed", autonomousListUsage)
+				return
+			}
+			q.Set("limit", v)
+		case "cursor":
+			if v == "" {
+				r.reply("autonomous list failed", autonomousListUsage)
+				return
+			}
+			q.Set("cursor", v)
 		default:
 			r.reply("autonomous list failed", autonomousListUsage)
 			return
 		}
-	}
-	if !sawFilter {
-		q.Set("full", "1")
 	}
 	out, err := r.commGet("/api/autonomous/prds", q)
 	if err != nil {
@@ -1888,6 +1898,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.handleAutonomousShippedCountsVerb(args)
 	case "shipped-backfill", "shipped_backfill":
 		r.handleAutonomousShippedBackfillVerb(args)
+	case "archive":
+		r.handleAutonomousArchiveVerb(args)
 	case "completed-migrate", "completed_migrate":
 		r.handleAutonomousCompletedMigrateVerb(args)
 	case "hold":

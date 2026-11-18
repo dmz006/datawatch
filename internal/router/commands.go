@@ -486,6 +486,11 @@ type Command struct {
 	HasPriority bool
 	PriorityErr string
 
+	// Model — explicit model for "new: model=<name>: <task>". ModelErr is set
+	// when the model= prefix was given with an empty value.
+	Model    string
+	ModelErr string
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -754,7 +759,7 @@ func Parse(text string) Command {
 		// Recognised keys: llm, compute, chrome, git, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority=", "model="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -769,6 +774,7 @@ func Parse(text string) Command {
 			llmRef, computeRef, parentID := "", "", ""
 			chrome, git, killChildren, killChildrenRecursive := false, false, false, false
 			priority, hasPriority, priorityErr := 0, false, ""
+			model, modelErr := "", ""
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -793,6 +799,11 @@ func Parse(text string) Command {
 						priorityErr = perr.Error()
 					}
 					priority = p
+				case strings.HasPrefix(tok, "model="):
+					model = strings.TrimSpace(strings.TrimPrefix(tok, "model="))
+					if model == "" {
+						modelErr = "model= needs a value (e.g. model=sonnet)"
+					}
 				case tok == "kill_children=true":
 					killChildren = true
 				case tok == "kill_children=false":
@@ -805,7 +816,7 @@ func Parse(text string) Command {
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority) {
+			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority || model != "" || modelErr != "") {
 				return Command{
 					Type:                  CmdNew,
 					Text:                  tail,
@@ -819,6 +830,8 @@ func Parse(text string) Command {
 					Priority:              priority,
 					HasPriority:           hasPriority,
 					PriorityErr:           priorityErr,
+					Model:                 model,
+					ModelErr:              modelErr,
 				}
 			}
 		}

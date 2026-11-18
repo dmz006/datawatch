@@ -128,6 +128,32 @@ def recent(ts, hours=72):
         return False
 
 
+def ts_of(s):
+    """Epoch seconds for an ISO timestamp, or None when absent or unparseable.
+
+    Shared by the backlog ordering (oldest first) and the priority-stall age
+    measure. A missing or unparseable instant is None, which the backlog sort
+    reads as the oldest entry in its priority band."""
+    try:
+        return time.mktime(time.strptime(s[:19], "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return None
+
+
+# Priority-stall knobs, mirroring the daemon-side supervisor watch defaults so
+# the cheap script and the daemon watch agree on what a stalled Automaton is.
+# The daemon reads these from its config; the oracle uses the same defaults.
+PRIORITY_FLOOR = 80
+STALL_THRESHOLD_MIN = 30
+# Waiting set: the Automata that are not finished and not running, awaiting a
+# lane or the operator's attention. Held is the operator's own pause, not a
+# stall, so it is left out (matching the daemon-side check).
+WAITING_STATUSES = ("draft", "planning", "needs_review", "approved", "revisions_asked")
+# The backlog finding names at most this many entries before a "+k more" tail,
+# so a long queue never buries the reason in a wall of ids.
+BACKLOG_CAP = 16
+
+
 def pi_transcript_dir(worktree_path):
     """The pi transcript folder for a worktree path.
 
@@ -299,6 +325,14 @@ def map_finding(text):
     m = re.match(r"^MERGE READY (\S+)", text)
     if m:
         return "automaton_not_merged", m.group(1)
+    m = re.match(r"^PRIORITY STALL (\S+): priority \d+ waiting \d+ min", text)
+    if m:
+        return "priority_stall", m.group(1)
+    if text.startswith("BACKLOG "):
+        # The backlog finding is one consolidated line, not per-Automaton; the
+        # daemon-side watch keys it by the fixed "backlog" label, so the oracle
+        # records the same label rather than an Automaton id.
+        return "backlog", "backlog"
     if text.startswith("TMUX"):
         return "tmux_restart", ""
     if text.startswith("DAEMON"):
@@ -424,23 +458,32 @@ def main(argv=None):
     # Backlog: work that is not finished and is not running. A failed Automaton used to be
     # invisible here (only running and blocked ones were inspected, and a held task was
     # reported once as NEW), so fifteen nearly finished Automata sat failed for a day
-    # (2026-11-12). These counts are reported on every run until the work is shipped.
-    backlog_failed, backlog_blocked, backlog_review = [], [], []
+    # (2026-11-12). The consolidated backlog is one finding listing every
+    # waiting Automaton and every failed or blocked Automaton with work left,
+    # sorted highest priority first and within a priority oldest created first
+    # (a missing creation instant reads as oldest), capped with a "+k more" tail.
+    # The daemon-side supervisor watch raises the single backlog finding with the
+    # same order and cap (kind backlog, subject "backlog").
+    backlog = []             # (priority, created_ts_or_none, entry_text)
+    priority_stalls = []     # (priority, id) — one per stalled waiting Automaton
     for p in prds:
         st = p.get("status")
         tasks = [k for s in p.get("stories", []) for k in s.get("tasks", [])]
         if p["id"] in IGNORE:
             continue
         _left = sum(1 for k in tasks if k.get("status") not in ("completed", "cancelled"))
-        _held = "HOLD" in (p.get("spec") or "")[:200]
-        if st == "failed" and tasks and _left:
-            backlog_failed.append("%s(%d left)" % (p["id"][:8], _left))
-        elif st == "blocked" and tasks and _left:
-            backlog_blocked.append("%s(%d left)" % (p["id"][:8], _left))
-        elif st in ("needs_review", "approved") and tasks:
-            backlog_review.append(p["id"][:8])
-        if st == "draft" and not tasks and not _held:
-            backlog_review.append(p["id"][:8] + "(draft)")
+        _prio = int(p.get("priority") or 0)
+        _bid = p["id"][:8]
+        _created = ts_of(p.get("created_at")) or ts_of(p.get("updated_at"))
+        if st in WAITING_STATUSES or (st in ("failed", "blocked") and _left > 0):
+            _btext = ("%s(%s, %d left)" % (_bid, st, _left)) if _left else ("%s(%s)" % (_bid, st))
+            backlog.append((_prio, _created, _btext))
+        if st in WAITING_STATUSES:
+            _c = ts_of(p.get("created_at"))
+            if _c is not None:
+                _age = int((time.time() - _c) // 60)
+                if _age > STALL_THRESHOLD_MIN and _prio >= PRIORITY_FLOOR:
+                    priority_stalls.append((_prio, _age, _bid))
         if st in ("needs_review", "approved", "draft") and recent(p.get("updated_at")) and (tasks or st == "draft"):
             queued_runnable += 1
         if st not in ("running", "blocked"):
@@ -492,12 +535,14 @@ def main(argv=None):
                 if age is not None and age > SILENT_MIN * 60:
                     findings.append("SILENT %s: no activity for %d min while %s is running (newest measure: %s); %s" % (p["id"], age // 60, live[0]["id"], measure, liveness(p["id"])))
 
-    if backlog_failed:
-        findings.append("BACKLOG %d failed Automata with work left, repair and reset them: %s" % (len(backlog_failed), " ".join(backlog_failed[:16])))
-    if backlog_blocked:
-        findings.append("BACKLOG %d blocked Automata with work left: %s" % (len(backlog_blocked), " ".join(backlog_blocked[:16])))
-    if backlog_review:
-        findings.append("BACKLOG %d Automata waiting for review, approval or planning: %s" % (len(backlog_review), " ".join(backlog_review[:16])))
+    if backlog:
+        backlog.sort(key=lambda x: (-x[0], x[1] if x[1] is not None else 0, x[2]))
+        _shown = [e[2] for e in backlog[:BACKLOG_CAP]]
+        if len(backlog) > BACKLOG_CAP:
+            _shown.append("+%d more" % (len(backlog) - BACKLOG_CAP))
+        findings.append("BACKLOG %d Automata (highest priority first, then oldest): %s" % (len(backlog), " ".join(_shown)))
+    for _prio, _age, _bid in sorted(priority_stalls, key=lambda x: (-x[0], x[1])):
+        findings.append("PRIORITY STALL %s: priority %d waiting %d min (stall threshold %d min, floor %d)" % (_bid, _prio, _age, STALL_THRESHOLD_MIN, PRIORITY_FLOOR))
 
     # capacity and lanes
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}

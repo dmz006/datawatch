@@ -1415,6 +1415,9 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
+	// archiveSettings reads the autonomous.archive settings (manager_archive.go).
+	// Guarded by mu.
+	archiveSettings func() (enabled bool, retentionDays int)
 	// taskRoutingBackendKnown reports whether an LLM backend is known to the
 	// registry; nil skips the check (SetTaskRoutingBackendCheck).
 	taskRoutingBackendKnown func(backend string) bool
@@ -7426,6 +7429,7 @@ func (m *Manager) Start(parent context.Context) {
 	}
 	m.ctx, m.cancel = context.WithCancel(parent)
 	go m.run(m.ctx)
+	m.startArchivePass(m.ctx)
 	if r := m.progressSnaps; r != nil {
 		go r.Run(m.ctx)
 	}

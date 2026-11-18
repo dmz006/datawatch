@@ -129,7 +129,8 @@ func (s *Server) automatonPoints() map[string]float64 {
 		return c.data
 	}
 	now := time.Now()
-	c.data = s.costRollupPoints(mgr, now, rollupMaxWindowDays)
+	revision := mgr.Store().Revision() // read before the entries
+	c.data = s.rollupPoints(mgr, mgr.Store().SummaryEntries(), revision, now, rollupMaxWindowDays)
 	c.at = now
 	return c.data
 }

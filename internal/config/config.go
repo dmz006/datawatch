@@ -4083,6 +4083,11 @@ type AutonomousConfig struct {
 	// See AutonomousProgressConfig.
 	Progress AutonomousProgressConfig `yaml:"progress" json:"progress"`
 
+	// Archive — the finished-Automaton archive: how old a completed, shipped
+	// or cancelled Automaton must be before it is archived, and whether the
+	// daemon may archive on its own. See AutonomousArchiveConfig.
+	Archive AutonomousArchiveConfig `yaml:"archive" json:"archive"`
+
 	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
 	// over the freshly decomposed plan, run at the end of Decompose and
 	// re-runnable via Manager.ReviewPlan. Internal wiring: see the
@@ -5600,6 +5605,43 @@ func (c AutonomousProgressConfig) validate() error {
 	return ValidateProgressSince(c.Since)
 }
 
+// autonomous.archive defaults. A zero RetentionDays means "use the default".
+const DefaultArchiveRetentionDays = 30
+
+// AutonomousArchiveConfig — autonomous.archive sub-config for the
+// finished-Automaton archive. RetentionDays is how many days old a completed,
+// shipped or cancelled Automaton must be before it is archived (0 = 30).
+// Enabled is a pointer so an explicit false survives a round trip: unset or
+// true lets the daemon archive on its own; false means only the explicit
+// migration command archives.
+type AutonomousArchiveConfig struct {
+	Enabled       *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	RetentionDays int   `yaml:"retention_days" json:"retention_days"`
+}
+
+// EffectiveRetentionDays returns the archive retention in effect: 0 (or less)
+// means 30 days.
+func (c AutonomousArchiveConfig) EffectiveRetentionDays() int {
+	if c.RetentionDays <= 0 {
+		return DefaultArchiveRetentionDays
+	}
+	return c.RetentionDays
+}
+
+// EffectiveEnabled reports whether the daemon may archive on its own: unset
+// means true.
+func (c AutonomousArchiveConfig) EffectiveEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
+// validate checks every autonomous.archive value on the load paths.
+func (c AutonomousArchiveConfig) validate() error {
+	if c.RetentionDays < 0 {
+		return fmt.Errorf("autonomous.archive.retention_days: %d must be >= 0 (0 = %d)", c.RetentionDays, DefaultArchiveRetentionDays)
+	}
+	return nil
+}
+
 // intPtr is the tiny pointer helper for pointer-to-int config fields.
 func intPtr(v int) *int { return &v }
 
@@ -5888,6 +5930,19 @@ const (
 	// many minutes before the watch records a silence finding.
 	DefaultSupervisorWatchSilentMinutes = 60
 
+	// DefaultSupervisorWatchStallThresholdMinutes — the supervisor
+	// watch stall_threshold_minutes default: an Automaton may make no
+	// progress this many minutes before the watch records a stall
+	// finding for it. 30 minutes matches the shared automation triage
+	// alert default, one number in both places.
+	DefaultSupervisorWatchStallThresholdMinutes = 30
+
+	// DefaultSupervisorWatchPriorityFloor — the supervisor watch
+	// priority_floor default: the watch acts on queueing Automata at
+	// this priority or above. 80 is the high-priority band where a
+	// stuck or stalled Automaton actually blocks work.
+	DefaultSupervisorWatchPriorityFloor = 80
+
 	// DefaultSupervisorWatchPollSeconds — the supervisor watch
 	// poll_seconds default: the configured coordinator poll interval
 	// (whole seconds) the script-record staleness window is measured
@@ -5932,13 +5987,15 @@ const (
 // of the main checkout; empty disables the dirty main-checkout finding
 // altogether.
 type SupervisorWatchConfig struct {
-	Mode                string `yaml:"mode" json:"mode"`
-	AlertMinutes        *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
-	SilentMinutes       *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
-	PollSeconds         int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
-	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
-	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
-	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
+	Mode                  string `yaml:"mode" json:"mode"`
+	AlertMinutes          *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
+	SilentMinutes         *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+	StallThresholdMinutes *int   `yaml:"stall_threshold_minutes,omitempty" json:"stall_threshold_minutes,omitempty"`
+	PriorityFloor         *int   `yaml:"priority_floor,omitempty" json:"priority_floor,omitempty"`
+	PollSeconds           int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
+	ScriptOutputPath      string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
+	TmuxRestartBaseline   string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
+	MainCheckout          string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
 
 	// WorkingModel is the model the watch expects to be resident on every
 	// registered compute node. Empty (unset) turns the model_not_resident
@@ -5983,6 +6040,31 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 		return DefaultSupervisorWatchSilentMinutes
 	}
 	return *c.SilentMinutes
+}
+
+// EffectiveStallThresholdMinutes returns the supervisor watch stall
+// window in effect: an unset (nil) value reads
+// DefaultSupervisorWatchStallThresholdMinutes (30), and an explicit 0
+// keeps the window at zero. Negative values are rejected on the write
+// paths, so this never has to guess for them. This accessor is the only
+// place the 30-minute default is applied.
+func (c SupervisorWatchConfig) EffectiveStallThresholdMinutes() int {
+	if c.StallThresholdMinutes == nil {
+		return DefaultSupervisorWatchStallThresholdMinutes
+	}
+	return *c.StallThresholdMinutes
+}
+
+// EffectivePriorityFloor returns the supervisor watch priority floor in
+// effect: an unset (nil) value reads DefaultSupervisorWatchPriorityFloor
+// (80), and an explicit 0 keeps the floor at zero (no floor). Negative
+// values are rejected on the write paths, so this never has to guess for
+// them. This accessor is the only place the 80 default is applied.
+func (c SupervisorWatchConfig) EffectivePriorityFloor() int {
+	if c.PriorityFloor == nil {
+		return DefaultSupervisorWatchPriorityFloor
+	}
+	return *c.PriorityFloor
 }
 
 // EffectivePollSeconds returns the configured coordinator poll interval
@@ -6041,6 +6123,16 @@ func validateSupervisorWatch(c SupervisorWatchConfig) error {
 	}
 	if c.SilentMinutes != nil {
 		if err := validateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
+			return err
+		}
+	}
+	if c.StallThresholdMinutes != nil {
+		if err := validateSupervisorWatchMinutes("stall_threshold_minutes", *c.StallThresholdMinutes); err != nil {
+			return err
+		}
+	}
+	if c.PriorityFloor != nil {
+		if err := validateSupervisorWatchMinutes("priority_floor", *c.PriorityFloor); err != nil {
 			return err
 		}
 	}
@@ -8880,6 +8972,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Archive.validate(); err != nil {
 		return err
 	}
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {

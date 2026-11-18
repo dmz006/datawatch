@@ -2621,13 +2621,18 @@ the operator view and the "Supervisor watch" section of `docs/operations.md`.
   `config set`, comm `configure`, the PWA Settings fields). The type is
   `autonomous.SupervisorWatchConfig` (`internal/autonomous/supervisor_watch_config.go`),
   mirrored by `config.SupervisorWatchConfig` in `internal/config/config.go`.
-  Eight keys: `mode` (off, shadow or on, case-insensitive; an unset or empty
+  Ten keys: `mode` (off, shadow or on, case-insensitive; an unset or empty
   mode reads shadow through the `EffectiveMode()` accessor, the one place the
   default is applied; any other value is refused on every write path),
   `alert_minutes` (a pointer on purpose: unset reads the shared 30-minute
   triage default, an explicit 0 turns the alert off and survives a merge round
   trip, negative refused), `silent_minutes` (a pointer: unset reads 60, an
-  explicit 0 is legal, negative refused), `poll_seconds` (unset or 0 reads 60,
+  explicit 0 is legal, negative refused), `stall_threshold_minutes` (unset
+  reads 30, an explicit 0 is legal, negative refused; the waiting age must be
+  strictly past the threshold for a `priority_stall` finding),
+  `priority_floor` (unset reads 80 — the high band boundary — an explicit 0 is
+  legal, negative refused; only queued Automata at or above it are named by
+  `priority_stall`), `poll_seconds` (unset or 0 reads 60,
   an explicit value below 60 refused), `script_output_path` (the file the
   script writes with `--record`; empty means no comparison),
   `tmux_restart_baseline` (empty means `tmux_restart` reports nothing),
@@ -2639,8 +2644,11 @@ the operator view and the "Supervisor watch" section of `docs/operations.md`.
   interface (`supervisor_watch_host.go` — the real adapters shell out to
   systemctl, git and the node model report; every probe error reads as
   unknown and raises nothing), the work checks over the Automaton list, the
-  lane fill status and the repo CI watch records (`supervisor_watch_work.go`),
-  and the worktree checks over a filesystem probe
+  lane fill status and the repo CI watch records (`supervisor_watch_work.go`,
+  which also holds the queue checks: `priority_stall` per waiting Automaton at
+  or above `priority_floor` waiting past `stall_threshold_minutes`, and one
+  `backlog` finding over the whole waiting queue, highest priority first then
+  oldest, capped at sixteen named with a `+k more` tail) and the worktree checks over a filesystem probe
   (`supervisor_watch_worktree.go`). Findings are keyed by kind plus subject in
   `supervisor_watch_record.go` (`<data-dir>/autonomous/supervisor_watch.jsonl`);
   a finding whose check stops reporting it is resolved, and re-opened in place
@@ -2662,14 +2670,19 @@ the operator view and the "Supervisor watch" section of `docs/operations.md`.
   `supervisor_watch_list` (`internal/mcp/supervisor_watch_tools.go`), the CLI
   `datawatch autonomous supervisor-watch`, the comm verb
   `autonomous supervisor-watch` (`internal/router/supervisor_watch_comm.go`;
-  the CLI and the verb share `autonomous.RenderSupervisorWatch`), the PWA card
-  on the Automation view and the eight settings fields. The federation
+  the CLI and the verb share `autonomous.RenderSupervisorWatch`, which prints
+  one line per prioritization band that waits something), the PWA card
+  on the Automation view and the ten settings fields. The federation
   capability `autonomous:read` covers the reads.
 - **Monitoring:** `GET /api/autonomous/supervisor-watch/stats` (the
-  `SupervisorWatchStats` numbers, derived by `SupervisorWatchStatus.Stats`),
+  `SupervisorWatchStats` numbers, derived by `SupervisorWatchStatus.Stats`,
+  including `priority_bands` — the per-band wait stats of
+  `SupervisorWatchStatus`, the fixed `high` / `medium` / `low` bands over the
+  same waiting set the checks use: each band's waiting count, oldest wait and
+  stalled count, empty when nothing waits),
   the MCP tool `supervisor_watch_stats`, the `supervisor_watch_*` fields of
-  `SystemStats` filled in `SetAutonomousStatsFunc`, the Monitor card in
-  `renderStatsData()` and the Prometheus gauges
+  `SystemStats` filled in `SetAutonomousStatsFunc` (including
+  `SupervisorWatchPriorityBands`), the Monitor card in `renderStatsData()` and the Prometheus gauges
   `datawatch_supervisor_watch_findings{state}`,
   `datawatch_supervisor_watch_agreed_days` and
   `datawatch_supervisor_watch_last_poll_age_seconds`.

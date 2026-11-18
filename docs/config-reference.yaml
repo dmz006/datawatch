@@ -1894,11 +1894,17 @@ autonomous:
       mode: shadow
     # Supervisor watch: the daemon-side version of the supervisor script
     # (scripts/supervisor-watch.py). On each coordinator poll, with no model
-    # call, it runs the script's checks and keeps one finding per kind and
-    # subject: tmux_restart, daemon_inactive, model_not_resident, task_failed,
+    # call, it runs sixteen checks and keeps one finding per kind and subject:
+    # tmux_restart, daemon_inactive, model_not_resident, task_failed,
     # task_review_needed, automaton_not_merged, idle_lane_eligible_work,
     # worktree_no_gomod, worktree_not_registered, worktree_silent,
-    # verify_script_not_executable, main_checkout_dirty, ci_red and ci_stuck.
+    # verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck,
+    # priority_stall (a queued Automaton at or above the priority floor waiting
+    # past the stall threshold) and backlog (one finding named after the whole
+    # waiting queue). The read surfaces also carry per-band wait stats: the
+    # waiting Automata grouped into the fixed bands high (80 or more), medium
+    # (50 through 79) and low (below 50), with the band's waiting count, oldest
+    # wait and how many of its waiters satisfy the priority-stall rule.
     # It is report-only in every mode: it never merges, starts, holds, cancels
     # or retries an Automaton and never restarts a service. A finding about one
     # Automaton is also noted on that Automaton's triage record the first time
@@ -1934,6 +1940,16 @@ autonomous:
     #   changed in its worktree, no worker transcript written) before
     #   worktree_silent. An explicit 0 is legal; unset reads the 60-minute
     #   default. A negative value is refused on the write paths.
+    # stall_threshold_minutes: whole minutes >= 0. How long a queued Automaton
+    #   at or above priority_floor may wait before priority_stall names it (the
+    #   age must be strictly past the threshold). An explicit 0 is legal (named
+    #   as soon as the waiting age is positive); unset reads the 30-minute
+    #   default. A negative value is refused on the write paths.
+    # priority_floor: whole number >= 0. The priority at or above which a
+    #   queued Automaton is high enough for priority_stall; below it the queue
+    #   is reported by backlog, not by stall. An explicit 0 is legal (every
+    #   queued Automaton is at or above it); unset reads the 80 default (the
+    #   high band boundary). A negative value is refused on the write paths.
     # poll_seconds: whole seconds. The poll interval the script record's
     #   freshness is judged against: a record older than three times this value
     #   is "script output unavailable" and no comparison is recorded for that
@@ -1963,7 +1979,7 @@ autonomous:
     # section of docs/operations.md and the "Supervisor watch" entry in
     # docs/datawatch-definitions.md. Read surfaces (all read-only): GET
     # /api/autonomous/supervisor-watch (body: mode, last_poll_at, findings[],
-    # comparison), the supervisor_watch_list MCP tool, `datawatch autonomous
+    # comparison, priority_bands), the supervisor_watch_list MCP tool, `datawatch autonomous
     # supervisor-watch`, the comm `supervisor-watch` verb, and the Supervisor
     # watch card in the Automation view (hidden when the endpoint is
     # unavailable, so never a stale state).
@@ -1971,6 +1987,8 @@ autonomous:
       mode: shadow
       alert_minutes: 30
       silent_minutes: 60
+      stall_threshold_minutes: 30
+      priority_floor: 80
       poll_seconds: 60
       script_output_path: ""
       tmux_restart_baseline: ""
@@ -2558,6 +2576,22 @@ autonomous:
     backlog_path: docs/plans/README.md
     since: ""
     snapshot_retention_days: 0
+
+  # Finished-Automaton archive. Settable on every channel: PUT /api/config
+  # {"autonomous.archive.<name>": <value>}, CLI `datawatch config set
+  # autonomous.archive.<name> <value>`, MCP `config_set` (or the
+  # archive_retention_days / archive_enabled arguments of
+  # autonomous_config_set), chat `configure autonomous.archive.<name>=<value>`,
+  # and Settings -> General -> Autonomous. A bad value is rejected and nothing
+  # is written.
+  # retention_days: whole number >= 0. How many days old a completed, shipped
+  #   or cancelled Automaton must be before it is archived. 0 (the default)
+  #   means 30; a negative number is rejected.
+  # enabled: true or false. true (the default) lets the daemon archive on its
+  #   own; false means only the explicit migration command archives.
+  archive:
+    retention_days: 0
+    enabled: true
 
   # Tag browser for the Automata list: the attention view and the tag tree.
   # Every key below is settable on every configuration channel: PUT /api/config {"autonomous.tags.<name>": <value>}
@@ -5258,6 +5292,29 @@ usage:
       final_gate: low
     # Most retries of one task on Claude. 0 to 20, default 2.
     retry_limit_claude: 2
+    # The pace_line policy for the weekly and the window usage, beside the
+    # ladder. mode: off never fires; shadow (the default — an unset mode
+    # reads shadow; shadow first, then on) computes and records the decision
+    # without touching anything; on backs the claude-code backend off until
+    # the estimate is back inside the line and the window. As of this change
+    # the settings are in place on every surface and the guard's own behavior
+    # is unchanged until the pace_line policy runs.
+    mode: shadow
+    # How many points the week reading may run over the pace line and still
+    # be ok. Whole number 0 to 10, default 2.
+    week_tolerance: 2
+    # One point of ledger burn counts as this many points of the weekly
+    # allowance. 1 to 10, default 1.3.
+    points_to_week_factor: 1.3
+    # One point burned is this percent of the current window. 1 to 25,
+    # default 4. The window anchors (windows ending at 02:00, 07:00 and
+    # 12:00, then every 5 hours) are fixed behavior, not a setting.
+    window_percent_per_point: 4
+    # A window is over at this percent used. 50 to 95, default 85.
+    window_stop_percent: 85
+    # A reading older than this is stale and the guard asks for a fresh one.
+    # Whole number 1 to 1440, default 60.
+    reading_freshness_minutes: 60
   # Billing profiles: per-provider pricing model. Open map keyed by provider
   # (claude-code, openai, gemini, or any other operator-chosen key). A
   # provider with no profile reads the assumed default (api_metered, unit

@@ -1066,6 +1066,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -13920,7 +13922,7 @@ components:
         `last_poll_at` is the coordinator's last poll instant (the zero time
         when it never has); `mode` is the watch mode in effect (an unset mode
         reads shadow — reports only, never acts).
-      required: [mode, last_poll_at, findings, comparison]
+      required: [mode, last_poll_at, findings, comparison, priority_bands]
       properties:
         mode:
           type: string
@@ -13935,6 +13937,10 @@ components:
           description: The stored findings, open first, most recently seen first; empty when none are stored
           items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
         comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+        priority_bands:
+          type: array
+          description: The per-band wait stats, bands in high, medium, low order, one row per band that waits at least one Automaton; empty when no band waits anything
+          items: {$ref: "#/components/schemas/SupervisorWatchPriorityBand"}
     SupervisorLoopStats:
       type: object
       description: The supervisor loop as numbers, as GET /api/supervisor-loop/stats returns it.
@@ -13955,7 +13961,7 @@ components:
       description: >-
         The supervisor watch as numbers, as GET /api/autonomous/supervisor-watch/stats
         returns it.
-      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days]
+      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days, priority_bands]
       properties:
         mode:
           type: string
@@ -13971,6 +13977,28 @@ components:
         findings_alerted: {type: integer, description: Open findings an alert was raised for}
         findings_resolved: {type: integer, description: Stored findings whose check stopped reporting them}
         agreed_days: {type: integer, description: Calendar days whose comparisons with the supervisor script all agreed}
+        priority_bands:
+          type: array
+          description: The per-band wait stats the list view carries, bands in high, medium, low order, one row per band that waits at least one Automaton; empty when no band waits anything
+          items: {$ref: "#/components/schemas/SupervisorWatchPriorityBand"}
+    SupervisorWatchPriorityBand:
+      type: object
+      description: >-
+        One band of the supervisor watch's per-band wait stats: the Automata
+        currently in one of the watch's waiting statuses whose priority falls
+        in the band's range (high is 80 or more, medium 50 through 79, low
+        below 50), with the band's oldest wait in whole minutes and how many
+        of the band's waiters also satisfy the watch's priority-stall rule
+        (priority at or above the watch's priority floor, waited past its stall
+        threshold).
+      required: [band, priority_from, priority_to, waiting, oldest_waiting_minutes, stalled]
+      properties:
+        band: {type: string, enum: [high, medium, low], description: The band; high is 80 or more, medium 50 through 79, low below 50}
+        priority_from: {type: integer, description: The band's lowest priority (inclusive)}
+        priority_to: {type: integer, description: The band's highest priority (inclusive)}
+        waiting: {type: integer, description: How many of the band's Automata are in one of the watch's waiting statuses; the band is left out of the list when this is zero}
+        oldest_waiting_minutes: {type: integer, description: The band's oldest wait in whole minutes; 0 when the band waits nothing}
+        stalled: {type: integer, description: How many of the band's waiters also satisfy the watch's priority-stall rule}
     SupervisorWatchFinding:
       type: object
       description: >-

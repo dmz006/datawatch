@@ -660,6 +660,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousConfigGet(), tracked(s.handleAutonomousConfigGet))
 	mcpSrv.AddTool(s.toolAutonomousConfigSet(), tracked(s.handleAutonomousConfigSet))
 	mcpSrv.AddTool(s.toolAutonomousPRDList(), tracked(s.handleAutonomousPRDList))
+	mcpSrv.AddTool(s.toolAutonomousPRDTasks(), tracked(s.handleAutonomousPRDTasks))
+	mcpSrv.AddTool(s.toolAutonomousPRDArchive(), tracked(s.handleAutonomousPRDArchive))
+	mcpSrv.AddTool(s.toolAutonomousArchive(), tracked(s.handleAutonomousArchive))
 	mcpSrv.AddTool(s.toolAutonomousPRDCreate(), tracked(s.handleAutonomousPRDCreate))
 	mcpSrv.AddTool(s.toolAutonomousPRDGet(), tracked(s.handleAutonomousPRDGet))
 	mcpSrv.AddTool(s.toolAutonomousPRDDecompose(), tracked(s.handleAutonomousPRDDecompose))
@@ -2015,6 +2018,15 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("permission_mode",
 			mcpsdk.Description("claude-code permission mode: default | plan | acceptEdits | auto | bypassPermissions | dontAsk. Omit to use config default."),
 		),
+		mcpsdk.WithString("model",
+			mcpsdk.Description("Model for this claude-code session (alias like sonnet or full name). Omit to use the LLM row's model or the daemon default"),
+		),
+		mcpsdk.WithString("effort",
+			mcpsdk.Description("Session effort: quick|normal|thorough. Omit for the default"),
+		),
+		mcpsdk.WithString("name",
+			mcpsdk.Description("Human-readable session name (used by send_input name resolution)"),
+		),
 		mcpsdk.WithString("caller_session_id",
 			mcpsdk.Description("BL347 — FullID (hostname-hex) of the calling session to record as the parent. Pass your own $CLAUDE_SESSION_ID environment variable to establish lineage. Omit for root sessions."),
 		),
@@ -2564,6 +2576,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	computeRef := req.GetString("compute_node", "")
 	chrome := req.GetBool("chrome", false)
 	pm := req.GetString("permission_mode", "")
+	model := strings.TrimSpace(req.GetString("model", ""))
+	effort := strings.TrimSpace(req.GetString("effort", ""))
+	sessName := strings.TrimSpace(req.GetString("name", ""))
 	callerID := req.GetString("caller_session_id", "")
 	killChildren := req.GetBool("kill_children", false)
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
@@ -2591,8 +2606,17 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "" || profileName != "") && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority || launchRole != "" || profileName != "" || model != "" || effort != "" || sessName != "") && s.webPort > 0 {
 		body := map[string]any{"task": task}
+		if model != "" {
+			body["model"] = model
+		}
+		if effort != "" {
+			body["effort"] = effort
+		}
+		if sessName != "" {
+			body["name"] = sessName
+		}
 		if llmRef != "" {
 			body["llm"] = llmRef
 		}
@@ -2672,6 +2696,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		ParentID:       callerID,
 		KillChildren:   killChildren,
 		Priority:       priority,
+		Name:           sessName,
+		Model:          model,
+		Effort:         effort,
 	}
 	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {

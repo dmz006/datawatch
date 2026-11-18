@@ -34,8 +34,8 @@ func TestTimelineRowStatusStartEndRelease(t *testing.T) {
 	done.MergedInRelease = "v1.2.3"
 	live := tlPRD("l", autonomous.PRDRunning, -5, -1, "/x", tlTask("k", autonomous.TaskInProgress, tlTime(-4), nil))
 	out := tlBuild(t, timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        []*autonomous.PRD{done, live},
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf([]*autonomous.PRD{done, live}), Load: loaderOf([]*autonomous.PRD{done, live}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "d", "l")},
 		Level:       "automata", Parent: "arc1",
 	})
@@ -48,7 +48,7 @@ func TestTimelineRowStatusStartEndRelease(t *testing.T) {
 	if l.Status != "running" || l.End != nil || l.Start == nil {
 		t.Errorf("live row = %+v", l)
 	}
-	arc := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, PRDs: []*autonomous.PRD{done, live},
+	arc := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, Entries: summaryOf([]*autonomous.PRD{done, live}), Load: loaderOf([]*autonomous.PRD{done, live}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "d", "l")}}).Rows[0]
 	if arc.Status != "running" || arc.End != nil || !arc.Start.Equal(*tlTime(-20)) {
 		t.Errorf("arc row = %+v", arc)
@@ -60,7 +60,7 @@ func TestTimelineTaskDependsOnAndOrder(t *testing.T) {
 	a := tlTask("a", autonomous.TaskCompleted, tlTime(-7), tlTime(-6))
 	b.DependsOn = []string{"a"}
 	p := tlPRD("p", autonomous.PRDCompleted, -10, -5, "/x", b, a)
-	out := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, PRDs: []*autonomous.PRD{p},
+	out := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "p")}, Level: "tasks", Automaton: "p"})
 	if got := tlIDs(out.Rows); !tlEq(got, []string{"a", "b"}) {
 		t.Errorf("order = %v, want dependency a above b", got)
@@ -132,7 +132,7 @@ func TestTimelineFocusEdgesAndOrder(t *testing.T) {
 	p2 := tlPRD("p2", autonomous.PRDCompleted, -20, -25, "/x")
 	arc := &autonomous.Automation{ID: "arc1", Name: "arc", Members: []autonomous.AutomationMember{
 		{ID: "m1", PRDID: "p1", OnComplete: "m2"}, {ID: "m2", PRDID: "p2"}}}
-	out := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, PRDs: []*autonomous.PRD{p1, p2},
+	out := tlBuild(t, timelineInput{Arcs: []config.ProjectArc{{AutomationID: "arc1"}}, Entries: summaryOf([]*autonomous.PRD{p1, p2}), Load: loaderOf([]*autonomous.PRD{p1, p2}),
 		Automations: []*autonomous.Automation{arc}, Focus: "arc1"})
 	if len(out.Edges) != 1 || out.Edges[0] != (timelineEdge{From: "p1", To: "p2", Kind: "chain"}) {
 		t.Fatalf("edges = %+v", out.Edges)
