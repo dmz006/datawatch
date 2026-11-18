@@ -244,6 +244,12 @@ func classifyConflicts(cls Classifier, paths []string) []Conflict {
 	return out
 }
 
+// GateStatusCountsAsPass reports whether a gate status is a pass: a plain pass
+// or a load_sensitive gate, which passed when rerun alone.
+func GateStatusCountsAsPass(status string) bool {
+	return status == string(GatePass) || status == string(GateLoadSensitive)
+}
+
 // toGates converts gate results into the plan's gate records.
 func toGates(results []GateResult) []Gate {
 	out := make([]Gate, 0, len(results))
@@ -361,6 +367,11 @@ func gateDetail(r GateResult) string {
 	detail := r.Detail
 	if r.Name == "test" && r.Status == GateFail {
 		detail = joinDetail(detail, failingTestsDetail(r.Output))
+	}
+	if r.Status == GateLoadSensitive {
+		if names, _ := ParseGoTestFailures(r.Output); len(names) > 0 {
+			detail = joinDetail(detail, "flaky tests: "+strings.Join(names, ", ")+" passed when rerun alone")
+		}
 	}
 	if r.Status != GateLoadSensitive || r.Finding == "" {
 		return detail
