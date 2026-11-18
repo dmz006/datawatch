@@ -8,6 +8,9 @@
 #    scripts/perf-measure-tabs.mjs on a throttled slow-4G profile and fails if a
 #    tab's time to first content exceeds PERF_TAB_BUDGET_MS (default 3000).
 #
+# 3. Runs scripts/perf-rollup-check.sh (roll-up and Automata list at 700
+#    Automata, plus the summary index memory bound), so one command runs both.
+#
 # Exits non-zero on any failure.
 set -u
 
@@ -20,6 +23,9 @@ fail=0
 
 echo "== Go budget test =="
 "$GO" test ./internal/server/ -run 'TestPerfBudget' -count=1 || fail=1
+
+echo "== Roll-up and Automata list at 700 Automata =="
+bash scripts/perf-rollup-check.sh || fail=1
 
 if [ -n "${TEST_HTTP:-}" ] && [ -n "${TEST_TOKEN:-}" ]; then
   if NODE=$(command -v node); then

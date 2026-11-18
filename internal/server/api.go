@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.25"
+var Version = "9.182.27"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -585,6 +585,8 @@ type Server struct {
 	// progressNow is the clock the progress routes read; nil means time.Now.
 	// Tests set it to a fixed time.
 	progressNow func() time.Time
+	// rollup holds the project roll-up cache, points memo and merge proof cache.
+	rollup rollupState
 	// timelineNow is the clock the timeline route reads; nil means time.Now.
 	// Tests set it to a fixed time.
 	timelineNow func() time.Time
@@ -5588,6 +5590,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			opts.PermissionMode = cl.PermissionMode
 		}
 	}
+	// Direct claude-code model chain: body model, then the resolved LLM row's
+	// model, then the daemon's global autonomous planning/execution pair.
+	// All empty leaves opts.Model empty so the manager refuses the launch.
+	if opts.Model == "" {
+		opts.Model = s.directClaudeModel(resolvedLLMRef, opts.Backend)
+	}
 	// Wire LLM registry session-backend settings into opts so the session
 	// manager uses per-named-LLM values instead of global cfg defaults.
 	if s.inferenceReg != nil {
@@ -7076,6 +7084,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"since":                   s.cfg.Autonomous.Progress.Since,
 				"snapshot_retention_days": s.cfg.Autonomous.Progress.SnapshotRetentionDays,
 			},
+			"archive": map[string]interface{}{
+				"enabled":        s.cfg.Autonomous.Archive.EffectiveEnabled(),
+				"retention_days": s.cfg.Autonomous.Archive.RetentionDays,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -7755,6 +7767,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
 	if verr := validateProgressPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Archive settings: checked before anything is applied.
+	if verr := validateArchivePatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -10404,6 +10421,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, err := parseProgressWhole("autonomous.progress.snapshot_retention_days", v); err == nil {
 				cfg.Autonomous.Progress.SnapshotRetentionDays = n
 			}
+		case "autonomous.archive.retention_days":
+			// Validated in handlePutConfig; 0 = the default of 30 days.
+			if n, err := parseProgressWhole("autonomous.archive.retention_days", v); err == nil {
+				cfg.Autonomous.Archive.RetentionDays = n
+			}
+		case "autonomous.archive.enabled":
+			if b, err := parseArchiveEnabled(v); err == nil {
+				cfg.Autonomous.Archive.Enabled = &b
+			}
 		case "pin_check_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -11828,6 +11854,39 @@ func parseProgressGapHours(v interface{}) (float64, error) {
 		return 0, errors.New(msg)
 	}
 	return f, nil
+}
+
+// parseArchiveEnabled reads autonomous.archive.enabled from a JSON bool or
+// the text true/false (the CLI and chat channel send strings).
+func parseArchiveEnabled(v interface{}) (bool, error) {
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "on", "yes":
+			return true, nil
+		case "false", "off", "no":
+			return false, nil
+		}
+	}
+	return false, errors.New("autonomous.archive.enabled: must be true or false")
+}
+
+// validateArchivePatch checks every autonomous.archive.* key present in a PUT
+// /api/config body and returns the first problem.
+func validateArchivePatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.archive.retention_days"]; ok {
+		if _, err := parseProgressWhole("autonomous.archive.retention_days", v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.archive.enabled"]; ok {
+		if _, err := parseArchiveEnabled(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateProgressPatch checks every autonomous.progress.* key present in a
@@ -16152,4 +16211,44 @@ func planRecordsSurface(p config.AutonomousPlanRecordsConfig) map[string]interfa
 		"write_through":          p.EffectiveWriteThrough(),
 		"import_conflict_policy": p.EffectiveImportConflictPolicy(),
 	}
+}
+
+// directClaudeModel resolves a model for a direct (interactive) claude-code
+// start that named none: the LLM row's model (Model, else the first non-empty
+// Models entry), then the daemon's global autonomous planning model when its
+// backend is claude-code. It returns "" for any other kind or when every
+// layer is empty, so the manager's refusal still fires.
+func (s *Server) directClaudeModel(llmRef, backend string) string {
+	name := llmRef
+	if name == "" {
+		name = backend
+	}
+	var entry *inference.LLM
+	if s.inferenceReg != nil && name != "" {
+		if e, err := s.inferenceReg.Get(name); err == nil {
+			entry = e
+		}
+	}
+	isClaudeCode := backend == string(inference.KindClaudeCode) ||
+		(entry != nil && entry.Kind == inference.KindClaudeCode)
+	if !isClaudeCode {
+		return ""
+	}
+	if entry != nil && entry.Kind == inference.KindClaudeCode {
+		if entry.Model != "" {
+			return entry.Model
+		}
+		for _, m := range entry.Models {
+			if m.Model != "" {
+				return m.Model
+			}
+		}
+	}
+	if s.cfg != nil {
+		a := s.cfg.Autonomous
+		if a.PlanningModel != "" && (a.PlanningBackend == "" || a.PlanningBackend == string(inference.KindClaudeCode)) {
+			return a.PlanningModel
+		}
+	}
+	return ""
 }

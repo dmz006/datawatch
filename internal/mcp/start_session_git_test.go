@@ -139,3 +139,53 @@ func TestStartSession_LaunchRole(t *testing.T) {
 		t.Errorf("REST body carries launch_role %v when none was given", gotBody["launch_role"])
 	}
 }
+
+func startSessionCapture(t *testing.T, args map[string]any) (map[string]any, string) {
+	t.Helper()
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ab12","task":"t"}`))
+	})
+	res, err := s.handleStartSession(context.Background(), callReq(args))
+	if err != nil {
+		t.Fatalf("handleStartSession: %v", err)
+	}
+	b, _ := json.Marshal(res)
+	return got, string(b)
+}
+
+func TestStartSession_ModelEffortName_Forwarded(t *testing.T) {
+	got, _ := startSessionCapture(t, map[string]any{"task": "t", "model": "sonnet", "effort": "thorough", "name": "n1"})
+	if got["model"] != "sonnet" || got["effort"] != "thorough" || got["name"] != "n1" {
+		t.Errorf("body = %v", got)
+	}
+}
+
+func TestStartSession_ModelEffortName_OmittedWhenEmpty(t *testing.T) {
+	got, _ := startSessionCapture(t, map[string]any{"task": "t", "git": true, "model": "", "effort": " ", "name": ""})
+	for _, k := range []string{"model", "effort", "name"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s should be omitted: %v", k, got)
+		}
+	}
+}
+
+func TestStartSession_ModelEffortName_ResponseUnchanged(t *testing.T) {
+	_, a := startSessionCapture(t, map[string]any{"task": "t", "git": true})
+	_, b := startSessionCapture(t, map[string]any{"task": "t", "git": true, "model": "sonnet"})
+	if a != b || !strings.Contains(a, "Session started") {
+		t.Errorf("responses differ: %s vs %s", a, b)
+	}
+}
+
+func TestStartSession_ModelEffortName_InSchema(t *testing.T) {
+	tool := (&Server{}).toolStartSession()
+	for _, k := range []string{"model", "effort", "name"} {
+		if _, ok := tool.InputSchema.Properties[k]; !ok {
+			t.Errorf("missing %s", k)
+		}
+	}
+}

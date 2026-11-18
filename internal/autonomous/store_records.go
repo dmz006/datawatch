@@ -94,6 +94,11 @@ type prdRecords struct {
 	allDirty bool
 	hashes   map[string][sha256.Size]byte
 
+	// lastFlush is when the last Automaton write went through flushPRDsLocked
+	// (not the archive's own rewrites); the background archive pass waits for
+	// it to be quiet.
+	lastFlush time.Time
+
 	bytesWritten int64 // record and side-file bytes written since open
 	fileWrites   int64
 	truncated    int64
@@ -162,9 +167,11 @@ func recordName(id string) string {
 func (s *Store) markPRDDirtyLocked(id string) {
 	if _, ok := s.prds[id]; !ok {
 		s.rec.allDirty = true
+		s.rebuildSummaryLocked()
 		return
 	}
 	s.rec.dirty[id] = struct{}{}
+	s.refreshSummaryLocked(id)
 }
 
 // persistPRD marks the given PRDs dirty and writes them. Callers hold s.mu.
@@ -182,6 +189,7 @@ func (s *Store) persistDeleted(ids ...string) error {
 		delete(s.rec.dirty, id)
 		delete(s.rec.hashes, id)
 		s.rec.deleted[id] = struct{}{}
+		s.refreshSummaryLocked(id)
 	}
 	return s.flushPRDsLocked()
 }
@@ -189,6 +197,7 @@ func (s *Store) persistDeleted(ids ...string) error {
 // flushPRDsLocked writes every dirty PRD and removes deleted ones. A PRD
 // whose write fails stays dirty and is retried by the next call.
 func (s *Store) flushPRDsLocked() error {
+	s.rec.lastFlush = time.Now()
 	if !s.rec.active {
 		// Old whole-file format (migration failed or not yet possible).
 		s.rec.dirty = map[string]struct{}{}
@@ -489,6 +498,7 @@ func (s *Store) adoptPRD(p *PRD) {
 			s.tasks[st.Tasks[j].ID] = &st.Tasks[j]
 		}
 	}
+	s.refreshSummaryLocked(p.ID)
 }
 
 // loadPRDs fills s.prds from the record layout or the old prds.jsonl and
