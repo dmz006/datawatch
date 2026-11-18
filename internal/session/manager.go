@@ -491,6 +491,13 @@ type Manager struct {
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
+
+	// preCommitScan is the warn-only pre-commit hook (e.g. the autonomous
+	// pre-commit security scan). It fires exactly once on the completion-
+	// commit path, after every guard, immediately before the commit is
+	// authorized. A panicking hook is logged and the commit still proceeds;
+	// the return value is ignored by design. nil = the hook is off.
+	preCommitScan func(sess *Session)
 	// onSessionReap ends the processes proven to belong to a session once the
 	// session is over. It runs from every end path (EndSession, which also
 	// serves kill, cancel and delete, and the terminal-state transition that
@@ -1209,6 +1216,15 @@ func (m *Manager) SetOnSessionReap(fn func(*Session)) {
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetPreCommitScan wires the warn-only pre-commit hook into
+// commitOnCompletion: it fires exactly once for a session that passed
+// every guard, immediately before the commit is authorized. A panicking
+// hook is logged and the commit proceeds; the hook can never fail, block
+// or delay the commit. Pass nil to detach.
+func (m *Manager) SetPreCommitScan(fn func(*Session)) {
+	m.preCommitScan = fn
 }
 
 // SetTraceIngestor wires the trace ingestor into the session lifecycle: it
@@ -5118,6 +5134,22 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 			fmt.Printf("[warn] one-shot %s not committed: %v\n", current.ID, err)
 			return
 		}
+	}
+
+	// Warn-only pre-commit hook (e.g. the autonomous security scan): fires
+	// exactly once, after every guard above, immediately before the commit
+	// is authorized. A panicking hook is logged and the commit still
+	// proceeds; the hook's return value is ignored by design — this path
+	// can never fail, block or delay the task's completion commit.
+	if m.preCommitScan != nil {
+		func(s *Session) {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("[warn] preCommitScan hook panicked: %v (commit proceeding)\n", r)
+				}
+			}()
+			m.preCommitScan(s)
+		}(current)
 	}
 
 	// Validation passed (or, for a PRD task, the verifier already passed):

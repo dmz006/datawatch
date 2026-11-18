@@ -249,6 +249,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Content auto-fix retries per Automaton (default 1). When the completion review still blocks after these are spent, the Automaton goes to needs_review with the findings attached.")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
+		mcpsdk.WithArray("security_scan_extensions", mcpsdk.Description("File extensions the security scan covers (e.g. [\".py\"]). Unset or an empty list = the scanner's built-in defaults (.py, .pyw); a non-empty list scans exactly those extensions. The scan is warn-only."), mcpsdk.WithStringItems()),
 		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
 		mcpsdk.WithNumber("verifier_min_free_mem_mb", mcpsdk.Description("Free GPU memory (MB) a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024 default; 0 turns the check off. Negative values are refused.")),
 		mcpsdk.WithNumber("verifier_headroom_max_age_hours", mcpsdk.Description("How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours. Negative values are refused.")),
@@ -456,6 +457,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["snapshot_never_stage"]; ok {
 			body["snapshot_never_stage"] = req.GetStringSlice("snapshot_never_stage", []string{})
+		}
+		// Presence-aware like snapshot_never_stage above: an explicit [] leaves
+		// the scanner's built-in defaults (.py, .pyw) in effect, an absent key
+		// leaves the stored list untouched.
+		if _, ok := args["security_scan_extensions"]; ok {
+			body["security_scan_extensions"] = req.GetStringSlice("security_scan_extensions", []string{})
 		}
 	}
 	// Plan-coverage gate — off|warn|block mode (empty = send nothing, let

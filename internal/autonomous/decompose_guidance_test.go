@@ -157,6 +157,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"unexecutable_verification_script",
 				"names_tracker_id",
 				"unbounded_load_step",
+				"check_matches_spec_text",
 			},
 		},
 	}

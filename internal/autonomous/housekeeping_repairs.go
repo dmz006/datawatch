@@ -11,7 +11,11 @@
 // resets or retries tasks, runs the documented sync and cleanup steps, and
 // advances state. Every repair writes one decision-log line (found, done,
 // how to undo), and a case skipped as unsafe raises exactly one alert per
-// subject until the subject stops being found.
+// subject until the subject stops being found. A group records a subject at
+// most once per pass: if two repairs of the same group both find the same
+// subject, the first one is recorded and acted on (or skipped), and the
+// second one's copy of it is dropped, so one read yields one entry per stuck
+// subject, not one per repair.
 package autonomous
 
 import (
@@ -164,6 +168,10 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 	set := r.settings()
 	grace := time.Duration(set.GraceSecondsOrDefault()) * time.Second
 	var added []RepairRecord
+	// claimed marks, per group, the subjects that pass has already found, so
+	// two repairs of one group never record the same subject twice in one
+	// pass and the group reads each stuck subject once.
+	claimed := map[string]map[string]bool{}
 	for idx, rep := range r.repairs {
 		if ctx.Err() != nil {
 			break
@@ -173,7 +181,10 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 		if mode == config.HousekeepingModeOff {
 			continue
 		}
-		added = append(added, r.runGroup(ctx, rep, idx, mode, grace)...)
+		if claimed[group] == nil {
+			claimed[group] = map[string]bool{}
+		}
+		added = append(added, r.runGroup(ctx, rep, idx, mode, grace, claimed[group])...)
 	}
 	if len(added) > 0 {
 		r.persist()
@@ -181,7 +192,7 @@ func (r *Repairer) Run(ctx context.Context) []RepairRecord {
 	return added
 }
 
-func (r *Repairer) runGroup(ctx context.Context, rep Repair, idx int, mode string, grace time.Duration) []RepairRecord {
+func (r *Repairer) runGroup(ctx context.Context, rep Repair, idx int, mode string, grace time.Duration, claimed map[string]bool) []RepairRecord {
 	group := rep.Group()
 	// ns keeps two repairs of one group from clearing each other's clocks.
 	ns := fmt.Sprintf("%s#%d/", group, idx)
@@ -190,6 +201,10 @@ func (r *Repairer) runGroup(ctx context.Context, rep Repair, idx int, mode strin
 	live := map[string]bool{}
 	var added []RepairRecord
 	for _, f := range findings {
+		if claimed[f.Subject] {
+			continue // another repair of this group found it first this pass
+		}
+		claimed[f.Subject] = true
 		key := ns + f.Subject
 		live[key] = true
 		r.mu.Lock()
