@@ -43,12 +43,12 @@ type ToolDescriptor struct {
 // Sprint 1 ships only the BM25 search; Sprint 2 wraps a hybrid searcher
 // (vector primary + BM25 fallback) in the same shape.
 type Runtime struct {
-	bm25      *BM25Index
-	searcher  Searcher
-	trust     *TrustState
-	pending   *PendingQueue
-	approvals *ApprovalStore
-	invoker   ToolInvoker
+	bm25       *BM25Index
+	searcher   Searcher
+	trust      *TrustState
+	pending    *PendingQueue
+	approvals  *ApprovalStore
+	invoker    ToolInvoker
 	translator LLMTranslator
 
 	// readBody resolves chunk_id → full markdown body, used by docs_read.

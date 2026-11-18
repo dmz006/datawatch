@@ -39,23 +39,23 @@ const (
 
 // Draft is one in-flight persona-wizard session.
 type Draft struct {
-	ID            string      `json:"id"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
-	OperatorRef   string      `json:"operator_ref,omitempty"`
-	ChannelRef    string      `json:"channel_ref,omitempty"`
-	Status        DraftStatus `json:"status"`
-	Backend       string      `json:"backend,omitempty"`
-	Name          string      `json:"name"`
-	Role          string      `json:"role"`
-	Focus         string      `json:"focus"`
-	Stance        string      `json:"stance"`
-	Tone          string      `json:"tone"`
-	AntiPatterns  string      `json:"anti_patterns"`
-	Examples      string      `json:"examples"`
-	DraftPersona  string      `json:"draft_persona,omitempty"`
-	DraftTags     string      `json:"draft_tags,omitempty"`
-	CurrentStep   string      `json:"current_step,omitempty"`
+	ID           string      `json:"id"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+	OperatorRef  string      `json:"operator_ref,omitempty"`
+	ChannelRef   string      `json:"channel_ref,omitempty"`
+	Status       DraftStatus `json:"status"`
+	Backend      string      `json:"backend,omitempty"`
+	Name         string      `json:"name"`
+	Role         string      `json:"role"`
+	Focus        string      `json:"focus"`
+	Stance       string      `json:"stance"`
+	Tone         string      `json:"tone"`
+	AntiPatterns string      `json:"anti_patterns"`
+	Examples     string      `json:"examples"`
+	DraftPersona string      `json:"draft_persona,omitempty"`
+	DraftTags    string      `json:"draft_tags,omitempty"`
+	CurrentStep  string      `json:"current_step,omitempty"`
 }
 
 // DraftsStore wraps the SQLite-backed drafts table.

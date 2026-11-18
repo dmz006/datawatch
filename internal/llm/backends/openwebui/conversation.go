@@ -59,7 +59,7 @@ func NewInteractive(baseURL, apiKey, model string) llm.Backend {
 	return &InteractiveBackend{baseURL: baseURL, apiKey: apiKey, model: model}
 }
 
-func (b *InteractiveBackend) Name() string                  { return "openwebui" }
+func (b *InteractiveBackend) Name() string                   { return "openwebui" }
 func (b *InteractiveBackend) SupportsInteractiveInput() bool { return true }
 
 func (b *InteractiveBackend) Version() string {

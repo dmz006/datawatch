@@ -70,7 +70,7 @@ type NVMLProbe struct {
 // present but the driver is broken") looking identical. Guarded by
 // nvmlInitErrMu; set once per NewNVMLProbe call, read via NVMLInitError.
 var (
-	nvmlInitErrMu  sync.RWMutex
+	nvmlInitErrMu   sync.RWMutex
 	lastNVMLInitErr string
 )
 

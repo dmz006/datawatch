@@ -317,9 +317,9 @@ func sdBranchWork(ctx context.Context, git MergeGitRunner, repo, base string, p 
 			r.statusOut = status
 		} else {
 			// Same daemon-section rule as the cleanup core: a tracked file
-		// whose only difference from HEAD is the daemon's own marked
-		// sections is not uncommitted work (the daemon rewrites that block
-		// at the next session start), so it does not hold the branch dirty.
+			// whose only difference from HEAD is the daemon's own marked
+			// sections is not uncommitted work (the daemon rewrites that block
+			// at the next session start), so it does not hold the branch dirty.
 			status = filterDaemonOnlyPorcelain(ctx, p.wt, status, func(ctx context.Context, dir string, args ...string) (string, error) {
 				runnerArgs := append([]string{"-C", dir}, args...)
 				return git.Run(ctx, repo, runnerArgs...)

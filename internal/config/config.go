@@ -3938,10 +3938,12 @@ type AutonomousConfig struct {
 	// skills, context, model, effort). A value's name, when set, must match
 	// its key. Empty (default) = no user profiles; built-ins still apply.
 	//
-	// worker_profile_defaults: the profile each role and task kind starts
-	// with when no profile is named. role keys: planner, worker, verifier,
-	// judge. kind keys: implementation, docs, note, final_gate. Values are
-	// built-in or user profile names. Empty (default) = built-in defaults.
+	// worker_profile_defaults: the profile each role, task kind and session
+	// kind starts with when no profile is named. role keys: planner, worker,
+	// verifier, judge. kind keys: implementation, docs, note, final_gate (task
+	// kinds) and supervisor, operator_interactive, scheduled_command, planner,
+	// one_shot, review (session kinds). Values are built-in or user profile
+	// names. Empty (default) = built-in defaults.
 	//
 	// worker_profile: the global-layer profile name, used when no task,
 	// automaton or project names one. Empty = the role default.
@@ -9005,21 +9007,25 @@ func validateGateScope(v string) error {
 	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
 }
 
-// WorkerProfileDefaultsConfig maps a worker role or a task kind to the name of
-// the worker profile it starts with when no profile is named at a more
-// specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
+// WorkerProfileDefaultsConfig maps a worker role, task kind or session kind to
+// the name of the worker profile it starts with when no profile is named at a
+// more specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
 type WorkerProfileDefaultsConfig struct {
 	// Role maps planner, worker, verifier or judge to a profile name.
 	Role map[string]string `yaml:"role" json:"role"`
-	// Kind maps implementation, docs, note or final_gate to a profile name.
+	// Kind maps a task kind (implementation, docs, note, final_gate) or a
+	// session kind (supervisor, operator_interactive, scheduled_command,
+	// planner, one_shot, review) to a profile name.
 	Kind map[string]string `yaml:"kind" json:"kind"`
 }
 
 // workerProfileRoleKeys lists the role keys worker_profile_defaults.role accepts.
 var workerProfileRoleKeys = []string{"planner", "worker", "verifier", "judge"}
 
-// workerProfileKindKeys lists the task-kind keys worker_profile_defaults.kind accepts.
-var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate"}
+// workerProfileKindKeys lists the kind keys worker_profile_defaults.kind
+// accepts: the task kinds and the session kinds (workerprofile.Kind*) the
+// daemon resolves at launch.
+var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate", "supervisor", "operator_interactive", "scheduled_command", "planner", "one_shot", "review"}
 
 // ValidateWorkerProfileConfig checks the worker session profile settings in
 // cfg.Autonomous and returns the first problem found, or nil. It refuses:
@@ -9027,8 +9033,8 @@ var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_ga
 //   - a user profile that workerprofile.Validate rejects;
 //   - a worker_profile_defaults value, or the worker_profile global name, that
 //     names no built-in and no user-defined profile;
-//   - an unknown role key in worker_profile_defaults.role, or an unknown task
-//     kind key in worker_profile_defaults.kind.
+//   - an unknown role key in worker_profile_defaults.role, or an unknown
+//     task- or session-kind key in worker_profile_defaults.kind.
 //
 // The config load paths call it, and every write surface that changes these
 // settings should call it before it persists them. Keys are checked in sorted

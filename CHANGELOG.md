@@ -5,6 +5,60 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.182.23 — Session-kind profiles: lean starts for every session kind
+
+### Changed
+
+- Session-kind profiles: lean starts for every session kind.
+
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
+## v9.182.20 — Keep the operator host name out of generated reports
+
+### Changed
+
+- Keep the operator host name out of generated reports.
+
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
 ## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
 
 ### Changed

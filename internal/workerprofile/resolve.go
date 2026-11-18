@@ -37,7 +37,50 @@ var kindDefaults = map[string]string{
 	"docs":           "digest",
 	"note":           "minimal",
 	"final_gate":     "digest",
+
+	// Session kinds: the smallest profile that works for each.
+	KindSupervisor: "datawatch-tools", // drives datawatch through its tools, nothing else
+	KindOperator:   "digest",
+	KindScheduled:  "minimal",
+	KindPlanner:    "full", // matches the planner role default
+	KindOneShot:    "minimal",
+	KindReview:     "minimal",
 }
+
+// Session kinds. They share the kind default table with the task kinds, so a
+// session of any kind resolves through the same single profile system.
+const (
+	KindSupervisor = "supervisor"
+	KindOperator   = "operator_interactive"
+	KindScheduled  = "scheduled_command"
+	KindPlanner    = "planner"
+	KindOneShot    = "one_shot"
+	KindReview     = "review"
+)
+
+// Activities describe what a session is doing. A kind default is looked up on
+// the activity when the session kind itself is unset or has no default.
+const (
+	ActivitySupervising = "supervising"
+	ActivityInteracting = "interacting"
+	ActivityScheduled   = "scheduled"
+	ActivityPlanning    = "planning"
+	ActivityOneShot     = "one_shot"
+	ActivityReviewing   = "reviewing"
+)
+
+// activityKinds maps each activity to the session kind whose default applies.
+var activityKinds = map[string]string{
+	ActivitySupervising: KindSupervisor,
+	ActivityInteracting: KindOperator,
+	ActivityScheduled:   KindScheduled,
+	ActivityPlanning:    KindPlanner,
+	ActivityOneShot:     KindOneShot,
+	ActivityReviewing:   KindReview,
+}
+
+// ActivityKinds returns a copy of the activity -> session kind table.
+func ActivityKinds() map[string]string { return copyDefaults(activityKinds) }
 
 // fallbackRole is used when the requested role has no default of its own.
 const fallbackRole = "worker"
@@ -52,8 +95,11 @@ type Decision struct {
 
 // ResolveInput carries the names a launch was given. Empty names are unset.
 type ResolveInput struct {
-	Role          string
-	Kind          string
+	Role string
+	Kind string
+	// Activity is what the session is doing. It selects a kind default when
+	// Kind is unset or has no default of its own.
+	Activity      string
 	TaskName      string
 	AutomatonName string
 	ProjectName   string
@@ -103,7 +149,7 @@ func Resolve(in ResolveInput) (WorkerProfile, Decision) {
 		return roleFallback(in, n.name, n.layer)
 	}
 
-	if name, ok := kindLookup(in, in.Kind); ok {
+	if name, ok := kindLookup(in, effectiveKind(in)); ok {
 		if p, found := lookupProfile(in, name); found {
 			return p, Decision{
 				Applied: p.Name,
@@ -156,6 +202,15 @@ func roleLookup(in ResolveInput, role string) (string, bool) {
 	}
 	name, ok := roleDefaults[role]
 	return name, ok
+}
+
+// effectiveKind returns the kind whose default applies: in.Kind when it has a
+// default (configured or built-in), otherwise the kind for in.Activity.
+func effectiveKind(in ResolveInput) string {
+	if _, ok := kindLookup(in, in.Kind); ok {
+		return in.Kind
+	}
+	return activityKinds[in.Activity]
 }
 
 // kindLookup returns the default profile name for kind. in.KindDefaults is

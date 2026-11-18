@@ -12633,20 +12633,8 @@ function _loadSessionSchedules(sessionId, force) {
         el.style.display = 'none';
         return;
       }
-      el.style.display = 'block';
-      const rows = items.map(sc => {
-        const when = _fmtScheduleTime(sc.run_at);
-        const extras = [];
-        if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
-        if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
-        const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
-        return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
-          <span style="color:var(--text2);">${escHtml(when)}</span>
-          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
-          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
-        </div>`;
-      }).join('');
-      el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
+      _schedLastItems.set(sessionId, items);
+      _renderSessionSchedules(sessionId);
     })
     .catch(() => { el.style.display = 'none'; })
     .finally(() => {
@@ -12659,6 +12647,40 @@ function _loadSessionSchedules(sessionId, force) {
         _loadSessionSchedules(sessionId, true);
       }
     });
+}
+
+// Last pending schedule list per session so a rollup toggle repaints without a refetch.
+const _schedLastItems = new Map();
+
+function _renderSessionSchedules(sessionId) {
+  const el = document.getElementById('sessionSchedules');
+  const items = _schedLastItems.get(sessionId);
+  if (!el || !items || items.length === 0) { if (el) el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const rows = items.map(sc => {
+    const when = _fmtScheduleTime(sc.run_at);
+    const extras = [];
+    if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
+    if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
+    const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
+    return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
+          <span style="color:var(--text2);">${escHtml(when)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
+        </div>`;
+  }).join('');
+  const head = _stx('session_detail_scheduled_summary', 'Scheduled');
+  if (!_sessionsPhoneWidth()) {
+    el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">${escHtml(head)} (${items.length})</div>${rows}`;
+    return;
+  }
+  const open = _sessionDetailRollupOpen(sessionId, 'scheduled');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = `${head} (${items.length}) · ${_stx('session_detail_next_run', 'Next run')} ${_fmtScheduleTime(items[0].run_at)}`;
+  const idArg = escHtml(encodeURIComponent(String(sessionId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-scheduled-rollup" onclick="_sessionDetailRollupToggle('${idArg}','scheduled')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? rows : ''}`;
 }
 
 function showScheduleInputPopup(sessionId) {
@@ -15252,6 +15274,18 @@ function renderNewSessionView() {
             <option value="">Language (LSP): none</option>
           </select>
         </div>
+        <!-- Worker profile: the worker session profile this session starts
+             with (its MCP servers, tools, skills, context, model, effort).
+             The option list mirrors the settings group (built-ins plus the
+             user profiles); empty = the daemon resolves it (daemon-wide
+             profile, then the session-kind default). -->
+        <div class="form-group" id="sessWorkerProfileRow">
+          <label for="sessWorkerProfile">${t('new_session_worker_profile_label')||'Worker profile'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for the daemon default)</span></label>
+          <select id="sessWorkerProfile" class="form-select">
+            <option value="">${t('new_session_worker_profile_auto')||'Auto (daemon rules: daemon-wide profile, then session-kind default)'}</option>
+          </select>
+          <div style="color:var(--text2);font-size:11px;margin-top:4px;" title="${escHtml(t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings > Worker session profiles.')}">${t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort.'}</div>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
@@ -15336,6 +15370,10 @@ function renderNewSessionView() {
   // (mirrors the New PRD modal). Async — defaults to __dir__ until
   // the daemon's profile lists land.
   populateSessionProjectClusterDropdowns();
+  // Worker profile dropdown: built-ins plus the user profiles from
+  // autonomous.worker_profiles. Async — defaults to "Auto" until the
+  // daemon's config lands.
+  populateSessionWorkerProfileDropdown();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -15703,6 +15741,25 @@ function populateSessionProjectClusterDropdowns() {
 }
 window.populateSessionProjectClusterDropdowns = populateSessionProjectClusterDropdowns;
 
+// Worker profile dropdown for the New Session form: lists the built-in
+// profile names (minimal, digest, full, datawatch-tools) and the user
+// profiles from autonomous.worker_profiles, with a leading blank entry
+// (the "Auto" choice). Reads the same config the Settings group writes, so
+// any name the daemon would accept is an option and nothing else.
+function populateSessionWorkerProfileDropdown() {
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const sel = document.getElementById('sessWorkerProfile');
+      if (!sel) return;
+      const autoLabel = t('new_session_worker_profile_auto') || 'Auto';
+      const names = workerProfileNames(cfg, true);
+      sel.innerHTML = names.map(n => `<option value="${escHtml(n)}">${n === '' ? escHtml(autoLabel) : escHtml(n)}</option>`).join('');
+    })
+    .catch(() => {}); // keep the Auto-only default if the config is unreachable
+}
+window.populateSessionWorkerProfileDropdown = populateSessionWorkerProfileDropdown;
+
 // Show/hide helper toggled by the unified Profile dropdown's
 // onchange. Mirrors _prdNewProfileChanged but operates on the
 // New Session modal's element ids.
@@ -15716,7 +15773,10 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
-  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  // A project-profile spawn goes through /api/agents, not the session start,
+  // so its rows are hidden there (the worker-profile row too).
+  const workerProfileRow = document.getElementById('sessWorkerProfileRow');
+  if (workerProfileRow) workerProfileRow.style.display = usingProfile ? 'none' : '';
   const tagsRow = document.getElementById('sessTagsRow');
   if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
@@ -16018,6 +16078,11 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
+    // Worker profile for this launch: a built-in or user profile name
+    // (claude-code only; the daemon resolves it against workerprofile
+    // rules). Empty = the daemon's own resolution (daemon-wide profile,
+    // then the session-kind default) applies.
+    worker_profile_name: document.getElementById('sessWorkerProfile')?.value || '',
     // v5.27.5 — claude-code per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
@@ -18236,7 +18301,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
       <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
-      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escJsAttr(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
     </tr>
   `).join('');
   overlay.innerHTML = `
@@ -27345,11 +27410,13 @@ function loadGeneralConfig() {
             };
             const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
             const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            const _wpdSessionKinds = WORKER_PROFILE_SESSION_KINDS.map(k => _wpdSelect('kind', k)).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
-              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:4px;">
                 <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
-                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">task kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">session kind</div>${_wpdSessionKinds}</div>
               </div>
               ${_settingsHelpTextHTML(f)}
             </div>`;
@@ -28985,6 +29052,7 @@ window.saveTracingBackendsSetting = saveTracingBackendsSetting;
 const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
 const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
 const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+const WORKER_PROFILE_SESSION_KINDS = ['supervisor', 'operator_interactive', 'scheduled_command', 'planner', 'one_shot', 'review'];
 
 // workerProfileNames lists the built-in profile names followed by the user
 // profiles from autonomous.worker_profiles, each name once. withBlank puts an
@@ -61774,10 +61842,38 @@ function _sessionFind(fullId) {
 function _renderSessionDetailTagRow(sess) {
   const el = document.getElementById('sessionDetailTagRow');
   if (!el || !sess) return;
-  const chips = _sessionTagChipsHTML(sess);
-  el.innerHTML = chips || '';
-  el.style.display = chips ? 'flex' : 'none';
+  const list = _sessionTagChipList(sess);
+  const chips = list.join('');
+  if (!chips) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  if (!_sessionsPhoneWidth()) { el.innerHTML = chips; el.style.display = 'flex'; return; }
+  const fullId = sess.full_id || sess.id;
+  const open = _sessionDetailRollupOpen(fullId, 'tags');
+  const tip = open
+    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
+    : _stx('session_detail_summary_expand_tip', 'Expand');
+  const label = _stx('session_detail_tags_summary', 'Tags') + ' (' + list.length + ')';
+  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
+  el.innerHTML = `<button type="button" class="session-detail-tags-rollup" onclick="_sessionDetailRollupToggle('${idArg}','tags')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? '<div class="session-detail-rollup-body" style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">' + chips + '</div>' : ''}`;
+  el.style.display = 'flex';
 }
+
+// Phone-width rollup state: in memory only, per session full id and section.
+function _sessionDetailRollupOpen(fullId, kind) {
+  const b = state._sessionDetailRollup && state._sessionDetailRollup[fullId];
+  return !!(b && b[kind]);
+}
+
+function _sessionDetailRollupToggle(idEnc, kind) {
+  let id = '';
+  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
+  if (!id) return;
+  if (!state._sessionDetailRollup) state._sessionDetailRollup = {};
+  const b = state._sessionDetailRollup[id] || (state._sessionDetailRollup[id] = {});
+  b[kind] = !b[kind];
+  if (kind === 'tags') _renderSessionDetailTagRow(_sessionFind(id));
+  else _renderSessionSchedules(id);
+}
+window._sessionDetailRollupToggle = _sessionDetailRollupToggle;
 
 window.openSessionTagsModal = function(fullId) {
   _tagsLoad().then(() => {

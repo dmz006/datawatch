@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -299,12 +299,27 @@ check-sarif-upload:
 # an error (that class is skipped with a stderr notice).
 check-leaks:
 	bash scripts/check-no-local-leaks.sh .
+	bash scripts/check-generated-reports-leaks.sh
+
+# Generated reports leak check: every tracked and untracked report file
+# under docs/plans/reports is copied to a throwaway directory and scanned
+# with the same check-no-local-leaks machinery, LEAK_CHECK_LOCAL pointing
+# at this repository's .leak-patterns.local (that class is skipped with a
+# stderr notice when the file is absent). The report is path:line: class
+# only — matched text is never printed.
+check-generated-reports-leaks:
+	bash scripts/check-generated-reports-leaks.sh
 
 # Fails when a changed file looks like a copy of operator configuration or
 # credentials (backups, .env files, config copies, key files). Compares the
 # branch with the remote main; untracked files count too.
 check-plans-links:
 	bash scripts/check-plans-links.sh --quiet
+
+# gofmt audit of cmd/ and internal/: reports unformatted files (excluding
+# 'Code generated' headers and testdata/ vendor paths), exits 1 on offenders.
+check-gofmt:
+	bash scripts/check-gofmt.sh
 
 check-no-config-copies:
 	bash scripts/check-no-config-copies.sh origin/main
@@ -329,7 +344,7 @@ check-dependabot-security-only:
 	bash scripts/check-dependabot-security-only.sh
 	bash scripts/check-dependabot-security-only_test.sh
 
-lint: check-tmux check-test-daemons check-dependabot-security-only check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links
+lint: check-tmux check-test-daemons check-dependabot-security-only check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links check-gofmt
 	golangci-lint run ./...
 
 # Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
@@ -357,6 +372,7 @@ test:
 	bash tests/test-pre-tag.sh
 	python3 scripts/tests/test_dismissed_alerts_watch.py
 	python3 scripts/tests/test_codeql_alert_gate.py
+	bash tests/test-e2e-pwa-config.sh
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`

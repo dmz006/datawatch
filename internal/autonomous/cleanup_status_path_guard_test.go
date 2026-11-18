@@ -115,3 +115,31 @@ func TestFixCleanupPermissionsRefusesBeforeFilesystem(t *testing.T) {
 		t.Fatalf("owner write not restored: %v", info.Mode())
 	}
 }
+
+func TestFixCleanupPermissionsOutOfBaseLeavesModeAlone(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "wt")
+	sibling := filepath.Join(root, "wt-evil")
+	for _, d := range []string{base, sibling} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outFile := filepath.Join(sibling, "ro.txt")
+	if err := os.WriteFile(outFile, []byte("x"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{outFile, "../wt-evil/ro.txt", "", "a\x00b"} {
+		n, err := FixCleanupPermissions(base, []string{p})
+		if err == nil || !strings.Contains(err.Error(), "outside the worktree base") || n != 0 {
+			t.Fatalf("path %q: n=%d err=%v", p, n, err)
+		}
+		info, serr := os.Stat(outFile)
+		if serr != nil {
+			t.Fatal(serr)
+		}
+		if info.Mode().Perm() != 0o400 {
+			t.Fatalf("path %q: outside mode changed to %v", p, info.Mode().Perm())
+		}
+	}
+}

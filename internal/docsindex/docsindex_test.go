@@ -247,10 +247,10 @@ func TestFrontMatter_TemplateRefersToUndeclaredParam(t *testing.T) {
 
 func TestBuild_SkipsExclusions(t *testing.T) {
 	memfs := fstest.MapFS{
-		"foo/howto/x.md":           {Data: []byte("# X\n\n## intro\n\nbody x")},
+		"foo/howto/x.md":               {Data: []byte("# X\n\n## intro\n\nbody x")},
 		"foo/datawatch-definitions.md": {Data: []byte("# Defs\n\n## sessions\n\nbody d")},
-		"foo/plans/2026-05-07.md":  {Data: []byte("# Plan\n\n## section\n\nbody p")},   // excluded
-		"foo/AGENT.md":             {Data: []byte("# Agent\n\n## rules\n\nbody a")},   // excluded
+		"foo/plans/2026-05-07.md":      {Data: []byte("# Plan\n\n## section\n\nbody p")}, // excluded
+		"foo/AGENT.md":                 {Data: []byte("# Agent\n\n## rules\n\nbody a")},  // excluded
 	}
 	idx, err := Build(BuildOptions{SourceFS: memfs, Root: "foo", SourceTier: "core"})
 	if err != nil {
