@@ -2469,6 +2469,15 @@ func (a *API) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
 	return a.M.MergeSafeToDelete(ctx)
 }
 
+// Branch reaper — ReapPreview, ReapRun and ReapRestore live in api_reap.go and
+// delegate to the Manager's reaper. This assertion mirrors the server's
+// reapRunner interface so a missing method fails the build, not the route.
+var _ interface {
+	ReapPreview(ctx context.Context) (ReapReport, []ReapBackup, error)
+	ReapRun(ctx context.Context) (ReapReport, error)
+	ReapRestore(ctx context.Context, branch string) (string, string, error)
+} = (*API)(nil)
+
 // CleanupStatus — the automation cleanup read surface behind
 // GET /api/autonomous/cleanup (and the MCP, CLI and comm reads on top of it).
 // Without it the route's interface check fails and the route answers 503 in
