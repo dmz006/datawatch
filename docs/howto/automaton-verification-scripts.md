@@ -44,10 +44,13 @@ task that fails for no reason in its own files. This guide says how to write
 scripts that do not drift, what the decompose lint flags, and how to fix a
 plan that has the problem.
 
-## 1. The five habits
+## 1. The nine habits
 
 Every script the planner writes — and every one you write by hand — follows
-these. The planner is given the same rules in its prompt.
+these. The planner's prompt carries the first four as a shared helper text, and
+the rest are enforced by the decompose-lint rules and the final-gate plan check
+when the plan comes in — a finding feeds the planner a retry with the text to
+fix.
 
 1. **Run `make sync-docs` first, in any docs check.** A script that checks
    the docs, the embedded docs copy (`internal/server/web/docs`) or how-to
@@ -69,6 +72,27 @@ these. The planner is given the same rules in its prompt.
 5. **One final gate for the Automaton, at the end.** Story-level checks are
    plain task verification; there is no per-story gate — see
    [section 4](#4-one-final-gate-per-automaton).
+6. **Exempt the generated artefacts from a file-set check.** The daemon
+   writes the per-Automaton artefacts — the changelog, tracker-rows and
+   registry-row drafts (`docs/plans/drafts/`), the parity issue and its hash
+   file (`docs/plans/parity-issues/`) and the gate report
+   (`docs/plans/reports/`) — into the cumulative tree, so a
+   changed-file-set check must exempt those paths or compare against a
+   cumulative list that already names them.
+7. **Write the final-gate re-run into a whole-set claim.** A script that
+   asserts a finite whole set of changed files must still pass when the
+   final gate re-runs it after every standard task has landed: assert only
+   the files this task adds, or guard the claim so it skips on the gate's
+   re-run.
+8. **Match flags against the real binary, not memory.** Every long option a
+   script invokes (`command … --flag`) must be listed as a whole option in
+   that command's own help (`command --help`); short flags and a command
+   that does not resolve or answer a bounded help probe are out of scope.
+9. **Anchor every heading and output-format assertion in the task spec.** A
+   script that greps a markdown heading, or the gate phrases "Final answer"
+   / "Verification summary", needs the task spec to name that heading or
+   phrase verbatim — a "Gates section" in the spec anchors a grep of
+   `## Gates`, and a spec naming `## Gates` anchors a grep of `Gates`.
 
 ## 2. The cumulative allowed-file helper
 
@@ -135,16 +159,20 @@ Decompose lint reads each task's script from the project directory and names
 the finding with **the script path and the rule id**, for example
 `verify_script_task_files_only: .datawatch/verify/<name>.sh …`. A script that
 does not exist yet (or is a command string, or lies outside the project) is
-skipped by the three rules below; the warn rule
+skipped by the rules below that read a script; the warn rule
 `unexecutable_verification_script` keeps covering it.
 
 | Rule id | Severity | What it means | How to fix it |
 |---|---|---|---|
 | `verify_script_task_files_only` | block | The script compares only against the task's own files (a literal list equal to them, or a file-listing diff of HEAD, the tree or `main`) and never against the merge base. | Compare against `git merge-base HEAD main` — directly, or through a sourced helper — and compare the result with the cumulative allowed list. |
 | `verify_script_docs_without_sync` | block | The script checks docs, the embedded docs copy or how-to coverage but never runs `make sync-docs`. | Add `make sync-docs` as the script's first step, or source a helper that runs it. |
+| `artefact_files_allowed` | block | Runs a changed-file-set check that does not exempt the generated artefacts the daemon writes per Automaton (the changelog draft, the parity issue draft and its hash file, the gate report) — the final gate re-runs the script against the cumulative tree, where exactly those files exist. | Exempt `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-file computation — in the check itself or in the sourced helper. |
+| `final_gate_artefact_allowed` | block | Asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; the gate runs after every standard task has landed, so a finite whole-set claim can only fail. | Assert only the files this task adds, or guard the claim so it skips when the final gate re-runs the script. |
+| `script_invokes_known_flag` | block | Invokes a command with a long flag (`--flag`) the command's own help does not list as a whole option — a flag invented from memory. | Check each command and flag against the real binary's help (`command --help`) before accepting the script; short flags and a command that does not resolve or answer a bounded help probe are out of scope. |
+| `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not name — the check is anchored to an assumption about output shape, not to the spec. | Name the exact heading or phrase in the spec the script checks (a "Gates section" in the spec anchors a grep of `## Gates`). |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 
-All three are `block`-severity: in `enforce` mode they feed the planner a retry
+All seven are `block`-severity: in `enforce` mode they feed the planner a retry
 with the findings as guidance; in `shadow` mode they are recorded on the
 Automaton and nothing is retried. See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
@@ -214,8 +242,12 @@ in tests. See **Verification lint gate** in [the definitions](../datawatch-defin
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All three stability rules are
-  `block`: in `enforce` mode a script that breaks one sends the plan back to
+- **Block severity is the shipped default.** All seven verification-script
+  stability rules are `block` (`verify_script_task_files_only`,
+  `verify_script_docs_without_sync`, `artefact_files_allowed`,
+  `final_gate_artefact_allowed`, `script_invokes_known_flag`,
+  `check_matches_spec_text` and `final_gate_without_script`): in `enforce`
+  mode a script that breaks one sends the plan back to
   the planner (up to `max_retries`) before any task runs. Decide whether you
   want that, or want `shadow` first to see how often your planners trip them;
   an operator rule with the same id replaces the built-in.
