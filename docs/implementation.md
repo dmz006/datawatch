@@ -1936,6 +1936,12 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   order is deterministic. The first candidate is the recorded sender. This
   is what stops an unrelated same-host process from being attributed as
   the stop sender in a full `go test` run.
+- **Process source seam:** the procscan reads the process table through a
+  small internal `procSource` interface (`pids`, `cmdline`, `identity`).
+  The default `liveProcSource` reads the live proc filesystem, so daemon
+  behavior is unchanged; only tests install another source
+  (`installProcSource` / `resetProcSource`). There is no config key, API
+  field or `source` value for it.
 - **Startup report:** at daemon startup, right after the data dir is known
   and the logger is ready, `cmd/datawatch` calls
   `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
@@ -1963,6 +1969,14 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   the test binary in its cmdline, and the captured cause must not point at
   some other process. Skips with a message on non-Linux; signals only its
   own process via the child it started.
+- **Hermetic scope:** after the child has signalled, the test installs a
+  process source limited to the test process's own descendants
+  (`scopeProcScanToDescendants`, in `scope_linux_test.go`), so an unrelated
+  host process (for example a service-stop command on a shared machine) can
+  never be picked up as the sender. The scope is restored at test cleanup.
+  `proctable_linux_test.go` (`TestProcScanFakeTable`) drives candidate
+  scanning and ranking against a fully in-memory fake process table, with
+  no dependence on the live host.
 
 ---
 
