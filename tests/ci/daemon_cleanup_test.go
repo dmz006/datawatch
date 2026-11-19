@@ -864,7 +864,7 @@ func TestMain(m *testing.M) {
 				"first sweep tolerated; a second will terminate")
 			if n >= 2 {
 				signal.Stop(term)
-				syscall.Kill(os.Getpid(), syscall.SIGTERM)
+				_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 			}
 		}
 	}()
