@@ -2017,6 +2017,10 @@ type Manager struct {
 	// records wired; the coordinator tick then skips its reconcile.
 	decisionRecords *DecisionRecords
 
+	// archivedUnmergedGit is the read-only git runner of the archived-unmerged
+	// finder and carry-forward (archived_unmerged.go); nil uses git. Guarded by mu.
+	archivedUnmergedGit MergeGitRunner
+
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.

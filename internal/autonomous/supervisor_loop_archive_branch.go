@@ -40,22 +40,46 @@ func (s *SupervisorLoopSteps) archiveKeepsBranch(p *PRD) (bool, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), archiveBranchGitTimeout)
 	defer cancel()
 
-	out, err := git.Run(ctx, repo, "for-each-ref", "--format=%(refname)", "refs/heads/"+p.Git.Branch)
-	if err != nil {
-		log.Printf("[autonomous] supervisor-loop: keeping %s: checking branch %s: %v", p.ID, p.Git.Branch, err)
+	state, ahead, detail := checkBranchAhead(ctx, git, repo, p.Git.Branch, p.Git.BaseBranch)
+	switch state {
+	case branchCheckUnknown:
+		log.Printf("[autonomous] supervisor-loop: keeping %s: branch %s state unknown: %s", p.ID, p.Git.Branch, detail)
 		return true, 0
-	}
-	if strings.TrimSpace(out) == "" {
+	case branchCheckDropped:
 		return false, 0 // the branch was dropped
 	}
-	base := p.Git.BaseBranch
+	return ahead > 0, ahead
+}
+
+// Outcomes of checkBranchAhead.
+const (
+	branchCheckUnknown = "unknown" // git failed or the comparison could not be made
+	branchCheckDropped = "dropped" // the branch no longer exists
+	branchCheckAhead   = "ahead"   // the branch holds commits not on the base
+	branchCheckMerged  = "merged"  // the branch holds nothing the base lacks
+)
+
+// checkBranchAhead is the read-only branch comparison shared by the close
+// step guard and the archived-unmerged finder: for-each-ref, then
+// CompareBranchToMain. An empty base is resolved from the repository. detail
+// carries the reason when the state is unknown.
+func checkBranchAhead(ctx context.Context, git MergeGitRunner, repo, branch, base string) (state string, ahead int, detail string) {
+	out, err := git.Run(ctx, repo, "for-each-ref", "--format=%(refname)", "refs/heads/"+branch)
+	if err != nil {
+		return branchCheckUnknown, 0, "checking branch " + branch + ": " + err.Error()
+	}
+	if strings.TrimSpace(out) == "" {
+		return branchCheckDropped, 0, ""
+	}
 	if base == "" {
 		base = resolveMergeBase(ctx, git, repo)
 	}
-	cmp := CompareBranchToMain(ctx, git, repo, p.Git.Branch, base)
+	cmp := CompareBranchToMain(ctx, git, repo, branch, base)
 	if cmp.State == MergeStateUnknown {
-		log.Printf("[autonomous] supervisor-loop: keeping %s: branch %s state unknown: %s", p.ID, p.Git.Branch, cmp.Error)
-		return true, 0
+		return branchCheckUnknown, 0, cmp.Error
 	}
-	return cmp.Ahead > 0, cmp.Ahead
+	if cmp.Ahead > 0 {
+		return branchCheckAhead, cmp.Ahead, ""
+	}
+	return branchCheckMerged, 0, ""
 }
