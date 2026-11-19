@@ -5569,11 +5569,13 @@ process. The full cause analysis is in
 
 ### When the daemon still dies silently
 
-1. `<data>/daemon-crash.log` — the daemon duplicates its stderr to this
-   file at start and runs with `GOTRACEBACK=crash`; a Go fatal error (the
-   SIGABRT class) leaves its full dump here, appended under a per-start
-   header line `=== datawatch vX started pid=… at … ===`, so crashes from
-   different process starts are distinguishable.
+1. `<data>/daemon-crash.log` — the daemon runs with `GOTRACEBACK=crash` and
+   registers this file for the runtime's fatal crash output at start; a Go
+   fatal error (the SIGABRT class) leaves its full dump here, appended under
+   a per-start header line `=== datawatch vX started pid=… at … ===`, so
+   crashes from different process starts are distinguishable. Stderr itself
+   is left untouched, so the service journal keeps receiving everything the
+   runtime prints on a fatal error alongside this file copy.
 2. `coredumpctl list`, then `coredumpctl info <pid>` — the core behind the
    SIGABRT, when the host keeps cores. (The 2026-11-18 host had no
    `coredumpctl` installed, which is why the abort first surfaced as the

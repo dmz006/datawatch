@@ -198,11 +198,12 @@ prefix), under a 5-second timeout, in its own process group, with its output
 capped at 64 KiB — see [automaton-decompose-lint.md](automaton-decompose-lint.md).
 If the daemon still dies silently, look in this order:
 
-1. `<data>/daemon-crash.log` — the daemon duplicates its stderr to this file
-   at start and runs with `GOTRACEBACK=crash`, so a Go fatal error (the
-   SIGABRT class) leaves its full dump here. Each process appends a header
-   line `=== datawatch vX started pid=… at … ===`, so crashes from
-   different starts are distinguishable.
+1. `<data>/daemon-crash.log` — the daemon runs with `GOTRACEBACK=crash` and
+   registers this file for the runtime's fatal crash output at start, so a
+   Go fatal error (the SIGABRT class) leaves its full dump here. Stderr
+   stays untouched — the journal still receives it — and each process
+   appends a header line `=== datawatch vX started pid=… at … ===`, so
+   crashes from different starts are distinguishable.
 2. `coredumpctl list`, then `coredumpctl info <pid>` — the core behind the
    SIGABRT, when the host keeps cores. (The 2026-11-18 host had no
    `coredumpctl` at all, which is why the abort first surfaced as the daemon
