@@ -9,13 +9,14 @@
 #
 # Every explicit pin must be an exact X.Y.Z >= FLOOR. Floating pins
 # (`1.26`, `1.27.x`, `1.x`, `stable`) can resolve below the floor, so they
-# fail. Go 1.27.0-1.27.2 are also rejected (CVE-2026-111943: fixed in 1.27.3).
+# fail. Go 1.27.0-1.27.3 are also rejected (CVE-2026-97054: fixed in 1.27.4 and
+# 1.26.11; CVE-2026-111943, fixed in 1.27.3, is covered by the same rule).
 #
 # Usage: scripts/check-go-toolchain-pins.sh [--self-test]
 
 set -euo pipefail
 
-FLOOR="1.26.10"
+FLOOR="1.26.11"
 
 # version_lt a b — true if a < b (both "X.Y.Z").
 version_lt() {
@@ -36,8 +37,8 @@ check_pin() {
         echo "✗ FAIL: $where pins $value, below the floor $FLOOR" >&2
         return 1
     fi
-    if [[ "$value" =~ ^1\.27\.([0-9]+)$ ]] && (( BASH_REMATCH[1] < 3 )); then
-        echo "✗ FAIL: $where pins $value, vulnerable to CVE-2026-111943 (need >= 1.27.3)" >&2
+    if [[ "$value" =~ ^1\.27\.([0-9]+)$ ]] && (( BASH_REMATCH[1] < 4 )); then
+        echo "✗ FAIL: $where pins $value, vulnerable to CVE-2026-97054 (need >= 1.27.4)" >&2
         return 1
     fi
     return 0
@@ -107,15 +108,17 @@ self_test() {
         fi
     }
 
-    expect 1 "Dockerfile pin 1.26.9 fails"        1.26.9  'go-version-file: go.mod'
+    expect 1 "Dockerfile pin 1.26.10 fails"       1.26.10 'go-version-file: go.mod'
     expect 1 "Dockerfile pin 1.27.2 fails"        1.27.2  'go-version-file: go.mod'
+    expect 1 "Dockerfile pin 1.27.3 fails"        1.27.3  'go-version-file: go.mod'
     expect 1 "Dockerfile floating 1.26 fails"     1.26    'go-version-file: go.mod'
-    expect 1 "workflow go-version: stable fails"  1.26.10 'go-version: stable'
-    expect 1 "workflow go-version: 1.27.x fails"  1.26.10 'go-version: 1.27.x'
-    expect 0 "Dockerfile pin 1.26.10 passes"      1.26.10 'go-version-file: go.mod'
-    expect 0 "Dockerfile pin 1.27.3 passes"       1.27.3  'go-version-file: go.mod'
-    expect 0 "workflow go-version-file passes"    1.26.10 'go-version-file: go.mod'
-    expect 0 "workflow go-version: 1.27.3 passes" 1.26.10 'go-version: "1.27.3"'
+    expect 1 "workflow go-version: stable fails"  1.26.11 'go-version: stable'
+    expect 1 "workflow go-version: 1.27.x fails"  1.26.11 'go-version: 1.27.x'
+    expect 1 "workflow go-version: 1.27.3 fails"  1.26.11 'go-version: "1.27.3"'
+    expect 0 "Dockerfile pin 1.26.11 passes"      1.26.11 'go-version-file: go.mod'
+    expect 0 "Dockerfile pin 1.27.4 passes"       1.27.4  'go-version-file: go.mod'
+    expect 0 "workflow go-version-file passes"    1.26.11 'go-version-file: go.mod'
+    expect 0 "workflow go-version: 1.27.4 passes" 1.26.11 'go-version: "1.27.4"'
 
     if [[ $rc -ne 0 ]]; then
         exit 1
@@ -132,6 +135,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if run_checks "$ROOT"; then
     echo "✓ PASS: all Go toolchain pins are exact and >= $FLOOR"
 else
-    echo "  Fix: pin an exact X.Y.Z >= $FLOOR (and not 1.27.0-1.27.2), or use go-version-file: go.mod." >&2
+    echo "  Fix: pin an exact X.Y.Z >= $FLOOR (and not 1.27.0-1.27.3), or use go-version-file: go.mod." >&2
     exit 1
 fi
