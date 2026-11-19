@@ -49,10 +49,19 @@ func TestProcIdentity(t *testing.T) {
 	}
 }
 
-// TestLooksLikeStopCommand covers the stop-sender classifier, in
-// particular the whole-token pid matching: an argument must equal the
-// daemon pid or be of the `--pid=<n>` form, never merely contain the
-// same digits inside a larger number.
+// TestLooksLikeStopCommand covers the stop-sender classifier:
+//
+//   - the issuer must be the invoked command (the first field, possibly
+//     behind a sudo/env/timeout wrapper); control words in later
+//     argument positions never count, so an agent session whose prompt
+//     merely mentions the unit and the stop/restart words is never a
+//     candidate;
+//   - kill/pkill/killall must name the daemon pid as a whole argument
+//     token, never the same digits inside a larger number;
+//   - systemctl/service must carry a stop|restart argument and name the
+//     datawatch unit as a whole argument token (not a substring of a
+//     longer unit name); datawatch (the daemon's own executable) must
+//     carry a stop|restart argument.
 func TestLooksLikeStopCommand(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("looksLikeStopCommand lives in the linux capture file")
@@ -68,10 +77,20 @@ func TestLooksLikeStopCommand(t *testing.T) {
 		{name: "kill with pid containing own digits as prefix", cmdline: "kill 12345", pid: "1234", want: false},
 		{name: "kill with own digits inside a larger pid", cmdline: "kill 4123", pid: "1234", want: false},
 		{name: "pkill naming parent pid", cmdline: "pkill -P 1234", pid: "1234", want: true},
-		{name: "systemctl stop via unit rule", cmdline: "systemctl --user stop datawatch", pid: "123456", want: true}, // service-scope-ok: fixture data, never executed
-		{name: "datawatch serve with port containing digits", cmdline: "datawatch serve --port 18443", pid: "184", want: false},
-		{name: "datawatch with pid flag form", cmdline: "datawatch --pid=184", pid: "184", want: true},
-		{name: "test binary re-exec kill form", cmdline: "./binary.test kill 1234", pid: "1234", want: true},
+		{name: "systemctl stop via unit rule", cmdline: "systemctl --user stop datawatch", pid: "123456", want: true},                        // service-scope-ok: fixture data, never executed
+		{name: "systemctl restart of the datawatch.service unit", cmdline: "systemctl restart datawatch.service", pid: "123456", want: true}, // service-scope-ok: fixture data, never executed
+		{name: "datawatch stop", cmdline: "datawatch stop", pid: "1", want: true},
+		{name: "datawatch restart", cmdline: "datawatch restart", pid: "1", want: true},
+		{name: "datawatch without stop intent: pid flag alone never counts", cmdline: "datawatch serve --port 18443 --pid=184", pid: "184", want: false},
+		{name: "sudo wrapper in front of systemctl", cmdline: "sudo systemctl stop datawatch", pid: "123456", want: true},
+		{name: "timeout wrapper and duration in front of systemctl", cmdline: "timeout 30 systemctl restart datawatch", pid: "123456", want: true},
+		{name: "unit containing the daemon name as a substring is not the datawatch unit", cmdline: "systemctl --user stop my-datawatch-extra", pid: "123456", want: false},
+		{name: "systemctl status of the unit has no stop intent", cmdline: "systemctl status datawatch", pid: "123456", want: false},
+		// Regression: an agent/editor process whose command line mentions
+		// the unit name and both control words must never be blamed.
+		{name: "agent session mentioning unit and both verbs is not a candidate", cmdline: "claude --print please stop the restart of datawatch once the datawatch run is done", pid: "123456", want: false},
+		{name: "verb only in a later argument (bash -c form) is not a candidate", cmdline: "bash -c systemctl stop datawatch", pid: "123456", want: false},
+		{name: "verb only in a later argument (test binary re-exec form) is not a candidate", cmdline: "./binary.test kill 1234", pid: "1234", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

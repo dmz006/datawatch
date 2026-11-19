@@ -50,6 +50,13 @@ const systemdJobTimeout = 2 * time.Second
 // daemonUnit is the unit name probed by systemdStopJob.
 const daemonUnit = "datawatch"
 
+// maxCandidateCmdlineBytes caps how long a /proc/*/cmdline may be before
+// the process is disqualified as a stop-sender candidate. Multi-kilobyte
+// command lines are almost always agent/editor/node processes that merely
+// talk about the unit in a prompt or argument, never service-control
+// invocations.
+const maxCandidateCmdlineBytes = 4096
+
 var (
 	pendingMu      sync.Mutex
 	pendingSiginfo = map[string]Cause{}
@@ -183,15 +190,14 @@ func CandidatesFor(daemonPID int) []Candidate {
 	return out
 }
 
-// candidateVerbs are command names treated as plausible stop senders.
-var candidateVerbs = map[string]bool{
-	"systemctl": true,
-	"service":   true,
-	"kill":      true,
-	"pkill":     true,
-	"killall":   true,
-	"datawatch": true,
-}
+// killVerbs names signal senders; these additionally must name the
+// daemon's own pid as a whole argument token.
+var killVerbs = map[string]bool{"kill": true, "pkill": true, "killall": true}
+
+// unitTokens are the exact argument forms that name the datawatch unit.
+// The unit must be a whole argument token, not a substring of some longer
+// argument.
+var unitTokens = map[string]bool{daemonUnit: true, daemonUnit + ".service": true}
 
 type candidateProc struct {
 	pid     int
@@ -221,9 +227,13 @@ func procScanCause() Cause {
 	return c
 }
 
-// scanCandidates lists live /proc entries whose cmdline contains a
-// service-control verb (or `datawatch stop|restart`) and names the
-// datawatch unit or the daemon's own pid.
+// scanCandidates lists live /proc entries whose cmdline is a
+// service-control invocation (systemctl/service/kill/pkill/killall/
+// datawatch as the invoked command, possibly behind a sudo/env/timeout
+// wrapper) that names the datawatch unit as a whole argument token or
+// the daemon's own pid as a whole argument token (see
+// looksLikeStopCommand). Command lines longer than
+// maxCandidateCmdlineBytes are never candidates.
 func scanCandidates(ownPID int) []candidateProc {
 	ownPIDStr := strconv.Itoa(ownPID)
 	entries, err := os.ReadDir("/proc")
@@ -244,7 +254,16 @@ func scanCandidates(ownPID int) []candidateProc {
 			continue
 		}
 		cmdline := strings.Trim(strings.ReplaceAll(string(raw), "\x00", " "), " ")
-		if cmdline == "" || !looksLikeStopCommand(cmdline, ownPIDStr) {
+		if cmdline == "" {
+			continue
+		}
+		// Multi-kilobyte command lines are agent/editor/node processes that
+		// mention the unit or the verbs in their arguments, not
+		// service-control invocations. They are never candidates.
+		if len(cmdline) > maxCandidateCmdlineBytes {
+			continue
+		}
+		if !looksLikeStopCommand(cmdline, ownPIDStr) {
 			continue
 		}
 		uid, user := procIdentity(pid)
@@ -267,33 +286,77 @@ func hasPIDToken(fields []string, pid string) bool {
 	return false
 }
 
-func looksLikeStopCommand(cmdline, ownPID string) bool {
-	fields := strings.Fields(cmdline)
-	var verb string
-	for _, f := range fields {
-		if base := filepath.Base(f); candidateVerbs[base] {
-			verb = base
-			break
+// controlVerb resolves the invoked command from a tokenized cmdline: the
+// first field, or the first field after a run of sudo/env/timeout
+// wrappers (timeout's duration argument included). A verb hit in any later
+// argument position is never the invoker, so it is never returned.
+func controlVerb(fields []string) (verb string, idx int, ok bool) {
+	i := 0
+	for i < len(fields) {
+		switch fields[i] {
+		case "sudo", "env":
+			i++
+		case "timeout":
+			i++
+			if i < len(fields) {
+				i++ // the duration argument
+			}
+		default:
+			return filepath.Base(fields[i]), i, true
 		}
 	}
-	if verb == "" {
+	return "", 0, false
+}
+
+// looksLikeStopCommand reports whether cmdline looks like a command that
+// could stop/restart the datawatch unit, or send it a signal.
+//
+// Only the invoked command (the first field, or after a
+// sudo/env/timeout wrapper) may be the issuer. Control words appearing
+// later in the line — an agent prompt that mentions "datawatch", "stop"
+// or "restart" — never qualify:
+//
+//   - kill/pkill/killall must name the daemon's own pid as a whole
+//     argument token;
+//   - systemctl/service must carry a stop|restart argument after the
+//     verb and name the datawatch unit as a whole argument token
+//     ("datawatch" or "datawatch.service");
+//   - datawatch (the daemon's own executable) must carry a stop|restart
+//     argument after the verb.
+func looksLikeStopCommand(cmdline, ownPID string) bool {
+	fields := strings.Fields(cmdline)
+	verb, idx, ok := controlVerb(fields)
+	if !ok {
 		return false
 	}
-	// Signal senders only count when they name our own pid.
-	if verb == "kill" || verb == "pkill" || verb == "killall" {
-		return hasPIDToken(fields, ownPID)
+	rest := fields[idx+1:]
+	switch {
+	case killVerbs[verb]:
+		return hasPIDToken(rest, ownPID)
+	case verb == "systemctl" || verb == "service":
+		return hasStopIntent(rest) && hasUnitToken(rest)
+	case verb == "datawatch":
+		return hasStopIntent(rest)
 	}
-	// systemctl / service / datawatch control verbs must carry a stop
-	// intent, so that "datawatch serve", "systemctl show datawatch" and
-	// the like do not match.
-	if hasPIDToken(fields, ownPID) {
-		return true
-	}
-	if !strings.Contains(strings.ToLower(cmdline), daemonUnit) {
-		return false
-	}
+	return false
+}
+
+// hasStopIntent reports whether fields contains a stop|restart argument
+// token.
+func hasStopIntent(fields []string) bool {
 	for _, f := range fields {
 		if f == "stop" || f == "restart" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasUnitToken reports whether fields contains the datawatch unit as an
+// exact argument token.
+func hasUnitToken(fields []string) bool {
+	for _, f := range fields {
+		if unitTokens[f] {
 			return true
 		}
 	}

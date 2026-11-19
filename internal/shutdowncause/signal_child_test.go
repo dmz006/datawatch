@@ -46,77 +46,81 @@ func runSignalParentRole() int {
 }
 
 // formatCandidates renders the procscan candidates for failure messages in
-// a stable, readable 'pid=N cmdline="..."' form.
+// a stable, readable 'pid=N cmdline="..."' form. It is deliberately
+// truncated — at most 5 candidates, each cmdline at most 200 characters,
+// with a "(N more)" marker — so a wave of misclassified agent/editor
+// sessions with multi-kilobyte command lines cannot blow up the failure
+// output.
 func formatCandidates(cands []Candidate) string {
-	parts := make([]string, 0, len(cands))
-	for _, c := range cands {
-		parts = append(parts, fmt.Sprintf("pid=%d cmdline=%q", c.PID, c.Cmdline))
+	const maxShown = 5
+	const maxCmdline = 200
+	parts := make([]string, 0, maxShown+1)
+	for i, c := range cands {
+		if i >= maxShown {
+			parts = append(parts, fmt.Sprintf("(%d more)", len(cands)-maxShown))
+			break
+		}
+		cmdline := c.Cmdline
+		if len(cmdline) > maxCmdline {
+			cmdline = cmdline[:maxCmdline] + "..."
+		}
+		parts = append(parts, fmt.Sprintf("pid=%d cmdline=%q", c.PID, cmdline))
 	}
 	return strings.Join(parts, " ")
 }
 
 // TestSignalChildProcScan is a regression test for the signal-capture
-// fallback: it re-executes this test binary (standard TestMain/helper-env
-// pattern); the child sends SIGTERM to us by PID; the capture is done via
-// signal.Notify + Capture. If the platform provided siginfo, the sender
-// must be exactly the child's PID; otherwise (the /proc fallback) the
-// child must appear among the procscan candidates and the captured
-// cmdline must contain the test binary. The test signals only its own
-// process, identified by the PID it passed to the child.
+// /proc fallback: while a live process shaped exactly like the datawatch
+// stop-sender is visible in the process table, the test delivers a real
+// SIGTERM and checks that Capture attributes the stop to that candidate
+// process — and never to some unrelated live process (for example the
+// agent session running this test) whose command line merely mentions the
+// unit name or the stop/restart words.
 func TestSignalChildProcScan(t *testing.T) {
 	if runtime.GOOS != "linux" {
-		t.Skipf("siginfo/procscan signal capture requires Linux (/proc, kill(2)); skipping on %s", runtime.GOOS)
+		t.Skipf("procscan signal capture requires Linux (/proc, kill(2)); skipping on %s", runtime.GOOS)
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not available; cannot stand up a live stop-sender-shaped process")
 	}
 	MarkAPIInitiated("")
 	t.Cleanup(func() { MarkAPIInitiated("") })
 
-	bin, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
 	myPID := os.Getpid()
 
-	// The child's /proc cmdline after start: binary, then "kill <our pid>".
-	childCmdline := bin + " kill " + strconv.Itoa(myPID)
+	// A live process whose /proc cmdline is exactly the systemctl stop of
+	// the datawatch unit: `exec -a` fakes the argv, and the process stays
+	// alive long enough to be visible to the procscan. No unit or service
+	// manager is ever invoked.
+	// service-scope-ok: fake argv on a child of this test; never touches a real unit.
+	fake := exec.Command(bash, "-c", `exec -a "systemctl --user stop datawatch" sleep 300`) // service-scope-ok fake argv, never executed by a service manager
+	if err := fake.Start(); err != nil {
+		t.Fatalf("start fake stop-sender: %v", err)
+	}
+	defer func() {
+		_ = fake.Process.Kill()
+		_ = fake.Wait()
+	}()
+	time.Sleep(150 * time.Millisecond) // let it settle so /proc sees a stable cmdline
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM) })
 
-	// Re-execute the test binary. The positional args are invisible to
-	// test flag parsing (parsing stops at the first non-flag) and exist
-	// only so the child's /proc/<pid>/cmdline is a recognizable
-	// stop-sender line: "kill <our own pid>" (no other pid is ever used).
-	// TestMain exits in helper mode before any test runs.
-	cmd := exec.Command(bin, "kill", strconv.Itoa(myPID))
-	cmd.Env = append(os.Environ(),
-		"DW_SHUTDOWNCAUSE_ROLE="+signalChildRole,
-		"DW_SHUTDOWNCAUSE_PARENT_PID="+strconv.Itoa(myPID),
-	)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	// Hold a stdin pipe to the child open for as long as we need it: the
-	// child blocks on it (with its own safety cap), so it cannot exit
-	// between sending SIGTERM and our procscan attribution check. The
-	// cleanup below closes it first, which gives the child EOF.
-	childStdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatalf("stdin pipe for child: %v", err)
+	// Deliver a real SIGTERM to this test process. With signal.Notify
+	// installed the Go runtime routes it to us instead of dying. No
+	// siginfo capture is installed for this signal here, so Capture must
+	// attribute via the procscan fallback.
+	if err := syscall.Kill(myPID, syscall.SIGTERM); err != nil {
+		t.Fatalf("kill(SIGTERM) to own pid %d: %v", myPID, err)
 	}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("re-execute test binary: %v", err)
-	}
-	defer func() {
-		_ = childStdin.Close() // EOF: releases the child promptly
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
 
 	var sig os.Signal
 	select {
 	case sig = <-sigCh:
 	case <-time.After(30 * time.Second):
-		t.Fatalf("waited 30s for SIGTERM from child pid %d, cmdline %q", cmd.Process.Pid, childCmdline)
+		t.Fatalf("waited 30s for our own SIGTERM; candidates at that moment: %s", formatCandidates(CandidatesFor(myPID)))
 	}
 
 	c := Capture(sig)
@@ -131,39 +135,59 @@ func TestSignalChildProcScan(t *testing.T) {
 		t.Fatalf("String() = %q, want prefix %q", c.String(), "shutdown: signal=terminated")
 	}
 
-	base := filepath.Base(bin)
 	switch c.Source {
 	case SourceSignalInfo:
-		// Platform provided siginfo: the sender is exactly the child.
-		if c.SenderPID != cmd.Process.Pid {
-			t.Fatalf("SenderPID = %d, want child pid %d (siginfo path)", c.SenderPID, cmd.Process.Pid)
+		// A platform-provided siginfo names the real sender; with no
+		// siginfo capture installed that is this test process itself.
+		if c.SenderPID != 0 && c.SenderPID != myPID {
+			t.Fatalf("SenderPID = %d, want 0 or own pid %d (siginfo path); candidates: %s",
+				c.SenderPID, myPID, formatCandidates(CandidatesFor(myPID)))
 		}
 	default:
-		// /proc fallback: the child must be among the candidates.
+		// /proc fallback: the live stop-sender-shaped process must be
+		// among the candidates, and the captured cause must point at one
+		// of them — never at an unrelated process.
 		cands := CandidatesFor(myPID)
-		var childc *Candidate
+		var fakec *Candidate
 		for i := range cands {
-			if cands[i].PID == cmd.Process.Pid {
-				childc = &cands[i]
+			if cands[i].PID == fake.Process.Pid {
+				fakec = &cands[i]
 				break
 			}
 		}
-		if childc == nil {
-			t.Fatalf("child pid %d not among procscan candidates: %s (cause: %s source=%q sender_pid=%d cmdline=%q)",
-				cmd.Process.Pid, formatCandidates(cands), c.String(), c.Source, c.SenderPID, c.Cmdline)
+		if fakec == nil {
+			t.Fatalf("fake stop-sender pid %d not among procscan candidates: %s (cause: %s source=%q)",
+				fake.Process.Pid, formatCandidates(cands), c.String(), c.Source)
 		}
-		if !strings.Contains(childc.Cmdline, base) {
-			t.Fatalf("candidate cmdline %q does not contain test binary %s (cause: %s source=%q sender_pid=%d; candidates: %s)",
-				childc.Cmdline, base, c.String(), c.Source, c.SenderPID, formatCandidates(cands))
+		if !strings.Contains(fakec.Cmdline, "systemctl") || !strings.Contains(fakec.Cmdline, daemonUnit) {
+			t.Fatalf("fake candidate cmdline = %q, want the systemctl stop of %s (cause: %s)",
+				fakec.Cmdline, daemonUnit, c.String())
 		}
-		// The captured cause must not point at some other process.
-		if c.SenderPID != 0 && c.SenderPID != cmd.Process.Pid {
-			t.Fatalf("SenderPID = %d, want child pid %d (procscan path); cause: %s source=%q sender_pid=%d cmdline=%q; candidates: %s",
-				c.SenderPID, cmd.Process.Pid, c.String(), c.Source, c.SenderPID, c.Cmdline, formatCandidates(cands))
+		if c.SenderPID != 0 {
+			inCands := false
+			for i := range cands {
+				if cands[i].PID == c.SenderPID {
+					inCands = true
+					break
+				}
+			}
+			if !inCands {
+				t.Fatalf("SenderPID = %d is not a procscan candidate (the cause blames an unrelated process): %s (cause: %s)",
+					c.SenderPID, formatCandidates(cands), c.String())
+			}
 		}
-		if c.Cmdline != "" && !strings.Contains(c.Cmdline, base) {
-			t.Fatalf("Captured Cmdline %q does not contain test binary %s (cause: %s source=%q sender_pid=%d; candidates: %s)",
-				c.Cmdline, base, c.String(), c.Source, c.SenderPID, formatCandidates(cands))
+		if c.Cmdline != "" {
+			inCands := false
+			for i := range cands {
+				if cands[i].Cmdline == c.Cmdline {
+					inCands = true
+					break
+				}
+			}
+			if !inCands {
+				t.Fatalf("captured Cmdline %q is not any procscan candidate's (the cause blames an unrelated process): %s",
+					c.Cmdline, formatCandidates(cands))
+			}
 		}
 	}
 }
