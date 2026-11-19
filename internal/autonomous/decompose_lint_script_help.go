@@ -199,7 +199,7 @@ func runBoundedProbe(ctx context.Context, name string, args ...string) ([]byte, 
 	if derr != nil {
 		return nil, derr
 	}
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = scratch
 	out := &cappedBuffer{max: scriptHelpMaxOutputBytes}
