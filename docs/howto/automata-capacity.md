@@ -1132,8 +1132,11 @@ same tick that reaps leaked leases):
   failed) and that has no live session is freed.
 - A holder with a **live session is never freed**, whatever its lease state. The
   reconcile only releases ledger slots; it never ends or kills a session.
-- A lease younger than one minute counts as having a node lease, so a holder
-  that was just admitted is left alone.
+- A lease younger than the **slot reconcile grace** counts as having a node
+  lease, so a holder that was just admitted is left alone. The grace is set by
+  `autonomous.capacity_slot_reconcile_grace_seconds` (default 60; minimum 10;
+  `0` reads the default). Values 1 to 9 and negative values are refused on every
+  surface.
 - Running it again frees nothing more.
 
 **What you see.** One journal line per freed slot
@@ -1146,7 +1149,16 @@ reason is `no live session and no node lease` or `Automaton finished`.
 **Operator review.** The alert is informational. If it repeats for the same
 Automaton, a judge or verifier is being started without a node lease; check the
 node pools and the holder in [Readable holder names](#readable-holder-names).
-There is no setting for this reconcile and nothing to turn on.
+
+**Setting.** `autonomous.capacity_slot_reconcile_grace_seconds` (default 60,
+minimum 10, `0` = 60) is the only knob. It is read live, so no restart is
+needed. Set it with the Web settings field *Slot reconcile grace*,
+`datawatch config set autonomous.capacity_slot_reconcile_grace_seconds <n>`,
+`PUT /api/config`, the comm `configure` verb or the MCP `autonomous_config_set`
+tool. Raise it only if the alert fires for holders that were admitted just
+before the check; a longer grace delays the release of a truly leaked slot by
+the same amount. Nothing is turned on or off by it, and it never ends a
+session.
 
 ### Confirming a freed slot
 
