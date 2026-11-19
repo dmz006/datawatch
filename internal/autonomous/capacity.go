@@ -1026,13 +1026,21 @@ func (m *Manager) releaseForRelaunch(t *Task) string {
 	return prev
 }
 
-// releaseCapacity frees the task's lease (safe when none is held).
+// releaseCapacity frees the lease held under holder (safe when none is held).
+// Given a task id it also frees the task's verifier lease, because a worker
+// lease that was handed to the verifier lives under VerifyHolder(taskID) and
+// would otherwise outlive the task's completion, cancel or failure. A holder
+// that already names a verify: or judge: lease frees only that lease.
 func (m *Manager) releaseCapacity(taskID string) {
 	m.mu.Lock()
 	led := m.capacity
 	m.mu.Unlock()
-	if led != nil {
-		led.Release(taskID)
+	if led == nil {
+		return
+	}
+	led.Release(taskID)
+	if !strings.HasPrefix(taskID, "verify:") && !strings.HasPrefix(taskID, "judge:") {
+		led.Release(VerifyHolder(taskID))
 	}
 }
 
