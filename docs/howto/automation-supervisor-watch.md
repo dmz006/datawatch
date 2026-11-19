@@ -307,7 +307,7 @@ to clear the blocker instead of finding it on its next scheduled check.
   priority floor is 80. Confirm these suit your installation before turning the
   supervisor wake on.
 
-### The seven blockers and their single action
+### The blockers and their single action
 
 Each stalled Automaton is named with exactly one blocker and one action.
 
