@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A task's string `verification` field is now accepted.** A plan that puts a plain string in a task's `verification` field is no longer rejected as unparseable: the daemon reads it as an unverified-result summary (`OK` false, the string as the summary). A planning answer that still cannot be parsed is now a content failure rather than a terminal invalid-response failure — it is retried once as a content failure, with the parse error (naming the offending field and task) fed back to the planner, before it is recorded.
+
 ### Fixed
 
 - **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
