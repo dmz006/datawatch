@@ -5521,6 +5521,68 @@ See [howto/autonomous-recovery](howto/autonomous-recovery.md).
 
 ---
 
+## Decompose output and daemon aborts (SIGABRT, core dump)
+
+### The 2026-11-18 abort
+
+The daemon aborted with SIGABRT and a core dump right after reading a
+Claude decompose session's output. Cause: the decompose-lint rule
+`script_invokes_known_flag` resolves a verification script's commands and
+probes their help; before the fix its fallback was to run the command's
+**bare prefix** (no arguments, no flags) as a third attempt after `--help`
+and `-h` — with no working directory, no process group and an unbounded
+output buffer. A long-running or streaming command in that position ran
+until the daemon's memory was exhausted and the Go runtime aborted the
+process. The full cause analysis is in
+`.datawatch/reports/decompose-abort-cause.md` (tracked with the fix).
+
+### What changed
+
+- **The help probe is bounded.** It runs `prefix --help` only — never `-h`,
+  never the bare prefix — in a fresh scratch working directory, in its own
+  process group (killed whole when the timeout fires), under a 5-second
+  timeout, with its combined output capped at 64 KiB and its pipe wait
+  bounded (2 seconds). A command that does not resolve, a probe that times
+  out, fails or prints nothing, and short flags are all skipped — the rule
+  skips on uncertainty rather than guessing. See
+  [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md).
+- **A bad decompose output fails the Automaton, not the daemon.** The raw
+  output is refused above 8 MiB before it is parsed; the parse-plus-lint
+  step — shared by the sync and streaming decompose paths and the
+  re-attached planner ingest — runs under a panic guard, so a Go panic in
+  the parser or the lint is recovered and returned as the named failure
+  `decompose output unparseable: <reason>` (output length plus a 200-byte
+  head).
+- **It is a written verdict, never an infra retry.** The failure is the
+  Automaton's planning failure, source `decompose-parse`, category
+  `invalid-response`, `retryable: false`, outside the `infra` budget — a
+  plan the model wrote that the daemon cannot parse, re-run the same way,
+  would only reproduce itself. On a give-up the PRD rolls back to `draft`,
+  one warning alert is raised, and the raw output is kept at
+  `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`
+  (a collision suffix if one already exists) for inspection. Two adjacent
+  sources are different: a decompose **LLM call** that fails before
+  producing output is source `decompose-llm`, category `infra` (the
+  ordinary infra-retry path), and a store **persistence** failure is source
+  `decompose-persist`, category `infra`, retryable. See
+  [howto/retry-policy.md](howto/retry-policy.md).
+
+### When the daemon still dies silently
+
+1. `<data>/daemon-crash.log` — the daemon duplicates its stderr to this
+   file at start and runs with `GOTRACEBACK=crash`; a Go fatal error (the
+   SIGABRT class) leaves its full dump here, appended under a per-start
+   header line `=== datawatch vX started pid=… at … ===`, so crashes from
+   different process starts are distinguishable.
+2. `coredumpctl list`, then `coredumpctl info <pid>` — the core behind the
+   SIGABRT, when the host keeps cores. (The 2026-11-18 host had no
+   `coredumpctl` installed, which is why the abort first surfaced as the
+   daemon vanishing.)
+3. The decompose output itself, if a decompose was in flight: the
+   `decompose-output.json.failed` artifact in the PRD's scratch directory.
+
+---
+
 ## Notification Routing Across Comm Channels
 
 Every comm channel you enable (Signal, Telegram, Discord, Slack, Matrix,

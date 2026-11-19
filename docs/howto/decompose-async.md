@@ -160,6 +160,56 @@ The Android T13 story maps to this flow:
 5. On network drop: reconnects with `Last-Event-ID` from the last received
    event ID — no stories are duplicated or lost.
 
+## When the decompose output cannot be parsed
+
+Since the 2026-11-18 abort fix, a decompose whose *output* is bad fails the
+Automaton — it can no longer abort the daemon:
+
+- **Bounded before parsing.** The raw output is refused above 8 MiB before it
+  is cleaned or parsed, so a runaway reply can never grow the daemon's heap.
+- **Guarded parse and lint.** The parse-plus-lint step — shared by the sync
+  and streaming decompose paths and the re-attached planner ingest — runs
+  under a panic guard. A Go panic in the parser or the lint is recovered and
+  returned as the named failure `decompose output unparseable: <reason>`
+  (with the output length and a 200-byte head), not as an abort.
+- **A written verdict, not an infra retry.** The failure is recorded as the
+  Automaton's planning failure with source `decompose-parse` and category
+  `invalid-response`: terminal, `retryable: false`, outside the `infra`
+  budget — a plan the model wrote that the daemon cannot parse is a content
+  judgment, and re-running the identical call would reproduce the identical
+  output. (Contrast: a decompose LLM call that fails *before* producing
+  output is source `decompose-llm`, category `infra`, and takes the ordinary
+  infra-retry path.) On a give-up the PRD rolls back to `draft`, one warning
+  alert is raised, and the raw output is kept at
+  `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`
+  (a collision suffix if one already exists) so you can inspect exactly what
+  the model wrote. See [retry-policy.md](retry-policy.md) for the
+  `invalid-response` category.
+
+## If the daemon itself aborts (SIGABRT, core dump)
+
+The 2026-11-18 abort — the daemon dying with SIGABRT and a core dump right
+after reading a decompose session's output — came from a decompose-lint help
+probe whose fallback ran a command's bare prefix with no working directory,
+no process group and no output cap; a long-running command in that position
+grew the daemon's memory until the Go runtime aborted the process. It is
+fixed: the probe runs `prefix --help` only (never `-h`, never the bare
+prefix), under a 5-second timeout, in its own process group, with its output
+capped at 64 KiB — see [automaton-decompose-lint.md](automaton-decompose-lint.md).
+If the daemon still dies silently, look in this order:
+
+1. `<data>/daemon-crash.log` — the daemon duplicates its stderr to this file
+   at start and runs with `GOTRACEBACK=crash`, so a Go fatal error (the
+   SIGABRT class) leaves its full dump here. Each process appends a header
+   line `=== datawatch vX started pid=… at … ===`, so crashes from
+   different starts are distinguishable.
+2. `coredumpctl list`, then `coredumpctl info <pid>` — the core behind the
+   SIGABRT, when the host keeps cores. (The 2026-11-18 host had no
+   `coredumpctl` at all, which is why the abort first surfaced as the daemon
+   simply vanishing.)
+3. The decompose output itself, if a decompose was in flight: the
+   `decompose-output.json.failed` artifact named above.
+
 ## Common pitfalls
 
 - **Job expires.** In-memory job state is held for 10 minutes after
