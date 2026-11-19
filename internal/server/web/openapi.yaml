@@ -6434,6 +6434,10 @@ paths:
         archived by the supervisor loop; any value that is not true or false is
         rejected with 400 and nothing changes. `archive_grace_minutes` (whole
         number >= 0, default 60) is how long a cancelled Automaton is kept first.
+        `capacity_slot_reconcile_grace_seconds` (whole seconds, default 60,
+        minimum 10, 0 = default; PUT key
+        `autonomous.capacity_slot_reconcile_grace_seconds`) is how long a capacity
+        slot may look unmatched to a live worker before it is reconciled away.
         The response includes the plan-requirement coverage gate settings under
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
@@ -6531,6 +6535,11 @@ paths:
               schema:
                 type: object
                 properties:
+                  capacity_slot_reconcile_grace_seconds:
+                    type: integer
+                    default: 60
+                    minimum: 0
+                    description: "How long, in seconds, a capacity slot may look unmatched to a live worker before the daemon reconciles it away (autonomous.capacity_slot_reconcile_grace_seconds). Default 60; the minimum is 10; 0 reads the default. The effective value is returned and the same key is accepted on PUT. A value from 1 to 9 or a negative value is rejected with 400."
                   scope_lint:
                     type: string
                     enum: [off, warn, enforce]
