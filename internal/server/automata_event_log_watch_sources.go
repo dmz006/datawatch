@@ -35,6 +35,7 @@ var automataWatchAutomatonKinds = map[autonomous.SupervisorWatchKind]bool{
 	autonomous.SupervisorWatchTaskFailed:                true,
 	autonomous.SupervisorWatchTaskReviewNeeded:          true,
 	autonomous.SupervisorWatchAutomatonNotMerged:        true,
+	autonomous.SupervisorWatchCompletedUnmerged:         true,
 	autonomous.SupervisorWatchWorktreeNoGomod:           true,
 	autonomous.SupervisorWatchWorktreeNotRegistered:     true,
 	autonomous.SupervisorWatchWorktreeSilent:            true,

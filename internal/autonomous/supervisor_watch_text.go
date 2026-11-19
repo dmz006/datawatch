@@ -69,6 +69,8 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 		return fmt.Sprintf("a task in Automaton %s is waiting for review", subject), nil
 	case SupervisorWatchAutomatonNotMerged:
 		return fmt.Sprintf("Automaton %s finished all of its work but is not merged", subject), nil
+	case SupervisorWatchCompletedUnmerged:
+		return fmt.Sprintf("Automaton %s reads completed but its branch is not merged into main and no no-code reason is recorded", subject), nil
 	case SupervisorWatchIdleLaneEligibleWork:
 		return fmt.Sprintf("lane %s is idle while Automata work that is eligible to run is waiting", subject), nil
 	case SupervisorWatchWorktreeNoGomod:
