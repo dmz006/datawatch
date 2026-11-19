@@ -3584,6 +3584,12 @@ type AutonomousConfig struct {
 	// 0 (archive at once) survives omitempty; unset reads as 60 through
 	// ArchiveGraceMinutesOrDefault.
 	ArchiveGraceMinutes *int `yaml:"archive_grace_minutes,omitempty" json:"archive_grace_minutes,omitempty"`
+	// ArchiveKeepUnmerged keeps a finished Automaton (completed, rejected or
+	// cancelled) out of the archive while its branch holds commits that are
+	// not on the base branch. A pointer, so an explicit false survives
+	// omitempty; unset reads as true through ArchiveKeepUnmergedOrDefault.
+	// Read live by the supervisor loop's close step.
+	ArchiveKeepUnmerged *bool `yaml:"archive_keep_unmerged,omitempty" json:"archive_keep_unmerged,omitempty"`
 	// CapacityFallthrough: when a task's requested pool is full while another
 	// allowed pool for the same task is idle, admit it on that other pool and
 	// audit the fall-through. Default false: a task waits for its own pool.
@@ -9688,6 +9694,18 @@ func (a AutonomousConfig) ArchiveGraceMinutesOrDefault() int {
 		return DefaultArchiveGraceMinutes
 	}
 	return *a.ArchiveGraceMinutes
+}
+
+// DefaultArchiveKeepUnmerged is autonomous.archive_keep_unmerged when unset.
+const DefaultArchiveKeepUnmerged = true
+
+// ArchiveKeepUnmergedOrDefault resolves autonomous.archive_keep_unmerged:
+// unset is true, an explicit false stays false.
+func (a AutonomousConfig) ArchiveKeepUnmergedOrDefault() bool {
+	if a.ArchiveKeepUnmerged == nil {
+		return DefaultArchiveKeepUnmerged
+	}
+	return *a.ArchiveKeepUnmerged
 }
 
 // ParseArchiveGraceMinutes validates a candidate autonomous.archive_grace_minutes
