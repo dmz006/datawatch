@@ -1231,6 +1231,12 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 	// for the server's process lifetime, same as the server itself.
 	s.nonces.startSweeper(nonceTTL, make(chan struct{}))
 	s.wireHubSessionStream() // BL432 / GH#242 — live ws_session_list_default + summary length
+	if manager != nil {
+		// Resumes (start-with-resume-id and restart) must re-apply the
+		// session's stored worker profile; non-profile sessions get a nil
+		// hook and keep the previous profile-less resume path.
+		manager.SetProfileResumeFn(s.profileResumeFnForSession)
+	}
 	return s
 }
 

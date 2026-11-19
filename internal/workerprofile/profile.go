@@ -39,6 +39,24 @@ type MCPSelection struct {
 	Servers []string `yaml:"servers,omitempty" json:"servers,omitempty"` // required when Mode is MCPList
 }
 
+// Includes reports whether a profile's MCP selection grants the named MCP
+// server: mode "datawatch" grants the "datawatch" bridge (the entry name the
+// channel package writes into the project .mcp.json), mode "list" grants
+// exactly the listed servers, and any other mode grants nothing.
+func (sel MCPSelection) Includes(name string) bool {
+	switch sel.Mode {
+	case MCPDatawatch:
+		return name == "datawatch"
+	case MCPList:
+		for _, s := range sel.Servers {
+			if s == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ToolSelection says which tools a worker may call.
 type ToolSelection struct {
 	Mode  string   `yaml:"mode,omitempty" json:"mode,omitempty"`   // one of ToolsAll or ToolsAllow
