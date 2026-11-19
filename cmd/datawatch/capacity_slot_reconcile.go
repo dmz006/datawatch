@@ -9,11 +9,6 @@ import (
 	"github.com/dmz006/datawatch/internal/capacity"
 )
 
-// slotReconcileGrace is how long a fresh lease counts as having a node lease,
-// so a holder that was just admitted and has not registered its session yet
-// is never freed.
-const slotReconcileGrace = time.Minute
-
 // sessionLiveFn adapts the session manager's running check to
 // autonomous.SessionLiveness.
 type sessionLiveFn func(id string) bool
@@ -24,10 +19,14 @@ func (f sessionLiveFn) SessionLive(id string) bool { return f(id) }
 // holds a node pool (node:<name>) still has its node lease.
 type ledgerNodeLease struct {
 	now func() time.Time
+	// grace is how long a fresh lease counts as having a node lease, so a
+	// holder that was just admitted and has not registered its session yet is
+	// never freed. It comes from autonomous.capacity_slot_reconcile_grace_seconds.
+	grace time.Duration
 }
 
 func (n ledgerNodeLease) HasNodeLease(ls capacity.Lease) bool {
-	if n.now != nil && n.now().Sub(ls.Acquired) < slotReconcileGrace {
+	if n.now != nil && n.now().Sub(ls.Acquired) < n.grace {
 		return true
 	}
 	for _, p := range ls.Pools {
