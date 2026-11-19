@@ -37,13 +37,12 @@ func (m *Manager) IngestPlannerOutput(prdID, raw string) error {
 	if status != PRDPlanning {
 		return nil
 	}
-	title, stories, err := ParsePlanning(raw)
+	title, raw, stories, err := m.parseAndLintDecompose(prd, raw,
+		func(string) (string, string, []Story, error) { return "", "", nil, errReattachNoRetry })
 	if err != nil {
 		m.failDecomposeAttempt(prd, "decompose-parse", err)
 		return err
 	}
-	title, raw, stories = m.decomposeLintHook(prd, title, raw, stories,
-		func(string) (string, string, []Story, error) { return "", "", nil, errReattachNoRetry })
 	outcome, oerr := m.validateAndStorePlan(prd, prdID, stories)
 	switch outcome {
 	case decomposeAttemptStored:

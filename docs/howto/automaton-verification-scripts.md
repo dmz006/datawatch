@@ -170,11 +170,39 @@ skipped by the rules below that read a script; the warn rule
 | `final_gate_artefact_allowed` | block | Asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; the gate runs after every standard task has landed, so a finite whole-set claim can only fail. | Assert only the files this task adds, or guard the claim so it skips when the final gate re-runs the script. |
 | `script_invokes_known_flag` | block | Invokes a command with a long flag (`--flag`) the command's own help does not list as a whole option — a flag invented from memory. | Check each command and flag against the real binary's help (`command --help`) before accepting the script; short flags and a command that does not resolve or answer a bounded help probe are out of scope. |
 | `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not name — the check is anchored to an assumption about output shape, not to the spec. | Name the exact heading or phrase in the spec the script checks (a "Gates section" in the spec anchors a grep of `## Gates`). |
+| `verify_script_artefact_files` | block | The script flags changed files the task did not plan, without exempting `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` (stricter shape check than `artefact_files_allowed`). | Exempt those paths from the "unexpected files" check, or check only the files the task adds. |
+| `verify_script_final_gate_rerun` | block | A script asserts the changed-file set against a finite allow-list with no guard the lint recognizes for the final gate rerunning it on the cumulative tree. | Guard it with an env var (`DATAWATCH_*`, `SKIP_*`, `FINAL*`), a `--final` argument, or a check limited to files the task adds. |
+| `verify_script_unknown_flag` | block | The script passes a long flag to a command (or one of its subcommands) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted. | Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked. |
+| `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec. | State the exact heading or the exact format being checked, word for word, in the task spec. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
+| `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
+| `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
+| `verify_script_pipefail_grep_q` | block | With `pipefail` on, a pipeline ends in a quiet grep and can read as a false no-match. | Write the output to a file, then run `grep -q` on the file. |
+| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path another story or task in the plan changes. | Make the allowed list cumulative over the whole plan. |
+| `fixed_calendar_date_in_test` | warn | The task asks for a test that uses a fixed calendar date, which passes now and fails later. | Take times from the current time with an offset, or an injected clock. |
 
-All seven are `block`-severity: in `enforce` mode they feed the planner a retry
-with the findings as guidance; in `shadow` mode they are recorded on the
-Automaton and nothing is retried. See
+**Operator note.** The rows fall in three groups:
+
+- The first eleven (`verify_script_task_files_only`,
+  `verify_script_docs_without_sync`, `artefact_files_allowed`,
+  `final_gate_artefact_allowed`, `script_invokes_known_flag`,
+  `check_matches_spec_text`, `final_gate_without_script`,
+  `verify_script_artefact_files`, `verify_script_final_gate_rerun`,
+  `verify_script_unknown_flag`, `verify_script_text_not_in_spec`) are rules in
+  the rule pack, severity `block`: in `enforce` mode they feed the planner a
+  retry with the findings as guidance; in `shadow` mode they are recorded on
+  the Automaton and nothing is retried. An operator rule with the same id can
+  replace or disable them.
+- The next four (`verify_script_syntax`, `verify_script_shell_mismatch`,
+  `verify_script_pipefail_grep_q`, `verify_script_allowed_files`) are the
+  preflight, not rule-pack rules (details in
+  [section 5a](#5a-preflight-checks-for-planner-written-scripts)). They run on
+  every decompose and when an edit sets a task's script, always at `block`,
+  and their findings appear on the Automaton before any task starts.
+- `fixed_calendar_date_in_test` is a rule-pack rule at `warn`: it is recorded
+  and never triggers a retry.
+
+See
 [the decompose-lint how-to](automaton-decompose-lint.md#3-the-rule-pack-that-ships)
 for the whole rule pack.
 
@@ -221,6 +249,43 @@ executable, has no shebang or lies outside the project is still a problem. The
 check after the task runs the written file and fails the task if it was never
 written, so accepting the start loses no safety. With
 `autonomous.checks.pre_start_verifier` set to `off` none of this runs.
+
+## 5a. Preflight checks for planner-written scripts
+
+Verification and final-gate scripts written by the planner used to fail on
+their first real run for reasons that had nothing to do with the task. The
+preflight checks catch four of those causes by reading the script text, never
+by running the script. Each finding names the script (repo-relative), the line
+(0 when no line applies), the rule id and a message.
+
+| Rule id | What it catches | How to fix it |
+|---|---|---|
+| `verify_script_syntax` | `<shell> -n` reports a syntax error in a script whose shebang names `bash`, `sh`, `dash`, `ksh` or `zsh`. At most one finding per script. A script whose interpreter is not installed is not flagged. | Fix the syntax at the reported line. |
+| `verify_script_shell_mismatch` | The script calls a helper with one shell (for example `sh helper.sh`) while the helper's shebang names another (`#!/usr/bin/env bash`). Helpers that cannot be read, or have no shell shebang, are skipped. | Call the helper with the shell its shebang names, or run it directly. |
+| `verify_script_pipefail_grep_q` | The script enables `pipefail` (`set -o pipefail`, `set -euo pipefail`) and pipes into a quiet grep (`-q`, `-qE`, `-Eq`, `--quiet`, also after `\|&`). grep exits at the first match, the upstream command gets a broken pipe, and the check reads as a false no-match. | Write the pipeline's output to a file, then test the file with `grep -q`. |
+| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path that some story or task in the **whole plan** changes. Files named by the built-in standard tasks count as covered (a templated path is cut to its static folder). A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
+
+**Where they run.** The preflight runs in two places, and every finding it
+raises has severity `block`:
+
+- **Every decompose.** Each decompose-lint pass also runs the preflight over
+  the planned stories and adds its findings to the pass. In `enforce` mode they
+  drive the retry like any other `block` finding; in `shadow` mode they are
+  recorded only. With decompose lint `off`, the preflight still runs once and,
+  when it finds anything, records those findings on the Automaton (with mode
+  `off`); nothing is retried.
+- **A task edit that sets a script.** When you set a task's
+  `verification_script` with the edit tools ([section 6](#6-set-a-tasks-script-or-reason-with-the-edit-tools)),
+  the preflight runs for that one script. Its findings replace any earlier
+  finding for the same script and rule id in the Automaton's decompose-lint
+  findings; they are reported, never enforced, and never refuse the edit.
+
+The findings are read on the same surfaces as other decompose-lint findings
+(`autonomous_decompose_lint_findings`, the findings REST/CLI paths and the PWA
+findings list). The preflight has no configuration setting of its own and is
+not a rule in the rule pack, so an operator rule cannot disable or re-grade it.
+The read-only dry run (`autonomous_decompose_lint_dry_run`) does **not** run
+the preflight; it only runs the rule pack.
 
 ## 6. Set a task's script or reason with the edit tools
 
@@ -286,11 +351,13 @@ in tests. See **Verification lint gate** in [the definitions](../datawatch-defin
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All seven verification-script
+- **Block severity is the shipped default.** All eleven verification-script
   stability rules are `block` (`verify_script_task_files_only`,
   `verify_script_docs_without_sync`, `artefact_files_allowed`,
   `final_gate_artefact_allowed`, `script_invokes_known_flag`,
-  `check_matches_spec_text` and `final_gate_without_script`): in `enforce`
+  `check_matches_spec_text`, `final_gate_without_script`,
+  `verify_script_artefact_files`, `verify_script_final_gate_rerun`,
+  `verify_script_unknown_flag` and `verify_script_text_not_in_spec`): in `enforce`
   mode a script that breaks one sends the plan back to
   the planner (up to `max_retries`) before any task runs. Decide whether you
   want that, or want `shadow` first to see how often your planners trip them;
@@ -313,6 +380,18 @@ These points are decisions or checks the docs cannot settle for you:
   phrases in the spec text. A spec that words the instruction differently is
   still refused at start; confirm your planner's wording on a dry run before
   relying on it.
+- **Preflight severity is fixed at `block`.** The four `verify_script_*`
+  preflight checks in [section 5a](#5a-preflight-checks-for-planner-written-scripts)
+  now run on every decompose and on a script edit, with no setting to turn
+  them off or lower them. In `enforce` mode they can send a plan back to the
+  planner. Review whether that is wanted, and note the dry run does not show
+  them — only a real decompose or an edit does.
+- **Fixed calendar dates in tests are a warning only.** The new
+  `fixed_calendar_date_in_test` rule (see the
+  [rule pack](automaton-decompose-lint.md#3-the-rule-pack-that-ships)) flags a
+  test-writing task whose spec holds a `YYYY-MM-DD` date, but never blocks. It
+  matches any such date, including ones that are not test fixtures; decide
+  whether to raise or disable it with an operator rule of the same id.
 - **Mobile apps.** The task editor fields are described for the web app only;
   parity for the Android and iPhone apps is tracked outside this tree.
 

@@ -265,7 +265,12 @@ func TestDecomposeLintEffectiveRulesDefault(t *testing.T) {
 		{"final_gate_artefact_allowed", "block"},
 		{"script_invokes_known_flag", "block"},
 		{"check_matches_spec_text", "block"},
+		{"fixed_calendar_date_in_test", "warn"},
 		{"final_gate_without_script", "block"},
+		{"verify_script_artefact_files", "block"},
+		{"verify_script_final_gate_rerun", "block"},
+		{"verify_script_unknown_flag", "block"},
+		{"verify_script_text_not_in_spec", "block"},
 		{"no_verification_script", "warn"},
 		{"unexecutable_verification_script", "warn"},
 		{"names_tracker_id", "warn"},
@@ -303,8 +308,8 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 		},
 	}
 	got := EffectiveRules(cfg)
-	if len(got) != 18 {
-		t.Fatalf("got %d rules, want 17 built-in + 1 new", len(got))
+	if len(got) != 23 {
+		t.Fatalf("got %d rules, want 22 built-in + 1 new", len(got))
 	}
 	// replaced at its original position (index 1)
 	if got[1].ID != "runs_hosting_cli" || got[1].Message != "Operator-local guidance for hosting CLI use." {
@@ -361,8 +366,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		t.Fatalf("Validate with bare disabled rules: %v", err)
 	}
 	gotA := EffectiveRules(cfgA)
-	if ids := idsOf(gotA); len(ids) != 15 {
-		t.Fatalf("disabled-flag: got %v, want the 15 non-disabled built-ins", ids)
+	if ids := idsOf(gotA); len(ids) != 20 {
+		t.Fatalf("disabled-flag: got %v, want the 20 non-disabled built-ins", ids)
 	}
 	absent(t, gotA, "runs_hosting_cli", "names_tracker_id")
 
@@ -371,21 +376,21 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		DisabledRules: []string{"edits_version_variable", "no_verification_script"},
 	}
 	gotB := EffectiveRules(cfgB)
-	if ids := idsOf(gotB); len(ids) != 15 {
-		t.Fatalf("disabled-list: got %v, want the 15 non-listed built-ins", ids)
+	if ids := idsOf(gotB); len(ids) != 20 {
+		t.Fatalf("disabled-list: got %v, want the 20 non-listed built-ins", ids)
 	}
 	absent(t, gotB, "edits_version_variable", "no_verification_script")
 
 	// (c) disabling an operator-added rule removes it; the built-in
-	// pack (17 rules) is untouched.
+	// pack (22 rules) is untouched.
 	cfgC := config.DecomposeLintConfig{
 		Rules: []config.DecomposeLintRule{
 			{ID: "operator_rule", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}, Disabled: true},
 		},
 	}
 	gotC := EffectiveRules(cfgC)
-	if ids := idsOf(gotC); len(ids) != 17 {
-		t.Fatalf("operator rule disabled: got %v, want the 17 built-ins", ids)
+	if ids := idsOf(gotC); len(ids) != 22 {
+		t.Fatalf("operator rule disabled: got %v, want the 22 built-ins", ids)
 	}
 	absent(t, gotC, "operator_rule")
 
@@ -396,8 +401,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		Rules:         []config.DecomposeLintRule{{ID: "runs_hosting_cli", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}}},
 	}
 	gotD := EffectiveRules(cfgD)
-	if len(gotD) != 16 {
-		t.Fatalf("list-wins: got %v, want 16 rules", idsOf(gotD))
+	if len(gotD) != 21 {
+		t.Fatalf("list-wins: got %v, want 21 rules", idsOf(gotD))
 	}
 	absent(t, gotD, "runs_hosting_cli")
 }

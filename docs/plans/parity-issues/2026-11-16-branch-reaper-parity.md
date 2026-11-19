@@ -47,3 +47,18 @@ The daemon now reaps task sub-branches that are contained in their Automaton bra
 
 - Automata maintenance: a Branch reaper card with the preview report (would be reaped, held), the backup refs list and a Restore button per reaped branch.
 - Settings: the backup-days field.
+
+## Status (2026-11-18)
+
+The REST contract did not change with the live-daemon wiring fix, so the contract above
+applies as written. One correction to expectations formed before the fix: until the fix,
+a running daemon answered 503 — `the autonomous manager does not expose the branch
+reaper` — on all three routes **even when** `autonomous.worktree_base_repo` was set,
+because the daemon's API wrapper did not carry the reaper's methods. A mobile app
+pointed at a live daemon therefore showed the card's error state (the
+`branch_reap_failed` wording with the 503 body) instead of the report, and
+`branch_reap_run` / `branch_reap_restore` failed with the same body. After the fix the
+three routes answer on a live daemon — the card renders its full rows and the Restore
+button works — and the error wording is reached only when the base repo is genuinely
+unset (or, for the two writes, when the write capability is missing). No app-side change
+was needed for the fix.

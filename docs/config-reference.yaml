@@ -2124,12 +2124,17 @@ autonomous:
   #   explicit 0 never treats an unreachable host as down and survives a round
   #   trip. Negative or non-integer values are refused.
   # require_confirmed_proposal: bool, default true (an absent key reads true).
-  #   An implementation Automaton is taken only when a proposal file named in
-  #   its spec (docs/plans/<name>.md, read from the base repository) has a line
-  #   starting "Confirmed: yes" in its first 200 lines. Otherwise it is refused
-  #   as proposal_not_confirmed (the file has no such line) or proposal_missing
-  #   (no readable file is named). Research, operational and personal
-  #   Automata are exempt. false turns the rule off.
+  #   An implementation Automaton is taken only when a proposal file it names
+  #   (docs/plans/<name>.md, read from the base repository) has a line starting
+  #   "Confirmed: yes" in its first 200 lines. The title or spec names a
+  #   proposal only through an explicit proposal field or line: a docs/plans
+  #   path on a line of the title or the spec that also names a proposal counts; a path that is merely mentioned
+  #   names nothing, and the plan folder's README is never a proposal. Otherwise
+  #   it is refused as proposal_not_confirmed (the file has no such line) or
+  #   proposal_missing (no readable file is named). Research, operational,
+  #   personal and defect Automata are exempt, and so is an Automaton whose
+  #   own job is to author the proposal: it is never gated on the Confirmed
+  #   line of the proposal it is producing. false turns the rule off.
   # check_main_carries: bool, default true. An Automaton whose work the default
   #   branch already carries (a merge or task commit for it, or its branch is
   #   entirely on the default branch) is refused as main_carries_work. A check
@@ -3318,6 +3323,16 @@ autonomous:
   # Whole minutes a cancelled Automaton is kept before the supervisor loop
   # archives it. Default 60; 0 archives it at once.
   archive_grace_minutes: 60
+  # Keep a completed, rejected or cancelled Automaton whose branch still holds
+  # commits that are not on the base branch (default true; false releases the
+  # guard for completed and rejected only — a cancelled one keeps its guard
+  # either way). Read by the supervisor loop's close step; your own archive is
+  # unaffected. An archived Automaton whose branch still holds commits shows
+  # up in the archived-unmerged finder (`archived_unmerged_list`, CLI
+  # `autonomous archived-unmerged`) and in the supervisor watch's
+  # `archived_unmerged` finding; carry it forward with
+  # `autonomous archived-unmerged carry-forward <id>`.
+  archive_keep_unmerged: true
   # Pool fall-through (default false). When a task's requested LLM pool is full
   # and another allowed backend/model can take it now, admit it there instead
   # of waiting. Off = a task always waits for its own pool. The alternates are
@@ -4604,7 +4619,7 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # seventeen rules: thirteen block, four warn; the pack is the floor, your
+    # twenty-two rules: seventeen block, five warn; the pack is the floor, your
     # rules the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
@@ -4628,6 +4643,14 @@ autonomous:
     # the command's own help does not list),
     # verification_script_spec_unanchored (script asserts a heading or gate
     # phrase the task spec does not name),
+    # fixed_calendar_date_in_test (a test-writing task whose spec holds a
+    # fixed YYYY-MM-DD date),
+    # verification_script_artefact_files / verification_script_final_gate_rerun
+    # (the same two faults, matched on the changed-file-set shape),
+    # verification_script_unknown_flag (a long flag the invoked command's own
+    # --help output does not list), verification_script_text_not_in_spec (a
+    # checked heading or multi-word phrase that does not appear verbatim in the
+    # task spec),
     # kind (task kind, e.g. final_gate), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
@@ -4790,7 +4813,9 @@ autonomous:
     # from its most recent cancel (0 or more). 0 archives it at once. A
     # cancelled Automaton whose branch holds commits that are not on the
     # base branch is not archived by the loop until you archive it, its
-    # work is merged, or its branch is deleted.
+    # work is merged, or its branch is deleted. Still accepted, but the
+    # close step now reads autonomous.archive_grace_minutes (same default);
+    # this key no longer drives the step.
     "supervisor_loop.archive_cancelled_after_minutes": 60
     # Lane count bounds for the lane_count step. max 0 means no bounds, so the
     # step moves nothing. When set, max must be at least min.

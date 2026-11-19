@@ -3847,6 +3847,118 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/remote-reap:
+    get:
+      summary: Remote branch reaper report (origin)
+      description: |
+        The read-side pass of the remote branch reaper, over the Automaton
+        work branches on origin. `reaped` lists the work branches a pass
+        would delete from origin — fully merged into the project's default
+        branch and at least the retention window old — with `base` the default
+        branch merged into, `tip` the tip commit and `age_days` its age in
+        whole days, `backup_ref` the ref that keeps the tip when an earlier
+        enabled pass already backed it up, and `reason` the outcome sentence.
+        `held` lists the branches a pass keeps and the plain reason: not
+        provably merged, still inside the retention window, no remote ref on
+        origin, or a backup that could not be verified. `report_only` is true
+        while autonomous.remote_reap_enabled is false or unset (the default):
+        the preview is the same either way. `backups` lists every ref under
+        refs/datawatch/remote-reap-backup/ with `branch` filled when the ref
+        key matches a stored Automaton work branch and `sha` the tip it
+        holds; `retention_days` is the effective retention window in whole
+        days (0 or unset reads 30; autonomous.remote_reap_retention_days).
+        The report only reads: it writes no ref and touches nothing on
+        origin. Only GET is served, and a federated peer needs the
+        autonomous read capability.
+      operationId: autonomousRemoteReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Remote branch reaper report (read-side pass on origin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/run:
+    post:
+      summary: Run one remote branch reap pass
+      description: |
+        Performs one pass over the Automaton work branches on origin. Each
+        work branch that is fully merged into the project's default branch
+        and at least the retention window old is backed up to
+        refs/datawatch/remote-reap-backup/<branch>/<unix-ts> first, the
+        backup ref is verified to point at the tip, and only then is the
+        branch deleted from origin (git push --delete); a branch whose
+        backup could not be verified is held instead of deleted. A branch
+        that is not merged, is too new for the retention window, has no
+        remote ref on origin, or whose backup could not be verified lands in
+        `held` with its reason. While autonomous.remote_reap_enabled is false
+        or unset (the default) the same evaluation runs but nothing is
+        deleted and `report_only` is true. Takes no body (a non-empty body is
+        refused). Deleting a remote ref is an operator-approved write and a
+        federated peer needs the autonomous write capability.
+      operationId: autonomousRemoteReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a remote delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/restore:
+    post:
+      summary: Restore one remotely reaped branch
+      description: |
+        Recreates one Automaton work branch a remote reap pass deleted, from
+        its newest backup ref under refs/datawatch/remote-reap-backup/. The
+        body is {"branch": "..."} where branch is the work branch from the
+        report; a missing or empty branch is refused. A branch that was never
+        remotely reaped (no backup ref) answers 404. A restore is an
+        operator-approved write and a federated peer needs the autonomous
+        write capability.
+      operationId: autonomousRemoteReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The Automaton work branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No remote reap backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/protected-paths:
     get:
       summary: Automaton protected-paths status
@@ -4069,7 +4181,10 @@ paths:
         first. Read-only: it repairs nothing, raises no alert and cannot change a
         mode; a group's mode changes only through the existing config set paths
         (`autonomous.housekeeping_repairs.<group>`). Needs the autonomous read
-        capability when called by a federated peer.
+        capability when called by a federated peer. It also lists, under
+        `intermittent_defects`, the defect records of tests that failed on the
+        first run of an Automaton's merge check and passed on the rerun
+        (`test`, `message`, `first_lines`, `date`, `commit`), newest first.
       operationId: autonomousHousekeepingRepairs
       tags: [Autonomous]
       responses:
@@ -5461,6 +5576,85 @@ paths:
         "405": {description: Method not allowed}
         "501": {description: The autonomous manager does not support the numbers}
         "503": {description: Autonomous is disabled}
+  /api/autonomous/archived-unmerged:
+    get:
+      summary: Archived Automata whose branch still holds unmerged commits
+      description: |
+        Lists archived Automata whose work branch still holds commits that never
+        reached the base branch, newest archive first. Each entry has the `title`,
+        `id`, `former_status` (completed, rejected or cancelled), `branch`,
+        `base_branch`, `ahead` (commits not on the base), `archived_at`, `state`
+        (`ahead`, or `unknown` when the comparison could not be made, with the
+        reason in `detail`) and `carried_to` (the draft already carried from it).
+        Git is only read; nothing is deleted or merged. Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: archivedUnmergedList
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The archived Automata with unmerged work
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archived_unmerged:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        former_status: {type: string}
+                        branch: {type: string}
+                        base_branch: {type: string}
+                        ahead: {type: integer}
+                        archived_at: {type: string, format: date-time}
+                        state: {type: string, enum: [ahead, unknown]}
+                        detail: {type: string}
+                        carried_to: {type: string}
+                  total: {type: integer}
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the finder}
+        "503": {description: Autonomous is disabled}
+  /api/autonomous/archived-unmerged/{id}/carry-forward:
+    post:
+      summary: Carry an archived Automaton's unmerged work forward
+      description: |
+        Creates a new draft that carries the archived record's title, spec and
+        branch name, and returns it. The draft is not approved and has run
+        nothing; the archived record and its branch are not changed, and nothing
+        is merged or deleted. Refused with 409 when the record is not archived,
+        has no branch, the branch is gone, unknown or has nothing ahead of the
+        base, or a draft was already carried from it (send `force: true` to carry
+        again). Needs the autonomous write capability when called by a federated
+        peer.
+      operationId: archivedUnmergedCarryForward
+      tags: [Autonomous]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, description: Carry again even though a draft was already carried}
+                actor: {type: string, description: Who carries it forward; defaults to operator}
+      responses:
+        "200": {description: The new draft Automaton}
+        "400": {description: Bad request body}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No Automaton with that id}
+        "405": {description: Method not allowed}
+        "409": {description: The record cannot be carried forward}
+        "501": {description: The autonomous manager does not support carry-forward}
+        "503": {description: Autonomous is disabled}
   /api/autonomous/prds/{id}/branch-refresh:
     post:
       summary: Set or clear the branch refresh override of an Automaton
@@ -6234,6 +6428,12 @@ paths:
     get:
       summary: Read autonomous config
       description: |
+        `archive_keep_unmerged` (boolean, default true; PUT key
+        `autonomous.archive_keep_unmerged` or `archive_keep_unmerged` here) keeps a
+        finished Automaton whose branch still holds unmerged commits from being
+        archived by the supervisor loop; any value that is not true or false is
+        rejected with 400 and nothing changes. `archive_grace_minutes` (whole
+        number >= 0, default 60) is how long a cancelled Automaton is kept first.
         The response includes the plan-requirement coverage gate settings under
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
@@ -13500,6 +13700,60 @@ components:
         branch: {type: string, description: The branch that came back}
         backup_ref: {type: string, description: The newest backup ref it was restored from}
         sha: {type: string, description: The commit the branch now points at}
+    RemoteReapEntry:
+      type: object
+      description: One Automaton work branch in the remote reaped or the held list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The work branch on origin that is reaped or held}
+        base: {type: string, description: The default branch the branch is merged into; empty only for entries held before the proof resolved one}
+        tip: {type: string, description: The branch tip commit the entry is about; empty when git could not resolve the local ref}
+        age_days: {type: integer, description: The branch tip's age in whole days at the pass instant}
+        backup_ref: {type: string, description: The ref that keeps the branch tip; present when an earlier enabled pass already backed it up}
+        reason: {type: string, description: The plain sentence for the entry}
+    RemoteReapReport:
+      type: object
+      description: The result of one remote reap evaluation or pass
+      required: [reaped, held, report_only]
+      properties:
+        reaped:
+          type: array
+          description: The work branches that would be reaped (report mode) or were deleted (an enabled pass), sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches kept, with the reason: not merged, too new, no remote ref, or an unverifiable backup
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+    RemoteReapSurfaceReport:
+      type: object
+      description: The read-side report, as GET /api/autonomous/remote-reap returns it
+      required: [reaped, held, report_only, backups, retention_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The work branches a pass would delete from origin, sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches a pass would keep, with the reason
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+        backups:
+          type: array
+          description: Every ref under refs/datawatch/remote-reap-backup/; empty while no enabled pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        retention_days: {type: integer, description: The effective retention window in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    RemoteReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/remote-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The work branch that came back}
+        backup_ref: {type: string, description: The newest remote reap backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     TriageList:
       type: object
       description: |-
@@ -13904,6 +14158,19 @@ components:
               did: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               failed: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
               skipped_unsafe: {type: array, items: {$ref: "#/components/schemas/HousekeepingRepairRecord"}}
+        intermittent_defects:
+          type: array
+          description: Defect records of tests that failed on the first run of an Automaton's merge check and passed on the rerun, newest first
+          items:
+            type: object
+            properties:
+              key: {type: string, description: Stable identity; the same test at the same commit is one record}
+              test: {type: string, description: The failing test name}
+              message: {type: string, description: The failure message}
+              first_lines: {type: string, description: The first lines of the first run's output}
+              date: {type: string, description: The day the record was made, YYYY-MM-DD}
+              commit: {type: string, description: The commit under test}
+              automaton_id: {type: string}
     HousekeepingRepairRecord:
       type: object
       properties:

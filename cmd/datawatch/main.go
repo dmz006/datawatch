@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.28"
+var Version = "9.182.47"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -452,8 +452,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 
 // installCrashLog wires runtime crash diagnostics so silent daemon deaths
 // (Go fatal errors like "concurrent map writes", cgo segfaults, OOM, etc.)
-// leave a stack trace on disk. Stderr is duplicated to <data>/daemon-crash.log
-// and GOTRACEBACK=crash forces the runtime to dump all goroutines on a fatal.
+// leave a stack trace on disk. GOTRACEBACK=crash forces the runtime to dump
+// all goroutines on a fatal, and debug.SetCrashOutput gives that crash output
+// an extra copy in <data>/daemon-crash.log while fd 2 (and the journal that
+// reads it) keeps receiving stderr untouched.
 func installCrashLog() {
 	debug.SetTraceback("crash")
 	cfg, _ := loadConfig()
@@ -472,10 +474,15 @@ func installCrashLog() {
 	// Tag the start of this process so multiple crashes are distinguishable.
 	_, _ = fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
 		Version, os.Getpid(), time.Now().Format(time.RFC3339))
-	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
-	// and "fatal error:" messages directly to fd 2, bypassing log packages.
-	// Implementation lives in main_unix.go / main_windows.go.
-	dupStderrTo(f)
+	// Have the runtime write its panic stacks and "fatal error:" messages to
+	// the crash file as well as fd 2 (Go 1.23+ debug.SetCrashOutput), instead
+	// of duplicating fd 2 over the file — that way the journal still sees
+	// everything the runtime prints on a fatal error. A failure here just
+	// leaves the crash file without the runtime dump; the journal copy is
+	// unaffected.
+	if err := installCrashOutput(f); err != nil {
+		fmt.Fprintln(os.Stderr, "datawatch: crash log: install crash output:", err)
+	}
 }
 
 // resolveConfigPath returns the effective config file path.
@@ -4722,6 +4729,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
+			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.
@@ -7149,6 +7157,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// refusals and shadow finding reports for Automaton pushes
 			// land in the operator audit log, redacted fields only.
 			amgr.SetSecretScanAuditFn(secretScanSink)
+			// Remote branch reap (autonomous.remote_reap_enabled /
+			// autonomous.remote_reap_retention_days): while the switch is off or
+			// unset (the default) the pass evaluates but touches nothing on origin
+			// and the report says report_only. The closure — not its result — is
+			// stored, so the switch and the retention window are read live on
+			// every pass; a runtime config set applies with no restart (the same
+			// live-config pattern as the push settings above).
+			amgr.SetRemoteReapSettings(func() (bool, int) {
+				return cfg.Autonomous.RemoteReapEnabled, cfg.Autonomous.EffectiveRemoteReapRetentionDays()
+			})
 			// Defect intake (autonomous.defect_intake_automation):
 			// when an Automaton is filed with kind bug and the setting names
 			// an Automation, it is offered to that Automation's bugs stage

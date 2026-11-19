@@ -11703,6 +11703,7 @@ function renderSessionDetail(sessionId) {
     + (isActive ? `<label for="sessionImageInput" class="btn-icon" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;cursor:pointer;">&#128247;</label><input type="file" id="sessionImageInput" accept="image/*" multiple style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
+  _sessionDetailHeaderOpen = '';
   view.innerHTML = `
     <div class="session-detail">
       <div class="session-info-bar">
@@ -11736,6 +11737,7 @@ function renderSessionDetail(sessionId) {
                flex span makes them move as a single unit, so they
                either fit together on the first line or wrap together. -->
           <span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+            <span id="sessionDetailHeaderIcons" class="session-detail-header-icons"></span>
             <button class="detail-pill-btn detail-pill-icon" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}" aria-label="${t('btn_timeline')||'Timeline'}">&#128336;</button>
             <button class="detail-pill-btn detail-pill-icon" onclick="showResponseViewer('${escHtml(sessionId)}')" title="${t('btn_view_last_response')||'View last response'}" aria-label="${t('btn_response')||'Response'}">&#128196;</button>
           </span>
@@ -13006,6 +13008,8 @@ function _loadSessionSchedules(sessionId, force) {
     .then(items => {
       if (!items || items.length === 0) {
         el.style.display = 'none';
+        _schedLastItems.delete(sessionId);
+        if (_sessionsPhoneWidth()) _paintSessionDetailHeaderIcons(sessionId);
         return;
       }
       _schedLastItems.set(sessionId, items);
@@ -13049,13 +13053,9 @@ function _renderSessionSchedules(sessionId) {
     el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">${escHtml(head)} (${items.length})</div>${rows}`;
     return;
   }
-  const open = _sessionDetailRollupOpen(sessionId, 'scheduled');
-  const tip = open
-    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
-    : _stx('session_detail_summary_expand_tip', 'Expand');
-  const label = `${head} (${items.length}) · ${_stx('session_detail_next_run', 'Next run')} ${_fmtScheduleTime(items[0].run_at)}`;
-  const idArg = escHtml(encodeURIComponent(String(sessionId || '')));
-  el.innerHTML = `<button type="button" class="session-detail-scheduled-rollup" onclick="_sessionDetailRollupToggle('${idArg}','scheduled')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? rows : ''}`;
+  _paintSessionDetailHeaderIcons(sessionId);
+  el.innerHTML = _sessionDetailHeaderOpen === 'scheduled' ? `<div class="session-detail-popover">${rows}</div>` : '';
+  el.style.display = _sessionDetailHeaderOpen === 'scheduled' ? 'block' : 'none';
 }
 
 function showScheduleInputPopup(sessionId) {
@@ -41435,8 +41435,20 @@ window.housekeepingRepairsCardHtml = function(data) {
       lines.join('') + empty + `</div>`;
   }).join('');
   return `<div class="prd-capacity-card housekeeping-repairs-card" style="min-width:0;"><div class="cap-title">${escHtml(t('housekeeping_repairs_card_title'))}${_housekeepingHelpLink('housekeeping_repairs_card', 'housekeeping_repairs_help_link')}</div>` +
-    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}</div>`;
+    `<div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${escHtml(t('housekeeping_repairs_purpose'))} ${escHtml(t('housekeeping_repairs_grace', [Number(d.grace_seconds) || 0]))}</div>${rows}${_housekeepingIntermittentHtml(d.intermittent_defects)}</div>`;
 };
+// _housekeepingIntermittentHtml draws the intermittent-test-failure rows of the
+// same view: { intermittent_defects: [{key, test, message, first_lines, date, commit}] }.
+function _housekeepingIntermittentHtml(list) {
+  const rows = (Array.isArray(list) ? list : []).filter(r => r && typeof r === 'object');
+  const body = rows.length ? rows.slice(0, 20).map(r => {
+    const first = r.first_lines ? `<div style="font-size:11px;color:var(--text2);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(t('housekeeping_repairs_intermittent_first_lines', [String(r.first_lines)]))}</div>` : '';
+    return `<div class="housekeeping-intermittent-row" data-key="${escHtml(String(r.key || ''))}" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-top:3px;">${escHtml(t('housekeeping_repairs_intermittent_line', [String(r.test || ''), String(r.date || ''), String(r.commit || '').slice(0, 12), String(r.message || '')]))}</div>${first}`;
+  }).join('') : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_intermittent_none'))}</div>`;
+  return `<div class="housekeeping-intermittent" data-count="${rows.length}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('housekeeping_repairs_intermittent_title'))}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('housekeeping_repairs_intermittent_purpose'))}</div>${body}</div>`;
+}
 
 function _automationHousekeepingRepairsLoader() {
   return window._listLoaders.automation_housekeeping_repairs || listLoader({
@@ -45666,6 +45678,7 @@ function _renderScanResult(el, prdId, r) {
       <span style="color:var(--text2);font-size:11px;">${count} ${escHtml(t('scan_findings')||'findings')} · ${escHtml(r.at ? new Date(r.at).toLocaleString() : '')}</span>
       ${r.verdict !== 'pass' && count > 0 ? `
         <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="createScanFixPRD(${idJ})">${escHtml(t('scan_fix_prd')||'Create Fix Automaton')}</button>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="runScanFixLoop(${idJ})">${escHtml(t('scan_fixloop')||'Run Fix Loop')}</button>
         <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="proposeScanRules(${idJ})">${escHtml(t('scan_propose_rules')||'Propose AGENT.md Rules')}</button>
       ` : ''}
     </div>
@@ -45701,6 +45714,49 @@ window.createScanFixPRD = function(prdId) {
       if (prd && prd.id) renderPRDDetailView(prd.id);
     })
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+function _fixLoopResultText(rep) {
+  if (!rep) return (t('scan_fixloop')||'Fix loop') + '…';
+  // Disabled loop: the endpoint returns a plain scan result (verdict,
+  // findings) instead of a fix-loop report.
+  if (rep.outcome === undefined) {
+    const n = (rep.findings||[]).length;
+    return (t('scan_fixloop_disabled')||'Auto-fix loop is disabled, so this ran a plain scan: ')
+      + (rep.verdict||'') + ' — ' + n + ' ' + (t('scan_findings')||'findings');
+  }
+  const n = (rep.attempts||[]).length;
+  switch (rep.outcome) {
+    case 'fixed':
+      return (t('scan_fixloop_fixed')||'Fix loop done: scan now passes after') + ' ' + n + (t('scan_fixloop_attempts')||' fix attempt(s)');
+    case 'clean':
+      return t('scan_fixloop_clean')||'Scan passes — nothing to fix';
+    case 'held':
+      return (t('scan_fixloop_held')||'Fix loop spent its retries; the Automaton is on hold:') + ' ' + (rep.hold_reason||'');
+    default:
+      return (rep.error || (t('scan_fixloop')||'Fix loop') + ': ' + (rep.outcome||''));
+  }
+}
+
+window.runScanFixLoop = function(prdId) {
+  el: {
+    const el = document.getElementById('prdScanResult_' + prdId);
+    if (el) el.innerHTML = `<span style="opacity:0.7;">${escHtml(t('scan_fixloop_running')||'Running fix loop…')}</span>`;
+  }
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan/fixloop', { method: 'POST' })
+    .then(rep => {
+      const text = _fixLoopResultText(rep);
+      const ok = rep && (rep.outcome === 'fixed' || rep.outcome === 'clean');
+      showToast(text, ok ? 'success' : 'error', 6000);
+      // The Automaton may now be held (or freshly scanning): refresh the
+      // detail view when this Automaton is the one on screen.
+      if (String(window._automataDetailId || '') === String(prdId)) renderPRDDetailView(prdId);
+    })
+    .catch(e => {
+      const el = document.getElementById('prdScanResult_' + prdId);
+      if (el) el.innerHTML = `<span style="opacity:0.7;color:var(--error);">${escHtml(String(e.message||e))}</span>`;
+      showToast(String(e.message||e), 'error');
+    });
 };
 
 window.proposeScanRules = function(prdId) {
@@ -62617,36 +62673,109 @@ function _renderSessionDetailTagRow(sess) {
   if (!el || !sess) return;
   const list = _sessionTagChipList(sess);
   const chips = list.join('');
-  if (!chips) { el.innerHTML = ''; el.style.display = 'none'; return; }
-  if (!_sessionsPhoneWidth()) { el.innerHTML = chips; el.style.display = 'flex'; return; }
-  const fullId = sess.full_id || sess.id;
-  const open = _sessionDetailRollupOpen(fullId, 'tags');
-  const tip = open
-    ? _stx('session_detail_summary_collapse_tip', 'Collapse')
-    : _stx('session_detail_summary_expand_tip', 'Expand');
-  const label = _stx('session_detail_tags_summary', 'Tags') + ' (' + list.length + ')';
-  const idArg = escHtml(encodeURIComponent(String(fullId || '')));
-  el.innerHTML = `<button type="button" class="session-detail-tags-rollup" onclick="_sessionDetailRollupToggle('${idArg}','tags')" aria-expanded="${open ? 'true' : 'false'}" title="${escHtml(tip)}" aria-label="${escHtml(tip)}">${escHtml(label)}</button>${open ? '<div class="session-detail-rollup-body" style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">' + chips + '</div>' : ''}`;
-  el.style.display = 'flex';
+  const phone = _sessionsPhoneWidth();
+  if (!chips) {
+    el.innerHTML = ''; el.style.display = 'none';
+    if (phone) _paintSessionDetailHeaderIcons(sess.full_id || sess.id);
+    return;
+  }
+  if (!phone) { el.innerHTML = chips; el.style.display = 'flex'; return; }
+  _paintSessionDetailHeaderIcons(sess.full_id || sess.id);
+  const showing = _sessionDetailHeaderOpen === 'tags';
+  el.innerHTML = showing ? '<div class="session-detail-popover" style="display:flex;flex-wrap:wrap;gap:6px;">' + chips + '</div>' : '';
+  el.style.display = showing ? 'flex' : 'none';
 }
 
-// Phone-width rollup state: in memory only, per session full id and section.
-function _sessionDetailRollupOpen(fullId, kind) {
-  const b = state._sessionDetailRollup && state._sessionDetailRollup[fullId];
-  return !!(b && b[kind]);
+// Phone-width header icons (Tags, Scheduled). The open popover is one
+// module-level in-memory value: '' (none), 'tags' or 'scheduled'. It is never
+// written to web storage and there is no setting for it.
+let _sessionDetailHeaderOpen = '';
+
+function _sessionDetailNextRun(items) {
+  let best = null;
+  (items || []).forEach(sc => {
+    const d = sc && sc.run_at ? new Date(sc.run_at) : null;
+    if (d && !isNaN(d.getTime()) && d.getFullYear() >= 2000 && (best === null || d < best)) best = d;
+  });
+  return best;
 }
 
-function _sessionDetailRollupToggle(idEnc, kind) {
-  let id = '';
-  try { id = decodeURIComponent(String(idEnc || '')); } catch (_) { id = String(idEnc || ''); }
-  if (!id) return;
-  if (!state._sessionDetailRollup) state._sessionDetailRollup = {};
-  const b = state._sessionDetailRollup[id] || (state._sessionDetailRollup[id] = {});
-  b[kind] = !b[kind];
-  if (kind === 'tags') _renderSessionDetailTagRow(_sessionFind(id));
-  else _renderSessionSchedules(id);
+// _sessionDetailHeaderIconsHTML renders the two header buttons. Pure: takes
+// {tagCount, jobs, open, tr} (tr is an optional (key, fallback, args) helper)
+// and returns markup. A button with a zero count is left out.
+function _sessionDetailHeaderIconsHTML(o) {
+  o = o || {};
+  const tx = typeof o.tr === 'function' ? o.tr : (k, f) => f;
+  const fmt = (n) => n; // counts are plain integers
+  const tagCount = Number(o.tagCount) || 0;
+  const jobs = Array.isArray(o.jobs) ? o.jobs : [];
+  const out = [];
+  const btn = (kind, glyph, count, label, tip) => {
+    const isOpen = o.open === kind;
+    return `<button type="button" class="session-detail-icon-btn${isOpen ? ' is-active' : ''}" data-kind="${kind}" onclick="_sessionDetailHeaderToggle('${kind}')" aria-expanded="${isOpen ? 'true' : 'false'}" aria-label="${escHtml(label)}" title="${escHtml(tip)}"><span aria-hidden="true">${glyph}</span><span class="session-detail-icon-badge">${fmt(count)}</span></button>`;
+  };
+  if (tagCount > 0) {
+    const label = tx('session_detail_tags_button_label', 'Tags: %1$s', [tagCount]);
+    out.push(btn('tags', '&#127991;', tagCount, label, label));
+  }
+  if (jobs.length > 0) {
+    const label = tx('session_detail_scheduled_button_label', 'Scheduled jobs: %1$s', [jobs.length]);
+    const nx = _sessionDetailNextRun(jobs);
+    const tip = nx ? tx('session_detail_next_run', 'next') + ' ' + nx.toLocaleString() : label;
+    out.push(btn('scheduled', '&#128339;', jobs.length, label, tip));
+  }
+  return out.join('');
 }
-window._sessionDetailRollupToggle = _sessionDetailRollupToggle;
+window._sessionDetailHeaderIconsHTML = _sessionDetailHeaderIconsHTML;
+
+function _paintSessionDetailHeaderIcons(fullId) {
+  const host = document.getElementById('sessionDetailHeaderIcons');
+  if (!host) return;
+  if (!_sessionsPhoneWidth()) { host.innerHTML = ''; return; }
+  const sess = _sessionFind(fullId);
+  const tagCount = sess ? _sessionTagChipList(sess).length : 0;
+  const jobs = _schedLastItems.get(fullId) || [];
+  host.innerHTML = _sessionDetailHeaderIconsHTML({
+    tagCount, jobs, open: _sessionDetailHeaderOpen,
+    tr: (k, f, a) => { const v = t(k, a); return (v === undefined || v === null || v === k) ? f.replace('%1$s', a ? a[0] : '') : v; },
+  });
+}
+
+function _sessionDetailRepaintHeader() {
+  const sid = state.activeSession || '';
+  const sess = _sessionFind(sid);
+  if (sess) _renderSessionDetailTagRow(sess);
+  _renderSessionSchedules(sess ? (sess.full_id || sess.id) : sid);
+}
+
+// Document listeners for Escape / outside tap are attached lazily, once, the
+// first time a header popover is opened, so nothing is registered at load.
+let _sessionDetailHeaderListening = false;
+function _sessionDetailHeaderListen() {
+  if (_sessionDetailHeaderListening) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _sessionDetailHeaderListening = true;
+  document.addEventListener('keydown', (e) => { if (e && e.key === 'Escape') _sessionDetailHeaderClose(); });
+  document.addEventListener('click', (e) => {
+    if (!_sessionDetailHeaderOpen) return;
+    const tg = e && e.target;
+    if (tg && typeof tg.closest === 'function' && tg.closest('.session-detail-icon-btn, .session-detail-popover')) return;
+    _sessionDetailHeaderClose();
+  });
+}
+
+function _sessionDetailHeaderToggle(kind) {
+  _sessionDetailHeaderListen();
+  _sessionDetailHeaderOpen = _sessionDetailHeaderOpen === kind ? '' : kind;
+  _sessionDetailRepaintHeader();
+}
+window._sessionDetailHeaderToggle = _sessionDetailHeaderToggle;
+
+function _sessionDetailHeaderClose() {
+  if (!_sessionDetailHeaderOpen) return;
+  _sessionDetailHeaderOpen = '';
+  _sessionDetailRepaintHeader();
+}
 
 window.openSessionTagsModal = function(fullId) {
   _tagsLoad().then(() => {
