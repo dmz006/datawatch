@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.41"
+var Version = "9.182.46"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6853,6 +6853,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"archive_grace_minutes":                s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
+			"archive_keep_unmerged":                s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
 			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
 			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
 			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
@@ -7762,6 +7763,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// the whole PUT.
 	if v, ok := patch["autonomous.archive_grace_minutes"]; ok {
 		if _, verr := config.ParseArchiveGraceMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Archive keep-unmerged: true or false; anything else rejects the whole PUT.
+	if v, ok := patch["autonomous.archive_keep_unmerged"]; ok {
+		if _, verr := config.ParseArchiveKeepUnmerged(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -10892,6 +10900,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.archive_grace_minutes":
 			if n, err := config.ParseArchiveGraceMinutes(v); err == nil {
 				cfg.Autonomous.ArchiveGraceMinutes = &n
+			}
+		case "autonomous.archive_keep_unmerged":
+			if b, err := config.ParseArchiveKeepUnmerged(v); err == nil {
+				cfg.Autonomous.ArchiveKeepUnmerged = &b
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

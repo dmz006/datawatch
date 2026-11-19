@@ -47,6 +47,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -634,4 +635,88 @@ func (w *SupervisorWatchWork) ciRecordView() []*RepoCIWatchRecord {
 		return nil
 	}
 	return w.CI.CIWatchRecords()
+}
+
+// Bounds on the archived-unmerged check: at most this many branch checks
+// run git per pass, and a check result is reused for the cache lifetime.
+const (
+	supervisorWatchArchivedMaxChecks = 8
+	supervisorWatchArchivedCacheTTL  = 2 * time.Minute
+)
+
+// supervisorWatchArchivedCheck is one cached branch check.
+type supervisorWatchArchivedCheck struct {
+	state  string
+	ahead  int
+	at     time.Time
+	branch string
+	base   string
+}
+
+// supervisorWatchArchivedUnmerged returns one archived_unmerged finding per
+// archived record whose branch holds commits not on the base (the same
+// comparison the ArchivedUnmerged finder makes). Git use is read-only and
+// bounded: at most supervisorWatchArchivedMaxChecks uncached branch checks per
+// pass, cached results reused for a short time. A record that was not checked
+// this pass (cap reached, or the comparison was unknown) keeps its open
+// finding rather than resolving it; a merged or deleted branch yields no
+// finding, so the pass resolves the stored one.
+func (m *Manager) supervisorWatchArchivedUnmerged(now time.Time) []SupervisorWatchFinding {
+	if m == nil || m.store == nil {
+		return nil
+	}
+	repo := m.archivedBaseRepo()
+	if repo == "" {
+		return nil
+	}
+	git := m.archivedUnmergedGitRunner()
+	open := map[string]*SupervisorWatchFinding{}
+	for _, rec := range m.supervisorWatchList() {
+		if rec != nil && !rec.Resolved && rec.Kind == SupervisorWatchArchivedUnmerged {
+			open[rec.Subject] = rec
+		}
+	}
+	var out []SupervisorWatchFinding
+	checks := 0
+	for _, p := range m.store.ListPRDs() {
+		if p == nil || p.Status != PRDArchived || p.Git.Branch == "" {
+			continue
+		}
+		m.mu.Lock()
+		c, cached := m.supervisorWatchArchCache[p.ID]
+		m.mu.Unlock()
+		fresh := cached && c.branch == p.Git.Branch && c.base == p.Git.BaseBranch &&
+			now.Sub(c.at) >= 0 && now.Sub(c.at) < supervisorWatchArchivedCacheTTL
+		if !fresh {
+			if checks >= supervisorWatchArchivedMaxChecks {
+				if rec := open[p.ID]; rec != nil {
+					out = append(out, SupervisorWatchFinding{Kind: rec.Kind, Subject: rec.Subject, Text: rec.Text})
+				}
+				continue
+			}
+			checks++
+			ctx, cancel := context.WithTimeout(context.Background(), archiveBranchGitTimeout)
+			state, ahead, _ := checkBranchAhead(ctx, git, repo, p.Git.Branch, p.Git.BaseBranch)
+			cancel()
+			c = supervisorWatchArchivedCheck{state: state, ahead: ahead, at: now, branch: p.Git.Branch, base: p.Git.BaseBranch}
+			m.mu.Lock()
+			if m.supervisorWatchArchCache == nil {
+				m.supervisorWatchArchCache = map[string]supervisorWatchArchivedCheck{}
+			}
+			m.supervisorWatchArchCache[p.ID] = c
+			m.mu.Unlock()
+		}
+		switch c.state {
+		case branchCheckAhead:
+			out = append(out, SupervisorWatchFinding{
+				Kind: SupervisorWatchArchivedUnmerged, Subject: p.ID,
+				Text: SupervisorWatchArchivedUnmergedText(p.ID, p.Title, p.Git.Branch, c.ahead),
+			})
+		case branchCheckUnknown:
+			if rec := open[p.ID]; rec != nil { // keep what we knew
+				out = append(out, SupervisorWatchFinding{Kind: rec.Kind, Subject: rec.Subject, Text: rec.Text})
+			}
+		}
+	}
+	return out
 }

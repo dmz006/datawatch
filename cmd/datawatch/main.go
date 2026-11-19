@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.41"
+var Version = "9.182.46"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4729,6 +4729,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
+			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.

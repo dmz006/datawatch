@@ -725,6 +725,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
 	mcpSrv.AddTool(s.toolAutonomousEventKinds(), tracked(s.handleAutonomousEventKinds))
+	mcpSrv.AddTool(s.toolArchivedUnmergedList(), tracked(s.handleArchivedUnmergedList))                 // "archived_unmerged_list"
+	mcpSrv.AddTool(s.toolArchivedUnmergedCarryForward(), tracked(s.handleArchivedUnmergedCarryForward)) // "archived_unmerged_carry_forward"
 	// Operator question channel (proxy /api/questions — internal/server/questions.go).
 	// The trailing comment is the MCP tool name each AddTool registers.
 	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
@@ -756,6 +758,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanResults(), tracked(s.handleAutonomousPRDScanResults))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanFix(), tracked(s.handleAutonomousPRDScanFix))
+	mcpSrv.AddTool(s.toolAutonomousPRDScanFixloop(), tracked(s.handleAutonomousPRDScanFixloop))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanRules(), tracked(s.handleAutonomousPRDScanRules))
 	// BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills tools.
 	mcpSrv.AddTool(s.toolAutonomousTypeList(), tracked(s.handleAutonomousTypeList))

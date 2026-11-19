@@ -24,6 +24,8 @@ algorithm_measure
 algorithm_reset
 algorithm_start
 analytics
+archived_unmerged_carry_forward
+archived_unmerged_list
 ask
 assist
 audit_access_query
@@ -140,6 +142,7 @@ autonomous_prd_resume
 autonomous_prd_run
 autonomous_prd_scan
 autonomous_prd_scan_fix
+autonomous_prd_scan_fixloop
 autonomous_prd_scan_results
 autonomous_prd_scan_rules
 autonomous_prd_set_authorized_paths

@@ -13,6 +13,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 - **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
 
+## v9.182.46 — Make the scan fix loop settings work and document them
+
+### Changed
+
+- Make the scan fix loop settings work and document them.
+
+## v9.182.45 — Archive guard covers every terminal state
+
+### Changed
+
+- Archive guard covers every terminal state.
+
+## v9.182.44 — Remove the CPU burner and fix intermittent tests at their root
+
+### Changed
+
+- Remove the CPU burner and fix intermittent tests at their root.
+
+## v9.182.43 — b2d40001
+
+### Security
+
+- The agent-base image no longer fails its blocking scan. The GitHub CLI inside it is rebuilt from source, and it was built with Go 1.27.3, whose standard library carries a HIGH vulnerability (CVE-2026-97054, the HTTP/1 request body limit). It is now built with Go 1.27.4, which has the fix. The Go toolchain floor check now rejects 1.27.3 and 1.26.10 as well, so a repository pin cannot slip back.
+
+## v9.182.42 — 26f60001
+
+### Fixed
+
+- A finished task no longer retries its merge forever when its branch is missing or untracked files block the merge. If the task branch is gone but the task worktree still holds the finished commit (a detached HEAD, or a worktree that is a clone of its own), the daemon brings the commit over and recreates the branch, and moves a branch forward to a newer detached commit. If an untracked file in the Automaton worktree would be overwritten by the merge, an identical copy is dropped and a different one is moved aside, never deleted, under `.datawatch/merge-aside/<task id>/`. If nothing is left to recover, the merge says so and changes nothing.
+
 ## v9.182.41 — Repair the Automaton cleanup passes: reaper wiring, skip resolution, remote reap, temp swe
 
 ### Changed

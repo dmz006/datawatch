@@ -39,6 +39,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/autonomous/scan"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
@@ -545,6 +546,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			if _, verr := config.ParseArchiveGraceMinutes(v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		// archive_keep_unmerged: true or false; a bad value rejects the whole PUT.
+		if raw, ok := top["archive_keep_unmerged"]; ok {
+			var v any
+			if json.Unmarshal(raw, &v) != nil {
+				http.Error(w, "autonomous.archive_keep_unmerged: must be true or false", http.StatusBadRequest)
+				return
+			}
+			if _, verr := config.ParseArchiveKeepUnmerged(v); verr != nil {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
@@ -3544,6 +3557,51 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "scan_fix", "automaton", id, nil) // GH#201 Phase 4
 		writeJSONOK(w, child)
+	case "scan/fixloop":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRun) {
+			return
+		}
+		// fix_loop_enabled off → the loop has nothing to do beyond a plain
+		// scan: same behavior as the /scan route (no fix task, no hold).
+		fixLoopEnabled := false
+		if sc, ok := s.autonomousMgr.GetScanConfig().(scan.Config); ok {
+			fixLoopEnabled = sc.FixLoopEnabled
+		}
+		if !fixLoopEnabled {
+			result, err := s.autonomousMgr.RunScan(id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.audit(r.Context(), "scan_fixloop_disabled", "automaton", id, nil)
+			writeJSONOK(w, result)
+			return
+		}
+		loopAPI, ok := s.autonomousMgr.(interface {
+			ScanFixLoop(id string) (any, error)
+		})
+		if !ok {
+			http.Error(w, "scan-fix loop not available on this server", http.StatusNotImplemented)
+			return
+		}
+		rep, err := loopAPI.ScanFixLoop(id)
+		if err != nil {
+			// The report usually survives a failed step (outcome "error" +
+			// the failed step named): surface what the loop actually did.
+			if rep != nil {
+				s.audit(r.Context(), "scan_fixloop", "automaton", id, nil)
+				writeJSONOK(w, rep)
+				return
+			}
+			http.Error(w, "scan-fix loop: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.audit(r.Context(), "scan_fixloop", "automaton", id, nil)
+		writeJSONOK(w, rep)
 	case "scan/rules":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

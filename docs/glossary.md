@@ -3,6 +3,45 @@
 Short definitions of terms used across the docs. The full reference is
 [datawatch-definitions.md](datawatch-definitions.md).
 
+## Archived unmerged
+
+The fact that an archived Automaton's branch still holds commits that are not
+on the base branch — its work never landed after the record was archived. Two
+surfaces name it: the supervisor watch finding `archived_unmerged` (one per
+such archived record, read-only and bounded, remediation: carry the work
+forward into a new draft on that branch, or merge it first) and the supervisor
+loop's guard, which keeps a completed, rejected or cancelled record with
+unmerged branch work until it is archived, merged, or its branch is deleted
+(`autonomous.archive_keep_unmerged` releases the guard for completed and
+rejected only; a cancelled one additionally needs its
+`autonomous.archive_grace_minutes` grace to have passed). The same branch
+shows up in the **unlanded work** list. See
+[howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md),
+[howto/supervisor-loop.md](howto/supervisor-loop.md) and
+[operations.md](operations.md#keep-unmerged-branch-work-on-archive-autonomousarchive_keep_unmerged).
+
+## Carry forward (archived work)
+
+The remediation the `archived_unmerged` finding names: start a new draft that
+reuses the archived Automaton's title, spec and work branch, so the commits
+that never reached the base are not orphaned; the new draft records its
+origin in `carried_from_id`. The operation lives at the manager level
+(`CarryForwardArchived`); the branch can also be handled from the **unlanded
+work** list (keep, archive-branch, delete-worktree). See
+[howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch).
+
+## Unlanded work
+
+The read-only review of the archived Automata whose work branch has commits
+that are not on the project's default branch, each recommended as **landed**,
+**superseded** or **needs decision**, with the actions **Keep**, **Archive
+branch** and **Delete worktree** (the last one takes a verified git bundle
+backup first). It is the **Unlanded work** card on the Housekeeping sub-tab,
+and also reached by REST, the CLI, MCP (read-only) and the chat verb. The
+full definition, the counts and the once-a-day pending-branch alert are in
+[datawatch-definitions.md](datawatch-definitions.md#unlanded-work). See
+[howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md#unlanded-branches-finished-work-that-never-reached-the-default-branch).
+
 ## Pool fall-through
 
 The setting `autonomous.capacity_fallthrough` (default off). When on, a worker

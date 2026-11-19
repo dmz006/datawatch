@@ -135,6 +135,30 @@ this change keeps them once merged, and already-landed history is never
 rewritten: if you see `worker-mcp.json` or `worker-starting-context.md` on a
 merged branch or in a release, review or remove them yourself.
 
+## When a finished task cannot merge yet: the daemon repairs it
+
+Two states used to leave a finished task retrying its merge every few seconds
+with nothing you could do but repair the tree by hand. The daemon now repairs
+both before it runs the merge, and logs what it did.
+
+- **The task's branch is gone, but its worktree still holds the finished
+  work.** This happens when the task worktree is a clone of its own, or sits on
+  a detached commit. The daemon brings the commit into the Automaton's
+  repository if it is not there yet, and recreates the branch at that commit.
+  When the branch exists and the task worktree is detached on a newer commit
+  (the cleanup commit above), the branch is moved forward to it. If neither the
+  branch nor the worktree is left, the merge reports that the finished work
+  cannot be recovered and nothing is changed.
+- **An untracked file in the Automaton's worktree has the path of a file the
+  task branch adds.** Git refuses such a merge ("untracked working tree files
+  would be overwritten"). A copy identical to the branch's file is dropped. A
+  different copy is moved, not deleted, to
+  `.datawatch/merge-aside/<task id>/<path>` inside the Automaton's worktree, so
+  you can read it afterwards. Untracked files the merge does not touch are never
+  moved.
+
+There is no setting for this: both repairs run on every task merge.
+
 ## Read what happened
 
 - **Task merge state** on each task card, in `datawatch autonomous prd-get <id>` and

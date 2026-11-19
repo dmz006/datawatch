@@ -46,6 +46,10 @@ const (
 	// SupervisorWatchAutomatonNotMerged — an Automaton finished all of
 	// its work but has not been merged.
 	SupervisorWatchAutomatonNotMerged SupervisorWatchKind = "automaton_not_merged"
+	// SupervisorWatchArchivedUnmerged — an archived Automaton's branch
+	// still holds commits that are not on the base branch. Subject: the
+	// Automaton id.
+	SupervisorWatchArchivedUnmerged SupervisorWatchKind = "archived_unmerged"
 	// SupervisorWatchIdleLaneEligibleWork — a lane is idle while work
 	// that is eligible to run is waiting.
 	SupervisorWatchIdleLaneEligibleWork SupervisorWatchKind = "idle_lane_eligible_work"
@@ -99,6 +103,7 @@ var SupervisorWatchKinds = []SupervisorWatchKind{
 	SupervisorWatchTaskFailed,
 	SupervisorWatchTaskReviewNeeded,
 	SupervisorWatchAutomatonNotMerged,
+	SupervisorWatchArchivedUnmerged,
 	SupervisorWatchIdleLaneEligibleWork,
 	SupervisorWatchWorktreeNoGomod,
 	SupervisorWatchWorktreeNotRegistered,
