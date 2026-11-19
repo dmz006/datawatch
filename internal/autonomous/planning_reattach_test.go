@@ -124,7 +124,7 @@ func TestBootResume_PlanningReattachKillsOnlyUnownedPlannerSessions(t *testing.T
 	}
 }
 
-func TestBootResume_PlanningReattachDraftPolicyResetsToDraft(t *testing.T) {
+func TestBootResume_PlanningReattachDraftPolicyStaysInPlanning(t *testing.T) {
 	f := newReattachFixture(t, "dec-live", "/w/proj/.decompose-output-x.json", []string{"dec-live"})
 	c := f.m.Config()
 	c.PlanningRestartPolicy = "draft"
@@ -132,14 +132,11 @@ func TestBootResume_PlanningReattachDraftPolicyResetsToDraft(t *testing.T) {
 
 	f.api.resumeRunningPRDs()
 
-	if got := f.status(t); got != PRDDraft {
-		t.Fatalf("status = %s, want %s under the draft policy", got, PRDDraft)
+	if got := f.status(t); got != PRDPlanning {
+		t.Fatalf("status = %s, want %s under the draft policy", got, PRDPlanning)
 	}
-	if len(f.hookArgs) != 0 {
-		t.Fatalf("draft policy must not attach a reader, got %v", f.hookArgs)
-	}
-	if len(f.killed) != 1 || f.killed[0] != "dec-live" {
-		t.Fatalf("draft policy should kill the planner, got %v", f.killed)
+	if len(f.hookArgs) != 1 {
+		t.Fatalf("a live planner is re-attached under any policy, got %v", f.hookArgs)
 	}
 }
 
@@ -149,8 +146,8 @@ func TestBootResume_PlanningReattachWithoutReaderResetsToDraft(t *testing.T) {
 
 	f.api.resumeRunningPRDs()
 
-	if got := f.status(t); got != PRDDraft {
-		t.Fatalf("status = %s, want %s when no reader is wired", got, PRDDraft)
+	if got := f.status(t); got != PRDPlanning {
+		t.Fatalf("status = %s, want %s when no reader is wired", got, PRDPlanning)
 	}
 	if len(f.killed) != 1 {
 		t.Fatalf("want the planner killed when no reader is wired, got %v", f.killed)

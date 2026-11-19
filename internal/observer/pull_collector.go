@@ -154,8 +154,12 @@ func classifyPullError(err error) string {
 
 // PullState is the observed state of one pull target.
 type PullState struct {
-	Name          string
-	Source        string // always "pull"
+	Name   string
+	Source string // always "pull"
+	// LastAttemptAt is the time of the most recent fetch attempt. It is
+	// published together with that attempt's outcome (Stale, StaleReason,
+	// LastSuccessAt, LastSnapshot) under one lock, so a non-zero value is
+	// never visible alongside the default outcome.
 	LastAttemptAt time.Time
 	LastSuccessAt time.Time
 	Stale         bool
@@ -261,13 +265,13 @@ func (c *PullCollector) runWorker(wctx context.Context, done chan struct{}, t Pu
 }
 
 // fetchOnce performs a single bounded fetch for t and records the outcome
-// in that target's PullState.
+// in that target's PullState. The attempt time is captured before the fetch
+// but published together with the outcome in one locked section, so readers
+// never observe an attempt time without its outcome.
 func (c *PullCollector) fetchOnce(t PullTarget) {
 	st := c.stateFor(t.Name)
 
-	c.mu.Lock()
-	st.LastAttemptAt = c.now()
-	c.mu.Unlock()
+	attemptAt := c.now()
 
 	ctx, cancel := context.WithTimeout(c.ctx, t.Timeout)
 	defer cancel()
@@ -275,6 +279,7 @@ func (c *PullCollector) fetchOnce(t PullTarget) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	st.LastAttemptAt = attemptAt
 	if err != nil {
 		st.Stale = true
 		st.StaleReason = classifyPullError(err)
