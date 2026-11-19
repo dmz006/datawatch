@@ -92,8 +92,8 @@ re-run so the merge check can resolve it. The status lists these as
 The **remote reap** removes the remote branch of an Automaton whose work is
 fully merged. The local passes never touch the remote.
 
-- **Report only by default.** `autonomous.remote_reap_enabled` is false or
-  unset by default, which means **report only**: a pass evaluates everything
+- **Report-only by default.** `autonomous.remote_reap_enabled` is false or
+  unset by default, which means **report-only**: a pass evaluates everything
   and the report says `report_only`, but deletes nothing on origin.
 - **Eligibility.** A branch is reaped only when it is merged into the
   project's default branch and its tip is older than
