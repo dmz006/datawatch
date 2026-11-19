@@ -7303,6 +7303,12 @@ A real migration run is refused while a final gate is running and skips, with a 
 
 The full how-to — what a hold records, operations, expiry, the held group, what stays away, and the hold migration's three rules — is [howto/automaton-hold.md](howto/automaton-hold.md).
 
+## Completion landing gate (`autonomous.completion_landing`)
+
+An Automaton is reported Completed only when its work has landed: its branch is merged into the default branch, a shipped or merge record names the commit, the landing record says landed, kept or dropped, or the record carries a no-code reason. The completion rollup, the judge re-run that accepts a warning and the post-ship hook all ask the gate first; the archive check reads the same recorded evidence. A refused change leaves the status as it was, sets `completion_refusal` on the Automaton and appends a `completion_refused` decision (path `rollup`, `judge_warn_accepted` or `post_ship`). The gate only reads git; it never merges, reverts or edits it. Setting: `autonomous.completion_landing.enabled`, default `true` (absent reads on). Walk-through: [howto/automata-completion-landing.md](howto/automata-completion-landing.md).
+
+**Operator review still owed:** Automata already stored as Completed are not re-checked by the gate; the repository is `worktree_base_repo` (falling back to the Automaton project directory), so confirm it is set; and no dedicated PWA or mobile display of `completion_refusal` exists yet.
+
 ## Merge-pending check (finished Automata whose branch is not on main)
 
 When an Automaton finishes, its work lives on its own branch (`automaton/<id>`) in the worktree base repository (`worktree_base_repo`). Nothing about finishing puts that work on `main`, so a completed Automaton can look done while its commits are still only on the branch. The merge-pending check compares each finished Automaton's branch with `main` — completed Automata always, and archived, `needs_review`, `blocked` and `failed` Automata too while `merge_pending_include_terminal` is on (the default) — so an operator can see which finished Automata are waiting to be merged, from every surface at once. The check is a **read**: it never merges, deletes or pushes anything, and it is **off by default**.
