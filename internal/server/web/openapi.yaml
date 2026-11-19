@@ -3720,6 +3720,44 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/completed-unmerged:
+    get:
+      summary: Completed Automata with an unmerged branch
+      description: |
+        The Automata that read completed while their work branch is not merged
+        into the default branch, sorted by id (the list the supervisor watch
+        raises a `completed_unmerged` finding from). An Automaton with a
+        recorded no-code reason, merge commit, landing record or default-branch
+        work is not listed. The route only reads; nothing is merged, reverted
+        or edited. Only GET is served, and a federated peer needs the
+        autonomous read capability.
+      operationId: autonomousCompletedUnmerged
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The completed Automata whose branch is not merged
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [completed_unmerged, count]
+                properties:
+                  completed_unmerged:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, branch, detail]
+                      properties:
+                        id: {type: string, description: Automaton id}
+                        branch: {type: string, description: The Automaton work branch}
+                        detail: {type: string, description: Why the branch is not known to be merged}
+                  count: {type: integer, description: Number of listed Automata}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/safe-to-delete:
     get:
       summary: Safe-to-delete report

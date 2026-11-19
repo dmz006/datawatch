@@ -2464,3 +2464,22 @@ func verifierMaxRunSeconds(req mcpsdk.CallToolRequest) (int, bool, error) {
 	}
 	return int(v), true, nil
 }
+
+// toolAutonomousCompletedUnmerged is the read-only list of completed
+// Automata whose work branch is not merged into the default branch. It
+// proxies GET /api/autonomous/completed-unmerged; nothing is merged,
+// reverted or edited.
+func (s *Server) toolAutonomousCompletedUnmerged() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_completed_unmerged",
+		mcpsdk.WithDescription("List the Automata that read completed while their work branch is not merged into the default branch (the same list the supervisor watch raises a completed_unmerged finding from). Returns {\"completed_unmerged\": [{id, branch, detail}], \"count\": N}, sorted by id; an Automaton with a recorded no-code reason, merge commit, landing record or default-branch work is not listed. Read-only; the same object as GET /api/autonomous/completed-unmerged. It never merges, reverts or edits a record."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleAutonomousCompletedUnmerged(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/completed-unmerged", url.Values{})
+	if err != nil {
+		return toolError("autonomous_completed_unmerged", err), nil
+	}
+	return textOK(string(out)), nil
+}

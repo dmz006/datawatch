@@ -850,6 +850,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPlanAttachBulk(), tracked(s.handlePlanAttachBulk))
 	mcpSrv.AddTool(s.toolPlanRowPlanList(), tracked(s.handlePlanRowPlanList))
 	mcpSrv.AddTool(s.toolPlanRowPlanConvert(), tracked(s.handlePlanRowPlanConvert))
+	mcpSrv.AddTool(s.toolAutonomousCompletedUnmerged(), tracked(s.handleAutonomousCompletedUnmerged))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))

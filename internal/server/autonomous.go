@@ -26,6 +26,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -5875,4 +5876,42 @@ func (s *Server) countLiveSessions(ids []string) int {
 		}
 	}
 	return live
+}
+
+// completedUnmergedReader is the narrow Manager surface the
+// completed-unmerged read needs.
+type completedUnmergedReader interface {
+	CompletedUnmerged(ctx context.Context) []autonomous.CompletedUnmerged
+}
+
+// handleAutonomousCompletedUnmerged serves GET /api/autonomous/completed-unmerged:
+// the completed Automata whose work branch is not merged into the default
+// branch (the list the supervisor watch raises findings from). It only reads:
+// nothing is merged, reverted or edited. Only GET is served, the Automata must
+// be enabled, and a federated peer needs autonomous:read.
+func (s *Server) handleAutonomousCompletedUnmerged(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	cr, ok := s.autonomousMgr.(completedUnmergedReader)
+	if !ok {
+		http.Error(w, "completed-unmerged list unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), mergeSafeDeleteTimeout)
+	defer cancel()
+	list := cr.CompletedUnmerged(ctx)
+	if list == nil {
+		list = []autonomous.CompletedUnmerged{}
+	}
+	writeJSONOK(w, map[string]any{"completed_unmerged": list, "count": len(list)})
 }

@@ -62,6 +62,7 @@ autonomous_branch_reap_run
 autonomous_branch_refresh_stats
 autonomous_cleanup_status
 autonomous_completed_migrate
+autonomous_completed_unmerged
 autonomous_config_get
 autonomous_config_set
 autonomous_decision_record_create

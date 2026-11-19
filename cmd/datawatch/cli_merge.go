@@ -7,6 +7,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -74,6 +75,55 @@ func newAutonomousSafeToDeleteCmd() *cobra.Command {
 				return err
 			}
 			_, err = fmt.Fprint(cmd.OutOrStdout(), autonomous.RenderSafeToDelete(r))
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	return c
+}
+
+// completedUnmergedList is the body of GET /api/autonomous/completed-unmerged.
+type completedUnmergedList struct {
+	Items []autonomous.CompletedUnmerged `json:"completed_unmerged"`
+	Count int                            `json:"count"`
+}
+
+// newAutonomousCompletedUnmergedCmd is the `datawatch autonomous
+// completed-unmerged` subcommand: the completed Automata whose work branch is
+// not merged into the default branch.
+func newAutonomousCompletedUnmergedCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "completed-unmerged",
+		Short: "List completed Automata whose branch is not merged into the default branch",
+		Long: "List every Automaton that reads completed while its work branch is not " +
+			"merged into the default branch, with the reason. A read: nothing is " +
+			"merged, reverted or edited.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body, err := progressGet("/api/autonomous/completed-unmerged", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			var l completedUnmergedList
+			if err := json.Unmarshal(body, &l); err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if len(l.Items) == 0 {
+				_, err = fmt.Fprintln(out, "No completed Automaton has an unmerged branch.")
+				return err
+			}
+			for _, u := range l.Items {
+				if _, err = fmt.Fprintf(out, "Automaton %s: branch %q is not merged: %s\n", u.ID, u.Branch, u.Detail); err != nil {
+					return err
+				}
+			}
+			_, err = fmt.Fprintf(out, "%d completed Automaton(s) with an unmerged branch. Nothing has been merged, reverted or edited.\n", len(l.Items))
 			return err
 		},
 	}
