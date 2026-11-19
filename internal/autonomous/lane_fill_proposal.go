@@ -78,10 +78,10 @@ func laneFillProposalIsREADME(ref string) bool {
 }
 
 // laneFillProposes reports whether the Automaton's own job is to author the
-// design proposal; such an Automaton is never gated on the Confirmed line of
-// the proposal it is producing.
-func laneFillProposes(spec string) bool {
-	return proposalWriterPattern.MatchString(spec)
+// design proposal, stated in its title or its spec; such an Automaton is
+// never gated on the Confirmed line of the proposal it is producing.
+func laneFillProposes(body string) bool {
+	return proposalWriterPattern.MatchString(body)
 }
 
 // LaneFillProposalFiles returns the distinct design-proposal references named
@@ -156,23 +156,25 @@ func laneFillImplementationType(typ string) bool {
 
 // CheckLaneFillProposal runs the proposal check for one Automaton and returns
 // its state and the path the verdict is about (the first readable file for
-// not_confirmed, the first named file for missing). The state is Exempt (and
+// not_confirmed, the first named file for missing). body is the Automaton's
+// title and spec, as data. The state is Exempt (and
 // so never refused) for a non-implementation Automaton, a template, a defect
 // Automaton, which is not a design implementation and has no design proposal to
 // confirm, and an Automaton whose job is to author the proposal, which is never
-// gated on the Confirmed line of the proposal it is producing. A proposal path
-// is read from the spec only as an explicit proposal field or line, and the
+// gated on the Confirmed line of the proposal it is producing, stated in the
+// title or the spec. A proposal path
+// is read from the body only as an explicit proposal field or line, and the
 // plan folder's README is never a proposal. warn, when not nil, is called for
 // a read that failed for a reason other than the file not existing. A nil
 // reader gives unknown: the rule does not apply until one is set.
-func CheckLaneFillProposal(typ string, isTemplate bool, isDefect bool, spec string, rd LaneFillProposalReader, warn func(ref string, err error)) (state, ref string) {
-	if isTemplate || isDefect || !laneFillImplementationType(typ) || laneFillProposes(spec) {
+func CheckLaneFillProposal(typ string, isTemplate bool, isDefect bool, body string, rd LaneFillProposalReader, warn func(ref string, err error)) (state, ref string) {
+	if isTemplate || isDefect || !laneFillImplementationType(typ) || laneFillProposes(body) {
 		return LaneFillProposalExempt, ""
 	}
 	if rd == nil {
 		return LaneFillProposalUnknown, ""
 	}
-	files := LaneFillProposalFiles(spec)
+	files := LaneFillProposalFiles(body)
 	if len(files) == 0 {
 		return LaneFillProposalMissing, ""
 	}

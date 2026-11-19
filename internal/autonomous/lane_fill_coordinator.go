@@ -723,7 +723,10 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
-			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.defect, r.spec, proposalRd, c.laneFillProposalWarnOnce)
+			// The body is the title and the spec: a writer's job may be stated in
+			// the title alone, and it must be exempt there too.
+			body := r.title + "\n" + r.spec
+			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.defect, body, proposalRd, c.laneFillProposalWarnOnce)
 		}
 		branches[r.id] = r.branch
 		if r.worktreeDir != "" {

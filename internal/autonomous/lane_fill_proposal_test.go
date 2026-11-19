@@ -366,6 +366,28 @@ func TestLaneFillProposalSnapshotRefusesAndNeverStartsInOnMode(t *testing.T) {
 	}
 }
 
+// An Automaton whose job to author the proposal is stated only in its title
+// is exempt just the same: the coordinator searches the title and the spec
+// together, so the spec needs no proposal file at all.
+func TestLaneFillProposalWriterTitleOnlyIsExempt(t *testing.T) {
+	h := newLaneFillHarness(t, "on")
+	h.c.SetReady()
+	h.c.SetLaneFillEvidenceSource(&laneFillEvidenceFake{ev: PoolEvidence{CheckedAt: h.now}})
+	h.c.SetLaneFillProposalReader(&laneFillProposalFake{}) // no proposal files at all
+
+	writer := h.addPRD("Write the design proposal", PRDApproved, "", "pi-prompt")
+	writer.Spec = "for the lane fill gate"
+	if err := h.m.store.SavePRD(writer); err != nil {
+		t.Fatal(err)
+	}
+
+	h.poll()
+
+	if reasons := laneFillEligibilityReasons(h); reasons[writer.ID] != "" {
+		t.Fatalf("a writer whose job is stated only in the title was refused: %v", reasons)
+	}
+}
+
 // A defect (bug) Automaton with no design proposal is eligible: it is not
 // refused with proposal_missing and takes its lane in on mode.
 func TestLaneFillProposalDefectSnapshotIsEligible(t *testing.T) {
