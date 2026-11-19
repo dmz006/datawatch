@@ -7156,6 +7156,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// refusals and shadow finding reports for Automaton pushes
 			// land in the operator audit log, redacted fields only.
 			amgr.SetSecretScanAuditFn(secretScanSink)
+			// Remote branch reap (autonomous.remote_reap_enabled /
+			// autonomous.remote_reap_retention_days): while the switch is off or
+			// unset (the default) the pass evaluates but touches nothing on origin
+			// and the report says report_only. The closure — not its result — is
+			// stored, so the switch and the retention window are read live on
+			// every pass; a runtime config set applies with no restart (the same
+			// live-config pattern as the push settings above).
+			amgr.SetRemoteReapSettings(func() (bool, int) {
+				return cfg.Autonomous.RemoteReapEnabled, cfg.Autonomous.EffectiveRemoteReapRetentionDays()
+			})
 			// Defect intake (autonomous.defect_intake_automation):
 			// when an Automaton is filed with kind bug and the setting names
 			// an Automation, it is offered to that Automation's bugs stage

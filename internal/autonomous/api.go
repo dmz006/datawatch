@@ -2835,3 +2835,32 @@ func (a *API) SummaryIndexRevision() uint64 { return a.M.Store().Revision() }
 func (a *API) NotifyEffectiveForEntry(e SummaryEntry) NotifyEventSet {
 	return a.M.ResolveNotifyEvents(&PRD{NotifyEvents: e.NotifyEvents, GuardrailProfile: e.GuardrailProfile})
 }
+
+// ReapPreview, ReapRun and ReapRestore — the task sub-branch reaper behind
+// GET /api/autonomous/branch-reap, POST .../branch-reap/run and
+// POST .../branch-reap/restore (and the MCP, CLI and comm surfaces on top).
+// Without them the routes' interface checks fail and answer 503 in a running
+// daemon, because the daemon installs the API, not the Manager.
+func (a *API) ReapPreview(ctx context.Context) (ReapReport, []ReapBackup, error) {
+	return a.M.ReapPreview(ctx)
+}
+func (a *API) ReapRun(ctx context.Context) (ReapReport, error) { return a.M.ReapRun(ctx) }
+func (a *API) ReapRestore(ctx context.Context, branch string) (string, string, error) {
+	return a.M.ReapRestore(ctx, branch)
+}
+
+// RemoteReapPreview, RemoteReapRun and RemoteReapRestore — the Automaton
+// work-branch remote reaper behind GET /api/autonomous/remote-reap, POST
+// .../remote-reap/run and POST .../remote-reap/restore (and the MCP, CLI
+// and comm surfaces on top). Without them the routes' interface checks
+// fail and answer 503 in a running daemon, because the daemon installs the
+// API, not the Manager.
+func (a *API) RemoteReapPreview(ctx context.Context) (RemoteReapSurfaceReport, []ReapBackup, error) {
+	return a.M.RemoteReapPreview(ctx)
+}
+func (a *API) RemoteReapRun(ctx context.Context) (RemoteReapReport, error) {
+	return a.M.RemoteReapRun(ctx)
+}
+func (a *API) RemoteReapRestore(ctx context.Context, branch string) (RemoteReapRestoreResult, error) {
+	return a.M.RemoteReapRestore(ctx, branch)
+}

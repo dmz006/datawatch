@@ -1508,6 +1508,10 @@ type Manager struct {
 	// autonomous.judge_verdict_cache_enabled (wired in cmd/datawatch/main.go);
 	// nil = read the manager's Config at call time. Guarded by mu.
 	judgeVerdictCacheEnabledFn func() bool
+	// remoteReapSettingsFn — live resolver for the autonomous.remote_reap
+	// settings (enabled, retention whole days), wired by cmd/datawatch with
+	// SetRemoteReapSettings; nil = read the defaults (disabled, 30 days).
+	remoteReapSettingsFn RemoteReapSettingsFunc
 	// hostLoadStatusFn — read-only snapshot of the daemon's host load check
 	// (host_load.go): wired by cmd/datawatch with SetHostLoadProvider so
 	// Status() carries it into the autonomous status (GET
