@@ -163,28 +163,59 @@ The Android T13 story maps to this flow:
 ## When the decompose output cannot be parsed
 
 Since the 2026-11-18 abort fix, a decompose whose *output* is bad fails the
-Automaton — it can no longer abort the daemon:
+Automaton — it can no longer abort the daemon, and nothing restarts the
+daemon as a result:
 
 - **Bounded before parsing.** The raw output is refused above 8 MiB before it
-  is cleaned or parsed, so a runaway reply can never grow the daemon's heap.
+  is cleaned or parsed, so an over-size or runaway reply fails the Automaton
+  the same way instead of growing the daemon's heap.
 - **Guarded parse and lint.** The parse-plus-lint step — shared by the sync
   and streaming decompose paths and the re-attached planner ingest — runs
   under a panic guard. A Go panic in the parser or the lint is recovered and
-  returned as the named failure `decompose output unparseable: <reason>`
-  (with the output length and a 200-byte head), not as an abort.
-- **A written verdict, not an infra retry.** The failure is recorded as the
-  Automaton's planning failure with source `decompose-parse` and category
-  `invalid-response`: terminal, `retryable: false`, outside the `infra`
-  budget — a plan the model wrote that the daemon cannot parse is a content
-  judgment, and re-running the identical call would reproduce the identical
-  output. (Contrast: a decompose LLM call that fails *before* producing
-  output is source `decompose-llm`, category `infra`, and takes the ordinary
-  infra-retry path.) On a give-up the PRD rolls back to `draft`, one warning
-  alert is raised, and the raw output is kept at
-  `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`
-  (a collision suffix if one already exists) so you can inspect exactly what
-  the model wrote. See [retry-policy.md](retry-policy.md) for the
+  returned as the named failure, not as an abort.
+- **One named failure.** Every one of these — an over-size output, an empty
+  result, a parse failure, a lint failure, a panic — is recorded as the
+  Automaton's planning failure with source `decompose-parse`, category
+  `invalid-response`, and error text starting
+  `decompose output unparseable: ` (the reason, the output length, and a
+  200-byte head), `retryable: false`, outside the `infra` budget — a plan
+  the model wrote that the daemon cannot parse is a content judgment, and
+  re-running the identical call would reproduce the identical output.
+  (Contrast: a decompose LLM call that fails *before* producing output is
+  source `decompose-llm`, category `infra`, and takes the ordinary
+  infra-retry path.) See [retry-policy.md](retry-policy.md) for the
   `invalid-response` category.
+- **Back to draft, with the reason.** On a give-up the Automaton rolls back
+  to `draft`, and the exact `decompose output unparseable: …` text is kept as
+  its last decompose failure (`last_decompose_failure`) — visible in the PWA
+  decompose panel, in the Automaton's REST snapshot, and in
+  `autonomous_prd_get`. One warning alert is raised, and the raw output is
+  kept at `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`
+  (a collision suffix if one already exists) so you can inspect exactly what
+  the model wrote. The daemon itself keeps running — a failed plan is not a
+  daemon death.
+
+### How to fix it
+
+The daemon does not re-run the call for you — `invalid-response` is terminal
+by design. Either re-run the decompose, or revise the spec:
+
+1. **Re-run the decompose** — the PWA **Plan** button, or
+   `POST /api/autonomous/prds/{id}/decompose`, or the MCP
+   `autonomous_prd_decompose`. A fresh attempt is sometimes enough: when it
+   runs, the previous failure reason is fed back to the model ("your
+   previous attempt failed: … Fix this in your next response.").
+2. **Revise the spec** — when the same failure repeats, the spec is what to
+   change. Tighten or split the part that produced the malformed plan, then
+   re-run. Start from the `.failed` artifact above and
+   `last_decompose_failure.detail` to see what the model actually wrote and
+   which phrase tripped the lint.
+
+If instead the *daemon* dies while a decompose is in flight, that is a
+different class of failure — see
+[operations.md — "Decompose output and daemon aborts"](../operations.md#decompose-output-and-daemon-aborts-sigabrt-core-dump).
+
+## If the daemon itself aborts (SIGABRT, core dump)
 
 ## If the daemon itself aborts (SIGABRT, core dump)
 
