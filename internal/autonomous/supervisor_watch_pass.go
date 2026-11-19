@@ -145,6 +145,7 @@ func (m *Manager) supervisorWatchRawFindings(now time.Time, cfg SupervisorWatchC
 	out = append(out, work.CheckCISTuck()...)
 	out = append(out, work.CheckPriorityStall(now, cfg)...)
 	out = append(out, work.CheckBacklog(now)...)
+	out = append(out, m.supervisorWatchCompletedUnmergedFindings(prds)...)
 
 	if baseRepo != "" {
 		wt := NewSupervisorWatchWorktree(
@@ -453,6 +454,7 @@ func supervisorWatchAutomatonScoped(kind SupervisorWatchKind) bool {
 	case SupervisorWatchTaskFailed,
 		SupervisorWatchTaskReviewNeeded,
 		SupervisorWatchAutomatonNotMerged,
+		SupervisorWatchCompletedUnmerged,
 		SupervisorWatchWorktreeNoGomod,
 		SupervisorWatchWorktreeNotRegistered,
 		SupervisorWatchWorktreeSilent,

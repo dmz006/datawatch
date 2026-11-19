@@ -88,6 +88,11 @@ const (
 	// the same priority by oldest created first, capped at sixteen entries
 	// with a "+<k> more" tail when the queue is longer.
 	SupervisorWatchBacklog SupervisorWatchKind = "backlog"
+	// SupervisorWatchCompletedUnmerged — an Automaton reads completed but
+	// its branch is not merged into the default branch and its record has
+	// no no-code reason. Subject: the Automaton id. Read only: the watch
+	// never merges or reverts.
+	SupervisorWatchCompletedUnmerged SupervisorWatchKind = "completed_unmerged"
 )
 
 // SupervisorWatchKinds is the complete stable finding vocabulary, in
@@ -109,6 +114,7 @@ var SupervisorWatchKinds = []SupervisorWatchKind{
 	SupervisorWatchCISTuck,
 	SupervisorWatchPriorityStall,
 	SupervisorWatchBacklog,
+	SupervisorWatchCompletedUnmerged,
 }
 
 // ValidSupervisorWatchKind reports whether k is one of the stable
