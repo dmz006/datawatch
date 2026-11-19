@@ -25,10 +25,13 @@
 //   - its commits must be all on the base project (re-verifying with
 //     rev-list at removal time), so nothing unique is lost.
 //
-// Removal itself is the strict pair `git worktree remove` (never with
-// --force) and `git branch -d` (never -D): if either one refuses, the
-// entry is left in place and the refusal is recorded with its error, so
-// work is never silently destroyed.
+// Removal itself is the pair `git worktree remove` — strict, never with
+// --force for a clean work tree, and with --force only for a work tree
+// whose uncommitted work the strict guard classified as generated harness
+// files (which git's strict removal would otherwise refuse to delete) —
+// plus `git branch -d` (never -D): if the removal or the branch delete
+// refuses, the entry is left in place and the refusal is recorded with its
+// error, so unmerged or unclassified work is never silently destroyed.
 //
 // Three modes are honored from the config accessors:
 //
@@ -441,7 +444,23 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 		}
 
 		if e.Worktree != "" {
-			out, rerr := opts.Git.Run(ctx, opts.Repo, "worktree", "remove", e.Worktree) // never --force
+			// A clean work tree (or one holding only a daemon section) is
+			// removed with the strict, never-forced `git worktree remove`. The
+			// one exception is a work tree that still holds only generated
+			// harness files (`.mcp.json`, `.aider.conf.yml`, `.goose/`, ...): it
+			// is safe to remove, but git's strict removal refuses because of
+			// those untracked files — so that (and only that) case passes
+			// --force, the established pattern for vetted worktrees in this
+			// package. Nothing with unmerged or unclassified uncommitted work
+			// reaches this line: those are held above and reported, never force-
+			// deleted.
+			removeArgs := []string{"worktree", "remove"}
+			if len(resolvedGenerated) > 0 {
+				removeArgs = append(removeArgs, "--force", e.Worktree)
+			} else {
+				removeArgs = append(removeArgs, e.Worktree)
+			}
+			out, rerr := opts.Git.Run(ctx, opts.Repo, removeArgs...)
 			if rerr != nil {
 				failed(cleanupStageRemove, "git worktree remove: %v: %s", rerr, strings.TrimSpace(out))
 				continue

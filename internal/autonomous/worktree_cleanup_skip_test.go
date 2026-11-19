@@ -8,7 +8,11 @@
 package autonomous
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -23,41 +27,66 @@ import (
 // removes it and names the resolved files in the audit record and in
 // the removal entry, and report mode would-remove it the same way.
 func TestWorktreeCleanupWorktreeGeneratedOnlyUncommittedIsRemoved(t *testing.T) {
-	mkResult := func(mode string) WorktreeCleanupResult {
-		g := newScriptedGit()
-		scriptStandardRemoval(t, g)
-		g.out[keyOf(testWorktree, "status", "--porcelain")] = "?? .mcp.json\n" +
-			"?? .aider.conf.yml\n" +
-			"?? .goose/\n"
-		g.out[keyOf(testRepo, "worktree", "remove", testWorktree)] = ""
-		g.out[keyOf(testRepo, "branch", "-d", testBranch)] = ""
-		audit := &recordedAudit{}
-		return runCoreWith(g, eligibleProbe(), coreWorktrees(mode), mode, audit.fn(), nil)
+	// Runs against a REAL git repository (NewMergeGitRunner): the strict
+	// `git worktree remove` refuses when the tree holds uncommitted files,
+	// so a pass that did not pass --force for the generated-only case would
+	// land in the failed bucket and the assertions below would fail — this
+	// is exactly the fake-success case the scripted version could not catch.
+	probe := &fakeProbe{finished: true, base: "trunk", age: 48 * time.Hour, ageOK: true, size: 4096}
+	runCase := func(mode string) (WorktreeCleanupResult, string) {
+		gBase, worktree := fixtureRepo(t)
+		// Two deterministic top-level generated harness files, each reported
+		// individually by `git status --porcelain`.
+		os.WriteFile(filepath.Join(worktree, ".mcp.json"), []byte("{}\n"), 0o644)
+		os.WriteFile(filepath.Join(worktree, ".aider.conf.yml"), []byte("model: x\n"), 0o644)
+		res := CleanupWorktrees(WorktreeCleanupOptions{
+			Ctx:         context.Background(),
+			Repo:        gBase,
+			Report:      SafeDeleteReport{Safe: []SafeDeleteEntry{{Branch: "automaton/fixture", Worktree: worktree, Reason: "all commits on main"}}},
+			Mode:        mode,
+			Retention:   24 * time.Hour,
+			MaxRemovals: 10,
+			Git:         NewMergeGitRunner(),
+			Probe:       probe,
+			Audit:       func(string, map[string]any) error { return nil },
+			Record:      nil,
+		})
+		return res, worktree
 	}
 
-	// on mode: removed, with the resolved files named.
-	res := mkResult(config.CleanupModeOn)
+	// on mode: the work tree is actually removed and the pass names the
+	// exact generated files it resolved.
+	res, worktree := runCase(config.CleanupModeOn)
+	if len(res.Failed) != 0 {
+		t.Fatalf("no failed entries expected (real git removed the tree), got %+v", res.Failed)
+	}
 	if len(res.Removed) != 1 {
-		t.Fatalf("generated-only uncommitted work must be cleaned, got removed=%+v skipped=%+v failed=%+v",
-			res.Removed, res.Skipped, res.Failed)
+		t.Fatalf("generated-only work tree must be cleaned, got removed=%+v skipped=%+v",
+			res.Removed, res.Skipped)
 	}
-	want := []string{".mcp.json", ".aider.conf.yml", ".goose"}
-	if !reflect.DeepEqual(res.Removed[0].ResolvedFiles, want) {
-		t.Fatalf("removal must name the resolved generated files, got %q", res.Removed[0].ResolvedFiles)
+	got := append([]string(nil), res.Removed[0].ResolvedFiles...)
+	sort.Strings(got)
+	want := []string{".aider.conf.yml", ".mcp.json"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("removal must name the resolved generated files, got %q want %q", got, want)
 	}
-	if skippedHas(res, cleanupSkipDirty) {
-		t.Fatalf("generated-only uncommitted work must not be held as uncommitted work, got %+v", res.Skipped)
+	if _, err := os.Stat(worktree); !os.IsNotExist(err) {
+		t.Fatalf("the real work tree %s must be gone after on-mode removal", worktree)
 	}
 
-	// report mode: would-remove with the same exact file list, nothing
-	// removed.
-	rep := mkResult(config.CleanupModeReport)
+	// report mode: would-remove the same tree with the same exact file list,
+	// and touch nothing on disk.
+	rep, rworktree := runCase(config.CleanupModeReport)
 	if len(rep.Removed) != 0 || len(rep.WouldRemove) != 1 {
-		t.Fatalf("report mode must would-remove the generated-only tree, got removed=%+v wouldRemove=%+v skipped=%+v",
-			rep.Removed, rep.WouldRemove, rep.Skipped)
+		t.Fatalf("report mode must would-remove the tree, got removed=%+v wouldRemove=%+v", rep.Removed, rep.WouldRemove)
 	}
-	if !reflect.DeepEqual(rep.WouldRemove[0].ResolvedFiles, want) {
-		t.Fatalf("report-mode entry must name the exact generated files, got %q", rep.WouldRemove[0].ResolvedFiles)
+	g2 := append([]string(nil), rep.WouldRemove[0].ResolvedFiles...)
+	sort.Strings(g2)
+	if !reflect.DeepEqual(g2, want) {
+		t.Fatalf("report-mode entry must name the exact generated files, got %q want %q", g2, want)
+	}
+	if _, err := os.Stat(rworktree); err != nil {
+		t.Fatalf("report mode must not remove the work tree, got %v", err)
 	}
 }
 
