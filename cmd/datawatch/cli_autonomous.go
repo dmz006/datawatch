@@ -85,6 +85,14 @@ Subcommands:
                                   then deleted; held branches are listed (a reaper needs the merge base repo)
   branch-reap-restore <branch> [--json]
                                   Recreate one reaped branch from its newest backup ref
+  remote-reap [--json]            The remote reap report on origin: the Automaton work branches that would be
+                                  deleted from origin, the ones held, and every backup ref under
+                                  refs/datawatch/remote-reap-backup/ (report only, nothing on origin is touched)
+  remote-reap-run [--json]        Perform one remote reap pass: each qualifying branch is backed up first, its
+                                  backup is verified, then deleted on origin (report only while
+                                  autonomous.remote_reap_enabled is unset); a reaper needs the merge base repo
+  remote-reap-restore <branch> [--json]
+                                  Recreate one remotely reaped branch from its newest backup ref
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
@@ -373,6 +381,9 @@ Subcommands:
 		newAutonomousBranchReapCmd(),
 		newAutonomousBranchReapRunCmd(),
 		newAutonomousBranchReapRestoreCmd(),
+		newAutonomousRemoteReapCmd(),
+		newAutonomousRemoteReapRunCmd(),
+		newAutonomousRemoteReapRestoreCmd(),
 		newAutonomousCleanupCmd(),
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
