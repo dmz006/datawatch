@@ -303,10 +303,44 @@ to clear the blocker instead of finding it on its next scheduled check.
   off by default). `priority_stall` is in the default wake kinds. With the
   supervisor wake off, no session is woken and the scheduled check covers the
   stall.
-- **Review before relying on it.** `stall_wake` is an advanced key: it is not yet
-  listed in the config reference or the definitions, so it is set by writing the
-  full key under `autonomous.automation.supervisor_watch`. Confirm the default
-  (`true`) suits your installation before turning the supervisor wake on.
+- **Default.** `stall_wake` is `true`, the threshold is 30 minutes and the
+  priority floor is 80. Confirm these suit your installation before turning the
+  supervisor wake on.
+
+### The seven blockers and their single action
+
+Each stalled Automaton is named with exactly one blocker and one action.
+
+| Blocker | Meaning | The one action |
+|---|---|---|
+| `lane_full` | Every lane is busy. | Wait for a lane or free one. |
+| `plan_coverage_blocked` | The plan coverage check failed and nobody has acknowledged it. | Acknowledge the coverage failure or re-decompose the Automaton. |
+| `held` | The Automaton is on hold. | Release the hold. |
+| `stale` | The Automaton has not been touched for too long. | Refresh the Automaton or re-decompose it. |
+| `proposal_not_confirmed` | Its proposal is not confirmed. | Confirm the proposal. |
+| `judge_timed_out` | The judge timed out on every backend. | Re-run the judge. |
+| `merge_pending` | Every task is done and the branch is waiting for a merge. | Merge the branch. |
+
+Any other lane-fill refusal is reported as `other_refusal`, with the refusal's
+own text and the action "clear the reason named in the text".
+
+A change of blocker for the same Automaton is a new wake; the same blocker is
+never woken twice.
+
+### Reading the current stalls
+
+The stalls can be read at any time, whatever `stall_wake` says:
+
+- REST: `GET /api/autonomous/priority-stalls`, body `stalls`: each with
+  `automaton_id`, `priority`, `waiting_minutes`, `blocker_code`, `blocker_text`
+  and `action`, high priority first. An empty list means nothing is stalled.
+- MCP: `priority_stalls` (read-only, no arguments).
+- CLI: `datawatch autonomous priority-stalls [--json]`.
+
+The read is toward Automata only and read only: it never wakes the supervisor
+and never approves, runs, acknowledges or merges an Automaton. The action is
+yours or the supervisor's to take. Run `datawatch autonomous priority-stalls`
+first to see what is stalled and why.
 
 ## Configuration
 
