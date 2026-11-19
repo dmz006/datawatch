@@ -103,6 +103,29 @@ address, a worktree path, any other plan check, or a release number in a plan
 that also fails another check. A private address or a worktree path is never
 reworded by the daemon, because only you know what should replace it.
 
+## The string verification value and the parse retry
+
+A task's verification field may be a plain string. The daemon accepts a
+string as an unverified-result summary — `OK` stays `false`, the string
+becomes the result's summary, and no issues are recorded — so a plan whose
+only "mistake" was a string there is no longer rejected as unparseable. A
+missing value or `null` still means "no verification result", and an object
+is still decoded strictly. A verification value of any other kind (a
+number, a boolean, an array) is still a parse error.
+
+A planning answer that still cannot be parsed is
+classified as a content failure, not the terminal invalid-response class: the
+planner wrote an answer, and the defect is one it can fix. It is retried
+within the content budget — at least one retry at the default configuration —
+and the retry prompt carries the parse error back to the planner as the next
+attempt's guidance.
+
+If the budget is spent and the failure is recorded, the reason names the field
+(and the task) that failed to parse — for example the verification field of a
+specific task — so you can reword the spec around exactly that spot. The
+record's category is `content`, its rule is `decompose-parse`, and its
+`retryable` flag is set by whether the content budget still has retries left.
+
 ## Where a planning failure is shown
 
 When planning gives up, the Automaton records one planning failure:
