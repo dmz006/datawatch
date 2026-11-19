@@ -213,6 +213,80 @@ func isDaemonToolingFile(f UncommittedFile) bool {
 		isLauncherToolingFile(f.Path)
 }
 
+// isGeneratedWorktreeArtifact reports whether an untracked path (relative
+// to a work tree) is a harness-file entry the daemon itself generates into
+// the tree: the per-session MCP discovery file, the injected skills folder
+// and the launcher files (isDaemonToolingFile), plus the generated entries
+// the LLM backends write into a project directory — the
+// tooling.BackendArtifacts patterns: .mcp.json, .aider.conf.yml,
+// .aider.chat.history.md, .aider.tags.cache.v*/, .goose/, .gemini/,
+// .opencode/, opencode.json. Those entries are rewritten into the tree at
+// the next session start there, so the worktree cleanup pass may treat a
+// work tree that holds only them as safe to clean. False is the
+// conservative answer: a path that does not match stays in the dirty list
+// and the work tree keeps its safety guard.
+func isGeneratedWorktreeArtifact(rel string) bool {
+	if isDaemonToolingFile(UncommittedFile{Path: rel, Status: "??"}) {
+		return true
+	}
+	for _, patterns := range tooling.BackendArtifacts {
+		for _, p := range patterns {
+			if artifactPatternMatches(p, rel) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// artifactPatternMatches reports whether a slash-separated
+// work-tree-relative path matches one generated-entry pattern: an exact
+// name (.mcp.json, opencode.json, .aider.conf.yml), a glob
+// (.aider.tags.cache.v*/), or a directory (a trailing slash: .goose/,
+// .gemini/, .opencode/) — in which case everything under it matches. A
+// directory pattern matches the path's leading segment, gitignore-style.
+func artifactPatternMatches(pattern, rel string) bool {
+	clean := path.Clean(filepath.ToSlash(rel))
+	if clean == "" || clean == "." || strings.HasPrefix(clean, "..") {
+		return false
+	}
+	p := pattern
+	isDir := strings.HasSuffix(p, "/")
+	if isDir {
+		p = strings.TrimSuffix(p, "/")
+	}
+	if p == "" {
+		return false
+	}
+	if containsGlob(p) {
+		if isDir {
+			seg := clean
+			if i := strings.Index(clean, "/"); i >= 0 {
+				seg = clean[:i]
+			}
+			m, err := path.Match(p, seg)
+			return err == nil && m
+		}
+		m, err := path.Match(p, clean)
+		return err == nil && m
+	}
+	if isDir {
+		return clean == p || strings.HasPrefix(clean, p+"/")
+	}
+	return clean == p
+}
+
+// containsGlob reports whether the pattern carries a glob metacharacter.
+func containsGlob(p string) bool {
+	for i := 0; i < len(p); i++ {
+		switch p[i] {
+		case '*', '?', '[':
+			return true
+		}
+	}
+	return false
+}
+
 // isIgnoreFileName reports whether p is one of the ignore files the daemon
 // appends patterns to.
 func isIgnoreFileName(p string) bool {

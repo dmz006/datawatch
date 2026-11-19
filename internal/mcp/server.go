@@ -725,6 +725,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousEventLog(), tracked(s.handleAutonomousEventLog))
 	mcpSrv.AddTool(s.toolAutonomousEventKinds(), tracked(s.handleAutonomousEventKinds))
+	mcpSrv.AddTool(s.toolArchivedUnmergedList(), tracked(s.handleArchivedUnmergedList))                 // "archived_unmerged_list"
+	mcpSrv.AddTool(s.toolArchivedUnmergedCarryForward(), tracked(s.handleArchivedUnmergedCarryForward)) // "archived_unmerged_carry_forward"
 	// Operator question channel (proxy /api/questions — internal/server/questions.go).
 	// The trailing comment is the MCP tool name each AddTool registers.
 	mcpSrv.AddTool(s.toolQuestionRaise(), tracked(s.handleQuestionRaise))       // "question_raise"
@@ -756,6 +758,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanResults(), tracked(s.handleAutonomousPRDScanResults))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanFix(), tracked(s.handleAutonomousPRDScanFix))
+	mcpSrv.AddTool(s.toolAutonomousPRDScanFixloop(), tracked(s.handleAutonomousPRDScanFixloop))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanRules(), tracked(s.handleAutonomousPRDScanRules))
 	// BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills tools.
 	mcpSrv.AddTool(s.toolAutonomousTypeList(), tracked(s.handleAutonomousTypeList))
@@ -864,6 +867,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousBranchReap(), tracked(s.handleAutonomousBranchReap))
 	mcpSrv.AddTool(s.toolAutonomousBranchReapRun(), tracked(s.handleAutonomousBranchReapRun))
 	mcpSrv.AddTool(s.toolAutonomousBranchReapRestore(), tracked(s.handleAutonomousBranchReapRestore))
+
+	// Remote branch reaper: same three, over the branches on origin; the run deletes nothing while autonomous.remote_reap_enabled is unset.
+	mcpSrv.AddTool(s.toolAutonomousRemoteReap(), tracked(s.handleAutonomousRemoteReap))
+	mcpSrv.AddTool(s.toolAutonomousRemoteReapRun(), tracked(s.handleAutonomousRemoteReapRun))
+	mcpSrv.AddTool(s.toolAutonomousRemoteReapRestore(), tracked(s.handleAutonomousRemoteReapRestore))
 	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))

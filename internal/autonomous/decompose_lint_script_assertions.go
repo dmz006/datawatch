@@ -3,7 +3,6 @@ package autonomous
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -51,7 +50,9 @@ var scriptHelpProbe = defaultScriptHelpProbe
 func defaultScriptHelpProbe(ctx context.Context, shellLine string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, scriptHelpTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "sh", "-c", shellLine).CombinedOutput()
+	// Bounded like the help-text probe (runBoundedProbe): own process group
+	// killed whole on timeout, capped output, scratch working directory.
+	out, err := runBoundedProbe(ctx, "sh", "-c", shellLine)
 	if err != nil {
 		// A non-zero exit with output (some commands report their
 		// help that way) is still usable help text; a failure with no
@@ -200,6 +201,10 @@ func newScriptHelpCache() *scriptHelpCache {
 // command or its help is unavailable — which the caller skips.
 func (c *scriptHelpCache) flagsHelpFor(ctx context.Context, inv scriptInvocation) (bool, error) {
 	probe := func(form, line string) (map[string]bool, error) {
+		// Never probe the running daemon's own executable.
+		if isDaemonCommand(inv.cmd) {
+			return nil, fmt.Errorf("command %q is the daemon executable", inv.cmd)
+		}
 		if f, ok := c.known[form]; ok {
 			return f, nil
 		}

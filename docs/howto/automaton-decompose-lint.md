@@ -144,7 +144,7 @@ and never name a particular project, repository or home directory.
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
 | `artefact_files_allowed` | block | a verification script that does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton — the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail. Fix: exclude `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-files computation |
 | `final_gate_artefact_allowed` | block | a verification script that asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree. Fix: check only the files this task adds, or skip the file-set check when the final gate re-runs the script |
-| `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help (`--help`, then `-h`, then the bare command, each under a bounded timeout). A command that does not resolve, a probe that fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
+| `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help with `prefix --help` only (never `-h`, never the bare prefix), under a 5-second timeout, in its own process group, with its output capped at 64 KiB. A command that does not resolve, a probe that times out, fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
 | `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not name verbatim — a heading also anchors with its leading `#` stripped. Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `verify_script_artefact_files` | block | a verification script that flags unexpected changed files without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md`; the same fault as `artefact_files_allowed`, detected by the shape of the changed-set check rather than by a literal artefact-path scan, so the two can both fire on one script |
@@ -181,11 +181,21 @@ project directory (and any helper it sources, one level deep) and name the
   file-set check when the final gate re-runs the script.
 - `script_invokes_known_flag` — fires when the script invokes a command with
   a long flag the command's own help does not list as a whole option. The
-  rule probes the real binary's help (`--help`, then `-h`, then the bare
-  command, bounded by a timeout); anything it cannot establish — an
-  unresolvable command, a hung or silent probe, short flags, a missing
-  script — is skipped, never guessed. The finding names the offending
-  invocation.
+  rule probes the real binary's help with `prefix --help` only (never `-h`,
+  never the bare prefix), under a 5-second timeout, in its own process
+  group, with its output capped at 64 KiB; anything it cannot establish —
+  an unresolvable command, a hung or silent probe, short flags, a missing
+  script — is skipped, never guessed. The bounds are not decoration: the
+  2026-11-18 daemon abort (SIGABRT, core dump) was a help-probe fallback
+  that ran the command's bare prefix with no working directory, no process
+  group and no output cap, and a long-running command in that position grew
+  the daemon's memory until the Go runtime aborted the process; the probe
+  is now `--help`-only and bounded, and a bad decompose output can no longer
+  abort the daemon either (the parse-plus-lint step runs under a panic
+  guard and a parse failure records source `decompose-parse`, category
+  `invalid-response` — see [howto/retry-policy.md](retry-policy.md) and
+  [howto/decompose-async.md](decompose-async.md)). The finding names the
+  offending invocation.
 - `check_matches_spec_text` — fires when the script (or a helper it sources)
   asserts a markdown heading, or the exact gate output formats `Final answer`
   / `Verification summary`, that the task's own spec does not name verbatim (a
@@ -318,7 +328,7 @@ hold for the same task. The leaves:
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
 | `verification_script_artefact_files_allowed` | assert the script's changed-file-set check does not exempt the generated artefacts the daemon writes per Automaton (changelog draft, parity draft, gate report); skipped when the script file does not exist |
 | `verification_script_final_gate_artefact_allowed` | assert the script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; skipped when the script file does not exist |
-| `verification_script_invokes_unknown_flag` | assert the script invokes a command with a long flag the command's own help does not list as a whole option; the command is probed on PATH with a bounded timeout and an unresolvable, hung or silent command is skipped, never guessed |
+| `verification_script_invokes_unknown_flag` | assert the script invokes a command with a long flag the command's own help does not list as a whole option; the command is probed on PATH with `--help` only, under a bounded timeout, and an unresolvable, hung or silent command is skipped, never guessed |
 | `fixed_calendar_date_in_test` | assert the task writes a test (a test file in its files list, or an Add/Write title naming a test) and its spec contains a fixed `YYYY-MM-DD` date |
 | `verification_script_artefact_files` | assert the script flags unexpected changed files without exempting the daemon-generated artefact folders and `CHANGELOG.md`; skipped when the script file does not exist |
 | `verification_script_final_gate_rerun` | assert the script checks the whole changed-file set against a finite allow-list with no final-gate rerun guard; skipped when the script file does not exist |
