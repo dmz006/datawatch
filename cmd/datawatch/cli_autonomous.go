@@ -370,6 +370,7 @@ Subcommands:
 		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousCompletedUnmergedCmd(),
 		newAutonomousBranchReapCmd(),
 		newAutonomousBranchReapRunCmd(),
 		newAutonomousBranchReapRestoreCmd(),

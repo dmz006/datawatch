@@ -16,10 +16,10 @@ import (
 // CompletedUnmerged is one completed Automaton whose branch is not merged
 // into the default branch and which carries no no-code reason.
 type CompletedUnmerged struct {
-	ID     string
-	Branch string
+	ID     string `json:"id"`
+	Branch string `json:"branch"`
 	// Detail says why the branch is not known to be merged.
-	Detail string
+	Detail string `json:"detail"`
 }
 
 // ListCompletedUnmerged returns, sorted by id, every completed Automaton in
@@ -76,6 +76,18 @@ func (m *Manager) supervisorWatchCompletedUnmergedFindings(prds []*PRD) []Superv
 	var out []SupervisorWatchFinding
 	for _, u := range ListCompletedUnmerged(context.Background(), git, repo, prds, nil) {
 		out = append(out, supervisorWatchWorkFinding(SupervisorWatchCompletedUnmerged, u.ID))
+	}
+	return out
+}
+
+// CompletedUnmerged lists, read-only, the completed Automata whose branch is
+// not merged into the default branch (the list the supervisor watch raises
+// findings from). It never returns nil, so a JSON body is always an array.
+func (m *Manager) CompletedUnmerged(ctx context.Context) []CompletedUnmerged {
+	_, git, repo := m.completionLandingSettings()
+	out := ListCompletedUnmerged(ctx, git, repo, m.supervisorWatchPRDs(), nil)
+	if out == nil {
+		out = []CompletedUnmerged{}
 	}
 	return out
 }

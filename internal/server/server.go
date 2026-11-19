@@ -650,6 +650,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                  // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step
+	apiMux.HandleFunc("/api/autonomous/completed-unmerged", api.handleAutonomousCompletedUnmerged)         // completed Automata whose branch is not merged into the default branch (GET, read-only)
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                  // safe-to-delete report of finished Automaton branches and worktrees
 	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
 	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
