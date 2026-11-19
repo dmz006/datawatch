@@ -40855,96 +40855,6 @@ window._branchReapEnsureRestoreHandler = function() {
   }, true);
 };
 
-// ── Remote branch reaper card ───────────────────────────────────────────────
-// remoteReapCardHtml(report) draws the body of GET /api/autonomous/remote-reap:
-// { reaped: [{automaton_id, branch, base, tip, age_days, backup_ref, reason}],
-//   held: [...same], report_only, backups: [{branch, ref, sha}],
-//   retention_days, computed_at }. A missing or malformed body reads as an
-// empty report. The report itself deletes nothing on origin; the only write
-// surface is the Restore button on a reaped entry, which posts the one branch
-// to /api/autonomous/remote-reap/restore (its click is delegated, because the
-// loader re-paints the card's innerHTML on every tick).
-function _remoteReapLine(text, style) {
-  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
-}
-function _remoteReapSection(title, rows, emptyText) {
-  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
-    (rows.length ? rows.join('') : _remoteReapLine(emptyText));
-}
-function _remoteReapEntryRow(e, offerRestore) {
-  const branch = String(e.branch || '');
-  // Only a reaped entry has a backup ref to restore from; a held branch was
-  // never deleted on origin, so there is nothing to bring back.
-  const restore = (branch && offerRestore)
-    ? `<button type="button" class="remote-reap-restore-btn" data-remote-reap-restore="${escHtml(branch)}" style="margin-top:4px;max-width:100%;">${escHtml(t('remote_reap_restore_btn'))}</button>`
-    : '';
-  return `<div class="remote-reap-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
-    _remoteReapLine(branch, 'font-weight:600;') +
-    (e.automaton_id ? _remoteReapLine(t('remote_reap_automaton', [String(e.automaton_id)])) : '') +
-    (e.base ? _remoteReapLine(t('remote_reap_base', [String(e.base)])) : '') +
-    (e.tip ? _remoteReapLine(t('remote_reap_tip', [String(e.tip)])) : '') +
-    (Number(e.age_days) ? _remoteReapLine(t('remote_reap_age', [Number(e.age_days)])) : '') +
-    (e.reason ? _remoteReapLine(String(e.reason)) : '') +
-    (e.backup_ref ? _remoteReapLine(t('remote_reap_backup', [String(e.backup_ref)])) : '') +
-    restore + `</div>`;
-}
-function _remoteReapBackupRow(bk) {
-  const parts = [String(bk.ref || '')];
-  if (bk.sha) parts.push('→ ' + String(bk.sha));
-  if (bk.branch) parts.push('(' + String(bk.branch) + ')');
-  return _remoteReapLine(parts.filter(Boolean).join(' '));
-}
-window.remoteReapCardHtml = function(report) {
-  const r = (report && typeof report === 'object') ? report : {};
-  const reaped = Array.isArray(r.reaped) ? r.reaped.filter(e => e && typeof e === 'object' && e.branch) : [];
-  const held = Array.isArray(r.held) ? r.held.filter(e => e && typeof e === 'object' && e.branch) : [];
-  const backups = Array.isArray(r.backups) ? r.backups.filter(b => b && typeof b === 'object' && b.ref) : [];
-  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
-  const head = `<div class="cap-title">${escHtml(t('remote_reap_card_title'))}</div>`;
-  const computedLine = computedAt ? _remoteReapLine(t('remote_reap_computed_at', [computedAt])) : '';
-  const modeLine = _remoteReapLine(r.report_only === false
-    ? t('remote_reap_enabled_note')
-    : t('remote_reap_report_only_note'));
-  const retentionLine = _remoteReapLine(Number(r.retention_days) > 0
-    ? t('remote_reap_retention_days', [Number(r.retention_days)])
-    : t('remote_reap_retention_default'));
-  const reapedRows = reaped.map(e => _remoteReapEntryRow(e, true));
-  const heldRows = held.map(e => _remoteReapEntryRow(e, false));
-  const emptyAll = reaped.length === 0 && held.length === 0;
-  const body = emptyAll
-    ? _remoteReapLine(t('remote_reap_empty'))
-    : _remoteReapSection(t('remote_reap_reaped_heading', [reaped.length]), reapedRows, t('remote_reap_reaped_empty')) +
-      _remoteReapSection(t('remote_reap_held_heading', [held.length]), heldRows, t('remote_reap_held_empty'));
-  return `<div class="prd-capacity-card remote-reap-card" style="min-width:0;">${head}${computedLine}${modeLine}${retentionLine}` +
-    body +
-    _remoteReapSection(t('remote_reap_backups_heading'), backups.map(_remoteReapBackupRow), t('remote_reap_backups_none')) + `</div>`;
-};
-// _remoteReapEnsureRestoreHandler binds the delegated Restore click once per
-// page load. The loader replaces the card's innerHTML on every tick, so the
-// handler lives on the document and re-targets the fresh button on each click.
-let _remoteReapRestoreBound = false;
-window._remoteReapEnsureRestoreHandler = function() {
-  if (_remoteReapRestoreBound) return;
-  _remoteReapRestoreBound = true;
-  document.addEventListener('click', e => {
-    const btn = e.target && e.target.closest ? e.target.closest('[data-remote-reap-restore]') : null;
-    if (!btn || btn.disabled) return;
-    const branch = btn.getAttribute('data-remote-reap-restore');
-    if (!branch) return;
-    btn.disabled = true;
-    btn.textContent = t('remote_reap_restoring');
-    apiFetch('/api/autonomous/remote-reap/restore', { method: 'POST', body: JSON.stringify({ branch }) })
-      .then(() => {
-        showToast(t('remote_reap_restore_ok', [branch]), 'success', 4000);
-        // The restore already happened; re-read the report so the card
-        // reflects the restored branch and the backup ref it now lives as.
-        const ctl = window._listLoaders && window._listLoaders.automation_remote_reap;
-        if (ctl && ctl.load) ctl.load();
-      })
-      .catch(err => { showToast(t('remote_reap_restore_err', [branch, ((err && err.message) || String(err))]), 'error', 6000); });
-  }, true);
-};
-
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
@@ -46155,17 +46065,6 @@ registerAutomationCardSlot('events', {
   mount: () => { window._branchReapEnsureRestoreHandler(); listLoaderAll([_automationBranchReapLoader()]); },
   stop: () => _automationStopLoaders(['automation_branch_reap']),
 });
-// The remote reaper report renders under the branch reaper card on the
-// Automata Events sub-tab (reaped + held entries with reasons, the origin
-// backup refs, and the Restore write). Its loader polls only while the
-// Events sub-tab is shown.
-registerAutomationCardSlot('events', {
-  id: 'automationRemoteReapCard',
-  order: 130,
-  html: `<div id="automationRemoteReapCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
-  mount: () => { window._remoteReapEnsureRestoreHandler(); listLoaderAll([_automationRemoteReapLoader()]); },
-  stop: () => _automationStopLoaders(['automation_remote_reap']),
-});
 // ── Cost report chart cards ──────────────────────────────────────────────────
 // Four bounded cards in the Automata page's cost report area: cost over time,
 // tool usage, retries and failure categories, and the combined report. Each
@@ -47797,22 +47696,6 @@ function _automationBranchReapLoader() {
     failedText: msg => t('branch_reap_failed', [msg]),
     active: () => !!document.getElementById('automationBranchReapCard'),
     render: report => window.branchReapCardHtml(report),
-  });
-}
-
-// _automationRemoteReapLoader reads the remote reaper report on the Automata
-// Events sub-tab, under the branch reaper card. The read lists origin and the
-// backup refs, so it polls slowly like the branch reaper read; its failed
-// state is the list loader's banner. The report is a preview — the only write
-// is the per-entry Restore button, which posts the branch to
-// POST /api/autonomous/remote-reap/restore.
-function _automationRemoteReapLoader() {
-  return window._listLoaders.automation_remote_reap || listLoader({
-    key: 'automation_remote_reap', el: 'automationRemoteReapCard', url: '/api/autonomous/remote-reap', pollMs: 60000,
-    timeoutMs: 45000,
-    failedText: msg => t('remote_reap_failed', [msg]),
-    active: () => !!document.getElementById('automationRemoteReapCard'),
-    render: report => window.remoteReapCardHtml(report),
   });
 }
 

@@ -87,12 +87,11 @@ function eventsPanelSandbox() {
 test('the safe-to-delete report and the cleanup status are Events card slots in order', () => {
   const sandbox = loadApp();
   const slots = [...vm.runInContext("_automationSlotsOf('events').map(s => s.id)", sandbox)];
-  assert.deepEqual(slots, ['automationSafeDeleteCard', 'automationCleanupCard', 'automationBranchReapCard', 'automationRemoteReapCard']);
+  assert.deepEqual(slots, ['automationSafeDeleteCard', 'automationCleanupCard', 'automationBranchReapCard']);
   const html = vm.runInContext("_automationSlotsHTML('events')", sandbox);
   assert.ok(html.includes('id="automationSafeDeleteCard"'));
   assert.ok(html.includes('id="automationCleanupCard"'));
   assert.ok(html.includes('id="automationBranchReapCard"'));
-  assert.ok(html.includes('id="automationRemoteReapCard"'));
   assert.ok(!html.includes('display:none'), 'the two cards are visible slots, not hidden placeholders');
 });
 
@@ -118,11 +117,11 @@ test('entering Events starts the two loaders and leaving Events stops them', () 
     });
     renderAutomataEventsPanel();
   `, sandbox);
-  assert.deepEqual(log, ['mount:automationSafeDeleteCard', 'mount:automationCleanupCard', 'mount:automationBranchReapCard', 'mount:automationRemoteReapCard']);
+  assert.deepEqual(log, ['mount:automationSafeDeleteCard', 'mount:automationCleanupCard', 'mount:automationBranchReapCard']);
   vm.runInContext("state._autonomousEnabled = true; _automataState.tab = 'events'; switchAutomataTab('automata')", sandbox);
-  assert.deepEqual(log.slice(4), ['stop:automationSafeDeleteCard', 'stop:automationCleanupCard', 'stop:automationBranchReapCard', 'stop:automationRemoteReapCard']);
+  assert.deepEqual(log.slice(3), ['stop:automationSafeDeleteCard', 'stop:automationCleanupCard', 'stop:automationBranchReapCard']);
   vm.runInContext("switchAutomataTab('templates')", sandbox);
-  assert.equal(log.length, 8, 'leaving a tab other than Events stops nothing more');
+  assert.equal(log.length, 6, 'leaving a tab other than Events stops nothing more');
 });
 
 test('the Events slots mount the real loaders and stop them by key', () => {
