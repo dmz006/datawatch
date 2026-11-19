@@ -104,11 +104,19 @@ func runSlotReconcile(d slotReconcileDeps) []autonomous.FreedSlot {
 			d.Logf("[capacity] reaped leaked lease holder=%s pool=%s: %s\n", f.Holder, f.Pool, f.Reason)
 		}
 		if d.Alert != nil {
-			d.Alert("Capacity slot freed", fmt.Sprintf("Freed a %s slot held by %s: %s", f.Pool, name, f.Reason))
+			d.Alert("Capacity slot freed", fmt.Sprintf("Freed a %s slot held by %s: %s", slotPoolLabel(f.Pool), name, f.Reason))
 		}
 		if d.Count != nil {
 			d.Count()
 		}
 	}
 	return freed
+}
+
+// slotPoolLabel renders a ledger pool id in plain words for alert text.
+func slotPoolLabel(pool string) string {
+	if pool == autonomous.PiPromptPool {
+		return "pi-prompt worker (llm:pi-prompt)"
+	}
+	return pool
 }
