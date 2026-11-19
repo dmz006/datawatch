@@ -77,7 +77,11 @@ scan the surface uses.
    > the scan-fix loop spent all 3 of its retries and its scan left 2 findings: SAST-102 (error) in cmd/datawatch/main.go:88: connection string not over TLS; SECRET-01 (critical) in deploy/vars.env: AWS access key id.
 
    If there is too much to name in a hold reason, as many finding labels fit as
-   fit and the rest is pointed at the scan report. The loop's actor is
+   fit and the rest is pointed at the scan report. Two hold edge cases: an
+   Automaton that is already on hold keeps its existing hold — the loop does
+   not replace that reason — and a completed Automaton cannot be held at all,
+   so such a run ends with outcome `error` (release or re-open it first, then
+   run the loop again). The loop's actor is
    `scan_fix_loop` in the decisions, and its trail — every opened fix Automaton
    and the final hold — is recorded on the scanned Automaton's decision log
    (`scan_fix_loop_open`, `scan_fix_loop_hold`).
@@ -122,13 +126,16 @@ one of the runtime surfaces below, which apply without a restart).
 
 ### PWA
 
-Settings → Automata, in the **Scan & Quality Gate Configuration** card: enable
-the **Scan fix loop** toggle, set **Fix loop max retries**, then **Save**.
+Settings → **Automata** → **Guardrail Library** card: flip the **Auto-fix loop**
+toggle and set **Fix loop max retries** — each row saves the moment it
+changes, there is no separate Save button to press.
 
-To run it, open the Automaton's detail view: the Scan tab's result panel
-carries **Run Fix Loop** (the loop), **Create Fix Automaton** (one corrective
+To run it, open the Automaton's detail view: when the recorded scan result is
+failing with one or more findings, the Scan tab's result panel carries
+**Run Fix Loop** (the loop), **Create Fix Automaton** (one corrective
 task), and **Propose AGENT.md Rules** (rule-edit proposals to prevent
-recurrence) buttons, and the loop's outcome prints next to them.
+recurrence) buttons. The loop's outcome arrives as a toast and the tab
+re-renders the fresh scan result.
 
 ### REST
 
