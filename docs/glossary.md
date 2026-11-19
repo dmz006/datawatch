@@ -67,5 +67,8 @@ decompose-lint pass (recorded even in mode `off`; drives the retry in
 `block`. The dry run does not run it. See
 [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
 
+## Decompose output unparseable
+The planning failure recorded when a decompose reply is over 8 MiB, empty, or fails the parse or lint step (error text starts `decompose output unparseable: `, source `decompose-parse`, category `invalid-response`, not retryable). The Automaton rolls back to `draft` with the reason in `last_decompose_failure` and the raw output kept as `decompose-output.json.failed`; the daemon keeps running. Since the 2026-11-18 fix, bad output can no longer abort the daemon. See [howto/decompose-async.md](howto/decompose-async.md#when-the-decompose-output-cannot-be-parsed) and [operations.md](operations.md#decompose-output-and-daemon-aborts-sigabrt-core-dump).
+
 ## Staging scan (agent-base)
 The blocking Trivy scan the image refresh runs on the `refresh-YYYYMMDD` staging tag before promoting an image. Its exceptions come from `security/accepted-risks.yml` via the generated `.trivyignore`; a failure never replaces a published image. See [Container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
