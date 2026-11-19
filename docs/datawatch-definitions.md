@@ -3516,3 +3516,6 @@ The **derived project alias** is the read-only `project` field on an Automaton o
 
 The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate run locally in CI order, stopping at the first failure, so a code failure shows up on the build host before the tag is pushed. It is the only gate that runs `go test`: CI (`ci.yaml`, `release.yaml`) no longer does. Each run appends a line with the commit, date, step count, result and seconds to `.datawatch/pre-tag-record`. A step with a missing tool is skipped, not failed. The agent-base step scans the image it builds with Trivy when Trivy is installed, on a throwaway isolated scan cache under the operator's temp space that the script removes on every exit path — a successful scan, a failing scan, or an interrupt. See [operations.md](operations.md#pre-tag-run-make-pre-tag) and [release-checklist.md](release-checklist.md#4a-pre-tag-run-local-gates-before-the-tag).
 
+## Completion landing gate
+
+The check that refuses a change to Completed unless the Automaton branch is merged into the default branch or the record carries a no-code reason or merge commit. The refusal is stored as `completion_refusal` and a `completion_refused` decision. See [howto/automata-completion-landing.md](howto/automata-completion-landing.md).

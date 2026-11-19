@@ -100,6 +100,7 @@ untouched and still reads Cancelled.
 
 ## See also
 
+- [Completion landing gate](automata-completion-landing.md)
 - [The shipped status](automata-shipped-status.md)
 - [Merged-member policy](automation-merged-member.md)
 - [Completion review and auto-fix](automata-completion-review-autofix.md)
