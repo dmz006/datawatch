@@ -1477,13 +1477,16 @@ type Manager struct {
 	// that seeded it; a change of the configured value reseeds.
 	supervisorWatchTmuxBaseline string
 	supervisorWatchTmuxCfg      string
-	supervisorWatchNodes        SupervisorWatchNodeLister
-	supervisorWatchSess         SupervisorWatchSessionLogger
-	supervisorWatchLiveness     SupervisorWatchLivenessSource
-	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
-	supervisorWatchAlerted      map[string]bool
-	supervisorWatchAlertMu      sync.Mutex
-	projectPolicyConcurrency    func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
+	// supervisorWatchArchCache holds recent archived-unmerged branch checks,
+	// so a poll does not re-run git for every archived record. Guarded by mu.
+	supervisorWatchArchCache map[string]supervisorWatchArchivedCheck
+	supervisorWatchNodes     SupervisorWatchNodeLister
+	supervisorWatchSess      SupervisorWatchSessionLogger
+	supervisorWatchLiveness  SupervisorWatchLivenessSource
+	supervisorWatchFindings  func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
+	supervisorWatchAlerted   map[string]bool
+	supervisorWatchAlertMu   sync.Mutex
+	projectPolicyConcurrency func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
 
 	// effectivePolicy is the three-tier policy resolver
 	// (config.ResolveProjectPolicy), injected by the daemon with
