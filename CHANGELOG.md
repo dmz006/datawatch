@@ -10,6 +10,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
 
+## v9.182.34 — Session detail header icons for tags and scheduled jobs
+
+### Changed
+
+- Session detail header icons for tags and scheduled jobs.
+
+## v9.182.33 — Verification-script pre-flight and fixed-date decompose lint
+
+### Changed
+
+- Verification-script pre-flight and fixed-date decompose lint.
+
+## v9.182.32 — Force-stage gitignored listed files in task auto-commit, and carry commit failure output i
+
+### Changed
+
+- Force-stage gitignored listed files in task auto-commit, and carry commit failure output i.
+
+## v9.182.31 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.30 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.29 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
 ## v9.182.28 — Supervisor watch: PRIORITY STALL finding, priority-then-age BACKLOG finding, per-priority-
 
 ### Changed
