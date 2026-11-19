@@ -25,10 +25,13 @@
 //   - its commits must be all on the base project (re-verifying with
 //     rev-list at removal time), so nothing unique is lost.
 //
-// Removal itself is the strict pair `git worktree remove` (never with
-// --force) and `git branch -d` (never -D): if either one refuses, the
-// entry is left in place and the refusal is recorded with its error, so
-// work is never silently destroyed.
+// Removal itself is the pair `git worktree remove` — strict, never with
+// --force for a clean work tree, and with --force only for a work tree
+// whose uncommitted work the strict guard classified as generated harness
+// files (which git's strict removal would otherwise refuse to delete) —
+// plus `git branch -d` (never -D): if the removal or the branch delete
+// refuses, the entry is left in place and the refusal is recorded with its
+// error, so unmerged or unclassified work is never silently destroyed.
 //
 // Three modes are honored from the config accessors:
 //
@@ -77,6 +80,13 @@ const worktreeCleanupPassTimeout = 120 * time.Second
 // worktreeCleanupAuditAction is the audit event recorded for every
 // work branch + work tree removal.
 const worktreeCleanupAuditAction = "autonomous_worktree_remove"
+
+// worktreeSkipHoldReleaseAction is the single concrete action that
+// releases an uncommitted-work hold on a branch or work tree the
+// cleanup pass left in place: commit the work or discard the held
+// files so the tree is clean, then the next worktree cleanup pass
+// resolves the entry and the hold lifts.
+const worktreeSkipHoldReleaseAction = "commit the work or discard the held files so the work tree is clean; the next worktree cleanup pass then resolves the entry and the hold lifts"
 
 // Skip reasons reported by CleanupWorktrees. Each one is a single fact
 // about why an entry was not removed.
@@ -188,6 +198,12 @@ type WorktreeCleanupRemoval struct {
 	// commits on trunk", "no commits ahead of trunk": the project's own
 	// default branch).
 	Reason string `json:"reason"`
+	// ResolvedFiles is the generated harness files the work tree left
+	// uncommitted (.mcp.json, .aider.conf.yml, .goose/, .gemini/, ...)
+	// that this pass resolved by cleaning the tree: they are rewritten
+	// when the next session starts in the tree, so cleaning it lost
+	// nothing. Empty when the tree was already clean.
+	ResolvedFiles []string `json:"resolved_files,omitempty"`
 }
 
 // WorktreeCleanupSkipped is one entry left in place, with the reason.
@@ -198,6 +214,16 @@ type WorktreeCleanupSkipped struct {
 	Reason string `json:"reason"`
 	// Detail is the human-facing explanation.
 	Detail string `json:"detail"`
+	// Files (when the hold keys on uncommitted work) is the exact list,
+	// work-tree-relative, of the uncommitted work the classification
+	// could not call generated harness files. Empty for holds on
+	// something else.
+	Files []string `json:"files,omitempty"`
+	// ReleaseAction is the single concrete action that releases this
+	// hold, matching what the entry is keyed on (for an
+	// uncommitted-work hold: commit or discard the held files so the
+	// work tree is clean again).
+	ReleaseAction string `json:"release_action,omitempty"`
 }
 
 // WorktreeCleanupFailed is one entry whose removal stopped at a stage,
@@ -297,6 +323,7 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			skip(cleanupSkipRetained, fmt.Sprintf("the entry is %s old, inside the %s retention window", age.Round(time.Second), opts.Retention.Round(time.Second)))
 			continue
 		}
+		resolvedGenerated := []string(nil)
 		if e.Worktree != "" {
 			if !primaryKnown {
 				skip(cleanupSkipPrimary, "the main checkout could not be identified from the work tree list; the entry may be it, so it is left")
@@ -321,8 +348,38 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			status = filterDaemonOnlyPorcelain(ctx, e.Worktree, status, func(ctx context.Context, dir string, args ...string) (string, error) {
 				return opts.Git.Run(ctx, dir, args...)
 			})
-			if strings.TrimSpace(status) != "" {
-				skip(cleanupSkipDirty, "the work tree has uncommitted changes: "+firstLine(status))
+			// What remains is either harness files the daemon and the
+			// launchers generate (.mcp.json, .aider.conf.yml, .goose/,
+			// .gemini/, the skills folder, launcher files) — this pass
+			// resolves them by cleaning the tree: they are rewritten
+			// when the next session starts in the tree, so nothing is
+			// lost — or uncommitted work the classification could not
+			// call generated. That work is never destroyed: the tree is
+			// left in place and the report names the exact files the
+			// hold is keyed on and the one action that releases it.
+			generatedOnly, realWork := classifyWorktreeUncommitted(status)
+			resolvedGenerated = generatedOnly
+			if len(realWork) > 0 {
+				res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{
+					Branch:        e.Branch,
+					Worktree:      e.Worktree,
+					Reason:        cleanupSkipDirty,
+					Detail:        "the work tree has uncommitted work the cleanup cannot classify",
+					Files:         realWork,
+					ReleaseAction: worktreeSkipHoldReleaseAction,
+				})
+				continue
+			}
+			if len(generatedOnly) == 0 && len(realWork) == 0 && strings.TrimSpace(status) != "" {
+				// A status line nothing could classify: fail closed, and the
+				// report keeps the raw line with the release action.
+				res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{
+					Branch:        e.Branch,
+					Worktree:      e.Worktree,
+					Reason:        cleanupSkipDirty,
+					Detail:        "the work tree has uncommitted changes: " + firstLine(status),
+					ReleaseAction: worktreeSkipHoldReleaseAction,
+				})
 				continue
 			}
 		}
@@ -342,7 +399,7 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 		}
 
 		if opts.Mode == config.CleanupModeReport {
-			w := WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, Reason: e.Reason}
+			w := WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, Reason: e.Reason, ResolvedFiles: resolvedGenerated}
 			if e.Worktree != "" {
 				if size, serr := opts.Probe.WorktreeSize(e.Worktree); serr == nil {
 					w.BytesFreed = size
@@ -375,13 +432,35 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 			"age_seconds": int64(age / time.Second),
 			"at":          opts.Now().Format(time.RFC3339),
 		}
+		if len(resolvedGenerated) > 0 {
+			// The tree carried only generated harness files; the audit
+			// record names them so the cleaned-up work tree is accounted
+			// for, not opaque.
+			details["resolved_files"] = resolvedGenerated
+		}
 		if err := opts.Audit(worktreeCleanupAuditAction, details); err != nil {
 			failed(cleanupStageAudit, "audit log write: %v", err)
 			continue
 		}
 
 		if e.Worktree != "" {
-			out, rerr := opts.Git.Run(ctx, opts.Repo, "worktree", "remove", e.Worktree) // never --force
+			// A clean work tree (or one holding only a daemon section) is
+			// removed with the strict, never-forced `git worktree remove`. The
+			// one exception is a work tree that still holds only generated
+			// harness files (`.mcp.json`, `.aider.conf.yml`, `.goose/`, ...): it
+			// is safe to remove, but git's strict removal refuses because of
+			// those untracked files — so that (and only that) case passes
+			// --force, the established pattern for vetted worktrees in this
+			// package. Nothing with unmerged or unclassified uncommitted work
+			// reaches this line: those are held above and reported, never force-
+			// deleted.
+			removeArgs := []string{"worktree", "remove"}
+			if len(resolvedGenerated) > 0 {
+				removeArgs = append(removeArgs, "--force", e.Worktree)
+			} else {
+				removeArgs = append(removeArgs, e.Worktree)
+			}
+			out, rerr := opts.Git.Run(ctx, opts.Repo, removeArgs...)
 			if rerr != nil {
 				failed(cleanupStageRemove, "git worktree remove: %v: %s", rerr, strings.TrimSpace(out))
 				continue
@@ -400,22 +479,103 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				res.Failed = append(res.Failed, WorktreeCleanupFailed{Branch: e.Branch, Worktree: e.Worktree, Stage: cleanupStageRecord, Error: err.Error()})
 			}
 		}
-		res.Removed = append(res.Removed, WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, BytesFreed: size, Reason: e.Reason})
+		res.Removed = append(res.Removed, WorktreeCleanupRemoval{Branch: e.Branch, Worktree: e.Worktree, BytesFreed: size, Reason: e.Reason, ResolvedFiles: resolvedGenerated})
 	}
 
+	// The held entries are reported as skips so the pass's own record
+	// shows why they were left in place: each one carries the reason,
+	// and when the hold keyed on uncommitted work the exact files and
+	// the one concrete action that releases the hold (matching what the
+	// report keyed it on). Nothing in the held set is ever removed.
 	for _, h := range opts.Report.Held {
 		reason := cleanupSkipHeld
 		detail := "the safe-to-delete report held the branch"
 		if h.Dirty {
 			reason = cleanupSkipDirty
-			detail = "the work tree has uncommitted changes"
+			detail = "the work tree has uncommitted work the cleanup cannot classify"
 		}
 		if h.Note != "" {
 			detail += ": " + h.Note
 		}
-		res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{Branch: h.Branch, Worktree: h.Worktree, Reason: reason, Detail: detail})
+		release := heldBranchReleaseAction(h.State)
+		if h.Dirty {
+			release = worktreeSkipHoldReleaseAction
+		}
+		res.Skipped = append(res.Skipped, WorktreeCleanupSkipped{Branch: h.Branch, Worktree: h.Worktree, Reason: reason, Detail: detail, ReleaseAction: release})
 	}
 	return res
+}
+
+// classifyWorktreeUncommitted splits a work tree's status (its
+// git status --porcelain output, with the daemon's own marked sections
+// already filtered out if present) into two lists: generatedOnly —
+// untracked harness files the daemon and the launchers generate
+// (.mcp.json, .aider.conf.yml, .goose/, .gemini/, the skills folder,
+// launcher files) — and realWork — everything else. Only an untracked
+// path matching a generated name is classified generated; any tracked
+// file that changed, or an untracked file the classification does not
+// recognize, stays real, so a project that tracks files under those
+// names itself still gets the safety guard. The paths stay
+// work-tree-relative as git reports them, so the report can name the
+// exact files it held on.
+func classifyWorktreeUncommitted(porcelain string) (generatedOnly, realWork []string) {
+	for _, line := range strings.Split(porcelain, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		p := porcelainStatusPath(line)
+		if p == "" {
+			continue
+		}
+		// A porcelain path may carry a trailing slash (a directory); the
+		// report names the entry itself.
+		p = strings.TrimSuffix(p, "/")
+		if isUntrackedPorcelainLine(line) && isGeneratedWorktreeArtifact(p) {
+			generatedOnly = append(generatedOnly, p)
+		} else {
+			realWork = append(realWork, p)
+		}
+	}
+	return generatedOnly, realWork
+}
+
+// isUntrackedPorcelainLine reports whether a status porcelain line
+// reports an untracked path (code columns "??" and beyond). Only such
+// paths can be files the harness generated fresh.
+func isUntrackedPorcelainLine(line string) bool {
+	return len(line) >= 3 && line[0] == '?' && line[1] == '?'
+}
+
+// porcelainStatusPath extracts the path a status porcelain line names
+// (for rename lines the new path, where the tree's content lives). It
+// returns "" for a malformed line.
+func porcelainStatusPath(line string) string {
+	if len(line) < 3 {
+		return ""
+	}
+	p := strings.TrimSpace(line[2:])
+	if i := strings.Index(p, " -> "); i >= 0 {
+		p = strings.TrimSpace(p[i+len(" -> "):])
+	}
+	return p
+}
+
+// heldBranchReleaseAction is the single concrete action that releases
+// the hold the safe-to-delete report placed on an entry, keyed on the
+// report's own state: work that has not landed must land (merge it to
+// the base branch), work already on the base resolves when the next
+// pass runs, and a state the report could not establish resolves once
+// the merge check can run.
+func heldBranchReleaseAction(state string) string {
+	switch state {
+	case MergeStateMerged, MergeStateEmpty:
+		return "the work is already on the base branch; re-run the worktree cleanup pass"
+	case MergeStateNeedsLook:
+		return "land the branch's work by merging it to the base branch, then re-run the worktree cleanup pass"
+	default:
+		return "re-run the worktree cleanup pass so the merge check can resolve the branch"
+	}
 }
 
 // worktreePrimaryPath returns the first work tree path of a `git worktree
