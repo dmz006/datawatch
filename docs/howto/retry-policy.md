@@ -37,7 +37,7 @@ classified and handled differently.
 
 | Category | Meaning |
 |---|---|
-| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, unparseable response, a stalled worker). Retrying the identical call against a healthy session would likely produce a different outcome. |
+| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, a stalled worker, a failed LLM call that produced no output at all). Retrying the identical call against a healthy session would likely produce a different outcome. A response that was written but cannot be parsed is the terminal `invalid-response` class, not `infra`; a written-but-unparseable *planning* answer is the `decompose-parse` content retry described below. |
 | `content` | The mechanism ran to completion and produced a real judgment — the work itself was found deficient. |
 | `scope` | The spec itself violates a structural constraint before any worker/judge acts on content. Retrying the identical spec unchanged reproduces the identical violation. |
 | `policy` | An operator-configured gate (e.g. a quality-gate regression) deliberately intervened by design. |
