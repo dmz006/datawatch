@@ -55,7 +55,6 @@ An Automaton is not listed when its record has a no-code reason, a merge commit,
 - Automata already stored as Completed are not re-checked; use the [completed migration](automata-completed-migration.md) rules for those.
 - A repo path that is unset falls back to the Automaton's project directory; confirm `worktree_base_repo` is set so the proof reads the right repository.
 - No PWA, mobile or MCP-specific surface was added for `completion_refusal`; it appears in the Automaton record on the existing read surfaces. Review whether a dedicated display is wanted.
-
 - The list and the watch finding use the same gate settings: with no repo path set, the Automaton's project directory is read. There is no PWA or chat view of the list yet; confirm whether one is wanted.
 - The watch is in shadow mode by default, so a `completed_unmerged` finding is recorded but not alerted until the watch is switched on.
 
