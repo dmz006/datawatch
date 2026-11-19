@@ -368,8 +368,12 @@ func TestDecomposeStreaming_CoreLLMFails_BudgetExhaustFails(t *testing.T) {
 }
 
 // --- Parse failure give-up on the streaming core (1412-1414) ---
+//
+// A parse failure is a written verdict: it never consumes the infra
+// budget, but it DOES get the one guided content retry (the parse error
+// names the offending field and task) before the attempt fails.
 
-func TestDecomposeStreaming_CoreParseFails_Terminal(t *testing.T) {
+func TestDecomposeStreaming_CoreParseFails_ContentRetriedThenTerminal(t *testing.T) {
 	fn := func(DecomposeRequest) (string, error) { return "{not valid json", nil }
 	m, prd := newDecomposeCovManager(t, "", DefaultConfig(), fn)
 
@@ -382,8 +386,11 @@ func TestDecomposeStreaming_CoreParseFails_Terminal(t *testing.T) {
 	if !ok {
 		t.Fatal("PRD missing from store")
 	}
-	if got := stored.LastDecomposeFailure.Category; got != "invalid-response" {
-		t.Errorf("failure category = %q, want invalid-response", got)
+	if got := stored.LastDecomposeFailure.Category; got != "content" {
+		t.Errorf("failure category = %q, want content (written but unparseable — a content judgement, not a terminal invalid-response, not infra)", got)
+	}
+	if stored.RetryCountsByCategory["infra"] != 0 {
+		t.Errorf("infra budget consumed %d — a parse failure never touches infra", stored.RetryCountsByCategory["infra"])
 	}
 }
 
