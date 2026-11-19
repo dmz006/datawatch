@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.25"
+var Version = "9.182.41"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -452,8 +452,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 
 // installCrashLog wires runtime crash diagnostics so silent daemon deaths
 // (Go fatal errors like "concurrent map writes", cgo segfaults, OOM, etc.)
-// leave a stack trace on disk. Stderr is duplicated to <data>/daemon-crash.log
-// and GOTRACEBACK=crash forces the runtime to dump all goroutines on a fatal.
+// leave a stack trace on disk. GOTRACEBACK=crash forces the runtime to dump
+// all goroutines on a fatal, and debug.SetCrashOutput gives that crash output
+// an extra copy in <data>/daemon-crash.log while fd 2 (and the journal that
+// reads it) keeps receiving stderr untouched.
 func installCrashLog() {
 	debug.SetTraceback("crash")
 	cfg, _ := loadConfig()
@@ -472,10 +474,15 @@ func installCrashLog() {
 	// Tag the start of this process so multiple crashes are distinguishable.
 	_, _ = fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
 		Version, os.Getpid(), time.Now().Format(time.RFC3339))
-	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
-	// and "fatal error:" messages directly to fd 2, bypassing log packages.
-	// Implementation lives in main_unix.go / main_windows.go.
-	dupStderrTo(f)
+	// Have the runtime write its panic stacks and "fatal error:" messages to
+	// the crash file as well as fd 2 (Go 1.23+ debug.SetCrashOutput), instead
+	// of duplicating fd 2 over the file — that way the journal still sees
+	// everything the runtime prints on a fatal error. A failure here just
+	// leaves the crash file without the runtime dump; the journal copy is
+	// unaffected.
+	if err := installCrashOutput(f); err != nil {
+		fmt.Fprintln(os.Stderr, "datawatch: crash log: install crash output:", err)
+	}
 }
 
 // resolveConfigPath returns the effective config file path.
@@ -7010,6 +7017,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			// autonomous.archive — the finished-Automaton archive reads its
+			// switch and retention at every use; the background pass only reads
+			// and rewrites Automaton record files and never touches a session.
+			amgr.SetArchiveSettings(func() (bool, int) {
+				ac := cfg.Autonomous.Archive
+				return ac.EffectiveEnabled(), ac.EffectiveRetentionDays()
+			})
 			// autonomous.project_link_backfill_apply (default off) — one-time
 			// project link backfill: dry-run report only unless set, then a
 			// durable done marker stops re-runs. Reads and writes Automaton
@@ -7142,6 +7156,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// refusals and shadow finding reports for Automaton pushes
 			// land in the operator audit log, redacted fields only.
 			amgr.SetSecretScanAuditFn(secretScanSink)
+			// Remote branch reap (autonomous.remote_reap_enabled /
+			// autonomous.remote_reap_retention_days): while the switch is off or
+			// unset (the default) the pass evaluates but touches nothing on origin
+			// and the report says report_only. The closure — not its result — is
+			// stored, so the switch and the retention window are read live on
+			// every pass; a runtime config set applies with no restart (the same
+			// live-config pattern as the push settings above).
+			amgr.SetRemoteReapSettings(func() (bool, int) {
+				return cfg.Autonomous.RemoteReapEnabled, cfg.Autonomous.EffectiveRemoteReapRetentionDays()
+			})
 			// Defect intake (autonomous.defect_intake_automation):
 			// when an Automaton is filed with kind bug and the setting names
 			// an Automation, it is offered to that Automation's bugs stage
@@ -9409,6 +9433,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
 				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
 				s.SupervisorWatchAgreedDays = sw.AgreedDays
+				if len(sw.PriorityBands) > 0 {
+					s.SupervisorWatchPriorityBands = make([]statspkg.SupervisorWatchBand, 0, len(sw.PriorityBands))
+					for _, b := range sw.PriorityBands {
+						s.SupervisorWatchPriorityBands = append(s.SupervisorWatchPriorityBands, statspkg.SupervisorWatchBand{
+							Band:                 b.Band,
+							PriorityFrom:         b.PriorityFrom,
+							PriorityTo:           b.PriorityTo,
+							Waiting:              b.Waiting,
+							OldestWaitingMinutes: b.OldestWaitingMinutes,
+							Stalled:              b.Stalled,
+						})
+					}
+				}
 				// Safe-to-delete report stats.
 				sd := amgrRef.SafeDeleteStats()
 				s.SafeDeleteLastMS = sd.LastDurationMs
@@ -12999,7 +13036,9 @@ func newSessionCmd() *cobra.Command {
 			}
 			launchRole, _ := cmd.Flags().GetString("launch-role")
 			profileName, _ := cmd.Flags().GetString("worker-profile-name")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
+			model, _ := cmd.Flags().GetString("model")
+			effort, _ := cmd.Flags().GetString("effort")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName, model, effort)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -13015,6 +13054,8 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
 	newCmd.Flags().String("worker-profile-name", "", "worker profile name (built-in or user-defined) applied at launch for any session kind; unknown = full harness, reason recorded (sent as worker_profile_name)")
+	newCmd.Flags().String("model", "", "Model for this claude-code session (alias like sonnet or full name). Omit to use the LLM row's model or the daemon default")
+	newCmd.Flags().String("effort", "", "Session effort: quick|normal|thorough. Omit for the default")
 	newCmd.Flags().String("launch-role", "", "placement role: worker|verifier|planner|judge|supervisor (use supervisor for the operator's supervisor session; sent as launch_role)")
 	sessionCmd.AddCommand(newCmd)
 
@@ -13742,6 +13783,27 @@ func sessionNewStartBodyRole(task, dir, name, backend, llm, compute string, chro
 	return json.Marshal(m)
 }
 
+// sessionNewStartBodyModel is sessionNewStartBodyRole plus the optional model
+// and effort, each sent only when non-empty.
+func sessionNewStartBodyModel(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole, profileName, model, effort string) ([]byte, error) {
+	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
+	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	if err != nil || (model == "" && effort == "") {
+		return body, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	if model != "" {
+		m["model"] = model
+	}
+	if effort != "" {
+		m["effort"] = effort
+	}
+	return json.Marshal(m)
+}
+
 // sessionNewStartBodyPriority is sessionNewStartBody plus the optional
 // capacity-queue priority, sent only when one was given.
 func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) ([]byte, error) {
@@ -13768,9 +13830,9 @@ func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, 
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName string) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int, launchRole string, profileName string, model, effort string) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBodyRole(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName)
+	body, err := sessionNewStartBodyModel(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority, launchRole, profileName, model, effort)
 	if err != nil {
 		return err
 	}

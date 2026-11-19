@@ -310,6 +310,10 @@ Compute node tools:
 
 Autonomous PRD reads and writes:
 
+- **`autonomous_prd_list`** — returns the summary list by default (one small row per Automaton, no task detail). `full=true` returns whole records; with `limit` or `cursor` that is one page of whole records, without either it is every record (heavy). `limit` and `cursor` page the list: pass a reply's `next_cursor` as the next `cursor`. `status` and `shipped` still narrow it.
+- **`autonomous_prd_tasks`** — reads one page of one Automaton's task rows. Takes `id` (required), `limit` (default 50, max 500), `cursor`, `story` and `status` (comma list). The reply is `{prd_id, tasks, total, next_cursor}`; `total` counts the matching tasks, ignoring the cursor.
+- **`autonomous_prd_archive`** — reads the archive of one finished Automaton on request: the decision log, session history and raw judge text moved out of the live record. Takes `id` (required). An Automaton that is not archived answers not found.
+- **`autonomous_archive`** — archives finished Automata. The default is a dry run (`dry_run` true or absent): it reports which Automata would be archived and the bytes before and after, and writes nothing. `dry_run=false` takes a verified backup of the touched records first, then archives one Automaton at a time. An Automaton that is in use is skipped. Needs the autonomous write capability.
 - **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
 - **`autonomous_prd_get` / `autonomous_prd_list` — `planning_failure`.** An Automaton whose last planning attempt failed carries `planning_failure {reason, category, source, phrases[], retryable, retry_counts{}, retry_budget, occurred_at}` (the rule that tripped, the exact phrases and the retries used against the budget); the key is absent when planning did not fail. See [api/autonomous.md](api/autonomous.md#planning-failure-planning_failure).
   - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
@@ -707,8 +711,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`security_failure_list`** — list the stored security failure reports, newest first, as a JSON list. Each entry carries the failing security run's identity (`repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url`, `status`) and the report stored for it under `report`: `dependency`, `advisory_ids`, `workflow`, `run_id`, `run_url`, `sha`, `published_at`, `fixed_version`, the accepted-risks registry result (`registry_found`, `registry_id`, `registry_first_added`, `registry_added`, `registry_expires`, `registry_error`), `lookup_error`, `recommendation`, `note`, the `mode` it was made under, the `action` the Automaton line received (`report_only`, `would_stop` or `stopped`) and `assessed_at`. Read-only: listing never reruns, cancels, stops or edits anything. Returns the same list as `GET /api/autonomous/security-failures`; nothing matching is `[]`.
 - **`dependency_update_status`** — read the weekly dependency update Automation: the three settings as they are in effect (`enabled`, `schedule` as 'weekday HH:MM', `max_majors`), the next scheduled run in local time (`next_run`, empty while the Automation is off), the time and Automaton title of the last run (`last_run_at`, `last_run_automaton_title`) and its outcome (`last_run_outcome`: `updated`, `nothing to update` or `needs attention`). The last-run fields are empty until a run has happened. Read-only; takes no parameters.
-- **`supervisor_watch_stats`** — read the supervisor watch as numbers: `mode`, `last_poll_at` and `last_poll_age_seconds` (-1 when the coordinator never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved` and `agreed_days` (days of full agreement with the supervisor script). Takes no arguments; any argument is refused. Read-only. Returns the same object as `GET /api/autonomous/supervisor-watch/stats`.
-- **`supervisor_watch_list`** — read the supervisor watch state as one JSON object: the `mode` in effect (`off`, `shadow` or `on`; an unset mode reads `shadow`, which reports only and never acts), `last_poll_at` (the instant the coordinator last polled), the stored `findings` (open first, most recently seen first: `kind`, `subject`, the operator line, first and last seen, the shadow would-alert mark and the raised-alert instant) and the `comparison` against the supervisor script's record. Takes no arguments; any argument is refused. Read-only: listing never raises an alert, resolves a finding or changes the mode. Returns the same object as `GET /api/autonomous/supervisor-watch`.
+- **`supervisor_watch_stats`** — read the supervisor watch as numbers: `mode`, `last_poll_at` and `last_poll_age_seconds` (-1 when the coordinator never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved`, `agreed_days` (days of full agreement with the supervisor script) and `priority_bands` (the per-band wait stats: the waiting Automata in the fixed `high` (80 or more), `medium` (50 through 79) and `low` (below 50) bands, each with its waiting count, oldest wait and stalled count; empty when nothing waits). Takes no arguments; any argument is refused. Read-only. Returns the same object as `GET /api/autonomous/supervisor-watch/stats`.
+- **`supervisor_watch_list`** — read the supervisor watch state as one JSON object: the `mode` in effect (`off`, `shadow` or `on`; an unset mode reads `shadow`, which reports only and never acts), `last_poll_at` (the instant the coordinator last polled), the stored `findings` (open first, most recently seen first: `kind`, `subject`, the operator line, first and last seen, the shadow would-alert mark and the raised-alert instant), the `comparison` against the supervisor script's record and the `priority_bands` per-band wait stats (fixed `high`, `medium` and `low` bands, each with its waiting count, oldest wait and stalled count; empty when nothing waits). Takes no arguments; any argument is refused. Read-only: listing never raises an alert, resolves a finding or changes the mode. Returns the same object as `GET /api/autonomous/supervisor-watch`.
 - **`supervisor_loop_jobs`** — read the supervisor loop's jobs: the loop's `enabled` state and, per job, its `name`, `kind`, the model job's style, backend and model, the enabled state, the last outcome and the last run instant. Takes no arguments; any argument is refused. Read-only. Returns the same body as `GET /api/supervisor-loop/jobs`.
 - **`supervisor_loop_runs`** — read the supervisor loop's run records, newest first. Optional `job` (a job name), `outcome` (`ok`, `validator_failed`, `escalated` or `error`) and `limit` filters; any other argument is refused. Read-only. Returns the same body as `GET /api/supervisor-loop/runs`.
 - **`supervisor_loop_run_job`** — run one supervisor loop job now. Needs `job` (the job name); optional `input` (text) and `candidates` (a comma list, for the model jobs that choose among candidates). An unknown job name comes back as a tool error with the daemon's `unknown job` message. Proxies `POST /api/supervisor-loop/jobs/<job>/run`. The loop's settings are the `supervisor_loop.*` keys, set with `config_set`.
@@ -1337,13 +1341,17 @@ Start a new AI coding session.
 | `llm` | string | No | LLM registry name to use for this session (e.g. `"ollama"`, `"claude"`). Overrides daemon default. |
 | `compute_node` | string | No | ComputeNode registry name. Requires `llm` to be set. |
 | `name` | string | No | Human-readable session name (used by `send_input` name resolution). |
+| `model` | string | No | Model for a `claude-code` session (alias such as `sonnet` or a full name). Omit it and the daemon uses the LLM row's model, then the global planning model; if all are empty the start is refused under the [explicit-model policy](howto/explicit-model-policy.md). |
+| `effort` | string | No | Session effort: `quick`, `normal` or `thorough`. Omit for the default. |
 | `permission_mode` | string | No | Permission mode for this session: `default`, `plan`, `acceptEdits`, `auto`, `bypassPermissions`, `dontAsk`. Empty uses daemon config default. |
 | `caller_session_id` | string | No | Full ID (`hostname-hex`) of the session spawning this one. Records parent-child lineage. Agents should pass `$CLAUDE_SESSION_ID`. |
 | `kill_children` | boolean | No | When `true`, killing this session also kills all child sessions it spawns. Default: `false` (children survive independently). |
 | `image_paths` | string[] | No | Local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and prepended to the task as `[image: ...]`. Requires `vision.enabled: true`. |
 
-**Example response:**
+**Example call and response:**
 ```
+start_session(task="fix the flaky test", llm="claude-code", model="sonnet", effort="normal", name="flaky-fix")
+
 Session started.
 ID:      a3f2
 Task:    write unit tests for the auth package
@@ -1686,7 +1694,7 @@ Sent to parent session pp01.
 **Usage pattern for sub-agents:**
 ```
 # At spawn time, parent passes its own session ID:
-start_session(task="...", caller_session_id="host-abc123")
+start_session(task="...", caller_session_id="host-abc123", model="sonnet")
 
 # When the sub-agent finishes, it calls:
 reply_to_parent(session_id="cc01", text="Task complete. Wrote 14 tests, all passing.")

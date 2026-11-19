@@ -858,6 +858,18 @@ func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
 	return FilterTasksView(BuildTasksView(prd), sel)
 }
 
+// ReadAutomatonArchive loads the archive of one Automaton on request.
+func (a *API) ReadAutomatonArchive(id string) (*PRDArchive, error) {
+	return a.M.ReadAutomatonArchive(id)
+}
+
+// PlanAutomatonArchive is the archive dry-run report; it writes nothing.
+func (a *API) PlanAutomatonArchive() ArchivePlan { return a.M.PlanAutomatonArchive() }
+
+// RunAutomatonArchive archives every eligible finished Automaton after a
+// verified backup.
+func (a *API) RunAutomatonArchive() (ArchiveReport, error) { return a.M.RunAutomatonArchive() }
+
 // PlanningFailureView returns the planning failure of prd for the read
 // surfaces, or nil when the last planning attempt did not fail.
 func (a *API) PlanningFailureView(prd *PRD) *PlanningFailure {
@@ -2809,4 +2821,46 @@ func (a *API) ProjectLinkBackfill(apply bool) ProjectLinkBackfillReport {
 // LatestProjectLinkBackfill returns the latest backfill report, if any.
 func (a *API) LatestProjectLinkBackfill() (ProjectLinkBackfillReport, bool) {
 	return a.M.LatestProjectLinkBackfill()
+}
+
+// SummaryIndexEntries returns the summary index (no record is read). The
+// server list handlers use it to answer a list without building any record.
+func (a *API) SummaryIndexEntries() []SummaryEntry { return a.M.Store().SummaryEntries() }
+
+// SummaryIndexRevision is the index revision; it moves on every change.
+func (a *API) SummaryIndexRevision() uint64 { return a.M.Store().Revision() }
+
+// NotifyEffectiveForEntry resolves the effective notify-events tier of one
+// indexed Automaton, the same answer ListPRDs gives for its record.
+func (a *API) NotifyEffectiveForEntry(e SummaryEntry) NotifyEventSet {
+	return a.M.ResolveNotifyEvents(&PRD{NotifyEvents: e.NotifyEvents, GuardrailProfile: e.GuardrailProfile})
+}
+
+// ReapPreview, ReapRun and ReapRestore — the task sub-branch reaper behind
+// GET /api/autonomous/branch-reap, POST .../branch-reap/run and
+// POST .../branch-reap/restore (and the MCP, CLI and comm surfaces on top).
+// Without them the routes' interface checks fail and answer 503 in a running
+// daemon, because the daemon installs the API, not the Manager.
+func (a *API) ReapPreview(ctx context.Context) (ReapReport, []ReapBackup, error) {
+	return a.M.ReapPreview(ctx)
+}
+func (a *API) ReapRun(ctx context.Context) (ReapReport, error) { return a.M.ReapRun(ctx) }
+func (a *API) ReapRestore(ctx context.Context, branch string) (string, string, error) {
+	return a.M.ReapRestore(ctx, branch)
+}
+
+// RemoteReapPreview, RemoteReapRun and RemoteReapRestore — the Automaton
+// work-branch remote reaper behind GET /api/autonomous/remote-reap, POST
+// .../remote-reap/run and POST .../remote-reap/restore (and the MCP, CLI
+// and comm surfaces on top). Without them the routes' interface checks
+// fail and answer 503 in a running daemon, because the daemon installs the
+// API, not the Manager.
+func (a *API) RemoteReapPreview(ctx context.Context) (RemoteReapSurfaceReport, []ReapBackup, error) {
+	return a.M.RemoteReapPreview(ctx)
+}
+func (a *API) RemoteReapRun(ctx context.Context) (RemoteReapReport, error) {
+	return a.M.RemoteReapRun(ctx)
+}
+func (a *API) RemoteReapRestore(ctx context.Context, branch string) (RemoteReapRestoreResult, error) {
+	return a.M.RemoteReapRestore(ctx, branch)
 }

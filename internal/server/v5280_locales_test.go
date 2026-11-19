@@ -484,6 +484,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"supervisor_watch_title",
 		"supervisor_watch_no_findings",
 		"settings_supervisor_watch_mode",
+		"settings_supervisor_watch_stall_threshold_minutes",
+		"settings_supervisor_watch_priority_floor",
 		"stats_supervisor_watch",
 		"prd_cancel_task",
 		"prd_cancel_task_confirm",

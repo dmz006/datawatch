@@ -44,6 +44,7 @@ Attach: tmux attach -t cs-myserver-a3f2
 ```
 
 **Notes:**
+- Add `model=<name>` before the task to name the model: `new: model=sonnet: refactor auth`. An empty `model=` is rejected with a reply asking for a value. With no model, the daemon falls back to the LLM row's model, then the global planning model, and refuses a `claude-code` start only if all are empty (see [explicit model policy](howto/explicit-model-policy.md))
 - The task is passed directly to `claude-code` as the prompt
 - A tmux session is created named `cs-<hostname>-<id>`
 - Output is logged to `~/.datawatch/logs/<hostname>-<id>.log`

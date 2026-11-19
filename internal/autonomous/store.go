@@ -18,17 +18,29 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // Store is the in-memory + JSONL-backed PRD/Story/Task/Learning store.
 type Store struct {
-	mu        sync.Mutex
-	dir       string
-	prds      map[string]*PRD
-	stories   map[string]*Story // keyed by Story.ID
-	tasks     map[string]*Task  // keyed by Task.ID
-	learnings []Learning
+	mu   sync.Mutex
+	dir  string
+	prds map[string]*PRD
+	// sumIdx and rev back the summary index (summary_index.go); both are
+	// guarded by mu.
+	// listCalls counts ListPRDs calls, so a test can prove a read stayed on
+	// the summary index.
+	listCalls atomic.Uint64
+	// recordReads counts every call that hands out a full record (GetPRD,
+	// SnapshotPRD, ListPRDs, ListChildPRDs). Test-facing, like listCalls: a
+	// summary-index read must leave it unchanged.
+	recordReads atomic.Uint64
+	sumIdx      map[string]SummaryEntry
+	rev         uint64
+	stories     map[string]*Story // keyed by Story.ID
+	tasks       map[string]*Task  // keyed by Task.ID
+	learnings   []Learning
 	// BL303 S2 — guardrail profiles
 	profiles map[string]*GuardrailProfile
 	// BL410 Phase 1 — retry profiles
@@ -38,6 +50,14 @@ type Store struct {
 
 	// rec is the per-PRD record layout state (store_records.go).
 	rec prdRecords
+
+	// archiveSessionOpen reports whether a session id names a live session;
+	// the archive refuses an Automaton that has one. archiveHook is test-only:
+	// it is called after each archive stage and an error stops the archive
+	// there, as an interrupt would. archiveBackupHook is test-only too.
+	archiveSessionOpen func(sessionID string) bool
+	archiveHook        func(stage string) error
+	archiveBackupHook  func(dst string)
 
 	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
 	// SavePRD rejects the save with an error. Nil in production — behavior
@@ -122,6 +142,7 @@ func (s *Store) CreatePRDWithParent(spec, projectDir, backend, model string, eff
 // first. BL191 Q4 (v5.9.0). Used by GET /api/autonomous/prds/{id}/children
 // and the chat verb to surface the genealogy tree.
 func (s *Store) ListChildPRDs(prdID string) []*PRD {
+	s.recordReads.Add(1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*PRD
@@ -310,6 +331,7 @@ func (s *Store) PRDRev(id string) (int, bool) {
 // but it must not be read concurrently with executor writes; read-only
 // callers that may overlap a running executor should use SnapshotPRD.
 func (s *Store) GetPRD(id string) (*PRD, bool) {
+	s.recordReads.Add(1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.prds[id]
@@ -321,6 +343,7 @@ func (s *Store) GetPRD(id string) (*PRD, bool) {
 // on miss. The copy shares nothing with the stored PRD, so it is safe to
 // read after the call returns and mutating it never alters the store.
 func (s *Store) SnapshotPRD(id string) (*PRD, bool) {
+	s.recordReads.Add(1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.prds[id]
@@ -383,8 +406,19 @@ func deepCopyValue(dst, src reflect.Value) {
 	}
 }
 
+// ListPRDCalls reports how many times ListPRDs has been called. A read that
+// the summary index answers must leave it unchanged.
+func (s *Store) ListPRDCalls() uint64 { return s.listCalls.Load() }
+
+// RecordReadCalls reports how many times a full Automaton record was handed
+// out (GetPRD, SnapshotPRD, ListPRDs, ListChildPRDs). A roll-up or list read
+// answered from the summary index must leave it unchanged.
+func (s *Store) RecordReadCalls() uint64 { return s.recordReads.Load() }
+
 // ListPRDs returns all PRDs newest-first.
 func (s *Store) ListPRDs() []*PRD {
+	s.listCalls.Add(1)
+	s.recordReads.Add(1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]*PRD, 0, len(s.prds))
@@ -1161,7 +1195,8 @@ func (s *Store) load() error {
 	if err := s.loadPRDs(); err != nil {
 		return err
 	}
-	s.clearStaleProgress() // boot-time safety re-check of the progress invariant
+	s.rebuildSummaryLocked() // index every loaded Automaton
+	s.clearStaleProgress()   // boot-time safety re-check of the progress invariant
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
 		var l Learning
 		if err := json.Unmarshal(line, &l); err != nil {

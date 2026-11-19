@@ -1066,6 +1066,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -3842,6 +3844,118 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: No backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap:
+    get:
+      summary: Remote branch reaper report (origin)
+      description: |
+        The read-side pass of the remote branch reaper, over the Automaton
+        work branches on origin. `reaped` lists the work branches a pass
+        would delete from origin — fully merged into the project's default
+        branch and at least the retention window old — with `base` the default
+        branch merged into, `tip` the tip commit and `age_days` its age in
+        whole days, `backup_ref` the ref that keeps the tip when an earlier
+        enabled pass already backed it up, and `reason` the outcome sentence.
+        `held` lists the branches a pass keeps and the plain reason: not
+        provably merged, still inside the retention window, no remote ref on
+        origin, or a backup that could not be verified. `report_only` is true
+        while autonomous.remote_reap_enabled is false or unset (the default):
+        the preview is the same either way. `backups` lists every ref under
+        refs/datawatch/remote-reap-backup/ with `branch` filled when the ref
+        key matches a stored Automaton work branch and `sha` the tip it
+        holds; `retention_days` is the effective retention window in whole
+        days (0 or unset reads 30; autonomous.remote_reap_retention_days).
+        The report only reads: it writes no ref and touches nothing on
+        origin. Only GET is served, and a federated peer needs the
+        autonomous read capability.
+      operationId: autonomousRemoteReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Remote branch reaper report (read-side pass on origin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/run:
+    post:
+      summary: Run one remote branch reap pass
+      description: |
+        Performs one pass over the Automaton work branches on origin. Each
+        work branch that is fully merged into the project's default branch
+        and at least the retention window old is backed up to
+        refs/datawatch/remote-reap-backup/<branch>/<unix-ts> first, the
+        backup ref is verified to point at the tip, and only then is the
+        branch deleted from origin (git push --delete); a branch whose
+        backup could not be verified is held instead of deleted. A branch
+        that is not merged, is too new for the retention window, has no
+        remote ref on origin, or whose backup could not be verified lands in
+        `held` with its reason. While autonomous.remote_reap_enabled is false
+        or unset (the default) the same evaluation runs but nothing is
+        deleted and `report_only` is true. Takes no body (a non-empty body is
+        refused). Deleting a remote ref is an operator-approved write and a
+        federated peer needs the autonomous write capability.
+      operationId: autonomousRemoteReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a remote delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/restore:
+    post:
+      summary: Restore one remotely reaped branch
+      description: |
+        Recreates one Automaton work branch a remote reap pass deleted, from
+        its newest backup ref under refs/datawatch/remote-reap-backup/. The
+        body is {"branch": "..."} where branch is the work branch from the
+        report; a missing or empty branch is refused. A branch that was never
+        remotely reaped (no backup ref) answers 404. A restore is an
+        operator-approved write and a federated peer needs the autonomous
+        write capability.
+      operationId: autonomousRemoteReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The Automaton work branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No remote reap backup ref for that branch}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
@@ -13498,6 +13612,60 @@ components:
         branch: {type: string, description: The branch that came back}
         backup_ref: {type: string, description: The newest backup ref it was restored from}
         sha: {type: string, description: The commit the branch now points at}
+    RemoteReapEntry:
+      type: object
+      description: One Automaton work branch in the remote reaped or the held list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The work branch on origin that is reaped or held}
+        base: {type: string, description: The default branch the branch is merged into; empty only for entries held before the proof resolved one}
+        tip: {type: string, description: The branch tip commit the entry is about; empty when git could not resolve the local ref}
+        age_days: {type: integer, description: The branch tip's age in whole days at the pass instant}
+        backup_ref: {type: string, description: The ref that keeps the branch tip; present when an earlier enabled pass already backed it up}
+        reason: {type: string, description: The plain sentence for the entry}
+    RemoteReapReport:
+      type: object
+      description: The result of one remote reap evaluation or pass
+      required: [reaped, held, report_only]
+      properties:
+        reaped:
+          type: array
+          description: The work branches that would be reaped (report mode) or were deleted (an enabled pass), sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches kept, with the reason: not merged, too new, no remote ref, or an unverifiable backup
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+    RemoteReapSurfaceReport:
+      type: object
+      description: The read-side report, as GET /api/autonomous/remote-reap returns it
+      required: [reaped, held, report_only, backups, retention_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The work branches a pass would delete from origin, sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches a pass would keep, with the reason
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+        backups:
+          type: array
+          description: Every ref under refs/datawatch/remote-reap-backup/; empty while no enabled pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        retention_days: {type: integer, description: The effective retention window in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    RemoteReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/remote-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The work branch that came back}
+        backup_ref: {type: string, description: The newest remote reap backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     TriageList:
       type: object
       description: |-
@@ -13920,7 +14088,7 @@ components:
         `last_poll_at` is the coordinator's last poll instant (the zero time
         when it never has); `mode` is the watch mode in effect (an unset mode
         reads shadow — reports only, never acts).
-      required: [mode, last_poll_at, findings, comparison]
+      required: [mode, last_poll_at, findings, comparison, priority_bands]
       properties:
         mode:
           type: string
@@ -13935,6 +14103,10 @@ components:
           description: The stored findings, open first, most recently seen first; empty when none are stored
           items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
         comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+        priority_bands:
+          type: array
+          description: The per-band wait stats, bands in high, medium, low order, one row per band that waits at least one Automaton; empty when no band waits anything
+          items: {$ref: "#/components/schemas/SupervisorWatchPriorityBand"}
     SupervisorLoopStats:
       type: object
       description: The supervisor loop as numbers, as GET /api/supervisor-loop/stats returns it.
@@ -13955,7 +14127,7 @@ components:
       description: >-
         The supervisor watch as numbers, as GET /api/autonomous/supervisor-watch/stats
         returns it.
-      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days]
+      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days, priority_bands]
       properties:
         mode:
           type: string
@@ -13971,6 +14143,28 @@ components:
         findings_alerted: {type: integer, description: Open findings an alert was raised for}
         findings_resolved: {type: integer, description: Stored findings whose check stopped reporting them}
         agreed_days: {type: integer, description: Calendar days whose comparisons with the supervisor script all agreed}
+        priority_bands:
+          type: array
+          description: The per-band wait stats the list view carries, bands in high, medium, low order, one row per band that waits at least one Automaton; empty when no band waits anything
+          items: {$ref: "#/components/schemas/SupervisorWatchPriorityBand"}
+    SupervisorWatchPriorityBand:
+      type: object
+      description: >-
+        One band of the supervisor watch's per-band wait stats: the Automata
+        currently in one of the watch's waiting statuses whose priority falls
+        in the band's range (high is 80 or more, medium 50 through 79, low
+        below 50), with the band's oldest wait in whole minutes and how many
+        of the band's waiters also satisfy the watch's priority-stall rule
+        (priority at or above the watch's priority floor, waited past its stall
+        threshold).
+      required: [band, priority_from, priority_to, waiting, oldest_waiting_minutes, stalled]
+      properties:
+        band: {type: string, enum: [high, medium, low], description: The band; high is 80 or more, medium 50 through 79, low below 50}
+        priority_from: {type: integer, description: The band's lowest priority (inclusive)}
+        priority_to: {type: integer, description: The band's highest priority (inclusive)}
+        waiting: {type: integer, description: How many of the band's Automata are in one of the watch's waiting statuses; the band is left out of the list when this is zero}
+        oldest_waiting_minutes: {type: integer, description: The band's oldest wait in whole minutes; 0 when the band waits nothing}
+        stalled: {type: integer, description: How many of the band's waiters also satisfy the watch's priority-stall rule}
     SupervisorWatchFinding:
       type: object
       description: >-

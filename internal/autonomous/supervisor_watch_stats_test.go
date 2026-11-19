@@ -60,4 +60,24 @@ func TestSupervisorWatchAPIStats(t *testing.T) {
 	if got.LastPollAgeSeconds != -1 || got.FindingsOpen != 0 {
 		t.Errorf("fresh manager stats = %+v", got)
 	}
+	if got.PriorityBands == nil || len(got.PriorityBands) != 0 {
+		t.Errorf("fresh manager PriorityBands = %+v, want an empty list, not nil", got.PriorityBands)
+	}
+}
+
+// TestSupervisorWatchStatsPriorityBands — the numeric view carries the
+// per-band wait stats through from the read view unchanged, in order,
+// and a view without them reads an empty list, never nil.
+func TestSupervisorWatchStatsPriorityBands(t *testing.T) {
+	band := SupervisorWatchPriorityBand{Band: SupervisorWatchBandHigh, PriorityFrom: 80, PriorityTo: 100, Waiting: 2, OldestWaitingMinutes: 41, Stalled: 1}
+	st := SupervisorWatchStatus{Mode: SupervisorWatchModeShadow,
+		PriorityBands: []SupervisorWatchPriorityBand{band}}
+	got := st.Stats(time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC))
+	if len(got.PriorityBands) != 1 || got.PriorityBands[0] != band {
+		t.Fatalf("PriorityBands = %+v, want one unchanged row %+v", got.PriorityBands, band)
+	}
+
+	if fresh := (SupervisorWatchStatus{Mode: SupervisorWatchModeShadow}).Stats(time.Now()); fresh.PriorityBands == nil || len(fresh.PriorityBands) != 0 {
+		t.Errorf("an absent band list must read as an empty list, not nil: %+v", fresh.PriorityBands)
+	}
 }

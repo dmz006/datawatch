@@ -203,7 +203,7 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
 | `autonomous.lane_fill.stale_after_hours` | `72` | How many hours an Automaton may go without any change before lane fill calls it stale and will not start it; `0` turns the rule off |
 | `autonomous.lane_fill.host_down_after_minutes` | `10` | How many minutes a pool host may stay unreachable before lane fill treats it as down and judges the lanes from the readable hosts; `0` never treats an unreachable host as down |
-| `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; `false` turns the rule off |
+| `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; the title or spec names the proposal only through an explicit proposal field or line, and research, operational, personal, defect and proposal-authoring Automata are exempt (see "What lane fill never does"); `false` turns the rule off |
 | `autonomous.lane_fill.check_main_carries` | `true` | Whether lane fill skips an Automaton whose work the default branch already has; `false` turns the check off |
 | `autonomous.lane_fill.require_worktree` | `true` | Whether an Automaton that has a recorded worktree is taken only when that worktree is real and registered; `false` turns the check off |
 | `autonomous.lane_fill.lane_counts_from_caps` | `true` | Whether the number of lanes follows the LLM concurrency caps; `false` uses `gpu_lanes` and `claude_lanes` as written |
@@ -247,8 +247,8 @@ The rules run in this order:
 | `held` | The title or spec has a line that starts with `HOLD`, says "do not run" or "sequenced last", or the judge timed out on every backend while the Automaton needed review. | Remove the line from the spec if the hold is over. If the hold is right, leave it: this is the rule working. |
 | `sequenced_after_unshipped` | The spec says it is "sequenced after" another Automaton, and that one is not completed, or the reference matches no Automaton at all (an unknown reference counts as unfinished). | Finish the other Automaton, or fix the reference so it names the right one (an 8-character id is the most reliable). |
 | `stale` | The Automaton has had no change for longer than `stale_after_hours` (72 by default). Old probes and forgotten drafts end up here. | If it still matters, edit it, which refreshes its last-updated time; if it does not, cancel it. To change the limit, set `stale_after_hours`; `0` turns the rule off. |
-| `proposal_not_confirmed` | An implementation Automaton whose spec names a `docs/plans/<name>.md` proposal that can be read, but the file has no line starting `Confirmed: yes` in its first 200 lines. | Read the proposal, and if you agree, add the line `Confirmed: yes`. The file is read again on every poll. |
-| `proposal_missing` | An implementation Automaton whose spec names no proposal file, or none of the named files can be read. | Name the proposal file in the spec, or fix its path. A path that is absolute, has a `..` element, or leaves the repository is treated as unreadable. Research, operational and personal Automata are exempt. |
+| `proposal_not_confirmed` | An implementation Automaton whose title or spec names, on an explicit proposal field or line, a `docs/plans/<name>.md` proposal that can be read, but the file has no line starting `Confirmed: yes` in its first 200 lines. | Read the proposal, and if you agree, add the line `Confirmed: yes`. The file is read again on every poll. |
+| `proposal_missing` | An implementation Automaton whose title or spec names no readable proposal file: a `docs/plans/<name>.md` path counts as the proposal only when it sits on a line that also names a proposal (an explicit proposal field or line), so a path that is merely mentioned names nothing, and the plan folder's README is never a proposal. | Give the title or spec an explicit proposal field or line that names the file, or fix its path. A path that is absolute, has a `..` element, or leaves the repository is treated as unreadable. Research, operational, personal and defect Automata, and an Automaton whose own job is to author the proposal, are exempt. |
 | `main_carries_work` | The default branch already has the work: a merge or a task commit for this Automaton, or its whole branch is already on the default branch. The detail names the commit. | The work has shipped, so cancel the Automaton. If the match is wrong, set `check_main_carries` to `false`. |
 | `worktree_invalid` | The Automaton has a recorded worktree that is gone, has no `.git` entry, or is not in the repository's registered worktree list. | Restore the worktree, or clear the stale entry in the repository (`git worktree prune`), then let the Automaton make a new one. An Automaton with no worktree yet is fine: it gets one when it runs. |
 | `plan_coverage_blocked` | The Automaton is awaiting review, and its stored plan-coverage record fails the approve gate: the gate mode resolves to `block`, the record is failing (ratio below `plan_coverage_min_ratio`, or a structural finding), and no covering acknowledgment exists. Starting it now would only leave it stuck at Approve, so lane fill refuses the ready slot instead: it never approves the Automaton and never clears the gate on the operator's behalf. | Either re-decompose with a plan that covers the spec, or acknowledge exactly that failing surface with an actor and a non-empty note (`datawatch autonomous prd-ack-coverage <id> --actor you --note "..."`, or the **Acknowledge** control on the PWA coverage panel). In `warn` or `off` mode the gate never blocks approval, so this rule never fires. See [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check). |
@@ -558,19 +558,27 @@ needs no restart.
   "sequenced after" an Automaton that has not completed. Held work is listed
   with its reason and is never silently dropped.
 - **It never starts an implementation Automaton whose proposal is not
-  confirmed.** The proposal files of an Automaton are the
-  `docs/plans/<name>.md` paths named in its spec. The Automaton is eligible only
-  when at least one of those files, read from the base repository, has a line
-  that starts with `Confirmed: yes` (case and markdown decoration such as bold
-  are ignored) within its first 200 lines. A readable file without the line
-  is refused as `proposal_not_confirmed`; a spec that names no file, or whose
-  named files cannot be read, is refused as `proposal_missing`. A reference that
-  is absolute, has a parent-directory element, or reaches outside the
-  repository through a symbolic link counts as unreadable and nothing outside
-  the repository is read. Research, operational and personal Automata are
-  exempt. A file that cannot be read for any other reason does not refuse the
-  Automaton. Set `autonomous.lane_fill.require_confirmed_proposal` to `false`
-  to turn the rule off.
+  confirmed.** The proposal of an Automaton is the `docs/plans/<name>.md`
+  path its title or spec names on an **explicit proposal field or line** — a
+  `docs/plans` path on a line that also names a proposal. A path that is
+  merely mentioned elsewhere in the title or spec names no proposal, and the plan
+  folder's README is never a proposal. The Automaton is eligible only when at
+  least one of the named files, read from the base repository, has a line
+  that starts with `Confirmed: yes` (case and markdown decoration such as
+  bold are ignored) within its first 200 lines. A readable file without the
+  line is refused as `proposal_not_confirmed`; a title or spec with no
+  proposal field or line, or whose named files cannot be read, is refused as
+  `proposal_missing`. A reference that is absolute, has a parent-directory
+  element, or reaches outside the repository through a symbolic link counts
+  as unreadable and nothing outside the repository is read. Exempt from the
+  rule are research, operational, personal and defect Automata — a defect
+  Automaton is not a design implementation and has no design proposal to
+  confirm — and any Automaton whose own job is to author the proposal, stated
+  in its title or spec: an Automaton that writes a proposal is never gated on
+  the `Confirmed: yes` line of the proposal it is producing. A file that
+  cannot be read for any other reason does not refuse the Automaton. Set
+  `autonomous.lane_fill.require_confirmed_proposal` to `false` to turn the
+  rule off.
 - **It never clears the plan-coverage gate on the operator's behalf.** A
   `needs_review` Automaton whose stored coverage record fails the approve gate
   in `block` mode without a covering acknowledgment is refused as

@@ -4320,3 +4320,19 @@ entries:
     expires: "2026-12-13"
     validated_by: "claude-session"
     reason: "The Release scan of agent-base 9.171.1 lists CVE-2026-114466 (HIGH) on git and git-man 1:2.39.5-0+deb12u3 as affected with no fixed version; the Debian security tracker (read 2026-11-13) lists bookworm, bookworm-security, trixie, forky and sid as vulnerable with no fix; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or build git from source in a pinned stage."
+  - id: cve/CVE-2025-6020
+    kind: container
+    package: "pam: libpam0g, libpam-modules, libpam-modules-bin, libpam-runtime"
+    version: "1.5.2-6+deb12u2"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2025-6020 is in the Linux-PAM pam_namespace module, where path handling of user-controlled directories can let a local user escalate privileges on a system that enables pam_namespace. NOT traced inside a built image (no container run was done); the analysis is from the diagnosis report of the blocked image-refresh scan, the Debian security tracker and the advisory text. The finding is on the agent-base staging image and appears on four binary packages of the pam source package. This entry does not claim that pam_namespace is unconfigured in the image or that sessions run as an unprivileged user: neither was checked. Residual risk that is NOT ruled out: an agent session running inside agent-base is a local user and could exercise pam_namespace if it is enabled. The datawatch service itself is Go and does not link PAM. Debian bookworm ships no fixed version (the fix is in trixie 1.7.0-5 and sid 1.7.0-8)."
+    first_added: "2026-11-18"
+    added: "2026-11-18"
+    expires: "2026-12-18"
+    validated_by: "claude-session"
+    reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2025-6020 (HIGH) on pam 1.5.2-6+deb12u2 with no fixed version in bookworm; the Debian security tracker lists it vulnerable in bookworm; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or move the base image."

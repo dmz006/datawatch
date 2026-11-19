@@ -477,6 +477,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// decompose-lint — config read/replace + per-PRD stored record / dry run.
 	apiMux.HandleFunc("/api/autonomous/decompose-lint/config", api.handleAutonomousDecomposeLintConfig)
 	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
+	// One page of one Automaton's task rows (never part of the list).
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/tasks", api.handlePRDTasks)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/archive", api.handlePRDArchive)
+	apiMux.HandleFunc("/api/autonomous/archive", api.handleAutonomousArchive)
 	// Planning routing: config, test and scorecard.
 	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)
@@ -650,6 +654,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
 	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap", api.handleAutonomousRemoteReap)                       // remote branch reaper: would-reap / would-hold preview on origin plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/remote-reap/run", api.handleAutonomousRemoteReapRun)                // remote branch reaper: perform one pass (backup first, verify, then delete on origin; report-only while remote_reap_enabled is unset) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap/restore", api.handleAutonomousRemoteReapRestore)        // remote branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list

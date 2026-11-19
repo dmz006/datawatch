@@ -1,6 +1,6 @@
-// Phone-width rollup of the session detail page: Tags and Scheduled collapse
-// to one aria-expanded summary button at phone width; wide width keeps the
-// legacy layout. Expanded state lives in memory only.
+// Phone-width header icons of the session detail page: Tags and Scheduled are
+// two aria-expanded buttons with count badges; wide width keeps the legacy
+// layout. Open state lives in one module-level variable, never in web storage.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -23,7 +23,7 @@ const JOBS = [
 // false = wide), with recorders on localStorage/sessionStorage.
 function setup(phone) {
   const sandbox = buildSandbox();
-  const els = { sessionDetailTagRow: makeStubElement(), sessionSchedules: makeStubElement() };
+  const els = { sessionDetailTagRow: makeStubElement(), sessionSchedules: makeStubElement(), sessionDetailHeaderIcons: makeStubElement() };
   sandbox.document.getElementById = (id) => els[id] || makeStubElement();
   sandbox.matchMedia = (q) => ({ media: q, matches: !!phone, addListener() {}, addEventListener() {} });
   const writes = [];
@@ -38,7 +38,7 @@ function setup(phone) {
   loadScript(APP_JS, sandbox);
   const sess = { id: 'aaaa', full_id: SID, tags: ['own1', 'own2', 'own3'], inherited_tags: [] };
   vm.runInContext(
-    `_tagsState.list = ${JSON.stringify(TAGS)}; _tagsState.byId = _tagsById(_tagsState.list); _tagsState.loaded = true; state.sessions = ${JSON.stringify([sess])};`,
+    `state.activeSession = ${JSON.stringify(SID)}; _tagsState.list = ${JSON.stringify(TAGS)}; _tagsState.byId = _tagsById(_tagsState.list); _tagsState.loaded = true; state.sessions = ${JSON.stringify([sess])};`,
     sandbox);
   sandbox.apiFetch = () => Promise.resolve(JOBS.map(j => ({ ...j })));
   return { sandbox, els, sess, writes };
@@ -51,79 +51,77 @@ async function paintAll(ctx) {
 }
 
 function toggle(ctx, kind) {
-  ctx.sandbox._sessionDetailRollupToggle(encodeURIComponent(SID), kind);
+  ctx.sandbox._sessionDetailHeaderToggle(kind);
 }
+const open = (ctx) => vm.runInContext('_sessionDetailHeaderOpen', ctx.sandbox);
 
-test('phone width, tags collapsed initially: aria-expanded=false, summary + count, no chips', async () => {
+test('phone: header icons with count badges, accessible names, collapsed lists', async () => {
   const ctx = setup(true);
   await paintAll(ctx);
+  const html = ctx.els.sessionDetailHeaderIcons.innerHTML;
+  assert.equal((html.match(/<button type="button"/g) || []).length, 2);
+  assert.match(html, /data-kind="tags"[^>]*aria-expanded="false" aria-label="Tags: 3"/);
+  assert.match(html, /data-kind="scheduled"[^>]*aria-expanded="false" aria-label="Scheduled jobs: 2"/);
+  assert.match(html, /<span class="session-detail-icon-badge">3<\/span>/);
+  assert.match(html, /<span class="session-detail-icon-badge">2<\/span>/);
+  assert.match(html, /title="next /); // next job time tooltip
+  assert.equal(ctx.els.sessionDetailTagRow.innerHTML, '');
+  assert.equal(ctx.els.sessionSchedules.innerHTML, '');
+});
+
+test('phone: tags popover opens in place, second tap closes', async () => {
+  const ctx = setup(true);
+  await paintAll(ctx);
+  toggle(ctx, 'tags');
+  assert.equal(open(ctx), 'tags');
+  assert.match(ctx.els.sessionDetailHeaderIcons.innerHTML, /data-kind="tags"[^>]*aria-expanded="true"/);
   const html = ctx.els.sessionDetailTagRow.innerHTML;
-  assert.match(html, /class="session-detail-tags-rollup"/);
-  assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /Tags \(3\)/); // session_detail_tags_summary fallback + count
-  assert.ok(!html.includes('tag-chip'), 'full chip list must be absent while collapsed');
-  assert.ok(!html.includes('Alpha'));
+  assert.ok(html.includes('session-detail-popover') && html.includes('Alpha') && html.includes('Gamma'));
+  toggle(ctx, 'tags');
+  assert.equal(open(ctx), '');
+  assert.ok(!ctx.els.sessionDetailTagRow.innerHTML.includes('tag-chip'));
 });
 
-test('phone width, tags expanded then collapsed again', async () => {
+test('phone: scheduled popover lists jobs with cancel; opening one closes the other', async () => {
   const ctx = setup(true);
   await paintAll(ctx);
-  toggle(ctx, 'tags');
-  let html = ctx.els.sessionDetailTagRow.innerHTML;
-  assert.match(html, /aria-expanded="true"/);
-  assert.ok(html.includes('tag-chip'));
-  assert.ok(html.includes('Alpha') && html.includes('Gamma'));
-  toggle(ctx, 'tags');
-  html = ctx.els.sessionDetailTagRow.innerHTML;
-  assert.match(html, /aria-expanded="false"/);
-  assert.ok(!html.includes('tag-chip'));
-});
-
-test('phone width, scheduled: collapsed summary then per-job rows with cancel when expanded', async () => {
-  const ctx = setup(true);
-  await paintAll(ctx);
-  let html = ctx.els.sessionSchedules.innerHTML;
-  assert.match(html, /class="session-detail-scheduled-rollup"/);
-  assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /Scheduled \(2\)/);
-  assert.match(html, /Next run /);
-  assert.ok(!html.includes('sched-item'), 'job rows hidden while collapsed');
   toggle(ctx, 'scheduled');
-  html = ctx.els.sessionSchedules.innerHTML;
-  assert.match(html, /aria-expanded="true"/);
+  let html = ctx.els.sessionSchedules.innerHTML;
   assert.equal((html.match(/class="sched-item"/g) || []).length, 2);
   assert.ok(html.includes("cancelSchedule('sc1'"));
-  assert.ok(html.includes('continue') && html.includes('status'));
-  toggle(ctx, 'scheduled');
-  assert.match(ctx.els.sessionSchedules.innerHTML, /aria-expanded="false"/);
+  toggle(ctx, 'tags');
+  assert.equal(open(ctx), 'tags');
+  assert.equal(ctx.els.sessionSchedules.innerHTML, '');
+  assert.ok(ctx.els.sessionDetailTagRow.innerHTML.includes('Alpha'));
 });
 
-test('wide width: legacy layout, no rollup classes', async () => {
+test('wide width: legacy layout, no header icons', async () => {
   const ctx = setup(false);
   await paintAll(ctx);
+  assert.equal(ctx.els.sessionDetailHeaderIcons.innerHTML, '');
   const tagHtml = ctx.els.sessionDetailTagRow.innerHTML;
-  assert.ok(!tagHtml.includes('session-detail-tags-rollup'));
   assert.ok(!tagHtml.includes('aria-expanded'));
   assert.ok(tagHtml.includes('tag-chip') && tagHtml.includes('Alpha'));
   const schedHtml = ctx.els.sessionSchedules.innerHTML;
-  assert.ok(!schedHtml.includes('session-detail-scheduled-rollup'));
-  assert.ok(!schedHtml.includes('aria-expanded'));
+  assert.ok(!schedHtml.includes('aria-expanded') && !schedHtml.includes('session-detail-popover'));
   assert.equal((schedHtml.match(/class="sched-item"/g) || []).length, 2);
-  assert.ok(schedHtml.includes("cancelSchedule('sc2'"));
 });
 
-test('state: expanded state survives a repaint from the in-memory map, never touches web storage', async () => {
+test('pure renderer: fakes in, markup out; zero counts omit the button', () => {
+  const ctx = setup(true);
+  const f = ctx.sandbox._sessionDetailHeaderIconsHTML;
+  assert.equal(f({ tagCount: 0, jobs: [] }), '');
+  const html = f({ tagCount: 1, jobs: [{ run_at: '2030-01-02T00:00:00Z' }, { run_at: '2030-01-01T00:00:00Z' }], open: 'scheduled', tr: (k, d) => '[' + k + ']' });
+  assert.match(html, /data-kind="tags"[^>]*aria-expanded="false"/);
+  assert.match(html, /data-kind="scheduled"[^>]*aria-expanded="true"/);
+  assert.ok(html.includes('[session_detail_tags_button_label]'));
+});
+
+test('state: in memory only, never touches web storage', async () => {
   const ctx = setup(true);
   await paintAll(ctx);
   toggle(ctx, 'tags');
   toggle(ctx, 'scheduled');
-  // Re-run the paint paths.
-  ctx.sandbox._renderSessionDetailTagRow(ctx.sess);
-  vm.runInContext(`_renderSessionSchedules(${JSON.stringify(SID)})`, ctx.sandbox);
-  assert.match(ctx.els.sessionDetailTagRow.innerHTML, /aria-expanded="true"/);
-  assert.match(ctx.els.sessionSchedules.innerHTML, /aria-expanded="true"/);
-  const bucket = vm.runInContext('JSON.stringify(state._sessionDetailRollup)', ctx.sandbox);
-  assert.deepEqual(JSON.parse(bucket), { [SID]: { tags: true, scheduled: true } });
-  const rollupWrites = ctx.writes.filter(([k, v]) => /rollup/i.test(k) || /rollup|aria-expanded/i.test(String(v)));
-  assert.deepEqual(rollupWrites, [], 'rollup state must not be persisted to web storage');
+  assert.equal(open(ctx), 'scheduled');
+  assert.deepEqual(ctx.writes, [], 'header icon state must not be persisted to web storage');
 });

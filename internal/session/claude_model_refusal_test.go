@@ -142,3 +142,25 @@ func TestClaudeExplicitModelLaunchRefusal(t *testing.T) {
 		}
 	})
 }
+
+// TestClaudeRefusalNamesEverySettingSurface pins that the refusal message
+// lists every place a model can be set, and never defaults to a model.
+func TestClaudeRefusalNamesEverySettingSurface(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t)
+	stub := &claudeModelStubBackend{}
+	_, err := mgr.Start(context.Background(), "t", "g1", t.TempDir(), &StartOptions{LaunchFn: stub.Launch, BackendObj: stub})
+	if err == nil {
+		t.Fatal("expected refusal")
+	}
+	for _, want := range []string{
+		"datawatch session new --model", "POST /api/sessions/start", "start_session",
+		"new: model=<name>", "datawatch llm models add <llm> --model <name>",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must name %q; got: %v", want, err)
+		}
+	}
+	if stub.modelCallCount() != 0 {
+		t.Errorf("refusal must not default a model")
+	}
+}

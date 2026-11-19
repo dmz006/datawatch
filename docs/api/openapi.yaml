@@ -1060,6 +1060,8 @@ paths:
         `autonomous.progress.since` (YYYY-MM-DD, empty = the first record's creation
         date), `autonomous.progress.snapshot_retention_days` (whole number >= 0,
         default 0 = 90); a bad progress value is rejected with 400 and nothing is written,
+        `autonomous.archive.retention_days` (whole number >= 0, default 0 = 30; negative
+        is rejected with 400), `autonomous.archive.enabled` (true | false, default true),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
@@ -3877,6 +3879,118 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/remote-reap:
+    get:
+      summary: Remote branch reaper report (origin)
+      description: |
+        The read-side pass of the remote branch reaper, over the Automaton
+        work branches on origin. `reaped` lists the work branches a pass
+        would delete from origin — fully merged into the project's default
+        branch and at least the retention window old — with `base` the default
+        branch merged into, `tip` the tip commit and `age_days` its age in
+        whole days, `backup_ref` the ref that keeps the tip when an earlier
+        enabled pass already backed it up, and `reason` the outcome sentence.
+        `held` lists the branches a pass keeps and the plain reason: not
+        provably merged, still inside the retention window, no remote ref on
+        origin, or a backup that could not be verified. `report_only` is true
+        while autonomous.remote_reap_enabled is false or unset (the default):
+        the preview is the same either way. `backups` lists every ref under
+        refs/datawatch/remote-reap-backup/ with `branch` filled when the ref
+        key matches a stored Automaton work branch and `sha` the tip it
+        holds; `retention_days` is the effective retention window in whole
+        days (0 or unset reads 30; autonomous.remote_reap_retention_days).
+        The report only reads: it writes no ref and touches nothing on
+        origin. Only GET is served, and a federated peer needs the
+        autonomous read capability.
+      operationId: autonomousRemoteReap
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Remote branch reaper report (read-side pass on origin)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapSurfaceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The reaper could not read the base repo}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/run:
+    post:
+      summary: Run one remote branch reap pass
+      description: |
+        Performs one pass over the Automaton work branches on origin. Each
+        work branch that is fully merged into the project's default branch
+        and at least the retention window old is backed up to
+        refs/datawatch/remote-reap-backup/<branch>/<unix-ts> first, the
+        backup ref is verified to point at the tip, and only then is the
+        branch deleted from origin (git push --delete); a branch whose
+        backup could not be verified is held instead of deleted. A branch
+        that is not merged, is too new for the retention window, has no
+        remote ref on origin, or whose backup could not be verified lands in
+        `held` with its reason. While autonomous.remote_reap_enabled is false
+        or unset (the default) the same evaluation runs but nothing is
+        deleted and `report_only` is true. Takes no body (a non-empty body is
+        refused). Deleting a remote ref is an operator-approved write and a
+        federated peer needs the autonomous write capability.
+      operationId: autonomousRemoteReapRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The pass that was performed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapReport"
+        "400": {description: A non-empty body was sent}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: Another reap pass is already running}
+        "500": {description: A backup write or a remote delete failed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
+  /api/autonomous/remote-reap/restore:
+    post:
+      summary: Restore one remotely reaped branch
+      description: |
+        Recreates one Automaton work branch a remote reap pass deleted, from
+        its newest backup ref under refs/datawatch/remote-reap-backup/. The
+        body is {"branch": "..."} where branch is the work branch from the
+        report; a missing or empty branch is refused. A branch that was never
+        remotely reaped (no backup ref) answers 404. A restore is an
+        operator-approved write and a federated peer needs the autonomous
+        write capability.
+      operationId: autonomousRemoteReapRestore
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch]
+              properties:
+                branch: {type: string, description: The Automaton work branch to restore}
+      responses:
+        "200":
+          description: The branch that came back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemoteReapRestoreResult"
+        "400": {description: The branch is missing or empty}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No remote reap backup ref for that branch}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
+
   /api/autonomous/cleanup:
     get:
       summary: Automation cleanup status
@@ -6326,7 +6440,13 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
-      responses: {"200": {description: OK}, "404": {description: Unknown tag}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50}, description: "Page size. Summary form: at most 500. With full=true: at most 100, so one call cannot write hundreds of megabytes"}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page; a bad cursor is a 400"}
+        - {name: full, in: query, required: false, schema: {type: boolean, default: false}, description: "Heavy form. true returns whole Automaton records (stories and tasks) instead of summary rows. With a limit or cursor it is one filtered, capped page of records ({prds,total,next_cursor}); with neither it returns every record, kept for compatibility, and can be hundreds of megabytes. The default summary list is built from the summary index alone and never reads a record"}
+      responses:
+        "200": {description: "OK. The summary list answers 304 to a matching If-None-Match without building any row; its ETag changes when any Automaton changes"}
+        "304": {description: Not modified}
+        "404": {description: Unknown tag}
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate
@@ -6380,6 +6500,128 @@ paths:
                         reason: {type: string, description: "One sentence of operator copy"}
                         read_hint: {type: string, description: "How to read the underlying item"}
       "400": {description: "No spec, a lane preference outside the vocabulary, or a spec carrying the capped-view truncation marker (a copy from a capped view)"}
+  /api/autonomous/prds/{id}/tasks:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: One page of an Automaton's task rows
+      description: "Reads only that Automaton. Rows carry id, title, status, story, timestamps, session ids and a short error; never the spec or history. It is never part of the list. Requires the autonomous read capability."
+      operationId: autonomousPRDTasks
+      tags: [Autonomous]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+        - {name: cursor, in: query, required: false, schema: {type: string}, description: "Opaque next_cursor from the previous page"}
+        - {name: story, in: query, required: false, schema: {type: string}, description: "Only tasks of this story id"}
+        - {name: status, in: query, required: false, schema: {type: string}, description: "Comma-separated task statuses"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prd_id: {type: string}
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        story: {type: string}
+                        story_title: {type: string}
+                        created_at: {type: string, format: date-time}
+                        updated_at: {type: string, format: date-time}
+                        started_at: {type: string, format: date-time}
+                        completed_at: {type: string, format: date-time}
+                        session_id: {type: string}
+                        verifier_session_id: {type: string}
+                        judge_session_ids: {type: array, items: {type: string}}
+                        error: {type: string, description: "Shortened to 240 characters"}
+                  total: {type: integer, description: "Tasks matching the filters, ignoring the cursor"}
+                  next_cursor: {type: string}
+        "400": {description: Bad limit or cursor}
+        "404": {description: Unknown Automaton}
+  /api/autonomous/prds/{id}/archive:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Read the archive of one finished Automaton
+      description: "Read on ask. Returns the parts that were moved out of the live record when the Automaton was archived: the decision log, every task's session history (history notes, session decisions, attempts, events, infra retries, runner evidence), long task errors and the raw judge text of every verdict. Reads only that Automaton's archive file. Requires the autonomous read capability."
+      operationId: autonomousPRDArchive
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: integer}
+                  id: {type: string}
+                  decisions: {type: array, items: {type: object}}
+                  memory_report: {type: string}
+                  verdict_raw_judge: {type: array, items: {type: string}}
+                  stories: {type: array, items: {type: object}, description: "Raw judge text of each story's verdicts, by story index"}
+                  tasks: {type: array, items: {type: object}, description: "The parts moved out of each task, by story and task index"}
+        "404": {description: Unknown Automaton, or an Automaton that is not archived}
+        "500": {description: The archive file is missing or does not match its marker}
+  /api/autonomous/archive:
+    post:
+      summary: Archive finished Automata (dry run by default)
+      description: "A finished Automaton is completed, shipped or cancelled and older than autonomous.archive.retention_days. The default is a dry run: the report names which Automata would be archived, with the bytes before and after, and writes nothing. With dry_run false the run first copies each touched record to a backup directory and verifies every copy by size and SHA-256, stopping without any change when one does not verify. It then archives one Automaton at a time and verifies each archive before rewriting the live record. An Automaton with a running task, an open session or an unmerged branch it still needs is skipped, never forced. No data is deleted, counts and lists read the same afterwards, and a second run archives nothing more. Requires the autonomous write capability."
+      operationId: autonomousArchive
+      tags: [Autonomous]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean, default: true, description: "true or absent: report only. false: take the verified backup and archive."}
+      responses:
+        "200":
+          description: The dry-run plan, or the run report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dry_run: {type: boolean}
+                  retention_days: {type: integer}
+                  eligible:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+                        bytes_before: {type: integer}
+                        bytes_after: {type: integer}
+                        archive_bytes: {type: integer}
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        reason: {type: string}
+                  not_finished: {type: integer}
+                  already_archived: {type: integer}
+                  bytes_before: {type: integer}
+                  bytes_after: {type: integer}
+                  archive_bytes: {type: integer}
+                  archived: {type: array, items: {type: object}, description: "Run only: the Automata archived"}
+                  failed: {type: array, items: {type: object}, description: "Run only: the Automata whose archive failed, with the reason"}
+                  backup_dir: {type: string, description: "Run only: where the verified backup sits"}
+                  backup_files: {type: integer}
+                  backup_bytes: {type: integer}
+        "400": {description: Unreadable body}
+        "409": {description: The run was refused or stopped before any change (a backup copy did not verify, or the daemon cannot yet tell whether a session is open)}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
@@ -12531,6 +12773,60 @@ components:
         branch: {type: string, description: The branch that came back}
         backup_ref: {type: string, description: The newest backup ref it was restored from}
         sha: {type: string, description: The commit the branch now points at}
+    RemoteReapEntry:
+      type: object
+      description: One Automaton work branch in the remote reaped or the held list
+      required: [branch]
+      properties:
+        automaton_id: {type: string, description: The Automaton the branch belongs to; empty when unknown}
+        branch: {type: string, description: The work branch on origin that is reaped or held}
+        base: {type: string, description: The default branch the branch is merged into; empty only for entries held before the proof resolved one}
+        tip: {type: string, description: The branch tip commit the entry is about; empty when git could not resolve the local ref}
+        age_days: {type: integer, description: The branch tip's age in whole days at the pass instant}
+        backup_ref: {type: string, description: The ref that keeps the branch tip; present when an earlier enabled pass already backed it up}
+        reason: {type: string, description: The plain sentence for the entry}
+    RemoteReapReport:
+      type: object
+      description: The result of one remote reap evaluation or pass
+      required: [reaped, held, report_only]
+      properties:
+        reaped:
+          type: array
+          description: The work branches that would be reaped (report mode) or were deleted (an enabled pass), sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches kept, with the reason: not merged, too new, no remote ref, or an unverifiable backup
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+    RemoteReapSurfaceReport:
+      type: object
+      description: The read-side report, as GET /api/autonomous/remote-reap returns it
+      required: [reaped, held, report_only, backups, retention_days, computed_at]
+      properties:
+        reaped:
+          type: array
+          description: The work branches a pass would delete from origin, sorted by branch
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        held:
+          type: array
+          description: The branches a pass would keep, with the reason
+          items: {$ref: "#/components/schemas/RemoteReapEntry"}
+        report_only: {type: boolean, description: True while autonomous.remote_reap_enabled is false or unset (the default)}
+        backups:
+          type: array
+          description: Every ref under refs/datawatch/remote-reap-backup/; empty while no enabled pass has run
+          items: {$ref: "#/components/schemas/ReapBackup"}
+        retention_days: {type: integer, description: The effective retention window in whole days; 0 or unset reads 30}
+        computed_at: {type: string, format: date-time, description: When the report was computed}
+    RemoteReapRestoreResult:
+      type: object
+      description: The restore response, as POST /api/autonomous/remote-reap/restore returns it
+      required: [branch, backup_ref, sha]
+      properties:
+        branch: {type: string, description: The work branch that came back}
+        backup_ref: {type: string, description: The newest remote reap backup ref it was restored from}
+        sha: {type: string, description: The commit the branch now points at}
     CleanupStatus:
       type: object
       description: |-
@@ -13222,7 +13518,7 @@ components:
       type: object
       description: |
         `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
-        `max_retries: 2`, the nine-rule built-in pack (six block, three warn), and an empty
+        `max_retries: 2`, the seventeen-rule built-in pack (thirteen block, four warn), and an empty
         `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
         validation error. `max_retries` clamps negatives to 0 (0 = valid,
         lint-and-record without retrying) and above the cap (5) to the cap.
