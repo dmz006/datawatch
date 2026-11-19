@@ -7326,14 +7326,15 @@ H "lean session datawatch tools"
 # — it passes only when memory_recall, supervisor_watch_stats, question_list
 # and usage_backoff_set are all present, and names the missing ones otherwise;
 # (3) the launched command line carries ENABLE_TOOL_SEARCH=true. It spawns a
-# real one-shot claude-code session, so it is gated exactly like the other
+# real claude-code session (killed at the end of the section, with add_cleanup
+# as backstop), so it is gated exactly like the other
 # claude-code sections: DW_MAJOR=1 (cost) and a claude-code backend reporting
 # available.
 LEAN_GATE=""
 if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
   LEAN_GATE="the section is not in the SMOKE_ONLY list"
 elif [[ "${DW_MAJOR:-0}" != "1" ]]; then
-  LEAN_GATE="gated behind DW_MAJOR=1 (cost - spawns a real one-shot claude-code session); run with DW_MAJOR=1 to include it"
+  LEAN_GATE="gated behind DW_MAJOR=1 (cost - spawns a real claude-code session); run with DW_MAJOR=1 to include it"
 fi
 if [[ -n "$LEAN_GATE" ]]; then
   skip "lean-session[tools]: $LEAN_GATE"
@@ -7345,16 +7346,26 @@ try:
 except Exception:
     print("no")
     sys.exit(0)
-bs = d.get("backends") if isinstance(d, dict) else d
-print("yes" if any(isinstance(b, dict) and b.get("name") == "claude-code" and b.get("available") for b in (bs or [])) else "no")
+# /api/backends answers {"llm": [...], "active": ...} (handleBackends),
+# so the claude-code rows live under the "llm" key, same as section 6.
+bs = d.get("llm") if isinstance(d, dict) else d
+print("yes" if isinstance(bs, list) and any(isinstance(b, dict) and b.get("name") == "claude-code" and b.get("available") for b in bs) else "no")
 ' 2>/dev/null || echo "no")
   if [[ "$LEAN_BK" != "yes" ]]; then
     skip "lean-session[tools]: the claude-code backend is not available on this daemon (worker profiles only apply to claude-code launches); run on a daemon where /api/backends reports it as available"
   else
-    LEAN_PROJ="$TEST_WORK_DIR/lean-session-$RUN_ID"
+    LEAN_PROJ="$TEST_DATA_DIR/prd-worktrees/lean-session-$RUN_ID"
+    # (under the daemon's PRD worktree base — an always-allowed project root —
+    # so the start request passes the allowed-roots guard; the dir is removed
+    # with $TEST_WORK_DIR by the smoke's test-dir cleanup)
     mkdir -p "$LEAN_PROJ"
+    # model is named explicitly: a claude-code launch without one is refused up
+    # front (no fallback to the account default), and haiku keeps the session
+    # cheap; the session is interactive (not one-shot) so the ENABLE_TOOL_SEARCH
+    # check has a stable observation window, and it is killed below (with
+    # add_cleanup as backstop).
     LEAN_START=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-      -d "{\"task\":\"Reply with exactly: DATAWATCH_COMPLETE: smoke lean ok\",\"git\":false,\"scrub_tmux_env\":true,\"one_shot\":true,\"project_dir\":\"$LEAN_PROJ\",\"launch_role\":\"supervisor\",\"backend\":\"claude-code\",\"name\":\"smoke-lean-$RUN_ID\"}" \
+      -d "{\"task\":\"Reply with exactly: DATAWATCH_COMPLETE: smoke lean ok\",\"git\":false,\"scrub_tmux_env\":true,\"project_dir\":\"$LEAN_PROJ\",\"launch_role\":\"supervisor\",\"backend\":\"claude-code\",\"model\":\"haiku\",\"name\":\"smoke-lean-$RUN_ID\"}" \
       "$BASE/api/sessions/start" 2>/dev/null || true)
     LEAN_SID=$(echo "$LEAN_START" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id") or "")' 2>/dev/null || echo "")
     if [[ -z "$LEAN_SID" ]]; then
@@ -7377,25 +7388,48 @@ print("yes" if any(isinstance(b, dict) and b.get("name") == "claude-code" and b.
           skip "lean-session[tools]: worker-mcp.json never appeared in the session project directory within its 45s wait - if the daemon is a remote DW_BASE not sharing this script's filesystem, that is expected (same constraint as the other file-dependent sections)"
         fi
       else
-        # ENABLE_TOOL_SEARCH is visible on the pane's launch command line, so
-        # catch it while the session can still be alive; each poll is 1s and
-        # the window is bounded at 45s.
+        # ENABLE_TOOL_SEARCH=true is an env assignment the launch command types
+        # into the pane shell, so it never appears in any process argv; the
+        # session's claude process is found by its --add-dir <proj> argument and
+        # the check reads /proc/<pid>/environ. Each poll is 1s; the window is
+        # bounded at 45s.
+        # Track which pids matched the --add-dir probe over the window so a
+        # failure message shows whether no session process was ever visible
+        # (launch never reached the pane) or one was visible without the var
+        # (launch built the command without the profile env).
         LEAN_ENV=""
+        LEAN_SEEN_PIDS=""
+        LEAN_SEEN_ARGV=""
         LEAN_TRIES=0
         while [[ "$LEAN_TRIES" -lt 45 && -z "$LEAN_ENV" ]]; do
-          if ps -eo args= 2>/dev/null | grep -F "$LEAN_PROJ" 2>/dev/null | grep -Fq "ENABLE_TOOL_SEARCH=true"; then
-            LEAN_ENV=1
-          fi
+          for LEAN_PID in $(ps -eo pid=,args= 2>/dev/null | grep -F -- "--add-dir $LEAN_PROJ" 2>/dev/null | awk '{print $1}'); do
+            # The probe's own grep/argv carries the literal path too - skip it.
+            case "$(ps -o comm= -p $LEAN_PID 2>/dev/null | head -n1)" in grep|awk) continue ;; esac
+            case " $LEAN_SEEN_PIDS " in
+              *" $LEAN_PID "*) ;;
+              *) LEAN_SEEN_PIDS="$LEAN_SEEN_PIDS $LEAN_PID"
+                 if [[ -z "$LEAN_SEEN_ARGV" ]]; then
+                   LEAN_SEEN_ARGV=$(tr '\0' ' ' < "/proc/$LEAN_PID/cmdline" 2>/dev/null | head -c 200)
+                 fi ;;
+            esac
+            # NOTE: the redirection must stay '< "..."' (quoted path); writing
+            # '</proc/...' would make the whole thing a literal tr ARGUMENT
+            # and tr would silently read its (empty) stdin instead of the file.
+            if tr '\0' '\n' < "/proc/$LEAN_PID/environ" 2>/dev/null | grep -Fq "ENABLE_TOOL_SEARCH=true"; then
+              LEAN_ENV=1
+              break
+            fi
+          done
           LEAN_TRIES=$((LEAN_TRIES+1))
           sleep 1
         done
         LEAN_STATE=$(curl "${curl_args[@]}" "$BASE/api/sessions/$LEAN_SID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state") or "")' 2>/dev/null || echo "")
         if [[ -n "$LEAN_ENV" ]]; then
-          ok "lean-session[tools]: the launched session's command line carries ENABLE_TOOL_SEARCH=true"
+          ok "lean-session[tools]: the launched session's claude process runs with ENABLE_TOOL_SEARCH=true in its environment"
         elif [[ "$LEAN_STATE" == "running" || "$LEAN_STATE" == "waiting_input" || "$LEAN_STATE" == "stalled" ]]; then
-          ko "lean-session[tools]: no command line for the session project directory carries ENABLE_TOOL_SEARCH=true while the session is state ${LEAN_STATE:-unknown}"
+          ko "lean-session[tools]: the session process (matched by --add-dir $LEAN_PROJ) does not carry ENABLE_TOOL_SEARCH=true in its environment while the session is state ${LEAN_STATE:-unknown}; pids seen over the 44s window: ${LEAN_SEEN_PIDS:-none} ${LEAN_SEEN_ARGV:+(first argv: $LEAN_SEEN_ARGV)}"
         else
-          skip "lean-session[tools]: ENABLE_TOOL_SEARCH check not confirmed - the session ended (state ${LEAN_STATE:-unknown}) before the launch command line could be observed (poll timing)"
+          skip "lean-session[tools]: ENABLE_TOOL_SEARCH check not confirmed - the session ended (state ${LEAN_STATE:-unknown}) before its process could be observed (poll timing)"
         fi
         # Launch the datawatch entry exactly as worker-mcp.json names it and
         # list its tools over MCP stdio. The helper bounds itself (60s
