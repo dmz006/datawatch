@@ -7767,6 +7767,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Archive keep-unmerged: true or false; anything else rejects the whole PUT.
+	if v, ok := patch["autonomous.archive_keep_unmerged"]; ok {
+		if _, verr := config.ParseArchiveKeepUnmerged(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
 	if verr := validateProgressPatch(patch); verr != nil {
@@ -10895,7 +10902,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.ArchiveGraceMinutes = &n
 			}
 		case "autonomous.archive_keep_unmerged":
-			if b, ok := v.(bool); ok {
+			if b, err := config.ParseArchiveKeepUnmerged(v); err == nil {
 				cfg.Autonomous.ArchiveKeepUnmerged = &b
 			}
 		case "autonomous.capacity_wait_timeout_seconds":

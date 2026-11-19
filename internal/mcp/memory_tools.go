@@ -985,6 +985,7 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Branch refresh keys: autonomous.branch_refresh_enabled (true|false; default false — merge the base branch into an Automaton branch between tasks) and "+
 			"autonomous.branch_refresh_behind_limit (whole number >= 0; commits behind before a refresh, 0 reads as 5); read them back with get_config section=autonomous. "+
 			"Archive grace key: autonomous.archive_grace_minutes (whole minutes >= 0; how long a cancelled Automaton is kept before it is archived, 0 = archive at once, default 60); read it back with get_config section=autonomous. "+
+			"Archive keep key: autonomous.archive_keep_unmerged (true|false, default true; keeps a finished Automaton whose branch still holds unmerged commits from being archived); read it back with get_config section=autonomous. "+
 			"A refused value returns the daemon's message and changes nothing."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),

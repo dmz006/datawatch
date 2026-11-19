@@ -549,6 +549,18 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
+		// archive_keep_unmerged: true or false; a bad value rejects the whole PUT.
+		if raw, ok := top["archive_keep_unmerged"]; ok {
+			var v any
+			if json.Unmarshal(raw, &v) != nil {
+				http.Error(w, "autonomous.archive_keep_unmerged: must be true or false", http.StatusBadRequest)
+				return
+			}
+			if _, verr := config.ParseArchiveKeepUnmerged(v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

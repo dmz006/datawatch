@@ -9740,6 +9740,24 @@ func (a AutonomousConfig) ArchiveKeepUnmergedOrDefault() bool {
 	return *a.ArchiveKeepUnmerged
 }
 
+// ParseArchiveKeepUnmerged validates a candidate autonomous.archive_keep_unmerged
+// value from a JSON boolean or the text true/false.
+func ParseArchiveKeepUnmerged(v any) (bool, error) {
+	const key = "autonomous.archive_keep_unmerged"
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return false, fmt.Errorf("%s: must be true or false, got %v", key, v)
+}
+
 // ParseArchiveGraceMinutes validates a candidate autonomous.archive_grace_minutes
 // value from a JSON number, an int or text. It must be a whole number >= 0.
 func ParseArchiveGraceMinutes(v any) (int, error) {
