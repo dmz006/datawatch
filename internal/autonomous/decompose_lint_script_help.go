@@ -5,8 +5,9 @@
 // The predicate (verifyScriptInvokesUnknownFlag) reads the task's
 // verification script — and any helper it sources, one level deep — and
 // for each long-flag invocation resolves the command on PATH and probes
-// it for its own help (`prefix --help`, then `prefix -h`, then the bare
-// prefix), each attempt under a bounded timeout. A flag that does not
+// it for its own help with `prefix --help` only (never `-h`, never the bare
+// prefix), under a bounded timeout, in its own process group, with its
+// output capped. A flag that does not
 // appear in that help as a whole option fires the rule. Skips, never
 // guesses: an unresolvable command, a probe that fails or prints
 // nothing, short flags, and a script that does not exist yet all skip.
@@ -14,7 +15,9 @@ package autonomous
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -160,16 +163,94 @@ func isBareWord(tok string) bool {
 	return true
 }
 
-// probeCommandHelp resolves the command prefix (its first word on PATH)
-// and returns the command's own help text: `prefix --help` first, then
-// `prefix -h`, then the bare prefix. Each attempt runs under
-// scriptHelpProbeTimeout; an attempt that fails or prints nothing
-// passes to the next, and a command whose every attempt fails or prints
-// nothing is skipped (skipped on uncertainty never fires). Results are
-// cached per command prefix so each prefix is probed at most once.
-func probeCommandHelp(prefix []string) (string, bool) {
-	bin, err := exec.LookPath(prefix[0])
+// scriptHelpMaxOutputBytes caps the output one help probe keeps. A probe
+// that prints more is read up to the cap and the rest is discarded, so a
+// streaming command can never grow the daemon's heap.
+const scriptHelpMaxOutputBytes = 64 << 10
+
+// scriptHelpWaitDelay is how long a probe waits, after its context ends, for
+// the child's output pipes to close before they are closed from this side.
+const scriptHelpWaitDelay = 2 * time.Second
+
+// cappedBuffer keeps at most max bytes and silently discards the rest. Write
+// reports the full length so the child is never failed by a short write.
+type cappedBuffer struct {
+	buf []byte
+	max int
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if room := c.max - len(c.buf); room > 0 {
+		if len(p) < room {
+			room = len(p)
+		}
+		c.buf = append(c.buf, p[:room]...)
+	}
+	return len(p), nil
+}
+
+// runBoundedProbe runs one help probe the bounded way: in a fresh scratch
+// working directory, in its own process group that is killed whole when ctx
+// ends, with the pipe wait bounded by scriptHelpWaitDelay and the combined
+// output capped at scriptHelpMaxOutputBytes. It returns what the child
+// printed (up to the cap) and the run error.
+func runBoundedProbe(ctx context.Context, name string, args ...string) ([]byte, error) {
+	scratch, derr := os.MkdirTemp("", "datawatch-help-probe-")
+	if derr != nil {
+		return nil, derr
+	}
+	defer os.RemoveAll(scratch)
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = scratch
+	out := &cappedBuffer{max: scriptHelpMaxOutputBytes}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	configureGateProcessGroup(cmd)
+	cmd.WaitDelay = scriptHelpWaitDelay
+	err := cmd.Run()
+	return out.buf, err
+}
+
+// isDaemonCommand reports whether name (a bare command name or a resolved
+// path) is the running daemon's own executable, by the name "datawatch", by
+// the executable's base name, or by file identity. A help probe must never
+// run it: the daemon's own subcommands act on the live daemon.
+func isDaemonCommand(name string) bool {
+	if name == "" {
+		return false
+	}
+	base := filepath.Base(name)
+	if base == "datawatch" {
+		return true
+	}
+	self, err := os.Executable()
 	if err != nil {
+		return false
+	}
+	if base == filepath.Base(self) {
+		return true
+	}
+	a, aerr := os.Stat(name)
+	b, berr := os.Stat(self)
+	return aerr == nil && berr == nil && os.SameFile(a, b)
+}
+
+// probeCommandHelp resolves the command prefix (its first word on PATH)
+// and returns the command's own help text from `prefix --help`, the only
+// form it ever runs. Only a bare command name plus at most one plain
+// subcommand word is probed; a longer prefix, a path, the daemon's own
+// executable, and a command whose help fails or prints nothing are all
+// skipped (skipped on uncertainty never fires). The probe runs under
+// scriptHelpProbeTimeout in its own process group with its output capped
+// (see runBoundedProbe). Results are cached per command prefix so each
+// prefix is probed at most once.
+func probeCommandHelp(prefix []string) (string, bool) {
+	if len(prefix) == 0 || len(prefix) > 2 || !scriptToolNameRe.MatchString(prefix[0]) ||
+		(len(prefix) == 2 && !scriptSubWordRe.MatchString(prefix[1])) {
+		return "", false
+	}
+	bin, err := exec.LookPath(prefix[0])
+	if err != nil || isDaemonCommand(prefix[0]) || isDaemonCommand(bin) {
 		return "", false
 	}
 	key := bin + "\x00" + strings.Join(prefix[1:], "\x1f")
@@ -180,21 +261,17 @@ func probeCommandHelp(prefix []string) (string, bool) {
 	}
 	scriptHelpProbeMu.Unlock()
 
-	attempts := [][]string{{"--help"}, {"-h"}, {}}
 	var help string
 	probed := false
-	for _, extra := range attempts {
-		args := append(append([]string{}, prefix[1:]...), extra...)
-		ctx, cancel := context.WithTimeout(context.Background(), scriptHelpProbeTimeout)
-		out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
-		cancel()
-		scriptHelpProbeMu.Lock()
-		scriptHelpProbeCount++
-		scriptHelpProbeMu.Unlock()
-		if err == nil && strings.TrimSpace(string(out)) != "" {
-			help, probed = string(out), true
-			break
-		}
+	args := append(append([]string{}, prefix[1:]...), "--help")
+	ctx, cancel := context.WithTimeout(context.Background(), scriptHelpProbeTimeout)
+	out, err := runBoundedProbe(ctx, bin, args...)
+	cancel()
+	scriptHelpProbeMu.Lock()
+	scriptHelpProbeCount++
+	scriptHelpProbeMu.Unlock()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		help, probed = string(out), true
 	}
 	res := helpProbeResult{help: help, ok: probed}
 	scriptHelpProbeMu.Lock()
