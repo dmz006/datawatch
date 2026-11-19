@@ -91,8 +91,8 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   `awaiting_approval` exactly like normal decompose output. Once it
   completes, the PRD-completion check re-fires automatically.
 - **`infra`/`scope`, during decompose itself** (the planning LLM call
-  failing, its response failing to parse, or a tooled plan skipping a
-  required verification script): the SAME retry budget and categories
+  failing, or a tooled plan skipping a required verification script): the
+  SAME retry budget and categories
   apply here too — decompose is not a separate mechanism. The failed
   attempt's own error text is fed into the next attempt's prompt
   ("Your previous attempt failed: ..."), the same single-use-hint
@@ -102,9 +102,15 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   revise. `scope`'s default budget of 0 means a verification-script
   violation still fails on the first attempt by default — an
   unchanged spec reproduces the identical violation, so retrying it
-  automatically wouldn't help — but `content`-category reasoning
-  never applies to decompose at all: there is no judgment verdict at
-  this stage, only a mechanism succeeding or failing.
+  automatically wouldn't help. A written-but-unparseable response is
+  the content side of decompose: it is a `content`-category retry (rule
+  `decompose-parse`) that spends the content budget — one retry at the
+  default configuration — and the parse error naming the offending
+  field and task is the hint carried back to the planner on the next
+  attempt. It is never an infra retry and never the terminal
+  invalid-response class. There is no judgment-verdict auto-fix at this
+  stage (no judgment verdict exists there); the content behavior in
+  decompose is the parse retry alone.
 
 ## Memory ceiling failures
 
