@@ -37,7 +37,7 @@ One of the two files the session launcher writes at the working directory root w
 
 ## Completion landing gate
 
-The check run before an Automaton's status changes to Completed: it passes only when the branch is merged into the default branch, a merge record names the commit, or the record has a no-code reason. A refusal leaves the status unchanged and records `completion_refusal`. Read-only on git; setting `autonomous.completion_landing.enabled` (default on). See [howto/automata-completion-landing.md](howto/automata-completion-landing.md) and [operations.md](operations.md#completion-landing-gate-autonomouscompletion_landing).
+The check run before an Automaton's status changes to Completed: it passes only when the branch is merged into the default branch, a merge record names the commit, or the record has a no-code reason. A refusal leaves the status unchanged and records `completion_refusal`. Read-only on git; setting `autonomous.completion_landing.enabled` (default on). The supervisor watch's `completed_unmerged` finding and the read-only `GET /api/autonomous/completed-unmerged` list name Automata that read Completed earlier with an unmerged branch. See [howto/automata-completion-landing.md](howto/automata-completion-landing.md) and [operations.md](operations.md#completion-landing-gate-autonomouscompletion_landing).
 
 ## Open high/critical alerts gate
 
