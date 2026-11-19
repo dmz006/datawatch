@@ -3844,7 +3844,10 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 			m.failDecomposeAttempt(prd, "decompose-llm", derr)
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
-		t, s, perr := ParsePlanning(r)
+		t, r, s, perr := m.parseAndLintDecompose(prd, r,
+			func(feedback string) (string, string, []Story, error) {
+				return m.retryDecomposeWithFeedback(prd, backend, planModel, effort, prompt+feedback)
+			})
 		if perr != nil {
 			// Written-verdict class (2026-10-19 incident; same class as
 			// BL478's 28KB-discarded-plan bug): a parse failure means the
@@ -3857,6 +3860,7 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
+		// (The parse above also ran the decompose-lint hook, in parseAndLintDecompose, and a panic in either step was recovered into the named DecomposeOutputError.)
 		// Decompose-lint hook (decompose_lint_hook.go), between a successful
 		// parse and the shared store tail: off is a complete no-op; shadow
 		// records findings on the PRD; enforce re-runs the decomposer within
@@ -3864,10 +3868,6 @@ func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 		// the prompt, then records what remained. The hook never fails the
 		// decompose — findings attach to the stored PRD, never fatal.
 		// decomposeStreamingCore keeps its identical call in sync.
-		t, r, s = m.decomposeLintHook(prd, t, r, s,
-			func(feedback string) (string, string, []Story, error) {
-				return m.retryDecomposeWithFeedback(prd, backend, planModel, effort, prompt+feedback)
-			})
 		// SHARED validation + store tail for the parsed plan (see
 		// validateAndStorePlan) — the single source of truth both
 		// decompose paths now call: retryable failures loop back into
@@ -4052,7 +4052,10 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 			m.failDecomposeAttempt(prd, "decompose-llm", derr)
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
-		t, s, perr := ParsePlanning(r)
+		t, r, s, perr := m.parseAndLintDecompose(prd, r,
+			func(feedback string) (string, string, []Story, error) {
+				return m.retryDecomposeWithFeedback(prd, backend, planModel2, effort, prompt+feedback)
+			})
 		if perr != nil {
 			// See Decompose()'s identical branch: a parse failure IS a
 			// written verdict (non-empty content only returns when the
@@ -4065,10 +4068,6 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result
 		// Decompose-lint hook (decompose_lint_hook.go) — identical to
 		// Decompose()'s call; see the hook's doc comment for the full
 		// off / shadow / enforce contract (never fails the decompose).
-		t, r, s = m.decomposeLintHook(prd, t, r, s,
-			func(feedback string) (string, string, []Story, error) {
-				return m.retryDecomposeWithFeedback(prd, backend, planModel2, effort, prompt+feedback)
-			})
 		// Same SHARED validation + store tail as Decompose (see
 		// validateAndStorePlan) — kept in one place rather than a second
 		// drifted copy; retry/terminal outcomes are handled identically.
