@@ -727,6 +727,9 @@ type Config struct {
 	CapacityCountPoolByNode     *bool `json:"capacity_count_pool_by_node,omitempty"`
 	CapacityAdoptBeforeAdmit    *bool `json:"capacity_adopt_before_admit,omitempty"`
 	CapacityAdoptionWaitSeconds int   `json:"capacity_adoption_wait_seconds,omitempty"`
+	// CapacitySlotReconcileGraceSeconds mirrors config.AutonomousConfig (0 = 60,
+	// otherwise at least 10).
+	CapacitySlotReconcileGraceSeconds int `json:"capacity_slot_reconcile_grace_seconds,omitempty"`
 	// CapacityRate* mirror config.AutonomousConfig: a per-llm: pool rolling
 	// ceiling on lease grants and recorded tokens (0 = none; window 0 = 3600).
 	CapacityRateRequests      int `json:"capacity_rate_requests,omitempty"`

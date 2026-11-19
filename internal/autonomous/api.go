@@ -749,6 +749,9 @@ func (a *API) SetConfig(v any) error {
 	if cfg.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("config: capacity_adoption_wait_seconds must be >= 0")
 	}
+	if g := cfg.CapacitySlotReconcileGraceSeconds; g < 0 || (g > 0 && g < 10) {
+		return fmt.Errorf("config: capacity_slot_reconcile_grace_seconds must be 0 (default 60) or at least 10")
+	}
 	// max_engines_per_node is clamped to 1 the same way config load does
 	// (config.Load normalizes anything below 1), so every write path agrees.
 	if cfg.MaxEnginesPerNode < 1 {
