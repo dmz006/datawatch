@@ -1347,6 +1347,14 @@ autonomous:
     # Number of shadow merge plans kept per project. Older plans are pruned
     # past this count. Default 200; a value below 1 falls back to the default.
     plan_keep: 200
+  # ── Completion landing gate (autonomous.completion_landing) ──
+  # A status change to completed is refused (the status stays as it was and a
+  # reason is recorded on the Automaton) unless its branch is merged into the
+  # default branch or the record carries an explicit no-code reason. The gate
+  # only reads git; it never merges, reverts or edits it. Absent or true = on;
+  # false turns the gate off.
+  completion_landing:
+    enabled: true
   # ── Lifecycle event notification sinks ──
   # Documented as autonomous.notify.default_events elsewhere (see
   # docs/implementation.md "Lifecycle event sinks" and the PWA settings

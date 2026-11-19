@@ -275,6 +275,12 @@ func (m *Manager) MarkPRDCompleted(id, release string, mergedAt time.Time, commi
 	if at.IsZero() {
 		at = time.Now() // only direct callers with no merge time; the migration always passes one
 	}
+	if p.Status != PRDCompleted {
+		// Post-ship hook: the caller's commit is the merge evidence.
+		if allowed, why := m.checkCompletionLanding(context.Background(), p, CompletionPathPostShip, "pass", commit); !allowed {
+			return nil, fmt.Errorf("prd %q: %s", id, why)
+		}
+	}
 	var refuse error
 	changed := false
 	m.store.WithLock(func() {

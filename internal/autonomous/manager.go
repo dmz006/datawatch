@@ -1498,6 +1498,10 @@ type Manager struct {
 	// merge reads its enabled switch and gate timeout from; guarded by mu and
 	// set with SetMergeShadowConfig (merge_shadow_hook.go).
 	mergeShadow config.MergeShadowConfig
+	// completionLanding and completionLandingGit back the completion landing
+	// gate (completion_landing.go); guarded by mu.
+	completionLanding    config.CompletionLandingConfig
+	completionLandingGit CompletionLandingGit
 	// judgeVerdictCache — per-commit judge verdict cache
 	// (judge_verdict_cache.go): in-memory + JSON-persisted under the same
 	// autonomous data directory as the PRD store, so a completed pass/block
