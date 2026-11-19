@@ -44,7 +44,7 @@ The gate refuses new completions only. Records that read Completed before the ga
 - MCP: `autonomous_completed_unmerged` (same object).
 - CLI: `datawatch autonomous completed-unmerged [--json]`.
 
-An Automaton is not listed when its record has a no-code reason, a merge commit, a landing record or default-branch work, or when its latest judge outcome is block or fail. The list only reads: nothing is merged, reverted or edited. Fix a listed one the same way as a refusal: merge the branch, or record a no-code reason. The finding closes on the next poll once the branch is merged.
+An Automaton is not listed when its record has a no-code reason, a merge commit, a landing record or default-branch work. The list only reads: nothing is merged, reverted or edited. Fix a listed one the same way as a refusal: merge the branch, or record a no-code reason. The finding closes on the next poll once the branch is merged.
 
 ## Setting
 
