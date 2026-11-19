@@ -3323,6 +3323,12 @@ autonomous:
   # Whole minutes a cancelled Automaton is kept before the supervisor loop
   # archives it. Default 60; 0 archives it at once.
   archive_grace_minutes: 60
+  # Keep a completed, rejected or cancelled Automaton whose branch still holds
+  # commits that are not on the base branch (default true; false releases the
+  # guard for completed and rejected only — a cancelled one keeps its guard
+  # either way). Read by the supervisor loop's close step; your own archive is
+  # unaffected.
+  archive_keep_unmerged: true
   # Pool fall-through (default false). When a task's requested LLM pool is full
   # and another allowed backend/model can take it now, admit it there instead
   # of waiting. Off = a task always waits for its own pool. The alternates are
@@ -4803,7 +4809,9 @@ autonomous:
     # from its most recent cancel (0 or more). 0 archives it at once. A
     # cancelled Automaton whose branch holds commits that are not on the
     # base branch is not archived by the loop until you archive it, its
-    # work is merged, or its branch is deleted.
+    # work is merged, or its branch is deleted. Still accepted, but the
+    # close step now reads autonomous.archive_grace_minutes (same default);
+    # this key no longer drives the step.
     "supervisor_loop.archive_cancelled_after_minutes": 60
     # Lane count bounds for the lane_count step. max 0 means no bounds, so the
     # step moves nothing. When set, max must be at least min.

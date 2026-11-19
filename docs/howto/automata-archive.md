@@ -58,6 +58,22 @@ A cancelled Automaton also waits for its own short grace period before it
 becomes eligible; see [operations.md](../operations.md) for
 `autonomous.archive_grace_minutes`.
 
+## The supervisor loop's guard on unmerged branch work
+
+Separate from this batch archive, the supervisor loop's *close finished
+records* step — which archives a completed, rejected or cancelled record on
+its own schedule — now keeps **every one of those three states** while its
+branch still holds commits that are not on the base branch, not just a
+cancelled one. The check is read-only and conservative: a branch that is
+gone, or a branch with nothing ahead of base, lets the record go; anything
+it cannot tell is kept. For completed and rejected records you can release
+the guard with `autonomous.archive_keep_unmerged: false` (unset reads
+`true`); a cancelled record keeps its guard either way, and its grace is the
+`autonomous.archive_grace_minutes` setting. Your own archive through this howto
+is unaffected by either: it archives whenever the eligibility above holds.
+See [operations.md](../operations.md) (*Keep unmerged branch work on
+archive*) and [the supervisor loop howto](supervisor-loop.md).
+
 ## Run the archive: dry run first, then apply
 
 Always look before you move anything.
@@ -118,6 +134,7 @@ need to open it by hand.
 |---|---|---|
 | `autonomous.archive.enabled` | `true` | Lets the daemon archive finished Automata on its own, at low frequency and never while an Automaton write is in progress. Set it to `false` and only `datawatch autonomous archive --apply` archives. |
 | `autonomous.archive.retention_days` | `30` (a value of `0` means 30) | How many days old a finished Automaton must be before it is archived. A negative number is refused. |
+| `autonomous.archive_keep_unmerged` | `true` | Read by the supervisor loop's close step, not by this batch archive: while `true` (the default) it keeps a completed or rejected Automaton whose branch holds commits that are not on the base branch. See above. |
 
 Both change live, with no restart:
 
@@ -138,6 +155,7 @@ They are also settable from the web app (Settings, General, Autonomous), from
 | The dry run lists nothing | No finished Automaton is older than the retention window, or the ones that are old are skipped (running task, open session, unmerged branch). Lower `autonomous.archive.retention_days` or finish the work first |
 | An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is a cancelled one still inside its grace period |
 | `--id` answers "automaton is not archived" | That Automaton has not been archived. Run the dry run to see whether it qualifies |
+| A finished Automaton the supervisor loop never closes | Its branch still holds commits that are not on the base branch (the loop keeps completed, rejected and cancelled records in that case). Merge the branch, delete it, or — for completed and rejected ones — set `autonomous.archive_keep_unmerged: false`; a cancelled one additionally needs its grace to have passed |
 | The apply run stops with a backup error | One backup copy did not verify by size and SHA-256. Nothing was changed. Check free disk space and run it again |
 | The daemon does not archive by itself | `autonomous.archive.enabled` is `false`. Set it to `true`, or apply by hand |
 
