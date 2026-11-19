@@ -1145,6 +1145,25 @@ Automaton, a judge or verifier is being started without a node lease; check the
 node pools and the holder in [Readable holder names](#readable-holder-names).
 There is no setting for this reconcile and nothing to turn on.
 
+### Confirming a freed slot
+
+A judge or verifier can keep holding a pool slot after its session ended or
+its Automaton merged. Every ten seconds the daemon frees a pool slot that has
+no live session and no node lease. Each freed slot raises an alert that says
+which slot was freed and why. A slot whose session is still running is never
+freed, and the reconcile never ends a session.
+
+To confirm:
+
+1. Open the alert list and find the `Capacity slot freed` alert. Read the
+   slot it names and the reason (`no live session and no node lease`, or
+   `Automaton finished`).
+2. Open the capacity view (`datawatch capacity`, or the Capacity and budget
+   card) and check that the pool's held count dropped by one and that the
+   holder is no longer listed.
+3. If the holder is still listed, its session is still running, so it was
+   correctly left alone.
+
 ## Readable holder names
 
 You don't need to keep a task-id diary. Wherever the capacity surfaces used
