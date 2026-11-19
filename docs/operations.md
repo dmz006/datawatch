@@ -8750,6 +8750,19 @@ Set it from PWA Settings (Observer), `datawatch config set`, the MCP `config_set
 
 The mobile apps still need to drop the stale badge and add the per-peer note; see `docs/plans/parity-issues/20070001.md`.
 
+## Observer pull: reading a stale peer
+
+A pulled peer that fails to answer is marked `stale` with a `stale_reason` (`timeout`, `error`, `forbidden`, `not_permitted`, `bad_payload` or `unknown`) and keeps that state until a fetch succeeds. Each row's last attempt time (`last_attempt_at`, shown in the `pull` object of `GET /api/observer/peers`) is published with the outcome of that attempt, so the time and the reason always describe the same fetch. A fetch still in flight does not change either value.
+
+To check a stale peer, read `GET /api/observer/pull` or `datawatch observer pull status` and then:
+
+1. `timeout` or `error`: check the peer's API is reachable from this daemon and raise the peer's `observer_pull_timeout_s` if the peer is slow to answer.
+2. `forbidden`: the peer answered 401/403. Check the peer's bearer token in the federation peer entry.
+3. `not_permitted`: the token lacks `observers:read`. No request is sent; fix the token's capability on the peer.
+4. `bad_payload`: the peer's `/api/observer/stats?v=2` body did not decode. Check the peer's daemon version.
+
+See [howto/federated-observer](howto/federated-observer.md#pull-mode) for setup and the push/pull comparison.
+
 ## Peer TLS (verify by default)
 
 Every outbound connection the daemon makes to a registered peer — remote servers (`servers:` / proxy mode) and federation peers — **verifies the peer's TLS certificate against the system trust store by default**. An `https://` peer with a trusted-CA certificate works with no extra setting; a peer with a self-signed or private-CA certificate fails the TLS handshake until one of the per-peer options below is set.

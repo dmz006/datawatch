@@ -345,6 +345,12 @@ A slow or blocked peer never delays the others: each target pulls in its
 own goroutine with its own timeout, and a failed peer is simply marked
 stale with a reason until the next fetch succeeds.
 
+A peer's last attempt time and the outcome of that attempt (its stale flag,
+stale reason and last success) are recorded together. While a fetch is still
+running, the row keeps the previous attempt's time and outcome; it does not
+show a new attempt time with an old result. When you read a row, take its
+last attempt time and its stale reason as one reading.
+
 ### Configuring pull
 
 Global defaults (primary side), `~/.datawatch/datawatch.yaml`:
