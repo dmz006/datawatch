@@ -3352,9 +3352,10 @@ autonomous:
   capacity_count_pool_by_node: true
   capacity_adopt_before_admit: true
   capacity_adoption_wait_seconds: 30
-  # capacity_slot_reconcile_grace_seconds: how long a capacity slot may look
-  # unmatched to a live worker before it is reconciled away (seconds;
-  # default 60, minimum 10; 0 = 60).
+  # capacity_slot_reconcile_grace_seconds: how long a freshly admitted capacity
+  # lease counts as having a node lease in the orphan slot reconcile, so the
+  # holder is not freed as an orphan during that window (seconds; default 60,
+  # minimum 10; 0 = 60). Read live. Values 1-9 and negatives are refused.
   capacity_slot_reconcile_grace_seconds: 60
   # How often the daemon re-checks LLM role tags for contention (seconds):
   # two enabled entries claiming one role, or two roles that have converged on
