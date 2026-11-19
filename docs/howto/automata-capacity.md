@@ -1122,8 +1122,10 @@ When you see that alert:
 
 A judge or verifier can end up holding a slot in the pi-prompt pool (`llm:pi-prompt`)
 with no live session and no node lease. The lane then sits wasted while a node
-is idle. The daemon now frees these on every capacity tick (the same tick that
-reaps leaked leases):
+is idle. The common leak is already closed at the source — when the daemon
+frees a task's capacity, it releases the task's verifier lease along with it —
+and whatever still slips through, the daemon frees on every capacity tick (the
+same tick that reaps leaked leases):
 
 - A `judge:` or `verify:` holder with **no live session and no node lease** is freed.
 - A judge or verifier whose **Automaton is finished** (merged, cancelled or
@@ -1135,10 +1137,11 @@ reaps leaked leases):
 - Running it again frees nothing more.
 
 **What you see.** One journal line per freed slot
-(`[capacity] reaped leaked lease holder=... pool=... : <reason>`), one alert
-titled `Capacity slot freed` that names the holder in plain words with the short
-id second, and one count on the reaped-leases metric. The reason is
-`no live session and no node lease` or `Automaton finished`.
+(`[capacity] reaped leaked lease holder=... pool=...: <reason>`), one alert
+titled `Capacity slot freed` whose body reads `Freed a pi-prompt worker
+(llm:pi-prompt) slot held by <holder>: <reason>` with the holder in plain
+words and the short id second, and one count on the reaped-leases metric. The
+reason is `no live session and no node lease` or `Automaton finished`.
 
 **Operator review.** The alert is informational. If it repeats for the same
 Automaton, a judge or verifier is being started without a node lease; check the
@@ -1149,9 +1152,10 @@ There is no setting for this reconcile and nothing to turn on.
 
 A judge or verifier can keep holding a pool slot after its session ended or
 its Automaton merged. Every ten seconds the daemon frees a pool slot that has
-no live session and no node lease. Each freed slot raises an alert that says
-which slot was freed and why. A slot whose session is still running is never
-freed, and the reconcile never ends a session.
+no live session and no node lease, or whose Automaton is finished. Each freed
+slot raises an alert that says which slot was freed and why. A slot whose
+session is still running is never freed, and the reconcile never ends a
+session.
 
 To confirm:
 
