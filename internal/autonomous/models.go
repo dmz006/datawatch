@@ -505,7 +505,10 @@ type PRD struct {
 	// a runaway decomposition can't tank the daemon.
 	ParentPRDID  string `json:"parent_prd_id,omitempty"`
 	ParentTaskID string `json:"parent_task_id,omitempty"`
-	Depth        int    `json:"depth,omitempty"`
+	// CarriedFromID is the archived Automaton whose title, spec and branch
+	// this draft carries forward (CarryForwardArchived). Empty otherwise.
+	CarriedFromID string `json:"carried_from_id,omitempty"`
+	Depth         int    `json:"depth,omitempty"`
 
 	// AutomationID is the Automation this Automaton is currently a member of (empty = standalone). Maintained by the Automation store; nothing reads it for execution yet.
 	AutomationID string `json:"automation_id,omitempty"`

@@ -21,10 +21,11 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs sixteen checks — one per finding kind, the
-sixteen (16) finding kinds this howto lists. Fourteen of them are checks the
-supervisor script (`scripts/supervisor-watch.py`) runs by hand today; two
-(`worktree_not_registered` and `verify_script_not_executable`) are new in the
+call**, it runs seventeen checks — one per finding kind, the
+seventeen (17) finding kinds this howto lists. Fourteen of them are checks the
+supervisor script (`scripts/supervisor-watch.py`) runs by hand today; three
+(`worktree_not_registered`, `verify_script_not_executable` and
+`archived_unmerged`) are new in the
 watch, and the script has several checks of its own the watch does not have yet
 — see "Where the watch and the script differ" below. Each thing it finds is kept
 as one **finding** with a stable kind, shown on every surface, and — once the
@@ -54,7 +55,7 @@ reloads a model. It reads, it records, it tells you.
 
 ## What the watch reports
 
-The finding kinds are a fixed vocabulary of the sixteen (16) kinds in the
+The finding kinds are a fixed vocabulary of the seventeen (17) kinds in the
 table below; the names there are exactly what you see in the `kind` field on
 every surface. The **subject** is the stable id the
 finding is about. A kind plus a subject is one finding, so the same problem on
@@ -68,6 +69,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `task_failed` | A task in an Automaton failed. Read the verifier verdict before retrying. | The Automaton id |
 | `task_review_needed` | A task in a running or blocked Automaton is held for a person to review (for example after it used up its attempts). It is read from the tasks themselves, not from the triage record, because the record of an Automaton held for review names no task. | The Automaton id |
 | `automaton_not_merged` | An Automaton finished all of its work, every task completed, and is waiting to be merged. | The Automaton id |
+| `archived_unmerged` | An archived Automaton's branch still holds commits that are not on the base branch — its work never landed after the record was archived. One finding per such archived record; the line names the title, the id, the branch and how many commits are ahead, and says to carry the work forward into a new draft on that branch. The check is bounded and read-only: at most eight branch checks per pass and each result is cached for a couple of minutes, so a large archive does not turn every pass into git work. A branch the check cannot verify does not open a finding on its own, but it does not clear an open one either — the finding stays until the branch is merged, is deleted, or the check can tell. | The Automaton id |
 | `idle_lane_eligible_work` | A lane is idle while Automata work that is eligible to run on it is waiting. This reads the lane fill's own status; the watch applies no eligibility rules of its own. | The lane name |
 | `worktree_no_gomod` | A running Automaton's worktree has no `go.mod`, so its project directory is broken. Only raised for a project that is a Go project. | The Automaton id |
 | `worktree_not_registered` | A running Automaton's project directory is not one of the registered worktrees of its repository. | The Automaton id |
@@ -184,9 +186,11 @@ The comparison is kind-and-subject against what the script recorded, so these
 differences are expected and are not bugs. Know them before you read the first
 day's result.
 
-- **Two watch-only kinds.** `worktree_not_registered` and
-  `verify_script_not_executable` are watch-only: the script never prints a
-  line for either, so the comparison cannot match them. Whenever either is
+- **Three watch-only kinds.** `worktree_not_registered`,
+  `verify_script_not_executable` and `archived_unmerged` are watch-only: the
+  script never prints a
+  line for any of them, so the comparison cannot match
+  them. Whenever one is
   open, the comparison lists it under **only the watch**, and that day does not
   count toward the days of full agreement. Treat each as a real finding to look
   at (or fix) rather than as a disagreement to chase, and expect a quiet day to
@@ -292,7 +296,7 @@ Every key is read live: a change takes effect on the next pass with no restart. 
 value is refused on every write path — an unknown mode, a negative minute
 threshold, a `poll_seconds` below 60, a non-text path or model name — and nothing
 is written. Until `working_model` is set, the `model_not_resident` check stays off
-and the other fifteen are unaffected.
+and the other sixteen are unaffected.
 
 ## The stuck-running message
 

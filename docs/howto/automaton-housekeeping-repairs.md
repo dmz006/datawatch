@@ -75,6 +75,16 @@ anything, raises an alert or changes a mode. It is on every surface:
 | Chat | `autonomous housekeeping-repairs` |
 | Web UI | the **Housekeeping repairs** card on the Automation view's Housekeeping sub-tab, refreshed every 30 seconds, and a group row under Settings, Automata, Housekeeping repairs |
 
+The same view lists **intermittent test failures** after the groups. When the
+merge check of a finished Automaton runs the tests and one fails on the first
+run and passes on the rerun, the daemon files a defect record with the test
+name, the failure message, the first lines of the failing output, the date and
+the commit under test, and raises one alert titled with the test name. The merge
+is not blocked. The same test at the same commit is one record, however often
+the check runs. These rows have no mode and nothing to repair: they are on every
+surface above (REST field `intermittent_defects`, the same MCP tool, CLI and
+chat verb, and the card) and need a fix in the test or the code.
+
 A group's mode is changed only through the config set paths, key
 `autonomous.housekeeping_repairs.<group>`; none of the read surfaces can change
 it. In `report` only `would` entries are produced; in `on`, `did`, `failed` and
@@ -288,6 +298,9 @@ kind in the watch yet, and `CI STUCK` is `ci_stuck`).
 | `DAEMON` (`daemon_inactive`) | The Automaton daemon is not active on a registered compute node. | No: restarting a service is never automatic. | Reports it. | Starting the service. |
 | `CI STUCK` (`ci_stuck`) | A CI run has been in progress abnormally long, so the release pipeline is stalled. | No. | Reports it. | Cancelling or re-running the run. |
 | `CI RED` (`ci_red`) | A CI run failed. | No: a red run needs a person, and security workflows are never touched. | Reports it. | Reading the failure and the fix. |
+| `archived_unmerged` | An archived Automaton's branch still holds commits that are not on the base branch — its work never landed after the record was archived. One finding per such archived record. (The supervisor script has no line for it; the finding is watch-only.) | No: starting a new draft from an archived record, or merging, is an operator decision. | Reports it. | Carrying the work forward into a new draft on that branch (the remedy the finding names), or merging it first; the branch can also be handled from the **unlanded work** list (keep, archive-branch, delete-worktree). |
+| `priority_stall` | A queued Automaton at or above the watch's priority floor has been waiting past the stall threshold. | No: starting it is an operator decision. | Reports it. | Looking at it, starting it, or changing its priority or the threshold. |
+| `backlog` | The queue of Automata that need attention — the waiting ones plus the failed or blocked ones that still have work left — in one finding, highest priority first. | No. | Reports it. | Working the list in the order it names. |
 
 A check that cannot tell says nothing. Every repair acts only on a finding that
 is still open at the end of its grace, and a finding that closes by itself in
@@ -370,7 +383,8 @@ Whatever the mode of any group, a repair never:
   only an operator release or extend changes it.
 
 Kinds that are not in a group (`MERGE READY`, `SILENT`, `TMUX`, `NODE`, `MODEL`,
-`MAIN`, `DAEMON`, `CI STUCK`, `CI RED`) are reported in every mode.
+`MAIN`, `DAEMON`, `CI STUCK`, `CI RED`, `priority_stall`, `backlog` and
+`archived_unmerged`) are reported in every mode.
 
 ## What a skipped unsafe finding means
 

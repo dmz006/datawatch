@@ -170,6 +170,10 @@ skipped by the rules below that read a script; the warn rule
 | `final_gate_artefact_allowed` | block | Asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; the gate runs after every standard task has landed, so a finite whole-set claim can only fail. | Assert only the files this task adds, or guard the claim so it skips when the final gate re-runs the script. |
 | `script_invokes_known_flag` | block | Invokes a command with a long flag (`--flag`) the command's own help does not list as a whole option — a flag invented from memory. | Check each command and flag against the real binary's help (`command --help`) before accepting the script; short flags and a command that does not resolve or answer a bounded help probe are out of scope. |
 | `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not name — the check is anchored to an assumption about output shape, not to the spec. | Name the exact heading or phrase in the spec the script checks (a "Gates section" in the spec anchors a grep of `## Gates`). |
+| `verify_script_artefact_files` | block | The script flags changed files the task did not plan, without exempting `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` (stricter shape check than `artefact_files_allowed`). | Exempt those paths from the "unexpected files" check, or check only the files the task adds. |
+| `verify_script_final_gate_rerun` | block | A script asserts the changed-file set against a finite allow-list with no guard the lint recognizes for the final gate rerunning it on the cumulative tree. | Guard it with an env var (`DATAWATCH_*`, `SKIP_*`, `FINAL*`), a `--final` argument, or a check limited to files the task adds. |
+| `verify_script_unknown_flag` | block | The script passes a long flag to a command (or one of its subcommands) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted. | Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked. |
+| `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec. | State the exact heading or the exact format being checked, word for word, in the task spec. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 | `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
@@ -179,10 +183,12 @@ skipped by the rules below that read a script; the warn rule
 
 **Operator note.** The rows fall in three groups:
 
-- The first seven (`verify_script_task_files_only`,
+- The first eleven (`verify_script_task_files_only`,
   `verify_script_docs_without_sync`, `artefact_files_allowed`,
   `final_gate_artefact_allowed`, `script_invokes_known_flag`,
-  `check_matches_spec_text`, `final_gate_without_script`) are rules in
+  `check_matches_spec_text`, `final_gate_without_script`,
+  `verify_script_artefact_files`, `verify_script_final_gate_rerun`,
+  `verify_script_unknown_flag`, `verify_script_text_not_in_spec`) are rules in
   the rule pack, severity `block`: in `enforce` mode they feed the planner a
   retry with the findings as guidance; in `shadow` mode they are recorded on
   the Automaton and nothing is retried. An operator rule with the same id can
@@ -345,11 +351,13 @@ in tests. See **Verification lint gate** in [the definitions](../datawatch-defin
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All seven verification-script
+- **Block severity is the shipped default.** All eleven verification-script
   stability rules are `block` (`verify_script_task_files_only`,
   `verify_script_docs_without_sync`, `artefact_files_allowed`,
   `final_gate_artefact_allowed`, `script_invokes_known_flag`,
-  `check_matches_spec_text` and `final_gate_without_script`): in `enforce`
+  `check_matches_spec_text`, `final_gate_without_script`,
+  `verify_script_artefact_files`, `verify_script_final_gate_rerun`,
+  `verify_script_unknown_flag` and `verify_script_text_not_in_spec`): in `enforce`
   mode a script that breaks one sends the plan back to
   the planner (up to `max_retries`) before any task runs. Decide whether you
   want that, or want `shadow` first to see how often your planners trip them;
