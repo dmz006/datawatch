@@ -6853,6 +6853,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"archive_grace_minutes":                s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
+			"archive_keep_unmerged":                s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
 			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
 			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
 			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
@@ -10875,6 +10876,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.archive_grace_minutes":
 			if n, err := config.ParseArchiveGraceMinutes(v); err == nil {
 				cfg.Autonomous.ArchiveGraceMinutes = &n
+			}
+		case "autonomous.archive_keep_unmerged":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.ArchiveKeepUnmerged = &b
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
