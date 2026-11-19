@@ -104,7 +104,7 @@ timing assumption — in the test or the code it exercises: a passing rerun is
 not a fix, and it is never repaired by a retry, a longer sleep, loading the
 machine up before the run, or excluding the test. How to prove the fix (the
 repeated run under the race detector) is in
-[testing.md](../testing.md#proving-a-flaky-test-fix).
+[testing.md](../testing.md#proving-an-intermittent-test-fix).
 
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
