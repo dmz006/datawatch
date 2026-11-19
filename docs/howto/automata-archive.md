@@ -54,9 +54,7 @@ An Automaton is archived when all of these hold:
   completed record whose work branch is not merged is skipped and never forced.
   It is picked up on a later run once it qualifies.
 
-A cancelled Automaton also waits for its own short grace period before it
-becomes eligible; see [operations.md](../operations.md) for
-`autonomous.archive_grace_minutes`.
+A cancelled Automaton has no grace of its own in this batch archive: cancelling stamps its update time, so a freshly cancelled one is simply skipped as newer than the retention window and picked up once it is old enough. The `autonomous.archive_grace_minutes` grace is a separate thing — it delays only the supervisor loop's close step for a cancelled record (below), not this batch archive; see [operations.md](../operations.md) for it.
 
 ## The supervisor loop's guard on unmerged branch work
 
@@ -206,7 +204,7 @@ They are also settable from the web app (Settings, General, Autonomous), from
 | Symptom | Cause and fix |
 |---|---|
 | The dry run lists nothing | No finished Automaton is older than the retention window, or the ones that are old are skipped (running task, open session, unmerged branch). Lower `autonomous.archive.retention_days` or finish the work first |
-| An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is a cancelled one still inside its grace period |
+| An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is still inside the retention window (a fresh cancel stamps the update time, so it counts as new) |
 | `--id` answers "automaton is not archived" | That Automaton has not been archived. Run the dry run to see whether it qualifies |
 | A finished Automaton the supervisor loop never closes | Its branch still holds commits that are not on the base branch (the loop keeps completed, rejected and cancelled records in that case). Merge the branch, delete it, or — for completed and rejected ones — set `autonomous.archive_keep_unmerged: false`; a cancelled one additionally needs its grace to have passed |
 | The apply run stops with a backup error | One backup copy did not verify by size and SHA-256. Nothing was changed. Check free disk space and run it again |
