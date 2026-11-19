@@ -5521,6 +5521,119 @@ See [howto/autonomous-recovery](howto/autonomous-recovery.md).
 
 ---
 
+## Decompose output and daemon aborts (SIGABRT, core dump)
+
+### The 2026-11-18 abort
+
+The daemon aborted with SIGABRT and a core dump right after reading a
+Claude decompose session's output. Cause: the decompose-lint rule
+`script_invokes_known_flag` resolves a verification script's commands and
+probes their help; before the fix its fallback was to run the command's
+**bare prefix** (no arguments, no flags) as a third attempt after `--help`
+and `-h` — with no working directory, no process group and an unbounded
+output buffer. A long-running or streaming command in that position ran
+until the daemon's memory was exhausted and the Go runtime aborted the
+process. The full cause analysis is in
+`.datawatch/reports/decompose-abort-cause.md` (tracked with the fix).
+
+### What changed
+
+- **The help probe is bounded.** It runs `prefix --help` only — never `-h`,
+  never the bare prefix — in a fresh scratch working directory, in its own
+  process group (killed whole when the timeout fires), under a 5-second
+  timeout, with its combined output capped at 64 KiB and its pipe wait
+  bounded (2 seconds). A command that does not resolve, a probe that times
+  out, fails or prints nothing, and short flags are all skipped — the rule
+  skips on uncertainty rather than guessing. See
+  [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md).
+- **A bad decompose output fails the Automaton, not the daemon.** The raw
+  output is refused above 8 MiB before it is parsed; the parse-plus-lint
+  step — shared by the sync and streaming decompose paths and the
+  re-attached planner ingest — runs under a panic guard, so a Go panic in
+  the parser or the lint is recovered and returned as the named failure
+  `decompose output unparseable: <reason>` (output length plus a 200-byte
+  head). See
+  [howto/automaton-decompose-lint.md](howto/automaton-decompose-lint.md).
+- **It is a written verdict, never an infra retry.** The failure is the
+  Automaton's planning failure, source `decompose-parse`, category
+  `invalid-response`, `retryable: false`, outside the `infra` budget — a
+  plan the model wrote that the daemon cannot parse, re-run the same way,
+  would only reproduce itself. On a give-up the Automaton rolls back to
+  `draft` with the exact failure text kept as its last decompose failure
+  (`last_decompose_failure`), one warning alert is raised, and the daemon
+  keeps running — nothing restarts it. The raw output is kept at
+  `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`
+  (a collision suffix if one already exists) for inspection. Two adjacent
+  sources are different: a decompose **LLM call** that fails before
+  producing output is source `decompose-llm`, category `infra` (the
+  ordinary infra-retry path), and a store **persistence** failure is source
+  `decompose-persist`, category `infra`, retryable. The operator view —
+  including how to fix it (re-run the decompose or revise the spec) — is in
+  [howto/decompose-async.md](howto/decompose-async.md) ("When the decompose
+  output cannot be parsed"). See
+  [howto/retry-policy.md](howto/retry-policy.md).
+- **The journal keeps the daemon's stderr.** Before this fix the daemon
+  redirected its stderr (fd 2) into `<data>/daemon-crash.log` at start, so
+  from boot on the service journal received nothing from the daemon and its
+  ordinary log lines landed in the crash log. Stderr is now left untouched —
+  the journal (and every other stderr consumer) keeps receiving everything —
+  and the runtime's fatal crash output is additionally written to the crash
+  log (Go 1.23+ `debug.SetCrashOutput`). The practical difference: look in
+  the journal (`journalctl -u datawatch`) for the daemon's ordinary log
+  lines, and in `<data>/daemon-crash.log` for the per-start header and the
+  crash dumps only.
+
+### When the daemon still dies silently
+
+1. `<data>/daemon-crash.log` — the daemon runs with `GOTRACEBACK=crash` and
+   registers this file for the runtime's fatal crash output at start; a Go
+   fatal error (the SIGABRT class) leaves its full dump here, appended under
+   a per-start header line `=== datawatch vX started pid=… at … ===`, so
+   crashes from different process starts are distinguishable. Stderr itself
+   is left untouched, so the service journal keeps receiving everything the
+   runtime prints on a fatal error alongside this file copy.
+2. `coredumpctl list`, then `coredumpctl info <pid>` — the core behind the
+   SIGABRT, when the host keeps cores. (The 2026-11-18 host had no
+   `coredumpctl` installed, which is why the abort first surfaced as the
+   daemon vanishing.)
+
+### What `status 6/ABRT` with no Go panic text meant before the fix
+
+Before the stderr fix, the daemon redirected its stderr (fd 2) into
+`<data>/daemon-crash.log` at start, so the service journal had no stderr
+stream from the daemon at all. When the Go runtime aborted the process, the
+only trace in the journal was systemd's exit line — `status=6/ABRT`
+(signal 6, SIGABRT). That combination — an abort status and *no* Go panic
+text anywhere in the journal — is how you recognize a hard runtime abort
+(out of memory, concurrent map writes, the SIGABRT class) rather than an
+ordinary error: the fatal message the runtime prints went to the crash log
+file, and the journal, with no stream wired up, had nothing else to show. On
+the 2026-11-18 host there was no `coredumpctl` either, so the daemon looked
+as if it had simply vanished. After the fix, both the journal and
+`<data>/daemon-crash.log` carry the runtime's fatal text, so an abort is
+readable from either one.
+
+### What to attach when reporting a crash
+
+1. The daemon version — `datawatch version`, or the
+   `=== datawatch vX started pid=… at … ===` header line in the crash log.
+2. The crash log around the affected start — the tail of
+   `<data>/daemon-crash.log` from the `=== datawatch … started pid=<pid>`
+   line matching the death; it holds the runtime's full fatal dump (all
+   goroutines, the daemon runs with `GOTRACEBACK=crash`).
+3. The journal around the death — `journalctl -u datawatch --since <time>`,
+   which now carries the daemon's ordinary log lines and the runtime's fatal
+   text plus the exit status (`status=6/ABRT` for an abort).
+4. The core, when the host keeps cores — `coredumpctl list`, then
+   `coredumpctl info <pid>` for the backtrace (attach the output, or the
+   core itself if you can transfer it).
+5. If a decompose was in flight — the `decompose-output.json.failed`
+   artifact from the Automaton's scratch directory and the Automaton's id,
+   so the unparseable plan can be reproduced (see
+   [howto/decompose-async.md](howto/decompose-async.md)).
+
+---
+
 ## Notification Routing Across Comm Channels
 
 Every comm channel you enable (Signal, Telegram, Discord, Slack, Matrix,
