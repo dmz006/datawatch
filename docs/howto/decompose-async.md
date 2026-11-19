@@ -217,8 +217,6 @@ different class of failure — see
 
 ## If the daemon itself aborts (SIGABRT, core dump)
 
-## If the daemon itself aborts (SIGABRT, core dump)
-
 The 2026-11-18 abort — the daemon dying with SIGABRT and a core dump right
 after reading a decompose session's output — came from a decompose-lint help
 probe whose fallback ran a command's bare prefix with no working directory,
