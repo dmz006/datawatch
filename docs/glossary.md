@@ -49,6 +49,14 @@ task whose requested capacity pool cannot be granted is admitted on an
 alternate backend that has room instead of waiting. Verifiers never fall
 through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-through).
 
+## Orphan slot reconcile
+
+A check on every capacity tick that frees a pi-prompt slot held by a judge or
+verifier with no live session and no node lease, or whose Automaton is finished.
+It only releases the slot; it never ends a session, and a holder with a live
+session is never freed. Each freed slot raises a `Capacity slot freed` alert.
+See [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+
 ## Allowed fall-through target
 
 An LLM entry setting (`fallthrough_target`, default off). With pool

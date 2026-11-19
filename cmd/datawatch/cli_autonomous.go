@@ -216,6 +216,7 @@ Subcommands:
   prd-scan <id>                   Trigger security scan (BL221 Phase 3)
   prd-scan-result <id>            Get latest scan result (BL221 Phase 3)
   prd-scan-fix <id>               Create fix child PRD (BL221 Phase 3b)
+  prd-scan-fixloop <id>           Run the scan-fix loop: fix, re-scan, up to fix_loop_max_retries; then hold with remaining findings
   prd-scan-rules <id>             Propose AGENT.md rule edits (BL221 Phase 3b)
   scan-config-get                 Read scan config (BL221 Phase 3)
   scan-config-set <k=v,...>       Update scan config fields (BL221 Phase 3)
@@ -304,6 +305,7 @@ Subcommands:
 		newAutonomousPRDScanCmd(),
 		newAutonomousPRDScanResultCmd(),
 		newAutonomousPRDScanFixCmd(),
+		newAutonomousPRDScanFixloopCmd(),
 		newAutonomousPRDScanRulesCmd(),
 		newAutonomousScanConfigGetCmd(),
 		newAutonomousScanConfigSetCmd(),
@@ -2114,6 +2116,17 @@ func newAutonomousPRDScanFixCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/scan/fix", nil)
+		},
+	}
+}
+
+func newAutonomousPRDScanFixloopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-scan-fixloop <id>",
+		Short: "Run the scan-fix loop: open fix Automata, execute them, re-scan, up to fix_loop_max_retries; on a still-failing scan hold with the remaining findings named",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/scan/fixloop", nil)
 		},
 	}
 }

@@ -1990,6 +1990,46 @@ grading pipeline every other scanner's findings already go through,
 not a second mechanism. See
 `docs/plans/2026-10-10-configurable-project-rules-enforcement.md`.
 
+**Scan fix loop** (`autonomous.scan.fix_loop_enabled`,
+`autonomous.scan.fix_loop_max_retries`) — the option that turns a failing
+scan into an automated fix attempt. Both keys are off/zero by default
+(`fix_loop_enabled: false`, `fix_loop_max_retries: 0`): with the loop off,
+a failing scan is just a failing scan. When it is on, a `scan/fixloop` run
+scans the Automaton first, and findings at or above
+`autonomous.scan.fail_on_severity` drive the fix cycle: open one corrective
+task for the findings (a child Automaton whose
+spec is built from them, linked to the scanned Automaton, starting from its
+setup), execute it, re-scan — repeating for up to
+`fix_loop_max_retries` fix-and-rescan cycles (the initial scan is not one of
+them, and the run stops early as soon as a re-scan passes). When the budget
+is spent and the scan still fails, the scanned Automaton is put on hold
+with a plain-English reason that names the remaining findings;
+`fix_loop_max_retries: 0` means "no fix attempts" — the failing scan is
+held immediately. The loop never overrides an operator gate: if a plan gate
+(coverage, plan review, hold) refuses the corrective task, the refusal is
+recorded on the attempt. Its trail (every opened fix Automaton and the
+final hold) is in the scanned Automaton's decision log under actor
+`scan_fix_loop`, and each path leaves an audit event (`scan_fixloop`,
+`scan_fixloop_disabled` when the disabled loop degenerates to a plain
+scan, `scan_fix` for the single fix task). Not the same as
+`autonomous.infra_retry` (that retries tasks whose *machinery* failed,
+free) — the fix loop reacts to the *work* failing its quality scan and pays
+a budget. Set the two keys from YAML, the PWA (Settings → Automata, *Guardrail Library*
+card: the *Auto-fix loop* toggle plus *Fix loop max retries*; each row saves
+itself the moment it changes), `PUT /api/autonomous/scan/config` (partial body
+OK), `datawatch autonomous scan-config-set fix_loop_enabled=true
+fix_loop_max_retries=3`, the `autonomous_scan_config_set` MCP tool, or the
+comm channel's autonomous verbs, and they apply to scan runs from that moment
+on; a config-file change needs a daemon restart to take effect. Run the loop
+with `POST /api/autonomous/prds/{id}/scan/fixloop`,
+`datawatch autonomous prd-scan-fixloop <id>`, `autonomous_prd_scan_fixloop`,
+the comm verb `autonomous scan-fixloop <prd-id>` (aliases `scan_fixloop`,
+`scan_fix_loop`), or the *Run Fix Loop* button on the Automaton detail's Scan tab; just
+one corrective task without the loop comes from `.../scan/fix`,
+`datawatch autonomous prd-scan-fix <id>`, `autonomous_prd_scan_fix`, or
+`autonomous scan-fix <prd-id>`. See
+[howto/scan-fix-loop](howto/scan-fix-loop.md).
+
 **Guided mode** — per-PRD setting (`guided_mode: true`,
 `PRD.GuidedModeSource` internally) that pauses the executor before
 every task and waits for an explicit `approve_task` call before it
