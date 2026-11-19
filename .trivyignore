@@ -1343,3 +1343,26 @@ CVE-2026-111760
 # this entry then; near expiry, renew or build git from source in a pinned
 # stage.
 CVE-2026-114466
+
+# pam: libpam0g, libpam-modules, libpam-modules-bin, libpam-runtime -- CVE-2025-6020
+# severity: high; images: agent-base
+# CVE-2025-6020 is in the Linux-PAM pam_namespace module, where path handling of
+# user-controlled directories can let a local user escalate privileges on a
+# system that enables pam_namespace. NOT traced inside a built image (no
+# container run was done); the analysis is from the diagnosis report of the
+# blocked image-refresh scan, the Debian security tracker and the advisory text.
+# The finding is on the agent-base staging image and appears on four binary
+# packages of the pam source package. This entry does not claim that
+# pam_namespace is unconfigured in the image or that sessions run as an
+# unprivileged user: neither was checked. Residual risk that is NOT ruled out:
+# an agent session running inside agent-base is a local user and could exercise
+# pam_namespace if it is enabled. The datawatch service itself is Go and does
+# not link PAM. Debian bookworm ships no fixed version (the fix is in trixie
+# 1.7.0-5 and sid 1.7.0-8).
+# The blocking Trivy scan of the agent-base staging image in the image-refresh
+# workflow lists CVE-2025-6020 (HIGH) on pam 1.5.2-6+deb12u2 with no fixed
+# version in bookworm; the Debian security tracker lists it vulnerable in
+# bookworm; untraced so the 30-day cap applies; the image's apt-get upgrade
+# picks up a Debian fix when it ships, so remove this entry then; near expiry,
+# renew or move the base image.
+CVE-2025-6020

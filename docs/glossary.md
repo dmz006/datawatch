@@ -66,3 +66,6 @@ decompose-lint pass (recorded even in mode `off`; drives the retry in
 `enforce`) and when a task edit sets a verification script; every finding is
 `block`. The dry run does not run it. See
 [howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+
+## Staging scan (agent-base)
+The blocking Trivy scan the image refresh runs on the `refresh-YYYYMMDD` staging tag before promoting an image. Its exceptions come from `security/accepted-risks.yml` via the generated `.trivyignore`; a failure never replaces a published image. See [Container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).

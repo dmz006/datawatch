@@ -2848,6 +2848,8 @@ The hardened installer is `scripts/ci-install-trivy.sh <tag> <install-dir>`:
 Coverage: `bash scripts/tests/ci-install-trivy_test.sh` (fake curl; success,
 persistent-failure and usage-error paths).
 
+**Staging-scan failures (agent-base).** When the image-refresh blocking scan of the agent-base staging image fails, fix it on `main` in `docker/dockerfiles/Dockerfile.agent-base`, `security/accepted-risks.yml` (then `python3 scripts/gen_trivyignore.py`) and `docs/security-review.md`; the next daily run picks it up with no release. Operator review: confirm the next run promotes agent-base and renew or remove untraced entries at their 30-day cap. See [howto/container-image-refresh.md](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
+
 **Single pin.** The Trivy version lives only in `scripts/trivy-version.txt`
 (one `vX.Y.Z` tag, currently `v0.73.0`). The eight "Install Trivy" steps in
 `release.yaml` (2), `containers.yaml` (2) and `image-refresh.yaml` (4) run
