@@ -60,18 +60,51 @@ var (
 	proposalConfirmedPattern = regexp.MustCompile("(?i)^[\\s>*_~\"'`-]*confirmed\\s*:[\\s*_~\"'`]*yes(?:[^\\pL\\pN]|$)")
 )
 
-// LaneFillProposalFiles returns the distinct proposal file references found in
-// the spec text, in order of appearance. The spec is searched as data with a
-// regular expression only.
+// proposalWordPattern is the word "proposal" or "proposals" on its own. A
+// docs/plans path counts as a design proposal only when it sits on a line that
+// also names a proposal (an explicit proposal field or an explicit proposal
+// line); a docs path that is merely mentioned never does.
+var proposalWordPattern = regexp.MustCompile(`(?i)\bproposals?\b`)
+
+// proposalWriterPattern names a writing verb aimed at the proposal, so an
+// Automaton whose job is to author the proposal is told apart from one that
+// implements a proposal it was handed.
+var proposalWriterPattern = regexp.MustCompile(`(?i)\b(?:write|draft|author|produce|create|prepare)\b[^\n]{0,60}\bproposals?\b`)
+
+// laneFillProposalIsREADME reports whether ref names the plan folder's README,
+// which is never a design proposal even when a line names it.
+func laneFillProposalIsREADME(ref string) bool {
+	return strings.EqualFold(path.Clean(ref), "docs/plans/README.md")
+}
+
+// laneFillProposes reports whether the Automaton's own job is to author the
+// design proposal, stated in its title or its spec; such an Automaton is
+// never gated on the Confirmed line of the proposal it is producing.
+func laneFillProposes(body string) bool {
+	return proposalWriterPattern.MatchString(body)
+}
+
+// LaneFillProposalFiles returns the distinct design-proposal references named
+// in the spec, in order of first mention. A path qualifies only when it sits on
+// a line that also names a proposal (an explicit proposal field or line) and
+// is not the plan folder's README; a docs/plans path that is merely mentioned
+// yields no proposal at all, so the spec is then missing one rather than
+// pointing at the wrong file. The spec is searched as data with a regular
+// expression only.
 func LaneFillProposalFiles(spec string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, m := range proposalPathPattern.FindAllString(spec, -1) {
-		if seen[m] {
+	for _, line := range strings.Split(spec, "\n") {
+		if !proposalWordPattern.MatchString(line) {
 			continue
 		}
-		seen[m] = true
-		out = append(out, m)
+		for _, m := range proposalPathPattern.FindAllString(line, -1) {
+			if seen[m] || laneFillProposalIsREADME(m) {
+				continue
+			}
+			seen[m] = true
+			out = append(out, m)
+		}
 	}
 	return out
 }
@@ -123,17 +156,25 @@ func laneFillImplementationType(typ string) bool {
 
 // CheckLaneFillProposal runs the proposal check for one Automaton and returns
 // its state and the path the verdict is about (the first readable file for
-// not_confirmed, the first named file for missing). warn, when not nil, is
-// called for a read that failed for a reason other than the file not existing.
-// A nil reader gives unknown: the rule does not apply until one is set.
-func CheckLaneFillProposal(typ string, isTemplate bool, spec string, rd LaneFillProposalReader, warn func(ref string, err error)) (state, ref string) {
-	if isTemplate || !laneFillImplementationType(typ) {
+// not_confirmed, the first named file for missing). body is the Automaton's
+// title and spec, as data. The state is Exempt (and
+// so never refused) for a non-implementation Automaton, a template, a defect
+// Automaton, which is not a design implementation and has no design proposal to
+// confirm, and an Automaton whose job is to author the proposal, which is never
+// gated on the Confirmed line of the proposal it is producing, stated in the
+// title or the spec. A proposal path
+// is read from the body only as an explicit proposal field or line, and the
+// plan folder's README is never a proposal. warn, when not nil, is called for
+// a read that failed for a reason other than the file not existing. A nil
+// reader gives unknown: the rule does not apply until one is set.
+func CheckLaneFillProposal(typ string, isTemplate bool, isDefect bool, body string, rd LaneFillProposalReader, warn func(ref string, err error)) (state, ref string) {
+	if isTemplate || isDefect || !laneFillImplementationType(typ) || laneFillProposes(body) {
 		return LaneFillProposalExempt, ""
 	}
 	if rd == nil {
 		return LaneFillProposalUnknown, ""
 	}
-	files := LaneFillProposalFiles(spec)
+	files := LaneFillProposalFiles(body)
 	if len(files) == 0 {
 		return LaneFillProposalMissing, ""
 	}

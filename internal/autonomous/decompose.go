@@ -133,6 +133,12 @@ Rules:
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
   were already unformatted would fail the task.
+  Exclude the daemon-generated artefact folders docs/plans/drafts/,
+  docs/plans/parity-issues/ and docs/plans/reports/ and the file
+  CHANGELOG.md from any changed-file check. Write each per-task script to
+  check only what that task added, and keep it safe to rerun on the
+  cumulative tree (the final gate reruns it with every earlier task's
+  files present): never hold the whole changed set to a fixed allow-list.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at
@@ -226,6 +232,12 @@ Rules:
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
   were already unformatted would fail the task.
+  Exclude the daemon-generated artefact folders docs/plans/drafts/,
+  docs/plans/parity-issues/ and docs/plans/reports/ and the file
+  CHANGELOG.md from any changed-file check. Write each per-task script to
+  check only what that task added, and keep it safe to rerun on the
+  cumulative tree (the final gate reruns it with every earlier task's
+  files present): never hold the whole changed set to a fixed allow-list.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at

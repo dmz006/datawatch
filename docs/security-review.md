@@ -121,6 +121,14 @@ CVE-2026-93990, which was never actually in `.trivyignore` — a stale
 entry this regeneration drops). Do not hand-edit the table below; edit
 the registry and run `python3 scripts/gen_trivyignore.py`.
 
+**Operator review (agent-base staging scan):** the image-refresh blocking
+scan of the agent-base staging image failed on findings that the Dockerfile
+upgrade layer or the registry did not yet cover; the fix lives in
+`docker/dockerfiles/Dockerfile.agent-base`, `security/accepted-risks.yml` and
+`.trivyignore`. Confirm the next refresh run promotes agent-base and re-check
+the expiry of every entry added for it. See
+[container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
+
 **Operator review (soupsieve, agent-aider):** the CVE-2026-126191 suppression
 was removed because the agent-aider venv now runs on a uv-managed Python 3.12,
 which lets soupsieve 4.x install (`scripts/check-dockerfile-soupsieve.sh`
@@ -132,13 +140,14 @@ longer apply to aider. See
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**106 suppressed container CVEs across 8 images, 40 independently traced.**
+**107 suppressed container CVEs across 8 images, 40 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
 | CVE-2023-25193 | `libharfbuzz0b` | high | parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2023-2953 | `libldap-2.5-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2023-45853 | `zlib1g` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2025-6020 | `pam: libpam0g, libpam-modules, libpam-modules-bin, libpam-runtime` | high | agent-base | no | 2026-12-18 | The blocking Trivy scan of the agent-base staging image in the image-refresh wor... |
 | CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
