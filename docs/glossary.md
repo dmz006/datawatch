@@ -24,9 +24,11 @@ The Python that runs aider inside the agent-aider container image: a uv-managed 
 
 A file a task declared (planned, generated or under its write directories)
 that the repository's ignore rules ignore and git does not track, such as a
-report under `.datawatch/reports/`. The task commit skips it instead of
-failing, the uncommitted-work check never lists it, and it stays local — it
-never ships with the branch. A tracked file is always staged. See
+report under `.datawatch/reports/`. The task commit stages it with
+`git add -f` instead of failing, so it is committed with the task; the
+uncommitted-work check never lists an ignored, untracked file as leftover
+work. A commit that still fails reports git's exit status and output in the
+hold reason (up to 1000 characters). A tracked file is always staged normally. See
 [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).
 
 ## Launcher tooling file
@@ -51,3 +53,19 @@ saved command (`!name` / `/name`), an approve/reject word, or an option
 id or label of the session's open question; other text is typed into the
 session as before. See
 [howto/alerts-and-notifications.md](howto/alerts-and-notifications.md#messaging-channel-quick-replies).
+
+## Verification-script preflight
+
+Text-only checks on a verification or final-gate script that catch causes of a
+failed first run unrelated to the task: a shell syntax error
+(`verify_script_syntax`), a helper called with a different shell than its
+shebang (`verify_script_shell_mismatch`), a piped `grep -q` under `pipefail`
+(`verify_script_pipefail_grep_q`), and an allowed-file list that is not
+cumulative over the whole plan (`verify_script_allowed_files`). Runs on every
+decompose-lint pass (recorded even in mode `off`; drives the retry in
+`enforce`) and when a task edit sets a verification script; every finding is
+`block`. The dry run does not run it. See
+[howto/automaton-verification-scripts.md](howto/automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+
+## Staging scan (agent-base)
+The blocking Trivy scan the image refresh runs on the `refresh-YYYYMMDD` staging tag before promoting an image. Its exceptions come from `security/accepted-risks.yml` via the generated `.trivyignore`; a failure never replaces a published image. See [Container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
