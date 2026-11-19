@@ -106,6 +106,16 @@ machine up before the run, or excluding the test. How to prove the fix (the
 repeated run under the race detector) is in
 [testing.md](../testing.md#proving-an-intermittent-test-fix).
 
+**Load-sensitive test gate — `load_sensitive` (a status).** To tell a test that
+only fails on a busy machine from one that fails on its own, the daemon runs the
+first `test` pass beside bounded CPU load, and stops that load before the rerun.
+The stop waits for every process in the load process group to exit rather than
+polling for the group to disappear, so a loaded machine can no longer make the
+group look populated and hold the rerun back or end it early. A gate that still
+fails only under load is recorded `load_sensitive`, and the operator decides what
+that test is — a real defect to fix at the root, or a test that needs a different
+home — the Automaton does not decide it.
+
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
 workflow pins — the `version` of a `golangci/golangci-lint-action` step in
