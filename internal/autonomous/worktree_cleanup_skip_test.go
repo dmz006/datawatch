@@ -37,8 +37,8 @@ func TestWorktreeCleanupWorktreeGeneratedOnlyUncommittedIsRemoved(t *testing.T) 
 		gBase, worktree := fixtureRepo(t)
 		// Two deterministic top-level generated harness files, each reported
 		// individually by `git status --porcelain`.
-		os.WriteFile(filepath.Join(worktree, ".mcp.json"), []byte("{}\n"), 0o644)
-		os.WriteFile(filepath.Join(worktree, ".aider.conf.yml"), []byte("model: x\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(worktree, ".mcp.json"), []byte("{}\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(worktree, ".aider.conf.yml"), []byte("model: x\n"), 0o644)
 		res := CleanupWorktrees(WorktreeCleanupOptions{
 			Ctx:         context.Background(),
 			Repo:        gBase,
