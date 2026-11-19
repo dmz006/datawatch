@@ -330,6 +330,23 @@ var promptPatterns = []string{
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
 type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error
 
+// ResumeLaunchFunc is like LaunchFunc but also receives the resume ID — the
+// id of an existing backend session to resume instead of starting fresh. A
+// backend needs the session profile re-applied on this path because plain
+// LaunchResume carries no profile.
+type ResumeLaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error
+
+// SetProfileResumeFn sets the callback the manager queries (at resume time,
+// in Start and in Restart) for a per-session resume launch function that
+// re-applies the session's stored worker profile. It should return nil when
+// the session has no applicable profile (or the backend cannot take one),
+// in which case the manager falls back to the backend's own LaunchResume.
+func (m *Manager) SetProfileResumeFn(fn func(sess *Session) ResumeLaunchFunc) {
+	m.mu.Lock()
+	m.profileResumeFn = fn
+	m.mu.Unlock()
+}
+
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
 	judgeDeliveryPerThousand int                 // extra judge main-prompt wait, seconds per 1000 prompt lines; guarded by mu
@@ -488,6 +505,12 @@ type Manager struct {
 
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
+
+	// profileResumeFn, when set, returns a ResumeLaunchFunc for a session
+	// whose stored worker profile must also be applied on resume
+	// (backend-specific — Claude Code). Nil return means no profile applies
+	// for this session and the manager uses the backend's LaunchResume.
+	profileResumeFn func(*Session) ResumeLaunchFunc
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
@@ -2572,6 +2595,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// what the backend dropped. Duck-typed so backends that apply the
 	// profile in their own launch path (Claude Code) are left untouched.
 	if opt != nil && opt.WorkerProfile.Name != "" {
+		// Retain the profile on the record so restart/resume re-applies the
+		// same profile and the launch hook can read this session's MCP
+		// selection (it must not silently relaunch profile-less).
+		wp := opt.WorkerProfile
+		sess.WorkerProfile = &wp
 		if rec, ok := backendObj.(interface {
 			RecordApplied(workerprofile.WorkerProfile) []workerprofile.FieldOutcome
 		}); ok {
@@ -2990,8 +3018,21 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {
-			// Try the Resumable interface first (on the backend object if available)
-			if rb, ok := backendObj.(llm.Resumable); ok {
+			// A session profile (e.g. a lean one whose MCP selection is
+			// datawatch) must be re-applied on resume: a profile-less resume
+			// would start the session with a different toolset than it had.
+			var profileResume ResumeLaunchFunc
+			if m.profileResumeFn != nil {
+				profileResume = m.profileResumeFn(sess)
+			}
+			if profileResume != nil {
+				if sess.Name != "" && resumeID == sess.Name {
+					m.debugf("launching %q with profile resume by name=%q", backendName, resumeID)
+				} else {
+					m.debugf("launching %q with profile resume=%q", backendName, resumeID)
+				}
+				launchErr = profileResume(launchCtx, launchTask, tmuxSession, projectDir, logFile, resumeID)
+			} else if rb, ok := backendObj.(llm.Resumable); ok {
 				// If the backend supports naming, pass the session name as resumeID
 				// so LaunchResume can derive the deterministic UUID.
 				if sess.Name != "" && resumeID == sess.Name {
@@ -4752,7 +4793,17 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	}
 	m.scrubPaneTmuxEnv(sess)
 	var launchErr error
-	if rb, ok := backendObj.(llm.Resumable); ok {
+	// A session profile (e.g. a lean one whose MCP selection is datawatch)
+	// must survive restarts: resume with the profile re-applied, not with
+	// the plain profile-less LaunchResume.
+	var profileResume ResumeLaunchFunc
+	if m.profileResumeFn != nil {
+		profileResume = m.profileResumeFn(sess)
+	}
+	if profileResume != nil {
+		m.debugf("restarting %q with profile resume=%q", backendName, resumeID)
+		launchErr = profileResume(ctx, resumeLaunchTask, sess.TmuxSession, sess.ProjectDir, logFile, resumeID)
+	} else if rb, ok := backendObj.(llm.Resumable); ok {
 		m.debugf("restarting %q with resume=%q", backendName, resumeID)
 		launchErr = rb.LaunchResume(ctx, resumeLaunchTask, sess.TmuxSession, sess.ProjectDir, logFile, resumeID)
 	} else if launchFn != nil {
