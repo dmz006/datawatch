@@ -88,10 +88,12 @@ Common kv pairs:
 TLS keys (https nodes):
   tls_ca_file=<path>               extra PEM CA bundle to trust for this node
   tls_cert_fingerprint=<hex>       pin the node's leaf certificate (SHA-256, colons allowed)
-  tls_insecure_skip_verify=true    turn certificate checking off for this node; audited
-                                   and shown in the PWA; cannot be combined with the two above
-  verify_tls=true                  model pulls to this node verify its certificate against the
-                                   system roots; default off
+  tls_insecure_skip_verify=true    turn certificate checking off for node probes; it does not
+                                   apply to model pulls, which always verify; audited and shown in
+                                   the PWA; cannot be combined with the two above
+  verify_tls=true                  kept for configuration compatibility; model pulls to this node
+                                   always verify the certificate (system roots, plus tls_ca_file
+                                   or tls_cert_fingerprint when set)
   update replaces the whole node, so a tls_ key or verify_tls you leave out is cleared`
 
 // replyComputeNodeList replies with the node list as plain text ending in
@@ -539,7 +541,7 @@ func withTLSSummary(body string) string {
 	var summary string
 	switch {
 	case n.TLSInsecureSkipVerify:
-		summary = "verification OFF"
+		summary = "probe verification OFF"
 	case n.TLSCAFile != "" && n.TLSCertFingerprint != "":
 		summary = "ca file + pinned"
 	case n.TLSCAFile != "":
@@ -549,9 +551,7 @@ func withTLSSummary(body string) string {
 	default:
 		summary = "verify"
 	}
-	if n.VerifyTLS {
-		summary += ", model pulls verify certificate"
-	}
+	summary += "; model pulls always verify certificate"
 	return pretty + "\ntls: " + summary
 }
 

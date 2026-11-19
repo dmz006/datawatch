@@ -45,9 +45,44 @@ func cleanupDiskText(c *CleanupDiskCheck) string {
 		if c.Alert {
 			line += " (alert)"
 		}
+		if c.Threshold > 0 {
+			line = fmt.Sprintf("%s (threshold %d%%)", line, c.Threshold)
+		}
 		return line
 	}
+	if c.Threshold > 0 {
+		return fmt.Sprintf("%s (no reading, threshold %d%%)", c.Path, c.Threshold)
+	}
 	return c.Path + " (no reading)"
+}
+
+// humanSize renders a byte count the way a disk alert should say it:
+// whole bytes under a KiB, whole units at ten or more, one decimal
+// below. The alert prefixes it with "about", so the rounding is part
+// of the wording, not an error.
+func humanSize(n int64) string {
+	if n < 0 {
+		n = 0
+	}
+	const unit = 1024
+	f := float64(n)
+	name := "B"
+	for _, u := range []string{"KiB", "MiB", "GiB", "TiB", "PiB"} {
+		if f < unit {
+			break
+		}
+		f /= 1024
+		name = u
+	}
+	switch name {
+	case "B":
+		return fmt.Sprintf("%d B", n)
+	default:
+		if f >= 10 {
+			return fmt.Sprintf("%d %s", int64(f), name)
+		}
+		return fmt.Sprintf("%.1f %s", f, name)
+	}
 }
 
 var cleanupReasonText = map[string]string{
@@ -82,6 +117,41 @@ func cleanupSkippedText(m map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
+// worktreeHoldsText renders the holds the worktree pass placed on
+// uncommitted work: the reason for each one, the exact files the hold
+// is keyed on, and the single action that releases it (matching what
+// the pass keyed it on). "" when the pass left no such hold behind.
+func worktreeHoldsText(skips []WorktreeCleanupSkipped) string {
+	if len(skips) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	any := false
+	for _, s := range skips {
+		if s.ReleaseAction == "" {
+			continue
+		}
+		any = true
+		subject := s.Branch
+		if s.Worktree != "" {
+			subject = s.Worktree
+		}
+		fmt.Fprintf(&b, "  worktree hold at %s: %s\n", subject, s.Detail)
+		if len(s.Files) > 0 {
+			names := strings.Join(s.Files, ", ")
+			if len(s.Files) > 8 {
+				names = strings.Join(s.Files[:8], ", ") + fmt.Sprintf(", … (%d total)", len(s.Files))
+			}
+			b.WriteString("    held files: " + names + "\n")
+		}
+		b.WriteString("    released by: " + s.ReleaseAction + "\n")
+	}
+	if !any {
+		return ""
+	}
+	return b.String()
+}
+
 func cleanupPassText(label string, ps CleanupPassStatus) string {
 	if ps.LastRun == nil {
 		return fmt.Sprintf("  %s pass: not run yet", label)
@@ -111,6 +181,7 @@ func RenderCleanupStatus(st CleanupStatus) string {
 	fmt.Fprintf(&b, "Automaton cleanup (disk alert threshold: %d%%):\n", st.DiskAlertPercent)
 	b.WriteString(cleanupPassText("worktrees", st.Worktrees) + "\n")
 	b.WriteString(cleanupPassText("temp", st.Temp) + "\n")
+	b.WriteString(worktreeHoldsText(st.LastWorktreeSkips))
 	if st.WorktreeDisk == nil && st.TempDisk == nil {
 		b.WriteString("  disks: no readings yet\n")
 	} else {
@@ -119,6 +190,12 @@ func RenderCleanupStatus(st CleanupStatus) string {
 		}
 		if st.TempDisk != nil {
 			b.WriteString("  temp dir disk: " + cleanupDiskText(st.TempDisk) + "\n")
+		}
+	}
+	if len(st.BiggestTempFolders) > 0 {
+		b.WriteString("  biggest folders in the temp folder (measured when that disk was over its threshold):\n")
+		for _, f := range st.BiggestTempFolders {
+			fmt.Fprintf(&b, "    %s — about %s — %s\n", f.Path, humanSize(f.Size), folderLivenessText(f))
 		}
 	}
 	if st.DiskAlert {

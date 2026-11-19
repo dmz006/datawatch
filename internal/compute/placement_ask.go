@@ -27,16 +27,16 @@ const (
 
 // PlacementAsk is one pending (or resolved) approval question.
 type PlacementAsk struct {
-	ID          string             `json:"id"`
-	Model       string             `json:"model"`
-	Node        string             `json:"node"`               // candidate node from the placement decision
-	Reason      string             `json:"reason"`             // operator-facing context (policy, headroom, why this node)
-	ModelSizeGB int                `json:"model_size_gb"`      // assumed size in GB (0 = unknown)
-	RequestedAt time.Time          `json:"requested_at"`
-	ExpiresAt   time.Time          `json:"expires_at"`         // zero = no timeout (ask_timeout_minutes = 0)
+	ID          string               `json:"id"`
+	Model       string               `json:"model"`
+	Node        string               `json:"node"`          // candidate node from the placement decision
+	Reason      string               `json:"reason"`        // operator-facing context (policy, headroom, why this node)
+	ModelSizeGB int                  `json:"model_size_gb"` // assumed size in GB (0 = unknown)
+	RequestedAt time.Time            `json:"requested_at"`
+	ExpiresAt   time.Time            `json:"expires_at"` // zero = no timeout (ask_timeout_minutes = 0)
 	Decision    PlacementAskDecision `json:"decision"`
-	DecidedAt   time.Time          `json:"decided_at,omitempty"` // set when answered or when it expired
-	DecidedBy   string             `json:"decided_by,omitempty"` // "operator", "timeout", ...
+	DecidedAt   time.Time            `json:"decided_at,omitempty"` // set when answered or when it expired
+	DecidedBy   string               `json:"decided_by,omitempty"` // "operator", "timeout", ...
 }
 
 // PlacementAskStore is an in-process registry of placement asks. It is

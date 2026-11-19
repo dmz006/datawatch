@@ -26,7 +26,7 @@ func TestClassifyTaskCommitPathsUnsafePaths(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
+			add, pathspec, _, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
 			if len(skipped) != 0 {
 				t.Errorf("%q must not be skipped, got %v", tc.path, skipped)
 			}
@@ -70,13 +70,17 @@ func TestClassifyTaskCommitPathsPathGuardTable(t *testing.T) {
 		wantSkip   bool
 	}{
 		{"traversal", "../escape.txt", true, false},
+		{"deep traversal", "a/../../x", true, false},
+		{"absolute", filepath.Join(os.TempDir(), "nope-abs"), true, false},
+		{"empty", "", true, false},
+		{"dot", ".", true, false},
 		{"nul byte", "a\x00b", true, false},
 		{"in base", "inside.txt", true, false},
 		{"in base missing", "nowhere.txt", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
+			add, pathspec, _, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
 			if tc.wantAdd && (len(add) != 1 || len(pathspec) != 1) {
 				t.Errorf("want add+pathspec, got add=%v pathspec=%v", add, pathspec)
 			}
@@ -102,6 +106,10 @@ func TestIsDaemonIgnoreChangePathGuardTable(t *testing.T) {
 		want      bool
 	}{
 		{"traversal", "../.gitignore", false},
+		{"deep traversal", "a/../../.gitignore", false},
+		{"absolute", filepath.Join(dir, ".gitignore"), false},
+		{"empty", "", false},
+		{"dot", ".", false},
 		{"nul byte", ".gitignore\x00x", false},
 		{"in base", ".gitignore", true},
 	}

@@ -90,25 +90,35 @@ func normSeverity(s string) string { return strings.ToLower(strings.TrimSpace(s)
 // one member match and all_of every member. Empty conditions are
 // absent and never restrict.
 type compiledMatch struct {
-	spec          *regexp.Regexp
-	title         *regexp.Regexp
-	files         *regexp.Regexp
-	readOnly      *bool
-	verifEmpty    bool
-	reportEmpt    bool
-	unexecScript  bool
-	reasonEmpty   bool
-	taskFilesOnly bool
-	docsNoSync    bool
-	kind          string
-	anyOf         []compiledMatch
-	allOf         []compiledMatch
+	spec                *regexp.Regexp
+	title               *regexp.Regexp
+	files               *regexp.Regexp
+	readOnly            *bool
+	verifEmpty          bool
+	reportEmpt          bool
+	unexecScript        bool
+	reasonEmpty         bool
+	taskFilesOnly       bool
+	docsNoSync          bool
+	artefactFiles       bool
+	finalGateArtefact   bool
+	invokesUnknownFlag  bool
+	specUnanchored      bool
+	fixedDate           bool
+	finalGateRerun      bool
+	unknownFlag         bool
+	textNotInSpec       bool
+	branchArtefactFiles bool
+	kind                string
+	anyOf               []compiledMatch
+	allOf               []compiledMatch
 }
 
 // usesScriptContent reports whether this condition tree reads script
 // content (so a finding carries the script path).
 func (m *compiledMatch) usesScriptContent() bool {
-	if m.taskFilesOnly || m.docsNoSync {
+	if m.taskFilesOnly || m.docsNoSync || m.artefactFiles || m.finalGateArtefact || m.invokesUnknownFlag || m.specUnanchored ||
+		m.branchArtefactFiles || m.finalGateRerun || m.unknownFlag || m.textNotInSpec {
 		return true
 	}
 	for i := range m.anyOf {
@@ -156,6 +166,51 @@ func (m *compiledMatch) matchTask(t Task, dir string) bool {
 	}
 	if m.docsNoSync {
 		if _, ok := verifyScriptDocsWithoutSync(dir, t); !ok {
+			return false
+		}
+	}
+	if m.fixedDate {
+		if _, ok := fixedCalendarDateInTest(t); !ok {
+			return false
+		}
+	}
+	if m.artefactFiles {
+		if _, ok := verifyScriptArtefactFilesAllowed(dir, t); !ok {
+			return false
+		}
+	}
+	if m.finalGateArtefact {
+		if _, ok := verifyScriptFinalGateArtefactAllowed(dir, t); !ok {
+			return false
+		}
+	}
+	if m.invokesUnknownFlag {
+		if _, _, ok := verifyScriptInvokesUnknownFlag(dir, t); !ok {
+			return false
+		}
+	}
+	if m.specUnanchored {
+		if _, _, ok := verifyScriptSpecUnanchored(dir, t); !ok {
+			return false
+		}
+	}
+	if m.branchArtefactFiles {
+		if _, ok := verifyScriptArtefactFiles(dir, t); !ok {
+			return false
+		}
+	}
+	if m.finalGateRerun {
+		if _, ok := verifyScriptFinalGateRerun(dir, t); !ok {
+			return false
+		}
+	}
+	if m.unknownFlag {
+		if _, _, ok := verifyScriptUnknownFlag(dir, t); !ok {
+			return false
+		}
+	}
+	if m.textNotInSpec {
+		if _, _, ok := verifyScriptTextNotInSpec(dir, t); !ok {
 			return false
 		}
 	}
@@ -232,7 +287,12 @@ func compileRules(rules []Rule) []compiledRule {
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
 	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty, unexecScript: m.VerificationScriptUnexecutable,
 		reasonEmpty: m.VerificationScriptReasonEmpty, taskFilesOnly: m.VerificationScriptTaskFilesOnly,
-		docsNoSync: m.VerificationScriptDocsWithoutSync, kind: strings.ToLower(strings.TrimSpace(m.Kind))}
+		docsNoSync: m.VerificationScriptDocsWithoutSync, artefactFiles: m.VerificationScriptArtefactFilesAllowed,
+		finalGateArtefact: m.VerificationScriptFinalGateArtefactAllowed, invokesUnknownFlag: m.VerificationScriptInvokesUnknownFlag,
+		specUnanchored: m.VerificationScriptSpecUnanchored, fixedDate: m.FixedCalendarDateInTest,
+		branchArtefactFiles: m.VerificationScriptArtefactFiles, finalGateRerun: m.VerificationScriptFinalGateRerun,
+		unknownFlag: m.VerificationScriptUnknownFlag, textNotInSpec: m.VerificationScriptTextNotInSpec,
+		kind: strings.ToLower(strings.TrimSpace(m.Kind))}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -490,6 +550,43 @@ func predicateExcerpt(m *compiledMatch, t Task, dir string) string {
 	}
 	if m.docsNoSync {
 		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (checks docs without make sync-docs)")
+	}
+	if m.fixedDate {
+		if d, ok := fixedCalendarDateInTest(t); ok {
+			parts = append(parts, d)
+		}
+	}
+	if m.artefactFiles {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (changed-file-set check without the generated-artefact exemptions)")
+	}
+	if m.finalGateArtefact {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (whole changed-file-set check with no FINAL_GATE sentinel)")
+	}
+	if m.invokesUnknownFlag {
+		if _, s, ok := verifyScriptInvokesUnknownFlag(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (invokes "+s+", a flag the command's own help does not list)")
+		}
+	}
+	if m.specUnanchored {
+		if i, s, ok := verifyScriptSpecUnanchored(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(s)+" (checks "+strconv.Quote(i)+", which the task spec does not name)")
+		}
+	}
+	if m.branchArtefactFiles {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (flags unexpected files without exempting the artefact folders)")
+	}
+	if m.finalGateRerun {
+		parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" (asserts a finite allow-list with no final-gate rerun guard)")
+	}
+	if m.unknownFlag {
+		if _, detail, ok := verifyScriptUnknownFlag(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+detail+")")
+		}
+	}
+	if m.textNotInSpec {
+		if _, detail, ok := verifyScriptTextNotInSpec(dir, t); ok {
+			parts = append(parts, "verification_script="+strconv.Quote(strings.TrimSpace(t.VerificationScript))+" ("+detail+")")
+		}
 	}
 	if len(parts) == 0 {
 		return ""

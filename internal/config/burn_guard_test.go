@@ -18,6 +18,13 @@ func TestBurnGuardDefaults(t *testing.T) {
 		RefitOnReading:   true,
 		EffortCeiling:    map[string]string{"docs": "low", "parity": "low", "live_check": "low", "final_gate": "low"},
 		RetryLimitClaude: 2,
+		// pace_line policy settings: unset mode reads shadow.
+		PaceLineMode:                    "shadow",
+		PaceLineWeekTolerance:           2,
+		PaceLinePointsToWeekFactor:      1.3,
+		PaceLineWindowPercentPerPoint:   4,
+		PaceLineWindowStopPercent:       85,
+		PaceLineReadingFreshnessMinutes: 60,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default usage.burn_guard = %+v, want %+v", got, want)

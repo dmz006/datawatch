@@ -12,7 +12,7 @@ func TestEffectiveSecretScanMode(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"", GitSecretScanShadow},  // unset reads shadow (shadow-first rollout)
+		{"", GitSecretScanShadow}, // unset reads shadow (shadow-first rollout)
 		{"off", GitSecretScanOff},
 		{"shadow", GitSecretScanShadow},
 		{"enforce", GitSecretScanEnforce},
@@ -45,11 +45,11 @@ func TestSecretScanRefusesPush(t *testing.T) {
 		mode string
 		want bool
 	}{
-		{"", false},        // shadow default: never refuses
+		{"", false}, // shadow default: never refuses
 		{"off", false},
 		{"shadow", false},
 		{"enforce", true},
-		{"bogus", false},   // falls back to shadow
+		{"bogus", false}, // falls back to shadow
 	}
 	for _, tc := range cases {
 		g := GitConfig{SecretScan: GitSecretScanConfig{Mode: tc.mode}}

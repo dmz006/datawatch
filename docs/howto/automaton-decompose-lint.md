@@ -125,9 +125,9 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: thirteen rules —
-the nine `block` rules first (the six boundary rules, then the three
-verification-script stability rules), then the four `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: twenty-two rules —
+the seventeen `block` rules first (the six boundary rules, then the
+verification-script stability rules), then the five `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -142,15 +142,24 @@ and never name a particular project, repository or home directory.
 | `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `verify_script_task_files_only` | block | a verification script that compares only against the task's own files (a literal allowed-file list equal to them, or a file-listing diff of HEAD, the working tree or main) and never against `git merge-base`; a sourced helper (one level deep) that uses the merge base passes. The finding names the script path. A script that does not exist yet is skipped |
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
+| `artefact_files_allowed` | block | a verification script that does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton — the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail. Fix: exclude `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-files computation |
+| `final_gate_artefact_allowed` | block | a verification script that asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree. Fix: check only the files this task adds, or skip the file-set check when the final gate re-runs the script |
+| `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help with `prefix --help` only (never `-h`, never the bare prefix), under a 5-second timeout, in its own process group, with its output capped at 64 KiB. A command that does not resolve, a probe that times out, fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
+| `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not name verbatim — a heading also anchors with its leading `#` stripped. Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
+| `verify_script_artefact_files` | block | a verification script that flags unexpected changed files without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md`; the same fault as `artefact_files_allowed`, detected by the shape of the changed-set check rather than by a literal artefact-path scan, so the two can both fire on one script |
+| `verify_script_final_gate_rerun` | block | a script that holds the whole changed-file set to a finite allow-list with no guard for the final gate rerunning it on the cumulative tree; the sibling of `final_gate_artefact_allowed` with the guard recognition (env var, `--final` argument, add-only check) of the stability checks |
+| `verify_script_unknown_flag` | block | a verification script that passes a long flag to a command (or subcommand) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted; commands the environment cannot find, or whose help it cannot read, are skipped |
+| `verify_script_text_not_in_spec` | block | a verification script that greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec; the spec is the contract, so an expectation stated nowhere is unverifiable |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
+| `fixed_calendar_date_in_test` | warn | a test-writing task (a test file such as `*_test.go`, `*.test.js`, `*.spec.ts` or `test_*.py` in its files, or a title starting with Add/Write that names a test) whose spec holds a fixed `YYYY-MM-DD` date; the test passes today and the gate fails later. Fix: take times from the current time (for example `time.Now` with a fixed offset) or an injected clock |
 | `unbounded_load_step` | warn | a spec that asks for an unbounded CPU-load/stress step (busy loop, load/soak test, pinning cores) — bound it before it runs: niced (`nice -n 19`), at most a quarter of the cores, a hard timeout, a cleanup trap so it never outlives its owning task |
 
-### The three verification-script stability rules
+### The verification-script stability rules
 
-The last three `block` rules read the task's verification script from the
+The last seven `block` rules read the task's verification script from the
 project directory (and any helper it sources, one level deep) and name the
 **script path and the rule id** in the finding:
 
@@ -160,16 +169,99 @@ project directory (and any helper it sources, one level deep) and name the
 - `verify_script_docs_without_sync` — fires when the script checks docs, the
   embedded docs copy or how-to coverage without running `make sync-docs`. Fix:
   run `make sync-docs` first.
+- `artefact_files_allowed` — fires when a changed-file-set check does not
+  exempt the generated artefacts the daemon writes per Automaton (changelog
+  draft, parity draft, gate report), which the final gate re-runs the script
+  against on the cumulative tree. Fix: exclude `docs/plans/drafts/`,
+  `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from
+  the unexpected-files computation.
+- `final_gate_artefact_allowed` — fires when the script asserts the whole
+  changed-file set against a finite list with no guard for the final gate
+  re-running it. Fix: check only the files this task adds, or skip the
+  file-set check when the final gate re-runs the script.
+- `script_invokes_known_flag` — fires when the script invokes a command with
+  a long flag the command's own help does not list as a whole option. The
+  rule probes the real binary's help with `prefix --help` only (never `-h`,
+  never the bare prefix), under a 5-second timeout, in its own process
+  group, with its output capped at 64 KiB; anything it cannot establish —
+  an unresolvable command, a hung or silent probe, short flags, a missing
+  script — is skipped, never guessed. The bounds are not decoration: the
+  2026-11-18 daemon abort (SIGABRT, core dump) was a help-probe fallback
+  that ran the command's bare prefix with no working directory, no process
+  group and no output cap, and a long-running command in that position grew
+  the daemon's memory until the Go runtime aborted the process; the probe
+  is now `--help`-only and bounded, and a bad decompose output can no longer
+  abort the daemon either (the parse-plus-lint step runs under a panic
+  guard and a parse failure records source `decompose-parse`, category
+  `invalid-response` — see [howto/retry-policy.md](retry-policy.md) and
+  [howto/decompose-async.md](decompose-async.md)). The finding names the
+  offending invocation.
+- `check_matches_spec_text` — fires when the script (or a helper it sources)
+  asserts a markdown heading, or the exact gate output formats `Final answer`
+  / `Verification summary`, that the task's own spec does not name verbatim (a
+  heading also anchors with its leading `#` stripped); a spec that names the
+  heading it asks for (or says "the final answer" and the script checks
+  `Final answer`) anchors, and arbitrary words never match. Fix: state the
+  exact heading and format the script checks in the task spec that asks for
+  it. The finding names the script path and the unanchored checked item.
 - `final_gate_without_script` — fires on a `final_gate` task that has no
   script, no `verification_script_reason` and no usable report path. Fix: give
   it a script, a report path, or a reason.
+- `verify_script_artefact_files` — fires when the script flags unexpected changed
+  files without exempting the daemon-generated artefact folders and
+  `CHANGELOG.md`. Fix: exclude those paths from the changed-file set.
+- `verify_script_final_gate_rerun` — fires when the script asserts the whole
+  changed-file set against a finite allow-list with no rerun guard. Fix: guard
+  the set check or check only the files this task adds.
+- `verify_script_unknown_flag` — fires when the script passes a long flag to
+  an invoked command (or subcommand) that the command's own `--help` output
+  does not list. Fix: use only flags the installed binary accepts (check with
+  `<command> --help`), or rephrase the check. Commands the environment cannot
+  find are not checked — the rule stays out of the way rather than guessing.
+- `verify_script_text_not_in_spec` — fires when the script greps or compares
+  against a markdown heading or a multi-word output phrase that does not appear
+  verbatim in the task spec. Fix: state the exact heading or the exact format
+  being checked, word for word, in the task spec.
 
-They use three match predicates (below): `verification_script_task_files_only`,
-`verification_script_docs_without_sync` and `verification_script_reason_empty`
-(the last with `kind: final_gate`). A script that does not exist yet is
-skipped by the first two. The full authoring guide, with the fix for each rule
-and how to set a task's script or reason on every surface, is
+### The unknown-flag and spec-text rules, by id
+
+These two rules read the script against ground truth, so they are the ones operators meet most when a
+flagged script still fails after the file-set rules are handled. Both
+are `block`-severity, and each finding names the **script path**, the **rule
+id** and the specific offending flag or text.
+
+| Rule id | What fault it catches | How to fix the flagged script |
+|---|---|---|
+| `verify_script_unknown_flag` | the script passes a long flag to a command — or one of its subcommands — that the installed binary's own `--help` output does not list, so the assertion cannot hold on the machine that will run it | validate the flags against the binary's help (`<command> --help`, or the subcommand's help), keep only the flags the installed binary actually accepts, and drop or rephrase any that do not; commands the environment cannot find are skipped by the rule, never guessed at |
+| `verify_script_text_not_in_spec` | the script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec — an expectation stated nowhere is unverifiable, and the check fails the moment the wording differs | state the **exact heading** being checked (or the exact phrase and format) in the task spec, word for word, so the check asserts against a contract that exists in the plan |
+
+The finding is a pointer at the script, not a verdict on the work: edit the
+script as the column says, then confirm with a dry run of the Automaton's
+stored plan (`lint dry-run <id>`) that the finding is gone. If the task
+exists already rather than being mid-decompose, you can also swap the flagged
+script for a corrected one with the task editor (see
+[Correcting a script after decompose](#correcting-a-script-after-decompose))
+— the corrected file still has to satisfy the rule, which reads the script's
+current contents.
+
+They use these match predicates (below): `verification_script_task_files_only`,
+`verification_script_docs_without_sync`, `verification_script_artefact_files_allowed`,
+`verification_script_final_gate_artefact_allowed`,
+`verification_script_invokes_unknown_flag`,
+`verification_script_spec_unanchored`, `verification_script_unknown_flag` and
+`verification_script_text_not_in_spec` (all read the script's content), plus
+`verification_script_reason_empty` with `kind: final_gate`. A script that does
+not exist yet is skipped by the content-reading ones. The full authoring guide,
+with the fix for each rule and how to set a task's script or reason on every
+surface, is
 [Write verification scripts that stay stable](automaton-verification-scripts.md).
+
+Every lint pass also runs the verification-script **preflight** (shell syntax,
+helper shell mismatch, piped `grep -q` under `pipefail`, non-cumulative
+allowed-file list). Its findings are `block`, sit beside the rule-pack
+findings, and are not rules you can override; they still run, and record, when
+the mode is `off`. The dry run does not include them. See
+[Preflight checks for planner-written scripts](automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
 
 ## 4. Writing your own rules — a worked example
 
@@ -234,6 +326,14 @@ hold for the same task. The leaves:
 | `verification_script_reason_empty` | assert the task states no reason for lacking a verification script |
 | `verification_script_task_files_only` | assert the script (plus sourced helpers, one level) compares only against the task's own files and never the merge base; skipped when the script file does not exist |
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
+| `verification_script_artefact_files_allowed` | assert the script's changed-file-set check does not exempt the generated artefacts the daemon writes per Automaton (changelog draft, parity draft, gate report); skipped when the script file does not exist |
+| `verification_script_final_gate_artefact_allowed` | assert the script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; skipped when the script file does not exist |
+| `verification_script_invokes_unknown_flag` | assert the script invokes a command with a long flag the command's own help does not list as a whole option; the command is probed on PATH with `--help` only, under a bounded timeout, and an unresolvable, hung or silent command is skipped, never guessed |
+| `fixed_calendar_date_in_test` | assert the task writes a test (a test file in its files list, or an Add/Write title naming a test) and its spec contains a fixed `YYYY-MM-DD` date |
+| `verification_script_artefact_files` | assert the script flags unexpected changed files without exempting the daemon-generated artefact folders and `CHANGELOG.md`; skipped when the script file does not exist |
+| `verification_script_final_gate_rerun` | assert the script checks the whole changed-file set against a finite allow-list with no final-gate rerun guard; skipped when the script file does not exist |
+| `verification_script_unknown_flag` | assert the script passes a long flag, to an invoked command or subcommand, the command's own `--help` output does not list; commands the environment cannot find are not checked, and unreadable help output is skipped |
+| `verification_script_text_not_in_spec` | assert the script greps or compares against a markdown heading or a multi-word output phrase that the task spec does not contain verbatim; text the script generates (echo/printf writes, comments) is not an assertion; skipped when the script file does not exist |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
@@ -515,16 +615,36 @@ writes keep passing after earlier tasks land. A generated script must:
 4. run gofmt only on the listed changed Go files, never a whole package or
    directory.
 
+The same rules area pins the planner to **full file paths verbatim**: every
+file named anywhere in a task title, spec or files list is written exactly
+as its real repo-relative path, in one piece — no space inside the name, no
+ellipsis, no abbreviation, no truncation. Older plans showed the failure the
+rule prevents: a name severed to `docs/plans/2026-11-16-re…`, a stray `Run`
+left where a path was cut from its tail, a report path reduced to prose like
+`Th-final-gate.txt`. The plan-coverage structural check extracts file-name
+tokens that stop at the first space, so it reads a name cut mid-way as a
+missing file and blocks approval until the spec carries the complete path.
+What the rule covers, and why it is a prompt rule rather than a lint rule,
+is in
+[§ The full-file-path rule is always enforced too](#the-full-file-path-rule-is-always-enforced-too).
+
 The planner is also told to plan exactly one final gate, as the last task,
 and to give every `final_gate` a `verification_script` (also listed in
 `files_generated`) or an explicit `verification_script_reason`. The decompose
-lint enforces the same three rules on what comes back — see
-`verify_script_task_files_only`, `verify_script_docs_without_sync` and
-`final_gate_without_script` in the rule table above. All three block; the
-two script-content rules read the script file from the project directory and
-are skipped when it does not exist yet.
+lint enforces the same contract on what comes back — see
+`verify_script_task_files_only`, `verify_script_docs_without_sync`,
+`artefact_files_allowed`, `final_gate_artefact_allowed`,
+`script_invokes_known_flag`, `check_matches_spec_text`,
+`final_gate_without_script`, `verify_script_unknown_flag` and
+`verify_script_text_not_in_spec` in the rule table above. All eleven block; the
+ten script-content rules read the script file from the project directory
+(one level into a sourced helper) and are skipped when it does not exist yet —
+the full authoring guide and the fix for each rule is
+[Write verification scripts that stay stable](automaton-verification-scripts.md).
 
-**Correcting a script after decompose.** When a finding names a task's
+### Correcting a script after decompose
+
+When a finding names a task's
 verification script (`no_verification_script`, `unexecutable_verification_script`,
 `final_gate_without_script`, or a script-content rule), you can fix that one
 task without a re-decompose: set its script with `prd-edit-task
@@ -657,6 +777,52 @@ the decompose checks report:
 | `system-binary-path` | a real system path | the command name, resolved at runtime with `command -v` |
 | `private-address` | a private address | "the target host" or a configured host name |
 | `worktree-path` | a worktree path | a repo-relative path |
+
+### The full-file-path rule is always enforced too
+
+Beside the forbidden-pattern list, **both planning prompts** the
+decomposer uses carry one fixed `Rules` bullet about how file names are
+written: every file named anywhere in a task title, spec or files list
+must be written exactly as its **real repo-relative path — the full path
+in one piece**, with no space inside the name, no ellipsis, no
+abbreviation, no truncation; a long hyphenated file name is spelled out
+completely. A display form of a path — a severed name such as
+`docs/plans/2026-11-16-re`, or a report path written as prose — is a
+defect. The bullet is fixed text the way the forbidden-pattern list is:
+`decompose_guidance` does not replace it.
+
+It exists for the plan-coverage structural check. That check extracts
+file-name tokens from the spec and the plan, and a token **stops at the
+first space**: a path broken across a line or written as a truncated
+fragment is read as a name of its own. A fragment is a *different name*
+from the full path the plan's tasks declare — the file-list matching is
+by exact name — and a name that exists neither in the tree nor in an
+earlier task's `files_generated` is reported as a missing file. In
+`block` mode that then locks Approve on noise, and the worker who later
+looks the file up meets a path the plan never wrote out completely.
+
+Note the shape of the guard: it is a prompt rule on the planner, **not a
+decompose-lint rule** — no rule id fires on a severed name. The backstop
+is the reporting gate itself: a severed name still fails the coverage
+report, and you see it as a missing-file finding on a fragment that is
+not a real file. When you do, the fix is to put the full path back into
+the task's spec and files list (or acknowledge the finding on the usual
+path), not to search the tree for the fragment.
+
+The gate mechanics are in [operations — Plan requirement coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check) (the `unresolved_file` finding) and [the plan-coverage findings filters](plan-coverage-filters.md).
+
+> **Operator review:** there is no new rule id and no new setting to wire: the
+> bullet is fixed text in both planning prompts, and a severed name is not
+> caught by the spec lint at all — the plan-coverage gate is the only thing
+> that reports it. Still for you to confirm: (1) drafts planned before the
+> rule shipped (and any plan a model still writes by display form) can carry a
+> severed name — if one sits blocked on a missing-file finding whose "file" is
+> a fragment of a real path, the fix is to put the full path back into the
+> task's spec and files list, or to acknowledge the finding on the usual path;
+> (2) because the guard is a prompt rule, a plan that names a file by display
+> form passes the spec lint clean and fails only at the coverage gate, so the
+> finding you act on is a plan-coverage `unresolved_file`, not a decompose-lint
+> one.
 
 ## 6a. Planning failures: what you see, what the daemon fixes, what it asks
 

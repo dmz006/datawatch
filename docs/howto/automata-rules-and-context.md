@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automata, rules, context, rules file, context files, digest, rules digest, planning record, rules checklist, rules checklist gap, project override, new repository]
+  topics: [autonomous, automata, rules, context, rules file, context files, digest, rules digest, planning record, rules checklist, rules checklist gap, project override, new repository, checkpoint, CHECKPOINT.md, no-checkpoints rule]
 exec_params:
   - name: project_dir
     description: Optional project directory whose resolved values and override you want to read
@@ -218,6 +218,25 @@ worded as "read these before starting this task and follow them", and to the
 prompt that asks for a task's verification script. A retried task is not given
 the block twice. A worker backend without file tools gets the digest by the
 same mode rule as the planner.
+
+### The no-checkpoints rule
+
+Every worker prompt that carries the rules block also carries a short, fixed
+rule: a worker of an automated Automaton task must not add, edit or remove
+checkpoint, progress-note or status entries in `AGENT.md`, `CLAUDE.md` or the
+configured rules file, and it must not copy their Checkpoints section into its
+work or notes. A worker that needs to leave a progress note writes it to
+`CHECKPOINT.md` at the root of its working directory instead — the daemon
+already relocates that file. Checkpoint entries in those files are written
+only by the human operator and by the supervisor.
+
+The rule is static instruction text: it reads no repository files and grows
+with nothing. A prompt that already carries it — a retried task — is not
+given it a second time, just like the rules block. Only worker prompts get
+it: the planning prompt decompose uses does not carry it, and a prompt that
+gets no rules block (a task with no project directory) gets no rule either.
+
+It is an instruction, not a wall. If a worker appends its entry to the rules file anyway and that entry is the file's entire change since the base commit, the [protected paths](automaton-protected-paths.md) gate strips the entry out of the file and records a `protected_paths_checkpoint_reverted` decision without holding the task ([the checkpoint-entry revert](automaton-protected-paths.md#the-checkpoint-entry-revert)); a change that goes beyond the entry is still held, and the rules review reads the rules from the base commit either way.
 
 ## Troubleshooting
 

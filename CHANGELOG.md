@@ -5,6 +5,527 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The daemon's stderr stays in the service journal, and the crash log keeps its job.** The daemon no longer redirects its stderr (fd 2) into `<data>/daemon-crash.log` at start — before this fix the journal received nothing from the daemon after boot and its ordinary log lines landed in the crash log. Stderr is left untouched, so the journal (and any other stderr consumer) keeps receiving everything as before; the runtime's fatal crash output is additionally written to the crash log with Go 1.23+ `debug.SetCrashOutput` (`GOTRACEBACK=crash` unchanged, all-goroutine dump on a fatal). `<data>/daemon-crash.log` therefore now holds the per-start header and the crash dumps only, not the daemon's ordinary log lines; a SIGABRT core image is still recovered with `coredumpctl`. Docs: the decompose-async how-to, the decompose-abort operations section and the definitions glossary entry.
+- **A decompose that aborts the daemon can no longer happen.** Two unbounded paths are now bounded and the third is guarded: (1) the decompose-lint `script_invokes_known_flag` rule probes only `prefix --help` — never `-h`, never the bare prefix — in a fresh scratch directory, its own process group, a 5-second timeout, a 64 KiB output cap and a bounded pipe wait, and skips anything it cannot establish instead of guessing; this closes the 2026-11-18 path where an unbounded fallback ran a bare prefix and grew the daemon's memory until the Go runtime aborted the process (SIGABRT, core dump); (2) a decompose output above 8 MiB is refused before it is parsed; (3) the parse-and-lint step runs under a panic guard, so a Go panic in the parser or the lint is recovered and recorded as the named planning failure `decompose output unparseable: <reason>` — source `decompose-parse`, category `invalid-response`, terminal and not retryable, the PRD rolls back to `draft`, one warning alert, and the raw output is kept at `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`. Docs: the decompose-async how-to, the decompose-lint and retry-policy how-tos, the decompose-abort operations section and the definitions glossary entry; the investigation is tracked in `.datawatch/reports/decompose-abort-cause.md`.
+- **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
+- **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
+- **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
+
+## v9.182.42 — 26f60001
+
+### Fixed
+
+- A finished task no longer retries its merge forever when its branch is missing or untracked files block the merge. If the task branch is gone but the task worktree still holds the finished commit (a detached HEAD, or a worktree that is a clone of its own), the daemon brings the commit over and recreates the branch, and moves a branch forward to a newer detached commit. If an untracked file in the Automaton worktree would be overwritten by the merge, an identical copy is dropped and a different one is moved aside, never deleted, under `.datawatch/merge-aside/<task id>/`. If nothing is left to recover, the merge says so and changes nothing.
+
+## v9.182.41 — Repair the Automaton cleanup passes: reaper wiring, skip resolution, remote reap, temp swe
+
+### Changed
+
+- Repair the Automaton cleanup passes: reaper wiring, skip resolution, remote reap, temp swe.
+
+## v9.182.40 — Decompose output abort fix and crash diagnostics
+
+### Changed
+
+- Decompose output abort fix and crash diagnostics.
+
+## v9.182.39 — 49910001
+
+### Fixed
+
+- The verification-script pre-flight no longer panics on a shell `||`. It read an empty segment and aborted the whole daemon whenever a decompose ran it (a crash loop on 2026-11-18). `||` is now treated as the logical or, not a pipe, and empty segments are skipped.
+
+## v9.182.38 — Lean supervisor session sees datawatch tools
+
+### Changed
+
+- Lean supervisor session sees datawatch tools.
+
+## v9.182.37 — Fix lane fill proposal gate for proposal-writing and defect Automata
+
+### Changed
+
+- Fix lane fill proposal gate for proposal-writing and defect Automata.
+
+## v9.182.36 — Stop generated verify scripts failing clean final gates
+
+### Changed
+
+- Stop generated verify scripts failing clean final gates.
+
+## v9.182.35 — Fix image-refresh agent-base Trivy scan
+
+### Changed
+
+- Fix image-refresh agent-base Trivy scan.
+
+## v9.182.34 — Session detail header icons for tags and scheduled jobs
+
+### Changed
+
+- Session detail header icons for tags and scheduled jobs.
+
+## v9.182.33 — Verification-script pre-flight and fixed-date decompose lint
+
+### Changed
+
+- Verification-script pre-flight and fixed-date decompose lint.
+
+## v9.182.32 — Force-stage gitignored listed files in task auto-commit, and carry commit failure output i
+
+### Changed
+
+- Force-stage gitignored listed files in task auto-commit, and carry commit failure output i.
+
+## v9.182.31 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.30 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.29 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
+## v9.182.28 — Supervisor watch: PRIORITY STALL finding, priority-then-age BACKLOG finding, per-priority-
+
+### Changed
+
+- Supervisor watch: PRIORITY STALL finding, priority-then-age BACKLOG finding, per-priority-.
+
+## v9.182.27 — Fast Projects and Automata pages
+
+### Changed
+
+- Fast Projects and Automata pages.
+
+## v9.182.26 — 6c000001
+
+### Changed
+
+- 6c000001.
+
+## v9.182.25 — pace_line: the supervisor's weekly and window usage guard rules inside the burn guard
+
+### Changed
+
+- pace_line: the supervisor's weekly and window usage guard rules inside the burn guard.
+
+## v9.182.24 — Stale browser state cannot break the Sessions view-mode buttons
+
+### Changed
+
+- Stale browser state cannot break the Sessions view-mode buttons.
+
+## v9.182.23 — Session-kind profiles: lean starts for every session kind
+
+### Changed
+
+- Session-kind profiles: lean starts for every session kind.
+
+## v9.182.22 — Session detail: phone-width rollup of tag chips and Scheduled list
+
+### Changed
+
+- Session detail: phone-width rollup of tag chips and Scheduled list.
+
+## v9.182.21 — Format all Go files with gofmt
+
+### Changed
+
+- Format all Go files with gofmt.
+
+## v9.182.20 — Keep the operator host name out of generated reports
+
+### Changed
+
+- Keep the operator host name out of generated reports.
+
+## v9.182.19 — Lint verification scripts for the four observed faults: generated-artefact exemption, cumu
+
+### Changed
+
+- Lint verification scripts for the four observed faults: generated-artefact exemption, cumu.
+
+## v9.182.18 — Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele
+
+### Changed
+
+- Repair the schedules-flood PWA e2e: temp-folder project root and default-view session sele.
+
+## v9.182.17 — Make the shutdowncause signal-capture process-scan test hermetic
+
+### Changed
+
+- Make the shutdowncause signal-capture process-scan test hermetic.
+
+## v9.182.16 — Verification script materialization before first task start
+
+### Changed
+
+- Verification script materialization before first task start.
+
+## v9.182.15 — Close the 12 surviving code-scanning alerts on main (round 2)
+
+### Changed
+
+- Close the 12 surviving code-scanning alerts on main (round 2).
+
+## v9.182.14 — Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi
+
+### Changed
+
+- Run the existing nightwire-port SecurityScan before Automaton task commits (warn-only), wi.
+
+## v9.182.13 — Requeue dependents whose only failure was a dependency-failed error once the dependency co
+
+### Changed
+
+- Requeue dependents whose only failure was a dependency-failed error once the dependency co.
+
+## v9.182.12 — Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the 
+
+### Changed
+
+- Fix housekeeping 503 from the API wrapper, the advance_judge read/wording faults, and the .
+
+## v9.182.11 — Keep full file paths in decomposed task specs (no names cut at a space or a length limit)
+
+### Changed
+
+- Keep full file paths in decomposed task specs (no names cut at a space or a length limit).
+
+## v9.182.10 — Stop the read-only task check from counting launcher files as tree changes
+
+### Changed
+
+- Stop the read-only task check from counting launcher files as tree changes.
+
+## v9.182.9 — Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e
+
+### Changed
+
+- Lane fill refuses plan-coverage-gated Automata up front and fills the lane with the next e.
+
+## v9.182.8 — Retire the registry: proposal
+
+### Changed
+
+- Retire the registry: proposal.
+
+## v9.182.7 — 3e500001
+
+### Changed
+
+- 3e500001.
+
+## v9.182.6 — 12480001
+
+### Changed
+
+- 12480001.
+
+## v9.182.5 — a46d0001
+
+### Changed
+
+- a46d0001.
+
+## v9.182.4 — Pack workflow graphs: research note with grounded answers
+
+### Changed
+
+- Pack workflow graphs: research note with grounded answers.
+
+## v9.182.3 — Fix the shutdowncause child process scan flake in the full test run
+
+### Changed
+
+- Fix the shutdowncause child process scan flake in the full test run.
+
+## v9.182.2 — Fix open high and critical CodeQL alerts
+
+### Changed
+
+- Fix open high and critical CodeQL alerts.
+
+## v9.182.1 — Fix the peer-down recovery test that fails in the full package run
+
+### Changed
+
+- Fix the peer-down recovery test that fails in the full package run.
+
+## v9.182.0 — Build-host toolchain freshness check
+
+### Changed
+
+- Build-host toolchain freshness check.
+
+## v9.181.0 — Remember the header server dropdown choice per browser
+
+### Changed
+
+- Remember the header server dropdown choice per browser.
+
+## v9.180.2 — Two data races found by the race detector
+
+### Fixed
+
+- **A model pull answered with a record that its own background pull was still updating.** The compute node model pull handler registered the pull task, started the goroutine that updates it, then encoded the same record into the response. The response is now a copy taken before the goroutine starts. The race detector reported it in `TestModelPullAllowedByModelEntry` and `TestModelPullAllowedByPublisher`.
+- **The observer pull test ticker helper was not safe for the several collector workers that ask it for a ticker at once.** It now holds a lock, which removes the race and the occasional failure of `TestHandleObserverPull_FailedPeerIsStaleWithReason`.
+
+## v9.180.1 — A generated board of everything still unfinished
+
+### Added
+
+- `scripts/automation-board.py` regenerates `docs/plans/<date>-finish-automation-board.md` from the daemon's own data: finished Automata whose work branch has commits that never reached main, failed or blocked Automata with work left, and Automata waiting for review, approval or planning.
+
+## v9.180.0 — Reap contained task branches and landed Automaton branches safely
+
+### Changed
+
+- Reap contained task branches and landed Automaton branches safely.
+
+## v9.179.2 — Keep git-ignored paths out of the task commit and uncommitted-work check
+
+### Changed
+
+- Keep git-ignored paths out of the task commit and uncommitted-work check.
+
+## v9.179.1 — Run the repository lint in task verification
+
+### Changed
+
+- Run the repository lint in task verification.
+
+## v9.179.0 — Automaton landing record
+
+### Changed
+
+- Automaton landing record.
+
+## v9.178.0 — Unlanded-work counts and daily alert
+
+### Changed
+
+- Unlanded-work counts and daily alert.
+
+## v9.177.1 — Merge-pending sweep covers every terminal state and leaves shadow mode
+
+### Changed
+
+- Merge-pending sweep covers every terminal state and leaves shadow mode.
+
+## v9.177.0 — Held state for Automata
+
+### Changed
+
+- Held state for Automata.
+
+## v9.176.2 — Quick replies answer the pending operator question
+
+### Changed
+
+- Quick replies answer the pending operator question.
+
+## v9.176.1 — Make the lifecycle queue-overflow test deterministic
+
+### Changed
+
+- Make the lifecycle queue-overflow test deterministic.
+
+## v9.176.0 — Multi-select state filters on Automata, Projects and Plans
+
+### Changed
+
+- Multi-select state filters on Automata, Projects and Plans.
+
+## v9.175.6 — Give the agent-aider image Python 3.11.5 or newer for soupsieve 4
+
+### Changed
+
+- Give the agent-aider image Python 3.11.5 or newer for soupsieve 4.
+
+## v9.175.5 — Stop the docs-sync check flagging a regenerated file whose content did not change
+
+### Fixed
+
+- The docs-sync check compared modification times, so a generated document that was rewritten with the same content counted as drift and failed a final gate. It now compares content checksums.
+
+## v9.175.4 — Fix the lint finding CI reported on the worker observer push test
+
+### Fixed
+
+- A test helper assigned a map lookup to the blank identifier, which the CI lint version flags; it now reads the value directly.
+
+## v9.175.3 — Verify peer TLS certificates by default
+
+### Changed
+
+- Verify peer TLS certificates by default.
+
+## v9.175.2 — Stop writing the instance-level server token into project files
+
+### Changed
+
+- Stop writing the instance-level server token into project files.
+
+## v9.175.1 — Fix: a saved project description is stored, returned and shown on every surface
+
+### Changed
+
+- Fix: a saved project description is stored, returned and shown on every surface.
+
+## v9.175.0 — Plans are releases with themes, and Automata attach by release
+
+### Changed
+
+- Plans are releases with themes, and Automata attach by release.
+
+## v9.174.1 — Projects Overview sub-tabs: clickable, Projects style, remembered
+
+### Changed
+
+- Projects Overview sub-tabs: clickable, Projects style, remembered.
+
+## v9.174.0 — Usage back-off must not block verification, judging and planning
+
+### Changed
+
+- Usage back-off must not block verification, judging and planning.
+
+## v9.173.6 — Pool fall-through reaches waiting tasks and has alternates
+
+### Added
+
+- **Pool fall-through now has alternates to fall through to.** With `autonomous.capacity_fallthrough` on, a worker whose requested pool is full is offered, in order, the other lane fill backend (the Claude lane backend or the GPU lane backend, on its default model) and then every LLM entry marked as an allowed fall-through target. An alternate whose backend is disabled, already at its in-flight cap or unable to serve the model is skipped, and verifiers, judges and planners never fall through.
+- **New LLM entry setting `fallthrough_target`** (default false) marks an entry as an allowed fall-through target. Set it with `datawatch llm add|update --fallthrough-target`, MCP `llm_add` / `llm_update`, comm `llm update <name> fallthrough_target=true`, `PUT /api/llms/{name}`, `fallthrough_target: true` in the `llms:` list, or the **Allowed fall-through target** switch in the web app LLM settings. Omitting it on an update keeps the stored value. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+
+### Fixed
+
+- **Turning on pool fall-through now reaches tasks that are already waiting.** A task decided about fall-through once, when it was queued, so a task waiting on a full pool stayed there after `autonomous.capacity_fallthrough` was switched on until it was re-queued or the daemon restarted. A waiting worker now re-reads the setting and asks for an idle alternate on every wait pass, keeping its queue place and wait timeout. The fall-through audit entry (`autonomous_capacity_admitted` with `fall_through`, `from_pools`, `to_pools` and a note) says when the task's backend was set explicitly (`explicit backend; fall-through setting on`), and an explicit-backend task still falls through only while the setting is on. See [howto/automata-capacity.md](docs/howto/automata-capacity.md#pool-fall-through).
+- **A task of an Automaton that prefers the Claude lane no longer asks for the daemon default's capacity pool.** When no task, story, PRD or Automaton worker was named, the worker fell back to the daemon default (often pi-prompt) and the task queued on `pool llm:pi-prompt` even though its lane preference was Claude. The lane preference is now a level of the worker order: task, story, PRD, Automaton, lane preference, then the daemon default. A `claude` preference falls back to the Claude lane backend, a `gpu` preference to the GPU lane backend, and `any` or none keeps the default. Lane fill and lane utilization read the same order.
+
+## v9.173.5 — Projects page phone overflow and empty Events grouping
+
+### Fixed
+
+- **The Projects page no longer scrolls sideways on a phone.** At 600 px or less only the page sub-tab strip scrolls horizontally; the picker row wraps, long event, card and directory text wraps, and wide `pre` and table content scrolls inside its own box. First seen on the Events page sub-tab of a project.
+- **Empty notes on a project's Events page are grouped.** Notes that only say something is empty or has never happened are collapsed into one summary line with a count while **Show empty lines and sections** is off; tick it to list them one per line. Notes that report something real are always listed.
+
+## v9.173.4 — Startup crash, release smoke navigation and test daemon cleanup fixes
+
+### Fixed
+
+- **The daemon no longer aborts at start on a typed-nil model-use source.** `internal/server/plugin_models.go` now passes a true nil interface, never a nil pointer wrapped in one, when no default model-use source exists, and the default source is safe on a nil receiver. Regression tests cover the typed-nil case and the node-event path.
+- **The release smoke's shared-navigation section honors the section filter.** With a section filter such as `SMOKE_ONLY=1,2,3,4` the section is skipped, the probe receives its four environment variables, and a run with no browser available skips instead of failing. A new shell test covers the section; the how-tos on navigation fit and on testing against a running daemon describe the behavior.
+- **The test daemon helper cleans up on HUP, INT and TERM even when the signal arrives ignored.** `scripts/test-daemon-lib.sh` now reruns the script with those signals reset to their defaults, so `tests/ci` daemon cleanup works when the shell started the script with SIGHUP ignored (a background job or `nohup`). Two new tests in `tests/ci/daemon_cleanup_test.go` cover it.
+- **The release smoke no longer aborts on an undefined counter.** A stray increment of a variable that was never defined ended the priority-source section and aborted the whole run with "unbound variable" even when the section was skipped. It is removed, and a new shell test fails if the script increments a counter it does not initialise.
+
+## v9.173.3 — Projects cards and Gantt fix
+
+### Fixed
+
+- The Projects view draws its project list and its Unassigned and History boards as cards, with a Cards, Tiles and Compact switch that is remembered in the browser; a phone width starts in Compact.
+- The Unassigned board now has Assign (set the project from the card), Open and Dismiss per Automaton, with an Undo link. Dismiss hides the card in this browser only; the daemon keeps tracking the Automaton.
+- The Policy page was removed from a project's sub-tabs. The link next to the project name opens the policy in Settings, and an old stored or addressed `policy` choice opens Overview.
+- The Projects Gantt now draws an Automaton from its first task start to its last task end, and a shipped Automaton always reads completed, whatever its record says.
+
+## v9.173.2 — Workers stop writing rules-file checkpoints
+
+### Fixed
+
+- **Automaton workers no longer write checkpoint entries into the rules file.** Workers often appended a progress note to `AGENT.md`, a protected path, so almost every task raised a protected-path question. Every worker prompt that carries the rules block now also carries a short rule: do not add, edit or remove checkpoint entries in `AGENT.md`, `CLAUDE.md` or the configured rules file, and write progress notes to `CHECKPOINT.md` at the root of the working directory instead.
+- **A checkpoint-only change to the rules file is reverted automatically.** When a worker appends a checkpoint entry anyway and that entry is the file's entire change since the base commit, the protected-paths gate strips it out, records a `protected_paths_checkpoint_reverted` decision and does not hold the task. A change that goes beyond the entry is still caught by the gate.
+- The how-tos on protected paths and rules and context, the operations guide and the glossary describe the new rule and the revert.
+
+## v9.173.1 — Dashboard phone layout fix
+
+### Fixed
+
+- **Dashboard on a phone.** At 600px or less the stat bar now wraps onto a second row so the **+ Card** and **Edit** buttons stay on screen, and the Dashboard scrolls as one page (the card grid grows to fit its cards instead of clipping inside a short nested scroll box). Layout only: no setting, API, MCP or CLI change. Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`; see [howto/dashboard.md](docs/howto/dashboard.md#on-a-phone).
+
+## v9.173.0 — Local pre-tag run replaces the slow CI checks
+
+### Added
+
+- **`make pre-tag` runs the release gates locally before the tag.** `scripts/pre-tag.sh` runs the checks CI would otherwise find after the tag, in CI order, and stops at the first failure: lint, the Go test suite, the security and release-build steps, and an opt-in slow step (tmp guard, cross build of the release targets, perf rollup and busy-loop checks, each niced and time-limited). A step whose tool is missing prints `SKIP [step]: <tool> not found` and does not fail the run. Every run appends a line to the git-ignored `.datawatch/pre-tag-record` (`PRE_TAG_RECORD_FILE` overrides it; a dry run writes nothing). `tests/test-pre-tag.sh` covers the runner and runs in `make test`.
+
+### Changed
+
+- **CI no longer runs the Go test suite.** The `go test` step was removed from `.github/workflows/ci.yaml` and `.github/workflows/release.yaml`, and the release job is now named `lint + build`. The pre-tag run is the only gate that runs the suite, so run it before every tag. AGENT.md, CONTRIBUTING.md, the release checklist, the push-and-tag how-to, the testing page, the operations page and the glossary describe the rule.
+
+## v9.172.14 — Accept the second soupsieve finding on the aider image
+
+### Security
+
+- **CVE-2026-126191 on the aider image is accepted for 30 days.** The release scan lists a second HIGH finding on soupsieve 2.10 (exponential ReDoS in selector compilation, fixed in 3.0.2). Every soupsieve release from 3.0.2 requires Python >=3.11.5 and the aider image runs Python 3.11.2, so it cannot be upgraded. Aider calls no selector, a finding reused from the CVE-2026-126190 trace and not re-traced, so the entry is untraced. It clears when the aider venv moves to Python >=3.11.5 (Automaton 66dd0001).
+
+## v9.172.13 — Burn script counts helper agents
+
+### Changed
+
+- **The usage burn script now counts helper agents.** `scripts/claude-burn.py` read only the top-level session transcripts and left out the subagent transcripts that Claude Code keeps for helper agents, so merge, repair and audit helpers did not show in the usage totals. It now counts them and prints them as their own line, and it joins the other supervisor tools (`supervisor-watch.py`, `v10-status.py`) in the version-bump check's exempt list.
+
+## v9.172.12 — Encryption audit: the encryption docs match the code
+
+### Documentation
+
+- **The encryption page and the pages that repeat it now match the code.** `docs/encryption.md` was rewritten against the 2026-11-13 encryption audit: it names the current config format and key settings, the real file names (session records under `sessions.d/`, `schedule.json`, `output.log.enc`), and states that memory encryption follows `--secure` (there is no memory encryption setting). It now lists what `--secure` covers, what is still plain, what cannot be encrypted, that there is no password-change or key-rotation command, that `export --all` misses the current session records and the schedule store, and that the vault key file sits beside the vault. The operations, setup, memory, secrets and cross-agent memory pages, the glossary and the README no longer say that all data is encrypted. No behavior changed.
+- **Three more encryption claims corrected.** The secrets how-to no longer tells operators to run `datawatch secrets export` and `secrets import <file>` (neither exists); it describes moving values with `secrets get` and `secrets set`, and separates `secrets migrate`. The devices API page no longer says `devices.json` is encrypted through a `secrets.encryption_enabled` setting (there is none; the file is plain). The profiles page links the encryption page.
+
+## v9.172.11 — Email empty-recipient test is instant and deterministic
+
+### Fixed
+
+- **The email empty-recipient test is instant and deterministic.** The test that a send with no recipient falls back to the configured `email.to` address used to connect to a non-routable host and wait for a network timeout, and it could not tell a refused address from a slow network. It now sends to a local fake mail server, so it finishes at once, and it checks that the message is addressed to the configured fallback. Test-only change: the email backend's behavior is unchanged. The comm channels how-to, the messaging backends reference, the operations guide and the glossary state the behavior: a send with no recipient goes to the configured address, and a recipient or sender containing a newline is refused before any connection is opened.
+
+## v9.172.10 — A pasted message with attachments is now submitted
+
+### Fixed
+
+- **A message sent to a session with attachments is now submitted.** A message pasted into a Claude Code session (for example from the web app with attachments) could land in the input box without being submitted, because Enter was pressed before the session had accepted the paste. The daemon now waits up to 1.5 seconds for the pasted text or its `[Pasted text #N]` placeholder to show in the pane, presses Enter once, and, for pasted, multi-line or long input, presses Enter again at most twice while the text is still unsent. The delivery sequence is covered by tests over a fake terminal. No new setting, endpoint or field.
+
+### Documentation
+
+- **Sending a message to a session is documented as wait, Enter, verify.** The Sessions deep-dive how-to gains "How a sent message is submitted", the operations guide gains "Message submission to a session", and the glossary gains a "Message submission" entry. The `schedule_settle_ms` comments, `datawatch session send` and the sessions API page point to it.
+
+## v9.172.9 — Projects Overview sub-tabs respond and use the Projects look
+
+### Fixed
+
+- **The Projects Overview sub-tabs respond to a click or tap.** Under Overview on the Projects page the in-flight sub-tabs (Inbox, Automations, Resources, Progress and cost, Housekeeping) did nothing when chosen. Choosing one now shows its body, marks it selected, and keeps the Inbox count live.
+- **The Overview sub-tabs use the Projects look.** The strip now matches the project page sub-tabs instead of the Automation view's second row, and the choice is remembered in this browser (the same stored value as the project page sub-tabs) and restored on refresh. A remembered value that does not belong to the Overview strip is ignored and Inbox opens. The strip has no address of its own, so the address stays `#projects`.
+- The Projects tab how-to and the glossary describe the Overview sub-tabs, with tests for the clicks, classes and memory. This is a display rule of the web app only: no setting and no REST, MCP, CLI or chat change.
+
+## v9.172.8 — Two slow tests behind opt-in make targets
+
+### Fixed
+
+- **Two slow non-unit tests no longer run in a plain `go test ./...`.** The release-target cross-build check and the temporary-folder leak guard each start nested builds or test runs and made the regular run slow. Both now skip with a message naming their target unless asked for, and two opt-in `make` targets run them: `make test-cross-build` (sets `DW_RUN_CROSS_BUILD=1`) and `make test-tmp-guard` (sets `DW_RUN_TMP_GUARD=1`). `make help` lists both, a test guards that the plain run skips them and the targets run them, and the contributor guide and testing guide say to run both before tagging a release. Whether CI and the release workflow run them is decided separately.
+
+## v9.172.7 — Automata list and get: notes off standard output
+
+### Fixed
+
+- **`datawatch autonomous list` and `get` print one JSON document on standard output.** The plain-text notes they add (for example a "planning failed" line for an Automaton, or a skipped-tag note) went to standard output after the JSON, so a script that parsed the output failed. The notes now go to standard error, and a test guards that standard output holds exactly one JSON document. The planning failures how-to, the API reference and the glossary describe the split.
+
+## v9.172.6 — Soupsieve CVE accepted for the aider image
+
+### Security
+
+- **CVE-2026-126190 (soupsieve 2.10, HIGH) in the aider image is accepted for 30 days.** It is a denial of service that needs an attacker to control a CSS selector passed to soupsieve; aider scrapes pages with beautifulsoup4 but its own code never calls select, so no selector reaches it. The fix (soupsieve 4.0.0) needs Python 3.11.5 or newer and the image has Python 3.11.2, so it cannot be installed yet. It clears when the aider venv moves to a newer Python, which is a separate follow-up; the entry expires 2026-12-13.
+
 ## v9.172.5 — Sessions deep-dive how-to corrections
 
 ### Fixed
@@ -196,7 +717,11 @@ The Projects page now decides which project an Automaton belongs to by an explic
 
 ### Changed
 
-- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting.
+- **The header server dropdown now remembers its choice per browser.** The entry chosen in the fixed header's server dropdown (**All servers**, this server, or a named peer) is saved on this device (the PWA's local storage, key `dw_server_choice`), so reloading the page or coming back later opens the same entry already selected — the boot round of data fetches runs against it, with no second refresh. A saved peer name is validated against the current server list at boot: if that peer has since been removed or disabled, the PWA starts on **All servers** instead (and keeps that, so a stale choice does not survive the next reload). With local storage blocked the choice still works for the open page but is not kept. No new endpoint or setting. Mobile parity for this persisted choice is tracked at [datawatch-app#482](https://github.com/dmz006/datawatch-app/issues/482).
+
+### Fixed
+
+- **The remembered server choice is no longer overwritten by the settle bound once boot has settled.** The boot settle step's fallback timer (which turns an unvalidatable saved choice into **All servers** when the server list cannot be fetched in time) was never cleared when another path settled, and its callback saved **All servers** unconditionally — so a page open longer than the bound could have its validated saved choice, or a choice the operator picked in the meantime, silently overwritten with "all" in local storage. Each now-settle path (validated peer, stale fallback, the bound) commits through one guarded finish: the first to settle wins and clears the pending bound, and the "all" save only runs through that guard. New PWA tests fire the bound's callback after a validated restore and pin that the stored choice — and a choice made after boot — do not change.
 
 ## v9.163.0 — Sessions Filters sheet: names, multi-select chips, one grouping control
 

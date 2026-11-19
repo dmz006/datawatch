@@ -23,13 +23,13 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 - Give it a goal: it breaks the goal into steps, does them and checks the results
 - It remembers past work, so a new session starts with background
 - Use one machine or many; the work is shared
-- Your data stays on your machines, encrypted and behind a login
+- Your data stays on your machines, behind a login, with encryption on disk in secure mode
 
 ---
 
 ## Current release
 
-**Current release: v9.172.5 (2026-11-13).** The Sessions deep-dive how-to now describes the Fold all icon and the search count the way the web app shows them. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.182.42 (2026-11-19).** 26f60001. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
@@ -66,8 +66,9 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Lines queued work up by kind (bug, maintenance, feature, other) with a visible priority source, and offers new defect filings to the Automation you name
 - Points the planner and workers at your project's rules and context files; set the file names under Settings, *Rules and context*, with `datawatch autonomous rules-context`, or with `GET`/`PUT /api/autonomous/rules-context` ([how-to](docs/howto/automata-rules-and-context.md))
 - Sets how small each worker, verifier and judge session starts with worker session profiles: which MCP servers, tools, skills, starting context, model and effort a session gets, set per role, task kind, task, Automaton, project or globally; the start-up size and profile name are recorded per attempt and shown in the cost report, stats and usage advice ([how-to](docs/howto/worker-session-profiles.md))
+- Holds any Automaton on an operator hold — a required reason, an optional condition and a look-again time (time, date or duration) — and shows every held Automaton in its own **held Automata** group that never enters the blocked, waiting or running counts; releasing returns it to the status it had, and the hold migration moves blocked or failed look-alikes onto a hold (dry run first, on every surface) — no configuration key is involved ([how-to](docs/howto/automaton-hold.md))
 
-More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [plan records](docs/howto/plan-records.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
+More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [plan records](docs/howto/plan-records.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md) · [operator hold](docs/howto/automaton-hold.md)
 
 ### See what agents did
 
@@ -111,7 +112,7 @@ More: [channel routing](docs/howto/channel-routing.md) · [file sharing](docs/ho
 
 ### Security
 
-- Data on disk is encrypted
+- Secure mode (`--secure`) encrypts the config and the main data stores on disk; some files stay plain, so pair it with disk encryption (the encryption page lists what is and is not covered)
 - Passwords and keys live in a vault
 - Logins, encrypted connections, and a log of who did what
 - Self-config gate: an agent may change the daemon's own non-secret settings only while it holds the **self-config** group — every attempt (allowed and denied) is recorded, and you can read the trail from the PWA Settings card, `datawatch audit self-config` or `GET /api/audit/self-config`
@@ -349,7 +350,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | Comms + federation | [docs/howto/channel-routing.md](docs/howto/channel-routing.md) · [docs/howto/file-service.md](docs/howto/file-service.md) · [docs/howto/discussion-scopes.md](docs/howto/discussion-scopes.md) · [docs/howto/comm-channels.md](docs/howto/comm-channels.md) |
 | Memory & intelligence | [docs/memory.md](docs/memory.md) · [docs/memory-usage-guide.md](docs/memory-usage-guide.md) |
 | Operations & security | [docs/operations.md](docs/operations.md) · [docs/config-reference.yaml](docs/config-reference.yaml) · [docs/encryption.md](docs/encryption.md) · [docs/multi-session.md](docs/multi-session.md) · [docs/uninstall.md](docs/uninstall.md) |
-| CI + release | [docs/howto/ci-code-scanning-upload.md](docs/howto/ci-code-scanning-upload.md) · [docs/howto/container-image-refresh.md](docs/howto/container-image-refresh.md) |
+| CI + release | [docs/howto/ci-code-scanning-upload.md](docs/howto/ci-code-scanning-upload.md) · [docs/howto/gofmt-check.md](docs/howto/gofmt-check.md) · [docs/howto/container-image-refresh.md](docs/howto/container-image-refresh.md) · [docs/howto/toolchain-freshness-check.md](docs/howto/toolchain-freshness-check.md) · [docs/howto/local-env-leak-check.md](docs/howto/local-env-leak-check.md) |
 | Community | [`dmz006/datawatch-community`](https://github.com/dmz006/datawatch-community) |
 | Source attribution | [docs/plan-attribution.md](docs/plan-attribution.md) |
 

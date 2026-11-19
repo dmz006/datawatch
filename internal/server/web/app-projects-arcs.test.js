@@ -81,6 +81,7 @@ test('the header shows every set field; the description is escaped', () => {
 
 test('only a missing weekly share becomes an Events entry; other unset fields are just hidden', () => {
   const { sb } = loadView();
+  vm.runInContext('_projectsShowEmpty = function () { return false; }', sb);
   const html = pageAllSubtabs(sb, { name: 'bare', dir: '/w/bare' }, ROLLUP, '');
   assert.doesNotMatch(html, /Owner:<\/span>/);
   assert.doesNotMatch(html, /Weekly share:<\/span>/);
@@ -88,7 +89,12 @@ test('only a missing weekly share becomes an Events entry; other unset fields ar
   assert.doesNotMatch(html, /Owner is not set\./);
   assert.doesNotMatch(html, /Repository is not set\./);
   assert.doesNotMatch(html, /Description is not set\./);
-  assert.match(html, /Weekly share is not set\./);
+  // The unset share is an empty-state line: counted in the summary while Show
+  // empty is off, listed one per line once it is on.
+  assert.doesNotMatch(html, /Weekly share is not set\./);
+  assert.match(html, /items hidden\./);
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
+  assert.match(pageAllSubtabs(sb, { name: 'bare', dir: '/w/bare' }, ROLLUP, ''), /Weekly share is not set\./);
 });
 
 test('a missing weekly share is silent when there is no plan or unassigned Automaton', () => {
@@ -133,6 +139,8 @@ test('an Automaton and each session link to the existing views', () => {
 
 test('a plan with no Automata is not expanded and its line goes to Events', () => {
   const { sb } = loadView();
+  // Empty-state lines are listed one per line only with Show empty on.
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   const roll = { arcs: [{ automation_id: 'auto-empty', priority: 1, state: 'planned', automata: [] }] };
   const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /data-automation="auto-empty"/);
@@ -142,6 +150,8 @@ test('a plan with no Automata is not expanded and its line goes to Events', () =
 
 test('an Automaton with no sessions goes to Events, not an empty list', () => {
   const { sb } = loadView();
+  // Empty-state lines are listed one per line only with Show empty on.
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   const roll = { arcs: [{ automation_id: 'a', priority: 1, automata: [{ id: 'p1', title: 'Solo', session_ids: [] }] }] };
   const html = pageAllSubtabs(sb, FULL, roll, '');
   assert.match(html, /data-automaton="p1"/);
@@ -151,10 +161,16 @@ test('an Automaton with no sessions goes to Events, not an empty list', () => {
 
 test('no plans and no unassigned Automata both say so in Events', () => {
   const { sb } = loadView();
+  // Empty-state lines are listed one per line only with Show empty on.
+  vm.runInContext('_projectsShowEmpty = function () { return true; }', sb);
   const html = pageAllSubtabs(sb, FULL, { arcs: [], unassigned: { automata: [] } }, '');
-  assert.doesNotMatch(html, /Plans<\/div>/);
   assert.match(html, /No plans are planned for this project\./);
   assert.match(html, /No unassigned Automata\./);
+  vm.runInContext('_projectsShowEmpty = function () { return false; }', sb);
+  const off = pageAllSubtabs(sb, FULL, { arcs: [], unassigned: { automata: [] } }, '');
+  assert.doesNotMatch(off, /Plans<\/div>/);
+  assert.doesNotMatch(off, /No plans are planned for this project\./);
+  assert.match(off, /2 empty or not-started items hidden\./);
 });
 
 test('unassigned Automata are shown when present', () => {

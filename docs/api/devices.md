@@ -37,8 +37,11 @@ Devices are registered out-of-band (CLI / web / MCP); chat channels
 
 ## Storage
 
-Device records live at `<data_dir>/devices.json` (encrypted at rest
-when `secrets.encryption_enabled` is on).
+Device records live at `<data_dir>/devices.json`. The file is **not
+encrypted**, with or without `--secure`: it holds the push registration
+tokens in plain text (mode 0600). There is no `secrets.encryption_enabled`
+setting. Protect the data directory with disk-level encryption; see
+[encryption](../encryption.md) for what `--secure` covers.
 
 ## See also
 

@@ -38,6 +38,11 @@ type MemberMergeProof struct {
 	// Reason explains a not-merged or unknown answer; the caller can surface
 	// it and keep its blocked behaviour.
 	Reason string `json:"reason,omitempty"`
+	// State is the branch-to-default-branch comparison state (merged, empty,
+	// pending, needs_look or unknown) when the comparison ran; empty when the
+	// proof stopped before it. "empty" means no commit is ahead of the
+	// default branch.
+	State string `json:"state,omitempty"`
 }
 
 // MergedMemberProof decides whether branch is merged on the default branch
@@ -81,6 +86,7 @@ func MergedMemberProof(ctx context.Context, git MergeGitRunner, repo, branch str
 	}
 
 	cmp := CompareBranchToMain(ctx, git, repo, branch, base)
+	proof.State = cmp.State
 	if cmp.State == MergeStateUnknown {
 		proof.Reason = cmp.Error
 		return proof

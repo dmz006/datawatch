@@ -67,6 +67,34 @@ type GateResult struct {
 // gateSignalKilledReason is the failure reason of a gate ended by a signal.
 const gateSignalKilledReason = "gate was killed by a signal"
 
+// gateNoSpaceReason is the failure reason of a gate whose output says the
+// storage it wrote to ran out: the operator reads it as "temporary folder
+// full", and the infra classifier maps it to the storage-retry class instead
+// of a content failure.
+const gateNoSpaceReason = "temporary folder full"
+
+// noSpacePhrases are the lower-case phrases, from the operating system or
+// the storage itself, that say the output's device is out of space.
+var noSpacePhrases = []string{
+	"no space left on device",
+	"enospc",
+	"disk quota exceeded",
+}
+
+// gateFailureReason is the failure reason for a gate that exited non-zero:
+// gateNoSpaceReason when its captured output says the storage is exhausted,
+// otherwise the plain exit-code reason. A gate killed by a signal or that
+// never ran keeps its own reason and never comes through here.
+func gateFailureReason(output string, exitCode int) string {
+	lower := strings.ToLower(output)
+	for _, phrase := range noSpacePhrases {
+		if strings.Contains(lower, phrase) {
+			return gateNoSpaceReason
+		}
+	}
+	return fmt.Sprintf("gate exited with code %d", exitCode)
+}
+
 // RunScriptGate runs check with projectDir as the working directory. A
 // timeout of 0 means no cap. On timeout the whole process group is killed,
 // so no child of the gate outlives it.
@@ -117,7 +145,7 @@ func RunScriptGate(ctx context.Context, check GateCheck, projectDir string, time
 		if res.ExitCode < 0 {
 			res.Reason = gateSignalKilledReason
 		} else {
-			res.Reason = fmt.Sprintf("gate exited with code %d", res.ExitCode)
+			res.Reason = gateFailureReason(res.Output, res.ExitCode)
 		}
 		return res
 	}

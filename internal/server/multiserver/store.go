@@ -75,6 +75,10 @@ type Entry struct {
 	// other peer keeps full verification). Default false. OK for a
 	// self-signed/local-dev peer on a trusted network; document the risk.
 	TLSSkipVerify bool `json:"tls_skip_verify,omitempty"`
+	// TLSCertFingerprint pins this peer's leaf certificate (hex SHA-256)
+	// and is the recommended alternative to TLSSkipVerify for a
+	// self-signed peer; when set it wins over TLSSkipVerify.
+	TLSCertFingerprint string `json:"tls_cert_fingerprint,omitempty"`
 	// FingerprintSync opts THIS peer into the resource-fingerprint exchange
 	// with this daemon. Opt-in per peer, default false — the operator
 	// decision recorded in
@@ -170,18 +174,19 @@ func newStore(dataDir string, seeds []config.RemoteServerConfig, key []byte) (*S
 			continue // runtime entry wins
 		}
 		builtins = append(builtins, &Entry{
-			Name:            sc.Name,
-			URL:             sc.URL,
-			Token:           sc.Token,
-			Enabled:         sc.Enabled,
-			Builtin:         true,
-			Federated:       sc.Federated,
-			AuthType:        sc.AuthType,
-			Capabilities:    sc.Capabilities,
-			TLSSkipVerify:   sc.TLSSkipVerify,
-			FingerprintSync: sc.FingerprintSync,
-			CreatedAt:       time.Time{},
-			UpdatedAt:       time.Time{},
+			Name:               sc.Name,
+			URL:                sc.URL,
+			Token:              sc.Token,
+			Enabled:            sc.Enabled,
+			Builtin:            true,
+			Federated:          sc.Federated,
+			AuthType:           sc.AuthType,
+			Capabilities:       sc.Capabilities,
+			TLSSkipVerify:      sc.TLSSkipVerify,
+			FingerprintSync:    sc.FingerprintSync,
+			TLSCertFingerprint: sc.TLSCertFingerprint,
+			CreatedAt:          time.Time{},
+			UpdatedAt:          time.Time{},
 		})
 	}
 	// Builtins first so they appear at the top of the list.
@@ -237,6 +242,11 @@ func (s *Store) Add(e *Entry) error {
 	if e.URL == "" {
 		return errors.New("url is required")
 	}
+	normalizedPin, err := ValidatePeerTLS(e.TLSSkipVerify, e.TLSCertFingerprint)
+	if err != nil {
+		return err
+	}
+	e.TLSCertFingerprint = normalizedPin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.getByName(e.Name) != nil {
@@ -254,6 +264,11 @@ func (s *Store) Add(e *Entry) error {
 // Update replaces an existing runtime entry. Returns ErrNotFound if the
 // name does not exist, ErrBuiltin if it is a YAML-seeded entry.
 func (s *Store) Update(name string, updated *Entry) error {
+	normalizedPin, err := ValidatePeerTLS(updated.TLSSkipVerify, updated.TLSCertFingerprint)
+	if err != nil {
+		return err
+	}
+	updated.TLSCertFingerprint = normalizedPin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing := s.getByName(name)
@@ -316,7 +331,7 @@ func (s *Store) Test(ctx context.Context, name string) (latencyMs int64, version
 		url = url[:len(url)-1]
 	}
 
-	client := HTTPClient(e.TLSSkipVerify, 10*time.Second)
+	client := PeerHTTPClient(e.TLSSkipVerify, e.TLSCertFingerprint, 10*time.Second)
 	start := time.Now()
 
 	healthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/api/health", nil)

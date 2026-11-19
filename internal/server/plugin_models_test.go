@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,28 @@ func (f fakeModelUseSource) ModelUse(_ context.Context, name string) (*plugins.M
 	if f.errs[name] != nil {
 		return nil, f.errs[name]
 	}
+	if rep, ok := f.reports[name]; ok {
+		return rep, nil
+	}
+	return nil, ErrModelUseUnknownPlugin
+}
+
+// swappableModelUseSource serves one report per plugin name and lets a
+// test swap the report while the background events task is reading it.
+type swappableModelUseSource struct {
+	mu      sync.Mutex
+	reports map[string]*plugins.ModelUseReport
+}
+
+func (f *swappableModelUseSource) set(name string, rep *plugins.ModelUseReport) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reports[name] = rep
+}
+
+func (f *swappableModelUseSource) ModelUse(_ context.Context, name string) (*plugins.ModelUseReport, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if rep, ok := f.reports[name]; ok {
 		return rep, nil
 	}
@@ -126,7 +149,7 @@ func decodeReport(t *testing.T, rr *httptest.ResponseRecorder) plugins.ModelUseR
 func TestPluginModels_Report(t *testing.T) {
 	report := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{
-			Name: "johnnyjohnny",
+			Name: "remotenode",
 			Loaded: []plugins.LoadedModel{
 				{Name: "qwen3:1.7b", RAMBytes: 512 << 20, VRAMBytes: 512 << 20, ContextTokens: 32768},
 			},
@@ -148,7 +171,7 @@ func TestPluginModels_Report(t *testing.T) {
 		t.Fatalf("models = %+v, want 1 row", got.Models)
 	}
 	e := got.Models[0]
-	if e.Model != "qwen3:1.7b" || e.Node != "johnnyjohnny" || e.HeldBytes != 1024<<20 || e.Calls != 1234 {
+	if e.Model != "qwen3:1.7b" || e.Node != "remotenode" || e.HeldBytes != 1024<<20 || e.Calls != 1234 {
 		t.Errorf("entry = %+v", e)
 	}
 	has := map[string]bool{}
@@ -167,7 +190,7 @@ func TestPluginModels_Report(t *testing.T) {
 func TestPluginModels_UndocumentedCounts(t *testing.T) {
 	report := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
 		Nodes: []plugins.ModelNode{{
-			Name:   "johnnyjohnny",
+			Name:   "remotenode",
 			Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 256 << 20}},
 		}},
 		Service: plugins.ServiceUsage{Documented: false},
@@ -197,18 +220,18 @@ func TestPluginModels_UndocumentedCounts(t *testing.T) {
 // not by requests to the endpoint.
 func TestPluginModels_NodeUnreachable(t *testing.T) {
 	bad := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
-		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Error: "connection refused"}},
+		Nodes: []plugins.ModelNode{{Name: "remotenode", Error: "connection refused"}},
 	}, plugins.ModelUseThresholds{})
 
 	good := plugins.CollectModelUse("imap-mcp", plugins.ModelUseInputs{
-		Nodes: []plugins.ModelNode{{Name: "johnnyjohnny", Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 1 << 20}}}},
+		Nodes: []plugins.ModelNode{{Name: "remotenode", Loaded: []plugins.LoadedModel{{Name: "qwen3:1.7b", VRAMBytes: 1 << 20}}}},
 	}, plugins.ModelUseThresholds{})
 
 	rec, cap := newModelUseRecorder(t)
-	reports := map[string]*plugins.ModelUseReport{"imap-mcp": bad}
+	src := &swappableModelUseSource{reports: map[string]*plugins.ModelUseReport{"imap-mcp": bad}}
 	s := pluginModelsServerBare(t)
 	s.SetModelNodeRecorder(rec)
-	s.SetPluginModels(fakeModelUseSource{reports: reports})
+	s.SetPluginModels(src)
 	// The events task raises from the background at a short interval.
 	s.SetModelNodeEventInterval(50 * time.Millisecond)
 	s.StartModelNodeEvents(context.Background(), func() []string { return []string{"imap-mcp"} })
@@ -223,7 +246,7 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 	}
 	got := decodeReport(t, rr)
 	joined := strings.Join(got.Notes, " ")
-	if !strings.Contains(joined, "johnnyjohnny") || !strings.Contains(joined, "did not answer") {
+	if !strings.Contains(joined, "remotenode") || !strings.Contains(joined, "did not answer") {
 		t.Errorf("notes do not name the node that did not answer: %q", joined)
 	}
 
@@ -234,7 +257,7 @@ func TestPluginModels_NodeUnreachable(t *testing.T) {
 
 	// The node answers again → the task clears the condition (1 clear)
 	// without re-raising.
-	reports["imap-mcp"] = good
+	src.set("imap-mcp", good)
 	waitFor(t, 5*time.Second, "task to clear after recovery", func() bool { return cap.count() >= 4 })
 	if !strings.Contains(cap.joined(), "reachable again") {
 		t.Errorf("no clear recorded: %s", cap.joined())
@@ -455,5 +478,30 @@ func TestPluginModels_DefaultSourceNodeDown(t *testing.T) {
 	}
 	if n := cap.count(); n != 0 {
 		t.Fatalf("saw %d sink calls for a mere request (the model_node_unreachable raise is owned by the events task): %s", n, cap.joined())
+	}
+}
+
+// A nil default source must never become a typed nil inside the
+// PluginModelsSource interface: ModelUse is safe on a nil receiver and
+// nil manifest func, and the handler answers 503 when no source exists.
+func TestDefaultModelUseSource_NilSafe(t *testing.T) {
+	var d *defaultModelUseSource
+	if _, err := d.ModelUse(context.Background(), "imap-mcp"); !errors.Is(err, ErrModelUseUnknownPlugin) {
+		t.Errorf("nil receiver: err = %v, want ErrModelUseUnknownPlugin", err)
+	}
+	d = &defaultModelUseSource{}
+	if _, err := d.ModelUse(context.Background(), "imap-mcp"); !errors.Is(err, ErrModelUseUnknownPlugin) {
+		t.Errorf("nil manifest: err = %v, want ErrModelUseUnknownPlugin", err)
+	}
+
+	s := &Server{}
+	if got := s.defaultModelUseSource(); got != nil {
+		t.Fatalf("defaultModelUseSource without tokens source = %v, want nil", got)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/plugins/imap-mcp/models", nil)
+	rr := httptest.NewRecorder()
+	s.handlePluginModels(rr, req, "imap-mcp")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("handler status = %d, want 503", rr.Code)
 	}
 }

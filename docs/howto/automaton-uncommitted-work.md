@@ -75,6 +75,13 @@ at the worktree with `git status`:
    `task(<short id>): <task title>`. Nothing is staged with `git add -A` or
    `git add .`, and the commit runs the repository's own commit hooks: a failing
    hook is a failed commit.
+   A declared file that git ignores and that is not tracked (for example a file
+   under `.datawatch/`) is staged with `git add -f -- <path>`, because a plain
+   `git add` would refuse it and fail the whole commit; it is committed along
+   with the other declared files. Only the exact listed path is forced, never
+   a directory or a wildcard. A tracked file is always staged normally. If git
+   cannot say which paths it ignores, nothing is forced and the real git error
+   is reported.
 2. **Look again.** If the worktree is now clean for the task, it is marked
    complete as usual, and the commit is the one its post-verify revision is
    pinned to.
@@ -90,14 +97,53 @@ The daemon's own scratch files are never counted: the worker completion marker
 decompose output, the advisory tree lock, the session discovery file
 `.mcp.json` and the skills under `.datawatch/skills/` when the daemon wrote them
 (an untracked file only, so a project that tracks `.mcp.json` still sees a change
-to it), the lines the daemon itself adds to an ignore file (a change to
+to it), the two launcher files the session drops into the working directory,
+`worker-mcp.json` and `worker-starting-context.md` (untracked root copies only:
+a tracked launcher-named root file is still a change, and so is a same-named
+file in a subfolder), the lines the daemon itself adds to an ignore file (a change to
 `.gitignore`, `.cfignore` or `.dockerignore` that only adds those lines; any
-other change to the file is counted), and anything the daemon's staging guard
-refuses to commit. Files git ignores never show up in `git status`, so they are
-not counted either. Do not confuse this list with the generated artefacts —
+other change to the file is counted — and the ignore file is read only when
+its path is demonstrably inside the worktree, so an ignore-file path that
+escapes it, or that a symlink chain resolves outside it, is not counted as a
+daemon change), and anything the daemon's staging guard
+refuses to commit. Three more kinds of file never enter the list:
+
+- **Ignored, untracked files.** A file the repository's own ignore rules
+  ignore and that the repository does not track is dropped by the check
+  itself, whatever `git status` reports, so it is never the reason for a hold
+  and never appears in the question — with the one exception above: a file the
+  task itself listed is not dropped, it is force-staged and committed. A
+  tracked file is still counted even when
+  it matches an ignore rule, and if git cannot answer the ignore question the
+  file is counted anyway — the error goes the way of holding you, not of
+  letting the task go.
+- **A tracked file that holds only the daemon's sections.** When the daemon
+  injects its marked sections into a rules file (the session guardrails
+  header, the memory, RTK, cross-session and platform context blocks), and the
+  file's only difference from the last commit is those sections, the file is
+  not counted. The same file with a real edit outside them is counted.
+- **A file that exists only to carry the daemon's sections.** A newly created
+  file whose whole content is the daemon's marked sections is not counted
+  either — but the moment it carries anything of its own, it is.
+
+The last two rules mean the check does not see a rules file whose content is
+only the daemon's injected sections, on the per-task list and on the
+before-finished list alike. Do not confuse this list with the generated artefacts —
 the small documents the daemon renders for your work when the Automaton
 finishes: at the finished check they count unless the daemon is the only one
 who wrote them (below).
+
+**Git-ignored files the task itself listed.** If a path the task listed is
+one the repository's ignore rules ignore and is not already in the index
+(for example a file a worker created under a git-ignored folder such as
+`.datawatch/`), the per-task check does not leave it behind: it stages exactly
+those listed paths with force — `git add -f -- <path>` for each one — and
+commits them together with the rest of the task's declared files. The force
+staging applies only to the exact listed path: it never stages the containing
+folder, never runs a blanket add, and never touches a git-ignored path the
+task did not list. Detection of other git-ignored, untracked files is
+unchanged: a git-ignored file the task did not list still stays outside both
+the commit and the hold listing.
 
 ### The completion marker file
 
@@ -241,7 +287,11 @@ work, and committing it would put it on the branch without anyone looking.
 
 A hold raises one question per hold, labelled `uncommitted_work`. It names the
 Automaton, the task, the cause and the files (at most the first 20, with a
-count of the rest), and marks the ones outside the declared files. Its options:
+count of the rest), and marks the ones outside the declared files. If the
+hold's cause is that staging or committing failed, the cause — and therefore
+the question text that carries it — also carries the failed git command's
+output and exit status, so you can see which git command failed and why. Its
+options:
 
 | Option | Meaning |
 |---|---|
@@ -330,7 +380,7 @@ nothing is held), one entry per held task or Automaton:
 | `kind` | `task` or `worktree` |
 | `files` | The uncommitted files |
 | `outside_scope` | The subset outside the task's declared files |
-| `reason` | Why it is held: the commit failed, or files were still uncommitted |
+| `reason` | Why it is held: the commit failed — with the failed git command's output and exit status — or files were still uncommitted |
 | `question_id` | The question waiting for your answer |
 | `held_at` | When the hold was placed |
 

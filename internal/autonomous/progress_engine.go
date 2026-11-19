@@ -71,6 +71,7 @@ type ProgressGroup struct {
 	Running            int      `json:"running"`
 	Waiting            int      `json:"waiting"`
 	Blocked            int      `json:"blocked"`
+	Held               int      `json:"held"` // on hold by the operator; never counted as waiting or blocked
 	Tasks              int      `json:"tasks"`
 	TasksDone          int      `json:"tasks_done"`
 	TasksLeft          int      `json:"tasks_left"`
@@ -211,7 +212,14 @@ type ProgressSource interface {
 // source is the only place records come from, so tests pass a fake.
 func CollectProgress(src ProgressSource, backlog []BacklogRow, windows []InactiveWindow, opts ProgressOptions) ProgressMetrics {
 	var prds []*PRD
-	if src != nil {
+	if es, ok := src.(interface{ ProgressEntries() []SummaryEntry }); ok && src != nil {
+		// The summary index answers the progress counts: no full record is read.
+		entries := es.ProgressEntries()
+		prds = make([]*PRD, 0, len(entries))
+		for _, e := range entries {
+			prds = append(prds, e.ProgressRecord())
+		}
+	} else if src != nil {
 		prds = src.ListPRDs()
 	}
 	if len(opts.Projects) > 0 && opts.Automations == nil {
@@ -245,6 +253,7 @@ func (a *progressAcc) add(o *progressAcc) {
 	a.g.Running += o.g.Running
 	a.g.Waiting += o.g.Waiting
 	a.g.Blocked += o.g.Blocked
+	a.g.Held += o.g.Held
 	a.g.Tasks += o.g.Tasks
 	a.g.TasksDone += o.g.TasksDone
 	a.g.WorkHours += o.g.WorkHours
@@ -511,6 +520,9 @@ func accumulateRecord(acc *progressAcc, r progressRec) {
 		acc.g.Running++
 	case PRDBlocked, PRDFailed:
 		acc.g.Blocked++
+	case PRDHeld:
+		// A hold is waiting by the operator's decision: its own group.
+		acc.g.Held++
 	default:
 		acc.g.Waiting++
 	}

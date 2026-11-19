@@ -39,7 +39,7 @@ All four live under `autonomous.parallel` and are changeable from the web app
 | `autonomous.parallel.read_only_tasks` | `true` | A task flagged read only skips the tree lock and runs beside other tasks. `false` makes every task take the lock. |
 | `autonomous.parallel.worktree_per_task` | `true` | Each task that runs alongside others gets its own worktree and branch off the Automaton branch. `false` keeps all tasks in the one worktree. |
 | `autonomous.parallel.merge_conflict_policy` | `additive_then_model` | What happens when a task branch does not merge cleanly: `additive_then_model`, `block` or `triage`. |
-| `autonomous.parallel.merge_conflict_model` | empty | The model that resolves a conflict. Empty uses the strongest configured planning model. |
+| `autonomous.parallel.merge_conflict_model` | empty | The model that resolves a conflict. Empty reads the non-Opus daemon default (`sonnet`); a model the operator names, an Opus model included, is used as written. |
 
 An explicit `false` is kept; only an absent key reads the default.
 
@@ -73,7 +73,11 @@ report).
 - **The dirty check ignores exactly that file.** After the task finishes, the
   `git status` selection excludes `.datawatch` (as before) and exactly the report
   path, so writing the report completes the task while any other stray change
-  still fails it.
+  still fails it. The same goes for the two untracked launcher files the session
+  launcher drops into the working directory, `worker-mcp.json` and
+  `worker-starting-context.md` (untracked root copies only — a tracked file with
+  a launcher name at the root, and a same-named file in a subfolder, are still a
+  change).
 
 Set it next to the task's `read_only` mark, from the same surfaces as above:
 
@@ -99,6 +103,61 @@ issue [#352](https://github.com/dmz006/datawatch-app/issues/352).)
   asks the merge conflict model to resolve anything else.
 - `block` holds the task at once and leaves the conflict for you.
 - `triage` raises the conflict as a question for you to answer.
+
+## Before a task branch merges: daemon-side cleanup
+
+Before a task branch is merged into the Automaton's work branch, the daemon
+settles the two kinds of files a session can leave that are not the task's own
+work:
+
+- **Rules files carrying only the daemon's sections.** If the branch's
+  committed `AGENT.md` or `CLAUDE.md` differs from the base commit only by the
+  daemon's marked sections, the file is restored to the base content; if it
+  also carries a real edit, the daemon's sections are stripped and the edit is
+  kept.
+- **The root launcher files.** If the branch committed the session launcher's
+  own root files — `worker-mcp.json` and `worker-starting-context.md` — they
+  are removed, but **only when the merge target state has no such files**
+  (present at the branch tip, absent at the base commit). A launcher-named
+  file that belongs to the target state, and a same-named file in a subfolder,
+  are both kept — fail-closed.
+
+Everything goes through the branch's ordinary `git add` / `git rm` /
+`git commit` path, so the branch advances by one plain cleanup commit —
+`Strip daemon sections from <file> before merge`, `Remove launcher files
+<names> before merge`, or both — and a branch with nothing of the sort gets no
+cleanup commit at all, so its merge moves the work branch exactly once. A
+rules or launcher file with uncommitted changes beyond what the cleanup would
+touch is an error, and the merge does not run.
+
+**Operator review.** A task branch that committed the launcher files *before*
+this change keeps them once merged, and already-landed history is never
+rewritten: if you see `worker-mcp.json` or `worker-starting-context.md` on a
+merged branch or in a release, review or remove them yourself.
+
+## When a finished task cannot merge yet: the daemon repairs it
+
+Two states used to leave a finished task retrying its merge every few seconds
+with nothing you could do but repair the tree by hand. The daemon now repairs
+both before it runs the merge, and logs what it did.
+
+- **The task's branch is gone, but its worktree still holds the finished
+  work.** This happens when the task worktree is a clone of its own, or sits on
+  a detached commit. The daemon brings the commit into the Automaton's
+  repository if it is not there yet, and recreates the branch at that commit.
+  When the branch exists and the task worktree is detached on a newer commit
+  (the cleanup commit above), the branch is moved forward to it. If neither the
+  branch nor the worktree is left, the merge reports that the finished work
+  cannot be recovered and nothing is changed.
+- **An untracked file in the Automaton's worktree has the path of a file the
+  task branch adds.** Git refuses such a merge ("untracked working tree files
+  would be overwritten"). A copy identical to the branch's file is dropped. A
+  different copy is moved, not deleted, to
+  `.datawatch/merge-aside/<task id>/<path>` inside the Automaton's worktree, so
+  you can read it afterwards. Untracked files the merge does not touch are never
+  moved.
+
+There is no setting for this: both repairs run on every task merge.
 
 ## Read what happened
 

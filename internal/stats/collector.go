@@ -181,6 +181,12 @@ type SystemStats struct {
 	SupervisorWatchFindingsWouldAlert int    `json:"supervisor_watch_findings_would_alert,omitempty"`
 	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
 	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
+	// SupervisorWatchPriorityBands are the per-band wait stats of the
+	// supervisor watch: one row per band that waits at least one
+	// Automaton (high, medium, low order), never a list of a band that
+	// waits nothing. Absent (nil) until the daemon reports the watch's
+	// mode, exactly like the rows above it.
+	SupervisorWatchPriorityBands []SupervisorWatchBand `json:"supervisor_watch_priority_bands,omitempty"`
 
 	// Supervisor loop: whether it is on, its job counts, the stored run
 	// counts by outcome, the retries used and the seconds since the last run
@@ -308,6 +314,20 @@ type UIPromptStats struct {
 	// ByKind breaks the totals down per interstitial prompt kind (e.g.
 	// autocompact).
 	ByKind map[string]UIPromptKindStats `json:"by_kind,omitempty"`
+}
+
+// SupervisorWatchBand is one row of the supervisor watch's per-priority-
+// band wait stats (mirrors the autonomous supervisor-watch read view): the
+// band's name, the priority range it covers (inclusive), how many Automata
+// wait in it, the oldest of their waits in whole minutes and how many of
+// those waiters also satisfy the watch's priority-stall rule.
+type SupervisorWatchBand struct {
+	Band                 string `json:"band"`
+	PriorityFrom         int    `json:"priority_from"`
+	PriorityTo           int    `json:"priority_to"`
+	Waiting              int    `json:"waiting"`
+	OldestWaitingMinutes int    `json:"oldest_waiting_minutes"`
+	Stalled              int    `json:"stalled"`
 }
 
 type SessionStat struct {

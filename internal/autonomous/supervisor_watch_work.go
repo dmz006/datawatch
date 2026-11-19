@@ -26,6 +26,18 @@
 //     for red and "hung" for stuck; no call to GitHub and no new CI
 //     state from here).
 //
+//   - an Automaton is waiting above the priority floor past the stall
+//     threshold (priority_stall: the Automaton sits in the waiting set
+//     — draft, planning, needs_review, approved or revisions_asked —
+//     has a resolved priority at or above the priority floor, and has
+//     now been waiting strictly longer than the stall threshold);
+//
+//   - the consolidated backlog (backlog: the single finding listing
+//     every waiting Automaton plus every failed or blocked Automaton
+//     that still has work left, sorted by highest resolved priority
+//     first, within the same priority by oldest created first, capped
+//     at sixteen entries with a "+k more" tail).
+//
 // Like the host checks (supervisor_watch_host.go), the checks are pure
 // over their inputs: they read state that was already observed and
 // mint a finding from it, and they never act. The checks take their
@@ -35,8 +47,10 @@
 package autonomous
 
 import (
+	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
 
 // SupervisorWatchPRDLister is the live view of the Automata the work
@@ -290,6 +304,191 @@ func (w *SupervisorWatchWork) CheckCISTuck() []SupervisorWatchFinding {
 	return out
 }
 
+// supervisorWatchInWaitingStatus reports whether s is one of the
+// waiting statuses of the supervisor watch: draft, planning,
+// needs_review, approved or revisions_asked. Held, running, and every
+// closed status — as well as failed and blocked, which are their own
+// queue problems — are not waiting; held is by the operator's decision
+// a pause, not a stall, and sortedPRDs drops it from the read view
+// anyway.
+func supervisorWatchInWaitingStatus(s PRDStatus) bool {
+	switch s {
+	case PRDDraft, PRDPlanning, PRDNeedsReview, PRDApproved, PRDRevisionsAsked:
+		return true
+	default:
+		return false
+	}
+}
+
+// supervisorWatchWaitingAge returns the whole-minute age of a waiting
+// Automaton at now: now minus the Automaton's creation instant, clamped
+// at zero for the case the clock moved backwards, or (0, false) when
+// the Automaton is not in the waiting set or has no creation instant —
+// a zero creation instant reads as not started yet, and never as the
+// oldest thing in the queue.
+func supervisorWatchWaitingAge(p *PRD, now time.Time) (int, bool) {
+	if p == nil || !supervisorWatchInWaitingStatus(p.Status) || p.CreatedAt.IsZero() {
+		return 0, false
+	}
+	mins := int(now.Sub(p.CreatedAt) / time.Minute)
+	if mins < 0 {
+		mins = 0
+	}
+	return mins, true
+}
+
+// CheckPriorityStall raises one finding per waiting Automaton that
+// meets both queue conditions at once: its priority is at or above the
+// configured priority floor (an explicit floor of zero admits whatever
+// priorities are in the queue), and it has been waiting strictly longer
+// than the configured stall threshold measured from its creation
+// instant. The check reads only the PRDs and the config it is handed —
+// it does nothing, does not touch triage, and does not re-report an
+// Automaton already raised for the same kind+subject pair.
+func (w *SupervisorWatchWork) CheckPriorityStall(now time.Time, cfg SupervisorWatchConfig) []SupervisorWatchFinding {
+	var out []SupervisorWatchFinding
+	for _, p := range w.sortedPRDs() {
+		age, waiting := supervisorWatchWaitingAge(p, now)
+		if !waiting {
+			continue
+		}
+		if p.Priority < cfg.EffectivePriorityFloor() || age <= cfg.EffectiveStallThresholdMinutes() {
+			continue
+		}
+		if w.isRaised(SupervisorWatchPriorityStall, p.ID) {
+			continue
+		}
+		out = append(out, SupervisorWatchFinding{
+			Kind:    SupervisorWatchPriorityStall,
+			Subject: p.ID,
+			Text: SupervisorWatchPriorityStallText(p.ID, p.Priority, age,
+				cfg.EffectiveStallThresholdMinutes(), cfg.EffectivePriorityFloor()),
+		})
+	}
+	w.markRaised(out)
+	return out
+}
+
+// supervisorWatchBacklogEntry is one Automaton of the consolidated
+// backlog finding, with exactly the fields the sort and the entry text
+// use.
+type supervisorWatchBacklogEntry struct {
+	id       string
+	status   PRDStatus
+	priority int
+	created  time.Time
+	left     int // tasks not completed and not cancelled; 0 renders without the "n left" tail
+}
+
+// supervisorWatchBacklogCap is the backlog finding's entry cap: the
+// queue is listed whole in order, but the one-line text names at most
+// this many entries before a "+k more" tail, so a long queue never
+// buries the reason in a wall of ids.
+const supervisorWatchBacklogCap = 16
+
+// supervisorWatchTasksLeft counts the Automaton's tasks that are not
+// completed and not cancelled: work that is not finished.
+func supervisorWatchTasksLeft(p *PRD) int {
+	n := 0
+	for i := range p.Story {
+		for j := range p.Story[i].Tasks {
+			s := p.Story[i].Tasks[j].Status
+			if s != TaskCompleted && s != TaskCancelled {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// supervisorWatchBacklogEntryText renders one backlog entry: id(status)
+// — the Automaton's id and status — or id(status, n left) when the
+// Automaton still carries tasks that are not completed or cancelled.
+func supervisorWatchBacklogEntryText(e supervisorWatchBacklogEntry) string {
+	if e.left > 0 {
+		return fmt.Sprintf("%s(%s, %d left)", e.id, e.status, e.left)
+	}
+	return fmt.Sprintf("%s(%s)", e.id, e.status)
+}
+
+// CheckBacklog raises the single consolidated backlog finding: every
+// waiting Automaton (the same waiting set priority_stall uses) plus
+// every failed or blocked Automaton that still has work left (at least
+// one task that is not completed or cancelled — a failed or blocked
+// Automaton with no work left is closed work and gets no entry). The
+// finding's subject is the fixed string "backlog", its text starts
+// with "BACKLOG <n> Automata (highest priority first, then oldest)",
+// and its entries are sorted by highest priority first, within the same
+// priority by oldest created first (a missing creation instant reads as
+// oldest, because the queue cannot age it any sooner; a
+// created-instant tie falls back to Automaton id, so the order is total
+// and stable). The entry list is capped at sixteen entries with a
+// "+k more" when the queue is longer, and an empty queue (no waiting,
+// no unfinished failure) raises nothing. The check reads only the PRDs
+// — it does not touch triage, does not act, and keeps the existing
+// kind+subject dedupe so the episode is not re-reported on the same
+// pass.
+func (w *SupervisorWatchWork) CheckBacklog(now time.Time) []SupervisorWatchFinding {
+	if w.isRaised(SupervisorWatchBacklog, SupervisorWatchBacklogSubject) {
+		return nil
+	}
+	var entries []supervisorWatchBacklogEntry
+	for _, p := range w.sortedPRDs() {
+		left := supervisorWatchTasksLeft(p)
+		var include bool
+		switch {
+		case supervisorWatchInWaitingStatus(p.Status):
+			include = true
+		case (p.Status == PRDFailed || p.Status == PRDBlocked) && left > 0:
+			include = true
+		}
+		if !include {
+			continue
+		}
+		entries = append(entries, supervisorWatchBacklogEntry{
+			id:       p.ID,
+			status:   p.Status,
+			priority: p.Priority,
+			created:  p.CreatedAt,
+			left:     left,
+		})
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	// Highest priority first; within the same priority, oldest created
+	// first; a created-instant tie falls back to Automaton id so the
+	// order is deterministic either way.
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := &entries[i], &entries[j]
+		if a.priority != b.priority {
+			return a.priority > b.priority
+		}
+		if a.created.IsZero() != b.created.IsZero() {
+			return a.created.IsZero()
+		}
+		if !a.created.Equal(b.created) {
+			return a.created.Before(b.created)
+		}
+		return a.id < b.id
+	})
+	list := make([]string, 0, supervisorWatchBacklogCap+1)
+	for _, e := range entries {
+		if len(list) == supervisorWatchBacklogCap {
+			list = append(list, fmt.Sprintf("+%d more", len(entries)-supervisorWatchBacklogCap))
+			break
+		}
+		list = append(list, supervisorWatchBacklogEntryText(e))
+	}
+	f := SupervisorWatchFinding{
+		Kind:    SupervisorWatchBacklog,
+		Subject: SupervisorWatchBacklogSubject,
+		Text:    SupervisorWatchBacklogText(len(entries), list),
+	}
+	w.markRaised([]SupervisorWatchFinding{f})
+	return []SupervisorWatchFinding{f}
+}
+
 // supervisorWatchWorkFinding mints one finding of the given kind for
 // the given subject, with its operator-facing text built in the single
 // wording home (supervisor_watch_text.go). FirstSeenAt and LastSeenAt
@@ -330,7 +529,7 @@ func supervisorWatchTriageNamesFailedTask(p *PRD, want TaskStatus) bool {
 // blocked (the two states a held task keeps an Automaton in) and has at
 // least one task in the review state.
 func supervisorWatchHasReviewHeldTask(p *PRD) bool {
-	if p == nil || (p.Status != PRDRunning && p.Status != PRDBlocked) {
+	if p == nil || p.Status == PRDHeld || (p.Status != PRDRunning && p.Status != PRDBlocked) {
 		return false
 	}
 	for i := range p.Story {
@@ -377,6 +576,9 @@ func supervisorWatchQueuedEligible(t LaneType, q LaneFillQueued) int {
 
 // sortedPRDs returns the lister's PRDs in stable Automaton-id order so
 // the check output is deterministic, skipping empties and duplicates.
+// A held Automaton is waiting by the operator's decision, so it is
+// skipped too: it never produces a task-failed, task-review or
+// not-merged finding. The Held group of the read view lists it instead.
 func (w *SupervisorWatchWork) sortedPRDs() []*PRD {
 	prds := w.prdView()
 	if len(prds) == 0 {
@@ -385,7 +587,7 @@ func (w *SupervisorWatchWork) sortedPRDs() []*PRD {
 	out := make([]*PRD, 0, len(prds))
 	seen := map[string]bool{}
 	for _, p := range prds {
-		if p == nil || p.ID == "" || seen[p.ID] {
+		if p == nil || p.ID == "" || seen[p.ID] || p.Status == PRDHeld {
 			continue
 		}
 		seen[p.ID] = true

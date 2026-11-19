@@ -10,11 +10,11 @@
 
 **Related plans:**
 
-- [Federated peer placement](2026-11-03-federated-peer-placement.md) — how a peer advertises nodes and how placement through a peer is gated. This design reuses its capability model and its `<peer>/<node>` token.
+- [Federated peer placement](historical-plans/2026-11-03-federated-peer-placement.md) — how a peer advertises nodes and how placement through a peer is gated. This design reuses its capability model and its `<peer>/<node>` token.
 - [Lane fill, shadow mode first](2026-10-24-lane-fill-shadow-mode.md) — the planner that today counts one GPU pool.
 - [Usage auto-lanes](2026-11-02-usage-auto-lanes.md) — the lane-count source that already derives counts from caps.
 - [Automata pages redesign](2026-11-06-automata-pages-redesign.md) — where the web views would sit.
-- [Placement auto-tags parity](2026-11-03-placement-auto-tags-parity.md) — the tag-based placement filter pools must coexist with.
+- [Placement auto-tags parity](historical-plans/2026-11-03-placement-auto-tags-parity.md) — the tag-based placement filter pools must coexist with.
 
 **The operator's request** (quoted as given):
 
@@ -333,7 +333,7 @@ A pool that contains peer members lets local work run on someone else's machine,
 
 ### The peer capability a placement through a peer needs
 
-Placing work on a peer member requires the capability **`placement:submit`** on the grant held for that peer, and a peer's nodes may enter a pool's candidate set only while the peer holds **`placement:advertise`** (both from [the federated placement plan](2026-11-03-federated-peer-placement.md), checked through the existing `Resolve()`/`Check()` chokepoint in `internal/federation/capabilities.go`; the `placement-partner` builtin group holds exactly these two). The checks are:
+Placing work on a peer member requires the capability **`placement:submit`** on the grant held for that peer, and a peer's nodes may enter a pool's candidate set only while the peer holds **`placement:advertise`** (both from [the federated placement plan](historical-plans/2026-11-03-federated-peer-placement.md), checked through the existing `Resolve()`/`Check()` chokepoint in `internal/federation/capabilities.go`; the `placement-partner` builtin group holds exactly these two). The checks are:
 
 - At pool write time: adding a `{peer: ...}` member is refused (or accepted but marked `inactive`, operator's choice at write time) when the peer lacks `placement:advertise`.
 - At decision time: a peer member without both capabilities is treated as **down** for placement with reason `capability`, and shows as such in the pool view.

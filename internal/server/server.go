@@ -374,6 +374,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("PUT /api/plans/{ref}/automata/order", api.handlePlanAutomataOrder)            // plans write API: set the order of a plan's Automata
 	apiMux.HandleFunc("POST /api/plans/{ref}/attach", api.handlePlanAttach)                          // plans write API: attach an Automaton, Automation or finding
 	apiMux.HandleFunc("POST /api/plans/{ref}/detach", api.handlePlanDetach)                          // plans write API: detach one of them
+	apiMux.HandleFunc("GET /api/plans/{ref}/themes", api.handlePlanThemesGet)                        // release plans API: a plan's themes and unplaced items
+	apiMux.HandleFunc("PUT /api/plans/{ref}/themes", api.handlePlanThemesPut)                        // release plans API: set the whole theme layout
+	apiMux.HandleFunc("POST /api/plans/{ref}/themes", api.handlePlanThemesAction)                    // release plans API: theme create, rename, delete, place, unplace, reorder
+	apiMux.HandleFunc("POST /api/plans/{ref}/archive", api.handlePlanArchive)                        // release plans API: archive a plan (nothing is deleted)
+	apiMux.HandleFunc("POST /api/plans/{ref}/restore", api.handlePlanRestore)                        // release plans API: clear the archive mark
+	apiMux.HandleFunc("GET /api/plans/unattributed", api.handlePlansUnattributed)                    // release plans API: Automata no release plan holds, with suggestions
 	apiMux.HandleFunc("GET /api/plans/{ref}/tasks", api.handlePlanTasks)                             // plans read API: a plan's tasks (on expand)
 	apiMux.HandleFunc("GET /api/projects/{name}/history", api.handleProjectHistory)                  // project history: finished/archived Automata, daily progress, Gantt rows
 	apiMux.HandleFunc("GET /api/projects/{name}/timeline", api.handleProjectTimeline)                // project timeline: first/last per arc, Automaton and task, one level at a time
@@ -471,6 +477,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// decompose-lint — config read/replace + per-PRD stored record / dry run.
 	apiMux.HandleFunc("/api/autonomous/decompose-lint/config", api.handleAutonomousDecomposeLintConfig)
 	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
+	// One page of one Automaton's task rows (never part of the list).
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/tasks", api.handlePRDTasks)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/archive", api.handlePRDArchive)
+	apiMux.HandleFunc("/api/autonomous/archive", api.handleAutonomousArchive)
 	// Planning routing: config, test and scorecard.
 	apiMux.HandleFunc("/api/autonomous/planning-routing", api.handleAutonomousPlanningRouting)
 	apiMux.HandleFunc("/api/autonomous/planning-routing/test", api.handleAutonomousPlanningRoutingTest)
@@ -505,6 +515,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Cancelled-to-Completed migration: POST /api/autonomous/completed/migrate
 	// [?dry_run=&limit=&id=].
 	apiMux.HandleFunc("/api/autonomous/completed/migrate", api.handleAutonomousCompletedMigrate)
+	// Operator hold: GET /api/autonomous/held (the held group) and
+	// POST /api/autonomous/held/migrate {dry_run,ids,reason,condition,until,actor}.
+	apiMux.HandleFunc("/api/autonomous/held", api.handleAutonomousHeld)
+	apiMux.HandleFunc("/api/autonomous/held/migrate", api.handleAutonomousHeldMigrate)
 	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
 	// [?dry_run=true] — one pass over the base repository's main branch.
 	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
@@ -623,6 +637,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)                       // decision records: create and list (exact path wins over the subtree)
 	apiMux.HandleFunc("/api/autonomous/decision-records/", api.handleDecisionRecords)                      // decision records: one by id, update, withdraw
 	apiMux.HandleFunc("/api/plan-records/", api.handlePlanRecords)                                         // plan records: registry rows, findings, search, import
+	apiMux.HandleFunc("/api/plans/migrate/row-plans", api.handlePlansRowPlans)                             // release plans API: list (GET) and convert (POST, preview by default) the registry-row plans
 	apiMux.HandleFunc("/api/plans/migrate", api.handlePlansMigrate)                                        // plans migrate: dry run by default, {apply:true} writes plans from arcs and registry rows
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                           // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                              // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
@@ -636,6 +651,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)                  // safe-to-delete report of finished Automaton branches and worktrees
+	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap", api.handleAutonomousRemoteReap)                       // remote branch reaper: would-reap / would-hold preview on origin plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/remote-reap/run", api.handleAutonomousRemoteReapRun)                // remote branch reaper: perform one pass (backup first, verify, then delete on origin; report-only while remote_reap_enabled is unset) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap/restore", api.handleAutonomousRemoteReapRestore)        // remote branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list
@@ -1119,6 +1140,17 @@ func (s *HTTPServer) CheckRoleContention() []string {
 func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {
 		s.api.SetServerStore(st)
+	}
+}
+
+// SetTLSPeerWarnTracker wires the peer certificate non-verification
+// warning tracker (log + once-per-peer-per-run system alert) into the
+// server's create/update handlers. Nil (unwired) is safe: the handlers
+// only nil-check the tracker when they run, and it is only invoked from
+// the server side.
+func (s *HTTPServer) SetTLSPeerWarnTracker(t *TLSPeerWarnTracker) {
+	if s.api != nil {
+		s.api.SetTLSPeerWarnTracker(t)
 	}
 }
 

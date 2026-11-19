@@ -189,7 +189,7 @@ func TestWorkerProfileInForceKey(t *testing.T) {
 }
 
 // workerProfileInForceLines prints a header then one indented line per role and
-// task kind, matching workerprofile.InForce over the same config body.
+// task kind and session kind, matching workerprofile.InForce over the same config body.
 func TestWorkerProfileInForceLines(t *testing.T) {
 	body := []byte(`{"autonomous":{"worker_profile":"","worker_profiles":{},` +
 		`"worker_profile_defaults":{"role":{"worker":"full"},"kind":{"note":"digest"}}}}`)
@@ -197,8 +197,8 @@ func TestWorkerProfileInForceLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workerProfileInForceLines: %v", err)
 	}
-	if len(lines) != 1+3+4 {
-		t.Fatalf("got %d lines, want 8 (header, 3 roles, 4 kinds): %q", len(lines), lines)
+	if len(lines) != 1+3+4+6 {
+		t.Fatalf("got %d lines, want 14 (header, 3 roles, 4 task kinds, 6 session kinds): %q", len(lines), lines)
 	}
 	if lines[0] != "profile in force:" {
 		t.Errorf("header = %q", lines[0])
@@ -208,7 +208,7 @@ func TestWorkerProfileInForceLines(t *testing.T) {
 		"  kind note profile=digest tier=kind": false,
 	}
 	for _, l := range lines[1:] {
-		if !strings.HasPrefix(l, "  role ") && !strings.HasPrefix(l, "  kind ") {
+		if !strings.HasPrefix(l, "  role ") && !strings.HasPrefix(l, "  kind ") && !strings.HasPrefix(l, "  session_kind ") {
 			t.Errorf("line %q is not indented scope line", l)
 		}
 		if _, ok := want[l]; ok {

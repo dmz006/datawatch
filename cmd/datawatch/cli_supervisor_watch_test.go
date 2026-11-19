@@ -154,7 +154,7 @@ func TestSupervisorWatchCLIJSONUntouched(t *testing.T) {
 
 func TestSupervisorWatchCLIEmptyFindings(t *testing.T) {
 	supervisorWatchDaemon(t, http.StatusOK,
-		`{"mode":"shadow","last_poll_at":"0001-01-01T00:00:00Z","findings":[],"comparison":{"last":null,"agreed_days":0,"only_watch":[],"only_script":[]}}`)
+		`{"mode":"shadow","last_poll_at":"0001-01-01T00:00:00Z","findings":[],"priority_bands":[],"comparison":{"last":null,"agreed_days":0,"only_watch":[],"only_script":[]}}`)
 	s, err := runSupervisorWatchCmd(t)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -163,6 +163,42 @@ func TestSupervisorWatchCLIEmptyFindings(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("empty state lacks %q:\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "priority band") {
+		t.Errorf("an empty band list must not print band lines:\n%s", s)
+	}
+}
+
+func TestSupervisorWatchCLIPriorityBands(t *testing.T) {
+	supervisorWatchDaemon(t, http.StatusOK, `{
+  "mode": "shadow",
+  "last_poll_at": "2026-10-29T10:15:00Z",
+  "findings": [],
+  "priority_bands": [
+    {"band": "high", "priority_from": 80, "priority_to": 100, "waiting": 2, "oldest_waiting_minutes": 41, "stalled": 1},
+    {"band": "low", "priority_from": 0, "priority_to": 49, "waiting": 1, "oldest_waiting_minutes": 5, "stalled": 0}
+  ],
+  "comparison": {"last": null, "agreed_days": 0, "only_watch": [], "only_script": []}
+}`)
+	s, err := runSupervisorWatchCmd(t)
+	if err != nil {
+		t.Fatalf("execute: %v (output: %q)", err, s)
+	}
+	for _, want := range []string{
+		"priority band high: 2 waiting (oldest 41 min, 1 stalled)",
+		"priority band low: 1 waiting (oldest 5 min, 0 stalled)",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("band output lacks %q:\n%s", want, s)
+		}
+	}
+	if i := strings.Index(s, "priority band high"); i < 0 {
+		t.Fatalf("high band line missing:\n%s", s)
+	} else if j := strings.Index(s, "priority band low"); j < 0 || j < i {
+		t.Errorf("bands must be in high, medium, low order:\n%s", s)
+	}
+	if strings.Contains(s, "priority band medium") {
+		t.Errorf("a band that waits nothing must not get a line:\n%s", s)
 	}
 }
 

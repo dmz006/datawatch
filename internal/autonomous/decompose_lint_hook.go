@@ -7,19 +7,19 @@
 // sync):
 //
 //   - off     : complete no-op — no template apply, no lint pass, no
-//               record. A PRD decomposed while the check is off is
-//               recorded exactly as before this feature.
+//     record. A PRD decomposed while the check is off is
+//     recorded exactly as before this feature.
 //   - shadow  : apply task templates (idempotent), run one lint pass,
-//               record the findings on the PRD (PRD.DecomposeLint).
-//               The pass never blocks: the plan the decomposer wrote
-//               is the plan that gets stored.
+//     record the findings on the PRD (PRD.DecomposeLint).
+//     The pass never blocks: the plan the decomposer wrote
+//     is the plan that gets stored.
 //   - enforce : as shadow, but while the pass carries block findings
-//               and decompose_lint.max_retries budget remains, re-run
-//               the decomposer with the current findings fed back into
-//               its prompt; each retry result is re-parsed,
-//               re-templated and re-linted. When the last retry is
-//               spent (or a retry fails), the last good plan is what
-//               gets stored, with whatever findings it still carries.
+//     and decompose_lint.max_retries budget remains, re-run
+//     the decomposer with the current findings fed back into
+//     its prompt; each retry result is re-parsed,
+//     re-templated and re-linted. When the last retry is
+//     spent (or a retry fails), the last good plan is what
+//     gets stored, with whatever findings it still carries.
 //
 // The hook NEVER fails the decompose: findings are attached to the
 // stored PRD, never fatal — a decomposition that produced them still
@@ -34,6 +34,12 @@
 // pack every planning run starts from is the built-in one merged with
 // the operator's autonomous.task_templates (see task_templates.go).
 // Mode off applies nothing.
+//
+// Every lint pass also runs the verification-script pre-flight
+// (RunVerifyScriptPreflight) and adds its block findings to the set, so
+// they drive the enforce-mode retry. In mode off the pre-flight still
+// runs once; when it finds anything it records those findings with mode
+// off, and nothing is retried.
 //
 // LintPRD is the operator's dry-run counterpart: the same engine
 // (EffectiveRules + LintTasks) over a PRD's STORED stories — it
@@ -129,6 +135,19 @@ type decomposeRetryStep func(feedback string) (title, raw string, stories []Stor
 func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story, retry decomposeRetryStep) (string, string, []Story) {
 	st := m.decomposeLintSettingsSnapshot()
 	if st.mode == config.DecomposeLintModeOff {
+		// The lint pass stays off, but the verification-script pre-flight
+		// still runs and records what it finds; nothing is retried.
+		ensurePlanIDs(stories)
+		pf := RunVerifyScriptPreflight(prd.ProjectDir, stories)
+		if len(pf) > 0 {
+			prd.DecomposeLint = &DecomposeLintRecord{
+				Findings: pf,
+				Mode:     st.mode,
+				Attempts: 1,
+				LintedAt: time.Now(),
+			}
+			_ = m.store.SavePRD(prd)
+		}
 		return title, raw, stories
 	}
 	applyTemplates := func(s []Story) []Story {
@@ -142,6 +161,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	}
 	findings := func(s []Story) []LintFinding {
 		f := LintTasksIn(prd.ProjectDir, m.daemonModeStories(s), st.rules)
+		f = append(f, RunVerifyScriptPreflight(prd.ProjectDir, s)...)
 		if f == nil {
 			f = []LintFinding{}
 		}
@@ -173,6 +193,29 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	// record's first write).
 	_ = m.store.SavePRD(prd)
 	return title, raw, stories
+}
+
+// parseAndLintDecompose is the parse-plus-lint step both decompose paths
+// (and the re-attached planner ingest) share: ParsePlanning, then
+// decomposeLintHook. A parse failure is returned as ParsePlanning gave it. A
+// Go panic in either step is recovered and returned as the named
+// DecomposeOutputError, so one bad plan fails its Automaton through
+// failDecomposeAttempt instead of aborting the daemon. The caller records the
+// failure; it is a written verdict, never an infra retry.
+func (m *Manager) parseAndLintDecompose(prd *PRD, raw string, retry decomposeRetryStep) (title, outRaw string, stories []Story, err error) {
+	outRaw = raw
+	err = guardDecomposeOutput(raw, func() error {
+		t, s, perr := ParsePlanning(raw)
+		if perr != nil {
+			return perr
+		}
+		title, outRaw, stories = m.decomposeLintHook(prd, t, raw, s, retry)
+		return nil
+	})
+	if err != nil {
+		return "", raw, nil, err
+	}
+	return title, outRaw, stories, nil
 }
 
 // decomposeLintTemplateCfg wraps the manager's task-templates mirror

@@ -486,6 +486,11 @@ type Command struct {
 	HasPriority bool
 	PriorityErr string
 
+	// Model — explicit model for "new: model=<name>: <task>". ModelErr is set
+	// when the model= prefix was given with an empty value.
+	Model    string
+	ModelErr string
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -754,7 +759,7 @@ func Parse(text string) Command {
 		// Recognised keys: llm, compute, chrome, git, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority=", "model="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -769,6 +774,7 @@ func Parse(text string) Command {
 			llmRef, computeRef, parentID := "", "", ""
 			chrome, git, killChildren, killChildrenRecursive := false, false, false, false
 			priority, hasPriority, priorityErr := 0, false, ""
+			model, modelErr := "", ""
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -793,6 +799,11 @@ func Parse(text string) Command {
 						priorityErr = perr.Error()
 					}
 					priority = p
+				case strings.HasPrefix(tok, "model="):
+					model = strings.TrimSpace(strings.TrimPrefix(tok, "model="))
+					if model == "" {
+						modelErr = "model= needs a value (e.g. model=sonnet)"
+					}
 				case tok == "kill_children=true":
 					killChildren = true
 				case tok == "kill_children=false":
@@ -805,7 +816,7 @@ func Parse(text string) Command {
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority) {
+			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority || model != "" || modelErr != "") {
 				return Command{
 					Type:                  CmdNew,
 					Text:                  tail,
@@ -819,6 +830,8 @@ func Parse(text string) Command {
 					Priority:              priority,
 					HasPriority:           hasPriority,
 					PriorityErr:           priorityErr,
+					Model:                 model,
+					ModelErr:              modelErr,
 				}
 			}
 		}
@@ -2016,7 +2029,7 @@ trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace ro
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
-usage_backoff                    show per-backend usage back-off flags, config and the patterns_version/patterns_stale/claude_cli_version drift guard
+usage_backoff                    show per-backend usage back-off flags, the effective config (incl. the backoff_reserve_for_review and backoff_reserve_tokens_per_hour reserve settings) and the live reserve usage (reserve array), plus the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
 usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
@@ -2036,6 +2049,10 @@ dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (w
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
+autonomous hold <id> <reason words> [until=<value>] [condition=<words>]   put an Automaton on hold; until is a time, a date or a duration like 72h; quote a multi-word value
+autonomous release-hold <id> [note]   release a hold; the Automaton returns to the status it had
+autonomous held   the Held group: Automata on hold, with reason, condition and look-again line
+autonomous held-migrate [dry_run=true] [id=<id>]... [reason=<words>]   list blocked or failed look-alikes, or hold the chosen ids (a real run needs id= and reason=)
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —

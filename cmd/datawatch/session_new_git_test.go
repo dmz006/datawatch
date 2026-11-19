@@ -79,3 +79,42 @@ func TestSessionNewStartBodyLaunchRole(t *testing.T) {
 	}
 	t.Error("session new command not found")
 }
+
+// TestSessionNewStartBodyModelFlag verifies --model/--effort land in the start body.
+func TestSessionNewStartBodyModelFlag(t *testing.T) {
+	body, err := sessionNewStartBodyModel("t", "/tmp/p", "", "", "", "", false, "", false, false, nil, false, nil, "", "", "sonnet", "thorough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["model"] != "sonnet" || got["effort"] != "thorough" || got["task"] != "t" {
+		t.Errorf("body = %s", body)
+	}
+	cmd := newSessionCmd()
+	for _, c := range cmd.Commands() {
+		if c.Name() == "new" {
+			if c.Flags().Lookup("model") == nil || c.Flags().Lookup("effort") == nil {
+				t.Error("session new missing --model/--effort")
+			}
+			return
+		}
+	}
+	t.Error("session new command not found")
+}
+
+func TestSessionNewStartBodyModelAbsent(t *testing.T) {
+	body, err := sessionNewStartBodyModel("t", "/tmp/p", "", "", "", "", false, "", false, false, nil, false, nil, "", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(body, &got)
+	for _, k := range []string{"model", "effort"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s sent when empty: %s", k, body)
+		}
+	}
+}

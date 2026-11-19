@@ -1,0 +1,76 @@
+{
+  "title": "Fix the merge-shadow comparison test race",
+  "stories": [
+    {
+      "title": "Merge-shadow comparison test race",
+      "description": "Make the comparison between the shadow merge and the live merge safe to run concurrently and keep its report stable. Reports are plain text, sorted, and never include wall-clock values. Each task changes only its own files and ends with a script that checks them. Inputs are synthetic and every name in them is invented. The shadow path may lag the live path by one merge, so the comparison tolerates that lag and reports it separately. A difference is reported once, with the key, the live value and the shadow value. Keys present on only one side are listed after the differing keys. The comparison never mutates either result set and never retains a reference to it. Concurrent callers each get their own report and share only the read-only fixture. The race detector is the final judge, so every task that touches shared state runs under it. Ordering of goroutine start is not assumed anywhere in the tests. Timeouts in the tests are generous so a slow machine does not cause a false failure. Reports are plain text, sorted, and never include wall-clock values. Each task changes only its own files and ends with a script that checks them. Keep runs short and repeatable here too Keep runs sh",
+      "tasks": [
+        {
+          "title": "Seed the merge-shadow comparison fixture",
+          "spec": "Build two in-memory merge results, one from the live merge path and one from the shadow path, over the same synthetic input set. Keep the inputs deterministic so the comparison is reproducible. The fixture must expose both result sets and the order each path produced them in. The check lives in .datawatch/verify/merge-shadow-1.sh and reads only the files this task changes.",
+          "verification_script": ".datawatch/verify/merge-shadow-1.sh",
+          "files": [
+            "internal/example/mergeshadow_1.go"
+          ],
+          "kind": "",
+          "rules_applied": [
+            "tests-with-code",
+            "no-tracker-ids"
+          ]
+        },
+        {
+          "title": "Compare shadow and live merge outputs",
+          "spec": "Add a comparison helper that walks both result sets and reports every key whose value differs, plus keys present on only one side. The helper returns a sorted report so two runs over the same inputs print the same text. The check lives in .datawatch/verify/merge-shadow-2.sh and reads only the files this task changes.",
+          "verification_script": ".datawatch/verify/merge-shadow-2.sh",
+          "files": [
+            "internal/example/mergeshadow_2.go"
+          ],
+          "kind": "",
+          "rules_applied": [
+            "tests-with-code",
+            "no-tracker-ids"
+          ]
+        },
+        {
+          "title": "Reproduce the comparison test race",
+          "spec": "Run the comparison from several goroutines at once against one shared fixture and record which unsynchronised read or write the race detector reports. Capture the report text in the task notes so the fix can be checked against it. The check lives in .datawatch/verify/merge-shadow-3.sh and reads only the files this task changes.",
+          "verification_script": ".datawatch/verify/merge-shadow-3.sh",
+          "files": [
+            "internal/example/mergeshadow_3.go"
+          ],
+          "kind": "",
+          "rules_applied": [
+            "tests-with-code",
+            "no-tracker-ids"
+          ]
+        },
+        {
+          "title": "Guard the shared comparison state",
+          "spec": "Protect the shared comparison state with one mutex held for the shortest span that covers both the read and the update. Do not hold the lock while the report is formatted or printed. The check lives in .datawatch/verify/merge-shadow-4.sh and reads only the files this task changes.",
+          "verification_script": ".datawatch/verify/merge-shadow-4.sh",
+          "files": [
+            "internal/example/mergeshadow_4.go"
+          ],
+          "kind": "",
+          "rules_applied": [
+            "tests-with-code",
+            "no-tracker-ids"
+          ]
+        },
+        {
+          "title": "Prove the race is gone",
+          "spec": "Run the comparison test repeatedly under the race detector and confirm it reports no data race and prints the same report each time. Add the repeated-run test to the comparison test file. The check lives in .datawatch/verify/merge-shadow-5.sh and reads only the files this task changes.",
+          "verification_script": ".datawatch/verify/merge-shadow-5.sh",
+          "files": [
+            "internal/example/mergeshadow_5.go"
+          ],
+          "kind": "",
+          "rules_applied": [
+            "tests-with-code",
+            "no-tracker-ids"
+          ]
+        }
+      ]
+    }
+  ]
+}

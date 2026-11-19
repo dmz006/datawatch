@@ -67,7 +67,7 @@ type MergeConflictFile struct {
 type MergeResolveRequest struct {
 	PRD   *PRD
 	Task  *Task
-	Model string // merge_conflict_model; empty = strongest planning model
+	Model string // merge_conflict_model; unset reads the daemon default (non-Opus)
 	Dir   string // the PRD worktree the merge runs in
 	Files []MergeConflictFile
 }
@@ -187,6 +187,11 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 	}
 
 	dir := prd.ProjectDir
+	// A branch missing from the base repository is recreated from the task
+	// worktree's finished commit before anything reads it (task_merge_recover.go).
+	if serr := m.syncTaskBranchToWorktree(ctx, prd, t); serr != nil {
+		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", serr)
+	}
 	if taskBranchMerged(ctx, dir, t.WorktreeBranch, "HEAD") {
 		sha := strings.TrimSpace(gitText(ctx, dir, "rev-parse", "HEAD"))
 		m.setMergeState(t, MergeStateMerged, sha)
@@ -210,6 +215,20 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 
 	if cerr := m.cleanTaskBranchDaemonSections(ctx, prd, t); cerr != nil {
 		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", cerr)
+	}
+
+	// The cleanup commit may sit on a detached task worktree: carry it onto
+	// the branch, then clear untracked files the merge would overwrite.
+	if serr := m.syncTaskBranchToWorktree(ctx, prd, t); serr != nil {
+		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", serr)
+	}
+	dropped, aside, uerr := clearOverwritableUntracked(ctx, dir, t.WorktreeBranch, t.ID)
+	if uerr != nil {
+		return MergeOutcomeDeferred, fmt.Errorf("task merge: %w", uerr)
+	}
+	if len(dropped) > 0 || len(aside) > 0 {
+		log.Printf("[autonomous] %s task %s: before the merge, dropped %d untracked file(s) identical to the task branch's (%s) and moved %d differing one(s) aside under .datawatch/merge-aside/%s (%s)",
+			prd.ID, t.ID, len(dropped), strings.Join(dropped, ", "), len(aside), t.ID, strings.Join(aside, ", "))
 	}
 
 	msg := fmt.Sprintf("Merge task %s: %s", t.ID, t.Title)
@@ -433,7 +452,7 @@ func unmergedPaths(ctx context.Context, dir string) []string {
 
 // abortMerge backs out an unfinished merge, restoring the tree it began from.
 func abortMerge(ctx context.Context, dir string) {
-	if _, err := runGitInCtx(ctx, dir, "rev-parse", "-q", "--verify", "MERGE_HEAD"); err != nil {
+	if !mergeInProgress(ctx, NewMergeGitRunner(), dir) {
 		return // no merge in progress
 	}
 	if _, err := runGitInCtx(ctx, dir, "merge", "--abort"); err != nil {

@@ -41,6 +41,13 @@ type RemoteServerConfig struct {
 	// false. OK for a self-signed/local-dev peer on a trusted network only;
 	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
 	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
+	// TLSCertFingerprint pins the peer's leaf certificate to the hex
+	// SHA-256 of its DER bytes. It is the recommended alternative to
+	// TLSSkipVerify for a self-signed peer: the peer's identity is still
+	// checked, only the CA chain is not. When set it wins over
+	// TLSSkipVerify. Same convention as the compute node
+	// tls_cert_fingerprint.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty"`
 	// FingerprintSync opts THIS peer into the resource-fingerprint exchange.
 	// Opt-in per peer, default false — the operator decision recorded in
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
@@ -1096,8 +1103,9 @@ type ComputeNodeYAML struct {
 	// node usage probes and the supervisor watch probe. Default false =
 	// verify. Cannot be combined with TLSCAFile or TLSCertFingerprint.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
-	// VerifyTLS makes model pulls to this node verify its HTTPS certificate
-	// against the system roots. Default false.
+	// VerifyTLS used to switch model-pull certificate verification on.
+	// Pulls now always verify, so the field is kept for configuration
+	// compatibility and no longer changes behavior.
 	VerifyTLS bool `yaml:"verify_tls" json:"verify_tls"`
 	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
 	// system roots when the node serves a certificate from a private CA.
@@ -3533,6 +3541,15 @@ type AutonomousConfig struct {
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
 	// rejected — see loop_detect_turns.go.
 	LoopDetectTurns *int `yaml:"loop_detect_turns,omitempty" json:"loop_detect_turns,omitempty"`
+	// UnlandedAlertEnabled turns the daily pending-branch alert on or off.
+	// *bool: nil = unset → on (DefaultUnlandedAlertEnabled); see
+	// unlanded_alert.go.
+	UnlandedAlertEnabled *bool `yaml:"unlanded_alert_enabled,omitempty" json:"unlanded_alert_enabled,omitempty"`
+	// UnlandedAlertThreshold is how many pending Automaton branches are
+	// allowed before the daily alert fires (it fires when the count is
+	// strictly above). *int: nil = unset → 3; 0 = alert on any pending
+	// branch. Negative values are rejected — see unlanded_alert.go.
+	UnlandedAlertThreshold *int `yaml:"unlanded_alert_threshold,omitempty" json:"unlanded_alert_threshold,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -3544,6 +3561,18 @@ type AutonomousConfig struct {
 	// BackoffMaxWaitMinutes caps the back-off applied when a rate limit
 	// carries no parseable reset time. Unset => 60; values < 1 clamp to 60.
 	BackoffMaxWaitMinutes int `yaml:"backoff_max_wait_minutes,omitempty" json:"backoff_max_wait_minutes,omitempty"`
+	// BackoffReserveForReview is the number of live session slots a backed-off
+	// backend keeps for the work that reviews it — guardrail judges and
+	// verifiers (planning roles of rank 0) and decompose/planning sessions
+	// (rank 2) — while worker sessions are held. A pointer, so an explicit 0
+	// (no reserve at all: a backed-off backend then refuses every new
+	// autonomous session) survives omitempty; unset reads as 1 through the
+	// default. Negative values clamp to 0 (reserve off).
+	BackoffReserveForReview *int `yaml:"backoff_reserve_for_review,omitempty" json:"backoff_reserve_for_review,omitempty"`
+	// BackoffReserveTokensPerHour caps the review work a backed-off backend
+	// takes through that gate: a rolling one-hour token budget. 0 (unset) or
+	// negative reads as no cap.
+	BackoffReserveTokensPerHour int64 `yaml:"backoff_reserve_tokens_per_hour,omitempty" json:"backoff_reserve_tokens_per_hour,omitempty"`
 	// RoleScanIntervalSeconds is how often the daemon re-checks LLM role
 	// tags for contention (two entries claiming one role, or two roles
 	// converging on one entry). Unset or < 1 => 300. Warnings only.
@@ -3658,9 +3687,34 @@ type AutonomousConfig struct {
 	// gates. 0 or unset means the default of 24 hours; a negative value is
 	// a config error. Read through EffectiveVerifierHeadroomMaxAge.
 	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
+	// ReapedBranchBackupDays is how many whole days the backup ref kept for
+	// a reaped Automaton branch stays before it is pruned. 0 or unset means
+	// the default of 30 days; a negative value is a config error. Read
+	// through EffectiveReapedBranchBackupDays.
+	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
+	// RemoteReapEnabled turns the remote branch reap pass from report-only
+	// into one that deletes: an automaton work branch is deleted from
+	// origin only when it is fully merged into the project's default
+	// branch, its tip is older than remote_reap_retention_days whole days,
+	// and the tip is kept in a backup ref that is verified to point at it
+	// before the delete. false or unset (the default) is report-only.
+	RemoteReapEnabled bool `yaml:"remote_reap_enabled,omitempty" json:"remote_reap_enabled,omitempty"`
+	// RemoteReapRetentionDays is how many whole days old the tip of a fully
+	// merged automaton work branch must be before the remote reap pass may
+	// delete it from origin. 0 or unset means the default of 30 days; a
+	// negative value is a config error. Read through
+	// EffectiveRemoteReapRetentionDays.
+	RemoteReapRetentionDays int `yaml:"remote_reap_retention_days,omitempty" json:"remote_reap_retention_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+	// SecurityScanExtensions — the file extensions the security scan
+	// covers (e.g. ".py"). Unset (nil) or an explicitly empty list means
+	// the scanner's built-in defaults (.py, .pyw); a non-empty list scans
+	// exactly those extensions and no others. The scan is warn-only. No
+	// `omitempty`, deliberately, same JSON round-trip reason as
+	// SnapshotNeverStage below.
+	SecurityScanExtensions []string `yaml:"security_scan_extensions" json:"security_scan_extensions"`
 	// SnapshotNeverStage lists path patterns the autonomous snapshot and
 	// automatic-staging paths (the refs/datawatch/attempts attempt snapshots
 	// and the other automatic commits) must never stage: an entry ending in
@@ -3897,10 +3951,12 @@ type AutonomousConfig struct {
 	// skills, context, model, effort). A value's name, when set, must match
 	// its key. Empty (default) = no user profiles; built-ins still apply.
 	//
-	// worker_profile_defaults: the profile each role and task kind starts
-	// with when no profile is named. role keys: planner, worker, verifier,
-	// judge. kind keys: implementation, docs, note, final_gate. Values are
-	// built-in or user profile names. Empty (default) = built-in defaults.
+	// worker_profile_defaults: the profile each role, task kind and session
+	// kind starts with when no profile is named. role keys: planner, worker,
+	// verifier, judge. kind keys: implementation, docs, note, final_gate (task
+	// kinds) and supervisor, operator_interactive, scheduled_command, planner,
+	// one_shot, review (session kinds). Values are built-in or user profile
+	// names. Empty (default) = built-in defaults.
 	//
 	// worker_profile: the global-layer profile name, used when no task,
 	// automaton or project names one. Empty = the role default.
@@ -4039,6 +4095,11 @@ type AutonomousConfig struct {
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
 	Progress AutonomousProgressConfig `yaml:"progress" json:"progress"`
+
+	// Archive — the finished-Automaton archive: how old a completed, shipped
+	// or cancelled Automaton must be before it is archived, and whether the
+	// daemon may archive on its own. See AutonomousArchiveConfig.
+	Archive AutonomousArchiveConfig `yaml:"archive" json:"archive"`
 
 	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
 	// over the freshly decomposed plan, run at the end of Decompose and
@@ -4312,6 +4373,36 @@ func (a AutonomousConfig) BranchRefreshLimit() int {
 // than this many hours is stale for the verifier cap gates.
 const VerifierHeadroomMaxAgeHoursDefault = 24
 
+// ReapedBranchBackupDaysDefault is the default of
+// autonomous.reaped_branch_backup_days: the backup ref of a reaped Automaton
+// branch is kept this many days.
+const ReapedBranchBackupDaysDefault = 30
+
+// RemoteReapRetentionDaysDefault is the default of
+// autonomous.remote_reap_retention_days: the tip of a fully merged
+// automaton work branch must be at least this many whole days old before a
+// remote reap pass may delete it from origin.
+const RemoteReapRetentionDaysDefault = 30
+
+// EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
+// with 0, unset or a non-positive value reading the default of 30 days.
+func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
+	if a.ReapedBranchBackupDays <= 0 {
+		return ReapedBranchBackupDaysDefault
+	}
+	return a.ReapedBranchBackupDays
+}
+
+// EffectiveRemoteReapRetentionDays returns autonomous.
+// remote_reap_retention_days, with 0, unset or a non-positive value reading
+// the default of 30 days.
+func (a AutonomousConfig) EffectiveRemoteReapRetentionDays() int {
+	if a.RemoteReapRetentionDays <= 0 {
+		return RemoteReapRetentionDaysDefault
+	}
+	return a.RemoteReapRetentionDays
+}
+
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
 // gates use: autonomous.verifier_min_free_mem_mb when set (0 = check off),
 // otherwise the default of 1024. It delegates to
@@ -4458,8 +4549,15 @@ type AutonomousAutomationConfig struct {
 	ChildInherit             *bool  `yaml:"child_inherit,omitempty" json:"child_inherit,omitempty"`
 	MergePendingMode         string `yaml:"merge_pending_mode,omitempty" json:"merge_pending_mode,omitempty"`
 	MergePendingAlertMinutes *int   `yaml:"merge_pending_alert_minutes,omitempty" json:"merge_pending_alert_minutes,omitempty"`
-	MergedMemberPolicy       string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
-	AgentInsertPolicy        string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+	// MergePendingIncludeTerminal is the
+	// autonomous.automation.merge_pending_include_terminal setting: when true
+	// (the default when unset, read through EffectiveMergePendingIncludeTerminal)
+	// the merge-pending pass also checks the work branches of archived,
+	// needs_review, blocked and failed Automata; an explicit false keeps the
+	// pass to completed Automata only.
+	MergePendingIncludeTerminal *bool  `yaml:"merge_pending_include_terminal,omitempty" json:"merge_pending_include_terminal,omitempty"`
+	MergedMemberPolicy          string `yaml:"merged_member_policy,omitempty" json:"merged_member_policy,omitempty"`
+	AgentInsertPolicy           string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
 	// SecurityFailure — the security failure block
 	// (autonomous.automation.security_failure.*). See
 	// SecurityFailureConfig: the one default (an unset or empty mode reads
@@ -5536,6 +5634,43 @@ func (c AutonomousProgressConfig) validate() error {
 	return ValidateProgressSince(c.Since)
 }
 
+// autonomous.archive defaults. A zero RetentionDays means "use the default".
+const DefaultArchiveRetentionDays = 30
+
+// AutonomousArchiveConfig — autonomous.archive sub-config for the
+// finished-Automaton archive. RetentionDays is how many days old a completed,
+// shipped or cancelled Automaton must be before it is archived (0 = 30).
+// Enabled is a pointer so an explicit false survives a round trip: unset or
+// true lets the daemon archive on its own; false means only the explicit
+// migration command archives.
+type AutonomousArchiveConfig struct {
+	Enabled       *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	RetentionDays int   `yaml:"retention_days" json:"retention_days"`
+}
+
+// EffectiveRetentionDays returns the archive retention in effect: 0 (or less)
+// means 30 days.
+func (c AutonomousArchiveConfig) EffectiveRetentionDays() int {
+	if c.RetentionDays <= 0 {
+		return DefaultArchiveRetentionDays
+	}
+	return c.RetentionDays
+}
+
+// EffectiveEnabled reports whether the daemon may archive on its own: unset
+// means true.
+func (c AutonomousArchiveConfig) EffectiveEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
+// validate checks every autonomous.archive value on the load paths.
+func (c AutonomousArchiveConfig) validate() error {
+	if c.RetentionDays < 0 {
+		return fmt.Errorf("autonomous.archive.retention_days: %d must be >= 0 (0 = %d)", c.RetentionDays, DefaultArchiveRetentionDays)
+	}
+	return nil
+}
+
 // intPtr is the tiny pointer helper for pointer-to-int config fields.
 func intPtr(v int) *int { return &v }
 
@@ -5824,6 +5959,19 @@ const (
 	// many minutes before the watch records a silence finding.
 	DefaultSupervisorWatchSilentMinutes = 60
 
+	// DefaultSupervisorWatchStallThresholdMinutes — the supervisor
+	// watch stall_threshold_minutes default: an Automaton may make no
+	// progress this many minutes before the watch records a stall
+	// finding for it. 30 minutes matches the shared automation triage
+	// alert default, one number in both places.
+	DefaultSupervisorWatchStallThresholdMinutes = 30
+
+	// DefaultSupervisorWatchPriorityFloor — the supervisor watch
+	// priority_floor default: the watch acts on queueing Automata at
+	// this priority or above. 80 is the high-priority band where a
+	// stuck or stalled Automaton actually blocks work.
+	DefaultSupervisorWatchPriorityFloor = 80
+
 	// DefaultSupervisorWatchPollSeconds — the supervisor watch
 	// poll_seconds default: the configured coordinator poll interval
 	// (whole seconds) the script-record staleness window is measured
@@ -5868,13 +6016,15 @@ const (
 // of the main checkout; empty disables the dirty main-checkout finding
 // altogether.
 type SupervisorWatchConfig struct {
-	Mode                string `yaml:"mode" json:"mode"`
-	AlertMinutes        *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
-	SilentMinutes       *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
-	PollSeconds         int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
-	ScriptOutputPath    string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
-	TmuxRestartBaseline string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
-	MainCheckout        string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
+	Mode                  string `yaml:"mode" json:"mode"`
+	AlertMinutes          *int   `yaml:"alert_minutes,omitempty" json:"alert_minutes,omitempty"`
+	SilentMinutes         *int   `yaml:"silent_minutes,omitempty" json:"silent_minutes,omitempty"`
+	StallThresholdMinutes *int   `yaml:"stall_threshold_minutes,omitempty" json:"stall_threshold_minutes,omitempty"`
+	PriorityFloor         *int   `yaml:"priority_floor,omitempty" json:"priority_floor,omitempty"`
+	PollSeconds           int    `yaml:"poll_seconds,omitempty" json:"poll_seconds,omitempty"`
+	ScriptOutputPath      string `yaml:"script_output_path,omitempty" json:"script_output_path,omitempty"`
+	TmuxRestartBaseline   string `yaml:"tmux_restart_baseline,omitempty" json:"tmux_restart_baseline,omitempty"`
+	MainCheckout          string `yaml:"main_checkout,omitempty" json:"main_checkout,omitempty"`
 
 	// WorkingModel is the model the watch expects to be resident on every
 	// registered compute node. Empty (unset) turns the model_not_resident
@@ -5919,6 +6069,31 @@ func (c SupervisorWatchConfig) EffectiveSilentMinutes() int {
 		return DefaultSupervisorWatchSilentMinutes
 	}
 	return *c.SilentMinutes
+}
+
+// EffectiveStallThresholdMinutes returns the supervisor watch stall
+// window in effect: an unset (nil) value reads
+// DefaultSupervisorWatchStallThresholdMinutes (30), and an explicit 0
+// keeps the window at zero. Negative values are rejected on the write
+// paths, so this never has to guess for them. This accessor is the only
+// place the 30-minute default is applied.
+func (c SupervisorWatchConfig) EffectiveStallThresholdMinutes() int {
+	if c.StallThresholdMinutes == nil {
+		return DefaultSupervisorWatchStallThresholdMinutes
+	}
+	return *c.StallThresholdMinutes
+}
+
+// EffectivePriorityFloor returns the supervisor watch priority floor in
+// effect: an unset (nil) value reads DefaultSupervisorWatchPriorityFloor
+// (80), and an explicit 0 keeps the floor at zero (no floor). Negative
+// values are rejected on the write paths, so this never has to guess for
+// them. This accessor is the only place the 80 default is applied.
+func (c SupervisorWatchConfig) EffectivePriorityFloor() int {
+	if c.PriorityFloor == nil {
+		return DefaultSupervisorWatchPriorityFloor
+	}
+	return *c.PriorityFloor
 }
 
 // EffectivePollSeconds returns the configured coordinator poll interval
@@ -5977,6 +6152,16 @@ func validateSupervisorWatch(c SupervisorWatchConfig) error {
 	}
 	if c.SilentMinutes != nil {
 		if err := validateSupervisorWatchMinutes("silent_minutes", *c.SilentMinutes); err != nil {
+			return err
+		}
+	}
+	if c.StallThresholdMinutes != nil {
+		if err := validateSupervisorWatchMinutes("stall_threshold_minutes", *c.StallThresholdMinutes); err != nil {
+			return err
+		}
+	}
+	if c.PriorityFloor != nil {
+		if err := validateSupervisorWatchMinutes("priority_floor", *c.PriorityFloor); err != nil {
 			return err
 		}
 	}
@@ -6090,6 +6275,20 @@ func (c AutonomousAutomationConfig) EffectiveChildInherit() bool {
 		return DefaultChildInherit
 	}
 	return *c.ChildInherit
+}
+
+// DefaultMergePendingIncludeTerminal is the
+// autonomous.automation.merge_pending_include_terminal default (on).
+const DefaultMergePendingIncludeTerminal = true
+
+// EffectiveMergePendingIncludeTerminal returns whether the merge-pending pass
+// also checks archived, needs_review, blocked and failed Automata: true when
+// unset, the explicit value otherwise.
+func (c AutonomousAutomationConfig) EffectiveMergePendingIncludeTerminal() bool {
+	if c.MergePendingIncludeTerminal == nil {
+		return DefaultMergePendingIncludeTerminal
+	}
+	return *c.MergePendingIncludeTerminal
 }
 
 // EffectiveMergePendingMode returns the merge-pending mode in effect: an empty
@@ -8049,13 +8248,16 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			ReleasePath:                              "direct_push",
-			ScriptGateTimeoutSeconds:                 DefaultScriptGateTimeoutSeconds,
-			GateDrainMinutes:                         DefaultGateDrainMinutes,
-			AutoFixRetries:                           1,
-			MaxConcurrentTasks:                       1,
-			UsageBackoff:                             UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
+			ReleasePath:              "direct_push",
+			ScriptGateTimeoutSeconds: DefaultScriptGateTimeoutSeconds,
+			GateDrainMinutes:         DefaultGateDrainMinutes,
+			AutoFixRetries:           1,
+			MaxConcurrentTasks:       1,
+			UsageBackoff:             UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:    BackoffMaxWaitDefaultMinutes,
+			// BackoffReserveForReview is a pointer so an explicit 0 (reserves
+			// off) survives omitempty; the default keeps one slot per backend.
+			BackoffReserveForReview:                  intPtr(DefaultBackoffReserveForReview),
 			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
 			ResumeMaxAgeSeconds:                      3600,
 			FirstAttemptEscalateAfterFailures:        DefaultFirstAttemptEscalateAfterFailures,
@@ -8670,8 +8872,17 @@ func validateLoaded(cfg *Config) error {
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
 	}
+	if err := ValidateUnlandedAlertThreshold(cfg.Autonomous.UnlandedAlertThreshold); err != nil {
+		return err
+	}
 	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
 		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be >= 0 (0 or unset = default %d hours)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
+		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
+	}
+	if cfg.Autonomous.RemoteReapRetentionDays < 0 {
+		return fmt.Errorf("autonomous.remote_reap_retention_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.RemoteReapRetentionDays, RemoteReapRetentionDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
@@ -8793,6 +9004,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Archive.validate(); err != nil {
 		return err
 	}
 	if err := validateScriptGateTimeout(cfg.Autonomous.ScriptGateTimeoutSeconds); err != nil {
@@ -8920,21 +9134,25 @@ func validateGateScope(v string) error {
 	return fmt.Errorf("autonomous.default_quality_gates.scope: invalid value %q (valid values: empty (inherit), \"full\", \"touched-plus-smoke\", \"touched\")", v)
 }
 
-// WorkerProfileDefaultsConfig maps a worker role or a task kind to the name of
-// the worker profile it starts with when no profile is named at a more
-// specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
+// WorkerProfileDefaultsConfig maps a worker role, task kind or session kind to
+// the name of the worker profile it starts with when no profile is named at a
+// more specific layer. Keys and values are validated by ValidateWorkerProfileConfig.
 type WorkerProfileDefaultsConfig struct {
 	// Role maps planner, worker, verifier or judge to a profile name.
 	Role map[string]string `yaml:"role" json:"role"`
-	// Kind maps implementation, docs, note or final_gate to a profile name.
+	// Kind maps a task kind (implementation, docs, note, final_gate) or a
+	// session kind (supervisor, operator_interactive, scheduled_command,
+	// planner, one_shot, review) to a profile name.
 	Kind map[string]string `yaml:"kind" json:"kind"`
 }
 
 // workerProfileRoleKeys lists the role keys worker_profile_defaults.role accepts.
 var workerProfileRoleKeys = []string{"planner", "worker", "verifier", "judge"}
 
-// workerProfileKindKeys lists the task-kind keys worker_profile_defaults.kind accepts.
-var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate"}
+// workerProfileKindKeys lists the kind keys worker_profile_defaults.kind
+// accepts: the task kinds and the session kinds (workerprofile.Kind*) the
+// daemon resolves at launch.
+var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_gate", "supervisor", "operator_interactive", "scheduled_command", "planner", "one_shot", "review"}
 
 // ValidateWorkerProfileConfig checks the worker session profile settings in
 // cfg.Autonomous and returns the first problem found, or nil. It refuses:
@@ -8942,8 +9160,8 @@ var workerProfileKindKeys = []string{"implementation", "docs", "note", "final_ga
 //   - a user profile that workerprofile.Validate rejects;
 //   - a worker_profile_defaults value, or the worker_profile global name, that
 //     names no built-in and no user-defined profile;
-//   - an unknown role key in worker_profile_defaults.role, or an unknown task
-//     kind key in worker_profile_defaults.kind.
+//   - an unknown role key in worker_profile_defaults.role, or an unknown
+//     task- or session-kind key in worker_profile_defaults.kind.
 //
 // The config load paths call it, and every write surface that changes these
 // settings should call it before it persists them. Keys are checked in sorted
@@ -9377,7 +9595,8 @@ type AutonomousParallelConfig struct {
 	// means the default (see autonomous.EffectiveMergeConflictPolicy).
 	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
 	// MergeConflictModel: model that resolves a merge conflict. Empty
-	// means the strongest configured planning model.
+	// reads the non-Opus daemon default (config.MergePipelineDefaultConflictModel);
+	// an operator-named model, an Opus model included, is used as written.
 	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
 	// MergeRetrySeconds: whole seconds between timed merge retry passes.
 	// Pointer so an explicit 0 (timer off) survives; nil means the default

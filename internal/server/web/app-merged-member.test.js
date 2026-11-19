@@ -77,7 +77,7 @@ test('GENERAL_CONFIG_FIELDS: autonomous.automation.merged_member_policy is a com
   const keys = autonomous.fields.map((f) => f.key);
   assert.equal(
     keys.indexOf('autonomous.automation.merged_member_policy'),
-    keys.indexOf('autonomous.automation.merge_pending_alert_minutes') + 1,
+    keys.indexOf('autonomous.automation.merge_pending_include_terminal') + 1,
     'the field sits next to the merge-pending fields');
 });
 

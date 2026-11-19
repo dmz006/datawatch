@@ -73,7 +73,7 @@ autonomous:
   enabled: true
   planning_backend: claude-code   # was "decomposition_backend" before v7.0
   planning_effort: high           # was "decomposition_effort"
-  planning_model: ""              # was "decomposition_model" — empty = LLM default
+  planning_model: ""              # was "decomposition_model" — empty = the daemon default model for that backend (sonnet on claude-code), not the backend's built-in default
   max_concurrent_tasks: 1         # tasks of one Automaton run at once; 1 = sequential
 ```
 
@@ -204,6 +204,9 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PR
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/run
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/cancel
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/archive
+# (Archive is refused while the Automaton's landing record is still pending:
+#  its work branch has not landed on the default branch yet — ship it, or
+#  record keep or drop for its landing. See howto/automaton-worktree-cleanup.md, "The landing record".)
 
 # Hard delete.
 curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
@@ -306,7 +309,13 @@ file and is added to the task's generated files.
 
 A task that does change files needs no marker; it lists them instead, for
 example `internal/config/config.go` and `internal/config/config_test.go` for a
-task titled "Add the retry setting to the config loader".
+task titled "Add the retry setting to the config loader". And every one of
+those names is written as **full file paths verbatim** — the exact
+repo-relative path, in one piece, with no space inside, no ellipsis and no
+abbreviation — because the coverage gate extracts names that stop at the
+first space and reads a name cut mid-way as a *different* missing file; the
+rule and its rationale are in
+[the full-file-path section of the decompose-lint how-to](automaton-decompose-lint.md#the-full-file-path-rule-is-always-enforced-too).
 
 These are exempt without a marker:
 
@@ -384,7 +393,10 @@ Most specific wins: task → story → Automaton → Automation → global. Set 
 **backend** at the level you want; a model or effort without any
 per-unit backend leaves the verifier on the global path. An explicit
 backend also skips the `verification_backends` pool. Send `""` (or an
-empty field in the PWA) to clear and inherit again.
+empty field in the PWA) to clear and inherit again. A `claude-code`
+verifier that ends up with no model from any of those levels runs on the
+daemon default model, `sonnet`, not the backend's built-in default — see
+[Explicit model policy](explicit-model-policy.md).
 
 ```bash
 # Stronger verifier for one risky task.

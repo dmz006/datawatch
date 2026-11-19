@@ -84,6 +84,12 @@ func (b *Backend) SetPermissionMode(mode string) { b.permissionMode = mode }
 // SetModel (v5.27.5) — alias or full name forwarded to `--model`.
 func (b *Backend) SetModel(model string) { b.model = model }
 
+// Model returns the explicit model the backend will pass to the CLI as
+// --model, or "" when none was set (in which case the CLI's own default
+// would apply — datawatch refuses such a launch upstream, see the session
+// manager's explicit-model backstop).
+func (b *Backend) Model() string { return b.model }
+
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
@@ -273,6 +279,26 @@ func (b *Backend) profileFlags(projectDir string, w WorkerProfileLaunch) (string
 	return flags, nil
 }
 
+// profileEnv returns the env assignment (with a leading space) a profile
+// launch needs, or "" for a non-profile launch (byte-identical command).
+//
+// Cause of the "connected but tools not listed" report: a profile launch
+// pins the session with --strict-mcp-config, and Claude Code's default
+// (auto) tool search only defers MCP tools once their schemas pass a
+// context threshold; otherwise they are inlined, and when the model's tool
+// list is trimmed they never show up. ENABLE_TOOL_SEARCH=true always defers
+// MCP tool schemas behind the ToolSearch tool, so the datawatch tools are
+// discoverable by name while the first-turn context stays small. The server
+// entry name ("datawatch") matches worker-mcp.json, so no name change is
+// needed; the per-session channel name is only used for --channels.
+func profileEnv(w WorkerProfileLaunch, profileFlags string) string {
+	if w.Profile.Name == "" || w.Profile.MCP.Mode == workerprofile.MCPNone ||
+		!strings.Contains(profileFlags, "--strict-mcp-config") {
+		return ""
+	}
+	return " ENABLE_TOOL_SEARCH=true"
+}
+
 // SetChrome (v8.8.3) — passes --chrome or --no-chrome to claude at launch.
 // Nil means neither flag is passed (let claude use its default).
 func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
@@ -413,15 +439,15 @@ func (b *Backend) LaunchWithProfileFallback(ctx context.Context, w WorkerProfile
 
 	var cmd string
 	if task == "" || b.channelEnabled {
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s; echo 'DATAWATCH_COMPLETE: claude done'",
-			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1%s %s%s --add-dir %s%s; echo 'DATAWATCH_COMPLETE: claude done'",
+			shellQuote(projectDir), profileEnv(w, profileFlags), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {
 		// Task is delivered via a scratch file ($(cat 'path')) so the typed
 		// line stays tmux-send-keys-friendly; rm -f cleanup runs right
 		// before the completion marker. See taskArgExpr.
 		argExpr, cleanup := taskArgExpr(tmuxSession, task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s %s; %secho 'DATAWATCH_COMPLETE: claude done'",
-			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, argExpr, cleanup)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1%s %s%s --add-dir %s%s %s; %secho 'DATAWATCH_COMPLETE: claude done'",
+			shellQuote(projectDir), profileEnv(w, profileFlags), b.binaryPath, pre, shellQuote(projectDir), post, argExpr, cleanup)
 	}
 
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
@@ -474,7 +500,7 @@ func (b *Backend) LaunchResumeWithProfileFallback(ctx context.Context, w WorkerP
 	// future restarts.
 	quotedDir := shellQuote(projectDir)
 	quotedUUID := shellQuote(actualResumeID)
-	base := fmt.Sprintf("cd %s && NO_COLOR=1", quotedDir)
+	base := fmt.Sprintf("cd %s && NO_COLOR=1%s", quotedDir, profileEnv(w, profileFlags))
 	claudeBase := fmt.Sprintf("%s%s --add-dir %s%s", b.binaryPath, pre, quotedDir, post)
 
 	// One task-delivery expression (the scratch-file $(cat 'path') from

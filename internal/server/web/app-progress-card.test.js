@@ -104,6 +104,28 @@ test('the other row shows once it is non-zero', () => {
   assert.ok(html.includes('>Other<'));
 });
 
+test('Held column hidden while no Automaton is held', () => {
+  const html = render({ status: 'ok', data: metrics(), trend: null });
+  assert.ok(!html.includes('>Held<'), 'no Held column without held counts');
+});
+
+test('Held column appears with one cell per row once an Automaton is held', () => {
+  const data = metrics();
+  data.groups.feature = Object.assign(group(), { held: 1 });
+  data.groups.bug = Object.assign(group({ prds: 1, done: 1 }), { held: 2 });
+  data.totals = Object.assign(group({ prds: 5, done: 3 }), { held: 3 });
+  const html = render({ status: 'ok', data, trend: null });
+  assert.ok(html.includes('>Held<'), 'Held column header');
+  const trs = Array.from(html.matchAll(/<tr>.*?<\/tr>/g)).map(m => m[0]);
+  const feature = trs.find(tr => tr.includes('>Feature<'));
+  const bug = trs.find(tr => tr.includes('>Bug<'));
+  const total = trs[trs.length - 1];
+  assert.ok(feature.includes('>1<'), 'feature held cell');
+  assert.ok(bug.includes('>2<'), 'bug held cell');
+  assert.ok(total.includes('>3<'), 'total held cell');
+});
+
+
 test('remaining block keeps known and estimated apart and labels the sum an estimate', () => {
   const html = render({ status: 'ok', data: metrics(), trend: null });
   assert.ok(html.includes('Known (these Automata exist)'));

@@ -28,6 +28,26 @@ Every day at 05:30 UTC it:
 Staging tags older than three days are removed by the weekly `ghcr-cleanup`
 workflow (see below).
 
+## agent-aider Python and the soupsieve floor
+
+The agent-aider image no longer runs aider on Debian 12's system Python
+(3.11.2). Aider and its dependencies live in their own venv on a uv-managed
+Python 3.12, because soupsieve 4.x (the fix for the selector-ReDoS finding)
+needs Python 3.11.5 or newer and pip refuses it on 3.11.2. The recipe is
+`docker/dockerfiles/Dockerfile.agent-aider`; the CI step that runs
+`scripts/check-dockerfile-soupsieve.sh` fails the build if its `soupsieve>=X`
+pin is missing or below 4.0.1.
+
+The soupsieve accepted-risk entry (CVE-2026-126191) was removed from
+`security/accepted-risks.yml` and `.trivyignore`, so the next scan of
+agent-aider fails if soupsieve is still vulnerable. The daily refresh rebuilds
+agent-aider from `main`, so an already-released version picks up the new recipe.
+
+**Operator review:** confirm the next Release scan or image-refresh scan of
+agent-aider is clean for soupsieve. The remaining agent-aider entries for
+Debian `python3.11` / `libpython3.11-*` CVEs may now be stale for aider's own
+runtime (the system Python is still in the image); re-scope them on that scan.
+
 ## How CI installs Trivy
 
 Found in a 2026-11-09 release run: the inline
@@ -167,6 +187,29 @@ The run log shows the Trivy table for the failing image. Options, in order:
    the containers: add the CVE to `.trivyignore` with a comment and add a row
    to the exceptions table in `docs/security-review.md`. Re-review each
    release.
+
+## Staging-scan failures on agent-base
+
+The blocking scan of the agent-base staging tag (`refresh-YYYYMMDD`) uses the
+same policy as the Release scan: `HIGH,CRITICAL`, exceptions from
+`.trivyignore`. When it failed on a finding, the fix is made on `main` in the
+story's files, not in the workflow:
+
+1. A fixed version exists: raise it in `docker/dockerfiles/Dockerfile.agent-base`
+   (the `apt-get upgrade` layer or an explicit package pin).
+2. No fix exists: add an entry to `security/accepted-risks.yml`, regenerate
+   `.trivyignore` with `python3 scripts/gen_trivyignore.py`, and let the table
+   in `docs/security-review.md` regenerate. Never hand-edit the generated
+   table or the generated `.trivyignore` block.
+
+The daily refresh rebuilds from `main`, so the next run uses the corrected
+recipe and policy; no release is needed.
+
+**Operator review:** confirm the next image-refresh run reaches promotion for
+agent-base (scan clean, `:latest` moved). Check the expiry date and the
+"traced" flag of each entry added for this fix; entries that are untraced carry
+the 30-day cap and must be renewed or removed when Debian ships a fix. See
+[Accepted exceptions](../security-review.md#accepted-exceptions-securityaccepted-risksyml--trivyignore).
 
 ## Stale-suppression auto-removal (`recheck-ignored-cves`)
 

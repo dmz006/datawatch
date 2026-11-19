@@ -63,7 +63,7 @@ func (m *Manager) preflightModelBackend(prdID string, prd *PRD) error {
 			if t.Status == TaskCompleted {
 				continue
 			}
-			backend, model := resolveTaskBackendModel(t, story, prd, auto, m.cfg.ExecutionBackend)
+			backend, model := resolveTaskBackendModel(t, story, prd, auto, executionFallbackBackend(m.cfg, prd))
 			if err := validateModelForBackend(backend, model); err != nil {
 				bad = append(bad, fmt.Sprintf("task %s (backend %q, model %q): %v", t.ID, backend, model, err))
 			}

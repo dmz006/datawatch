@@ -236,6 +236,77 @@ test('reload: a saved peer name that is still in the server list is restored by 
   assertNoKillOrSignal(sb);
 });
 
+// The settle bound (6 s in a browser) must not fire after the choice has
+// already been validated: the timer is cleared on settle, and its save is
+// behind the same settled guard. Firing the pending bound late — a session
+// open longer than the bound — changes nothing in state or in storage.
+test('reload: the validated restore is unchanged when the settle bound fires late, and the stored value survives', async () => {
+  const storage = { m: new Map(), getItem(k) { return this.m.has(k) ? this.m.get(k) : null; }, setItem(k, v) { this.m.set(k, String(v)); }, removeItem(k) { this.m.delete(k); }, keys() { return Array.from(this.m.keys()); } };
+  storage.setItem(STORE_KEY, PEER);
+
+  const sb = loadPage(storage);
+  vm.runInContext('state.servers = undefined; state._serversLoading = false;', sb);
+  sb.__fetchImpl = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ servers: [{ name: PEER, label: PEER, enabled: true, url: 'https://x' }] }),
+  });
+
+  // Record the bound's callback instead of discarding it, so the test can
+  // fire it AFTER the list-ready settlement (time passing, in a browser). A
+  // bare no-op timer would make the bug untestable: the overwrite is only
+  // visible once the pending callback actually runs.
+  sb.__timeoutFns = [];
+  sb.setTimeout = (fn) => { sb.__timeoutFns.push(fn); return sb.__timeoutFns.length; };
+
+  vm.runInContext('_serverChoiceSettleBoot();', sb);
+  await flushAsync(50);
+  assert.equal(active(sb), PEER, 'the list-ready path settles on the saved peer');
+  assert.equal(storage.getItem(STORE_KEY), PEER, 'the validated restore is what is stored');
+
+  // Boot proceeds; the user keeps working…
+  vm.runInContext('connect();', sb);
+
+  // …longer than the settle bound, and the bound's callback now runs late.
+  sb.__timeoutFns.forEach((fn) => fn());
+  await flushAsync(20);
+  assert.equal(active(sb), PEER, 'the late bound does not change the active server');
+  assert.equal(storage.getItem(STORE_KEY), PEER, 'and it does not clobber the validated saved choice with "all"');
+  assert.equal(renderSelected(sb), PEER, 'the dropdown is still on the restored server');
+  assertNoKillOrSignal(sb);
+});
+
+test('reload: a choice the user made after boot is also not clobbered when the settle bound fires late', async () => {
+  const storage = { m: new Map(), getItem(k) { return this.m.has(k) ? this.m.get(k) : null; }, setItem(k, v) { this.m.set(k, String(v)); }, removeItem(k) { this.m.delete(k); }, keys() { return Array.from(this.m.keys()); } };
+  storage.setItem(STORE_KEY, PEER);
+
+  const sb = loadPage(storage);
+  vm.runInContext('state.servers = undefined; state._serversLoading = false;', sb);
+  sb.__fetchImpl = (url) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ servers: [{ name: PEER, label: PEER, enabled: true, url: 'https://x' }] }),
+  });
+  sb.__timeoutFns = [];
+  sb.setTimeout = (fn) => { sb.__timeoutFns.push(fn); return sb.__timeoutFns.length; };
+
+  vm.runInContext('_serverChoiceSettleBoot();', sb);
+  await flushAsync(50);
+  assert.equal(active(sb), PEER, 'the list-ready path settles on the saved peer');
+
+  // The user changes the selection after boot (e.g. to All), which saves it
+  // — then the pending bound fires.
+  choose(sb, 'all');
+  assert.equal(storage.getItem(STORE_KEY), 'all', 'the new choice is saved');
+  assert.equal(active(sb), 'all');
+
+  sb.__timeoutFns.forEach((fn) => fn());
+  await flushAsync(20);
+  assert.equal(active(sb), 'all', 'the late bound does not change the current server');
+  assert.equal(storage.getItem(STORE_KEY), 'all', 'and it does not clobber the user\'s meantime choice');
+  assertNoKillOrSignal(sb);
+});
+
 test('reload: a saved "all" is restored by a fresh sandbox the same way, and the first-paint dropdown is on All', async () => {
   const storage = { m: new Map(), getItem(k) { return this.m.has(k) ? this.m.get(k) : null; }, setItem(k, v) { this.m.set(k, String(v)); }, removeItem(k) { this.m.delete(k); }, keys() { return Array.from(this.m.keys()); } };
   storage.setItem(STORE_KEY, 'all');

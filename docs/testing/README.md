@@ -35,14 +35,17 @@ bash scripts/run-tests.sh --serial
 bash scripts/run-tests.sh --no-daemon
 ```
 
-## PWA E2E — `make test-e2e-pwa`
+## PWA E2E — the schedules-flood story (TS-797)
 
 Runs the PWA **schedules-flood** story (`scripts/test-stories/pwa/schedule-flood.mjs`,
-the TS-797 spec) against an isolated daemon — **no Docker required**:
+the TS-797 spec) in real headless Chrome against an isolated daemon —
+**no Docker required**. The local runner is `scripts/e2e-pwa.sh`; with no
+story argument it runs `schedule-flood`:
 
 ```bash
-make test-e2e-pwa                    # isolated local daemon, fresh 127.0.0.1 ports
-TEST_TRUSTED_TLS=https://127.0.0.1:2443 make test-e2e-pwa   # fixed trusted origin
+bash scripts/e2e-pwa.sh                    # default story: schedule-flood
+bash scripts/e2e-pwa.sh schedule-flood     # the same, named explicitly
+TEST_TRUSTED_TLS=https://127.0.0.1:2443 bash scripts/e2e-pwa.sh schedule-flood  # fixed trusted origin
 ```
 
 **Load group** — `scripts/e2e-pwa.sh` also accepts a story *group*: `load`
@@ -62,22 +65,40 @@ view exceeds 256 KB per minute, or when a window-form client gets more than one
 `scripts/test-stories/pwa/perf-lib.mjs`. It skips (exit 2) without the seeded
 fixture.
 
-What the target does (`scripts/e2e-pwa.sh`):
+What the runner does in local mode (`scripts/e2e-pwa.sh`):
 
-1. Picks free 127.0.0.1 ports, generates an isolated config from
-   `testdata/datawatch.yaml`, starts the daemon (same mechanism as
-   `scripts/run-tests.sh`) and waits for `/api/health`.
-2. `npm ci` in `scripts/test-stories/pwa` (falls back to `npm install` without
-   a lockfile).
-3. Runs `node schedule-flood.mjs` with `TEST_HTTP`, `TEST_TLS`, `TEST_TOKEN`
-   (plus `TEST_TRUSTED_TLS` when set). Exit code is the story's: **0 pass,
-   1 fail, 2 skip** — so a failing story makes the target (and any CI step
-   calling it) exit non-zero.
-4. Stops the daemon; the per-run tmp dir (evidence + `daemon.log`) is kept on
-   non-zero exit and removed on success.
+1. Picks free 127.0.0.1 ports and creates a per-run dir
+   (`dw-e2e-pwa-XXXXXX` under `${TMPDIR:-/tmp}`), generates an isolated
+   config from `testdata/datawatch.yaml`, starts the daemon (`bin/datawatch`,
+   or `TEST_BINARY`, or `datawatch` on the `PATH`, else `go build`) and
+   waits for `/api/health`. The config is written by `e2e_pwa_write_config`
+   in `scripts/e2e-pwa-config.sh`, which also sets
+   `server.allowed_project_roots` to the parent of that run dir
+   (`${TMPDIR:-/tmp}`): stories such as `schedule-flood` seed sessions under
+   `/tmp` (TS-823 under `$TMPDIR` when set), and without this project root
+   the daemon's project-root guard refuses them. `tests/test-e2e-pwa-config.sh`
+   (run by `make test`) checks that the generated config carries the temp
+   root.
+2. `npm ci` in `scripts/test-stories/pwa` (falls back to `npm install`
+   without a lockfile).
+   It creates a real, gitignored `node_modules` directory there; the old
+   tracked `node_modules` symlink is gone, so a run leaves `git status` clean.
+3. Runs `node <story>.mjs` (or `run-all.mjs --group <group>` for a group)
+   with `TEST_HTTP`, `TEST_TLS`, `TEST_TOKEN` (default `dw-e2e-pwa-token`),
+   `EVIDENCE_DIR`, `TEST_TLS_CA` (locally: the daemon's own generated cert)
+   and, when set, `TEST_TRUSTED_TLS` exported. The exit code is the story's:
+   **0 pass, 1 fail, 2 skip** — a failing story makes the runner (and any CI
+   step calling it) exit non-zero. TS-797 itself fails (exit 1) when Google
+   Chrome is not at `/usr/bin/google-chrome`.
+4. On exit — pass, fail, skip or signal — ends the daemon's sessions through
+   the API first, then kills the daemon by its recorded pid.
+5. Keeps the per-run dir (evidence + `daemon.log`) on any non-zero exit,
+   including skip, and removes it on pass.
 
 If `TEST_HTTP` + `TEST_TLS` + `TEST_TOKEN` are all set, the already-running
-daemon at those origins is used instead (external-daemon mode).
+daemon at those origins is used instead (external-daemon mode): nothing is
+started, and `EVIDENCE_DIR` falls back to `/tmp/dw-e2e-pwa-evidence` there
+(no per-run dir is created in this mode, so its evidence persists).
 
 **Two origins** (the story runs the same flood scenario against both):
 
@@ -88,22 +109,46 @@ daemon at those origins is used instead (external-daemon mode).
   generated on the fly (throwaway openssl CA + daemon-TLS-terminating Node
   proxy + Chrome `--ignore-certificate-errors-spki-list`).
   `navigator.serviceWorker.controller` is asserted to be set **before**
-  request counting begins. If (B) is infeasible on the host, the story exits
-  2 (SKIP, with a reason in `result.txt`) — never a silent pass.
+  request counting begins. If (B) is infeasible on the host *and* scenario
+  (A) passed, the story exits 2 (SKIP, with a reason in `result.txt` and
+  `SKIP-REASON.txt.txt`) — never a silent pass. A failure in (A) always exits 1.
 
 Pass criteria per origin: `GET /api/schedules` requests stay ≤ 5 (constant,
-vs. 20+ seeded sessions) across a WS disconnect/reconnect burst, zero
+vs. the 20+ seeded sessions — `TS797_SESSION_COUNT` raises the seed count,
+not the cap) across a WS disconnect/reconnect burst, zero
 `net::ERR_INSUFFICIENT_RESOURCES` request failures, and `/api/sessions` +
-`/api/stats` still succeed afterwards. Seeded sessions are always cleaned up.
+`/api/stats` still succeed afterwards. Seeded sessions are always deleted and
+killed in the story's finally block.
 
-Evidence: screenshots + `logs.jsonl` + `verdict.txt` under
-`$EVIDENCE_DIR/schedule-flood/` (inside the per-run dir, or
-`/tmp/dw-e2e-pwa-evidence/schedule-flood/` in external mode).
+**Evidence** — under `$EVIDENCE_DIR/schedule-flood/` — the runner controls
+`$EVIDENCE_DIR`: `scripts/e2e-pwa.sh` resets any inherited `EVIDENCE_DIR` (it
+sets `EVIDENCE_DIR=""` before choosing the mode's default), so the
+environment value does not redirect a run — local mode always writes to the
+per-run dir's `evidence/` (removed on a pass, kept on a fail or skip),
+external-daemon mode to `/tmp/dw-e2e-pwa-evidence` (persisted); a
+`EVIDENCE_DIR` you set is honored only when invoking the story directly
+(`node schedule-flood.mjs` with the daemon's `TEST_*` env, lib.mjs default
+`/tmp/dw-pwa-evidence`) — `ts797-A-untrusted-tls.png` / `ts797-B-trusted-tls.png` screenshots;
+`verdict.txt.txt` with the verdict and per-scenario request counts;
+`failure-A.txt.txt` / `failure-B.txt.txt` on failure; `SKIP-REASON.txt.txt` and
+`result.txt` on a (B) skip; and `trusted-origin.txt` plus `trusted-tls/` (the
+generated CA, cert, key and SPKI) when (B) was generated. (The doubled
+`.txt.txt`: lib.mjs's `saveLog(name)` appends its own `.txt`, and the story
+already hands it names ending in `.txt` — `result.txt` and
+`trusted-origin.txt` are written with a single `.txt`.)
 
-A docker-compose convenience service (`playwright` in
-`docker-compose.test.yml`) points at the same story dir, but the stories
-expect native Chrome (`/usr/bin/google-chrome`) and a Node host, so prefer
-the local route above.
+**`make test-e2e-pwa` is the docker-compose route, not the local one:** it
+starts the `datawatch` + `playwright` services
+(`docs/testing/docker-compose.test.yml`) and runs the **full** story suite
+(`node run-all.mjs`) inside the `playwright` container, with a fixed
+environment (`TEST_HTTP=http://datawatch:8080`, `TEST_TOKEN`,
+`EVIDENCE_DIR`) and no `TEST_TLS`/`TEST_TRUSTED_TLS`. The schedules-flood
+story needs two *loopback* TLS origins (the local `TEST_TLS` default is
+`https://127.0.0.1:18443`, plus its generated 127.0.0.1 proxy) and
+`/usr/bin/google-chrome`, none of which are reachable from inside that
+container, so it cannot pass through this route — use the local runner
+above. The compose route is aimed at the group suites (`load`, `wire`)
+against the daemon's compose-network port.
 
 ## Mobile-fit — `make test-e2e-mobile-fit`
 
@@ -122,7 +167,10 @@ TEST_HTTP=https://host:8443 TEST_TLS=1 TEST_TOKEN=... bash scripts/e2e-pwa.sh TS
 What the target does (`scripts/e2e-pwa.sh`):
 
 1. Same daemon lifecycle as `make test-e2e-pwa` (isolated 127.0.0.1 daemon,
-   or the external daemon named by `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN`).
+   or the external daemon named by `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN`). The
+   generated config also sets `server.allowed_project_roots` to the run's
+   temp folder, so stories that seed sessions in the temp folder pass the
+   project-root guard.
 2. `npm ci` in `scripts/test-stories/pwa` and runs `node TS-817.mjs` then
    `node TS-818.mjs`. Exit code: **0 pass, 1 fail, 2 skip** — a finding
    makes the target exit non-zero.
@@ -131,7 +179,7 @@ What the stories check (full suite mechanics in docs/howto/testing-against-a-run
 section **Mobile-fit suite**):
 
 - TS-817 — re-runs the recorded pre-fix Observer mobile-fit run (reproduction
-  report: `docs/testing/runs/observer-mobile-fit/repro-report.json` — 29,968
+  report: `docs/testing/runs/observer-mobile-fit/repro-report.txt` — 29,968
   findings in 68 groups over 199 scenario runs, 2026-10-23) with the API
   state fully seeded. Passes when **none** of the 68 recorded groups produces
   a finding (e.g. `G-20442ed3`, clipped text); fails listing the group IDs

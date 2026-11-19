@@ -110,15 +110,25 @@ func progressWrapped(sb *strings.Builder, label, s string) {
 	}
 }
 
-func progressTableHeader(sb *strings.Builder) {
-	fmt.Fprintf(sb, "%-8s %9s %5s %5s %6s %7s | %6s %6s %5s | %9s %12s %12s\n",
-		"", "Automata", "done", "run", "wait", "blocked", "tasks", "done", "left",
+// The held column is shown only when at least one Automaton is on hold, so a
+// table with no holds keeps its familiar shape.
+func progressTableHeader(sb *strings.Builder, showHeld bool) {
+	held := ""
+	if showHeld {
+		held = fmt.Sprintf(" %5s", "held")
+	}
+	fmt.Fprintf(sb, "%-8s %9s %5s %5s %6s %7s%s | %6s %6s %5s | %9s %12s %12s\n",
+		"", "Automata", "done", "run", "wait", "blocked", held, "tasks", "done", "left",
 		"work", "median", "mean/task")
 }
 
-func progressTableRow(sb *strings.Builder, name string, g ProgressGroup) {
-	fmt.Fprintf(sb, "%-8s %9d %5d %5d %6d %7d | %6d %6d %5d | %9s %12s %12s\n",
-		name, g.PRDs, g.Done, g.Running, g.Waiting, g.Blocked,
+func progressTableRow(sb *strings.Builder, name string, g ProgressGroup, showHeld bool) {
+	held := ""
+	if showHeld {
+		held = fmt.Sprintf(" %5d", g.Held)
+	}
+	fmt.Fprintf(sb, "%-8s %9d %5d %5d %6d %7d%s | %6d %6d %5d | %9s %12s %12s\n",
+		name, g.PRDs, g.Done, g.Running, g.Waiting, g.Blocked, held,
 		g.Tasks, g.TasksDone, g.TasksLeft,
 		progressHoursValue(g.WorkHours), progressHours(g.MedianPRDWallHours), progressHours(g.MeanTaskHours))
 }
@@ -138,7 +148,8 @@ func RenderProgressText(m ProgressMetrics) string {
 	if m.Scope != "" && m.Scope != progressScopeAll {
 		fmt.Fprintf(&sb, "Scope: %s\n", m.Scope)
 	}
-	progressTableHeader(&sb)
+	showHeld := m.Totals.Held > 0
+	progressTableHeader(&sb, showHeld)
 	for _, k := range []string{"feature", "bug", "other"} {
 		g, ok := m.Groups[k]
 		if !ok {
@@ -147,9 +158,9 @@ func RenderProgressText(m ProgressMetrics) string {
 		if k == "other" && g.PRDs == 0 {
 			continue
 		}
-		progressTableRow(&sb, k, g)
+		progressTableRow(&sb, k, g, showHeld)
 	}
-	progressTableRow(&sb, "total", m.Totals)
+	progressTableRow(&sb, "total", m.Totals, showHeld)
 	sb.WriteString("median = median wall time of a finished Automaton; mean/task = mean time of a finished task\n")
 	sb.WriteString("\n")
 
@@ -167,8 +178,13 @@ func RenderProgressText(m ProgressMetrics) string {
 
 func progressLeftLines(sb *strings.Builder, m ProgressMetrics) {
 	r := m.Remaining
-	fmt.Fprintf(sb, "LEFT  known: %d Automata not done (%d running, %d waiting or blocked) with %d tasks still open; %d not decomposed yet\n",
-		r.Known.PRDs, m.RunningPRDs, r.Known.PRDs-m.RunningPRDs, r.Known.Tasks, r.Known.UndecomposedPRDs)
+	if held := m.Totals.Held; held > 0 {
+		fmt.Fprintf(sb, "LEFT  known: %d Automata not done (%d running, %d waiting or blocked, %d held) with %d tasks still open; %d not decomposed yet\n",
+			r.Known.PRDs, m.RunningPRDs, r.Known.PRDs-m.RunningPRDs-held, held, r.Known.Tasks, r.Known.UndecomposedPRDs)
+	} else {
+		fmt.Fprintf(sb, "LEFT  known: %d Automata not done (%d running, %d waiting or blocked) with %d tasks still open; %d not decomposed yet\n",
+			r.Known.PRDs, m.RunningPRDs, r.Known.PRDs-m.RunningPRDs, r.Known.Tasks, r.Known.UndecomposedPRDs)
+	}
 	fmt.Fprintf(sb, "      estimated: %d Automata not filed yet; about %.0f tasks (%.1f tasks per Automaton)\n",
 		r.Estimated.NewPRDs, r.Estimated.EstimatedTasks, r.Estimated.TasksPerPRD.Mean)
 	fmt.Fprintf(sb, "      combined estimate: about %d Automata and about %.0f tasks (known plus estimated)\n",

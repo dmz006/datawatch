@@ -52,6 +52,7 @@ const (
 	PRDBlocked        PRDStatus = "blocked" // BL191 Q6 — a guardrail returned `block`; awaits operator action
 	PRDFailed         PRDStatus = "failed"  // one or more tasks failed after all retries; PRD did not complete
 	PRDPaused         PRDStatus = "paused"  // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
+	PRDHeld           PRDStatus = "held"    // operator hold — waiting by decision; not blocked, failed or in review, and nothing starts it
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.
@@ -61,6 +62,24 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 		return PRDPlanning
 	}
 	return s
+}
+
+// HoldState is the record of an operator hold on an Automaton (status
+// held). Reason is required; Condition is free text shown to the operator
+// and never evaluated; Until is the optional look-again time. From is the
+// status the Automaton had when it was held, and a release restores it.
+// PriorBlockedReason keeps the blocked reason at hold time, because the
+// store clears BlockedReason whenever the status is not blocked. ExpiredAt
+// is set once when Until passes; expiry never changes the status.
+type HoldState struct {
+	Reason             string     `json:"reason"`
+	Condition          string     `json:"condition,omitempty"`
+	Until              *time.Time `json:"until,omitempty"`
+	HeldAt             time.Time  `json:"held_at"`
+	HeldBy             string     `json:"held_by,omitempty"`
+	From               PRDStatus  `json:"from"`
+	PriorBlockedReason string     `json:"prior_blocked_reason,omitempty"`
+	ExpiredAt          *time.Time `json:"expired_at,omitempty"`
 }
 
 // SessionDecision is one duplicate-session decision on a task: two or more
@@ -78,7 +97,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill | completed_migration
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing | guardrail_rejudge | child_inherit | task_routing | project_link_backfill | completed_migration | verifier_materialize | hold | hold_extend | hold_release | hold_expired
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -263,6 +282,10 @@ type ProtectedPathHold struct {
 
 // PRD is the operator-supplied feature description.
 type PRD struct {
+	// Archive is the marker of an archived Automaton: its bulky parts (decision
+	// log, session history, raw judge text) live in the archive file the marker
+	// names. Nil on every live record. See prd_archive.go.
+	Archive *ArchiveRef `json:"archive,omitempty"`
 	// Truncated is set only on the capped copy the default detail GET
 	// returns (see CapPRDText). It is never stored.
 	Truncated  []TruncatedField `json:"truncated,omitempty"`
@@ -378,6 +401,9 @@ type PRD struct {
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// Hold is the operator hold record. Set while Status is held and nil
+	// otherwise; releasing the hold clears it.
+	Hold *HoldState `json:"hold,omitempty"`
 	// RulesReviewOutcome is the structured record of the last completion
 	// rules review that blocked this automaton: the findings, the recovery
 	// action taken and the retry budget. It is set by the completion rollup
@@ -416,6 +442,11 @@ type PRD struct {
 
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
+
+	// Landing says whether the Automaton's branch reached the default
+	// branch: pending, landed, kept or dropped (see landing.go). Nil when
+	// the Automaton never had a branch.
+	Landing *Landing `json:"landing,omitempty"`
 
 	// BranchRefresh is the state of the last branch refresh against main.
 	BranchRefresh *BranchRefresh `json:"branch_refresh,omitempty"`
@@ -1553,6 +1584,18 @@ type Task struct {
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
 
+	// SecurityFindings — human-readable findings (file:line: detail) from
+	// the daemon's warn-only pre-commit security scan over the task's
+	// worktree, recorded on the task right before its completion commit
+	// by Manager.RecordTaskSecurityFindings. Only the first 20 are stored;
+	// the full volume is on SecurityFindingCount. Warn-only: findings
+	// never change the task's status, and never fail, block or requeue it.
+	SecurityFindings []string `json:"security_findings,omitempty"`
+	// SecurityFindingCount — cumulative number of security-scan findings
+	// recorded on this task (a task that passes the pre-commit scan more
+	// than once accumulates the full count of each pass).
+	SecurityFindingCount int `json:"security_finding_count,omitempty"`
+
 	// SnapshotSkipped — files the session's staging commit (or the attempt
 	// snapshot pass) REFUSED to stage, each with the staging guard's reason
 	// (never-stage, ignored, outside-plan, outside-root, size, ignore-dir,
@@ -1942,6 +1985,7 @@ type LoopStatus struct {
 	MaxDepthSeen   int            `json:"max_depth_seen,omitempty"`   // BL191 Q4: max(PRD.Depth) across the store
 	VerdictCounts  map[string]int `json:"verdict_counts,omitempty"`   // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
 	BlockedPRDs    int            `json:"blocked_prds,omitempty"`     // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
+	HeldPRDs       int            `json:"held_prds,omitempty"`        // count of Automata on hold by the operator; never included in BlockedPRDs
 
 	// BL367 — quality gate observability (surfaced via GET /api/autonomous/status + autonomous_status MCP).
 	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`        // tasks with a non-nil QualityGateResult

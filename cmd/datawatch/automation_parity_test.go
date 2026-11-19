@@ -2,6 +2,7 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/mcp"
@@ -60,6 +61,54 @@ func toSet(names []string) map[string]bool {
 		m[n] = true
 	}
 	return m
+}
+
+// TestAutomationLandingParity — landing state parity across the surfaces:
+// the landing record rides on the Automaton read (REST GET, the
+// `autonomous prd-get` landing line, MCP get output, comm `autonomous
+// landing <id>`, and the PWA overview block), and the two operator
+// decisions (keep / drop) are each reachable from REST, MCP, CLI and the
+// comm channel. Every REST landing operation must have its MCP tool, CLI
+// verb and comm verb; the landing record read must be on the comm channel.
+func TestAutomationLandingParity(t *testing.T) {
+	mcpTools := toSet(mcp.LandingToolNames())
+	commVerbs := toSet(router.LandingCommVerbs())
+	cliVerbs := map[string]bool{}
+	for _, c := range newAutonomousCmd().Commands() {
+		cliVerbs[c.Name()] = true
+	}
+
+	for _, op := range server.LandingRESTOperations() {
+		base := strings.ReplaceAll(op.Name, "/", "_") // landing_keep
+		action := strings.TrimPrefix(base, "landing_")
+		if action != "keep" && action != "drop" {
+			t.Fatalf("landing REST operation %q: expected a keep/drop decision op", op.Name)
+		}
+		want := map[string]string{
+			"mcp":  "autonomous_" + base,
+			"cli":  "prd-landing-" + action,
+			"comm": "landing-" + action,
+		}
+		for surface, name := range want {
+			present := false
+			switch surface {
+			case "mcp":
+				present = mcpTools[name]
+			case "cli":
+				present = cliVerbs[name]
+			case "comm":
+				present = commVerbs[name]
+			}
+			if !present {
+				t.Errorf("REST operation %q has no %s counterpart named %q", op.Name, surface, name)
+			}
+		}
+	}
+
+	// The landing record read is on the comm channel as `autonomous landing <id>`.
+	if !commVerbs["landing"] {
+		t.Errorf(`comm verbs %v: the landing record read ("landing <id>") is missing`, commVerbs)
+	}
 }
 
 func TestAutomationParity(t *testing.T) {

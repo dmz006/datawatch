@@ -75,13 +75,13 @@ func TestIsLocalhostScope(t *testing.T) {
 		// Scope-test hosts are built from byte values so the literals below
 		// stay out of the private RFC1918 blocks (leak-check hygiene) while
 		// still exercising the docker/k8s/home-LAN branches.
-		"127.0.0.1":                 true,
-		"::1":                       true,
+		"127.0.0.1": true,
+		"::1":       true,
 		net.IPv4(0xAC, 0x11, 0x00, 0x05).String(): true, // docker bridge
 		net.IPv4(0x0A, 0x2A, 0x00, 0x05).String(): true, // k8s default
 		net.IPv4(0xC0, 0xA8, 0x01, 0x0A).String(): true, // home LAN / Thor scope per Q5 answer
-		"8.8.8.8":                   false,
-		"203.0.113.10":              false,
+		"8.8.8.8":      false,
+		"203.0.113.10": false,
 	}
 	for ipStr, want := range cases {
 		ip := net.ParseIP(ipStr)

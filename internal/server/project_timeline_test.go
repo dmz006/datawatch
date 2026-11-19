@@ -76,8 +76,8 @@ func TestProjectTimeline_ArcsSpanEarliestToLatest(t *testing.T) {
 		tlPRD("a2", autonomous.PRDCompleted, -30, -15, "/x"),
 	}
 	out := tlBuild(t, timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1", State: "active"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1", State: "active"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "a1", "a2")},
 	})
 	if out.Level != "arcs" || out.Total != 1 || out.HasMore {
@@ -87,11 +87,11 @@ func TestProjectTimeline_ArcsSpanEarliestToLatest(t *testing.T) {
 	if r.Kind != "arc" || r.ID != "arc1" || r.State != "active" || r.Title != "arc arc1" {
 		t.Errorf("row = %+v", r)
 	}
-	if r.First == nil || !r.First.Equal(*tlTime(-50)) {
-		t.Errorf("first = %v, want -50h", r.First)
+	if r.First == nil || !r.First.Equal(*tlTime(-40)) {
+		t.Errorf("first = %v, want -40h (a1's first task start; its -50h created time is ignored)", r.First)
 	}
-	if r.Last == nil || !r.Last.Equal(*tlTime(-15)) {
-		t.Errorf("last = %v, want -15h (latest member end; tasks never widen the arc)", r.Last)
+	if r.Last == nil || !r.Last.Equal(*tlTime(-10)) {
+		t.Errorf("last = %v, want -10h (a1's last task end)", r.Last)
 	}
 	if r.Running || !r.HasChildren || r.ChildrenCount != 2 {
 		t.Errorf("row = %+v", r)
@@ -122,8 +122,8 @@ func TestProjectTimeline_RunningWorkHasNullLastAndRunning(t *testing.T) {
 			tlTask("live", autonomous.TaskInProgress, tlTime(-4), nil)),
 	}
 	in := timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "r1")},
 	}
 	arc := tlBuild(t, in).Rows[0]
@@ -151,8 +151,8 @@ func TestProjectTimeline_ExplicitLinkBeatsDirectory(t *testing.T) {
 	// The Automaton's directory is the project's, but an arc holds it: it is in the arc.
 	p := tlPRD("e1", autonomous.PRDCompleted, -5, -1, "/srv/acme")
 	in := timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        []*autonomous.PRD{p},
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "e1")},
 	}
 	out := tlBuild(t, in)
@@ -162,6 +162,7 @@ func TestProjectTimeline_ExplicitLinkBeatsDirectory(t *testing.T) {
 	// An explicit AutomationID on the PRD also wins over the directory.
 	p.AutomationID = "arc1"
 	in.Automations = nil
+	in.Entries = summaryOf([]*autonomous.PRD{p})
 	out = tlBuild(t, in)
 	if len(out.Rows) != 1 || out.Rows[0].ChildrenCount != 1 {
 		t.Fatalf("rows = %+v", out.Rows)
@@ -177,8 +178,8 @@ func TestProjectTimeline_NoArcGroupUsesDirectoryOnlyAsFallback(t *testing.T) {
 	}
 	prds[3].IsTemplate = true
 	in := timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "held"), tlAutomation("elsewhere", "other")},
 	}
 	out := tlBuild(t, in)
@@ -198,7 +199,7 @@ func TestProjectTimeline_NoArcGroupUsesDirectoryOnlyAsFallback(t *testing.T) {
 		t.Errorf("none rows = %+v", rows)
 	}
 	// With no unassigned Automata there is no unassigned row.
-	out = tlBuild(t, timelineInput{Arcs: in.Arcs, PRDs: prds[1:3], Automations: in.Automations})
+	out = tlBuild(t, timelineInput{Arcs: in.Arcs, Entries: summaryOf(prds[1:3]), Load: loaderOf(prds[1:3]), Automations: in.Automations})
 	if len(out.Rows) != 1 || out.Rows[0].Kind != "arc" {
 		t.Errorf("rows = %+v", out.Rows)
 	}
@@ -210,10 +211,10 @@ func TestProjectTimeline_ChildrenPagingWithCursor(t *testing.T) {
 		prds = append(prds, tlPRD(fmt.Sprintf("p%03d", i), autonomous.PRDCompleted, -200+i, -100+i, "/x"))
 	}
 	in := timelineInput{
-		Level:  "automata",
-		Parent: "arc1",
-		Arcs:   []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:   prds,
+		Level:   "automata",
+		Parent:  "arc1",
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", func() []string {
 			var ids []string
 			for _, p := range prds {
@@ -268,8 +269,8 @@ func TestProjectTimeline_TasksLevel(t *testing.T) {
 		tlTask("k2", autonomous.TaskPending, nil, nil))
 	in := timelineInput{
 		Level: "tasks", Automaton: "a1",
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        []*autonomous.PRD{p},
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "a1")},
 	}
 	out := tlBuild(t, in)
@@ -302,8 +303,8 @@ func TestProjectTimeline_FocusReturnsAutomataAndTasksInOneReply(t *testing.T) {
 	}
 	in := timelineInput{
 		Focus: "arc1", Limit: 1,
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "a1", "a2")},
 	}
 	out := tlBuild(t, in)
@@ -379,8 +380,8 @@ func TestProjectTimeline_GanttArcSpansAreMemberMinMaxNotWholeWindow(t *testing.T
 		tlPRD("n1", autonomous.PRDCompleted, -10, -5, "/x"),
 	}
 	out := tlBuild(t, timelineInput{
-		Arcs:        []config.ProjectArc{{AutomationID: "arcA"}, {AutomationID: "arcB"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arcA"}, {AutomationID: "arcB"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{tlAutomation("arcA", "m1", "m2"), tlAutomation("arcB", "n1")},
 	})
 	a, b := tlRow(t, out.Rows, "arcA"), tlRow(t, out.Rows, "arcB")
@@ -404,7 +405,7 @@ func TestProjectTimeline_GanttAutomataOrderedByCompletionTime(t *testing.T) {
 		tlPRD("early", autonomous.PRDCompleted, -60, -20, "/srv/acme"),
 	}
 	// No Automation chains these, so only completion time orders them.
-	out := tlBuild(t, timelineInput{Level: "automata", Parent: "none", PRDs: prds})
+	out := tlBuild(t, timelineInput{Level: "automata", Parent: "none", Entries: summaryOf(prds), Load: loaderOf(prds)})
 	var ids []string
 	for _, r := range out.Rows {
 		ids = append(ids, r.ID)
@@ -466,8 +467,8 @@ func TestProjectTimeline_GanttTaskDependencyIsReported(t *testing.T) {
 	p := tlPRD("a1", autonomous.PRDCompleted, -9, -1, "/x", second, first)
 	out := tlBuild(t, timelineInput{
 		Level: "tasks", Automaton: "a1",
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        []*autonomous.PRD{p},
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf([]*autonomous.PRD{p}), Load: loaderOf([]*autonomous.PRD{p}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "a1")},
 	})
 	s := tlRow(t, out.Rows, "second")
@@ -492,8 +493,8 @@ func TestProjectTimeline_GanttChainStepBetweenAutomataIsAnEdge(t *testing.T) {
 	}}
 	in := timelineInput{
 		Level: "automata", Parent: "arc1",
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        prds,
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf(prds), Load: loaderOf(prds),
 		Automations: []*autonomous.Automation{auto},
 	}
 	out := tlBuild(t, in)
@@ -517,8 +518,8 @@ func TestProjectTimeline_GanttRunningStatusAndCompletedRelease(t *testing.T) {
 	live := tlPRD("live", autonomous.PRDRunning, -8, -1, "/x", tlTask("k", autonomous.TaskInProgress, tlTime(-3), nil))
 	out := tlBuild(t, timelineInput{
 		Level: "automata", Parent: "arc1",
-		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
-		PRDs:        []*autonomous.PRD{merged, plain, live},
+		Arcs:    []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries: summaryOf([]*autonomous.PRD{merged, plain, live}), Load: loaderOf([]*autonomous.PRD{merged, plain, live}),
 		Automations: []*autonomous.Automation{tlAutomation("arc1", "shipped", "plain", "live")},
 	})
 	s, p, l := tlRow(t, out.Rows, "shipped"), tlRow(t, out.Rows, "plain"), tlRow(t, out.Rows, "live")
@@ -530,5 +531,126 @@ func TestProjectTimeline_GanttRunningStatusAndCompletedRelease(t *testing.T) {
 	}
 	if l.Status != "running" || l.End != nil || !l.Running {
 		t.Errorf("live = %+v", l)
+	}
+}
+
+// The Automaton bar spans the first task start to the last task end, created
+// and updated times are ignored once any task has started, running work has a
+// null end, an Automaton with no started task falls back to created/updated,
+// and a shipped Automaton reads completed even when its status is cancelled.
+func TestProjectTimeline_GanttAutomatonSpanFirstTaskStartToLastTaskEnd(t *testing.T) {
+	shippedCancelled := tlPRD("shipped", autonomous.PRDCancelled, -30, -20, "/x",
+		tlTask("k1", autonomous.TaskCompleted, tlTime(-28), tlTime(-22)))
+	shippedCancelled.MergedInRelease = "v9.9.0"
+	cases := []struct {
+		name        string
+		p           *autonomous.PRD
+		wantStart   *time.Time
+		wantEnd     *time.Time
+		wantRunning bool
+		wantStatus  string
+	}{{
+		name: "bar spans first task start to last task end",
+		p: tlPRD("a", autonomous.PRDCompleted, -400, -200, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-18)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-15), tlTime(-10))),
+		wantStart:  tlTime(-20),
+		wantEnd:    tlTime(-10),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "created and updated times far outside the task times are ignored",
+		p: tlPRD("b", autonomous.PRDCompleted, -9000, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-30), tlTime(-25))),
+		wantStart:  tlTime(-30),
+		wantEnd:    tlTime(-25),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "running automaton has a null end",
+		p: tlPRD("c", autonomous.PRDRunning, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskInProgress, tlTime(-12), nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "running automaton between tasks has a null end",
+		p: tlPRD("c", autonomous.PRDRunning, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskPending, tlTime(-12), nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "active automaton between completed tasks has a null end",
+		p: tlPRD("g", autonomous.PRDActive, -30, -1, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-15)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-14), tlTime(-10)),
+			tlTask("k3", autonomous.TaskPending, nil, nil)),
+		wantStart:   tlTime(-20),
+		wantRunning: true,
+		wantStatus:  tlStatusRunning,
+	}, {
+		name: "no started task falls back to created and updated",
+		p: tlPRD("d", autonomous.PRDCompleted, -40, -35, "/x",
+			tlTask("k1", autonomous.TaskPending, nil, nil)),
+		wantStart:  tlTime(-40),
+		wantEnd:    tlTime(-35),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name:       "shipped but cancelled reports completed",
+		p:          shippedCancelled,
+		wantStart:  tlTime(-28),
+		wantEnd:    tlTime(-22),
+		wantStatus: tlStatusCompleted,
+	}, {
+		name: "cancelled and unshipped stays cancelled",
+		p: tlPRD("f", autonomous.PRDCancelled, -30, -10, "/x",
+			tlTask("k1", autonomous.TaskCancelled, tlTime(-28), tlTime(-22))),
+		wantStart:  tlTime(-28),
+		wantEnd:    tlTime(-22),
+		wantStatus: tlStatusCancelled,
+	}}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := autonomous.SummaryEntryOf(c.p)
+			r := timelineAutomatonRow(&e)
+			if r.Kind != timelineKindAutomaton || r.Status != c.wantStatus {
+				t.Errorf("row = %+v, want status %q", r, c.wantStatus)
+			}
+			if (r.Start == nil) != (c.wantStart == nil) || (c.wantStart != nil && !r.Start.Equal(*c.wantStart)) {
+				t.Errorf("start = %v, want %v", r.Start, c.wantStart)
+			}
+			if (r.End == nil) != (c.wantEnd == nil) || (c.wantEnd != nil && !r.End.Equal(*c.wantEnd)) {
+				t.Errorf("end = %v, want %v", r.End, c.wantEnd)
+			}
+			if r.First != r.Start || r.Last != r.End {
+				t.Errorf("first/last = %v/%v, start/end = %v/%v; the pairs must be identical", r.First, r.Last, r.Start, r.End)
+			}
+			if r.Running != c.wantRunning {
+				t.Errorf("running = %v, want %v", r.Running, c.wantRunning)
+			}
+		})
+	}
+}
+
+// Arc and group rows aggregate their members' task-time spans through
+// timelineSpan, so they pick up the tighter bounds instead of created/updated.
+func TestProjectTimeline_GanttArcPicksUpTighterTaskBounds(t *testing.T) {
+	prds := []*autonomous.PRD{
+		tlPRD("a", autonomous.PRDCompleted, -400, -200, "/x",
+			tlTask("k1", autonomous.TaskCompleted, tlTime(-20), tlTime(-18)),
+			tlTask("k2", autonomous.TaskCompleted, tlTime(-15), tlTime(-10))),
+	}
+	out := tlBuild(t, timelineInput{
+		Arcs:        []config.ProjectArc{{AutomationID: "arc1"}},
+		Entries:     summaryOf(prds),
+		Automations: []*autonomous.Automation{tlAutomation("arc1", "a")},
+	})
+	r := tlRow(t, out.Rows, "arc1")
+	if r.Start == nil || !r.Start.Equal(*tlTime(-20)) || r.End == nil || !r.End.Equal(*tlTime(-10)) {
+		t.Errorf("arc span = %v..%v, want -20h..-10h", r.Start, r.End)
+	}
+	if r.Running {
+		t.Errorf("arc = %+v", r)
 	}
 }

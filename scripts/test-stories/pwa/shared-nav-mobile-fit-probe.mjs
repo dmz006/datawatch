@@ -14,11 +14,14 @@
 // It drives the system google-chrome over the DevTools protocol, so it needs no npm
 // install (the pwa node_modules is a symlink outside this worktree).
 //
-// Env:
-//   TEST_TLS             sandbox daemon HTTPS base URL (the PWA origin for localStorage)
-//   TEST_TOKEN           sandbox auth token
-//   PROBE_OUT_DIR        directory for report-only.json and occurrences.json (required)
-//   PROBE_CHROME_PROFILE chrome --user-data-dir (required, kept inside the project)
+// Env (only the daemon origin is required, the rest have defaults):
+//   TEST_TLS             sandbox daemon base URL (the PWA origin for localStorage;
+//                        default TEST_HTTP — one of the two is required)
+//   TEST_TOKEN           sandbox auth token (default empty, for a daemon with no
+//                        auth token — the release-smoke test daemon starts with TOK="")
+//   PROBE_OUT_DIR        directory for report-only.json and occurrences.json
+//                        (default EVIDENCE_DIR, or $TMPDIR, + /shared-nav-mobile-fit)
+//   PROBE_CHROME_PROFILE chrome --user-data-dir (default <PROBE_OUT_DIR>/chrome-profile)
 //   PROBE_DAEMON_VERSION daemon version string recorded into the report
 //   SHARED_NAV_MODE      report-only (default), baseline or gate. baseline writes
 //                        nav-baseline.json: bottom-nav boxes at 768x1024, 1024x768
@@ -30,17 +33,23 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const OUT_DIR = process.env.PROBE_OUT_DIR;
-const PROFILE = process.env.PROBE_CHROME_PROFILE;
-const TLS = process.env.TEST_TLS;
-const TOKEN = process.env.TEST_TOKEN;
-if (!OUT_DIR || !PROFILE || !TLS || !TOKEN) {
-  console.error('shared-nav-mobile-fit-probe: PROBE_OUT_DIR, PROBE_CHROME_PROFILE, TEST_TLS and TEST_TOKEN are required');
+// Only the daemon origin is required. The rest fall back to defaults so the probe
+// also runs against a daemon with no auth token (the release-smoke test daemon
+// starts with TOK="") and so a direct invocation needs no environment at all.
+const OUT_DIR = process.env.PROBE_OUT_DIR || path.join(process.env.EVIDENCE_DIR || tmpdir(), 'shared-nav-mobile-fit');
+const PROFILE = process.env.PROBE_CHROME_PROFILE || path.join(OUT_DIR, 'chrome-profile');
+const TLS = process.env.TEST_TLS || process.env.TEST_HTTP;
+const TOKEN = process.env.TEST_TOKEN || '';
+if (!TLS) {
+  console.error('shared-nav-mobile-fit-probe: TEST_TLS (or TEST_HTTP) is required');
   process.exit(2);
 }
+mkdirSync(OUT_DIR, { recursive: true });
 
 const MODE = process.env.SHARED_NAV_MODE || 'report-only';
 if (!['report-only', 'baseline', 'gate'].includes(MODE)) {

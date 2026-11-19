@@ -302,7 +302,32 @@ datawatch mcp status
   binary on the host's PATH. `which datawatch` from the same shell
   the MCP host is started in.
 - **Tool calls return 401.** `DATAWATCH_TOKEN` env var missing or
-  wrong. Reset via `datawatch token rotate` and update the host config.
+  wrong. First work out **which** file the bridge is using, because the two
+  daemon-written `.mcp.json` variants carry different credentials:
+  - For **your own MCP host config**, check whether the daemon's bearer was
+    rotated or regenerated — then reset it via `datawatch token rotate`
+    and update the host config.
+  - For the **per-session** `<project_dir>/.mcp.json`, the token is that
+    session's scoped, short-lived credential (it is **not** the long-lived
+    `server.token`) and it is revoked when that session ends
+    ([howto/federation-cbac](federation-cbac.md)). A 401 from a leftover
+    file whose session is over is dead-credential behaviour: start a
+    session (the daemon rewrites the file with the starting session's
+    credential) or use a live session's bridge.
+  - For the **instance-level** `<data_dir>/.mcp.json`, the token is an
+    **instance-scoped, short-lived credential** (the `session-default`
+    group by default, valid about an hour) — not the daemon's long-lived
+    `server.token`, which is **no longer written there**. It is refreshed
+    when a session starts and revoked when no live session remains (the
+    file may even have been removed by then), so a 401 there means the
+    credential expired or was revoked — or the daemon is not reachable.
+    Start a session (the write is refreshed at launch) or use a
+    live session's bridge; for standing access, point your own MCP host
+    config at the daemon with the daemon's bearer or a federation peer
+    token. `datawatch token rotate` no longer helps this file: the
+    instance write does not use a rotated admin token. Do not write the
+    daemon's `server.token` back into that file.
+  Capability model: [howto/federation-cbac](federation-cbac.md).
 - **ACL denies a call.** Daemon returns the denied scope set; check
   `mcp.per_tool_acl` and adjust.
 - **Tool not in catalogue but in the docs.** A new tool was added;

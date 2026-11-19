@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [usage, burn, guard, ladder, effort, retry, capacity, alerts]
+  topics: [usage, burn, guard, ladder, effort, retry, capacity, alerts, pace_line, window]
 exec_steps:
   - tool: burn_guard_status
     description: Read the guard first. It shows whether it is on, the rung in force, the projected weekly percent at the reset against the pace line and margin, and the last decision
@@ -23,6 +23,9 @@ exec_steps:
   - tool: burn_guard_config_set
     description: Worked example, a state-changing call. Turn on ask mode so the guard also raises a question per change alongside the alert, keeping at most one open
     args: {ask_on_change: true}
+  - tool: burn_guard_config_set
+    description: "Worked example, a state-changing call. Set the pace_line policy mode to shadow (off, shadow, on; unset reads shadow): it computes and records the decision without touching anything"
+    args: {mode: shadow}
 ---
 
 # Burn guard
@@ -34,6 +37,10 @@ When the burn is back under the line it steps back up.
 
 **The guard changes admission only. It never ends, kills or restarts a running
 session.** A session that is already running always finishes.
+
+Beside the ladder it carries the **pace_line policy** for the weekly and the
+window usage (`mode` off, shadow, on; see *The pace_line policy: the weekly
+and window guard* below).
 
 It builds on the [usage calculator](usage-calculator.md): it uses the readings
 you type there for the pace line and the ceiling, so a recent reading is the
@@ -176,6 +183,47 @@ until you release them (turn the guard off, which releases everything at once).
 Turning the guard off (`enabled: false`) releases every rung at once, so
 admission is never left restricted by a guard that is off.
 
+## The pace_line policy: the weekly and window guard
+
+Beside the ladder, the burn guard carries the **pace_line policy** for the
+weekly and the window usage. Its six settings sit in the same
+`usage.burn_guard` block:
+
+- **`mode`** — `off` never fires; `shadow` computes and records the decision
+  without touching anything; `on` backs the `claude-code` backend off until
+  the estimate is back inside the line and the window. An unset mode reads
+  `shadow` — shadow first, then on.
+- **`week_tolerance`** — how many points the week reading may run over the
+  pace line and still be ok. Whole number 0 to 10, default `2`.
+- **`points_to_week_factor`** — one point of ledger burn counts as this many
+  points of the weekly allowance. 1 to 10, default `1.3`.
+- **`window_percent_per_point`** — one point burned is this percent of the
+  current window. 1 to 25, default `4`.
+- **`window_stop_percent`** — a window is over at this percent used. 50 to
+  95, default `85`.
+- **`reading_freshness_minutes`** — a reading older than this is stale, and
+  the guard asks you for a fresh one. Whole number 1 to 1440, default `60`.
+
+The **window anchors** are fixed behavior, not a setting: windows end at
+02:00, 07:00 and 12:00, then every 5 hours.
+
+The six keys are read and written on the same six surfaces as the other
+`usage.burn_guard` keys (YAML, web app, CLI, REST, MCP and the comm channel),
+and they share the same rule: one invalid value rejects the whole change and
+nothing is stored, and a saved value that is out of range falls back to its
+default on load, with a warning in the daemon log.
+
+**Status.** As of this change the settings are in place on every surface and
+the guard's own behavior is unchanged until the pace_line policy runs. The
+default mode is `shadow`, so the first state the policy takes is one that
+computes and records the decision without touching anything — you choose when
+it goes `on`.
+
+**Review before you turn it on.** Check that the window anchors above match
+how your provider's windows actually run, and that `window_stop_percent`,
+`window_percent_per_point`, `week_tolerance` and `points_to_week_factor` fit
+the allowance you are pacing, before you set `mode` to `on`.
+
 ## Settings
 
 All settings are under `usage.burn_guard`. Each is applied to the next
@@ -201,6 +249,12 @@ is unchanged, so a script or config file that used the old keys keeps working.
 | `refit_on_reading` | Refit the two prices when a new reading arrives | `true` |
 | `effort_ceiling` | Task kind to ceiling (see below) | `docs`, `parity`, `live_check`, `final_gate` all `low` |
 | `retry_limit_claude` | Most retries of one task on Claude, 0 to 20 | `2` |
+| `mode` | The pace_line policy mode: `off` (never fires), `shadow` (computes and records the decision without touching anything), `on` (backs the `claude-code` backend off until the estimate is back inside the line and the window). An unset mode reads `shadow` | `shadow` |
+| `week_tolerance` | How many points the week reading may run over the pace line and still be ok, whole number 0 to 10 | `2` |
+| `points_to_week_factor` | One point of ledger burn counts as this many points of the weekly allowance, 1 to 10 | `1.3` |
+| `window_percent_per_point` | One point burned is this percent of the current window, 1 to 25 | `4` |
+| `window_stop_percent` | A window is over at this percent used, 50 to 95 | `85` |
+| `reading_freshness_minutes` | A reading older than this is stale and the guard asks you for a fresh one, whole number 1 to 1440 | `60` |
 
 An invalid value in a saved config falls back to its default with a warning in
 the daemon log; the daemon still starts.
@@ -321,7 +375,10 @@ three places:
 The hold ends on its own when the guard steps back, at the next reading, or
 at the weekly reset. Until then the flag stays in the list — its presence is
 the clearest sign that something the guard did is still restricting
-admission.
+admission. While a burn-guard hold is up the backend behaves like any
+usage back-off: new **worker** sessions are held, and the review roles
+(guardrail judges, verifiers, planning) may still run on it through its
+[review reserve](usage-backoff.md#what-a-flag-does-not-hold-the-review-reserve).
 
 ## The effort ceiling
 

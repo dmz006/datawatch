@@ -95,9 +95,40 @@ not remove. Use it to clear the leftovers of a killed run.
 (`internal/session`) runs the tested suites one package at a time against a
 fresh, private temp directory and fails the run — naming the surviving entry and
 the responsible package — if any scratch directory is left behind.
-`make test-tmp-guard` runs the guard in full mode over every package in the
-repository; the ordinary `go test ./...` run of the same test keeps a small
-default list so a local run stays fast.
+The guard is opt-in: a plain `go test ./...` skips it with a message naming
+the target (the target sets `DW_RUN_TMP_GUARD=1`). `make test-tmp-guard` runs it in full mode over every package in the
+repository.
+
+`make test-cross-build` is the other opt-in local pre-tag check. It
+cross-compiles the daemon (`./cmd/datawatch/`) for windows/amd64, windows/arm64
+and darwin/arm64 (`TestMainBuildsForReleaseTargets` in `tests/ci`; the target sets `DW_RUN_CROSS_BUILD=1`), and is
+skipped by a plain `go test ./...` with a message naming the target. Whether CI
+and the release workflow run either check is decided separately.
+
+## Performance budget checks are part of the local pre-tag run
+
+`scripts/perf-budget.sh` is a local pre-tag check, not a CI step: it is
+run on the release host before a tag is cut (alongside `make test-tmp-guard`
+and `make test-cross-build`). It enforces two budgets in one command:
+
+- the web UI load budget (the seeded-server Go test and the optional
+  slow-4G tab timing pass), and
+- the roll-up and Automata list budget at 700 Automata,
+  `scripts/perf-rollup-check.sh`
+  (`TestPerfRollup*` / `TestPerfAutomata*` in `internal/server` and
+  `TestSummaryIndexMemory*` in `internal/autonomous`).
+
+The roll-up and list checks run against a deterministic temp-dir fixture
+(no network, no git, never the operator's data directory). The byte limits
+and the "no full record read" assertions are ordinary Go tests and run in a
+plain `go test` run. **Only the time-limit assertions are gated** behind
+`PERF_ROLLUP_CHECK=1`, which `scripts/perf-rollup-check.sh` sets; in a normal
+`go test` run those time limits are skipped with the assertions that a
+miss would be reported. `PERF_ROLLUP_MULTIPLIER` (a number >= 1, default
+1) scales every time limit for a slow host; the byte limits never scale.
+The script runs the tests niced (`nice -n 19`) with workers capped at a
+quarter of the cores, under a hard timeout (`PERF_ROLLUP_TIMEOUT`, default
+600 s) and a cleanup trap, and exits non-zero on any miss.
 
 ## Smoke checks: the no-config-copy rule (smoke-check-task)
 
@@ -179,7 +210,7 @@ repo-relative paths or glob patterns). Its shell tests live in
   target `check-internal-refs`, and the `lint` target depends on it, so `make lint` runs
   the check as part of every lint pass.
 - It is a hard gate in both workflows: `ci.yaml` runs `bash scripts/check-no-internal-refs.sh`
-  on every push, and the release workflow's `go test + lint` job runs
+  on every push, and the release workflow's `lint + build` job runs
   `make check-internal-refs` (the dedicated step right before golangci-lint) before
   anything is released.
 - The merge helper `scripts/merge-branches-bump-version.sh` also runs `make check-internal-refs`
@@ -243,6 +274,35 @@ OK
 (The run's elapsed seconds are a wall-clock figure and shift by a few
 hundredths of a second between runs; `Ran 13 tests` and `OK` are the stable
 parts, and the exit code is 0 either way.)
+
+## Automaton task verification: the lint step
+
+When an Automaton task's or story's changed files touch Go files, verification
+also runs the repository lint — `golangci-lint` over the touched packages — after
+the verification script passes. The gate counts the branch's diff against its
+merge base with `main` **plus the untracked files**, keeps the Go files, and
+lints only their package directories. A clean lint is required: any lint finding
+fails the unit (the task, or the story's verification as a whole), and the
+failure is recorded as a **non-retryable** `content` failure with source
+`lint-gate` — the finding text (capped at 8 KiB) goes into the failure reason and
+is appended to the script output, so the operator sees exactly what to fix.
+There is no automatic retry after this failure: fix the findings (or install
+`golangci-lint` on the worker's node) and reset the unit. A unit whose changed
+files touch no Go files, or that has no project directory, or a project
+directory that is not a git work tree, skips the lint step.
+
+To reproduce the check exactly as the gate takes it, lint the packages the gate
+would take:
+
+```bash
+files=$(printf '%s\n' \
+  "$(git diff --name-only "$(git merge-base HEAD main)" -- '*.go')" \
+  "$(git ls-files --others --exclude-standard -- '*.go')" | sed '/^$/d')
+pkgs=$(printf '%s\n' "$files" | xargs -r -n1 dirname | sort -u | sed 's|^|./|')
+golangci-lint run $pkgs
+```
+
+A finding printed here is the same finding that fails verification.
 
 ## Test daemon cleanup rules
 
@@ -953,7 +1013,7 @@ These packages depend on external services that can't be easily unit-tested:
 - **LLM backends** (6 packages): require running LLM servers (Ollama, OpenCode, etc.)
 - **channel, wizard, signal**: require Node.js runtime or signal-cli Java process
 
-See [test-coverage plan](plans/2026-04-12-test-coverage.md) for roadmap to improve.
+See [test-coverage plan](plans/historical-plans/2026-04-12-test-coverage.md) for roadmap to improve.
 
 ### Pre-release Validation Checklist (v2.3.0)
 
@@ -1707,6 +1767,18 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 - **Android and iOS.** The repo has no native client source for this surface.
 - **Runner side effect.** `make test-e2e-shared-nav` runs `npm ci` in `scripts/test-stories/pwa`. That replaces the tracked symlink `scripts/test-stories/pwa/node_modules` (it points to `/home/<user>/workspace/datawatch/scripts/test-stories/pwa/node_modules`) with a real directory, which git shows as a deleted file. The symlink was restored with `git checkout` after each run.
 - **Runner `EVIDENCE_DIR`.** `scripts/e2e-pwa.sh` line 41 sets `EVIDENCE_DIR=""`, so an `EVIDENCE_DIR` set in the environment is ignored. In local mode a passing run deletes its report. The record copied the gate reports out during the run (`make-run/gate-reports/`). Fixing the script is a separate change.
+
+### N7 — Release smoke section 79a (shared nav) and its shell test
+
+- **Section.** `scripts/release-smoke.sh` section `79a. Shared navigation bar fits phone widths in light and dark` runs the shared-nav scenario through the PWA runner's `shared-nav` group (`node run-all.mjs --group shared-nav` in `scripts/test-stories/pwa`) against the smoke daemon only: `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN` come from the smoke daemon's `$BASE`/`$TOK`, the node invocation is scrubbed of `TMUX`/`TMUX_TMPDIR`, and the run is bounded by `SMOKE_SHARED_NAV_TIMEOUT` (default 600 s) through `timeout` when available. Unlike the load section, a navigation layout finding at phone widths is a failure (FAIL), never a skip.
+- **SMOKE_ONLY id.** The section is selectable by its numbered id `79a` (e.g. `SMOKE_ONLY=79a bash scripts/release-smoke.sh`; the `79` prefix selects it together with the load section `79. Web UI slow-network load scenarios…`). When `SMOKE_ONLY` is set to other ids, the section prints its `(skipped — not in SMOKE_ONLY=…)` line and does nothing — in particular it never calls `node`. The adjacent load section has the same guarantee.
+- **Probe variables.** The section passes the probe's required variables in full: `TEST_TLS` and `TEST_TOKEN` from `$BASE`/`$TOK` (the smoke daemon starts with no auth token, so `TEST_TOKEN` may be empty and the probe's empty-token default applies), `PROBE_OUT_DIR` the evidence dir, and `PROBE_CHROME_PROFILE` a throwaway Chrome profile under the smoke's temp dir; both dirs are removed again on every path.
+- **Exit 2 is a skip.** When the browser at `DW_CHROME_PATH` is missing (or the daemon does not answer) the runner ends with exit 2 and a `0 passed 0 failed` summary; the section records that as SKIP, and exit 0 with `0 passed 0 failed` is also a SKIP. Any other non-zero exit (including the timeout bound) is a FAIL.
+- **Shell test.** `scripts/tests/release-smoke-shared-nav_test.sh` covers both sections without a browser, daemon or network: it extracts the section bodies and the `H`/`ok`/`ko`/`skip` helpers from `scripts/release-smoke.sh` and evaluates them in a harness whose PATH carries a fake `node` (and fake `timeout`) that records its environment and arguments and exits with a test-chosen status. Cases: another section id in `SMOKE_ONLY` skips both sections with no `node` call; a selected run (own id `79a`, and empty `SMOKE_ONLY`) calls `node run-all.mjs --group shared-nav` once with `PROBE_OUT_DIR`, `PROBE_CHROME_PROFILE`, `TEST_TLS` and `TEST_TOKEN` non-empty in the node's environment and leaves no throwaway dirs behind; a `0 passed 0 failed` run (exit 0) and an exit-2 run are SKIPs with no FAIL; a failing run is a FAIL. Run it with:
+
+```
+bash scripts/tests/release-smoke-shared-nav_test.sh
+```
 
 ## TS-817 — Two pi-prompt workers hold different compute nodes (sandbox daemon)
 
@@ -2568,4 +2640,16 @@ A run on a running sandbox daemon (a real task moved between pools, and a restar
 | **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: run `.datawatch/verify/retry-prompt-flake-loop.sh 50` (reproduction loop: race detector, count 50, three modes — `GOMAXPROCS=1`, `GOMAXPROCS=1` with CPU load, and default `GOMAXPROCS` with CPU load) and the targeted test run `go test -race -count=1 -v -run 'TestFailureEscalation_RetryPromptCarriesEarlierReports$' ./internal/autonomous/`. Before the fix (observed while triaging, same loop, 50 runs per mode): failed runs 7, 6 and 9 and race reports 24, 22 and 36 across the three modes. |
 | **Expected** | The loop shows 0 failed runs and 0 race reports in all three modes, and the targeted test passes under the race detector. |
 | **Actual** | The targeted test passes under `-race`. After the fix, the loop was run three times: the final two runs show 0 failed runs and 0 race reports in all three modes, as did about 1500 further runs of the two flaky-mode tests and the `TestStoreLockedWrites` regression pair under the heaviest mode; the first run had one one-off anomaly (1 failed run, 4 race reports in the default-`GOMAXPROCS`-with-CPU-load mode) that did not reproduce in any later run. |
+| **Result** | PASS |
+
+## Peer-down recovery test flake (2026-11-16)
+
+### BUG: `TestPeerDownRecovers` failed in the full `internal/autonomous` package run
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestPeerDownRecovers` failed in a full `internal/autonomous` package run and passed on rerun. Two test-side causes were found; no production behavior changed. (1) The shared test double `fakePlacementAdvisor` in `internal/autonomous/placement_admission_test.go` recorded the last `pinnedTo` it saw (`gotPin`) with no lock, but `Plan` is called by several goroutines at once — both admission passes in `TestPlacementAskDedupesAcrossAttempts` call it concurrently, and a manager pass can reach it while a test reads `gotPin` back in its assertion (`TestPlacementPinsTaskNode`, `TestPlacementTaskPinIsRespected`) — so the race detector reported it and the package run failed. (2) The recovery subtest asserted the recorded delivery outcome before the forwarder had written it: the receiving stub counts its hit when the request arrives, but the outcome is recorded only after the response returns, so a hit did not mean the record existed yet (wait-then-read). Fix: `fakePlacementAdvisor` serializes the `gotPin` write in `Plan` with a mutex, and `TestPeerDownRecovers` waits for the recorded outcome (`peerDownWaitUntil` until `outcomes()` is `[retry delivered]`) before asserting it; the other peer-down tests keep the same wait-then-read discipline. This is the test-only sibling of the failure-escalation flake above (which fixed the executor side in `v9.180.2`). No setting, command, surface or product behavior changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go test -race -count=1 -v -run 'TestPeerDown' ./internal/autonomous/`; stress the recovering test with `go test -race -count=10 -run 'TestPeerDownRecovers' ./internal/autonomous/`; and run the placement tests that use the fake advisor, `go test -race -count=1 -run 'TestPlacementAskDedupesAcrossAttempts\|TestPlacementPinsTaskNode\|TestPlacementTaskPinIsRespected' ./internal/autonomous/`. |
+| **Expected** | All `TestPeerDown*` subtests pass under the race detector with no data race report; `TestPeerDownRecovers` passes every repeat run; the three placement tests pass under `-race`. |
+| **Actual** | All six subtests of `TestPeerDownDoesNotBlockLocalDelivery` and `TestPeerDownRecovers` passed under `-race` (`ok`, `TestPeerDownRecovers` at 0.02s); `TestPeerDownRecovers` passed 10 of 10 under `-race -count=10`; the three placement tests passed under `-race` (`ok`). Note: a *full* package run at `-race` still fails, in a different test — `TestPlanningRequeue_Table` reads the planner pair through `plannerPairFor` (`planning_requeue.go:86`) unlocked while `Manager.SetPRDLLM` writes it (`manager.go:6743`) — a production-side race tracked by the sibling story "Make the `internal/autonomous` race detector run pass" (d5060001), not by this flake's fix; the targeted runs above do not trip it. |
 | **Result** | PASS |

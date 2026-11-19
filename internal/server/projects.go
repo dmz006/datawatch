@@ -256,6 +256,7 @@ func (s *Server) upsertProject(w http.ResponseWriter, r *http.Request) {
 		s.cfg.Projects = map[string]config.ProjectConfigEntry{}
 	}
 	s.cfg.Projects[req.Name] = entry
+	s.evictRollupProject(req.Name)
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -293,6 +294,7 @@ func (s *Server) setProjectArcs(w http.ResponseWriter, r *http.Request, name str
 		return
 	}
 	s.cfg.Projects[name] = candidate
+	s.evictRollupProject(name)
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -403,6 +405,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, name string) {
 		return
 	}
 	delete(s.cfg.Projects, name)
+	s.evictRollupProject(name)
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return

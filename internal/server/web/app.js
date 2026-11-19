@@ -86,7 +86,7 @@ function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {})
 // and the default set an effective list falls back to when an Automaton
 // stores an empty (= inherit) list. Ground truth: the lifecycle
 // subscription known event kinds, minus the generic "persisted" kind.
-const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
+const NOTIFY_EVENT_KINDS = ['automaton.merge_ready', 'automaton.stuck_running', 'automaton.tasks_done_or_cancelled', 'burn_guard.rung_changed', 'guardrail_warn', 'judge.verdict_block', 'judge.verdict_pass', 'judge.verdict_warn', 'prd.active', 'prd.approved', 'prd.archived', 'prd.blocked', 'prd.cancelled', 'prd.completed', 'prd.draft', 'prd.failed', 'prd.held', 'prd.needs_review', 'prd.paused', 'prd.planning', 'prd.rejected', 'prd.revisions_asked', 'prd.running', 'scope_warning', 'task.awaiting_approval', 'task.blocked', 'task.cancelled', 'task.capacity_wait_too_long', 'task.completed', 'task.failed', 'task.final_gate_failed', 'task.in_progress', 'task.pending', 'task.queued', 'task.review_needed', 'task.running_tests', 'task.session_cleared', 'task.session_started', 'task.verifying', 'task.waiting_capacity'];
 const NOTIFY_EVENT_DEFAULTS = ['prd.needs_review', 'prd.blocked', 'prd.failed', 'prd.completed', 'prd.cancelled'];
 // Opt-in event kinds: off by default and only fire when explicitly listed in
 // the resolved notification events (Automaton tier, else guardrail profile,
@@ -297,6 +297,91 @@ window.fetch = function(...args) {
   });
 };
 
+// ── Saved-state reads: never throw, one bad key never blocks the rest ─────
+// localStorage can be unavailable (blocked, private mode, non-browser hosts)
+// and operator-saved values can be malformed or from a release that stored
+// a different shape. _safeStored is the single entry point for reading a
+// saved value: it never throws and validates the raw string with the
+// provided reader. The reader returns the accepted value, or null to mean
+// "reject" — the key is then removed (so the bad value is not re-read), one
+// line goes to console.info, and the fallback is used. No toast, nothing
+// visible in the UI; the page just opens with the default.
+// An optional 4th argument (ls) lets callers/tests inject a specific storage
+// object instead of the ambient localStorage.
+function _sessionsLogDiscard(key) {
+  try { console.info('[sessions] saved value for ' + key + ' was unrecognized; using the default and dropping it'); } catch (_) { /* no console */ }
+}
+
+function _safeStored(key, read, fallback, ls) {
+  if (ls === undefined) {
+    try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  }
+  let raw = null;
+  let have = false;
+  try {
+    // The capability check is inside the try: a blocked storage can make even
+    // reading ``ls.getItem`` throw, and that must degrade to the fallback too.
+    if (!ls || typeof ls.getItem !== 'function') return fallback;
+    raw = ls.getItem(key);
+    have = (raw !== null && raw !== undefined);
+  } catch (_) { return fallback; }
+  if (!have) return fallback;
+  let v = fallback;
+  try { v = read(raw, ls); } catch (_) { v = null; }
+  if (v === null || v === undefined) {
+    try { if (ls && typeof ls.removeItem === 'function') ls.removeItem(key); } catch (_) { /* best effort */ }
+    _sessionsLogDiscard(key);
+    return fallback;
+  }
+  return v;
+}
+
+// Reader: a stored JSON array of non-empty strings (manual session order,
+// watched/muted lists, collapsed group keys). A single bad entry disqualifies
+// the whole value so one stray number can't corrupt the list — it is dropped
+// and the default (an empty list) is used instead.
+function _storedStrArrayRead(raw) {
+  let p = null;
+  try { p = JSON.parse(raw); } catch (_) { return null; }
+  if (!Array.isArray(p)) return null;
+  if (!p.every(x => typeof x === 'string' && x)) return null;
+  return p;
+}
+
+// One optional block inside a page render must be able to fail on its own:
+// log it and render it as absent instead of taking the whole page down with
+// it. The block's output is expected to be an HTML string.
+function _sessionsRenderGuard(label, fn) {
+  try { return (typeof fn === 'function') ? fn() : ''; } catch (err) {
+    try { console.info('[sessions] "' + label + '" block skipped: ' + ((err && err.message) || err)); } catch (_) { /* no console */ }
+    return '';
+  }
+}
+
+// Safe counterpart for writes: storing the operator's preference must never
+// throw either (storage can be blocked or full). Best-effort, silent on
+// failure — the in-memory state already carries the value for this page.
+function _storedWrite(key, value) {
+  let ls = null;
+  try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (_) { ls = null; }
+  try {
+    // Inside the try: a blocked storage can make reading ``ls.setItem`` throw.
+    if (!ls || typeof ls.setItem !== 'function') return;
+    ls.setItem(key, value);
+  } catch (_) { /* storage blocked/full: in-memory state is enough for this page */ }
+}
+
+// Chips the state filter accepts: the buckets (all/active/waiting/done) or a
+// real session state (running … killed, from the state filter; the history
+// states are included since setSessionStateChip enables those too). Anything
+// else stored under this key is a stale value we don't know about.
+const SESSIONS_STATE_CHIP_KEYS = ['all', 'active', 'waiting', 'done',
+  'running', 'waiting_input', 'stalled', 'rate_limited',
+  'complete', 'failed', 'killed', 'cancelled', 'archived'];
+
+// Saved search text cap. Above this the value is a bug, not a saved search.
+const SESSIONS_SEARCH_MAX_LEN = 500;
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -326,7 +411,7 @@ const state = {
   // v6.13.9 (BL277) — yellow popup removed; needsInputDismissed and
   // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
-  sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
+  sessionOrder: _safeStored('cs_session_order', _storedStrArrayRead, []), // manual ordering
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _initServerDropdown/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
@@ -348,12 +433,12 @@ const state = {
   // GH#172 D61 — watch sessions + watched-badge filter. Same client-
   // only persistence pattern as sessionOrder above (personal marker,
   // not shared/authoritative — no backend state needed).
-  watchedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_watched') || '[]')),
+  watchedSessions: new Set(_safeStored('cs_sessions_watched', _storedStrArrayRead, [])),
   sessionWatchFilter: false,
   // GH#172 D62 — swipe-to-mute + muted icon. Same client-only
   // persistence pattern; gates handleNeedsInput's Notification/toast.
-  mutedSessions: new Set(JSON.parse(localStorage.getItem('cs_sessions_muted') || '[]')),
-  sessionTreeView: localStorage.getItem('cs_session_tree_view') === '1', // BL348 — tree view toggle
+  mutedSessions: new Set(_safeStored('cs_sessions_muted', _storedStrArrayRead, [])),
+  sessionTreeView: _safeStored('cs_session_tree_view', (raw) => (raw === '1' || raw === '0') ? raw : null, '0') === '1', // BL348 — tree view toggle
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
   terminal: null,          // xterm.js Terminal instance for active session
@@ -706,7 +791,14 @@ function _daemonVersionNoteFrame(version, serverName) {
   const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
   if (!(key in bySrv)) {
     bySrv[key] = version; // first frame from this server: record only
-    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    if (key === 'local' && !state._daemonVersion) {
+      state._daemonVersion = version;
+      // The SW may have been registered before the version was known (bare
+      // /sw.js); adopt the versioned script URL now (no-op if it already is).
+      _swAdoptDaemonVersion(version);
+      // The notice (if painted) keys off this state — keep it current.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
+    }
     return;
   }
   if (bySrv[key] === version || seen[key] === version) return;
@@ -714,6 +806,7 @@ function _daemonVersionNoteFrame(version, serverName) {
   seen[key] = version;
   _loadUiConfig();
   _onDaemonVersionChange(version);
+  try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
 }
 
 // The daemon serving this page (the primary), captured at boot from a
@@ -729,6 +822,10 @@ function _bootDaemonVersion() {
       const v = (h && typeof h.version === 'string') ? h.version : '';
       if (!v || state._daemonVersion) return; // lost the race to a local frame
       state._daemonVersion = v;
+      // registerServiceWorker may have run before the version was known and
+      // registered bare /sw.js; adopt /sw.js?v=<v> now (no-op if already
+      // versioned with this release).
+      _swAdoptDaemonVersion(v);
       const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
       bySrv[_daemonVersionKey('local')] = v;
     })
@@ -1239,7 +1336,8 @@ window._apiPath = _apiPath;
 // forbids a body on 204, so the body can never arrive and r.json() throws
 // "Failed to execute 'json' on 'Response": Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem('cs_token') || '';
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
   // Route through proxy when a specific remote server is selected
@@ -1260,10 +1358,91 @@ function apiFetch(path, opts = {}) {
       // actually proxied to a remote; a LOCAL 401/403 isn't a "this peer
       // lacks a capability" situation and keeps the original generic
       // handling.
+      // An auth reset (a local 401) drops the cached roll-ups and first pages.
+      if (r.status === 401 && !isRemote && typeof _cfDrop === 'function') _cfDrop();
       if (isRemote && (r.status === 401 || r.status === 403 || r.status === 502)) return _fedFetchError(r);
       return r.text().then(t => Promise.reject(new Error(t || r.statusText)));
     });
 }
+
+// ── Cache-first layer (Projects and Automata pages) ─────────────────────────
+// The last good roll-up of a project (per window) and the first page of the
+// Automata list are kept in memory and in localStorage, each tagged with the
+// ETag the server returned (or the body's own revision). A page opens from this
+// cache at once, marks the card "refreshing", then refetches in the background
+// with If-None-Match and repaints only the cards whose data changed. Storage is
+// a convenience: every access is wrapped, and the page renders without it.
+// The cache is dropped on a project change and on an auth reset.
+const CF_PREFIX = 'cs_cf_';
+const CF_MAX = 512 * 1024;
+const _cfMem = new Map();
+// Keys touched this session, so a drop also reaches entries a storage that
+// cannot enumerate would miss.
+const _cfKnown = new Set();
+function _cfKey(kind, name) {
+  return CF_PREFIX + (state.activeServer || 'local') + '_' + kind + (name ? '_' + name : '');
+}
+function _cfGet(key) {
+  if (_cfMem.has(key)) return _cfMem.get(key);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || !('data' in o)) return null;
+    _cfMem.set(key, o); _cfKnown.add(key);
+    return o;
+  } catch (e) { return null; }
+}
+function _cfPut(key, tag, data) {
+  const o = { tag: tag || '', data, at: Date.now() };
+  _cfMem.set(key, o); _cfKnown.add(key);
+  try {
+    const s = JSON.stringify(o);
+    if (s.length > CF_MAX) localStorage.removeItem(key); else localStorage.setItem(key, s);
+  } catch (e) { /* storage is optional */ }
+  return o;
+}
+// _cfDrop forgets every cache entry whose key starts with the prefix (all
+// entries when none is given), in memory and in storage.
+function _cfDrop(prefix) {
+  const p = prefix || CF_PREFIX;
+  Array.from(_cfMem.keys()).forEach(k => { if (k.indexOf(p) === 0) _cfMem.delete(k); });
+  const gone = [];
+  _cfKnown.forEach(k => { if (k.indexOf(p) === 0) gone.push(k); });
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(p) === 0 && gone.indexOf(k) < 0) gone.push(k);
+    }
+  } catch (e) { /* storage may not enumerate */ }
+  gone.forEach(k => { _cfKnown.delete(k); try { localStorage.removeItem(k); } catch (e) { /* storage is optional */ } });
+}
+function _cfDropProject(name) { if (name) _cfDrop(_cfKey('rollup', name + '@')); }
+// A signature of a card's data: equal signatures mean no repaint.
+function _cfSig(v) { try { return JSON.stringify(v); } catch (e) { return String(Math.random()); } }
+// _cfFetch reads a JSON route as {data, tag, unchanged}. It sends
+// If-None-Match when a tag is held for the key; a 304 answers with the held
+// data and unchanged=true. The tag is the ETag header, else the body's
+// revision field. A failure rejects with the server's text.
+function _cfFetch(path, key, o) {
+  const held = key ? _cfGet(key) : null;
+  let token = '';
+  try { token = localStorage.getItem('cs_token') || ''; } catch (_) { /* a blocked store means no stored token */ }
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (held && held.tag) headers['If-None-Match'] = held.tag;
+  return fetch(_apiPath(path), Object.assign({}, o || {}, { headers })).then(r => {
+    if (r.status === 304 && held) return { data: held.data, tag: held.tag, unchanged: true };
+    if (!r.ok) return r.text().then(tx => Promise.reject(new Error(tx || r.statusText)));
+    const hdr = r.headers && typeof r.headers.get === 'function' ? (r.headers.get('ETag') || '') : '';
+    return r.json().then(data => {
+      const rev = data && typeof data === 'object' && !Array.isArray(data) && data.revision != null ? String(data.revision) : '';
+      const tag = hdr || rev;
+      return { data, tag, unchanged: !!(held && tag && held.tag === tag) };
+    });
+  });
+}
+window._cfDrop = _cfDrop;
 
 // ── listLoader: shared load-state helper for list views ─────────────────────
 // listLoader({key, url, render, el, pollMs, timeoutMs, metaExtra}) owns the whole
@@ -1326,6 +1505,14 @@ function listLoader(opts) {
   const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
   const staleOnly = opts.ageDisplay === 'stale-only';
   const isStale = () => st.hasData && (st.error !== '' || (now() - st.at) > (staleOnly ? LIST_STALE_ONLY_MS : LIST_STALE_MS));
+  // The meta badges: cached, refreshing, stale. Shared by html() and patch hooks.
+  function metaHtml() {
+    let meta = '';
+    if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
+    if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
+    if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+    return meta.trim();
+  }
   function html() {
     let h = '';
     if (st.error) {
@@ -1338,11 +1525,7 @@ function listLoader(opts) {
         '<div class="list-skel-row"></div><div class="list-skel-row"></div><div class="list-skel-row"></div></div>';
     }
     if (st.hasData) {
-      let meta = '';
-      if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
-      if (st.loading) meta += `<span class="list-state-refreshing">${escHtml(t('loading'))}</span> `;
-      if (isStale()) meta += `<span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
-      meta = meta.trim();
+      const meta = metaHtml();
       let extra = '';
       if (typeof opts.metaExtra === 'function') {
         // A throwing or non-string metaExtra must never break the paint;
@@ -1356,8 +1539,8 @@ function listLoader(opts) {
         // the split; without metaExtra the meta row is plain, and with
         // neither meta spans nor extra the meta row is omitted entirely.
         h += `<div class="list-state-meta list-state-meta-row"><span class="list-state-meta-main">${meta}</span>${extra}</div>` + body;
-      } else if (meta) {
-        h += `<div class="list-state-meta">${meta}</div>` + body;
+      } else if (meta || opts.metaId) {
+        h += `<div class="list-state-meta"${opts.metaId ? ` id="${escHtml(opts.metaId)}"` : ''}>${meta}</div>` + body;
       } else {
         h += body;
       }
@@ -1367,8 +1550,20 @@ function listLoader(opts) {
   function paint() {
     const el = target();
     if (!el || (opts.active && !opts.active())) return;
+    // A loader with a patch hook repaints only what changed once it has
+    // painted data: the hook returns true when it handled the update.
+    if (opts.patch && st.painted && st.hasData && !st.error) {
+      let handled = false;
+      try { handled = !!opts.patch(el, st.paintedData, st.data, ctl); } catch (e) { handled = false; }
+      if (handled) {
+        st.paintedData = st.data;
+        if (opts.afterPaint) opts.afterPaint(el, null, st.data);
+        return;
+      }
+    }
     const keep = opts.beforePaint ? opts.beforePaint(el) : null;
     el.innerHTML = html();
+    st.painted = st.hasData && !st.error; st.paintedData = st.data;
     if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
   }
   function schedule() {
@@ -1383,6 +1578,7 @@ function listLoader(opts) {
   const ctl = {
     state: st,
     html,
+    metaHtml,
     paint,
     isStale,
     load() {
@@ -3089,7 +3285,9 @@ const _PROJECTS_SECTION_KEY_PREFIX = 'cs_projects_section_collapsed_';
 // hist is the paged history of the project named by hist.name: items so far,
 // next is the cursor for the following page ('' when none), error is its load
 // failure. histBusy guards a Load more click against a second request.
-let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', hist: null, histBusy: false, subtab: '' };
+let _projectsState = { list: null, error: '', selected: _PROJECTS_OVERVIEW, rollup: null, rollupFor: '', rollupError: '', rollupStatus: '', cardHtml: {}, cardShape: '', hist: null, histBusy: false, subtab: '' };
+// The roll-up window the page asks for (days; the server default).
+const _PROJECTS_ROLLUP_WINDOW = 7;
 const _PROJECTS_HISTORY_PAGE = 20;
 // _projectsLinks holds the read-only replies for the selected project (name):
 // its effective policy, its merge pipeline and its event stream. A reply for a
@@ -3138,11 +3336,26 @@ function _projectsSectionToggleState(card, collapsed) {
     if (chev) chev.textContent = collapsed ? '▸' : '▾';
   }
 }
+// _stripTagsStable removes tag-shaped spans from a string by repeating the
+// strip until none remain (a fixed-point sanitizer). CodeQL's
+// js/incomplete-multi-character-sanitization (alert 849) flags a single
+// pass of the multi-character pattern /<[^>]*>/ as an incomplete sanitizer;
+// the fixed-point form is the rule's accepted shape. The two forms are
+// behavior-identical for this pattern (one left-to-right pass already
+// leaves no surviving '<' with a surviving '>' after it -- verified by
+// exhaustive string comparison, zero differences), so operator-visible
+// output does not change; the loop makes the stability contract explicit
+// instead of relying on single-pass match semantics.
+function _stripTagsStable(s) {
+  let out = String(s === null || s === undefined ? '' : s);
+  while (/<[^>]*>/.test(out)) out = out.replace(/<[^>]*>/g, '');
+  return out;
+}
 // _projectsSectionCard wraps a section in a card with a title row, a collapse
 // toggle and a body. titleHtml is already escaped; titleText is its plain form.
 function _projectsSectionCard(id, titleHtml, innerHtml, titleText) {
   const collapsed = _projectsSectionCollapsed(id);
-  const plain = titleText === undefined ? String(titleHtml).replace(/<[^>]*>/g, '') : titleText;
+  const plain = titleText === undefined ? _stripTagsStable(titleHtml) : titleText;
   const label = t(collapsed ? 'projects_section_expand' : 'projects_section_collapse', [plain]);
   return `<div class="project-section-card${collapsed ? ' collapsed' : ''}" id="projectSection-${id}" data-section="${id}" data-title="${escHtml(plain)}">` +
     `<div class="project-section-header"><span class="project-section-title">${titleHtml}</span>` +
@@ -3185,6 +3398,39 @@ function _projectsActive() {
   return state.activeView === 'autonomous' && _automataState.tab === 'projects';
 }
 
+// ── Per-card load state ─────────────────────────────────────────────────────
+// Every card of the project page (arc cards, unassigned, without a project,
+// totals, throughput, events) is a .pc-card of its own with a state: loading
+// (a skeleton), refreshing (cache-rendered content while the background fetch
+// runs), error (its own message and a Retry) or ready. The state sits on the
+// wrapper as data-state; the content sits in the body so a refresh replaces a
+// card's body only when its markup changed. Gantt, Plan and history keep their
+// own fetches and show the same skeleton and error rows in their own blocks.
+let _pcardSink = null;
+function _pcardSkeleton(label) {
+  return `<div class="pc-skeleton" role="status" aria-label="${escHtml(label || t('loading'))}"><span class="pc-skeleton-label">${escHtml(label || t('loading'))}</span><span class="pc-skeleton-bar"></span><span class="pc-skeleton-bar short"></span></div>`;
+}
+function _pcardError(id, msg, label) {
+  return `<div class="pc-error" role="alert"><span class="pc-error-msg">${escHtml((label || t('projects_card_failed')) + ' ' + msg)}</span>` +
+    `<button type="button" class="btn-secondary pc-retry" onclick="${escHtml('projectsCardRetry(' + JSON.stringify(id) + ')')}">${escHtml(t('retry'))}</button></div>`;
+}
+// _pcard wraps one card. status is loading | refreshing | error | ready; err is
+// the failure text for the error state; inner is the ready content.
+function _pcard(id, status, inner, err, loadLabel) {
+  let body = inner;
+  if (status === 'loading') body = _pcardSkeleton(loadLabel);
+  else if (status === 'error') body = _pcardError(id, err || '');
+  if (_pcardSink) _pcardSink.push({ id, status, inner: body });
+  const eid = escHtml(id);
+  return `<div class="pc-card" id="pcard_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="pcard_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="pcard_${eid}_body">${body}</div></div>`;
+}
+// The state every roll-up card shares: one roll-up feeds them all.
+function _projectsRollupCardState(roll, rollErr) {
+  if (rollErr) return 'error';
+  if (!roll) return 'loading';
+  return _projectsState.rollupStatus === 'refreshing' ? 'refreshing' : 'ready';
+}
+
 function _projectsPaint() {
   _projectsGanttStopDrag();
   _projectsFocus = null; // painting the project page leaves the focus page
@@ -3204,28 +3450,381 @@ function _projectsPaint() {
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
     // Overview is the cross-project in-flight view; it draws the whole
-    // #view, so the picker goes back on top of it afterwards.
-    view.innerHTML = '<div id="projectsOverviewBody">' + _automationBodyHTML() + '</div>';
+    // #view, so the picker goes back on top of it afterwards. The card
+    // renderer (shared Cards / Tiles / Compact sub-tab) sits between the
+    // picker and the automation board.
+    _projectsOverviewRestoreSubtab();
+    view.innerHTML = '<div id="projectsOverviewBody">' + _projectsCardSectionHTML(list || []) + _automationBodyHTML({ projectsStyle: true }) + '</div>';
     _automationMount();
-    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err) + '</div>');
+    view.insertAdjacentHTML('afterbegin', _projectsPickerHTML(list || [], selected, err));
   } else {
     const p = list.find(x => x.name === selected);
     const forSel = _projectsState.rollupFor === selected;
     const hist = _projectsState.hist && _projectsState.hist.name === selected ? _projectsState.hist : null;
-    view.innerHTML = _projectsPickerHTML(list, selected, err) + _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist);
+    _pcardSink = [];
+    let pageHtml;
+    try { pageHtml = _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+    finally { _projectsState.cardHtml = {}; (_pcardSink || []).forEach(c => { _projectsState.cardHtml[c.id] = c.inner; }); _projectsState.cardShape = (_pcardSink && _pcardSink.shape) || ''; _pcardSink = null; }
+    view.innerHTML = _projectsPickerHTML(list, selected, err) + pageHtml;
   }
   _tabStripsRevealAll();
 }
+
+// ── Projects cards: shared Cards / Tiles / Compact renderer ───────────────────
+// One shared card renderer for the Projects view, modelled on the Sessions
+// view modes: the three modes (cards, tiles, compact) draw the same items,
+// the choice is remembered on this device in one localStorage key (every
+// read/write in try/catch), and phone widths default to the compact mode.
+// The toggle reuses the Sessions .sessions-mode-toggle / .sessions-mode-btn
+// CSS; only the card bodies below get new rules in style.css.
+//
+// An item is a plain object: {id, title, badge, badgeKind, status, age,
+// details[], actions[], link}. badge/badgeKind win over status; shipped and
+// merged work never get a cancelled badge. actions[].onclick is
+// caller-escaped (the renderWorkTile convention); every other free value is
+// escHtml-escaped by the renderer.
+const PROJECTS_CARD_MODES = ['cards', 'tiles', 'compact'];
+const PROJECTS_CARD_MODE_KEY = 'cs_projects_view_mode';
+const PROJECTS_CARD_PHONE_WIDTH = 600;   // matches the window.innerWidth < 600 convention elsewhere
+const PROJECTS_CARD_TEXT_MAX = 100;      // long titles/details are cut here, full value kept in title="..."
+const PROJECTS_BADGE_KINDS = ['ok', 'info', 'neutral', 'warn', 'error', 'cancelled'];
+
+// status → badge for records that report a status instead of an explicit badge.
+const PROJECTS_STATUS_BADGES = {
+  shipped: { key: 'projects_badge_shipped', kind: 'ok' },
+  merged: { key: 'projects_badge_merged', kind: 'ok' },
+  active: { key: 'projects_badge_active', kind: 'info' },
+  planned: { key: 'projects_badge_planned', kind: 'neutral' },
+  failed: { key: 'projects_badge_failed', kind: 'error' },
+  cancelled: { key: 'projects_badge_cancelled', kind: 'cancelled' },
+};
+
+function _projectsCardModeNormalize(mode) {
+  return PROJECTS_CARD_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+// _projectsCardModeDefault picks the first-visit mode from the viewport:
+// phones open compact, wider screens open the full cards. An unknown width
+// (no window metrics) keeps the full cards rather than the phone layout.
+function _projectsCardModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'cards';
+  return w < PROJECTS_CARD_PHONE_WIDTH ? 'compact' : 'cards';
+}
+
+function _projectsCardModeRead(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(PROJECTS_CARD_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _projectsCardModeStore(mode, lse) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(PROJECTS_CARD_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _projectsCardMode() {
+  if (PROJECTS_CARD_MODES.indexOf(state.projectsCardMode) >= 0) return state.projectsCardMode;
+  const stored = _projectsCardModeNormalize(_projectsCardModeRead());
+  if (stored) { state.projectsCardMode = stored; return stored; }
+  state.projectsCardMode = _projectsCardModeDefault(_tileViewportWidth());
+  return state.projectsCardMode;
+}
+
+// _projectsCardSetMode remembers the choice (try/catch) and repaints the
+// Projects page only while it is the active tab, like the Sessions switch.
+function _projectsCardSetMode(mode) {
+  const m = _projectsCardModeNormalize(mode);
+  if (!m) return false;
+  state.projectsCardMode = m;
+  _projectsCardModeStore(m);
+  if (_projectsActive()) _projectsPaint();
+  return true;
+}
+
+// _projectsCardShipped: shipped or merged, by status or by an explicit flag.
+function _projectsCardShipped(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const st = String(it.status === undefined || it.status === null ? '' : it.status).trim().toLowerCase();
+  return st === 'shipped' || st === 'merged' || it.shipped === true || it.merged === true;
+}
+
+// _projectsCardBadgeInfo resolves the one badge for an item. An explicit
+// badge (badge/badgeKind) wins; status fills the gap. Shipped or merged
+// work never gets the cancelled badge: the rule drops it entirely rather
+// than restyling it.
+function _projectsCardBadgeInfo(item) {
+  const it = (item && typeof item === 'object') ? item : {};
+  let key = null, kind = '';
+  if (it.badge !== undefined && it.badge !== null && String(it.badge) !== '') {
+    key = String(it.badge);
+    if (it.badgeKind !== undefined && it.badgeKind !== null && String(it.badgeKind) !== '') kind = String(it.badgeKind);
+  } else if (it.status !== undefined && it.status !== null && String(it.status) !== '') {
+    const def = PROJECTS_STATUS_BADGES[String(it.status).trim().toLowerCase()];
+    if (def) { key = def.key; kind = def.kind; }
+  }
+  if (!key) return null;
+  if (PROJECTS_BADGE_KINDS.indexOf(kind) < 0) kind = 'neutral';
+  if (_projectsCardShipped(it) && kind === 'cancelled') return null;
+  return { key, kind };
+}
+
+function _projectsCardBadgeHTML(info) {
+  if (!info) return '';
+  return `<span class="project-card-badge project-card-badge-${info.kind}">${escHtml(_stx(info.key, info.key))}</span>`;
+}
+
+// _projectsCardText cuts long values with an ellipsis; the full value stays
+// available for the title attribute.
+function _projectsCardText(value) {
+  const s = String(value === undefined || value === null ? '' : value).trim();
+  if (!s || s.length <= PROJECTS_CARD_TEXT_MAX) return { text: s, full: s, truncated: false };
+  return { text: s.slice(0, PROJECTS_CARD_TEXT_MAX - 1).replace(/[\s,.;:]+$/, '') + '…', full: s, truncated: true };
+}
+
+// _projectsCardAgeInfo splits a moment (number ms or seconds, or a
+// parseable date string) into its relative parts. Falsy or unparseable ages
+// read as none, and a future one reads as "just now".
+function _projectsCardAgeInfo(age, nowMs) {
+  const n = Number(nowMs) || Date.now();
+  let at = NaN;
+  if (age !== undefined && age !== null && age !== '') {
+    if (typeof age === 'number' || /^-?\d+(\.\d+)?$/.test(String(age).trim())) {
+      const v = Number(age);
+      at = v >= 1e12 ? v : v * 1000;
+    } else {
+      at = Date.parse(age);
+    }
+  }
+  if (!Number.isFinite(at)) return null;
+  const secs = Math.round((n - at) / 1000);
+  if (secs < 60) return { unit: 'now' };
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return { unit: 'minutes', count: mins };
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return { unit: 'hours', count: hours };
+  return { unit: 'days', count: Math.round(hours / 24) };
+}
+
+function _projectsCardAgeText(age, nowMs) {
+  const a = _projectsCardAgeInfo(age, nowMs);
+  if (!a) return '';
+  if (a.unit === 'now') return _stx('projects_age_now', 'just now');
+  const def = {
+    minutes: ['projects_age_minutes', 'm ago'],
+    hours: ['projects_age_hours', 'h ago'],
+    days: ['projects_age_days', 'd ago'],
+  }[a.unit] || ['projects_age_minutes', 'm ago'];
+  const s = t(def[0], [a.count]);
+  if (s === def[0]) return a.count + def[1]; // no bundle loaded: fall back to the English label
+  return s;
+}
+
+// _projectsCardDetailInfo normalizes one detail: a string, or {label, value}
+// (a {text} alias is accepted). Blank details are dropped.
+function _projectsCardDetailInfo(d) {
+  if (d === undefined || d === null) return null;
+  if (typeof d === 'string') {
+    const text = d.trim();
+    return text ? { label: '', value: text } : null;
+  }
+  if (typeof d === 'object') {
+    const label = String(d.label === undefined || d.label === null ? '' : d.label).trim();
+    const raw = (d.value === undefined || d.value === null) ? d.text : d.value;
+    const value = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (!label && !value) return null;
+    return { label, value };
+  }
+  const s = String(d);
+  return s ? { label: '', value: s } : null;
+}
+
+// _projectsCardActionInfo: {label, onclick, kind?}. onclick stays
+// caller-escaped (inline handlers are compiled after the HTML-decode, so the
+// caller owns that string — the same convention as renderWorkTile's onOpen).
+function _projectsCardActionInfo(a) {
+  if (!a || typeof a !== 'object') return null;
+  const label = String(a.label === undefined || a.label === null ? '' : a.label).trim();
+  if (!label) return null;
+  const onclick = String(a.onclick === undefined || a.onclick === null ? '' : a.onclick);
+  const kind = String(a.kind === undefined || a.kind === null ? '' : a.kind).trim();
+  return { label, onclick, kind };
+}
+
+// _projectsCardLink: a safe link for the title. Scheme URLs (http/https),
+// site-relative paths and in-page anchors qualify; anything else (incl.
+// javascript: and bare words) is not rendered as a link.
+function _projectsCardLink(link) {
+  const s = String(link === undefined || link === null ? '' : link).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.charAt(0) === '/' || s.charAt(0) === '#') return s;
+  return '';
+}
+
+// renderProjectCard draws one item in one mode:
+//   cards    — title row with badge and age, the detail list, an actions row;
+//   tiles    — a dense grid tile: title + badge, the first two details inline
+//              (the rest behind a +N chip), age, actions;
+//   compact  — one line: badge, truncated title, age.
+// All three modes draw the same item; only the layout weight changes.
+function renderProjectCard(item, mode) {
+  const it = (item && typeof item === 'object') ? item : {};
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const idAttr = id ? ` data-project-id="${escHtml(id)}"` : '';
+  const title = _projectsCardText(it.title);
+  const badge = _projectsCardBadgeHTML(_projectsCardBadgeInfo(it));
+  const age = _projectsCardAgeText(it.age, it.nowMs);
+  const ageHTML = age ? `<span class="project-card-age">${escHtml(age)}</span>` : '';
+  const url = _projectsCardLink(it.link);
+  const titleHTML = title.text
+    ? (url
+      ? `<a class="project-card-title" href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escHtml(title.full)}">${escHtml(title.text)}</a>`
+      : `<span class="project-card-title" title="${escHtml(title.full)}">${escHtml(title.text)}</span>`)
+    : '';
+  // Detail rows, shared by all three modes (full kept for the title attr).
+  const src = Array.isArray(it.details) ? it.details : [];
+  const rows = [];
+  for (const d of src) {
+    const info = _projectsCardDetailInfo(d);
+    if (!info) continue;
+    const shown = _projectsCardText(info.value);
+    const prefix = info.label ? escHtml(info.label) + ': ' : '';
+    rows.push({ full: (info.label ? info.label + ': ' : '') + info.value, text: prefix + escHtml(shown.text) });
+  }
+  // Actions, shared by all three modes (rendering differs slightly).
+  const actions = Array.isArray(it.actions) ? it.actions : [];
+  const buttons = [];
+  for (const a of actions) {
+    const info = _projectsCardActionInfo(a);
+    if (!info) continue;
+    buttons.push(`<button type="button" class="project-card-action${info.kind ? ' project-card-action-' + info.kind : ''}" onclick="${info.onclick}">${escHtml(info.label)}</button>`);
+  }
+  const actionsHTML = buttons.join('');
+  if (m === 'tiles') {
+    const shown = rows.slice(0, 2).map(r => `<span class="project-card-detail-inline" title="${escHtml(r.full)}">${r.text}</span>`).join('');
+    const more = rows.length > 2 ? `<span class="project-card-detail-more">+${rows.length - 2}</span>` : '';
+    return `<div class="project-card project-card-tile"${idAttr}>` +
+      `<div class="project-card-tile-line">${titleHTML}${badge}</div>` +
+      (ageHTML ? `<div class="project-card-tile-age">${ageHTML}</div>` : '') +
+      (shown || more ? `<div class="project-card-tile-details">${shown}${more}</div>` : '') +
+      (actionsHTML ? `<div class="project-card-tile-actions">${actionsHTML}</div>` : '') +
+    `</div>`;
+  }
+  if (m === 'compact') {
+    return `<div class="project-card project-card-compact"${idAttr}>` + badge + titleHTML + ageHTML + `</div>`;
+  }
+  // Cards (the full layout).
+  const detailsHTML = rows.length ? `<ul class="project-card-details">` + rows.map(r => `<li class="project-card-detail" title="${escHtml(r.full)}">${r.text}</li>`).join('') + `</ul>` : '';
+  return `<article class="project-card project-card-card"${idAttr}>` +
+    `<header class="project-card-head">${titleHTML}${badge}${ageHTML}</header>` +
+    detailsHTML +
+    (actionsHTML ? `<footer class="project-card-card-actions">${actionsHTML}</footer>` : '') +
+  `</article>`;
+}
+
+// renderProjectCards lays out a list in one mode; the container carries the
+// mode so the CSS (and a live switch) can style each grid differently.
+function renderProjectCards(items, mode) {
+  const list = Array.isArray(items) ? items : [];
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const body = list.map(it => renderProjectCard(it, m)).join('');
+  return `<div class="project-cards project-cards-${m}" data-project-mode="${m}">${body}</div>`;
+}
+
+// renderProjectsCardToggle: the three-mode switch. It reuses the Sessions
+// toggle CSS classes (.sessions-mode-toggle / .sessions-mode-btn); only the
+// project-scoped aria/label text is new.
+function renderProjectsCardToggle(mode) {
+  const m = _projectsCardModeNormalize(mode) || _projectsCardMode();
+  const defs = [
+    { key: 'cards', label: _stx('projects_view_cards', 'Cards'), icon: '▭' },
+    { key: 'tiles', label: _stx('projects_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('projects_view_compact', 'Compact'), icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${m === d.key ? ' active' : ''}" data-icon="${d.icon}" aria-label="${escHtml(d.label)}" title="${escHtml(d.label)}" onclick="projectsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('projects_view_toggle', 'Projects view mode'))}">${btns}</div>`;
+}
+
+// _projectCardItemsFromList maps the picker's project records to card items:
+// the name is the title, dir / backend / description are read-only details.
+function _projectCardItemsFromList(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const out = [];
+  for (const p of rows) {
+    if (!p || !p.name) continue;
+    const details = [];
+    const dir = String(p.dir || '').trim();
+    if (dir) details.push({ label: t('projects_manage_field_dir'), value: dir });
+    const backend = String(p.default_backend || '').trim();
+    if (backend) details.push({ label: t('projects_manage_field_backend'), value: backend });
+    const desc = String(p.description || '').trim();
+    if (desc) details.push(desc);
+    out.push({ id: p.name, title: p.name, details });
+  }
+  return out;
+}
+
+// _projectsCardSectionHTML: the cards sub-tab block for the Projects Overview
+// (mode toggle + cards). An empty list draws nothing, so a first visit is
+// unchanged apart from the new switch.
+function _projectsCardSectionHTML(list) {
+  const items = _projectCardItemsFromList(list);
+  if (!items.length) return '';
+  const m = _projectsCardMode();
+  return `<div id="projectsCards" data-projects-cards="block" style="margin:4px 0 14px;">` +
+    renderProjectsCardToggle(m) +
+    renderProjectCards(items, m) +
+  `</div>`;
+}
+
+window.PROJECTS_CARD_MODES = PROJECTS_CARD_MODES;
+window.PROJECTS_CARD_MODE_KEY = PROJECTS_CARD_MODE_KEY;
+window.PROJECTS_CARD_PHONE_WIDTH = PROJECTS_CARD_PHONE_WIDTH;
+window.PROJECTS_CARD_TEXT_MAX = PROJECTS_CARD_TEXT_MAX;
+window.PROJECTS_BADGE_KINDS = PROJECTS_BADGE_KINDS;
+window.PROJECTS_STATUS_BADGES = PROJECTS_STATUS_BADGES;
+window._projectsCardModeNormalize = _projectsCardModeNormalize;
+window._projectsCardModeDefault = _projectsCardModeDefault;
+window._projectsCardModeRead = _projectsCardModeRead;
+window._projectsCardModeStore = _projectsCardModeStore;
+window._projectsCardMode = _projectsCardMode;
+window._projectsCardSetMode = _projectsCardSetMode;
+window.projectsSetViewMode = _projectsCardSetMode;
+window._projectsCardShipped = _projectsCardShipped;
+window._projectsCardBadgeInfo = _projectsCardBadgeInfo;
+window._projectsCardBadgeHTML = _projectsCardBadgeHTML;
+window._projectsCardText = _projectsCardText;
+window._projectsCardAgeInfo = _projectsCardAgeInfo;
+window._projectsCardAgeText = _projectsCardAgeText;
+window._projectsCardDetailInfo = _projectsCardDetailInfo;
+window._projectsCardActionInfo = _projectsCardActionInfo;
+window._projectsCardLink = _projectsCardLink;
+window.renderProjectCard = renderProjectCard;
+window.renderProjectCards = renderProjectCards;
+window.renderProjectsCardToggle = renderProjectsCardToggle;
+window._projectCardItemsFromList = _projectCardItemsFromList;
+window._projectsCardSectionHTML = _projectsCardSectionHTML;
 
 function _projectsPickerHTML(list, selected, err) {
   const opts = [`<option value="" ${selected === _PROJECTS_OVERVIEW ? 'selected' : ''}>${escHtml(t('projects_overview') || 'Overview')}</option>`]
     .concat(list.map(p => `<option value="${escHtml(p.name)}" ${p.name === selected ? 'selected' : ''}>${escHtml(p.name)}</option>`));
   const errLine = err ? `<div style="color:var(--error,#ef4444);font-size:13px;margin-bottom:8px;">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>` : '';
-  return `<div id="projectsView" style="padding:12px 16px;">${errLine}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+  return `<div id="projectsView" class="projects-view" style="padding:12px 16px;">${errLine}
+    <div class="projects-toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
       <label for="projectsPicker" style="font-size:13px;color:var(--text2);">${escHtml(t('projects_picker_label') || 'Project')}</label>
-      <select id="projectsPicker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
-      <label for="projectsShowEmpty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);white-space:nowrap;">
+      <select id="projectsPicker" class="projects-picker" onchange="selectProjectsView(this.value)" style="flex:1;max-width:360px;">${opts.join('')}</select>
+      <label for="projectsShowEmpty" class="projects-show-empty" title="${escHtml(t('projects_show_empty_help') || '')}" style="display:flex;gap:4px;align-items:center;font-size:13px;color:var(--text2);">
         <input type="checkbox" id="projectsShowEmpty" ${_projectsShowEmpty() ? 'checked' : ''} title="${escHtml(t('projects_show_empty_help') || '')}" onchange="toggleProjectsShowEmpty(this.checked)">
         ${escHtml(t('projects_show_empty') || 'Show empty')}
       </label>
@@ -3403,7 +4002,16 @@ function toggleProjectsShowEmpty(checked) {
 // it loads); rollErr is the roll-up's load failure, if any.
 function _projectPageHTML(p, roll, rollErr, hist) {
   if (!p) return '</div>';
-  const events = [];
+  // Informative Events lines are always shown, one each. emptyEvents holds the
+  // lines whose only content is that something is empty, absent, unset or has
+  // never happened (no sessions yet, empty plan, no plans, no unassigned
+  // Automata, a field that is not set). Those are listed one per line only
+  // while Show empty lines and sections is on; otherwise one summary line
+  // carries their count. Every line keeps its push order in eventOrder.
+  const emptyEvents = [];
+  const eventOrder = [];
+  const addEvent = text => { eventOrder.push({ text, empty: false }); };
+  const addEmptyEvent = text => { emptyEvents.push(text); eventOrder.push({ text, empty: true }); };
   // Only a missing weekly share matters, and only when the project has an arc
   // or an unassigned Automaton that needs a share. Other empty fields are hidden
   // and produce no Events entry.
@@ -3411,7 +4019,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     (Array.isArray(roll.arcs) && roll.arcs.length > 0) ||
     (roll.unassigned && Array.isArray(roll.unassigned.automata) && roll.unassigned.automata.length > 0));
   const unset = key => {
-    if (key === 'projects_page_weekly_share' && needsShare) events.push(t('projects_event_unset', [t(key)]));
+    if (key === 'projects_page_weekly_share' && needsShare) addEmptyEvent(t('projects_event_unset', [t(key)]));
     return '';
   };
   const row = (key, val) => `<div style="margin:3px 0;font-size:14px;"><span style="color:var(--text2);">${escHtml(t(key))}:</span> ${escHtml(val)}</div>`;
@@ -3441,13 +4049,14 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   const automatonHTML = a => {
     const title = a.title || a.id;
     const sessions = Array.isArray(a.session_ids) ? a.session_ids.filter(Boolean) : [];
-    if (!sessions.length) events.push(t('projects_event_automaton_no_sessions', [title]));
+    if (!sessions.length) addEmptyEvent(t('projects_event_automaton_no_sessions', [title]));
     const links = sessions.length ? `<div style="margin-top:2px;">${sessions.map(sessionLink).join('')}</div>` : '';
     return `<div class="project-automaton" data-automaton="${escHtml(a.id)}" style="margin:6px 0 6px 12px;">
       <a href="#" class="project-automaton-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(a.id)});return false;`)}" style="font-size:14px;">${escHtml(title)}</a>
       <span style="color:var(--text2);font-size:12px;"> ${escHtml(a.status || '')}${pts(a.points)}</span>${links}</div>`;
   };
   const automataList = list => list.map(automatonHTML).join('');
+  const cardState = _projectsRollupCardState(roll, rollErr);
   const arcHTML = arc => {
     const state = arc.state || 'planned';
     const stateKey = { planned: 'projects_page_arc_state_planned', active: 'projects_page_arc_state_active', done: 'projects_page_arc_state_done' }[state];
@@ -3462,59 +4071,88 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       <span style="font-size:12px;color:var(--text2);">${pts(arc.points)}</span>
     </summary>`;
     const docs = _projectArcDocsHTML(p, arc);
+    const cid = 'arc_' + arc.automation_id;
     if (!automata.length) {
-      events.push(t('projects_event_plan_empty', [arc.automation_id]));
-      return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`;
+      addEmptyEvent(t('projects_event_plan_empty', [arc.automation_id]));
+      return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}" style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}</details>`);
     }
-    return `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`;
+    return _pcard(cid, cardState, `<details class="project-arc" data-automation="${escHtml(arc.automation_id)}"${state === 'active' ? ' open' : ''} style="border-top:1px solid var(--border);padding:4px 0;">${summary}${docs}${automataList(automata)}</details>`);
   };
 
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
-  const loadingLine = `<div style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_page_loading_plans'))}</div>`;
   if (rollErr) {
-    events.push(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
+    overviewBody = _pcard('totals', 'error', '', rollErr) + _pcard('throughput', 'error', '', rollErr);
+    arcsBody = _pcard('arcs', 'error', '', rollErr);
+    unassignedBody = _pcard('unassigned', 'error', '', rollErr);
   } else if (!roll) {
-    overviewBody = loadingLine;
-    arcsBody = loadingLine;
-    unassignedBody = loadingLine;
+    const wait = t('projects_page_loading');
+    overviewBody = _pcard('totals', 'loading', '', '', wait) + _pcard('throughput', 'loading', '', '', wait);
+    arcsBody = _pcard('arcs', 'loading', '', '', wait);
+    unassignedBody = _pcard('unassigned', 'loading', '', '', wait);
   } else {
     const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
-    overviewBody = _projectRollupHTML(roll, arcs);
+    overviewBody = _projectRollupHTML(roll, arcs, cardState);
     if (!arcs.length) {
-      events.push(t('projects_event_no_plans'));
-      if (showEmpty) arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`;
+      addEmptyEvent(t('projects_event_no_plans'));
+      if (showEmpty) arcsBody = _pcard('arcs', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`);
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
     const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
-    if (un.length) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${automataList(un)}</div>`;
-    else {
-      events.push(t('projects_event_no_unassigned'));
-      if (showEmpty) unassignedBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`;
+    const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
+      lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
+        renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
+    const hidden = _projectsUnassignedHiddenLoad();
+    const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
+    const hiddenCount = un.length - shownUn.length;
+    if (un.length) {
+      const undo = hiddenCount
+        ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
+        : '';
+      const list = shownUn.length ? unassignedListHTML(shownUn) : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div>`;
+      unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div>${undo}${list}</div>`);
+    } else {
+      addEmptyEvent(t('projects_event_no_unassigned'));
+      if (showEmpty) unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`);
     }
     const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
-    if (wp.length) unassignedBody += `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${automataList(wp)}</div>`;
+    if (wp.length) unassignedBody += _pcard('without_project', cardState, `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`);
   }
 
   const L = _projectsLinks.name === p.name ? _projectsLinks : { events: null, eventsError: '' };
-  const evs = events.length
-    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), `<div id="projectEvents">${events.map(e => `<div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(e)}</div>`).join('')}</div>`)
+  const eventLine = (e, cls) => `<div class="${cls}" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(e)}</div>`;
+  // Informative lines always show; empty-state lines show one per line with
+  // Show empty on, or fold into one counted summary line with it off. The
+  // summary comes after the real events and never replaces them.
+  const eventLines = eventOrder.filter(e => showEmpty || !e.empty).map(e => eventLine(e.text, 'project-event-line'));
+  if (!showEmpty && emptyEvents.length > 0) {
+    eventLines.push(eventLine(t('projects_event_empty_summary', [emptyEvents.length]), 'project-event-line project-event-summary'));
+  }
+  const evs = eventLines.length
+    ? _projectsSectionCard('events', escHtml(t('projects_page_events')), _pcard('events', 'ready', `<div id="projectEvents">${eventLines.join('')}</div>`))
     : '';
-  const hasEvents = events.length > 0;
+  const hasEvents = eventLines.length > 0;
   const active = _projectsActiveSubtab(hasEvents);
+  if (_pcardSink) _pcardSink.shape = active + '|' + hasEvents;
   const bodies = {
     overview: head + _projectOverviewSummaryHTML(p),
-    plans: (roll && !rollErr ? _projectRollupHTML(roll, (Array.isArray(roll.arcs) ? roll.arcs : [])) : '') + plansBrowserHTML(p) + arcsBody,
+    plans: overviewBody + plansBrowserHTML(p) + arcsBody,
     records: _projectRecordsTabHTML(p),
     gantt: _projectGanttHTML(hist, true),
     unassigned: unassignedBody,
     history: _projectHistoryHTML(hist, true),
-    policy: _projectLinksHTML(p),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
   const strip = _projectsSubtabStripHTML(active, hasEvents);
+  // A stored or hashed sub-tab that no longer exists (the old Policy page)
+  // falls back to Overview, the one body that is always renderable.
+  const bodyHTML = (bodies[active] !== undefined && bodies[active] !== '') ? bodies[active] : (bodies.overview || '');
   return `<div class="project-detail-card" data-project="${escHtml(p.name)}" style="border:1px solid var(--border);border-radius:6px;padding:12px;">
-    <div style="font-weight:600;font-size:16px;margin-bottom:6px;">${escHtml(p.name)}</div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodies[active]}</div></div></div>`;
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+      <span style="font-weight:600;font-size:16px;">${escHtml(p.name)}</span>
+      ${_projectsSettingsLinkHTML('project_policy', t('projects_links_policy_settings'))}
+    </div>${strip}<div id="projectsSubtabBody" role="tabpanel" aria-labelledby="projectsSubtab_${active}" data-projects-subtab-body="${active}">${bodyHTML}</div></div></div>`;
 }
 
 // ── Projects sub-tab strip ──────────────────────────────────────────────────
@@ -3522,11 +4160,14 @@ function _projectPageHTML(p, roll, rollErr, hist) {
 // remembered per browser; an unknown value means overview, and events falls
 // back to overview while there are no events to show.
 const _PROJECTS_SUBTAB_KEY = 'cs_projects_subtab';
-const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'policy', 'events'];
+// The former Policy sub-tab is gone: its only setting link now sits next to
+// the project name in the header row, and a stored or hashed 'policy' value
+// falls back to Overview.
+const _PROJECTS_SUBTABS = ['overview', 'plans', 'records', 'gantt', 'unassigned', 'history', 'events'];
 const _PROJECTS_SUBTAB_LABELS = {
   overview: 'projects_subtab_overview', plans: 'projects_subtab_plans', records: 'projects_subtab_records', gantt: 'projects_subtab_gantt',
   unassigned: 'projects_subtab_unassigned', history: 'projects_subtab_history',
-  policy: 'projects_subtab_policy', events: 'projects_subtab_events',
+  events: 'projects_subtab_events',
 };
 // 'arcs' is the old name of the Plans sub-tab; the #arcs deep link and a value
 // remembered by an older version still land on Plans.
@@ -3560,6 +4201,31 @@ function selectProjectsSubtab(k) {
   } catch (_) { /* history blocked */ }
   _projectsPaint();
 }
+
+// ── Overview sub-tabs ───────────────────────────────────────────────────────
+// Projects Overview shows the cross-project in-flight sub-tabs (Inbox,
+// Automations, ...) in the Projects sub-tab style. The choice is kept in the
+// same remembered value as the project sub-tabs (cs_projects_subtab), so a
+// refresh opens the same sub-tab again.
+function _projectsOverviewSubtabValid(v) { return _AUTOMATION_SUBTABS.some(s => s.id === v); }
+function _projectsOverviewRestoreSubtab() {
+  if (_projectsState.overviewSubtabRestored) return;
+  _projectsState.overviewSubtabRestored = true;
+  try {
+    const v = localStorage.getItem(_PROJECTS_SUBTAB_KEY) || '';
+    if (_projectsOverviewSubtabValid(v)) _automationState.subtab = v;
+  } catch (_) { /* not remembered */ }
+}
+function selectProjectsOverviewSubtab(id) {
+  if (!_projectsOverviewSubtabValid(id)) return;
+  _automationNormalizeSubtab();
+  const prev = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab);
+  if (prev && prev.id !== id) prev.stop();
+  _automationState.subtab = id;
+  _projectsRememberSubtab(id);
+  _projectsPaint();
+}
+window.selectProjectsOverviewSubtab = selectProjectsOverviewSubtab;
 
 // ── Project roll-up section: progress bars, cost in points, throughput ──────
 // ── Project links: read-only policy, merge pipeline, arc documents, events ──
@@ -3712,9 +4378,23 @@ function _projectEventStreamHTML(ev, err) {
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
-          const when = e.at ? new Date(e.at).toLocaleString() : '';
-          const ids = [e.automation_id, e.task_id].filter(Boolean).join(' · ');
-          return `<div class="project-event-row" style="font-size:12px;color:var(--text2);margin:2px 0;overflow-wrap:anywhere;">${escHtml(when)} · ${escHtml(e.kind || '')}${e.level ? ' (' + escHtml(e.level) + ')' : ''}${ids ? ' · ' + escHtml(ids) : ''}</div>`;
+          const ev = (e && typeof e === 'object') ? e : {};
+          const kind = String(ev.kind || '');
+          const human = kind ? kind.replace(/[_-]+/g, ' ').replace(/^\w/, c => c.toUpperCase()) : t('projects_links_events_heading');
+          const lv = String(ev.level || '').trim().toLowerCase();
+          const lvKind = { info: 'info', warn: 'warn', warning: 'warn', error: 'error', success: 'ok' }[lv] || 'neutral';
+          const details = [];
+          if (ev.automation_id) details.push({ label: t('projects_links_event_automation'), value: String(ev.automation_id) });
+          if (ev.task_id) details.push({ label: t('projects_links_event_task'), value: String(ev.task_id) });
+          const innerCard = renderProjectCard({
+            id: ev.id || '',
+            title: human,
+            badge: kind || null,
+            badgeKind: lvKind,
+            age: ev.at || ev.time || '',
+            details,
+          }, _projectsCardMode());
+          return `<div class="project-event-row" style="margin:2px 0;" data-kind="${escHtml(kind)}" data-automation="${escHtml(ev.automation_id || '')}" data-task="${escHtml(ev.task_id || '')}">${innerCard}</div>`;
         }).join('')
         : `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_events_empty'))}</div>`);
   }
@@ -3771,7 +4451,8 @@ function _projectBarHTML(done, total, label) {
 // progress bar, its cost in points, and the throughput over the window. A
 // roll-up without a total (older replies) is summed from its arcs and the
 // unassigned group.
-function _projectRollupHTML(roll, arcs) {
+function _projectRollupHTML(roll, arcs, cardState) {
+  cardState = cardState || 'ready';
   const groups = arcs.concat([roll.unassigned || {}]);
   let tot = roll.total && roll.total.tasks ? roll.total : null;
   if (!tot) {
@@ -3800,11 +4481,13 @@ function _projectRollupHTML(roll, arcs) {
     Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
+  const totalsCard = _pcard('totals', cardState, `${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+    ${line(t('projects_rollup_points_label'), pointsVal)}`);
+  const throughputCard = _pcard('throughput', cardState, `${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
+    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>`);
   return _projectsSectionCard('progress', escHtml(t('projects_rollup_heading')), `<div class="project-rollup">
-    ${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
-    ${line(t('projects_rollup_points_label'), pointsVal)}
-    ${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
-    <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>
+    ${totalsCard}
+    ${throughputCard}
   </div>`);
 }
 
@@ -3813,22 +4496,135 @@ function _projectDate(v) {
   return d && !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
 }
 
-// _projectHistoryRowHTML is one entry of the history list: a finished or
-// archived Automaton (linked to its view) or a daily progress snapshot.
-// Other kinds are left out.
+// ── Unassigned Automaton cards: assign, open, dismiss (per browser) ────────
+// Dismiss only hides the card in this browser: the list is saved to
+// localStorage and Undo clears it. It does not touch the daemon state.
+const _PROJECTS_UNASSIGNED_HIDDEN_KEY = 'cs_projects_unassigned_hidden';
+
+function _projectsUnassignedHiddenLoad() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+  } catch (_) { return []; }
+}
+function _projectsUnassignedHiddenSave(ids) {
+  try {
+    const list = Array.isArray(ids) ? ids.filter(x => typeof x === 'string' && x) : [];
+    localStorage.setItem(_PROJECTS_UNASSIGNED_HIDDEN_KEY, JSON.stringify(list));
+  } catch (_) { /* not remembered */ }
+}
+function projectsUnassignedDismiss(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  const ids = _projectsUnassignedHiddenLoad();
+  if (ids.indexOf(id) < 0) ids.push(id);
+  _projectsUnassignedHiddenSave(ids);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+function projectsUnassignedUndo() {
+  _projectsUnassignedHiddenSave([]);
+  if (typeof _projectsActive === 'function' && _projectsActive()) _projectsPaint();
+}
+// projectsUnassignedAssign asks for a project name (offering the configured
+// ones) and saves it with the same call the Automaton settings use:
+// POST /api/autonomous/prds/{id}/set_project.
+async function projectsUnassignedAssign(prdID) {
+  const id = String(prdID === undefined || prdID === null ? '' : prdID).trim();
+  if (!id) return;
+  let names = [];
+  if (typeof _automatonProjectNames === 'function') {
+    try { names = (await _automatonProjectNames()).filter(Boolean); } catch (_) { names = []; }
+  }
+  let name = '';
+  if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+    name = String(window.prompt(t('projects_unassigned_assign_prompt'), names[0] || '') || '').trim();
+  } else if (names.length === 1) {
+    name = String(names[0]);
+  }
+  if (!name) { showToast(t('projects_unassigned_assign_cancelled'), 'info', 2500); return; }
+  try {
+    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/set_project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: name }),
+    });
+    showToast(t('automaton_project_saved'), 'success', 1500);
+    if (typeof _projectsLoadSelected === 'function') {
+      const r = _projectsLoadSelected();
+      if (r && typeof r.then === 'function') await r.catch(() => {});
+    } else if (typeof _projectsPaint === 'function') _projectsPaint();
+  } catch (err) {
+    showToast(t('automaton_project_error') + ': ' + (((err && err.message) || String(err))), 'error', 6000);
+  }
+}
+window.projectsUnassignedDismiss = projectsUnassignedDismiss;
+window.projectsUnassignedUndo = projectsUnassignedUndo;
+window.projectsUnassignedAssign = projectsUnassignedAssign;
+
+// _projectUnassignedCard is one unassigned (or without-project) Automaton as
+// a shared card item: plain title, badge, age from the created time, the
+// project directory as a detail (the full path stays in the title attribute)
+// and the actions. Unassigned Automata get Assign, Open and Dismiss;
+// without-project ones are read-only and get Open.
+function _projectUnassignedCard(a, group) {
+  const it = (a && typeof a === 'object') ? a : {};
+  const id = String(it.id === undefined || it.id === null ? '' : it.id).trim();
+  const st = String(it.status || '').trim().toLowerCase();
+  const badge = st ? (PROJECTS_STATUS_BADGES[st] ? {} : { badge: String(it.status), badgeKind: 'neutral' }) : {};
+  const actions = [];
+  if (group === 'unassigned') {
+    actions.push({ label: t('projects_unassigned_assign'), onclick: escHtml(`projectsUnassignedAssign(${JSON.stringify(id)});return false;`) });
+  }
+  actions.push({ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) });
+  if (group === 'unassigned') {
+    actions.push({ label: t('action_dismiss'), onclick: escHtml(`projectsUnassignedDismiss(${JSON.stringify(id)});return false;`) });
+  }
+  const details = [];
+  const dir = String(it.project_dir === undefined || it.project_dir === null ? '' : it.project_dir).trim();
+  if (dir) details.push({ label: t('projects_unassigned_dir'), value: dir });
+  if (group === 'unassigned') {
+    details.push({ label: t('action_dismiss'), value: t('projects_unassigned_hidden_note') });
+  }
+  return Object.assign({
+    id,
+    title: String(it.title || it.name || id),
+    status: it.status || '',
+    age: it.created_at || it.started_at || it.last || it.first || '',
+    details,
+    actions,
+  }, badge);
+}
+
+// _projectHistoryRowHTML is one entry of the history list as a shared card:
+// a finished or archived Automaton (status badge, plain title, the finished
+// moment as the age, its task counts and an Open action) or a daily
+// snapshot's progress line. The wrapper keeps the data-kind/data-automaton
+// attributes the page and tests rely on. Other kinds are left out.
 function _projectHistoryRowHTML(e) {
   if (!e || typeof e !== 'object') return '';
   if (e.kind === 'automaton') {
-    const tk = e.tasks || {};
-    const when = _projectDate(e.finished_at || e.time);
-    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(e.id || '')}" style="margin:6px 0;font-size:13px;">
-      <a href="#" class="project-history-link" onclick="${escHtml(`_statusOpenAutomaton(${JSON.stringify(e.id || '')});return false;`)}">${escHtml(e.title || e.id || '')}</a>
-      <span style="color:var(--text2);font-size:12px;"> ${escHtml(e.status || '')}${when ? ' · ' + escHtml(when) : ''} · ${escHtml(tk.done || 0)}/${escHtml(tk.total || 0)} ${escHtml(t('projects_page_tasks'))}</span></div>`;
+    const id = String(e.id || '');
+    const tk = (e.tasks && typeof e.tasks === 'object') ? e.tasks : {};
+    const st = String(e.status || '').trim().toLowerCase();
+    const badge = st ? (PROJECTS_STATUS_BADGES[st] ? { status: e.status } : { badge: String(e.status), badgeKind: 'neutral' }) : {};
+    return `<div class="project-history-row" data-kind="automaton" data-automaton="${escHtml(id)}" style="margin:6px 0;">` +
+      renderProjectCard(Object.assign({
+        id,
+        title: String(e.title || id),
+        age: e.finished_at || e.time || '',
+        details: [String(tk.done || 0) + '/' + String(tk.total || 0) + ' ' + t('projects_page_tasks')],
+        actions: [{ label: t('action_open'), onclick: escHtml(`_statusOpenAutomaton(${JSON.stringify(id)});return false;`) }],
+      }, badge), _projectsCardMode()) + `</div>`;
   }
   if (e.kind === 'snapshot' && e.progress) {
     const p = e.progress;
     const when = _projectDate(e.taken_at || e.time);
-    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;font-size:13px;color:var(--text2);">${escHtml(t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0]))}</div>`;
+    return `<div class="project-history-row" data-kind="snapshot" style="margin:6px 0;">` +
+      renderProjectCard({
+        title: String(e.taken_at || e.time || ''),
+        badge: 'snapshot', badgeKind: 'neutral',
+        age: e.taken_at || e.time || '',
+        details: [t('projects_history_snapshot', [when, p.tasks_done || 0, p.tasks || 0])],
+      }, _projectsCardMode()) + `</div>`;
   }
   return '';
 }
@@ -3899,7 +4695,9 @@ function _projectsGanttKey(row) {
 }
 
 // _projectsGanttSpan returns { a, b, running } in ms for a timeline row, or null
-// when the row has nothing to draw (planned). Running work draws to now.
+// when the row has nothing to draw (planned). Running work with no end draws to
+// now; a bar never outgrows the row's own start..end, and a non-running row
+// never reaches now.
 function _projectsGanttSpan(r, now) {
   if (!r) return null;
   // span = start..end; first and last stand in on a reply without the new fields.
@@ -3910,7 +4708,8 @@ function _projectsGanttSpan(r, now) {
   const running = !!r.running || r.status === 'running';
   if (isNaN(f) && isNaN(l) && !running) return null;
   const a = isNaN(f) ? (isNaN(l) ? now : l) : f;
-  const b = running ? now : (isNaN(l) ? a : l);
+  let b = running ? Math.max(a, now) : (isNaN(l) ? a : l);
+  if (!isNaN(l) && b > l) b = l;
   return { a: Math.min(a, b), b: Math.max(a, b), running };
 }
 
@@ -3918,9 +4717,14 @@ function _projectsGanttSpan(r, now) {
 // range, as a fraction of the visible range (2 percent).
 const _PROJECTS_GANTT_MARGIN = 0.02;
 
-// _projectsGanttStatusKey maps a row status to the literal i18n key of its word:
-// Completed, Running, Waiting, Blocked, Failed, Cancelled. Empty when unknown.
-function _projectsGanttStatusKey(status) {
+// _projectsGanttStatusKey maps a row to the literal i18n key of its status
+// word: Completed, Running, Waiting, Blocked, Failed, Cancelled. A row whose
+// release field is set and whose status is cancelled is shipped work and reads
+// as completed. A bare status string still maps. Empty when unknown.
+function _projectsGanttStatusKey(row) {
+  const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : { status: row };
+  let status = r.status || '';
+  if (status === 'cancelled' && r.release) status = 'completed';
   return ({ completed: 'projects_gantt_status_completed', running: 'projects_gantt_status_running', waiting: 'projects_gantt_status_waiting', blocked: 'projects_gantt_status_blocked', failed: 'projects_gantt_status_failed', cancelled: 'projects_gantt_status_cancelled' })[status] || '';
 }
 
@@ -4233,10 +5037,10 @@ function _projectGanttHTML(hist, bare) {
 function _projectGanttInnerHTML(g, ui) {
   ui = ui || _PROJECTS_GANTT_UI;
   if (!g || (g.loading && !g.rows.length && !g.error)) {
-    return `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_gantt_loading'))}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="loading">${_pcardSkeleton(t('projects_gantt_loading'))}</div>`;
   }
   if (g.error && !g.rows.length) {
-    return `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + g.error)}</div>`;
+    return `<div class="pc-card" data-card="gantt" data-state="error">${_pcardError('gantt', g.error, t('projects_history_failed'))}</div>`;
   }
   const now = Date.now();
   const range = _projectsGanttCurrent(g, now);
@@ -4286,7 +5090,7 @@ function _projectGanttInnerHTML(g, ui) {
     } else {
       const x1 = pct(sp.a), x2 = pct(sp.b);
       const dates = [new Date(sp.a).toLocaleDateString(), sp.running ? t('projects_gantt_running') : new Date(sp.b).toLocaleDateString()].join(' – ');
-      const stKey = _projectsGanttStatusKey(r.status);
+      const stKey = _projectsGanttStatusKey(r);
       const tip = `${label} · ${stKey ? t(stKey) : (r.state || '')} · ${dates}${r.release ? ' · ' + t('projects_gantt_release_detail', [r.release]) : ''}`;
       track = `<div class="project-gantt-bar${sp.running ? ' running' : ''}" tabindex="0" data-id="${escHtml(r.id || '')}" onmouseenter="${ui.edge}(this,1)" onmouseleave="${ui.edge}(this,0)" onfocus="${ui.edge}(this,1)" onblur="${ui.edge}(this,0)" data-state="${escHtml(r.state || '')}" style="left:${x1.toFixed(2)}%;width:max(2px,${(x2 - x1).toFixed(2)}%);background:${_ganttStateColour(_projectsGanttBarState(r), pal.acc, pal.txt2)};opacity:${sp.running ? 0.55 : 0.9};" title="${escHtml(tip)}"></div>`
         + (sp.running ? `<span class="project-gantt-now" style="right:0;">${escHtml(t('projects_gantt_running'))}</span>` : '');
@@ -4314,15 +5118,35 @@ function _projectsGanttRepaint() {
 // an object with a rows array reads as no rows.
 function _projectsGanttBody(r) {
   const b = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+  if (Array.isArray(b.tasks) && !Array.isArray(b.rows)) return { rows: _projectsGanttTaskRows(b.tasks), next: b.next_cursor || '', edges: [] };
   return { rows: (Array.isArray(b.rows) ? b.rows : []).filter(x => x && typeof x === 'object'), next: b.next_cursor || '', edges: _projectsGanttCleanEdges(b.edges) };
 }
 
+// _projectsGanttTaskRows maps one page of GET /api/autonomous/prds/{id}/tasks
+// to Gantt task rows: a started task spans start to finish, a task still
+// running draws to now and a task that has not started has no bar.
+function _projectsGanttTaskRows(tasks) {
+  const st = { in_progress: 'running', verifying: 'running', pending: 'waiting', queued: 'waiting', waiting_capacity: 'waiting', waiting_decision: 'waiting' };
+  return (Array.isArray(tasks) ? tasks : []).filter(x => x && typeof x === 'object' && x.id).map(x => {
+    const status = st[x.status] || x.status || '';
+    const running = status === 'running';
+    const first = x.started_at || null;
+    const last = running ? null : (x.completed_at || (first ? x.updated_at : null) || null);
+    return { kind: 'task', id: x.id, title: x.title || x.id, state: status, status, first, last, start: first, end: last, running, has_children: false, children_count: 0 };
+  });
+}
+
 function _projectsGanttUrl(name, key, row, cursor) {
+  // An Automaton's tasks come from its own paged task route, never the whole record.
+  if (key && key !== _PROJECTS_GANTT_NONE_KEY && row && row.kind === 'automaton') {
+    let tq = '?limit=' + _PROJECTS_GANTT_PAGE;
+    if (cursor) tq += '&cursor=' + encodeURIComponent(cursor);
+    return '/api/autonomous/prds/' + encodeURIComponent(row.id) + '/tasks' + tq;
+  }
   let q = '?limit=' + _PROJECTS_GANTT_PAGE;
   if (!key) q += '&level=arcs';
   else if (key === _PROJECTS_GANTT_NONE_KEY) q += '&level=automata&parent=none';
   else if (row && row.kind === 'arc') q += '&level=automata&parent=' + encodeURIComponent(row.id);
-  else if (row && row.kind === 'automaton') q += '&level=tasks&automaton=' + encodeURIComponent(row.id);
   if (cursor) q += '&cursor=' + encodeURIComponent(cursor);
   return '/api/projects/' + encodeURIComponent(name) + '/timeline' + q;
 }
@@ -4724,7 +5548,7 @@ function _planRecordsFresh(project) {
     project: project || '',
     status: 'idle',      // idle | loading | ready | error | disabled
     kind: 'registry_row',
-    stateFilter: '',
+    states: [],         // selected state keys (a set; [] === all states)
     q: '',
     recs: [],
     total: 0,
@@ -4973,6 +5797,27 @@ function planRecordsBodyHtml(v) {
 
 // planRecordsSectionHtml is the whole Records section for one state object
 // (see _planRecordsFresh). It is empty until the first answer has come, and
+// planRecordsStateChipsHtml builds the card's state chip set for the current
+// view kind: one chip per state of that kind, so a view is filterable by any
+// combination of them — the server accepts the states together as
+// state=one,two,three. The selection has its own cs_state_chips_* key via the
+// shared helper; the chip's own change handler is the mutation path (it seeds
+// the card's mirror and refetches).
+function planRecordsStateChipsHtml(kind, st) {
+  const chips = createStateChipSet({
+    name: 'planRecordsState',
+    items: (Array.isArray(_PLAN_RECORD_STATES[kind]) ? _PLAN_RECORD_STATES[kind] : []).map(function (s) { return { key: s, label: _planRecordsStateLabel(s) }; }),
+    total: (st && st.kind === kind) ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _planRecords.states = sel.slice();
+      _planRecordsLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 // stays empty while the feature is off or not wired.
 function planRecordsSectionHtml(v) {
   if (!v || (v.status !== 'ready' && v.status !== 'error')) return '';
@@ -4980,7 +5825,7 @@ function planRecordsSectionHtml(v) {
   const tab = (k, key) => `<button type="button" class="automata-filter-badge plan-records-view${k === kind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === kind}" onclick="planRecordsSetKind('${k}')">${escHtml(t(key))}</button>`;
   const controls = v.view === 'list'
     ? `<div class="plan-records-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
-        <select id="planRecordsStateFilter" class="form-select" aria-label="${escHtml(t('plan_records_filter_state'))}" style="font-size:12px;" onchange="planRecordsSetState(this.value)">${_planRecordsStateOptions(kind, v.stateFilter, true)}</select>
+        <div id="planRecordsStateFilter" class="state-chip-row" style="display:inline-block;vertical-align:middle;">${planRecordsStateChipsHtml(kind, v)}</div>
         <input id="planRecordsSearch" type="search" class="form-input" aria-label="${escHtml(t('plan_records_search_label'))}" placeholder="${escHtml(t('plan_records_search_placeholder'))}" value="${escHtml(v.q || '')}" oninput="planRecordsSearchInput(this.value)" style="flex:1;min-width:120px;font-size:12px;">
         <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsNew()">＋ ${escHtml(t('plan_records_new'))}</button>
         <button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsImportOpen()">${escHtml(t('plan_records_import'))}</button>
@@ -5001,14 +5846,22 @@ window.planRecordImportHtml = planRecordImportHtml;
 window.planRecordCreateHtml = planRecordCreateHtml;
 
 function _planRecordsSlotHtml(p) {
-  const inner = _planRecords.project === (p && p.name) ? planRecordsSectionHtml(_planRecords) : '';
-  return `<div id="planRecordsSlot">${inner}</div>`;
+  return `<div id="planRecordsSlot">${_planRecordsSlotInner(p && p.name)}</div>`;
+}
+// The Plan card has its own state: a skeleton while its first read runs and an
+// error row with Retry when it fails; the other cards never wait for it.
+function _planRecordsSlotInner(name) {
+  const st = _planRecords;
+  if (st.project !== name) return '';
+  if (st.status === 'loading') return `<div class="pc-card" data-card="plan" data-state="loading">${_pcardSkeleton(t('projects_card_plan_loading'))}</div>`;
+  if (st.status === 'error' && st.view === 'list' && !(st.recs || []).length) return `<div class="pc-card" data-card="plan" data-state="error">${_pcardError('plan', st.error || '', t('projects_card_plan_failed'))}</div>`;
+  return planRecordsSectionHtml(st);
 }
 
 function _planRecordsPaint() {
   if (!_projectsActive()) return;
   const el = document.getElementById('planRecordsSlot');
-  if (el) el.innerHTML = planRecordsSectionHtml(_planRecords);
+  if (el) el.innerHTML = _planRecordsSlotInner(_planRecords.project);
 }
 function _planRecordsPaintBody() {
   const el = document.getElementById('planRecordsBody');
@@ -5026,10 +5879,11 @@ function _planRecordsLoad(more) {
   if (_planRecords.project !== name) _planRecords = _planRecordsFresh(name);
   const st = _planRecords;
   const seq = ++st.seq;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) st.states = window._stateChipSets.planRecordsState.get();
   const q = (st.q || '').trim();
   if (!more && st.status === 'idle') st.status = 'loading';
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _PLAN_RECORDS_PAGE, 'offset=' + (more ? st.recs.length : 0)];
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   let url;
   if (q) { params.unshift('q=' + encodeURIComponent(q), 'kind=' + st.kind); url = '/api/plan-records/search?'; }
   else url = '/api/plan-records/' + _planRecordsRoute(st.kind) + '?';
@@ -5057,13 +5911,16 @@ window.planRecordsSetKind = function(kind) {
   const st = _planRecords;
   if (kind !== 'registry_row' && kind !== 'finding') return;
   if (st.kind === kind && st.view === 'list') return;
-  st.kind = kind; st.stateFilter = ''; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, '');
+  st.kind = kind; st.states = []; st.q = ''; st.view = 'list'; st.recs = []; st.total = 0;
   st.formError = ''; st.candidates = []; st.notice = '';
   _planRecordsPaint();
   return _planRecordsLoad(false);
 };
 window.planRecordsSetState = function(state) {
-  _planRecords.stateFilter = String(state || '');
+  const csv = String(state || '');
+  _planRecords.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.planRecordsState) _stateChipsReconcile(window._stateChipSets.planRecordsState, csv);
   return _planRecordsLoad(false);
 };
 // planRecordsSearchInput waits for a pause in typing, then calls the search
@@ -5297,7 +6154,15 @@ function _plansBrowserFresh(project) {
     backlog: [], backlogTotal: 0,
     error: '', notice: '',
     seq: 0,
-    q: '', stateFilter: '',
+    q: '', states: [],  // selected state keys (a set; [] === all states)
+    // archived is the archive scope (GET ?archived=): 'exclude' is the default
+    // and sends no parameter, 'include' shows archived plans after the live
+    // ones, 'only' shows only them.
+    archived: 'exclude',
+    // archiveAsk names the plan whose Archive button switched to the reason
+    // form, archiveReason is that form's current text.
+    archiveAsk: '',
+    archiveReason: '',
     matchPlans: null,   // plan ids with a registry row or finding that matches q
     detail: {},         // plan id -> { status, automata, tasks, tasksTotal, tasksStatus, error }
     links: { status: 'idle', rows: [] },
@@ -5340,12 +6205,17 @@ function _plansBrowserLoad(more) {
   const seq = ++st.seq;
   if (st.status === 'idle') st.status = 'loading';
   const params = ['limit=' + _PLANS_PAGE, 'offset=' + (more === 'plans' ? st.plans.length : 0), 'backlog_offset=' + (more === 'backlog' ? st.backlog.length : 0)];
+  if (st.archived === 'include' || st.archived === 'only') params.push('archived=' + st.archived);
   return apiFetch('/api/projects/' + encodeURIComponent(name) + '/plans?' + params.join('&')).then(r => {
     if (_plansBrowser !== st || seq !== st.seq) return;
     const plans = r && Array.isArray(r.plans) ? r.plans : [];
     const back = r && r.backlog && Array.isArray(r.backlog.plans) ? r.backlog.plans : [];
     if (more !== 'backlog') st.plans = more === 'plans' ? st.plans.concat(plans) : plans;
     if (more !== 'plans') st.backlog = more === 'backlog' ? st.backlog.concat(back) : back;
+    // Release plans lead their group: they collect every state, so the order
+    // is a display priority, not a re-ordering write.
+    st.plans = st.plans.filter(pl => pl && pl.plan_kind === 'release').concat(st.plans.filter(pl => !(pl && pl.plan_kind === 'release')));
+    st.backlog = st.backlog.filter(pl => pl && pl.plan_kind === 'release').concat(st.backlog.filter(pl => !(pl && pl.plan_kind === 'release')));
     st.total = Number(((r || {}).page || {}).total) || st.plans.length;
     st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
     st.status = 'ready'; st.error = '';
@@ -5376,13 +6246,29 @@ function _plansLoadLinks() {
 
 function _plansLoadDetail(plan) {
   const st = _plansBrowser;
-  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
   d.status = 'loading';
   return apiFetch(_plansPath(plan, '/automata?limit=500')).then(r => {
     if (_plansBrowser !== st) return;
     d.automata = r && Array.isArray(r.automata) ? r.automata : [];
     d.status = 'ready'; d.error = '';
     _plansBrowserPaint();
+    // A release plan also carries its theme layout, read alongside its
+    // Automata; a plan without themes still shows its Automations and rows.
+    const pl = (st.plans || []).concat(st.backlog || []).find(x => x && String(x.id) === String(plan)) || null;
+    if (!pl || pl.plan_kind !== 'release' || d.themesStatus === 'loading' || d.themesStatus === 'ready') return null;
+    d.themesStatus = 'loading'; d.themesError = '';
+    _plansBrowserPaint();
+    return apiFetch(_plansPath(plan, '/themes')).then(th => {
+      if (_plansBrowser !== st) return null;
+      d.themes = th && typeof th === 'object' ? th : { themes: [], unplaced: [] };
+      d.themesStatus = 'ready';
+      _plansBrowserPaint();
+    }).catch(err2 => {
+      if (_plansBrowser !== st) return;
+      d.themesStatus = 'error'; d.themesError = _plansErrText(err2);
+      _plansBrowserPaint();
+    });
   }).catch(err => {
     if (_plansBrowser !== st) return;
     d.status = 'error'; d.error = _plansErrText(err);
@@ -5392,7 +6278,7 @@ function _plansLoadDetail(plan) {
 
 function _plansLoadTasks(plan, more) {
   const st = _plansBrowser;
-  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', error: '' };
+  const d = st.detail[plan] = st.detail[plan] || { status: 'idle', automata: [], tasks: [], tasksTotal: 0, tasksStatus: 'idle', themesStatus: 'idle', themesError: '', error: '' };
   d.tasksStatus = 'loading';
   return apiFetch(_plansPath(plan, '/tasks?limit=' + _PLANS_TASK_PAGE + '&offset=' + (more ? d.tasks.length : 0))).then(r => {
     if (_plansBrowser !== st) return;
@@ -5414,7 +6300,8 @@ function _plansLower(s) { return String(s || '').toLowerCase(); }
 // loaded Automata, or a registry row or finding linked to it matches. The row
 // and finding part is answered by the browse search route (matchPlans).
 function _plansMatch(st, p) {
-  if (st.stateFilter && p.state !== st.stateFilter) return false;
+  const sel = Array.isArray(st.states) ? st.states : [];
+  if (sel.length && sel.indexOf(p.state) < 0) return false;
   const q = _plansLower(st.q).trim();
   if (!q) return true;
   if (_plansLower(p.title).indexOf(q) >= 0) return true;
@@ -5439,7 +6326,12 @@ window.plansBrowserSearchInput = function(val) {
     _plansBrowserPaint();
   }, 250);
 };
-window.plansBrowserSetState = function(v) { _plansBrowser.stateFilter = String(v || ''); _plansBrowserPaint(); };
+window.plansBrowserSetState = function(v) {
+  const csv = String(v || '');
+  if (window._stateChipSets && window._stateChipSets.plansBrowserState) _stateChipsReconcile(window._stateChipSets.plansBrowserState, csv);
+  _plansBrowser.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  _plansBrowserPaint();
+};
 
 // ── HTML ────────────────────────────────────────────────────────────────────
 function _plansStateLabel(state) {
@@ -5519,7 +6411,7 @@ function _plansExpandedHTML(st, plan) {
   const linked = st.links.rows.filter(r => r.plan_id === plan.id);
   const fin = linked.filter(r => r.kind === 'finding');
   const rows = linked.filter(r => r.kind !== 'finding');
-  return `<div class="plans-browser-expanded">${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
+  return `<div class="plans-browser-expanded">${plan.plan_kind === 'release' ? plansReleaseThemesHTML(st, plan) : ''}${automationsHtml}${section('plans_browser_automata', automataBody)}${_plansTasksHTML(st, plan)}
     ${section('plans_browser_findings', fin.length ? fin.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${section('plans_browser_rows', rows.length ? rows.map(_plansLinkedRowHTML).join('') : none('plans_browser_none'))}
     ${_plansAttachFormHTML(st, plan)}</div>`;
@@ -5532,20 +6424,23 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
   const label = t('plans_browser_progress', [Number(pg.done) || 0, Number(pg.total) || 0, pct]);
   const next = plan.next && plan.next.title ? `<span class="plans-browser-next" style="font-size:12px;color:var(--text2);">${escHtml(t('plans_browser_next_marker'))}: ${escHtml(plan.next.title)}</span>` : '';
   const moves = canMove ? _plansMoveButtons(_plansCall('plansBrowserMovePlan', plan.id, -1), _plansCall('plansBrowserMovePlan', plan.id, 1), idx > 0, idx < list.length - 1) : '';
+  const isRelease = plan.plan_kind === 'release';
+  const badge = isRelease ? `<span class="plans-release-badge" data-plan-kind="release" style="display:inline-block;margin-left:2px;padding:0 8px;border:1px solid var(--accent,#3b82f6);border-radius:10px;font-size:11px;color:var(--accent,#3b82f6);background:transparent;" title="${escHtml(t('plans_release_badge'))}">${escHtml(t('plans_release_badge'))}${plan.release ? `<span style="opacity:.85;"> · ${escHtml(t('plans_release_label', [String(plan.release || '')]))}</span>` : ''}</span>` : '';
+  const arch = _plansArchiveCtlHTML(_plansBrowser, plan);
   return `<div class="plans-browser-plan" data-plan="${escHtml(plan.id)}" data-state="${escHtml(plan.state || '')}" style="border-top:1px solid var(--border);padding:6px 0;">
     <div class="plans-browser-head" style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;">
-      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>
+      <a href="#" class="plans-browser-toggle" aria-expanded="${open}" onclick="${_plansCall('plansBrowserToggle', plan.id)}" style="font-size:14px;font-weight:600;">${open ? '▾' : '▸'} ${escHtml(plan.title || plan.id)}</a>${badge}
       <span class="plans-browser-state" style="font-size:12px;">${escHtml(_plansStateLabel(plan.state))}</span>
       <span class="plans-browser-bar" style="flex:1 1 160px;min-width:140px;"><div class="project-progress" role="progressbar" aria-label="${escHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;min-width:60px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent,#3b82f6);"></div></div>
         <span style="font-size:12px;color:var(--text2);white-space:nowrap;">${escHtml(label)}</span></div></span>
-      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${moves}
+      <span class="plans-browser-points" style="font-size:12px;color:var(--text2);">${escHtml(_plansPointsText(plan.points))}</span>${next}${arch}${moves}
     </div>${plan.goal ? `<div class="plans-browser-goal" style="margin:2px 0 0 14px;font-size:13px;color:var(--text2);">${escHtml(plan.goal)}</div>` : ''}${open ? _plansExpandedHTML(st, plan) : ''}</div>`;
 }
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
   const shown = list.filter(p => _plansMatch(st, p));
-  const filtering = !!(st.stateFilter || st.q.trim());
+  const filtering = !!(st.states.length || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
     ? `<button type="button" class="btn-secondary plans-browser-more" style="font-size:12px;padding:3px 10px;margin-top:6px;" onclick="${_plansCall(loadMoreFn)}">${escHtml(t('plans_browser_load_more'))}</button>` : '';
@@ -5561,8 +6456,8 @@ function plansBrowserListHTML(st) {
   const back = _plansGroupHTML(st, st.backlog, st.backlogTotal, 'backlog', 'plansBrowserBacklogMore');
   const backOpen = _plansIsOpen(st.project, _PLANS_BACKLOG_ID);
   let html = notice + main.rows + main.more;
-  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.stateFilter && st.backlog.length)) {
-    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.stateFilter ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
+  if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
+    html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
   if (st.backlogTotal > 0 || back.count) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
@@ -5572,20 +6467,752 @@ function plansBrowserListHTML(st) {
   return html;
 }
 
+// plansBrowserStateChipsHtml is the browser's state filter as a multi-select
+// chip set: one chip per registry state, any combination selectable. The
+// selection has its own cs_state_chips_* key via the shared helper, and the
+// chip's own change handler is the mutation path (seeds the mirror, repaints).
+function plansBrowserStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'plansBrowserState',
+    items: _PLAN_RECORD_STATES.registry_row.map(function (s) { return { key: s, label: _plansStateLabel(s) }; }),
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _plansBrowser.states = sel.slice();
+      _plansBrowserPaint();
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function plansBrowserHTML(p) {
   const st = _plansBrowser.project === (p && p.name) ? _plansBrowser : null;
-  const stateOpts = [`<option value="">${escHtml(t('plans_browser_state_all'))}</option>`].concat(_PLAN_RECORD_STATES.registry_row.map(s => `<option value="${s}"${st && st.stateFilter === s ? ' selected' : ''}>${escHtml(_plansStateLabel(s))}</option>`)).join('');
+  _plansBrowserEnsureUnattributed();
+  const stateSel = plansBrowserStateChipsHtml(st);
+  const archOpts = ['exclude', 'include', 'only'].map(v => `<option value="${v}"${st && st.archived === v ? ' selected' : ''}>${escHtml(t(v === 'exclude' ? 'plans_release_archived_live' : v === 'include' ? 'plans_release_archived_with' : 'plans_release_archived_only'))}</option>`).join('');
+  const docsUrl = '/diagrams.html#docs/howto/plan-records.md';
   const controls = `<div class="plans-browser-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
     <input id="plansBrowserSearch" type="search" class="form-input" aria-label="${escHtml(t('plans_browser_search_label'))}" placeholder="${escHtml(t('plans_browser_search_placeholder'))}" value="${escHtml(st ? st.q : '')}" oninput="plansBrowserSearchInput(this.value)" style="flex:1;min-width:140px;font-size:12px;">
-    <select id="plansBrowserState" class="form-select" aria-label="${escHtml(t('plans_browser_filter_state'))}" style="font-size:12px;" onchange="plansBrowserSetState(this.value)">${stateOpts}</select></div>
+    <div id="plansBrowserState" class="state-chip-row" style="vertical-align:middle;">${stateSel}</div>
+    <select id="plansBrowserArchived" class="form-select" aria-label="${escHtml(t('plans_release_archived_label'))}" style="font-size:12px;" onchange="plansReleaseSetArchived(this.value)">${archOpts}</select>
+    <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_docs_help'))} <a href="${escHtml(docsUrl)}" style="font-size:11px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>
     <div class="plans-browser-create" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;">
       <input id="plansBrowserNewTitle" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_title_ph'))}" placeholder="${escHtml(t('plans_browser_create_title_ph'))}" style="flex:1;min-width:140px;font-size:12px;">
       <input id="plansBrowserNewGoal" type="text" class="form-input" aria-label="${escHtml(t('plans_browser_create_goal_ph'))}" placeholder="${escHtml(t('plans_browser_create_goal_ph'))}" style="flex:2;min-width:160px;font-size:12px;">
       <button type="button" class="btn-primary" style="font-size:12px;padding:3px 10px;" onclick="plansBrowserCreate(document.getElementById('plansBrowserNewTitle').value,document.getElementById('plansBrowserNewGoal').value);return false;">＋ ${escHtml(t('plans_browser_create_btn'))}</button></div>`;
   return `<div class="plans-browser" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     ${controls}
-    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div></div>`;
+    <div id="plansBrowserList">${plansBrowserListHTML(st)}</div>
+    <div id="plansReleaseUnattributed" style="margin-top:14px;">${plansReleaseUnattributedSectionHTML()}</div>
+    <div id="plansReleaseMigrate" style="margin-top:14px;">${plansReleaseMigrateHTML()}</div>
+    <div id="plansReleaseRowPlans" style="margin-top:14px;">${plansReleaseRowPlansHTML()}</div></div>`;
 }
+
+// ── Release plans: archive, unattributed, themes, migrations ─────────────────────────────
+// All of this lives beside the Plans browser and reuses its state, helpers
+// (_plansWrite, _plansPath, _plansMatch) and render helpers (escHtml, _plansCall).
+// User-facing wording is Automaton/Automata; "release plan" is the only plan
+// wording that reaches the UI, and it is the operator-facing name already used
+// by the plan records docs.
+
+let _plansReleaseBusy = false;
+
+// Unattributed Automata: read from the dedicated endpoint (GET /api/plans/unattributed),
+// which counts only Automata no release plan holds.
+let _plansUnattributed = { status: 'idle', total: 0, rows: [], error: '' };
+// Per-row attach panel: openIdx is the row index whose inline panel is open.
+let _plansUnattribAttachOpen = -1;
+// Bulk selection: all flag + explicit per-row checked map keyed by row id.
+let _plansUnattribSel = { all: false, ids: Object.create(null) };
+// Latest attach results (single or bulk), newest first; the bulk refusals show here.
+let _plansUnattribResults = null;   // null | { busy, error, results: [] }
+// Release migration panel state.
+let _plansReleaseMigrate = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', nextRelease: '', currentRelease: '', marks: {} };
+// Row-plans conversion panel state.
+let _plansReleaseRowPlans = { busy: false, preview: null, previewId: '', applied: false, note: '', error: '', currentRelease: '' };
+
+function _releasePaint() {
+  if (typeof _projectsActive === 'function' && _projectsActive() && typeof _projectsPaint === 'function') _projectsPaint();
+}
+
+function _plansBrowserEnsureUnattributed() {
+  if (_plansReleaseBusy) return;
+  if (_plansUnattributed.status === 'loading' || _plansUnattributed.status === 'ready') return;
+  const name = _projectsState.selected;
+  if (!name || !(Array.isArray(_projectsState.list) && _projectsState.list.some(p2 => p2 && p2.name === name))) return;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); });
+}
+
+function plansReleaseViewUnattributed() {
+  if (typeof selectProjectsSubtab === 'function') selectProjectsSubtab('plans');
+  const el = document.getElementById('plansReleaseUnattributed');
+  if (el && el.scrollIntoView) el.scrollIntoView();
+}
+
+function _projectUnattributedChipHTML() {
+  const u = _plansUnattributed;
+  if (!u || u.status !== 'ready') return '';
+  const box = inner => `<div class="project-unattributed-chip plans-release-unattributed-chip" style="margin-top:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">${inner}</div>`;
+  if (u.total > 0) return box(`<span style="font-weight:600;">${u.total}</span> ${escHtml(t('plans_release_unattributed_chip'))}<a href="#" style="font-size:12px;margin-left:8px;" onclick="plansReleaseViewUnattributed();return false;">${escHtml(t('plans_release_unattributed_view'))}</a>`);
+  return `<div class="project-unattributed-chip plans-release-unattributed-empty" style="margin-top:8px;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unattributed_none'))}</div>`;
+}
+
+function _plansReleasePlansList() {
+  const st = _plansBrowser;
+  if (!st || st.status !== 'ready') return [];
+  const seen = Object.create(null);
+  const out = [];
+  (st.plans || []).concat(st.backlog || []).forEach(p => {
+    if (p && p.plan_kind === 'release' && p.id && !seen[p.id]) { seen[p.id] = true; out.push(p); }
+  });
+  return out;
+}
+
+function _plansReleasePlanOptions() {
+  return _plansReleasePlansList().filter(r => !r.archived).length
+    ? _plansReleasePlansList().filter(r => !r.archived)
+    : _plansReleasePlansList();
+}
+
+function _plansUnattribRowKey(r) { return String((r && r.id) || ''); }
+
+function _plansUnattribRowSelected(r) {
+  return !!(r && (_plansUnattribSel.all || _plansUnattribSel.ids[_plansUnattribRowKey(r)]));
+}
+
+function plansReleaseUnattribRowSelect(id, checked) {
+  if (String(id) === '__bulkPlan') {
+    if (String(checked || '')) _plansUnattribSel.ids['__bulkPlan'] = String(checked);
+    else delete _plansUnattribSel.ids['__bulkPlan'];
+    _releasePaint();
+    return;
+  }
+  if (checked) _plansUnattribSel.ids[String(id)] = true;
+  else { delete _plansUnattribSel.ids[String(id)]; _plansUnattribSel.all = false; }
+  _releasePaint();
+}
+
+function plansReleaseUnattribSelectAll(checked) {
+  const ids = Object.create(null);
+  if (_plansUnattribSel && typeof _plansUnattribSel.ids === 'object') {
+    for (const k of Object.keys(_plansUnattribSel.ids)) if (String(k).indexOf('__') === 0) ids[k] = _plansUnattribSel.ids[k];
+  }
+  _plansUnattribSel = { all: !!checked, ids };
+  _releasePaint();
+}
+
+function plansReleaseUnattribAttachToggle(idx) {
+  _plansUnattribAttachOpen = _plansUnattribAttachOpen === idx ? -1 : idx;
+  _releasePaint();
+}
+
+function _plansUnattribThemeOfInput(id) {
+  const el = id ? document.getElementById(id) : null;
+  return el ? String(el.value || '').trim() : '';
+}
+
+function _plansUnattribRowFromIdx(idx) {
+  return (_plansUnattributed.rows || [])[Number(idx)] || null;
+}
+
+function _plansAttachRowResultHTML(res, extra) {
+  const keyMap = { attached: 'plans_release_attach_attached', already_attached: 'plans_release_attach_already', refused: 'plans_release_attach_refused', not_found: 'plans_release_attach_not_found', placement_failed: 'plans_release_attach_placement_failed', failed: 'plans_release_attach_failed' };
+  const key = keyMap[res && res.status] || 'plans_release_attach_failed';
+  const err = res && res.error ? ' <span style="color:var(--error);overflow-wrap:anywhere;">' + escHtml(String(res.error)) + '</span>' : '';
+  const thm = res && res.theme ? ' <span style="color:var(--text2);">· ' + escHtml(String(res.theme)) + '</span>' : '';
+  return `<div style="font-size:12px;margin:2px 0;" data-attach-result="${escHtml(res ? String(res.id || '') : '')}" data-status="${escHtml(res ? String(res.status || '') : '')}">${escHtml(t(key))}${thm}${extra || ''}${err}</div>`;
+}
+
+function _releaseNotice(msg) { if (_plansBrowser) _plansBrowser.notice = String(msg || ''); }
+
+// Attach one Automaton to the operator's release plan (bulk form with one id,
+// one result line for it).
+function plansReleaseUnattribAttachGo(idx) {
+  const row = _plansUnattribRowFromIdx(idx);
+  if (!row || _plansReleaseBusy) return Promise.resolve();
+  const id = _plansUnattribRowKey(row);
+  const plan = _plansUnattribSel.ids['__rowPlan_' + id] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseRowTheme_' + id);
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _plansReleaseBusy = false;
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: [row.id], theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _plansUnattribAttachOpen = -1; _releasePaint(); });
+}
+
+// Bulk attach: one request for all checked rows; the per-Automaton refusals
+// from the server are shown item by item below the list.
+function plansReleaseUnattribBulkGo() {
+  const rows = (_plansUnattributed.rows || []).filter(_plansUnattribRowSelected);
+  if (!rows.length || _plansReleaseBusy) return Promise.resolve();
+  const ids = rows.map(r => r.id).filter(Boolean);
+  const plan = _plansUnattribSel.ids['__bulkPlan'] || '';
+  const theme = _plansUnattribThemeOfInput('plansReleaseBulkTheme');
+  if (!plan) {
+    _releaseNotice(t('plans_release_unattributed_plan_required'));
+    _plansUnattribResults = { busy: false, error: String(t('plans_release_unattributed_plan_required')), results: [] };
+    _releasePaint();
+    return Promise.resolve();
+  }
+  _plansUnattribResults = { busy: true, error: '', results: [] };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(plan, '/attach'), 'POST', { kind: 'automaton', ids: ids, theme })
+    .then(r => {
+      if (r && Array.isArray(r.results)) {
+        _plansUnattribResults = { busy: false, error: '', results: r.results };
+        if (r.results.some(x => x && (x.status === 'attached' || x.status === 'already_attached'))) return _plansUnattributedRefresh();
+        return null;
+      }
+      _plansUnattribResults = { busy: false, error: (_plansBrowser && _plansBrowser.notice) || t('plans_release_attach_failed'), results: [] };
+      return null;
+    })
+    .then(() => {
+      if (_plansUnattribResults && !_plansUnattribResults.busy) _plansUnattribSel = { all: false, ids: Object.create(null) };
+      _plansReleaseBusy = false;
+      _releasePaint();
+    });
+}
+
+function _plansUnattributedRefresh() {
+  if (_plansUnattributed.status !== 'ready' && _plansUnattributed.status !== 'loading') return Promise.resolve(null);
+  const name = _projectsState.selected;
+  _plansUnattributed = { status: 'loading', total: _plansUnattributed.total, rows: [], error: '' };
+  _releasePaint();
+  return apiFetch('/api/plans/unattributed?project=' + encodeURIComponent(name))
+    .then(r => { _plansUnattributed = { status: 'ready', total: (r && r.page && Number(r.page.total)) || ((r && r.automata) || []).length, rows: (r && Array.isArray(r.automata)) ? r.automata : [], error: '' }; })
+    .catch(err => { _plansUnattributed = { status: 'error', total: 0, rows: [], error: _plansErrText(err) }; })
+    .then(() => { if (typeof _projectsActive === 'function' && _projectsActive()) _releasePaint(); })
+    .catch(() => { _releasePaint(); });
+}
+_plansUnattributedRefresh;
+function _plansUnattributedFresh() { return _plansUnattributedRefresh(); }
+_plansUnattributedFresh;
+
+function _plansUnattributedResultsHTML() {
+  if (!_plansUnattribResults) return '';
+  const bu = _plansUnattribResults;
+  const rowsHtml = (bu.results || []).filter(r => r && r.id).map(r => _plansAttachRowResultHTML(r, ' <span style="color:var(--text2);">' + escHtml(String(r.title || '')) + '</span>')).join('');
+  const body = bu.busy
+    ? `<div style="color:var(--text2);font-size:12px;">${escHtml(t('plans_browser_loading'))}</div>`
+    : (rowsHtml || (bu.error ? `<div role="alert" style="color:var(--error);font-size:12px;overflow-wrap:anywhere;">${escHtml(bu.error)}</div>` : ''));
+  return `<div class="plans-release-unattributed-results" style="margin:6px 0 4px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">${body}</div>`;
+}
+
+function _plansUnattribRowHTML(r, idx) {
+  const sug = (r && (r.suggested_release || r.suggested_theme))
+    ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('plans_release_unattributed_suggest'))} ${escHtml([r.suggested_release, r.suggested_theme].filter(Boolean).map(String).join(' · '))}</span>`
+    : '';
+  const sel = _plansUnattribRowSelected(r);
+  const id = _plansUnattribRowKey(r);
+  const planOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const open = _plansUnattribAttachOpen === idx;
+  const attachPanel = open
+    ? `<div class="plans-release-unattributed-attach" style="margin:4px 0 4px 8px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <select class="form-select" id="plansReleaseRowPlan_${escHtml(id)}" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowPlan(${_plansCallArg(id)},this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${planOpts}</select>
+        <input type="text" class="form-input" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" id="plansReleaseRowTheme_${escHtml(id)}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseUnattribAttachGo', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach_confirm'))}</button>
+        <button type="button" class="btn-secondary" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}">${escHtml(t('plans_release_archive_cancel'))}</button></div>`
+    : '';
+  return `<div class="plans-release-unattributed-row" data-automaton="${escHtml(String(r && r.id || ''))}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);">
+    <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseRowSel_${escHtml(id)}" ${sel ? 'checked' : ''} aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribRowSelect(${_plansCallArg(id)},this.checked)" style="margin:0;"></span>
+    <span style="font-size:13px;font-weight:500;" title="${escHtml(String(r && r.title || ''))}">${escHtml(String((r && r.title) || (r && r.id) || ''))}</span>
+    ${r && r.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(r.state))}</span>` : ''}
+    ${r && r.holding_plan ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_unattributed_holding', [String(r.holding_plan)]))}</span>` : ''}
+    ${sug}
+    <button type="button" class="btn-secondary plans-release-unattributed-attach-btn" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseUnattribAttachToggle', idx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_attach'))}</button>
+  </div>${attachPanel}`;
+}
+
+function plansReleaseUnattribRowPlan(id, val) {
+  const key = '__rowPlan_' + String(id);
+  if (String(val || '')) _plansUnattribSel.ids[key] = String(val);
+  else delete _plansUnattribSel.ids[key];
+  _releasePaint();
+}
+function _plansCallArg(v) { return JSON.stringify(String(v)).replace(/"/g, '&quot;'); }
+
+function plansReleaseUnattributedSectionHTML() {
+  const u = _plansUnattributed;
+  const plansOpts = _plansReleasePlanOptions().map(p2 => `<option value="${escHtml(p2.id)}">${escHtml(p2.title || p2.id)}</option>`).join('');
+  const head = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+    <span style="font-weight:600;font-size:14px;" class="plans-release-unattributed-title">${escHtml(t('plans_release_unattributed_title'))}${u.status === 'ready' ? ` <span style="font-weight:400;color:var(--text2);">(${u.total})</span>` : ''}</span>
+    <span style="font-size:12px;color:var(--text2);"><a href="${escHtml('/diagrams.html#docs/datawatch-definitions.md')}" style="font-size:12px;">${escHtml(t('plans_release_docs_link'))}</a></span></div>`;
+  if (u.status === 'error') return `<div class="plans-release-unattributed" role="alert">${head}<div style="color:var(--error);font-size:13px;margin-top:6px;overflow-wrap:anywhere;">${escHtml(t('plans_browser_failed', [u.error || '']))}</div></div>`;
+  if (u.status !== 'ready') return `<div class="plans-release-unattributed">${head}<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_browser_loading'))}</div></div>`;
+  const rows = u.rows || [];
+  const list = rows.length
+    ? `<div class="plans-release-unattributed-rows">${rows.map((r2, i) => _plansUnattribRowHTML(r2, i)).join('')}</div>
+      <div class="plans-release-unattributed-bulkbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+        <span style="display:inline-flex;gap:6px;align-items:center;"><input type="checkbox" id="plansReleaseUnattribAll" checked="${_plansUnattribSel.all ? 'true' : ''}" aria-label="${escHtml(t('plans_release_unattributed_select_all'))}" onchange="plansReleaseUnattribSelectAll(this.checked)" style="margin:0;"><label for="plansReleaseUnattribAll" style="font-size:12px;color:var(--text2);cursor:pointer;">${escHtml(t('plans_release_unattributed_select_all'))}</label></span>
+        <select class="form-select" id="plansReleaseBulkPlan" aria-label="${escHtml(t('plans_release_unattributed_attach_to_ph'))}" style="font-size:12px;max-width:220px;" onchange="plansReleaseUnattribRowSelect('__bulkPlan',this.value)">${escHtml(t('plans_release_unattributed_attach_to_ph'))}${plansOpts}</select>
+        <input type="text" class="form-input" id="plansReleaseBulkTheme" value="" placeholder="${escHtml(t('plans_release_unattributed_theme_ph'))}" aria-label="${escHtml(t('plans_release_unattributed_theme_ph'))}" style="font-size:12px;width:140px;">
+        <button type="button" class="btn-primary plans-release-unattributed-bulk" style="font-size:12px;padding:2px 10px;" onclick="plansReleaseUnattribBulkGo()" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unattributed_bulk'))}</button></div>`
+    : `<div style="color:var(--text2);font-size:13px;margin-top:6px;">${escHtml(t('plans_release_unattributed_empty'))}</div>`;
+  return `<div class="plans-release-unattributed">${head}${list}${_plansUnattributedResultsHTML()}</div>`;
+}
+
+// Archive / restore: confirm + reason on archive, one click on restore.
+function _plansArchiveCtlHTML(st, plan) {
+  if (!st || st.status !== 'ready') return '';
+  const style = { fontSize: '12px', padding: '2px 8px' };
+  if (st.archiveAsk === plan.id) {
+    const reasonVal = escHtml(st.archiveReason || '');
+    return `<span class="plans-release-archive-ask" role="group" style="display:inline-flex;gap:4px;align-items:center;margin-left:6px;">
+      <input type="text" value="${reasonVal}" placeholder="${escHtml(t('plans_release_archive_reason_ph'))}" aria-label="${escHtml(t('plans_release_archive_reason_ph'))}" oninput="plansReleaseArchiveReason(this.value)" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-archive-confirm" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveSubmit', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive_confirm'))}</button>
+      <button type="button" class="btn-secondary plans-release-archive-cancel" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveCancel')}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_archive_cancel'))}</button></span>`;
+  }
+  if (plan.archived) {
+    return `<button type="button" class="btn-secondary plans-release-restore" style="${style.css}" onclick="${_plansCall('plansReleaseRestore', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_restore_help'))}">${escHtml(t('plans_release_restore'))}</button>`;
+  }
+  return `<button type="button" class="btn-secondary plans-release-archive" style="${style.css}" onclick="${_plansCall('plansReleaseArchiveAsk', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))} ${escHtml(t('plans_release_archive_help'))}">${escHtml(t('plans_release_archive'))}</button>`;
+}
+
+function plansReleaseArchiveAsk(id) {
+  const st = _plansBrowser;
+  st.archiveAsk = String(id);
+  st.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveReason(v) {
+  _plansBrowser.archiveReason = String(v || '');
+}
+function plansReleaseArchiveCancel() {
+  _plansBrowser.archiveAsk = '';
+  _plansBrowser.archiveReason = '';
+  _plansBrowserPaint();
+}
+function plansReleaseArchiveSubmit(id) {
+  const st = _plansBrowser;
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/archive'), 'POST', { reason: (st.archiveReason || '').trim() })
+    .then(r => {
+      st.archiveAsk = '';
+      st.archiveReason = '';
+      if (r) return _plansReloadAfterWrite('');
+      return null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseRestore(id) {
+  if (_plansReleaseBusy) return Promise.resolve();
+  _plansReleaseBusy = true;
+  return _plansWrite(_plansPath(id, '/restore'), 'POST', {})
+    .then(r => { if (r) return _plansReloadAfterWrite(''); return null; })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+function plansReleaseSetArchived(scope) {
+  if (_plansBrowser.archived === scope) return;
+  _plansBrowser.archived = scope === 'include' || scope === 'only' ? scope : 'exclude';
+  _plansBrowserLoad(false);
+}
+
+// Theme layout for a release plan: ordered themes with their members, the
+// unplaced group, place-in-theme and reorder. The editor keeps a local copy
+// (d._themeEdits); the PUT sends the whole desired layout and the server
+// writes it atomically (with its audit entries).
+function plansReleaseThemesHTML(st, plan) {
+  if (typeof plan === 'string' && st && Array.isArray(st.plans)) { const found = st.plans.find(x => x && x.id === plan); if (found) plan = found; }
+  const d = st.detail[plan.id] || {};
+  const box = inner => `<div class="plans-release-themes" data-plan="${escHtml(plan.id)}" style="margin:8px 0 4px 12px;border-left:2px solid var(--border);padding-left:10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+      <span style="font-weight:600;font-size:13px;" class="plans-release-themes-title">${escHtml(t('plans_release_themes'))}</span>
+      <button type="button" class="btn-secondary plans-release-theme-add" style="font-size:12px;padding:2px 8px;" onclick="${_plansCall('plansReleaseThemeAdd', plan.id)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_docs_help'))}">${escHtml(t('plans_release_theme_add'))}</button></div>
+    ${inner}</div>`;
+  if (d.themesStatus === 'error') return box(`<div role="alert" style="color:var(--error);font-size:13px;margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('plans_release_theme_error', [(d.themesError || '').toString()]))}</div>`);
+  if (!d.themes || d.themesStatus !== 'ready') return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_loading'))}</div>`);
+  const local = _plansThemesLocal(plan.id);
+  if (!local) return box(`<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('plans_release_theme_error', ['']))}</div>`);
+  const themeNames = local.themes.map(x => x.name).filter(Boolean);
+  const member = (m, where, mIdx) => {
+    const listLen = where === 'unplaced' ? local.unplaced.length : (local.themes[Number(where)] ? local.themes[Number(where)].items.length : 0);
+    const up = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, -1)}" ${mIdx <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button>`;
+    const down = `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseItemMove', plan.id, where, mIdx, 1)}" ${mIdx >= listLen - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button>`;
+    const unplaceBtn = where === 'unplaced' ? '' : `<button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_unplace'))}" onclick="${_plansCall('plansReleaseUnplace', plan.id, where, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_unplace_short'))}</button>`;
+    const placeCtl = where === 'unplaced'
+      ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+          <select class="form-select" id="plansReleasePlaceSel_${escHtml(plan.id)}_${mIdx}" aria-label="${escHtml(t('plans_release_place'))}" style="font-size:11px;padding:1px 2px;max-width:150px;">
+            <option value="">${escHtml(t('plans_release_place_none'))}</option>
+            ${themeNames.map(nm => `<option value="${escHtml(nm)}">${escHtml(nm)}</option>`).join('')}
+            <option value="__new__">${escHtml(t('plans_release_theme_new', ['']))}</option>
+          </select>
+          <input type="text" class="form-input" id="plansReleasePlaceName_${escHtml(plan.id)}_${mIdx}" value="" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" style="font-size:11px;width:120px;">
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:0 6px;" onclick="${_plansCall('plansReleasePlaceGo', plan.id, mIdx)}" ${_plansReleaseBusy ? 'disabled' : ''} title="${escHtml(t('plans_release_place'))}">${escHtml(t('plans_release_place_short'))}</button>
+        </span>`
+      : '';
+    const kindLabel = m && m.kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+    return `<div class="plans-release-theme-item" data-item="${escHtml(m ? String(m.id || '') : '')}" data-kind="${escHtml(m ? String(m.kind || 'automaton') : '')}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:baseline;margin:2px 0;font-size:13px;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(kindLabel)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(m ? String(m.title || m.id || '') : '')}</span>
+      ${m && m.state ? `<span style="font-size:11px;color:var(--text2);">${escHtml(String(m.state))}</span>` : ''}
+      ${up}${down}${unplaceBtn}${placeCtl}</div>`;
+  };
+  const themeBlocks = local.themes.map((th, ti) => {
+    const del = `<button type="button" class="btn-secondary plans-release-theme-delete" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_delete'))}" onclick="${_plansCall('plansReleaseThemeDelete', plan.id, ti)}" ${_plansReleaseBusy ? 'disabled' : ''}>${escHtml(t('plans_release_theme_delete_short'))}</button>`;
+    const rename = `<input type="text" class="form-input" value="${escHtml(th.name)}" placeholder="${escHtml(t('plans_release_theme_rename_ph'))}" aria-label="${escHtml(t('plans_release_theme_rename_ph'))}" onchange="plansReleaseThemeRename(${_plansCallArg(plan.id)},${ti},this.value)" style="font-size:12px;min-width:140px;max-width:240px;">`;
+    return `<div class="plans-release-theme-block" data-theme="${escHtml(th.name)}" style="margin:6px 0;padding:6px 8px;border:1px solid var(--border);border-radius:5px;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${rename}${del}
+        <span style="font-size:11px;color:var(--text2);margin-left:auto;display:inline-flex;gap:2px;align-items:center;"><span>${escHtml(t('plans_release_theme_items'))}</span><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_up'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, -1)}" ${ti <= 0 || _plansReleaseBusy ? 'disabled' : ''}>&uarr;</button><button type="button" style="font-size:11px;padding:0 4px;" title="${escHtml(t('plans_release_theme_item_down'))}" onclick="${_plansCall('plansReleaseThemeMove', plan.id, ti, 1)}" ${ti >= local.themes.length - 1 || _plansReleaseBusy ? 'disabled' : ''}>&darr;</button></span></div>
+      ${th.items.length ? th.items.map((m2, i2) => member(m2, String(ti), i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_members_empty'))}</div>`}</div>`;
+  }).join('');
+  const unplacedBlock = `<div class="plans-release-unplaced-block" style="margin:6px 0;padding:6px 8px;border:1px dashed var(--border);border-radius:5px;">
+    <div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t('plans_release_unplaced'))}</div>
+    ${local.unplaced.length ? local.unplaced.map((m2, i2) => member(m2, 'unplaced', i2)).join('') : `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_unplaced_empty'))}</div>`}</div>`;
+  return box(themeBlocks + unplacedBlock + ((!local.themes.length && !local.unplaced.length) ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_theme_empty'))}</div>` : ''));
+}
+
+function _plansThemesLocal(planId) {
+  const d = _plansBrowser && _plansBrowser.detail[planId];
+  if (!d || !d.themes) return null;
+  if (!d._themeEdits) {
+    const th = d.themes;
+    d._themeEdits = {
+      themes: (Array.isArray(th.themes) ? th.themes : []).map(x => ({
+        id: (x && x.id) || '',
+        name: String((x && x.name) || ''),
+        items: (x && Array.isArray(x.items) ? x.items : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+      })),
+      unplaced: (Array.isArray(th.unplaced) ? th.unplaced : []).map(m2 => ({ kind: m2.kind || 'automaton', id: m2.id, title: m2.title || '', state: m2.state || '' })),
+    };
+  }
+  return d._themeEdits;
+}
+
+function _plansThemesSave(planId) {
+  const st = _plansBrowser;
+  const d = st && st.detail[planId];
+  const ed = _plansThemesLocal(planId);
+  if (!d || !ed) return Promise.resolve(null);
+  const body = { themes: ed.themes.map(x => ({ id: x.id || '', name: x.name, automata: x.items.filter(m2 => (m2.kind || 'automaton') === 'automaton').map(m2 => m2.id), automations: x.items.filter(m2 => m2.kind === 'automation').map(m2 => m2.id) })) };
+  _plansReleaseBusy = true;
+  _releasePaint();
+  return _plansWrite(_plansPath(planId, '/themes'), 'PUT', body)
+    .then(r => {
+      if (r && r.themes != null) { delete d._themeEdits; d.themes = r; d.themesStatus = 'ready'; }
+      else if (!r) { d.themesStatus = 'error'; d.themesError = (st.notice || '').toString(); }
+      return r ? _plansReloadAfterWrite(planId) : null;
+    })
+    .then(() => { _plansReleaseBusy = false; _releasePaint(); });
+}
+
+function plansReleaseThemeAdd(planId) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  let nm = String(t('plans_release_theme_new', [ed.themes.length + 1]));
+  while (ed.themes.some(x => x.name === nm)) nm += '\u00b7';
+  ed.themes.push({ id: '', name: nm, items: [] });
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeRename(planId, ti, name) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const th = ed.themes[Number(ti)];
+  if (!th) return;
+  th.name = String(name || '').trim();
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function plansReleaseThemeDelete(planId, ti) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return false;
+  const removed = ed.themes.splice(Number(ti), 1)[0];
+  if (removed && removed.items.length) ed.unplaced = ed.unplaced.concat(removed.items);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleaseThemeMove(planId, ti, delta) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return;
+  const j = Number(ti) + Number(delta);
+  if (j < 0 || j >= ed.themes.length) return;
+  const tmp = ed.themes[Number(ti)]; ed.themes[Number(ti)] = ed.themes[j]; ed.themes[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+function _plansThemeEditAt(planId, where, mIdx) {
+  const ed = _plansThemesLocal(planId);
+  if (!ed) return null;
+  const j = Number(mIdx);
+  if (String(where) === 'unplaced') return { ed, list: ed.unplaced, j };
+  const th = ed.themes[Number(where)];
+  if (!th) return null;
+  return { ed, list: th.items, j };
+}
+
+function plansReleaseItemMove(planId, where, mIdx, delta) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return;
+  const j = e.j + Number(delta);
+  if (j < 0 || j >= e.list.length) return;
+  const tmp = e.list[e.j]; e.list[e.j] = e.list[j]; e.list[j] = tmp;
+  _releasePaint();
+  _plansThemesSave(planId);
+}
+
+// Remove a theme without a confirm dialog: the server still enforces the
+// rules; a refused delete lands as an error state and the layout is reloaded.
+function plansReleaseUnplace(planId, where, mIdx) {
+  const e = _plansThemeEditAt(planId, where, mIdx);
+  if (!e || !e.list.length) return false;
+  if (String(where) === 'unplaced') return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (item) e.ed.unplaced.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+function plansReleasePlaceGo(planId, mIdx) {
+  const selEl = document.getElementById('plansReleasePlaceSel_' + planId + '_' + mIdx);
+  const nmEl = document.getElementById('plansReleasePlaceName_' + planId + '_' + mIdx);
+  let name = selEl ? String(selEl.value || '') : '';
+  if (name === '__new__') name = nmEl ? String(nmEl.value || '').trim() : '';
+  if (_plansReleaseBusy) return false;
+  const e = _plansThemeEditAt(planId, 'unplaced', mIdx);
+  if (!e || !e.list.length) return false;
+  const item = e.list.splice(e.j, 1)[0];
+  if (!item) { _releasePaint(); return false; }
+  if (!name) { e.ed.unplaced.push(item); _releasePaint(); return _plansThemesSave(planId); }
+  let th = e.ed.themes.find(x => x.name === name);
+  if (!th) { th = { id: '', name, items: [] }; e.ed.themes.push(th); }
+  th.items.push(item);
+  _releasePaint();
+  return _plansThemesSave(planId);
+}
+
+// Release migration: preview first (apply=false), then approve with the
+// preview id. Attached items may be marked for the next release with an
+// optional theme; marks apply at approve. Nothing is written on preview.
+function _plansMigrateItemHTML(it, ms, markable, i) {
+  const kind = it && it.kind ? String(it.kind) : 'automaton';
+  const label = kind === 'automation' ? t('plans_release_automation') : t('plans_release_automaton');
+  const extra = [];
+  if (it && it.release) extra.push(String(it.release));
+  if (it && it.theme) extra.push(String(it.theme) + (it.theme_source ? ' (' + String(it.theme_source) + ')' : ''));
+  if (it && it.plan_id) extra.push(String(it.plan_id));
+  if (it && it.holding_plan) extra.push(String(it.holding_plan));
+  if (it && it.reason) extra.push(String(it.reason));
+  const mk = ms && ms.marks ? ms.marks[String(i)] : null;
+  const mark = markable ? `<span style="display:inline-flex;gap:4px;align-items:center;margin-left:8px;">
+      <input type="checkbox" id="plansReleaseMarkOn_${i}" ${mk && mk.on ? 'checked' : ''} aria-label="${escHtml(t('plans_release_migrate_mark'))}" onchange="plansReleaseMigrateMark(${i},this.checked)" style="margin:0;">
+      <label style="font-size:11px;color:var(--text2);" for="plansReleaseMarkOn_${i}">${escHtml(t('plans_release_migrate_mark'))}</label>
+      <input type="text" class="form-input" id="plansReleaseMarkTheme_${i}" value="${escHtml(mk ? mk.theme : '')}" placeholder="${escHtml(t('plans_release_migrate_theme_ph'))}" aria-label="${escHtml(t('plans_release_migrate_theme_ph'))}" oninput="plansReleaseMigrateTheme(${i},this.value)" style="font-size:11px;width:110px;"></span>` : '';
+  return `<div style="font-size:12.5px;margin:2px 0;overflow-wrap:anywhere;">
+      <span style="font-size:11px;color:var(--text2);min-width:70px;">${escHtml(label)}</span>
+      <span style="font-weight:500;overflow-wrap:anywhere;">${escHtml(it ? String(it.title || it.id || '') : '')}</span>
+      ${extra.length ? `<span style="font-size:11px;color:var(--text2);"> &middot; ${escHtml(extra.join(' &middot; '))}</span>` : ''}
+      ${mark}</div>`;
+}
+
+function _plansMigrateSection(ms, head, list, emptyKey, markable) {
+  if (!list || !list.length) return `<div style="font-size:12px;color:var(--text2);margin:4px 0;">${escHtml(t(emptyKey))}</div>`;
+  return `<div style="margin:6px 0;"><div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t(head))}</div>${list.map((it, i) => _plansMigrateItemHTML(it, ms, markable, i)).join('')}</div>`;
+}
+
+function plansReleaseMigrateMark(i, on) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: !!on, theme: cur.theme || '' };
+}
+function plansReleaseMigrateTheme(i, val) {
+  const cur = _plansReleaseMigrate.marks[String(i)] || { on: false, theme: '' };
+  _plansReleaseMigrate.marks[String(i)] = { on: cur.on, theme: String(val || '') };
+}
+
+function plansReleaseMigrateHTML() {
+  const ms = _plansReleaseMigrate;
+  const busy = ms.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_current_ph'))}" value="${escHtml(ms.currentRelease)}" aria-label="${escHtml(t('plans_release_migrate_current_ph'))}" onchange="_plansReleaseMigrate.currentRelease=this.value" style="font-size:12px;width:170px;">
+      <input type="text" class="form-input" placeholder="${escHtml(t('plans_release_migrate_next_ph'))}" value="${escHtml(ms.nextRelease)}" aria-label="${escHtml(t('plans_release_migrate_next_ph'))}" onchange="_plansReleaseMigrate.nextRelease=this.value" style="font-size:12px;width:170px;">
+      <button type="button" class="btn-secondary plans-release-migrate-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseMigratePreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_preview'))}</button>
+    </div>`;
+  if (ms.preview) {
+    const pr = ms.preview;
+    inner += `
+    ${ms.applied ? '' : `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(ms.note || '')}</div>`}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_counts', [(Array.isArray(pr.created) ? pr.created.length : 0), (Array.isArray(pr.attached) ? pr.attached.length : 0), (Array.isArray(pr.unplaced) ? pr.unplaced.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(ms, 'plans_release_migrate_created_head', pr.created, 'plans_release_migrate_created_none', false)}
+    ${ms.applied ? '' : _plansMigrateSection(ms, 'plans_release_migrate_attached_head', pr.attached, 'plans_release_migrate_attached_none', true)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_unplaced_head', pr.unplaced, 'plans_release_migrate_unplaced_none', false)}
+    ${_plansMigrateSection(ms, 'plans_release_migrate_conflicts_head', pr.conflicts, 'plans_release_migrate_conflicts_none', false)}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_migrate_unchanged_note', [Array.isArray(pr.unchanged) ? pr.unchanged.length : 0]))}</div>
+    ${!ms.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-migrate-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseMigrateApprove')}" ${busy || !ms.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_migrate_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (ms.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(ms.error)}</div>`;
+  }
+  if (ms.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(ms.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-migrate panel" style="margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-migrate-title">${escHtml(t('plans_release_migrate_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_migrate_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseMigratePreview() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy) return Promise.resolve();
+  if (!String(ms.nextRelease || '').trim()) {
+    ms.error = String(t('plans_release_migrate_next_required'));
+    _releasePaint();
+    return Promise.resolve();
+  }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: false, preview_id: '', marks: [] })
+    .then(r => {
+      if (r && r.preview_id) {
+        ms.preview = r; ms.previewId = String(r.preview_id); ms.note = r.note || ''; ms.applied = false; ms.appliedNote = '';
+        ms.marks = {};
+        (r.attached || []).forEach((it, i) => { ms.marks[String(i)] = { on: false, theme: (it && it.theme) ? String(it.theme) : '' }; });
+      } else {
+        ms.preview = null; ms.previewId = '';
+        ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      }
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+function plansReleaseMigrateApprove() {
+  const ms = _plansReleaseMigrate;
+  if (ms.busy || !ms.previewId) return Promise.resolve();
+  const marks = [];
+  const keys = Object.keys(ms.marks).sort((a, b) => (Number(a) < Number(b) ? -1 : 1));
+  for (const k of keys) { const mk = ms.marks[k]; if (mk && mk.on) marks.push({ release: String(ms.nextRelease).trim(), theme: String(mk.theme || '') }); }
+  ms.busy = true; ms.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate', 'POST', { mode: 'release', project: _projectsState.selected, next_release: String(ms.nextRelease).trim(), current_release: String(ms.currentRelease || '').trim(), apply: true, preview_id: ms.previewId, marks: marks })
+    .then(r => {
+      if (r) {
+        ms.applied = true; ms.appliedNote = r.note || t('plans_release_migrate_done'); ms.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      ms.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_migrate_failed');
+      return null;
+    })
+    .then(() => { ms.busy = false; _releasePaint(); });
+}
+
+// Row-plans migration: converts row plans into themes + an unplaced group.
+// Preview first, then approve with this panel's own preview id.
+function plansReleaseRowPlansHTML() {
+  const rp = _plansReleaseRowPlans;
+  const busy = rp.busy || _plansReleaseBusy;
+  let inner = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 2px 0;">
+      <button type="button" class="btn-secondary plans-release-rowplans-preview" style="font-size:12px;padding:2px 10px;" onclick="${_plansCall('plansReleaseRowPlansPreview')}" ${busy ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_preview'))}</button>
+    </div>`;
+  if (rp.preview) {
+    const pr = rp.preview;
+    inner += `
+    ${!rp.applied ? `<div style="font-size:12px;color:var(--text2);margin:4px 0;overflow-wrap:anywhere;">${escHtml(rp.note || '')}</div>` : ''}
+    <div style="font-size:12px;color:var(--text2);margin:2px 0;">${escHtml(t('plans_release_rowplans_counts', [(Array.isArray(pr.link_rows) ? pr.link_rows.length : 0), (Array.isArray(pr.backlog_items) ? pr.backlog_items.length : 0), (Array.isArray(pr.waiting) ? pr.waiting.length : 0), (Array.isArray(pr.conflicts) ? pr.conflicts.length : 0), (Array.isArray(pr.unchanged) ? pr.unchanged.length : 0), (Array.isArray(pr.skipped) ? pr.skipped.length : 0)]))}</div>
+    ${_plansMigrateSection(null, 'plans_release_rowplans_link_head', pr.link_rows, 'plans_release_rowplans_link_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_backlog_head', pr.backlog_items, 'plans_release_rowplans_backlog_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_waiting_head', pr.waiting, 'plans_release_rowplans_waiting_none', false)}
+    ${_plansMigrateSection(null, 'plans_release_rowplans_conflicts_head', pr.conflicts, 'plans_release_rowplans_conflicts_none', false)}
+    ${!rp.applied ? `<div style="margin:8px 0;display:flex;gap:8px;align-items:center;">
+        <button type="button" class="btn-primary plans-release-rowplans-approve" style="font-size:13px;padding:4px 14px;" onclick="${_plansCall('plansReleaseRowPlansApprove')}" ${busy || !rp.previewId ? 'disabled' : ''}>${escHtml(t('plans_release_rowplans_approve'))}</button>
+        <span style="font-size:11px;color:var(--text2);">${escHtml(t('plans_release_migrate_hint'))}</span>
+      </div>` : ''}`;
+  } else if (rp.error) {
+    inner += `<div role="alert" style="color:var(--error);font-size:13px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(rp.error)}</div>`;
+  }
+  if (rp.applied) inner += `<div style="font-size:13px;margin:8px 0;color:var(--text2);overflow-wrap:anywhere;">${escHtml(rp.appliedNote || t('plans_release_migrate_done'))}</div>`;
+  return `<div class="plans-release-rowplans panel" style="margin:10px 0;padding:10px;border:1px dashed var(--border);border-radius:6px;">
+    <div style="font-weight:600;font-size:14px;" class="plans-release-rowplans-title">${escHtml(t('plans_release_rowplans_title'))}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('plans_release_rowplans_help'))}</div>
+    ${inner}</div>`;
+}
+
+function plansReleaseRowPlansPreview() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: false })
+    .then(r => {
+      if (r && r.preview_id) {
+        rp.preview = r; rp.previewId = String(r.preview_id); rp.note = r.note || ''; rp.applied = false; rp.appliedNote = '';
+      } else {
+        rp.preview = null; rp.previewId = '';
+        rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      }
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+
+function plansReleaseRowPlansApprove() {
+  const rp = _plansReleaseRowPlans;
+  if (rp.busy || !rp.previewId) return Promise.resolve();
+  rp.busy = true; rp.error = '';
+  _releasePaint();
+  return _plansWrite('/api/plans/migrate/row-plans', 'POST', { project: _projectsState.selected, apply: true, preview_id: rp.previewId })
+    .then(r => {
+      if (r) {
+        rp.applied = true; rp.appliedNote = r.note || t('plans_release_migrate_done'); rp.previewId = '';
+        return Promise.resolve(_plansBrowserLoad(false)).then(() => _plansUnattributedRefresh()).then(() => null);
+      }
+      rp.error = (_plansBrowser && _plansBrowser.notice) || t('plans_release_rowplans_failed');
+      return null;
+    })
+    .then(() => { rp.busy = false; _releasePaint(); });
+}
+window.plansReleaseArchiveAsk = plansReleaseArchiveAsk;
+window.plansReleaseArchiveReason = plansReleaseArchiveReason;
+window.plansReleaseArchiveCancel = plansReleaseArchiveCancel;
+window.plansReleaseArchiveSubmit = plansReleaseArchiveSubmit;
+window.plansReleaseRestore = plansReleaseRestore;
+window.plansReleaseSetArchived = plansReleaseSetArchived;
+window.plansReleaseViewUnattributed = plansReleaseViewUnattributed;
+window.plansReleaseUnattribRowSelect = plansReleaseUnattribRowSelect;
+window.plansReleaseUnattribSelectAll = plansReleaseUnattribSelectAll;
+window.plansReleaseUnattribAttachToggle = plansReleaseUnattribAttachToggle;
+window.plansReleaseUnattribAttachGo = plansReleaseUnattribAttachGo;
+window.plansReleaseUnattribBulkGo = plansReleaseUnattribBulkGo;
+window.plansReleaseUnattribRowPlan = plansReleaseUnattribRowPlan;
+window.plansReleaseThemeAdd = plansReleaseThemeAdd;
+window.plansReleaseThemeRename = plansReleaseThemeRename;
+window.plansReleaseThemeDelete = plansReleaseThemeDelete;
+window.plansReleaseThemeMove = plansReleaseThemeMove;
+window.plansReleaseItemMove = plansReleaseItemMove;
+window.plansReleaseUnplace = plansReleaseUnplace;
+window.plansReleasePlaceGo = plansReleasePlaceGo;
+window.plansReleaseMigratePreview = plansReleaseMigratePreview;
+window.plansReleaseMigrateApprove = plansReleaseMigrateApprove;
+window.plansReleaseMigrateMark = plansReleaseMigrateMark;
+window.plansReleaseMigrateTheme = plansReleaseMigrateTheme;
+window.plansReleaseRowPlansPreview = plansReleaseRowPlansPreview;
+window.plansReleaseRowPlansApprove = plansReleaseRowPlansApprove;
 window.plansBrowserHTML = plansBrowserHTML;
 window.plansBrowserListHTML = plansBrowserListHTML;
 
@@ -5706,7 +7333,7 @@ const _RECORDS_TAB_PAGE = 50;
 const _RECORDS_TAB_STATES = _PLAN_RECORD_STATES.registry_row.concat(_PLAN_RECORD_STATES.finding.filter(s => _PLAN_RECORD_STATES.registry_row.indexOf(s) < 0));
 
 function _recordsTabFresh(project) {
-  return { project: project || '', status: 'idle', q: '', kind: '', stateFilter: '', rows: [], total: 0, error: '', seq: 0 };
+  return { project: project || '', status: 'idle', q: '', kind: '', states: [], rows: [], total: 0, error: '', seq: 0 };
 }
 let _recordsTab = _recordsTabFresh('');
 
@@ -5718,10 +7345,11 @@ function _recordsTabLoad(more) {
   const st = _recordsTab;
   const seq = ++st.seq;
   if (!more) st.status = 'loading';
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) st.states = window._stateChipSets.recordsTabState.get();
   const params = ['project=' + encodeURIComponent(name), 'limit=' + _RECORDS_TAB_PAGE, 'offset=' + (more ? st.rows.length : 0)];
   if ((st.q || '').trim()) params.push('q=' + encodeURIComponent(st.q.trim()));
   if (st.kind) params.push('kind=' + encodeURIComponent(st.kind));
-  if (st.stateFilter) params.push('state=' + encodeURIComponent(st.stateFilter));
+  if (st.states.length) params.push('state=' + encodeURIComponent(st.states.join(',')));
   return apiFetch('/api/plan-records/browse?' + params.join('&')).then(r => {
     if (_recordsTab !== st || seq !== st.seq) return;
     const rows = r && Array.isArray(r.records) ? r.records : [];
@@ -5766,11 +7394,32 @@ function recordsTabListHTML(st) {
   return status + st.rows.map(_recordsTabRowHTML).join('') + more;
 }
 
+// recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
+// chip set: one chip per state of the selected plan/finding type, any
+// combination selectable (the server accepts the states as
+// state=one,two,three). Its selection has its own cs_state_chips_* key via
+// the shared helper; the chip's own change handler is the mutation path
+// (seeds the tab's mirror and reloads).
+function recordsTabStateChipsHtml(st) {
+  const chips = createStateChipSet({
+    name: 'recordsTabState',
+    items: _RECORDS_TAB_STATES.map(function (s) { return { key: s, label: _recordsTabStateLabel(s) }; }),
+    total: (st && st.status === 'ready') ? st.total : null,
+    onChange: function (sel) {
+      if (window._stateChipsSeeding) return;
+      _recordsTab.states = sel.slice();
+      _recordsTabLoad(false);
+    },
+  });
+  if (st) st.states = chips.get();
+  return chips.html();
+}
+
 function recordsTabHTML(p) {
   const st = _recordsTab.project === (p && p.name) ? _recordsTab : _recordsTabFresh(p && p.name);
   const kinds = [['', 'records_tab_kind_all'], ['registry_row', 'plan_records_view_registry'], ['finding', 'plan_records_view_findings']];
   const kindSel = `<select class="form-select records-tab-kind-filter" aria-label="${escHtml(t('records_tab_filter_kind'))}" onchange="recordsTabSetKind(this.value)" style="font-size:12px;">${kinds.map(([v, k]) => `<option value="${v}"${st.kind === v ? ' selected' : ''}>${escHtml(t(k))}</option>`).join('')}</select>`;
-  const stateSel = `<select class="form-select records-tab-state-filter" aria-label="${escHtml(t('plan_records_filter_state'))}" onchange="recordsTabSetState(this.value)" style="font-size:12px;"><option value="">${escHtml(t('plan_records_filter_state_all'))}</option>${_RECORDS_TAB_STATES.map(s => `<option value="${s}"${st.stateFilter === s ? ' selected' : ''}>${escHtml(_recordsTabStateLabel(s))}</option>`).join('')}</select>`;
+  const stateSel = `<div id="recordsTabStateFilter" class="records-tab-state-filter state-chip-row" style="vertical-align:middle;">${recordsTabStateChipsHtml(st)}</div>`;
   const box = `<input type="text" class="form-input records-tab-search" aria-label="${escHtml(t('records_tab_search_label'))}" placeholder="${escHtml(t('records_tab_search_placeholder'))}" value="${escHtml(st.q)}" oninput="recordsTabSearchInput(this.value)" style="font-size:13px;flex:1 1 200px;min-width:140px;">`;
   return `<div class="records-tab" data-project="${escHtml(p ? p.name : '')}" style="margin-top:10px;">
     <div class="records-tab-controls" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">${box}${kindSel}${stateSel}</div>
@@ -5792,7 +7441,12 @@ window.recordsTabSearchInput = function(v) {
   window._recordsTabSearchTimer = setTimeout(() => { window._recordsTabSearchTimer = null; if (_recordsTab === st) _recordsTabLoad(false); }, 250);
 };
 window.recordsTabSetKind = function(v) { _recordsTab.kind = String(v || ''); return _recordsTabLoad(false); };
-window.recordsTabSetState = function(v) { _recordsTab.stateFilter = String(v || ''); return _recordsTabLoad(false); };
+window.recordsTabSetState = function(v) {
+  const csv = String(v || '');
+  _recordsTab.states = csv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (window._stateChipSets && window._stateChipSets.recordsTabState) _stateChipsReconcile(window._stateChipSets.recordsTabState, csv);
+  return _recordsTabLoad(false);
+};
 window.recordsTabMore = function() { return _recordsTabLoad(true); };
 
 // recordsTabGoPlan opens the Plans sub-tab with the plan expanded.
@@ -5814,18 +7468,91 @@ function _projectRecordsTabHTML(p) {
   return `<div id="projectRecordsMount" data-mount="records">${recordsTabHTML(p)}</div>${_planRecordsSlotHtml(p)}`;
 }
 
+// _projectsLoadSelected starts every card's fetch at once: the roll-up, the
+// Gantt, summary, Plans, Records, history and links each settle on their own,
+// and one slow or failed fetch never holds the others back. The roll-up
+// repaints only the cards whose data changed.
 function _projectsLoadSelected() {
-  return _projectsLoadRollup().then(() => {
-    if (!_projectsActive()) return null;
-    _projectsPaint();
-    const gantt = _projectsLoadGantt();
-    const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
-    const records = _planRecordsLoad(false);
-    const recordsBrowse = _recordsTabLoad(false);
-    const plans = _plansBrowserLoadSelected();
-    return _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => Promise.all([gantt, records, summary, plans, recordsBrowse]));
+  const roll = _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+  const gantt = _projectsLoadGantt();
+  const summary = _projectsLoadSummary().then(() => { if (_projectsActive()) _projectsPaint(); });
+  const records = _planRecordsLoad(false);
+  const recordsBrowse = _recordsTabLoad(false);
+  const plans = _plansBrowserLoadSelected();
+  const hist = _projectsLoadHistory(false).then(() => (_projectsActive() ? _projectsLoadLinks() : null)).then(() => {
+    // History, policy and events are not roll-up cards: repaint when one is open.
+    if (_projectsActive() && ['history', 'policy', 'events'].indexOf(_projectsActiveSubtab(true)) >= 0) _projectsPaint();
   });
+  return Promise.all([roll, gantt, records, summary, plans, recordsBrowse, hist]);
 }
+
+// _projectsSeedFromCache fills the project list and the selected project's
+// roll-up from the cache so the first paint has content. The roll-up card is
+// marked refreshing until the background fetch settles. It returns true when
+// the selected project's roll-up came from the cache.
+function _projectsSeedFromCache() {
+  if (!Array.isArray(_projectsState.list)) {
+    const c = _cfGet(_cfKey('projects'));
+    if (c && Array.isArray(c.data)) _projectsState.list = c.data;
+  }
+  const name = _projectsState.selected;
+  const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
+  if (!known) return false;
+  if (_projectsState.rollupFor === name && _projectsState.rollup) return false;
+  const c = _cfGet(_cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW));
+  if (!c || !c.data || typeof c.data !== 'object' || Array.isArray(c.data)) return false;
+  _projectsState.rollup = c.data;
+  _projectsState.rollupFor = name;
+  _projectsState.rollupError = '';
+  _projectsState.rollupStatus = 'refreshing';
+  return true;
+}
+
+// _projectsSyncCards repaints after a background refresh. It renders the page
+// once into a sink, then updates each card's state and replaces the body of
+// only those cards whose markup changed. A change of shape (another card set,
+// another sub-tab, a new Events tab) or a card that is not on the page repaints
+// the whole page instead.
+function _projectsSyncCards() {
+  const view = typeof document !== 'undefined' ? document.getElementById('automataPanel') : null;
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const sel = _projectsState.selected;
+  const p = list && list.find(x => x.name === sel);
+  if (!view || !p || sel === _PROJECTS_OVERVIEW) { _projectsPaint(); return 0; }
+  const forSel = _projectsState.rollupFor === sel;
+  const hist = _projectsState.hist && _projectsState.hist.name === sel ? _projectsState.hist : null;
+  _pcardSink = [];
+  let cards, shape;
+  try { _projectPageHTML(p, forSel ? _projectsState.rollup : null, forSel ? _projectsState.rollupError : '', hist); }
+  finally { cards = _pcardSink || []; shape = cards.shape || ''; _pcardSink = null; }
+  const prev = _projectsState.cardHtml || {};
+  const same = shape === _projectsState.cardShape && cards.length === Object.keys(prev).length && cards.every(c => c.id in prev);
+  if (!same) { _projectsPaint(); return -1; }
+  let painted = 0;
+  cards.forEach(c => {
+    const w = document.getElementById('pcard_' + c.id);
+    if (w) w.setAttribute('data-state', c.status);
+    if (prev[c.id] === c.inner) return;
+    const body = document.getElementById('pcard_' + c.id + '_body');
+    if (body) { body.innerHTML = c.inner; painted++; }
+    prev[c.id] = c.inner;
+  });
+  _projectsState.cardHtml = prev;
+  _projectsState.cardsPainted = (_projectsState.cardsPainted || 0) + painted;
+  return painted;
+}
+
+// projectsCardRetry re-runs the fetch behind one card; the other cards keep
+// what they show.
+window.projectsCardRetry = function(id) {
+  if (String(id).indexOf('prdtasks:') === 0) { prdPanelTasksRetry(String(id).slice(9)); return; }
+  if (id === 'gantt') { _projectsLoadGantt(); _projectsGanttRepaint(); return; }
+  if (id === 'plan') { _planRecordsLoad(false); return; }
+  if (id === 'history') { _projectsLoadHistory(false).then(() => { if (_projectsActive()) _projectsPaint(); }); return; }
+  _projectsState.rollupStatus = 'loading'; _projectsState.rollupError = '';
+  if (!_projectsState.rollup) { _projectsPaint(); }
+  _projectsLoadRollup().then(() => { if (_projectsActive()) _projectsSyncCards(); });
+};
 
 function renderProjectsView() {
   _projectsState.selected = (() => {
@@ -5836,10 +7563,15 @@ function renderProjectsView() {
     return fromHash !== null ? fromHash : _projectsRecallLast();
   })();
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
+  // First paint from the cache; the fetches below refresh it in the background.
+  _projectsSeedFromCache();
   _projectsPaint();
-  return _projectsLoad().then(() => (_projectsActive() ? _projectsLoadSelected() : null)).then(() => {
-    // Paint again only while the Projects tab is still the active view.
-    if (_projectsActive()) _projectsPaint();
+  return _projectsLoad().then(() => {
+    if (!_projectsActive()) return null;
+    // With nothing cached the list has just arrived: paint the cards' skeletons
+    // now, before the roll-up and the other fetches settle.
+    if (!(_projectsState.rollup && _projectsState.rollupFor === _projectsState.selected)) _projectsPaint();
+    return _projectsLoadSelected();
   });
 }
 
@@ -5848,6 +7580,7 @@ function _projectsLoad() {
     if (!_projectsActive()) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
+    if (Array.isArray(list)) _cfPut(_cfKey('projects'), '', list);
   }).catch(err => {
     if (!_projectsActive()) return;
     _projectsState.list = _projectsState.list || [];
@@ -5862,32 +7595,47 @@ function _projectsLoadRollup() {
   const name = _projectsState.selected;
   const known = !!name && (_projectsState.list || []).some(p => p && p.name === name);
   if (!known) return Promise.resolve();
-  return apiFetch('/api/projects/' + encodeURIComponent(name) + '/rollup').then(r => {
+  const key = _cfKey('rollup', name + '@' + _PROJECTS_ROLLUP_WINDOW);
+  const showing = _projectsState.rollupFor === name && !!_projectsState.rollup && !_projectsState.rollupError;
+  _projectsState.rollupStatus = showing ? 'refreshing' : 'loading';
+  if (!showing) { _projectsState.rollupError = ''; }
+  return _cfFetch('/api/projects/' + encodeURIComponent(name) + '/rollup', key).then(res => {
     if (_projectsState.selected !== name) return;
+    const r = res.data;
+    if (!res.unchanged || !showing) _cfPut(key, res.tag, r);
     _projectsState.rollup = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     _projectsState.rollupFor = name;
     _projectsState.rollupError = '';
+    _projectsState.rollupStatus = 'ready';
   }).catch(err => {
     if (_projectsState.selected !== name) return;
     _projectsState.rollup = null;
     _projectsState.rollupFor = name;
     _projectsState.rollupError = (err && err.message) || String(err);
+    _projectsState.rollupStatus = 'error';
   });
 }
 
 // selectProjectsView is the picker's change handler. It remembers the choice
 // and mirrors it in the hash without adding a history entry.
 function selectProjectsView(name) {
-  _projectsState.selected = name || _PROJECTS_OVERVIEW;
+  const next = name || _PROJECTS_OVERVIEW;
+  if (next !== _projectsState.selected) {
+    // A project change drops what the page shows for the project left: its
+    // roll-up and card state, and its cached roll-up.
+    _cfDropProject(_projectsState.selected);
+    _projectsState.rollup = null; _projectsState.rollupFor = ''; _projectsState.rollupError = '';
+    _projectsState.rollupStatus = ''; _projectsState.cardHtml = {}; _projectsState.cardShape = '';
+  }
+  _projectsState.selected = next;
+  _projectsSeedFromCache();
   _projectsRememberLast(_projectsState.selected);
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   try {
     history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
   } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
-  return _projectsLoadSelected().then(() => {
-    if (_projectsActive()) _projectsPaint();
-  });
+  return _projectsLoadSelected();
 }
 
 // Handle Android/browser back button via popstate
@@ -6892,16 +8640,17 @@ function renderSessionsView() {
   // v7.0.0-alpha.22 (multi-select) — status filter is a SET of chips:
   // every selected state counts, any unselected state is hidden. Empty
   // set = 'all'. Persists in localStorage; state.sessionStateChip is the
-  // legacy single-select reader of the same choice.
+  // legacy single-select reader of the same choice. Saved values are
+  // validated on read: a malformed set or an unknown legacy chip is dropped
+  // and the page opens on 'all'.
   if (!Array.isArray(state.sessionStateChips)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_STATE_CHIPS_KEY); } catch (_) { stored = null; }
-    const storedArr = (stored) ? JSON.parse(stored).filter(x => typeof x === 'string') : null;
+    const storedArr = _safeStored(SESSIONS_STATE_CHIPS_KEY, _storedStrArrayRead, null);
     if (storedArr) state.sessionStateChips = storedArr;
     else if (state.sessionStateChip === undefined) {
-      let legacy = null;
-      try { legacy = localStorage.getItem('cs_session_state_chip'); } catch (_) { legacy = null; }
-      state.sessionStateChip = (legacy !== null) ? legacy : 'all';
+      state.sessionStateChip = _safeStored(
+        'cs_session_state_chip',
+        (raw) => (typeof raw === 'string' && SESSIONS_STATE_CHIP_KEYS.indexOf(raw) >= 0) ? raw : null,
+        'all');
       state.sessionStateChips = (state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
     } else {
       state.sessionStateChips = (state.sessionStateChip && state.sessionStateChip !== 'all') ? [state.sessionStateChip] : [];
@@ -6909,9 +8658,7 @@ function renderSessionsView() {
   }
   // Backend filter — its own multi-select set, NOT the search box text.
   if (!Array.isArray(state.sessionBackendSel)) {
-    let stored = null;
-    try { stored = localStorage.getItem(SESSIONS_BACKEND_SEL_KEY); } catch (_) { stored = null; }
-    state.sessionBackendSel = (stored) ? (JSON.parse(stored) || []).filter(x => typeof x === 'string') : [];
+    state.sessionBackendSel = _safeStored(SESSIONS_BACKEND_SEL_KEY, _storedStrArrayRead, []);
   }
   const chip = _sessionStateSel();
   // Show active + recently completed sessions by default; "Show history" shows all
@@ -6982,9 +8729,10 @@ function renderSessionsView() {
   if (state._filtersCollapsed === undefined) {
     // Mobile parity: default OFF means default-collapsed. Honor any
     // existing localStorage choice; new operators get the collapsed view.
-    let stored = null;
-    try { stored = localStorage.getItem('cs_filters_collapsed'); } catch (_) { stored = null; }
-    state._filtersCollapsed = stored === null ? true : stored === '1';
+    // Only '0' and '1' are values this page writes — anything else is a
+    // stale value from another release and is forgotten (default wins).
+    state._filtersCollapsed =
+      _safeStored('cs_filters_collapsed', (raw) => (raw === '0' || raw === '1') ? raw : null, '1') === '1';
   }
   const collapsed = !!state._filtersCollapsed;
   // The search-icon toggle moved to the top header bar (next to the
@@ -7041,13 +8789,16 @@ function renderSessionsView() {
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
-  const sheetHtml = _sessionsSheetHTML({
+  // The filters sheet is optional chrome: if it fails to build on our end
+  // (unexpected data, a bad helper), log it and render the rest of the page
+  // without it.
+  const sheetHtml = _sessionsRenderGuard('filters sheet', () => _sessionsSheetHTML({
     groupBy: _sessionsGroupCurrent(),
     stateBadges,
     llmBadges: backendTypes.length > 1 ? backendBadges : '',
     tagPanel: tagFilterPanelHtml,
     tagHelp: tagHelpLink,
-  });
+  }));
   _sessionsSheetSyncKey();
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -7237,12 +8988,11 @@ function _sessionsTileModeDefault(width) {
 }
 
 function _sessionsReadStoredMode(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string' && v) ? v : null;
+  // One of list/tiles/compact. A stored value from another release (or a
+  // broken write) is unrecognized: forget it and let _sessionsViewMode apply
+  // the viewport default.
+  const read = (raw) => (typeof raw === 'string' && raw && SESSIONS_VIEW_MODES.indexOf(raw) >= 0) ? raw : null;
+  return _safeStored(SESSIONS_VIEW_MODE_KEY, read, null, lse);
 }
 
 function _sessionsStoreMode(mode, lse) {
@@ -7294,12 +9044,10 @@ function _sessionsSearchCountText(shown, total) {
 }
 
 function _sessionsSearchReadStored(lse) {
-  let v = null;
-  try {
-    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_SEARCH_KEY);
-  } catch (_) { v = null; }
-  return (typeof v === 'string') ? v : '';
+  // A plain string, capped: a saved value longer than SESSIONS_SEARCH_MAX_LEN
+  // is a bug, not a saved search — forget it and open with an empty box.
+  const read = (raw) => (typeof raw === 'string' && raw.length <= SESSIONS_SEARCH_MAX_LEN) ? raw : null;
+  return _safeStored(SESSIONS_SEARCH_KEY, read, '', lse);
 }
 
 function _sessionsSearchWriteStored(text, lse) {
@@ -7511,17 +9259,23 @@ function _sessionsGroupStorage() {
 function _sessionsGroupCurrent() {
   if (state.sessionGroupBy === undefined) {
     let by = null;
-    try {
-      const ls = _sessionsGroupStorage();
-      if (ls) {
-        const raw = ls.getItem(SESSIONS_GROUP_STORE_KEY);
-        if (raw) by = _sessionsGroupValidate(JSON.parse(raw));
-        else {
-          const legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY);
-          if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
-        }
+    const ls = _sessionsGroupStorage();
+    // The current shape is {axis, tagPrefix}. Its value is validated; a
+    // stored value that isn't a known axis is forgotten (default: no
+    // grouping). The legacy bare tag-prefix shape is migrated forward once.
+    if (ls) {
+      let raw = null;
+      try { raw = ls.getItem(SESSIONS_GROUP_STORE_KEY); } catch (_) { raw = null; }
+      if (raw) {
+        by = _safeStored(SESSIONS_GROUP_STORE_KEY,
+          (r) => { let p; try { p = JSON.parse(r); } catch (_) { return null; } return _sessionsGroupValidate(p); },
+          null, ls);
+      } else {
+        let legacy = null;
+        try { legacy = ls.getItem(SESSIONS_GROUP_LEGACY_KEY); } catch (_) { legacy = null; }
+        if (legacy) by = _sessionsGroupValidate({ axis: 'tag', tagPrefix: legacy + ':' });
       }
-    } catch (_) { by = null; }
+    }
     state.sessionGroupBy = by;
     state._sessionsGroupByKey = by ? (by.axis + '|' + (by.tagPrefix || '')) : '';
   }
@@ -7833,14 +9587,16 @@ function _sessionsCollapseKey(by, key) {
 }
 
 function _sessionsCollapsedRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_COLLAPSED_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return (Array.isArray(arr) ? arr : []).filter(k => typeof k === 'string' && k);
-  } catch (_) { return []; }
+  // Group keys the operator collapsed (an array of strings). A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with nothing collapsed. An array keeps only its string entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(k => typeof k === 'string' && k);
+  };
+  return _safeStored(SESSIONS_COLLAPSED_KEY, read, [], storage) || [];
 }
 
 function _sessionsCollapseWrite(keys, storage) {
@@ -8176,17 +9932,18 @@ window.setSessionGroupBy = setSessionGroupBy;
 
 // ── Saved views (per device) ────────────────────────────────────────────
 function _savedViewsRead(storage) {
-  try {
-    const ls = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!ls || typeof ls.getItem !== 'function') return [];
-    const raw = ls.getItem(SESSIONS_SAVED_VIEWS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(v => v && typeof v === 'object'
+  // A list of saved views {id, name, mode, groupBy, filter}. A value that
+  // isn't an array is an unrecognized shape: drop it, forget the key, open
+  // with no saved views. An array keeps only well-formed entries.
+  const read = (raw) => {
+    let p = null;
+    try { p = JSON.parse(raw); } catch (_) { return null; }
+    if (!Array.isArray(p)) return null;
+    return p.filter(v => v && typeof v === 'object'
       && typeof v.id === 'string' && v.id
       && typeof v.name === 'string' && v.name.trim());
-  } catch (_) { return []; }
+  };
+  return _safeStored(SESSIONS_SAVED_VIEWS_KEY, read, [], storage) || [];
 }
 
 function _savedViewsWrite(views, storage) {
@@ -8581,6 +10338,161 @@ function _sheetRestore(view, snap, patchFn) {
   return root;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED multi-select state chip set — ONE reusable helper.
+//
+// Renders + manages the Sessions-page status-filter chip row for any other
+// page. Reuses the Sessions implementation's pieces and rules verbatim:
+// same container marker (`.state-filter-chips`), same chip class family
+// (`.backend-filter-badge`, `.active`, `.badge-count`), same colored state
+// dot, same native <button> with aria-pressed, same "Label (count)" tooltip,
+// same multi-select semantics (an empty selection === all states; a second
+// click clears that one chip; the "All" chip clears the whole group; 0-count
+// chips hide until picked, then stay visible so the pick can be backed out)
+// and the same per-viewer localStorage pattern — Sessions persists under
+// `cs_session_state_chips`; every other page gets its OWN `cs_state_chips_<name>`
+// key and never shares one with another page.
+//
+//   const chips = createStateChipSet({
+//     name: 'alerts-kind',            // → storage key cs_state_chips_alerts_kind
+//     total: 12,                      // optional — the "All" chip's count
+//     items: [                        // display order
+//       { key: 'failed', label: t('session_chip_failed'),
+//         count: 3, color: 'var(--error,#ef4444)' },
+//     ],
+//     onChange: (selected) => {},     // optional — after every change
+//   });
+//   chips.html();        // '<div class="state-filter-chips state-chip-set">…</div>' — re-call after data changes
+//   chips.summaryHTML(); // compact line: removable chips + "Clear all" ('' when nothing selected)
+//   chips.get();         // selected keys; [] === all states
+//   chips.toggle(key); chips.clear(); chips.isSelected(key); chips.match(key);
+//
+// Every page passes its OWN `name` so its filter is stored under its own
+// per-viewer key — two pages must not reuse one, or their filters would
+// track each other.
+// ─────────────────────────────────────────────────────────────────────────────
+window._stateChipSets = window._stateChipSets || {};
+
+function createStateChipSet(opts) {
+  const o = opts || {};
+  const name = String(o.name || 'chips').replace(/[^a-zA-Z0-9]+/g, '_');
+  const storageKey = 'cs_state_chips_' + name;
+  const items = (Array.isArray(o.items) ? o.items : [])
+    .filter(it => it && (it.key != null))
+    .map(it => ({
+      key: String(it.key),
+      label: String((it.label != null && it.label !== '') ? it.label : it.key),
+      color: it.color ? String(it.color) : '',
+      count: (it.count != null) ? it.count : null,
+    }));
+  const known = new Set(items.map(it => it.key));
+  let sel = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(raw)) sel = raw.map(String).filter(k => known.has(k));
+  } catch (_) { sel = []; } // corrupt/absent entry: start from "all"
+
+  function persist(next) {
+    try {
+      if (next.length) localStorage.setItem(storageKey, JSON.stringify(next));
+      else localStorage.removeItem(storageKey); // empty set === all: don't keep an empty array around
+    } catch (_) { /* storage blocked: the selection still lives in memory for this page */ }
+  }
+  function emit(next) {
+    if (typeof o.onChange === 'function') {
+      try { o.onChange(next.slice()); } catch (_) { /* a page callback must never kill the control */ }
+    }
+  }
+  function chipInner(it) {
+    // Same dot + label + count composition as _sessionsSheetStateChips().
+    return (it.color ? `<span style="color:${it.color};">●</span> ` : '')
+      + escHtml(it.label)
+      + (it.count != null ? `<span class="badge-count">${it.count}</span>` : '');
+  }
+
+  const api = {
+    name: name,
+    storageKey: storageKey,
+    // Empty array === all states selected.
+    get: () => sel.slice(),
+    isSelected: key => sel.indexOf(String(key)) >= 0,
+    // Row predicate for the page's list: passes everything when nothing is picked.
+    match: stateKey => sel.length === 0 || sel.indexOf(String(stateKey)) >= 0,
+    toggle: function (key) {
+      key = String(key);
+      if (!known.has(key)) return;
+      const next = sel.slice();
+      const i = next.indexOf(key);
+      if (i >= 0) next.splice(i, 1); else next.push(key); // second click clears that one chip
+      sel = next;
+      persist(next); emit(next);
+    },
+    clear: function () { // the "All" chip / summary "Clear all": whole group → all states
+      if (!sel.length) return;
+      sel = [];
+      persist(sel); emit(sel);
+    },
+    html: function () {
+      const allLabel = _stx('state_chips_all', 'All');
+      const hasTotal = (o.total != null) && o.total >= 0;
+      const allActive = sel.length === 0;
+      const allTitle = hasTotal ? `${allLabel} (${o.total})` : allLabel;
+      const allBtn = `<button class="backend-filter-badge ${allActive ? 'active' : ''}" type="button" onclick="stateChipsClear('${escJsAttr(name)}')" title="${escAttr(allTitle)}" aria-pressed="${allActive ? 'true' : 'false'}">${escHtml(allLabel)}${hasTotal ? `<span class="badge-count">${o.total}</span>` : ''}</button>`;
+      // GATE (operator 2026-05-10), same rule as Sessions: hide 0-count chips
+      // unless already picked; chips without a count are always shown.
+      const visible = items.filter(it => it.count == null || it.count > 0 || sel.indexOf(it.key) >= 0);
+      const chipsHtml = visible.map(it => {
+        const active = sel.indexOf(it.key) >= 0;
+        const title = (it.count != null) ? `${it.label} (${it.count})` : it.label;
+        return `<button class="backend-filter-badge ${active ? 'active' : ''}" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(it.key)}')" title="${escAttr(title)}" aria-pressed="${active ? 'true' : 'false'}"${it.color ? ` style="border-left:3px solid ${it.color};"` : ''}>${chipInner(it)}</button>`;
+      }).join('');
+      return `<div class="state-filter-chips state-chip-set">${allBtn}${chipsHtml}</div>`;
+    },
+    summaryHTML: function () {
+      // Compact summary line with a removable chip per selected value + a
+      // "Clear all" (same shape as the Sessions selected-filter line).
+      if (!sel.length) return '';
+      const byKey = {};
+      items.forEach(it => { byKey[it.key] = it; });
+      const selChips = sel.map(k => {
+        const it = byKey[k] || { label: k, color: '', count: null };
+        const removeTitle = _stx('state_chips_remove', 'Remove %1$s').replace('%1$s', it.label);
+        return `<button class="backend-filter-badge active" type="button" onclick="stateChipsToggle('${escJsAttr(name)}','${escJsAttr(k)}')" title="${escAttr(removeTitle)}">${chipInner(it)}<span aria-hidden="true">✕</span></button>`;
+      }).join('');
+      const label = _stx('state_chips_selected', 'Selected filters');
+      const clearBtn = `<button type="button" class="state-chip-clear-all" onclick="stateChipsClear('${escJsAttr(name)}')">${escHtml(_stx('state_chips_clear_all', 'Clear all'))}</button>`;
+      return `<div class="state-chip-summary"><span class="state-chip-label">${escHtml(label)}:</span>${selChips}${clearBtn}</div>`;
+    },
+  };
+  // Registry the inline onclick handlers dispatch through (re-created on
+  // every page render with the same name — the fresh instance wins).
+  window._stateChipSets[name] = api;
+  return api;
+}
+window.createStateChipSet = createStateChipSet;
+window.stateChipsToggle = function (name, key) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.toggle(key);
+};
+window.stateChipsClear = function (name) {
+  const s = (window._stateChipSets || {})[name];
+  if (s) s.clear();
+};
+
+// _stateChipsReconcile brings a built chip set's selection in line with a
+// comma-separated state list (a programmatic setter's new value) without
+// letting the chip's own change handler load the page for every toggle.
+function _stateChipsReconcile(chips, csv) {
+  const want = String(csv || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  window._stateChipsSeeding = true;
+  try {
+    chips.get().forEach(function (k) { if (want.indexOf(k) < 0) chips.toggle(k); });
+    want.forEach(function (k) { if (!chips.isSelected(k)) chips.toggle(k); });
+  } finally {
+    window._stateChipsSeeding = false;
+  }
+}
+
 // Shared chip markup so the full paint and the in-place patch always agree
 // byte-for-byte (the patch skips the write when they already do).
 function _sessionsSheetWatchBtnHTML() {
@@ -8782,7 +10694,7 @@ function _sessionsSheetHTML(parts) {
       <div class="sessions-sheet-head"><strong>${escHtml(title)}</strong><button type="button" class="sessions-sheet-close" onclick="sessionsFiltersClose()" title="${escHtml(close)}" aria-label="${escHtml(close)}">&#10005;</button></div>
       <div class="sessions-sheet-body">
         ${sec(_stx('sessions_group_by', 'Group by'), groupBody)}
-        ${sec(_stx('sessions_view_title', 'Views'), renderSessionsViewsBar())}
+        ${sec(_stx('sessions_view_title', 'Views'), _sessionsRenderGuard('saved views', renderSessionsViewsBar) || '')}
         ${sec(_stx('sessions_filters_status', 'Status'), statusBody)}
       </div>
     </div>
@@ -8979,7 +10891,7 @@ function toggleHistory() {
 // BL348 — tree view toggle
 function toggleSessionTreeView() {
   state.sessionTreeView = !state.sessionTreeView;
-  localStorage.setItem('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
+  _storedWrite('cs_session_tree_view', state.sessionTreeView ? '1' : '0');
   renderSessionsView();
 }
 window.toggleSessionTreeView = toggleSessionTreeView;
@@ -9479,6 +11391,9 @@ function showCardCmds(fullId) {
 
 function cardHandleQuickCmd(sel, fullId) {
   const val = sel.value;
+  // The option's display text ("approve") is the label the operator
+  // pressed; the value ("yes") is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -9488,7 +11403,7 @@ function cardHandleQuickCmd(sel, fullId) {
     return;
   }
   event.stopPropagation();
-  cardSendCmd(fullId, val);
+  cardSendCmd(fullId, val, label);
 }
 
 function cardSendCustom(fullId, shortId) {
@@ -9505,7 +11420,7 @@ function cardSendKey(fullId, keyName) {
   showToast('Sent: ' + keyName, 'success', 1500);
 }
 
-function cardSendCmd(fullId, cmd) {
+function cardSendCmd(fullId, cmd, label) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
   } else if (cmd === '__esc__') {
@@ -9525,7 +11440,12 @@ function cardSendCmd(fullId, cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: fullId, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(fullId, label || cmd, cmd, () => {
+      send('send_input', { session_id: fullId, text: cmd });
+    });
+    return;
   }
   showToast('Sent', 'success', 1500);
 }
@@ -9783,6 +11703,7 @@ function renderSessionDetail(sessionId) {
     + (isActive ? `<label for="sessionImageInput" class="btn-icon" title="${escHtml(t('btn_attach_image')||'Attach image or take photo')}" style="font-size:15px;cursor:pointer;">&#128247;</label><input type="file" id="sessionImageInput" accept="image/*" multiple style="display:none;" onchange="onSessionImageSelected(this)" />` : '')
     : '';
 
+  _sessionDetailHeaderOpen = '';
   view.innerHTML = `
     <div class="session-detail">
       <div class="session-info-bar">
@@ -9816,6 +11737,7 @@ function renderSessionDetail(sessionId) {
                flex span makes them move as a single unit, so they
                either fit together on the first line or wrap together. -->
           <span style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+            <span id="sessionDetailHeaderIcons" class="session-detail-header-icons"></span>
             <button class="detail-pill-btn detail-pill-icon" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}" aria-label="${t('btn_timeline')||'Timeline'}">&#128336;</button>
             <button class="detail-pill-btn detail-pill-icon" onclick="showResponseViewer('${escHtml(sessionId)}')" title="${t('btn_view_last_response')||'View last response'}" aria-label="${t('btn_response')||'Response'}">&#128196;</button>
           </span>
@@ -11086,22 +13008,12 @@ function _loadSessionSchedules(sessionId, force) {
     .then(items => {
       if (!items || items.length === 0) {
         el.style.display = 'none';
+        _schedLastItems.delete(sessionId);
+        if (_sessionsPhoneWidth()) _paintSessionDetailHeaderIcons(sessionId);
         return;
       }
-      el.style.display = 'block';
-      const rows = items.map(sc => {
-        const when = _fmtScheduleTime(sc.run_at);
-        const extras = [];
-        if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
-        if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
-        const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
-        return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
-          <span style="color:var(--text2);">${escHtml(when)}</span>
-          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
-          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
-        </div>`;
-      }).join('');
-      el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
+      _schedLastItems.set(sessionId, items);
+      _renderSessionSchedules(sessionId);
     })
     .catch(() => { el.style.display = 'none'; })
     .finally(() => {
@@ -11114,6 +13026,36 @@ function _loadSessionSchedules(sessionId, force) {
         _loadSessionSchedules(sessionId, true);
       }
     });
+}
+
+// Last pending schedule list per session so a rollup toggle repaints without a refetch.
+const _schedLastItems = new Map();
+
+function _renderSessionSchedules(sessionId) {
+  const el = document.getElementById('sessionSchedules');
+  const items = _schedLastItems.get(sessionId);
+  if (!el || !items || items.length === 0) { if (el) el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const rows = items.map(sc => {
+    const when = _fmtScheduleTime(sc.run_at);
+    const extras = [];
+    if (sc.cron_expr) extras.push(`cron:${escHtml(sc.cron_expr)}`);
+    if (sc.schedule_name) extras.push(`name:${escHtml(sc.schedule_name)}`);
+    const extraHtml = extras.length ? `<span style="font-size:9px;color:var(--text2);margin-left:4px;">[${extras.join(' ')}]</span>` : '';
+    return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
+          <span style="color:var(--text2);">${escHtml(when)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}${extraHtml}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
+        </div>`;
+  }).join('');
+  const head = _stx('session_detail_scheduled_summary', 'Scheduled');
+  if (!_sessionsPhoneWidth()) {
+    el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">${escHtml(head)} (${items.length})</div>${rows}`;
+    return;
+  }
+  _paintSessionDetailHeaderIcons(sessionId);
+  el.innerHTML = _sessionDetailHeaderOpen === 'scheduled' ? `<div class="session-detail-popover">${rows}</div>` : '';
+  el.style.display = _sessionDetailHeaderOpen === 'scheduled' ? 'block' : 'none';
 }
 
 function showScheduleInputPopup(sessionId) {
@@ -11756,6 +13698,9 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     const v = String(s || '').toLowerCase();
     if (['completed', 'approved', 'done', 'passed'].includes(v)) return 'var(--success,#10b981)';
     if (['failed', 'rejected', 'cancelled', 'blocked', 'error'].includes(v)) return 'var(--error)';
+    // held = a deliberate operator pause: a neutral color of its own,
+    // never the error color.
+    if (v === 'held') return 'var(--text2,#94a3b8)';
     if (['waiting', 'needs_review', 'paused', 'pending', 'queued'].includes(v)) return 'var(--warning,#f59e0b)';
     return 'var(--accent2,#60a5fa)';
   };
@@ -12211,14 +14156,18 @@ window.stopArrowRepeat = function() {
 };
 
 // GH#172 D68 — chat quick-reply chips (Yes/No/Stop), shown only while a
-// session is waiting_input. Fills the composer and sends through the
-// same path as a typed reply (tmux or channel routing already handled
-// inside sendSessionInput).
+// session is waiting_input. Routed through the open-question gate: with an
+// open question for this session the chip answers it (nothing typed); with
+// none it fills the composer and sends through the same path as a typed
+// reply (tmux or channel routing already handled inside sendSessionInput).
 function chatQuickReply(text) {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  inputEl.value = text;
-  sendSessionInput();
+  if (!state.activeSession) { inputEl.value = text; sendSessionInput(); return; }
+  quickReplyRoute(state.activeSession, text, text, () => {
+    inputEl.value = text;
+    sendSessionInput();
+  });
 }
 
 // Image-send pending indicator — while a session input carrying
@@ -13293,6 +15242,9 @@ function loadSavedCmdsQuick(sessionId) {
 
 function handleQuickCmd(sel) {
   const val = sel.value;
+  // The option's display text is the label the operator pressed; the value
+  // is what would be typed with no question open.
+  const label = sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : val;
   sel.selectedIndex = 0;
   if (!val) return;
   if (val === '__custom__') {
@@ -13317,7 +15269,7 @@ function handleQuickCmd(sel) {
     }).catch(err => showToast('Guardrail error: ' + String(err), 'error', 3000));
     return;
   }
-  sendSavedCmd(val);
+  sendSavedCmd(val, label);
 }
 
 function sendCustomCmd() {
@@ -13335,7 +15287,7 @@ function hideCustomCmd() {
   if (input) input.value = '';
 }
 
-function sendSavedCmd(cmd) {
+function sendSavedCmd(cmd, label) {
   if (!state.activeSession) return;
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: state.activeSession, text: '' });
@@ -13358,7 +15310,12 @@ function sendSavedCmd(cmd) {
     exitScrollMode();
     return;
   } else {
-    send('send_input', { session_id: state.activeSession, text: cmd });
+    // Text reply: route through the open-question gate; only with no open
+    // question for this session does it get typed in, exactly as before.
+    quickReplyRoute(state.activeSession, label || cmd, cmd, () => {
+      send('send_input', { session_id: state.activeSession, text: cmd });
+    });
+    return;
   }
 }
 
@@ -13692,6 +15649,18 @@ function renderNewSessionView() {
             <option value="">Language (LSP): none</option>
           </select>
         </div>
+        <!-- Worker profile: the worker session profile this session starts
+             with (its MCP servers, tools, skills, context, model, effort).
+             The option list mirrors the settings group (built-ins plus the
+             user profiles); empty = the daemon resolves it (daemon-wide
+             profile, then the session-kind default). -->
+        <div class="form-group" id="sessWorkerProfileRow">
+          <label for="sessWorkerProfile">${t('new_session_worker_profile_label')||'Worker profile'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for the daemon default)</span></label>
+          <select id="sessWorkerProfile" class="form-select">
+            <option value="">${t('new_session_worker_profile_auto')||'Auto (daemon rules: daemon-wide profile, then session-kind default)'}</option>
+          </select>
+          <div style="color:var(--text2);font-size:11px;margin-top:4px;" title="${escHtml(t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings > Worker session profiles.')}">${t('new_session_worker_profile_hint')||'What a worker session starts with: its MCP servers, tools, skills, project context, model and effort.'}</div>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
@@ -13776,6 +15745,10 @@ function renderNewSessionView() {
   // (mirrors the New PRD modal). Async — defaults to __dir__ until
   // the daemon's profile lists land.
   populateSessionProjectClusterDropdowns();
+  // Worker profile dropdown: built-ins plus the user profiles from
+  // autonomous.worker_profiles. Async — defaults to "Auto" until the
+  // daemon's config lands.
+  populateSessionWorkerProfileDropdown();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -14143,6 +16116,25 @@ function populateSessionProjectClusterDropdowns() {
 }
 window.populateSessionProjectClusterDropdowns = populateSessionProjectClusterDropdowns;
 
+// Worker profile dropdown for the New Session form: lists the built-in
+// profile names (minimal, digest, full, datawatch-tools) and the user
+// profiles from autonomous.worker_profiles, with a leading blank entry
+// (the "Auto" choice). Reads the same config the Settings group writes, so
+// any name the daemon would accept is an option and nothing else.
+function populateSessionWorkerProfileDropdown() {
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const sel = document.getElementById('sessWorkerProfile');
+      if (!sel) return;
+      const autoLabel = t('new_session_worker_profile_auto') || 'Auto';
+      const names = workerProfileNames(cfg, true);
+      sel.innerHTML = names.map(n => `<option value="${escHtml(n)}">${n === '' ? escHtml(autoLabel) : escHtml(n)}</option>`).join('');
+    })
+    .catch(() => {}); // keep the Auto-only default if the config is unreachable
+}
+window.populateSessionWorkerProfileDropdown = populateSessionWorkerProfileDropdown;
+
 // Show/hide helper toggled by the unified Profile dropdown's
 // onchange. Mirrors _prdNewProfileChanged but operates on the
 // New Session modal's element ids.
@@ -14156,7 +16148,10 @@ function _sessProfileChanged() {
   if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
   if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
   if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
-  // A project-profile spawn goes through /api/agents, not the session start, so the row is hidden there.
+  // A project-profile spawn goes through /api/agents, not the session start,
+  // so its rows are hidden there (the worker-profile row too).
+  const workerProfileRow = document.getElementById('sessWorkerProfileRow');
+  if (workerProfileRow) workerProfileRow.style.display = usingProfile ? 'none' : '';
   const tagsRow = document.getElementById('sessTagsRow');
   if (tagsRow) tagsRow.style.display = usingProfile ? 'none' : '';
 }
@@ -14458,6 +16453,11 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
+    // Worker profile for this launch: a built-in or user profile name
+    // (claude-code only; the daemon resolves it against workerprofile
+    // rules). Empty = the daemon's own resolution (daemon-wide profile,
+    // then the session-kind default) applies.
+    worker_profile_name: document.getElementById('sessWorkerProfile')?.value || '',
     // v5.27.5 — claude-code per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
@@ -14742,6 +16742,10 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   merge_blocked_card_title: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  // The held-Automata group (Inbox) and the hold dialog's help line both
+  // open the "Held Automata" section of the hold how-to (anchor
+  // held-automata), through the group's own key.
+  held_automata_inbox_title: 'howto/automaton-hold.md#held-automata',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
@@ -16020,6 +18024,20 @@ function renderSettingsView() {
                serving this page. Informational only — never the update banner,
                never touches _onDaemonVersionChange. -->
           <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Loaded-version notice + Reset browser state (2026-11-09). The
+               notice shows the release this page's assets were loaded with
+               (window.__DW_VERSION__, baked into the HTML at request time)
+               next to the daemon version (state._daemonVersion); a
+               mismatch gets its own skew wording. The button clears only
+               what this app owns in this browser — cs_/dw_ localStorage
+               keys, the sessionStorage reload markers, every Cache Storage
+               cache, every service worker — and reloads once. It is never
+               a server action: no session is ever touched. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+            <div id="aboutLoadedVersionNotice" style="font-size:12px;color:var(--text2);">—</div>
+            <button class="btn-secondary" style="font-size:12px;" onclick="confirmResetBrowserState()">${escHtml(t('settings_reset_browser_state') || 'Reset browser state')}</button>
+            <div style="font-size:11px;color:var(--text2);">${escHtml(t('settings_reset_browser_state_hint') || "Clears this app's saved settings and cached files in this browser, then reloads. It never touches running sessions.")}</div>
+          </div>
           <!-- Which server every About sub-section (this Version card, the
                API block, the Config Viewer block) above/below actually
                describes. The single shared "Showing:" label for the whole
@@ -16231,8 +18249,13 @@ function renderSettingsView() {
                   Federated peer (MCP SSE auth + CBAC)
                 </label>
                 <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev server on a trusted network'}">
-                  <input type="checkbox" id="serverFormTLSSkipVerify" />
+                  <input type="checkbox" id="serverFormTLSSkipVerify" onchange="tlsPinPairSync('serverForm')" />
                   ${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}
+                </label>
+                <div id="serverFormTLSWarn" style="display:none;font-size:11px;color:var(--warning,#e0a030);margin-top:2px;">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this server — use only on a trusted network.')}</div>
+                <label style="font-size:12px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this server: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'} (optional)<br>
+                  <input type="text" id="serverFormTLSCertFingerprint" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('serverForm')" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;margin-top:2px;" />
                 </label>
                 <div id="serverFormCapsWrap" style="display:none;">
                   <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px;">${t('federation_cap_group_label')||'Capabilities'}</label>
@@ -16270,7 +18293,12 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">Name</label><input id="fedPeerFormName" class="form-input" style="width:100%;font-size:11px;" placeholder="peer-alpha" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
-                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" onchange="tlsPinPairSync('fedPeerForm')" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div id="fedPeerFormTLSWarn" style="grid-column:1/-1;display:none;font-size:11px;color:var(--warning,#e0a030);">${escHtml(t('server_tls_skip_verify_warning')||'TLS certificate verification is disabled for this peer — use only on a trusted network.')}</div>
+                <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);" title="${escHtml(t('server_tls_cert_fingerprint_tip')||'Pin the exact certificate of this peer: connections are only accepted against this SHA-256 fingerprint. Cannot be combined with skipping certificate verification.')}">
+                  ${t('server_tls_cert_fingerprint_label')||'Certificate fingerprint (SHA-256 pin)'}<br>
+                  <input id="fedPeerFormTLSCertFingerprint" class="form-input" placeholder="64 hex characters (AB:CD:… accepted)" oninput="tlsPinPairSync('fedPeerForm')" style="width:100%;font-size:11px;margin-top:2px;" />
+                </label></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
                 <!-- Observer pull protocol: per-peer opt-in plus the two
                      numeric overrides. A blank number field stays 0 on the
@@ -16566,6 +18594,9 @@ function renderSettingsView() {
   if (aboutCanvas && window.DWSplashArt) {
     window._aboutSplashStopFn = window.DWSplashArt.startScene(aboutCanvas, { compact: true });
   }
+  // Loaded-version notice — the card just re-rendered, paint it now (both
+  // versions are usually known by the time the About tab opens).
+  if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice();
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -16662,7 +18693,7 @@ window.openComputeKindMigrationModal = function(nodes, supported) {
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
       <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
       <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
-      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escJsAttr(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
     </tr>
   `).join('');
   overlay.innerHTML = `
@@ -17322,27 +19353,27 @@ function buildComputeNodeForm(n) {
         <input id="fe_hw_arch" class="form-input" placeholder="Arch" value="${escHtml(hw.arch||'')}" />
         <input id="fe_hw_gpu_vendor" class="form-input" placeholder="GPU vendor" value="${escHtml(hw.gpu_vendor||'')}" />
         <input id="fe_hw_gpu_model" class="form-input" placeholder="GPU model" value="${escHtml(hw.gpu_model||'')}" />
-        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${hw.gpu_count||''}" />
-        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${hw.memory_gb||''}" />
-        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${hw.cpu_cores||''}" />
+        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${escHtml(hw.gpu_count||'')}" />
+        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${escHtml(hw.memory_gb||'')}" />
+        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${escHtml(hw.cpu_cores||'')}" />
       </div>
     </div>
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
-    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
+    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${escHtml(cap.max_concurrent_models||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_sessions')||'Max concurrent sessions (0 = unlimited)')}</label>
-    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
+    <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${escHtml(n.max_concurrent_sessions||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
-    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
+    <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${escHtml(n.session_slots||'')}" />
     <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
          as typed, so the three fields round-trip through the collector. -->
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
-    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${n.verifier_slots == null ? '' : n.verifier_slots}" />
+    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${escHtml(n.verifier_slots == null ? '' : n.verifier_slots)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_min_free_mem_mb')||'Verifier min free memory, MB (empty = default, 0 = off)')}</label>
-    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb}" />
+    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_context_mb')||'Verifier context, MB (0 = no suggestion)')}</label>
-    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${n.verifier_context_mb == null ? '' : n.verifier_context_mb}" />
+    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${escHtml(n.verifier_context_mb == null ? '' : n.verifier_context_mb)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
-    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
+    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${escHtml(n.scheduling_priority||50)}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_compute_tags', (n.tags||[]).join(', '), { freeform: true, placeholder: 'gpu, high-memory…' })}
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
@@ -17352,7 +19383,11 @@ function buildComputeNodeForm(n) {
     <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
       <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
         <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+        <!-- CodeQL js/xss-through-dom (alert 850): n.name is operator
+             textarea input embedded as a single-quoted JS literal inside the
+             inline handler; escHtml alone is defeated by the HTML attribute
+             decode step, so use escJsAttr (BL394 §3h). -->
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
       </div>
       <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
     </div>
@@ -17703,13 +19738,15 @@ function buildLLMForm(l) {
     <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="${l.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', l.api_key_ref_prefix ? ' — '+l.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" />
     ${l.api_key_ref_present ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref_hint')||'Leave blank to keep the current key. Type a new value to replace it.')}</div>` : ''}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
-    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
+    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${escHtml(l.timeout_seconds||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
+    <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${escHtml(l.max_inflight||'')}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;"><input type="checkbox" id="fe_llm_fallthrough_target" ${l.fallthrough_target ? 'checked' : ''} /> ${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</label>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
     ${buildLLMBudgetGroup(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_roles')||'Workload roles (comma-separated; empty = none)')}</label>
     <input id="fe_llm_roles" class="form-input" placeholder="planning, review" value="${escHtml((l.roles||[]).join(', '))}" />
@@ -17735,6 +19772,7 @@ function collectLLMForm(originalRecord) {
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
+  out.fallthrough_target = !!(document.getElementById('fe_llm_fallthrough_target')||{}).checked;
   out.budget = collectLLMBudget();
   // Roles: always sent, so clearing the box clears the stored list (an
   // omitted field would keep it).
@@ -17942,6 +19980,13 @@ window._renderLLMEditPanel = function(existing) {
           <label class="toggle-switch"><input type="checkbox" id="llmAutoAddModels" ${existing.auto_add_models ? 'checked' : ''} /><span class="toggle-slider"></span></label>
         </div>
       </div>
+      <div class="wizard-field" id="llmFallthroughTargetSect">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12px;color:var(--text);">${escHtml(t('llm_field_fallthrough_target')||'Allowed fall-through target')}</span>
+          <label class="toggle-switch"><input type="checkbox" id="llmEditFallthroughTarget" ${existing.fallthrough_target ? 'checked' : ''} /><span class="toggle-slider"></span></label>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_fallthrough_target_hint')||'When capacity fall-through is on and a worker\'s requested pool is full, the daemon may run it on this LLM instead.')}</div>
+      </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
         <input id="llmEditAPIKey" class="form-input" placeholder="${existing.api_key_ref_present ? escHtml((t('llm_field_api_key_ref_unchanged')||'(unchanged — key set{prefix})').replace('{prefix}', existing.api_key_ref_prefix ? ' — '+existing.api_key_ref_prefix+'…' : '')) : '$\{secret:anthropic-key\}'}" value="${escHtml(existing.api_key_ref||'')}" />
@@ -17949,11 +19994,11 @@ window._renderLLMEditPanel = function(existing) {
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_timeout')||'Timeout (seconds, 0 = adapter default)')}</label>
-        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${existing.timeout_seconds||''}" placeholder="0" />
+        <input id="llmEditTimeout" type="number" min="0" class="form-input" value="${escHtml(existing.timeout_seconds||'')}" placeholder="0" />
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
-        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
+        <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${escHtml(existing.max_inflight||'')}" placeholder="0" />
         <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
       </div>
       <div class="wizard-field">
@@ -17980,11 +20025,11 @@ window._renderLLMEditPanel = function(existing) {
         <div style="display:flex;gap:6px;">
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_cols')||'Console width (cols)')}</label>
-            <input id="llmEditCols" type="number" min="0" class="form-input" value="${existing.console_cols||''}" placeholder="120" />
+            <input id="llmEditCols" type="number" min="0" class="form-input" value="${escHtml(existing.console_cols||'')}" placeholder="120" />
           </div>
           <div class="wizard-field" style="flex:1;">
             <label class="wizard-label">${escHtml(t('llm_field_console_rows')||'Console height (rows)')}</label>
-            <input id="llmEditRows" type="number" min="0" class="form-input" value="${existing.console_rows||''}" placeholder="40" />
+            <input id="llmEditRows" type="number" min="0" class="form-input" value="${escHtml(existing.console_rows||'')}" placeholder="40" />
           </div>
         </div>
         <div style="display:flex;gap:6px;">
@@ -18242,6 +20287,7 @@ window._llmSaveDraft = function() {
   if (!isEdit && !name) { showError('LLM name required'); return; }
   const models = window._llmCollectModels ? window._llmCollectModels() : [];
   const autoAddModels = !!(document.getElementById('llmAutoAddModels')||{}).checked;
+  const fallthroughTarget = !!(document.getElementById('llmEditFallthroughTarget')||{}).checked;
   const firstModel = models.length > 0 ? models[0].model : '';
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
@@ -18266,7 +20312,7 @@ window._llmSaveDraft = function() {
   const method = isEdit ? 'PUT' : 'POST';
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
-    auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
+    auto_add_models: autoAddModels, fallthrough_target: fallthroughTarget, compute_nodes: computeNodes, api_key_ref: apiKey,
     timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
@@ -18470,12 +20516,12 @@ window.openComputeAddPanel = function(existingNode, prefill) {
             <input id="computeNewTLSSkip" type="checkbox" onchange="computeTLSModeChanged()" ${initTLSSkip ? 'checked' : ''} ${!initTLSSkip && (initTLSCA || initTLSFP) ? 'disabled' : ''} />
             ${escHtml(t('compute_tls_insecure_skip_verify')||'Skip certificate verification (not recommended)')}${defsLink('compute_tls_insecure_skip_verify')}
           </label>
-          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for this node. Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
+          <div id="computeNewTLSSkipWarn" style="display:${initTLSSkip ? '' : 'none'};font-size:11px;font-weight:600;color:var(--error);">⚠ ${escHtml(t('compute_tls_insecure_skip_verify_warn')||'Certificate verification will be OFF for the probes of this node (model pulls still verify it). Anyone on the network path can impersonate it and read or alter what is sent, including API keys.')}</div>
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
             <input id="computeNewVerifyTLS" type="checkbox" ${initVerifyTLS ? 'checked' : ''} />
-            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls')}${defsLink('compute_verify_tls')}
+            ${escHtml(t('compute_verify_tls')||'Verify TLS for model pulls (always on; kept for compatibility)')}${defsLink('compute_verify_tls')}
           </label>
-          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'When on, model pulls to this node verify its certificate against the system roots. Off by default because registered nodes are usually on a private network with self-signed certificates.')}</div>
+          <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_verify_tls_help')||'Kept for configuration compatibility. Model pulls to this node always verify its certificate against the system roots, plus any tls_ca_file or tls_cert_fingerprint set on the node.')}</div>
         </div>
       </div>
       <div class="wizard-field" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px;">
@@ -18502,7 +20548,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_port')||'Port')}</label>
-                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${initDN.port||''}" />
+                <input id="computeDockerPort" type="number" min="1" max="65535" class="form-input" placeholder="11434" value="${escHtml(initDN.port||'')}" />
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_docker_container_name')||'Container name (optional)')}</label>
@@ -18545,7 +20591,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
               </div>
               <div>
                 <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_proxy_timeout')||'Timeout (seconds)')}</label>
-                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${initDP.timeout_seconds||''}" />
+                <input id="computeProxyTimeout" type="number" min="1" class="form-input" placeholder="30" value="${escHtml(initDP.timeout_seconds||'')}" />
               </div>
             </div>
           </div>
@@ -18563,16 +20609,16 @@ window.openComputeAddPanel = function(existingNode, prefill) {
           <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" value="${escHtml(hw.arch||'')}" />
           <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" value="${escHtml(hw.gpu_vendor||'')}" />
           <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" value="${escHtml(hw.gpu_model||'')}" />
-          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${hw.gpu_count||''}" oninput="computeRecomputeMax()" />
+          <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" value="${escHtml(hw.gpu_count||'')}" oninput="computeRecomputeMax()" />
           <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" value="${cap.gpu_mem_gb && hw.gpu_count ? Math.round(cap.gpu_mem_gb / Math.max(1, hw.gpu_count)) : ''}" oninput="computeRecomputeMax()" />
-          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${hw.memory_gb||''}" />
-          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${hw.cpu_cores||''}" />
+          <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" value="${escHtml(hw.memory_gb||'')}" />
+          <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" value="${escHtml(hw.cpu_cores||'')}" />
         </div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
         <div style="display:flex;gap:6px;align-items:center;">
-          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${cap.max_concurrent_models||''}" />
+          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" value="${escHtml(cap.max_concurrent_models||'')}" />
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
       </div>
@@ -18589,7 +20635,7 @@ window.openComputeAddPanel = function(existingNode, prefill) {
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
           <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
-          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escJsAttr(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
         </div>
         <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
@@ -19567,6 +21613,9 @@ function loadVersionInfo() {
           noteEl.innerHTML = '';
         }
       }
+      // Loaded-version notice — the daemon version may just have been
+      // confirmed (or corrected for a peer); repaint if the card is up.
+      try { if (typeof renderAboutLoadedVersionNotice === 'function') renderAboutLoadedVersionNotice(); } catch (_) {}
     })
     .catch(e => {
       loadAboutShowingServer();
@@ -19915,17 +21964,26 @@ function _prdPanelQuery(cursor, limit) {
   if (f.status) q.push('status=' + encodeURIComponent(f.status));
   return '/api/autonomous/prds?' + q.join('&');
 }
+// The first page is cached (memory and storage) with the ETag the server
+// returned and refetched with If-None-Match; a 304 keeps the held page. A
+// refresh that asks for more than the first page is read unconditionally and
+// never replaces the cached first page. The list is always the summary form;
+// the full-records form is never requested.
 function _prdPanelFetch(url, o) {
   const key = _prdPanelFilters().status;
   if (key !== _prdPanelState.filterKey) { _prdPanelState.filterKey = key; _prdPanelState.loaded = 0; }
   const limit = Math.min(Math.max(_prdPanelState.loaded, PRD_PANEL_PAGE), PRD_PANEL_RELOAD_MAX);
+  const firstPage = limit === PRD_PANEL_PAGE;
+  const ckey = firstPage ? _cfKey('automata_first', key || 'all') : '';
   return Promise.all([
-    apiFetch(_prdPanelQuery('', limit), o),
+    _cfFetch(_prdPanelQuery('', limit), ckey, o),
     apiFetch('/api/llms', o).catch(() => null),
-  ]).then(([data, llms]) => {
+  ]).then(([res, llms]) => {
+    const data = res.data;
     if (llms) state._prdBackends = (llms.llms || []).filter(l => !l.disabled);
     const prds = (data && data.prds) || [];
     _prdPanelState.loaded = prds.length;
+    if (ckey && !res.unchanged) _cfPut(ckey, res.tag, data);
     return { prds, total: (data && data.total) || prds.length, next: (data && data.next_cursor) || '' };
   });
 }
@@ -19957,12 +22015,48 @@ function _prdPanelBodyHtml(prd, storiesHtml) {
     `<button type="button" class="btn-secondary list-state-retry" onclick="${escHtml('prdPanelLoadDetail(' + JSON.stringify(id) + ',true)')}">${escHtml(t('retry'))}</button></div>`;
   if (e && e.prd) {
     const kids = e.children ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children</summary><div id="prd-children-${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">${e.children}</div></details>` : `<div id="prd-children-${escHtml(id)}"></div>`;
-    return (e.error ? failed(e.error) : '') + storiesHtml() + kids;
+    return (e.error ? failed(e.error) : '') + storiesHtml() + _prdPanelTasksHtml(id) + kids;
   }
   if (e && e.error) return failed(e.error);
   if (e && e.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
   return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load') || 'Open to load stories and tasks')}</span>`;
 }
+// ── Automaton detail: paged tasks ───────────────────────────────────────────
+// The opened Automaton lists its tasks from GET /api/autonomous/prds/{id}/tasks,
+// one page at a time with a Load more control; a failed page shows its own error
+// with Retry and never touches the rest of the row.
+const PRD_TASKS_PAGE = 50;
+function _prdPanelTasksHtml(id) {
+  const e = _prdPanelState.detail[id];
+  const tk = e && e.tasks;
+  if (!tk) return '';
+  let h = `<div class="automaton-tasks" data-automaton-tasks="${escHtml(id)}"><div style="font-weight:600;">${escHtml(t('automaton_tasks_heading'))}</div>`;
+  h += tk.rows.map(r => `<div class="automaton-tasks-row"><code>${escHtml(r.id)}</code><span>${escHtml(r.status || '')}</span><span>${escHtml(r.title || '')}</span></div>`).join('');
+  if (tk.loading) h += _pcardSkeleton(t('automaton_tasks_loading'));
+  if (tk.error) h += _pcardError('prdtasks:' + id, tk.error, t('automaton_tasks_failed'));
+  if (tk.next && !tk.loading) h += `<button type="button" class="btn-secondary automaton-tasks-more" onclick="${escHtml('prdPanelTasksMore(' + JSON.stringify(id) + ')')}">${escHtml(t('automaton_tasks_load_more', [tk.rows.length, tk.total]))}</button>`;
+  return h + '</div>';
+}
+function _prdPanelLoadTasks(id, more) {
+  const e = _prdPanelState.detail[id];
+  if (!e) return Promise.resolve();
+  const tk = e.tasks = more && e.tasks ? e.tasks : { rows: [], next: '', total: 0, loading: false, error: '' };
+  if (tk.loading) return Promise.resolve();
+  tk.loading = true; tk.error = '';
+  _prdPanelRepaint();
+  let url = '/api/autonomous/prds/' + encodeURIComponent(id) + '/tasks?limit=' + PRD_TASKS_PAGE;
+  if (more && tk.next) url += '&cursor=' + encodeURIComponent(tk.next);
+  return apiFetch(url).then(r => {
+    const rows = (r && Array.isArray(r.tasks)) ? r.tasks : [];
+    tk.rows = (more ? tk.rows : []).concat(rows);
+    tk.next = (r && r.next_cursor) || '';
+    tk.total = (r && r.total) || tk.rows.length;
+  }).catch(err => {
+    tk.error = (err && err.message) || String(err);
+  }).then(() => { tk.loading = false; _prdPanelRepaint(); });
+}
+window.prdPanelTasksMore = function(id) { return _prdPanelLoadTasks(id, true); };
+window.prdPanelTasksRetry = function(id) { const tk = (_prdPanelState.detail[id] || {}).tasks; return _prdPanelLoadTasks(id, !!(tk && tk.rows.length)); };
 function _prdPanelRepaint() {
   const ctl = window._listLoaders && window._listLoaders.prdpanel;
   if (ctl) ctl.paint();
@@ -19986,6 +22080,7 @@ function _prdPanelLoadDetail(id, force) {
     e.error = (err && err.message) || String(err);
   }).then(() => {
     e.loading = false;
+    if (!e.error) _prdPanelLoadTasks(id, false);
     _prdPanelRepaint();
     if (e.error || !st.open.has(id) || typeof window.loadPRDChildren !== 'function') return e.prd;
     return Promise.resolve(window.loadPRDChildren(id)).then(html => { e.children = html || ''; return e.prd; });
@@ -20022,11 +22117,62 @@ function _prdPanelLoadMoreHtml(d) {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="prdPanelLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="prdPanelLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// Each Automaton row is a card of its own (.pc-card): its state is refreshing
+// while the list is cache-rendered or being refetched, and its body is replaced
+// by a refresh only when that row's markup changed.
+function _prdPanelRowState() {
+  const ctl = window._listLoaders && window._listLoaders.prdpanel;
+  const st = ctl && ctl.state;
+  return st && (st.loading || st.fromCache) ? 'refreshing' : 'ready';
+}
+function _prdPanelRowInner(p) {
+  return renderPRDRow(_prdPanelMerged(p), { panel: true });
+}
+function _prdPanelRowCard(p, status, inner) {
+  const eid = escHtml(p.id);
+  return `<div class="pc-card prd-pc" id="prdRow_${eid}" data-card="${eid}" data-state="${status}"><span class="pc-refreshing" id="prdRow_${eid}_mark">${escHtml(t('projects_card_refreshing'))}</span><div class="pc-body" id="prdRow_${eid}_body">${inner}</div></div>`;
+}
 function _prdPanelRender(d) {
   const rows = _prdPanelVisible(d);
   const more = _prdPanelLoadMoreHtml(d);
+  const ps = _prdPanelState;
+  ps.paintedIds = rows.map(p => p.id);
+  ps.moreHtml = more;
+  ps.rowHtml = {};
   if (rows.length === 0) return `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>` + more;
-  return rows.map(p => renderPRDRow(_prdPanelMerged(p), { panel: true })).join('') + more;
+  const status = _prdPanelRowState();
+  return rows.map(p => {
+    const inner = _prdPanelRowInner(p);
+    ps.rowHtml[p.id] = inner;
+    return _prdPanelRowCard(p, status, inner);
+  }).join('') + more;
+}
+// _prdPanelPatch is the list loader's repaint hook: with the same rows in the
+// same order it updates the meta badges and each row's state and replaces the
+// body of only the rows whose markup changed. It returns false (full repaint)
+// when the row set, the empty state or Load more changed.
+function _prdPanelPatch(el, from, to, ctl) {
+  const ps = _prdPanelState;
+  const meta = document.getElementById('prdPanelMeta');
+  if (!meta || !ps.paintedIds) return false;
+  const rows = _prdPanelVisible(to);
+  const ids = rows.map(p => p.id);
+  if (ids.join('\u0001') !== ps.paintedIds.join('\u0001')) return false;
+  if (_prdPanelLoadMoreHtml(to) !== ps.moreHtml) return false;
+  const status = _prdPanelRowState();
+  rows.forEach(p => {
+    const w = document.getElementById('prdRow_' + p.id);
+    if (w) w.setAttribute('data-state', status);
+    const inner = _prdPanelRowInner(p);
+    if (inner === ps.rowHtml[p.id]) return;
+    const body = document.getElementById('prdRow_' + p.id + '_body');
+    if (!body) return;
+    body.innerHTML = inner;
+    ps.rowHtml[p.id] = inner;
+    ps.rowsPainted = (ps.rowsPainted || 0) + 1;
+  });
+  meta.innerHTML = ctl.metaHtml();
+  return true;
 }
 // Rows that are open need their detail; a moved revision refetches it.
 function _prdPanelAfterPaint(el, keep, d) {
@@ -20039,6 +22185,8 @@ function _prdPanelLoader() {
   if (cur) return cur;
   return listLoader({
     key: 'prdpanel', el: 'prdPanel', pollMs: PRD_PANEL_POLL_MS,
+    metaId: 'prdPanelMeta',
+    patch: _prdPanelPatch,
     fetch: _prdPanelFetch,
     active: _prdPanelActive,
     render: _prdPanelRender,
@@ -24132,6 +26280,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
     { key: 'usage.burn_guard.retry_limit_claude', label: 'Burn guard Claude retry limit', labelKey: 'settings_usage_burn_guard_retry_limit_claude', type: 'number', placeholder: '2', min: 0, max: 20, step: 1, default: '2' },
+    { key: 'usage.burn_guard.mode', label: 'Burn guard pace_line mode (off, shadow, on; unset defaults to shadow)', labelKey: 'settings_usage_burn_guard_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'usage.burn_guard.week_tolerance', label: 'Burn guard pace_line week tolerance (whole number, 0 to 10, default 2)', labelKey: 'settings_usage_burn_guard_week_tolerance', type: 'number', placeholder: '2', min: 0, max: 10, step: 1, default: '2' },
+    { key: 'usage.burn_guard.points_to_week_factor', label: 'Burn guard pace_line points-to-week factor (1 to 10, default 1.3)', labelKey: 'settings_usage_burn_guard_points_to_week_factor', type: 'number', placeholder: '1.3', min: 1, max: 10, step: 0.1, default: '1.3' },
+    { key: 'usage.burn_guard.window_percent_per_point', label: 'Burn guard pace_line window percent per point (1 to 25, default 4)', labelKey: 'settings_usage_burn_guard_window_pp', type: 'number', placeholder: '4', min: 1, max: 25, step: 0.5, default: '4' },
+    { key: 'usage.burn_guard.window_stop_percent', label: 'Burn guard pace_line window stop percent (50 to 95, default 85)', labelKey: 'settings_usage_burn_guard_window_stop', type: 'number', placeholder: '85', min: 50, max: 95, step: 1, default: '85' },
+    { key: 'usage.burn_guard.reading_freshness_minutes', label: 'Burn guard pace_line reading freshness (minutes, 1 to 1440, default 60)', labelKey: 'settings_usage_burn_guard_reading_freshness', type: 'number', placeholder: '60', min: 1, max: 1440, step: 1, default: '60' },
   ]},
   { id: 'classifier', section: 'Classifier', docs: 'howto/classification-verdicts.md', fields: [
     { key: 'classifier.timeout_seconds', label: "Classifier call timeout", labelKey: 'settings_classifier_timeout_seconds', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
@@ -24168,6 +26322,7 @@ const GENERAL_CONFIG_FIELDS = [
     // need a fresh measurement with this much free memory left. 0 or unset is the default.
     { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier min free memory (MB; unset = 1024, 0 = check off)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', placeholder: '1024' },
     { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom max age (hours; 0 or unset = 24)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', placeholder: '24' },
+    { key: 'autonomous.reaped_branch_backup_days', label: 'Reaped Automaton branch backup kept (days; 0 or unset = 30)', labelKey: 'settings_reaped_branch_backup_days', type: 'number', placeholder: '30' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
@@ -24255,10 +26410,18 @@ const GENERAL_CONFIG_FIELDS = [
     // turns the live loop detector compares ("Pi worker observability" in
     // docs/operations.md). 0 turns loop detection off (default 3).
     { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
+    // Daily pending-branch alert: once per calendar day, one alert naming the
+    // oldest pending Automaton branch when more than the threshold wait for
+    // cleanup (default on, threshold 3; 0 alerts on any pending branch).
+    { key: 'autonomous.unlanded_alert_enabled', label: 'Daily pending-branch alert', labelKey: 'settings_unlanded_alert_enabled', helpKey: 'settings_unlanded_alert_enabled_help', type: 'toggle', default: true },
+    { key: 'autonomous.unlanded_alert_threshold', label: 'Pending-branch alert threshold (default 3)', labelKey: 'settings_unlanded_alert_threshold', helpKey: 'settings_unlanded_alert_threshold_help', type: 'number', placeholder: '3' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', labelKey: 'settings_auto_fix_retries', helpKey: 'settings_auto_fix_retries_help', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+    // File extensions the security scan covers. Empty = the scanner's
+    // built-in defaults (.py, .pyw); non-empty = exactly those extensions.
+    { key: 'autonomous.security_scan_extensions', label: 'Security scan extensions (default .py, .pyw)', type: 'text', placeholder: '.py, .pyw', csv: true },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
     { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },
@@ -24410,6 +26573,12 @@ const GENERAL_CONFIG_FIELDS = [
     // and interactive session starts are never blocked.
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
+    // Review reserve: while a backed-off backend holds nothing else, keep a
+    // few of its live slots for review work (guardrail judging, verifying,
+    // planning) — workers never take a reserve slot. Slot count 0 = off
+    // (default 1); the reserve's rolling one-hour token budget 0 = no cap.
+    { key: 'autonomous.backoff_reserve_for_review', label: 'Usage back-off review reserve (review session slots kept per backed-off backend, 0 = off, default 1)', labelKey: 'settings_backoff_reserve_for_review', type: 'number', placeholder: '1', min: 0, step: 1, default: '1' },
+    { key: 'autonomous.backoff_reserve_tokens_per_hour', label: 'Usage back-off review reserve token cap (rolling one-hour tokens the reserve may use per backend, 0 = no cap)', labelKey: 'settings_backoff_reserve_tokens_per_hour', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     { key: 'autonomous.automation.triage_alert_minutes', label: 'Automation triage alert (minutes an Automation may sit waiting before a triage alert, 0 = off, default 30)', labelKey: 'settings_automation_triage_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     // Host load check — off does nothing, alert (default) raises one alert per sustained breach, reap also ends proven-orphan processes of ended sessions.
@@ -24421,6 +26590,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.merge_pending_include_terminal', label: 'Automaton merge-pending check covers terminal Automata (archived, needs_review, blocked and failed, beside completed; default on)', labelKey: 'settings_automation_merge_pending_include_terminal', type: 'toggle' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
@@ -24519,6 +26689,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.mode', label: 'Supervisor watch mode (off, shadow or on; default shadow)', labelKey: 'settings_supervisor_watch_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.supervisor_watch.alert_minutes', label: 'Supervisor watch alert (minutes a finding stays open before one alert, 0 = off, default 30)', labelKey: 'settings_supervisor_watch_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     { key: 'autonomous.automation.supervisor_watch.silent_minutes', label: 'Supervisor watch silence window (minutes an Automaton worktree may stay silent, default 60)', labelKey: 'settings_supervisor_watch_silent_minutes', type: 'number', placeholder: '60', min: 0, step: 1, default: '60' },
+    { key: 'autonomous.automation.supervisor_watch.stall_threshold_minutes', label: 'Supervisor watch stall threshold (minutes an Automaton may stall before the watch records it, 0 = no window, default 30)', labelKey: 'settings_supervisor_watch_stall_threshold_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.supervisor_watch.priority_floor', label: 'Supervisor watch priority floor (minimum Automaton priority the watch acts on, 0 = no floor, default 80)', labelKey: 'settings_supervisor_watch_priority_floor', type: 'number', placeholder: '80', min: 0, step: 1, default: '80' },
     { key: 'autonomous.automation.supervisor_watch.poll_seconds', label: 'Supervisor watch poll interval (seconds, min 60, default 60)', labelKey: 'settings_supervisor_watch_poll_seconds', type: 'number', placeholder: '60', min: 60, step: 1, default: '60' },
     { key: 'autonomous.automation.supervisor_watch.script_output_path', label: 'Supervisor watch script record path (repository-relative path of the supervisor script record file, empty = no comparison)', labelKey: 'settings_supervisor_watch_script_output_path', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
@@ -24733,6 +26905,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.progress.backlog_path', label: 'Progress backlog file (relative paths resolve against the base repository, default docs/plans/README.md)', labelKey: 'settings_progress_backlog_path', type: 'text', placeholder: 'docs/plans/README.md', default: 'docs/plans/README.md' },
     { key: 'autonomous.progress.since', label: 'Progress start date (YYYY-MM-DD, empty = first record\'s creation date)', labelKey: 'settings_progress_since', type: 'text', placeholder: 'YYYY-MM-DD', default: '' },
     { key: 'autonomous.progress.snapshot_retention_days', label: 'Progress snapshot retention (days kept, 0 = 90)', labelKey: 'settings_progress_snapshot_retention_days', type: 'number', placeholder: '90', min: 0, step: 1, default: '0' },
+    // Finished-Automaton archive.
+    { key: 'autonomous.archive.enabled', label: 'Archive finished Automata automatically (default on)', labelKey: 'settings_archive_enabled', helpKey: 'settings_archive_enabled_help', type: 'toggle' },
+    { key: 'autonomous.archive.retention_days', label: 'Archive retention (days old before a finished Automaton is archived, 0 = 30)', labelKey: 'settings_archive_retention_days', helpKey: 'settings_archive_retention_days_help', type: 'number', placeholder: '30', min: 0, step: 1, default: '0' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
     // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An
@@ -25740,11 +27915,13 @@ function loadGeneralConfig() {
             };
             const _wpdRoles = WORKER_PROFILE_ROLES.map(k => _wpdSelect('role', k)).join('');
             const _wpdKinds = WORKER_PROFILE_KINDS.map(k => _wpdSelect('kind', k)).join('');
+            const _wpdSessionKinds = WORKER_PROFILE_SESSION_KINDS.map(k => _wpdSelect('kind', k)).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
-              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+              <div class="wpd-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:4px;">
                 <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">role</div>${_wpdRoles}</div>
-                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">task kind</div>${_wpdKinds}</div>
+                <div style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;">session kind</div>${_wpdSessionKinds}</div>
               </div>
               ${_settingsHelpTextHTML(f)}
             </div>`;
@@ -27380,6 +29557,7 @@ window.saveTracingBackendsSetting = saveTracingBackendsSetting;
 const WORKER_PROFILE_BUILTINS = ['minimal', 'digest', 'datawatch-tools', 'full'];
 const WORKER_PROFILE_ROLES = ['planner', 'worker', 'verifier', 'judge'];
 const WORKER_PROFILE_KINDS = ['implementation', 'docs', 'note', 'final_gate'];
+const WORKER_PROFILE_SESSION_KINDS = ['supervisor', 'operator_interactive', 'scheduled_command', 'planner', 'one_shot', 'review'];
 
 // workerProfileNames lists the built-in profile names followed by the user
 // profiles from autonomous.worker_profiles, each name once. withBlank puts an
@@ -29117,6 +31295,32 @@ function loadServersList() {
   });
 }
 
+// ── TLS pin / skip-verify pair (server + federation peer forms) ──────────────
+// The daemon refuses a peer that carries both a tls_cert_fingerprint pin and
+// tls_skip_verify, so the two controls stay mutually exclusive on the client
+// too: typing a pin while the checkbox is on reverts the checkbox, and
+// checking the box while a pin is typed reverts the checkbox. The inline
+// warning line follows the checkbox on every change and on form load.
+function tlsPinPairSync(prefix) {
+  const skipEl = document.getElementById(prefix + 'TLSSkipVerify');
+  const pinEl = document.getElementById(prefix + 'TLSCertFingerprint');
+  const warnEl = document.getElementById(prefix + 'TLSWarn');
+  if (skipEl && pinEl && (pinEl.value || '').trim() && skipEl.checked) skipEl.checked = false;
+  if (warnEl) warnEl.style.display = (skipEl && skipEl.checked) ? '' : 'none';
+}
+window.tlsPinPairSync = tlsPinPairSync;
+
+// The REST layer appends a `warnings` array to server/peer create, update and
+// test responses when the stored TLS posture is insecure. Surface every entry
+// through the existing toast helper instead of dropping it silently.
+function _surfaceResponseWarnings(d) {
+  if (!d || !Array.isArray(d.warnings)) return;
+  for (const w of d.warnings) {
+    if (typeof w === 'string' && w.trim()) showToast(w.trim(), 'warning');
+  }
+}
+window._surfaceResponseWarnings = _surfaceResponseWarnings;
+
 function showServerForm(entry) {
   const wrap = document.getElementById('serverFormWrap');
   const nameEl = document.getElementById('serverFormName');
@@ -29135,6 +31339,11 @@ function showServerForm(entry) {
   tokenEl.value = '';
   if (enabledEl) enabledEl.checked = entry ? (entry.enabled!==false) : true;
   if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!(entry && entry.tls_skip_verify);
+  // Certificate pin: editing pre-fills the saved pin; adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
+  if (fpEl) fpEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('serverForm');
   if (editNameEl) editNameEl.value = entry ? (entry.name||'') : '';
   if (fedEl) {
     fedEl.checked = !!(entry && entry.federated);
@@ -29169,6 +31378,7 @@ function saveServer() {
   const errEl = document.getElementById('serverFormError');
   const fedEl = document.getElementById('serverFormFederated');
   const tlsSkipVerifyEl = document.getElementById('serverFormTLSSkipVerify');
+  const fpEl = document.getElementById('serverFormTLSCertFingerprint');
   if (!nameEl || !urlEl) return;
   const name = nameEl.value.trim();
   const url = urlEl.value.trim();
@@ -29178,6 +31388,10 @@ function saveServer() {
   }
   const editName = editNameEl ? editNameEl.value : '';
   const body = { name, url, enabled: enabledEl ? enabledEl.checked : true, tls_skip_verify: tlsSkipVerifyEl ? tlsSkipVerifyEl.checked : false };
+  if (fpEl) {
+    const fp = (fpEl.value || '').trim();
+    if (fp) body.tls_cert_fingerprint = fp;
+  }
   if (tokenEl && tokenEl.value.trim()) body.token = tokenEl.value.trim();
   if (fedEl) body.federated = fedEl.checked;
   if (fedEl && fedEl.checked) {
@@ -29188,7 +31402,7 @@ function saveServer() {
   const method = isEdit ? 'PUT' : 'POST';
   const path = isEdit ? `/api/servers/${encodeURIComponent(editName)}` : '/api/servers';
   apiFetch(path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    .then(() => { closeServerForm(); loadServersList(); })
+    .then(d => { _surfaceResponseWarnings(d); closeServerForm(); loadServersList(); })
     .catch(e => { if (errEl) errEl.textContent = e.message || 'Save failed.'; });
 }
 
@@ -29203,6 +31417,7 @@ function testServerEntry(name, btnEl) {
   if (btnEl) { btnEl.disabled = true; btnEl.textContent = '…'; }
   apiFetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' })
     .then(d => {
+      _surfaceResponseWarnings(d);
       const msg = d.ok ? `${d.latency_ms}ms v${d.version||'?'}` : `fail: ${d.error||'err'}`;
       showToast(`${name}: ${msg}`, d.ok ? 'success' : 'error');
     })
@@ -29310,23 +31525,29 @@ function _serverChoiceSettleBoot() {
   }
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (name) => {
+    let timeoutId = null;
+    // finish(name, saveAll) commits the choice. The fallback save only runs
+    // through this guard — once a validated restore has settled, the pending
+    // settle timeout must not be able to overwrite the saved value (or a
+    // choice the user made in the meantime) with 'all'.
+    const finish = (name, saveAll) => {
       if (settled) return;
       settled = true;
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      if (saveAll) _serverChoiceSave('all'); // stale or unvalidatable: persist the fallback
       state.activeServer = name;
       resolve(name);
     };
     _onServerListReady(() => {
       if (_pickerServers().some(s => s.name === choice)) {
-        finish(choice); // validated: the saved peer is still listed and enabled
+        finish(choice, false); // validated: the saved peer is still listed and enabled
       } else {
-        _serverChoiceSave('all'); // stale: peer removed or disabled
-        finish('all');
+        finish('all', true); // stale: peer removed or disabled
       }
     });
     // The list never arrived (the local daemon's /api/servers is down or
     // slow): do not hold boot open — an unvalidatable choice is All.
-    setTimeout(() => { _serverChoiceSave('all'); finish('all'); }, _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
+    timeoutId = setTimeout(() => finish('all', true), _SERVER_CHOICE_SETTLE_TIMEOUT_MS);
   });
 }
 
@@ -29675,6 +31896,7 @@ function saveToken() {
   const token = input.value.trim();
   state.token = token;
   localStorage.setItem('cs_token', token);
+  _cfDrop();
   showToast('Token saved. Reconnecting…', 'success', 2000);
   disconnect();
   setTimeout(connect, 500);
@@ -29704,6 +31926,7 @@ window.splashSaveToken = function() {
   if (!tok) return;
   state.token = tok;
   localStorage.setItem('cs_token', tok);
+  _cfDrop();
   if (window._splashStopFn) window._splashStopFn();
   const splash = document.getElementById('splash');
   if (splash) {
@@ -30285,7 +32508,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
     state._filtersCollapsed = !state._filtersCollapsed;
-    localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
+    _storedWrite('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
     if (state.activeView === 'sessions') renderSessionsView();
   });
 
@@ -31387,12 +33610,72 @@ let _swDisabledInfoShown = false;
 // an update and reload the page.
 let _swControllerChangeAttached = false;
 
+// ── Versioned SW registration + once-only upgrade reload ─────────────
+// The worker script's bytes are identical every release, so registering it
+// as bare /sw.js can mean the browser never installs a fresh copy. The page
+// therefore registers /sw.js?v=<daemon version>: each release is a distinct
+// script URL for the browser (and sw.js derives its cache name from the
+// same query string), so an upgrade is always visible. The version is
+// state._daemonVersion (recorded by _daemonVersionNoteFrame); if it has not
+// been recorded yet when registerServiceWorker runs, register bare and adopt
+// the versioned URL later (see _swAdoptDaemonVersion). Pure helper:
+function _swScriptUrl(version) {
+  if (version && typeof version === 'string') {
+    const v = version.trim();
+    if (v) return '/sw.js?v=' + encodeURIComponent(v);
+  }
+  return '/sw.js';
+}
+
+// Once-only auto-reload slot. sessionStorage survives a reload (it is
+// cleared only when the tab closes), so a tab can auto-reload for a SW
+// upgrade at most once: whatever controllerchange events fire afterwards
+// (claim re-fires, re-register, etc.) find the marker and do not reload —
+// a reload loop is impossible by construction. If the marker cannot be
+// read/written (storage blocked or unavailable), refuse the slot: an
+// unrecorded reload would be repeated forever.
+const SW_AUTO_RELOAD_MARK_KEY = 'cs_sw_autoreload_done';
+function _swTakeAutoReloadSlot(store) {
+  try {
+    if (!store) return false;
+    if (store.getItem(SW_AUTO_RELOAD_MARK_KEY) === '1') return false;
+    store.setItem(SW_AUTO_RELOAD_MARK_KEY, '1');
+    return true;
+  } catch (_) { return false; }
+}
+
+// registerServiceWorker may run before state._daemonVersion is known (it
+// fires on DOMContentLoaded; the version arrives from /api/health or the
+// first 'sessions' frame). When the local version is first recorded after a
+// bare registration, re-register with the versioned script URL so this tab's
+// worker is the current release. Re-registering is per-scope idempotent:
+// same URL is a no-op; a new URL is an ordinary SW update.
+function _swAdoptDaemonVersion(version) {
+  try {
+    if (!version) return;
+    const url = _swScriptUrl(version);
+    if (window._swRegUrl === url) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register(url).then(reg => {
+      if (!reg) return;
+      window._swReg = reg;
+      window._swRegUrl = url;
+    }).catch(() => {});
+  } catch (_) { /* SW is best-effort; never break the page */ }
+}
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
+    // The versioned script URL keeps the browser's "has the worker file
+    // changed" check honest across releases (see _swScriptUrl above); bare
+    // /sw.js only when the release has not been recorded yet —
+    // _swAdoptDaemonVersion re-registers once it has.
+    const scriptUrl = _swScriptUrl(state._daemonVersion);
+    navigator.serviceWorker.register(scriptUrl).then(reg => {
       console.log('SW registered:', reg.scope);
       window._swReg = reg;
+      window._swRegUrl = scriptUrl;
       // GATE alpha.36 (operator 2026-05-10): force an SW update check
       // on load AND every 60s. Without this the browser may sit on a
       // stale SW until next cold-start.
@@ -31452,7 +33735,11 @@ function registerServiceWorker() {
           console.log('SW controller changed — fresh assets available');
           if (_canAutoReload(_autoReloadCtx())) {
             // Real build change: a fresh SW took control of this page and
-            // the user is idle — take the page over now.
+            // the user is idle — take the page over now. Once-only: the
+            // sessionStorage slot (see _swTakeAutoReloadSlot) survives the
+            // reload, so a controllerchange re-firing on the freshly loaded
+            // page can never reload a second time.
+            if (!_swTakeAutoReloadSlot(typeof sessionStorage !== 'undefined' ? sessionStorage : null)) return;
             _reloadGuard = true;
             window.location.reload();
           } else {
@@ -31464,27 +33751,209 @@ function registerServiceWorker() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Settings → About — loaded-version notice + Reset browser state (2026-11-09)
+//
+// The notice compares two releases: the one this page's assets were loaded
+// with (window.__DW_VERSION__, stamped into the HTML at request time — see
+// index.html) and the daemon version already tracked for the update banner
+// (state._daemonVersion, see _daemonVersionNoteFrame). Same release → one
+// quiet line. Different → skew wording (informational, like the existing
+// federated-peer skew note). Unknown halves read "not recorded yet".
+function _aboutLoadedPageVersion() {
+  try {
+    const v = (typeof window !== 'undefined' && window.__DW_VERSION__) ? String(window.__DW_VERSION__).trim() : '';
+    if (!v || v.indexOf('%') !== -1) return ''; // unbaked placeholder — treat as unknown
+    return v;
+  } catch (_) { return ''; }
+}
+window._aboutLoadedPageVersion = _aboutLoadedPageVersion;
+
+function renderAboutLoadedVersionNotice() {
+  let el = null;
+  try { el = (typeof document !== 'undefined') ? document.getElementById('aboutLoadedVersionNotice') : null; } catch (_) { return; }
+  if (!el) return; // About tab not rendered — nothing to paint
+  const pageVer = _aboutLoadedPageVersion();
+  const daemonVer = (typeof state !== 'undefined' && state && state._daemonVersion) ? String(state._daemonVersion).trim() : '';
+  if (pageVer && daemonVer && pageVer !== daemonVer) {
+    el.textContent = t('about_loaded_version_skew', [pageVer, daemonVer])
+      || `This page was loaded with v${pageVer}, a different release than v${daemonVer}, the one the daemon reports. Reset browser state clears this browser's copies of the app and reloads it fresh.`;
+  } else if (pageVer && daemonVer) {
+    el.textContent = t('about_loaded_version_match', [pageVer, daemonVer])
+      || `Loaded with v${pageVer} — the daemon reports the same release, v${daemonVer}.`;
+  } else if (pageVer) {
+    el.textContent = t('about_loaded_version_daemon_unknown', [pageVer])
+      || `Loaded with v${pageVer}. The daemon version is not recorded yet.`;
+  } else {
+    el.textContent = t('about_loaded_version_pending')
+      || 'Version information appears here once the page and daemon versions are known.';
+  }
+}
+window.renderAboutLoadedVersionNotice = renderAboutLoadedVersionNotice;
+
+// Reset browser state: clears ONLY what this app owns in this browser and
+// reloads exactly once:
+//   * localStorage keys with the cs_ / dw_ prefixes (app settings, the
+//     token, splash records) — every other key in this origin's storage is
+//     left exactly as it is;
+//   * the sessionStorage reload markers (the once-only auto-reload slot and
+//     the index.html _dw_reloaded_for_<version> one-shots) — other session
+//     keys (e.g. the alert-muted flag) are left alone;
+//   * every Cache Storage cache (the app shell and data caches);
+//   * every registered service worker in this scope.
+// Deliberately a browser-state reset, not a server action: no fetch, no
+// WebSocket, no session endpoint is ever touched, so no session can be
+// affected. Every step is individually fault-tolerant and the reload is
+// ALWAYS reached exactly once — even when a cache delete or worker
+// unregistration throws. Pure over injected deps (localStorage /
+// sessionStorage / caches / serviceWorker / reload) so node:test can drive
+// it with fakes — no browser required.
+const BROWSER_STATE_STORAGE_PREFIXES = ['cs_', 'dw_'];
+// Exact keys this app owns that do not carry a cs_/dw_ prefix: the locale
+// override (setLocaleOverride, app.js — read at boot, same app only).
+const BROWSER_STATE_STORAGE_EXACT_KEYS = ['datawatch.locale'];
+const BROWSER_STATE_SESSION_MARKER_KEYS = ['cs_sw_autoreload_done'];
+const BROWSER_STATE_SESSION_MARKER_PREFIXES = ['_dw_reloaded_for_'];
+
+function _ownedStorageKeys(store, prefixes, exactKeys) {
+  const out = [];
+  const exact = exactKeys || [];
+  for (const k of exact) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    if (out.indexOf(ks) >= 0) continue;
+    for (const p of prefixes) {
+      if (ks.indexOf(p) === 0) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+function _ownedSessionMarkerKeys(store) {
+  const out = [];
+  for (const k of BROWSER_STATE_SESSION_MARKER_KEYS) {
+    try { if (store.getItem(k) !== null) out.push(k); } catch (_) { out.push(k); }
+  }
+  const n = store.length;
+  for (let i = 0; i < n; i++) {
+    const k = store.key(i);
+    if (k === null || k === undefined) continue;
+    const ks = String(k);
+    for (const p of BROWSER_STATE_SESSION_MARKER_PREFIXES) {
+      if (ks.indexOf(p) === 0 && out.indexOf(ks) === -1) { out.push(ks); break; }
+    }
+  }
+  return out;
+}
+
+async function resetBrowserState(deps) {
+  deps = deps || {};
+  const prefixes = (Array.isArray(deps.keyPrefixes) && deps.keyPrefixes.length)
+    ? deps.keyPrefixes.map(String)
+    : BROWSER_STATE_STORAGE_PREFIXES;
+  const store = deps.localStorage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  const session = deps.sessionStorage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+  const cacheManager = deps.caches || (typeof caches !== 'undefined' ? caches : null);
+  const swController = deps.serviceWorker
+    || (typeof navigator !== 'undefined' && navigator && typeof navigator.serviceWorker !== 'undefined' ? navigator.serviceWorker : null);
+  const doReload = typeof deps.reload === 'function'
+    ? deps.reload
+    : (() => { try { window.location.reload(); } catch (_) { location.reload(); } });
+
+  const result = { removedStorageKeys: 0, removedSessionMarkers: 0, deletedCaches: 0, unregisteredWorkers: 0, reloaded: false };
+
+  // 1. localStorage — only the keys this app owns (cs_ / dw_ prefixes plus
+  //    the exact-key locale override); every other key stays put.
+  if (store) {
+    let keys = [];
+    try { keys = _ownedStorageKeys(store, prefixes, BROWSER_STATE_STORAGE_EXACT_KEYS); } catch (_) { keys = []; }
+    for (const k of keys) {
+      try { store.removeItem(k); result.removedStorageKeys++; } catch (_) {}
+    }
+  }
+
+  // 2. sessionStorage — only the reload markers.
+  if (session) {
+    let markers = [];
+    try { markers = _ownedSessionMarkerKeys(session); } catch (_) { markers = []; }
+    for (const k of markers) {
+      try { session.removeItem(k); result.removedSessionMarkers++; } catch (_) {}
+    }
+  }
+
+  // 3. Cache Storage — delete every cache. A failing delete must not stop
+  //    the rest: the reload below still happens, and the fresh install's
+  //    activate step sweeps stale caches as a second pass.
+  if (cacheManager && typeof cacheManager.keys === 'function') {
+    let names = [];
+    try { names = await cacheManager.keys(); } catch (_) { names = []; }
+    for (const name of (names || [])) {
+      let ok = false;
+      try { ok = await cacheManager.delete(name); } catch (_) { ok = false; }
+      if (ok) result.deletedCaches++;
+    }
+  }
+
+  // 4. Service workers — unregister every registration in this scope.
+  if (swController && typeof swController.getRegistrations === 'function') {
+    let regs = [];
+    try { regs = await swController.getRegistrations(); } catch (_) { regs = []; }
+    for (const reg of (regs || [])) {
+      let ok = false;
+      try { ok = await reg.unregister(); } catch (_) { ok = false; }
+      if (ok) result.unregisteredWorkers++;
+    }
+  }
+
+  // 5. Reload — exactly once, always reached, even when every step above
+  //    failed. A clean page from the server is the whole point of the
+  //    button; a half-reset browser would be worse than no reset at all.
+  try { doReload(); result.reloaded = true; } catch (_) { /* reload itself failed; nothing left to do */ }
+
+  return result;
+}
+window.resetBrowserState = resetBrowserState;
+
+// The About-card button. One click: pressing the button IS the
+// confirmation — no second confirm step, no dialog. Ends with the same
+// hard reload the legacy forcePWAUpdate used (full refresh splash, which
+// also bypasses the HTTP cache).
+async function confirmResetBrowserState() {
+  let reloaded = false;
+  const doReload = () => {
+    if (reloaded) return; // exactly one reload, whatever else throws
+    reloaded = true;
+    try { if (typeof window !== 'undefined' && typeof window.performFullPageRefresh === 'function') { window.performFullPageRefresh({ eyeBolt: false }); return; } } catch (_) {}
+    try { window.location.reload(); } catch (_) { location.reload(); }
+  };
+  try {
+    await resetBrowserState({ reload: doReload });
+  } catch (_) {
+    doReload();
+  }
+}
+window.confirmResetBrowserState = confirmResetBrowserState;
+
 // GATE alpha.36 (operator 2026-05-10): manual escape hatch for stuck
 // PWA caches. Unregisters every SW + drops every cache + reloads with
 // bypass. Operator can fire this from the dev console
 // (window.forcePWAUpdate()) or via the long-press refresh hint.
+// Reuses resetBrowserState (owned storage keys, reload markers, all
+// caches, all workers) and finishes with the same hard reload it always
+// used. resetBrowserState never throws and always runs its reload exactly
+// once, so the legacy try/catch-then-reload shape is preserved.
 window.forcePWAUpdate = async function() {
   try {
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-  } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
-  // Hard reload bypassing HTTP cache too.
-  // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
-  // eye keeps the deliberate gesture from reading as a broken page.
-  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
-  // hatch) — never triggered by a federated-server switch.
-  performFullPageRefresh({ eyeBolt: false });
+    await resetBrowserState({ reload: () => performFullPageRefresh({ eyeBolt: false }) });
+  } catch (e) {
+    console.warn('forcePWAUpdate cleanup error:', e);
+    performFullPageRefresh({ eyeBolt: false });
+  }
 };
 
 // ── Alerts view ───────────────────────────────────────────────────────────────
@@ -31603,6 +34072,7 @@ const _AUTOMATA_STATE_RANK = {
   revisions_asked:  0,
   blocked:          1,
   paused:           1,
+  held:             3,
   running:          2,
   decomposing:      2,
   approved:         3,
@@ -31648,7 +34118,7 @@ window.toggleAutomataWatchFilter = function() {
 // Status sets for history toggle.
 // completed is in the active set so it shows by default without toggling history.
 // The history toggle adds the terminal-failure/archive statuses only.
-const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','completed']);
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','paused','blocked','held','completed']);
 const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
 
 // _automataBaseList is the Automata list before the tag and facet filters: the
@@ -31984,6 +34454,21 @@ function renderAutomataCard(prd, alsoInHtml) {
   const resumeBtn = status === 'paused'
     ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_resume_tip')||'Resume this automaton')}" onclick="event.stopPropagation();automataResume(${escId})">▶ ${escHtml(t('automata_action_resume')||'Resume')}</button>`
     : '';
+  // Hold / Release / Extend — the held Automaton's card actions. Hold is a
+  // pause, not a block: the card button stays visible on every state that
+  // is still holdable (server side is authoritative; running/planning/
+  // completed/cancelled/archived refuse a hold), and Release + Extend only
+  // on a held card. Expiry never auto-releases — the card keeps both
+  // buttons and the "ready to review" line.
+  const holdBtn = status !== 'held' && ['draft','needs_review','approved','revisions_asked','paused','blocked','failed'].includes(status)
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_hold')||'Put this Automaton on hold')}" onclick="event.stopPropagation();automataHold(${escId})">⏸ ${escHtml(t('automaton_hold_action')||'Hold')}</button>`
+    : '';
+  const releaseBtn = status === 'held'
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automaton_hold_tooltip_release')||'Release this held Automaton')}" onclick="event.stopPropagation();automataRelease(${escId})">▶ ${escHtml(t('automaton_hold_release')||'Release')}</button>`
+    : '';
+  const extendBtn = status === 'held'
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;border-color:var(--text2);color:var(--text2);" title="${escHtml(t('automaton_hold_tooltip_extend')||'Extend this hold')}" onclick="event.stopPropagation();automataExtend(${escId})">↻ ${escHtml(t('automaton_hold_extend')||'Extend')}</button>`
+    : '';
   // Pin and watch sit in the tile's overflow menu; the marks show their state
   // in the header while the menu is closed.
   const isWatched = _automataState.watched.has(id);
@@ -32000,6 +34485,10 @@ function renderAutomataCard(prd, alsoInHtml) {
   const full = _automataFullPrd(prd);
   const counts = _tileAutomataCounts(prd);
   const held = _prdHeldBadgeHTML(prd);
+  // The held Automaton's hold record: reason, condition, who/when and the
+  // look-again line (or the "ready to review" line once expired). Shown on
+  // the card body and in the detail view; a release drops it.
+  const holdRec = (status === 'held' || (prd.hold || prd.Hold)) ? _automatonHoldRecordHtml(prd) : '';
   const storiesDetail = `<details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
       <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
     </details>`;
@@ -32026,9 +34515,9 @@ function renderAutomataCard(prd, alsoInHtml) {
     alsoInHtml,
     updatedAt: prd.updated_at,
     nowMs: Date.now(),
-    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${approveBtn}`,
+    primaryHtml: `${openBtn}${cancelBtn}${rejectBtn}${reviseBtn}${pauseBtn}${resumeBtn}${holdBtn}${releaseBtn}${extendBtn}${approveBtn}`,
     menuHtml: `${watchItem}${pinItem}`,
-    bodyHtml: `${position}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
+    bodyHtml: `${position}${holdRec ? `<div class="automaton-hold-record">${holdRec}</div>` : ''}${held ? `<div>${held}</div>` : ''}<div class="lifecycle-compact">${renderLifecycleStrip(prd)}</div>`,
     afterHtml: storiesDetail + graphDetail,
   });
 }
@@ -32130,6 +34619,163 @@ window.automataCancel = function(id, status) {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
       .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
       .catch(e => showError('Cancel failed: ' + (e.message || e)));
+  });
+};
+
+// ── Automaton hold: dialog, actions, record line ────────────────────────
+// Holding is a deliberate pause (the Automaton stops advancing, it is not
+// failed or blocked). The same POST /hold endpoint places and extends a
+// hold; the dialog differs only in whether a previous reason carries over.
+// Release is POST /release_hold and restores the status the Automaton had
+// before the hold. Expiry never releases: an expired hold keeps its
+// buttons and gains the "ready to review" line (server wording in
+// next_look_text, mirrored here from the hold record for the card views).
+
+// The read view's look-again line, localized. The server already computes
+// it ("looked at again on <date>", "no date set", "hold expired, ready to
+// review") in next_look_text; we render the local wording from the fields
+// so the UI copy is translated.
+function _automatonHoldLookAgainText(h) {
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  return !isNaN(untilTs) && untilTs < Date.now() ? t('automaton_hold_expired') : t('automaton_hold_no_date');
+}
+
+// _automatonHoldRecordHtml renders the hold record lines: reason,
+// condition, who/when, and the look-again wording. Pure; the only outside
+// reads are the hold fields on the PRD (camelCase or, from the detail GET,
+// PascalCase) which are read once here.
+function _automatonHoldRecordHtml(prd) {
+  const h = (prd && (prd.hold || prd.Hold)) || null;
+  if (!h) return '';
+  const dt = v => { const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); };
+  const untilTs = h.until ? Date.parse(h.until) : NaN;
+  const expired = h.expired === true || (!isNaN(untilTs) && untilTs < Date.now());
+  const lines = [];
+  if (h.reason) lines.push(`<div class="automaton-hold-line"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(h.reason)}</div>`);
+  if (h.condition) lines.push(`<div class="automaton-hold-line" style="color:var(--text2);"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(h.condition)}</div>`);
+  const by = [h.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(h.held_by) : '', h.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(dt(h.held_at)) : ''].filter(Boolean).join(' · ');
+  lines.push(`<div class="automaton-hold-line" style="color:var(--text2);font-size:11px;">${by || escHtml(t('automaton_hold_no_date'))}</div>`);
+  lines.push(`<div class="automaton-hold-line automaton-hold-lookagain">${escHtml(expired ? t('automaton_hold_expired') : (!isNaN(untilTs) ? t('automaton_hold_until_label') + ': ' + escHtml(dt(h.until)) : t('automaton_hold_no_date')))}</div>`);
+  return `<div class="automaton-hold-record" style="margin:8px 0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:rgba(120,120,140,0.06);">${lines.join('')}</div>`;
+}
+window._automatonHoldRecordHtml = _automatonHoldRecordHtml;
+
+// _automatonHoldValidate checks the dialog fields. A new hold must carry a
+// reason; an extension may restate the same one. until and condition stay
+// optional; the server parses until (RFC 3339, a date, or a duration).
+function _automatonHoldValidate(fields, extend) {
+  const reason = (fields && fields.reason) ? String(fields.reason).trim() : '';
+  if (!reason) {
+    const err = new Error(t('automaton_hold_reason_required') || t('automaton_hold_reason_prompt')); // "A reason is required for the hold"
+    err.field = 'reason';
+    return { ok: false, error: err };
+  }
+  const payload = {
+    reason,
+    condition: (fields.condition) ? String(fields.condition).trim() : '',
+    until: (fields.until) ? String(fields.until).trim() : '',
+    actor: 'operator',
+  };
+  return { ok: true, payload };
+}
+window._automatonHoldValidate = _automatonHoldValidate;
+
+// automatonHoldSubmit validates and POSTs to /hold. It never throws:
+// an empty reason rejects with a reason-marked error; a transport failure
+// reports through showError and resolves (the card reloads either way, so
+// the state the server actually has is what the UI shows next).
+window.automatonHoldSubmit = function(id, fields, extend) {
+  const v = _automatonHoldValidate(fields, !!extend);
+  if (!v.ok) return Promise.reject(v.error);
+  const doneKey = extend ? 'automaton_hold_toast_extended' : 'automaton_hold_toast_set';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/hold', { method: 'POST', body: JSON.stringify(v.payload) })
+    .then(() => { showToast(t(doneKey), 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
+};
+
+// automataHold / automataExtend open the dialog in a browser; with fields
+// passed directly they submit immediately (the node tests take this path).
+window.automataHold = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, false);
+  return _automatonHoldDialogOpen(id, false);
+};
+window.automataExtend = function(id, fields) {
+  if (fields) return window.automatonHoldSubmit(id, fields, true);
+  return _automatonHoldDialogOpen(id, true);
+};
+
+// _automatonHoldDialogOpen is the modal dialog: a required reason plus
+// optional until and condition. Submitting with an empty reason leaves the
+// dialog open and shows the reason error; it never POSTs.
+function _automatonHoldDialogOpen(id, extend) {
+  if (typeof document === 'undefined' || !document.body || typeof document.body.appendChild !== 'function') return Promise.resolve();
+  const existing = document.getElementById('automationHoldDialog');
+  if (existing && typeof existing.remove === 'function') existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'automationHoldDialog';
+  modal.className = 'confirm-modal-overlay';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  const title = extend ? (t('automaton_hold_extend') || 'Extend') : (t('automaton_hold_action') || 'Hold');
+  const blurb = t(extend ? 'automaton_hold_tooltip_extend' : 'automaton_hold_tooltip_hold');
+  const helpLine = (typeof heldHoldDialogHelpLine === 'function') ? heldHoldDialogHelpLine() : '';
+  modal.innerHTML = `<div class="confirm-modal automation-hold-dialog" aria-label="${escHtml(title)}">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${escHtml(title)}</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">${escHtml(blurb || '')}${helpLine}</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_reason_prompt'))}</span>
+        <textarea id="automationHoldReason" rows="2" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;"></textarea>
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_until_prompt'))}</span>
+        <input id="automationHoldUntil" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+      <label style="font-size:12px;"><span>${escHtml(t('automaton_hold_condition_prompt'))}</span>
+        <input id="automationHoldCondition" type="text" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;margin-top:4px;">
+      </label>
+    </div>
+    <div id="automationHoldError" style="display:none;font-size:12px;color:var(--error);margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" class="btn-secondary" style="font-size:12px;padding:4px 16px;" id="automationHoldCancel">${escHtml(t('action_cancel'))}</button>
+      <button type="button" class="btn-primary" style="font-size:12px;padding:4px 16px;" id="automationHoldSubmitBtn">${escHtml(title)}</button>
+    </div>
+  </div>`;
+  if (typeof modal.addEventListener === 'function') {
+    modal.addEventListener('click', e => { if (e && e.target === modal) modal.remove(); });
+  }
+  document.body.appendChild(modal);
+  const cancel = () => { if (modal.parentNode) modal.remove(); };
+  const submit = () => {
+    const v = _automatonHoldValidate({
+      reason: (document.getElementById('automationHoldReason') || {}).value || '',
+      until: (document.getElementById('automationHoldUntil') || {}).value || '',
+      condition: (document.getElementById('automationHoldCondition') || {}).value || '',
+    }, extend);
+    if (!v.ok) {
+      const errEl = document.getElementById('automationHoldError');
+      if (errEl) { errEl.textContent = v.error.message; errEl.style.display = ''; }
+      const rEl = document.getElementById('automationHoldReason');
+      if (rEl && typeof rEl.focus === 'function') rEl.focus();
+      return;
+    }
+    cancel();
+    window.automatonHoldSubmit(id, { reason: v.payload.reason, until: v.payload.until, condition: v.payload.condition }, extend);
+  };
+  const cBtn = document.getElementById('automationHoldCancel');
+  const sBtn = document.getElementById('automationHoldSubmitBtn');
+  if (cBtn) cBtn.onclick = cancel;
+  if (sBtn) sBtn.onclick = submit;
+  const rEl = document.getElementById('automationHoldReason');
+  if (rEl && typeof rEl.focus === 'function') rEl.focus();
+  return Promise.resolve();
+}
+
+// automataRelease asks once, then POSTs /release_hold. The server restores
+// the status held in the record; the UI just reloads the list.
+window.automataRelease = function(id) {
+  showConfirmModal(t('automaton_hold_release_ask') || 'Release this held Automaton now?', () => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/release_hold', { method: 'POST' })
+      .then(() => { showToast(t('automaton_hold_toast_released') || 'Hold released', 'info', 2000); loadAutomataPanel(); })
+      .catch(e => showError((t('automaton_hold_failed') || 'Hold action failed: %1$s').replace('%1$s', (e && e.message) || e)));
   });
 };
 
@@ -34258,6 +36904,13 @@ function _renderDetailContent(prd) {
   const triageSlot = (status === 'failed' || status === 'blocked')
     ? `<div id="prdTriageCard" class="prd-capacity-slot triage-slot" style="margin-top:10px;">${window.triageCardHtml(prd.triage || null)}</div>`
     : '';
+  // The hold slot: a held Automaton carries its hold record (reason,
+  // condition, who/when, look-again or the expired line) above every
+  // sub-tab, so a held state is never lost behind a tab switch — the same
+  // self-contained slot pattern as the triage card.
+  const holdSlot = status === 'held'
+    ? `<div id="prdHoldRecord" class="prd-capacity-slot hold-slot" style="margin-top:10px;">${_automatonHoldRecordHtml(prd)}</div>`
+    : '';
   // The merge-pending badge slot sits beside it for a finished Automaton: it
   // paints from the last merge read at once and again when a fresh read lands.
   const mergeSlot = status === 'completed'
@@ -34270,6 +36923,7 @@ function _renderDetailContent(prd) {
     ${window.protectedPathsBannerHtml(prd)}
     ${window.protectedPathsAuthorisedHtml(prd)}
     ${triageSlot}
+    ${holdSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -34633,7 +37287,11 @@ function capacityBackoffHtml(backoff) {
     const rung = b.rung
       ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
       : '';
-    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
+    // The daemon sends the reserve reason in its built-in English wording
+    // ("back-off, review reserve in use"); show it translated here, keeping
+    // any pool prefix the ledger added. Every other reason shows as sent.
+    const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
+    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
     return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
@@ -34644,11 +37302,17 @@ function capacityBackoffHtml(backoff) {
 // and the holdings line. Field names cover both payload shapes: the task
 // views (cause, resets_at, pools, node) and the session status automaton
 // block (wait_cause, wait_resets_at, holds).
-function _taskWaitCauseLabel(cause) {
+// A back-off wait narrows to the review-reserve chip when its reason names
+// the reserve (a review slot or the reserve's hourly token budget is in
+// use), so the chip says why instead of a bare back-off; every other
+// back-off keeps the original label.
+function _taskWaitCauseLabel(cause, reason) {
   switch (cause) {
     case 'pool_full': return t('task_wait_cause_pool_full') || 'Pool full';
     case 'node_busy': return t('task_wait_cause_node_busy') || 'Node busy';
-    case 'backoff': return t('task_wait_cause_backoff') || 'Back-off';
+    case 'backoff':
+      if (/review reserve in use/.test(String(reason || ''))) return t('task_wait_cause_backoff_reserve') || 'Back-off, review reserve in use';
+      return t('task_wait_cause_backoff') || 'Back-off';
     case 'budget': return t('task_wait_cause_budget') || 'Budget';
     case 'global_cooldown': return t('task_wait_cause_global_cooldown') || 'Cool-down';
     case 'await_external': return t('task_wait_cause_await_external') || 'Awaiting external';
@@ -34671,7 +37335,7 @@ window.taskWaitHtml = function(task) {
   const name = nameText
     ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
     : '';
-  const label = _taskWaitCauseLabel(cause);
+  const label = _taskWaitCauseLabel(cause, reason);
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
@@ -36894,6 +39558,14 @@ function _mergeStatusBlockHtml(status) {
   const lines = [];
   if (s.merge_lock && typeof s.merge_lock === 'object') lines.push(_mergeLockLineHtml(s.merge_lock));
   if (s.last_validator && typeof s.last_validator === 'object') lines.push(_mergeValidatorLineHtml(s.last_validator));
+  // The shadow pass counts: how many decisions it recorded and how many of
+  // those were later found to have been false (0 while the mode is off or
+  // no pass has run yet, so the line only appears once a decision exists).
+  if (typeof s.shadow_decisions_total === 'number' && s.shadow_decisions_total > 0) {
+    const falseCount = (typeof s.shadow_decisions_false === 'number') ? s.shadow_decisions_false : 0;
+    const text = t('merge_shadow_decisions_counts', [String(s.shadow_decisions_total), String(falseCount)]);
+    lines.push(`<div class="merge-status-shadow" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;margin-top:4px;">${escHtml(text)}${_mergeHelpLink('merge_shadow_decisions_counts', 'merge_shadow_decisions_help')}</div>`);
+  }
   return lines.length ? `<div class="merge-status" style="margin-top:8px;min-width:0;">${lines.join('')}</div>` : '';
 }
 window.mergePipelineCardHtml = function(view, opts) {
@@ -37303,6 +39975,36 @@ function _automationHelpLinkHtml(helpKey, anchor) {
   const label = t(helpKey);
   return `<a class="automation-card-help" href="/diagrams.html#docs/howto/automation-tab.md${anchor}" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;flex:none;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
 }
+
+// _heldDocsPath — the "Held Automata" section of the hold how-to, read
+// off the docs link map through the held group's own key, so the group
+// head help icon and the hold dialog's help line always point at the
+// same section. Null when the map has no entry.
+function _heldDocsPath() {
+  if (typeof docsLinkForKey !== 'function') return null;
+  return docsLinkForKey('held_automata_inbox_title') || null;
+}
+
+// heldAutomataHelpLink — the help icon on the held-Automata group head.
+// Respects the General → "Show inline doc links" toggle like every other
+// card help link.
+function heldAutomataHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${escHtml(label)}" aria-label="${escHtml(label)}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:auto;">?</a>`;
+}
+window.heldAutomataHelpLink = heldAutomataHelpLink;
+
+// heldHoldDialogHelpLine — the help line inside the hold dialog (the same
+// "Held Automata" section as the group head icon).
+function heldHoldDialogHelpLine() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const path = _heldDocsPath() || 'howto/automaton-hold.md#held-automata';
+  const label = t('automation_help_held_automaton') || 'Help: Putting an Automaton on hold';
+  return ` <a class="docs-link held-automata-help" href="/diagrams.html#docs/${escHtml(path)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--accent2,#60a5fa);text-decoration:underline;">${escHtml(label)}</a>`;
+}
+window.heldHoldDialogHelpLine = heldHoldDialogHelpLine;
 window.triageCardHtml = function(record) {
   if (record && typeof record === 'object' && record.status === 'merge_blocked') return window.mergeBlockedTriageCardHtml(record);
   _triageBindClick();
@@ -38067,6 +40769,92 @@ window.safeDeleteCardHtml = function(report) {
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
 
+// ── Branch reaper card ─────────────────────────────────────────────────────
+// branchReapCardHtml(report) draws the body of GET
+// /api/autonomous/branch-reap:
+// { reaped: [{automaton_id, branch, backup_ref, contained_in, commits, reason}],
+//   waiting: [...same], backups: [{branch, ref, sha}], backup_days,
+//   computed_at }. A missing or malformed body reads as an empty report.
+// The report itself deletes nothing; the only write surface is the Restore
+// button on a reaped entry, which posts the one branch to
+// /api/autonomous/branch-reap/restore (its click is delegated, because the
+// loader re-paints the card's innerHTML on every tick).
+function _branchReapLine(text, style) {
+  return `<div style="${style || 'color:var(--text2);'}overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+}
+function _branchReapSection(title, rows, emptyText) {
+  return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
+    (rows.length ? rows.join('') : _branchReapLine(emptyText));
+}
+function _branchReapEntryRow(e) {
+  const branch = String(e.branch || '');
+  const restore = branch
+    ? `<button type="button" class="branch-reap-restore-btn" data-branch-reap-restore="${escHtml(branch)}" style="margin-top:4px;max-width:100%;">${escHtml(t('branch_reap_restore_btn'))}</button>`
+    : '';
+  return `<div class="branch-reap-row" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    _branchReapLine(branch, 'font-weight:600;') +
+    (e.automaton_id ? _branchReapLine(t('branch_reap_automaton', [String(e.automaton_id)])) : '') +
+    (e.reason ? _branchReapLine(String(e.reason)) : '') +
+    (e.contained_in ? _branchReapLine(t('branch_reap_contained', [String(e.contained_in)])) : '') +
+    (Number(e.commits) ? _branchReapLine(t('branch_reap_commits', [Number(e.commits)])) : '') +
+    (e.backup_ref ? _branchReapLine(t('branch_reap_backup', [String(e.backup_ref)])) : '') +
+    restore + `</div>`;
+}
+function _branchReapBackupRow(bk) {
+  const parts = [String(bk.ref || '')];
+  if (bk.sha) parts.push('→ ' + String(bk.sha));
+  if (bk.branch) parts.push('(' + String(bk.branch) + ')');
+  return _branchReapLine(parts.filter(Boolean).join(' '));
+}
+window.branchReapCardHtml = function(report) {
+  const r = (report && typeof report === 'object') ? report : {};
+  const reaped = Array.isArray(r.reaped) ? r.reaped.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const waiting = Array.isArray(r.waiting) ? r.waiting.filter(e => e && typeof e === 'object' && e.branch) : [];
+  const backups = Array.isArray(r.backups) ? r.backups.filter(b => b && typeof b === 'object' && b.ref) : [];
+  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
+  const head = `<div class="cap-title">${escHtml(t('branch_reap_card_title'))}</div>`;
+  const computedLine = computedAt ? _branchReapLine(t('branch_reap_computed_at', [computedAt])) : '';
+  const note = _branchReapLine(t('branch_reap_preview_note'));
+  const retentionLine = _branchReapLine(Number(r.backup_days) > 0
+    ? t('branch_reap_retention_days', [Number(r.backup_days)])
+    : t('branch_reap_retention_default'));
+  const reapedRows = reaped.map(_branchReapEntryRow);
+  const waitingRows = waiting.map(_branchReapEntryRow);
+  const emptyAll = reaped.length === 0 && waiting.length === 0;
+  const body = emptyAll
+    ? _branchReapLine(t('branch_reap_empty'))
+    : _branchReapSection(t('branch_reap_reaped_heading', [reaped.length]), reapedRows, t('branch_reap_reaped_empty')) +
+      _branchReapSection(t('branch_reap_waiting_heading', [waiting.length]), waitingRows, t('branch_reap_waiting_empty'));
+  return `<div class="prd-capacity-card branch-reap-card" style="min-width:0;">${head}${computedLine}${note}${retentionLine}` +
+    body +
+    _branchReapSection(t('branch_reap_backups_heading'), backups.map(_branchReapBackupRow), t('branch_reap_backups_none')) + `</div>`;
+};
+// _branchReapEnsureRestoreHandler binds the delegated Restore click once per
+// page load. The loader replaces the card's innerHTML on every tick, so the
+// handler lives on the document and re-targets the fresh button on each click.
+let _branchReapRestoreBound = false;
+window._branchReapEnsureRestoreHandler = function() {
+  if (_branchReapRestoreBound) return;
+  _branchReapRestoreBound = true;
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-branch-reap-restore]') : null;
+    if (!btn || btn.disabled) return;
+    const branch = btn.getAttribute('data-branch-reap-restore');
+    if (!branch) return;
+    btn.disabled = true;
+    btn.textContent = t('branch_reap_restoring');
+    apiFetch('/api/autonomous/branch-reap/restore', { method: 'POST', body: JSON.stringify({ branch }) })
+      .then(() => {
+        showToast(t('branch_reap_restore_ok', [branch]), 'success', 4000);
+        // The delete already happened; re-read the report so the card
+        // reflects the restored branch and the backup ref it now lives as.
+        const ctl = window._listLoaders && window._listLoaders.automation_branch_reap;
+        if (ctl && ctl.load) ctl.load();
+      })
+      .catch(err => { showToast(t('branch_reap_restore_err', [branch, ((err && err.message) || String(err))]), 'error', 6000); });
+  }, true);
+};
+
 // ── Automata cleanup status card ─────────────────────────────────────────────
 // cleanupCardHtml(status) draws the body of GET /api/autonomous/cleanup:
 // { worktrees, temp: {mode, last_run, removed, would_remove, skipped, failed,
@@ -38534,6 +41322,31 @@ function _unlandedWorkBranches(data) {
   const b = data && typeof data === 'object' ? data.branches : null;
   return (Array.isArray(b) ? b : []).filter(x => x && typeof x === 'object' && x.branch);
 }
+// unlandedCountsHtml(counts, alertCfg) draws the compact counts block from the
+// read's counts section: one count per landing state, one per age band, the
+// oldest pending branch, and a marker when the pending count is above the
+// daily alert threshold (alertCfg from GET /api/autonomous/config).
+const UNLANDED_COUNT_STATES = ['landed', 'pending', 'live', 'unlanded'];
+const UNLANDED_COUNT_AGES = ['under_one_day', 'under_one_week', 'older'];
+window.unlandedCountsHtml = function(counts, alertCfg) {
+  if (!counts || typeof counts !== 'object') return '';
+  const num = (m, k) => Number(m && typeof m === 'object' ? m[k] : 0) || 0;
+  const chip = (key, n) => `<span class="unlanded-counts-chip" data-key="${escHtml(key)}">${escHtml(t('unlanded_counts_' + key, [n]))}</span>`;
+  const states = UNLANDED_COUNT_STATES.map(k => chip(k, num(counts.by_state, k))).join('');
+  const ages = UNLANDED_COUNT_AGES.map(k => chip(k, num(counts.by_age, k))).join('');
+  const pending = num(counts.by_state, 'pending');
+  const cfg = alertCfg && typeof alertCfg === 'object' ? alertCfg : null;
+  const threshold = cfg && Number.isFinite(Number(cfg.threshold)) ? Number(cfg.threshold) : null;
+  const over = !!cfg && cfg.enabled !== false && threshold !== null && pending > threshold;
+  const o = counts.oldest_pending;
+  const oldest = o && typeof o === 'object' && o.branch
+    ? `<div class="unlanded-counts-oldest" data-branch="${escHtml(String(o.branch))}">${escHtml(t('unlanded_counts_oldest', [String(o.title || o.branch), String(o.branch), String(o.age || '')]))}</div>` : '';
+  const marker = over ? `<div class="unlanded-counts-over">${escHtml(t('unlanded_counts_over_threshold', [pending, threshold]))}</div>` : '';
+  return `<div class="unlanded-counts">` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_state'))}</span>${states}</div>` +
+    `<div class="unlanded-counts-row"><span class="unlanded-counts-label">${escHtml(t('unlanded_counts_by_age'))}</span>${ages}</div>` +
+    oldest + marker + `</div>`;
+};
 window.unlandedWorkCardHtml = function(data) {
   const list = _unlandedWorkBranches(data);
   if (!list.length) return '';
@@ -38550,7 +41363,7 @@ window.unlandedWorkCardHtml = function(data) {
       _cleanupLine(t('unlanded_work_recommendation', [rec]) + (e.reason ? ' — ' + String(e.reason) : '')) +
       `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;">${btn('keep', 'unlanded_work_keep')}${btn('archive', 'unlanded_work_archive')}${btn('delete', 'unlanded_work_delete')}</div></div>`;
   }).join('');
-  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${rows}</div>`;
+  return `<div class="prd-capacity-card unlanded-work-card" style="min-width:0;"><div class="cap-title">${escHtml(t('unlanded_work_card_title'))}${_housekeepingHelpLink('unlanded_work_card', 'unlanded_work_help_link')}</div>${window.unlandedCountsHtml(data.counts, window._unlandedAlertCfg)}${rows}</div>`;
 };
 
 window.unlandedWorkAct = function(btn, act) {
@@ -38568,6 +41381,12 @@ window.unlandedWorkAct = function(btn, act) {
 };
 
 function _automationUnlandedWorkLoader() {
+  if (!window._unlandedAlertCfgFetched) {
+    window._unlandedAlertCfgFetched = true;
+    apiFetch('/api/autonomous/config').then(ac => {
+      if (ac && typeof ac === 'object') window._unlandedAlertCfg = { enabled: ac.unlanded_alert_enabled !== false, threshold: ac.unlanded_alert_threshold };
+    }).catch(() => { window._unlandedAlertCfgFetched = false; });
+  }
   return window._listLoaders.automation_unlanded_work || listLoader({
     key: 'automation_unlanded_work', el: 'automationStaleWorktreesCard', url: '/api/autonomous/unlanded-work', pollMs: 30000,
     failedText: msg => t('unlanded_work_failed', [msg]),
@@ -39971,7 +42790,7 @@ const PROGRESS_METHOD_FIELDS = {
 const PC_KEYS = {
   col: {
     records: 'progress_card_col_records', done: 'progress_card_col_done', running: 'progress_card_col_running',
-    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', tasks: 'progress_card_col_tasks',
+    waiting: 'progress_card_col_waiting', blocked: 'progress_card_col_blocked', held: 'progress_card_col_held', tasks: 'progress_card_col_tasks',
     tasks_done: 'progress_card_col_tasks_done', left: 'progress_card_col_left', work_time: 'progress_card_col_work_time',
     median: 'progress_card_col_median', mean_task: 'progress_card_col_mean_task',
   },
@@ -40067,13 +42886,19 @@ function _pcHelp() {
 
 function _pcTable(data, axis) {
   const groups = (data && data.groups) || {};
-  const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
+  // The held column is shown only when at least one Automaton is on hold, the
+  // same rule the CLI text and the read view keep (a whole of zeros would add
+  // a column nobody can act on).
+  const anyHeld = [data && data.totals, groups.feature, groups.bug, groups.other].some(g => _pcIsNum(g && g.held) && g.held > 0)
+    || Object.values((data && data.grouped) || {}).some(map => Object.values(map || {}).some(g => _pcIsNum(g && g.held) && g.held > 0));
+  const cols = ['records', 'done', 'running', 'waiting', 'blocked'].concat(anyHeld ? ['held'] : []).concat(['tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task']);
   const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
   const cell = h => `<td style="text-align:right;padding:2px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;">${h}</td>`;
   const rowHtml = (label, g) => {
     g = g || {};
     return `<tr><th scope="row" style="text-align:left;padding:2px 6px;font-weight:600;">${escHtml(label)}</th>` +
       cell(_pcNum(g.prds)) + cell(_pcNum(g.done)) + cell(_pcNum(g.running)) + cell(_pcNum(g.waiting)) + cell(_pcNum(g.blocked)) +
+      (anyHeld ? cell(_pcNum(g.held)) : '') +
       cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
       cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
   };
@@ -41934,7 +44759,7 @@ const _LIFECYCLE_SUB_KIND_GROUPS = [
   ['lifecycle_sub_form_group_prd', 'PRD status', [
     'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
     'prd.active', 'prd.running', 'prd.completed', 'prd.rejected', 'prd.cancelled',
-    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused']],
+    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused', 'prd.held']],
   ['lifecycle_sub_form_group_task', 'Task status', [
     'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
     'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
@@ -42479,6 +45304,47 @@ function _renderDetailCost(prd) {
 }
 
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
+// Landing state: the operator's record of what happens to an Automaton's
+// unmerged work branch — state (pending / landed / kept / dropped), commit,
+// actor, at, reason — plus the keep/drop decisions once the record is still
+// pending. The record arrives in the PRD JSON (its landing field, part of
+// every Automaton read); keep/drop POST to
+// /api/autonomous/prds/{id}/landing/keep|drop. Renders in the Overview
+// sub-tab of the Automaton detail page.
+function renderLandingState(prd) {
+  const l = prd.landing || prd.Landing;
+  const label = escHtml(t('automata_detail_landing') || 'Landing');
+  if (!l) {
+    return `<div class="prd-detail-landing" style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${label}</div>
+      <div style="font-size:11px;color:var(--text2);">${escHtml(t('automata_detail_landing_none') || 'No landing record yet — the Automaton has no work branch to keep or drop.')}</div>
+    </div>`;
+  }
+  const st = l.state || '';
+  const stMap = { pending: t('automata_detail_landing_state_pending'), landed: t('automata_detail_landing_state_landed'), kept: t('automata_detail_landing_state_kept'), dropped: t('automata_detail_landing_state_dropped') };
+  const stTxt = stMap[st] || st;
+  const color = st === 'landed' ? '#10b981' : st === 'kept' ? '#3b82f6' : st === 'dropped' ? '#ef4444' : '#f59e0b';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  const rows = [];
+  if (l.commit) rows.push([t('automata_detail_landing_commit') || 'Commit', `<code style="font-size:10px;">${escHtml(l.commit)}</code>`]);
+  if (l.actor) rows.push([t('automata_detail_landing_actor') || 'Actor', escHtml(l.actor)]);
+  if (l.at) rows.push([t('automata_detail_landing_at') || 'Time', escHtml(_fmtDate(l.at))]);
+  if (l.reason) rows.push([t('automata_detail_landing_reason') || 'Reason', escHtml(l.reason)]);
+  const decisions = st === 'pending'
+    ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="prd-landing-btn prd-landing-keep" style="font-size:11px;padding:3px 10px;background:#3b82f6;color:#fff;border:none;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/keep','reason',${escHtml(JSON.stringify(t('automata_detail_landing_keep_prompt') || 'Reason for keeping this branch unmerged (required)'))})">${escHtml(t('automata_detail_landing_keep_btn') || 'Keep (branch not merged)')}</button>
+        <button class="prd-landing-btn prd-landing-drop" style="font-size:11px;padding:3px 10px;background:var(--bg2);border:1px solid #ef4444;color:#ef4444;border-radius:4px;font-weight:600;" onclick="prdActionPrompt(${idJ},'landing/drop','reason',${escHtml(JSON.stringify(t('automata_detail_landing_drop_prompt') || 'Reason the work will not be merged (required)'))})">${escHtml(t('automata_detail_landing_drop_btn') || 'Drop (work not merged)')}</button>
+      </div>`
+    : '';
+  return `<div class="prd-detail-landing" style="margin-top:10px;display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:11px;margin-bottom:2px;"><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-weight:700;font-size:10px;background:${color}22;color:${color};border:1px solid ${color}55;">${escHtml(stTxt)}</span></div>
+      ${rows.map(([k, v]) => `<div style="font-size:11px;color:var(--text2);">${escHtml(k)}: ${v}</div>`).join('')}
+    </div>
+    ${decisions}
+  </div>`;
+}
+
 function _renderDetailOverview(prd) {
   const stories = prd.stories || prd.Story || [];
   const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
@@ -42518,6 +45384,7 @@ function _renderDetailOverview(prd) {
     ${_renderDetailCost(prd)}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${renderLandingState(prd)}
     ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
@@ -43187,6 +46054,17 @@ registerAutomationCardSlot('events', {
   mount: () => listLoaderAll([_automationCleanupLoader()]),
   stop: () => _automationStopLoaders(['automation_cleanup']),
 });
+// The branch reaper report renders under the cleanup card on the Automata
+// Events sub-tab (reaped + waiting entries with reasons, the backup refs, and
+// the Restore write). Like the two above, its loader polls only while the
+// Events sub-tab is shown.
+registerAutomationCardSlot('events', {
+  id: 'automationBranchReapCard',
+  order: 120,
+  html: `<div id="automationBranchReapCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+  mount: () => { window._branchReapEnsureRestoreHandler(); listLoaderAll([_automationBranchReapLoader()]); },
+  stop: () => _automationStopLoaders(['automation_branch_reap']),
+});
 // ── Cost report chart cards ──────────────────────────────────────────────────
 // Four bounded cards in the Automata page's cost report area: cost over time,
 // tool usage, retries and failure categories, and the combined report. Each
@@ -43720,7 +46598,11 @@ registerAutomationCardSlot(COST_CHARTS_TAB, {
 // by source key so the badge stays current while another sub-tab is shown.
 const _automationInboxCounts = {};
 const _automationInboxRaw = {};
-const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
+const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'automation_held_automata', 'supervisor'];
+// Held Automata are their own group: they appear on their own card with
+// their own count, never inside the triage (failed/blocked) count or the
+// Inbox needs-review badge.
+const _AUTOMATION_INBOX_BADGE_EXCLUDED = ['automation_held_automata'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
 // (everything) or one selected project. A project scope applies only while
@@ -43787,6 +46669,16 @@ function _inboxScopeData(key, data) {
   const keep = x => _inboxItemInProject(x, scope.project);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
+  if (key === 'automation_held_automata') {
+    // A held row names its project by name or directory; _inboxItemInProject
+    // reads the same fields off the row (project_dir) and the Automaton its
+    // prd_id names, so the cut behaves like the other Inbox groups.
+    if (typeof data === 'object' && Array.isArray(data.held)) {
+      const held = data.held.filter(v => v && typeof v === 'object' && _inboxItemInProject({ prd_id: v.id, project_dir: v.project, system_tags: [] }, scope.project));
+      return Object.assign({}, data, { held, total: held.length, expired: held.filter(v => v && v.expired).length });
+    }
+    return data;
+  }
   if (key === 'automation_questions') {
     if (data.__automationQuestionsDisabled) return data;
     if (Array.isArray(data)) return data.filter(keep);
@@ -43806,6 +46698,7 @@ function _automationInboxCountOf(key, data) {
   data = _inboxScopeData(key, data);
   if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_held_automata') return (data && Array.isArray(data.held)) ? data.held.length : 0;
   if (key === 'automation_questions') {
     if (!data || data.__automationQuestionsDisabled) return 0;
     const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
@@ -43847,6 +46740,7 @@ function _automationInboxRescope() {
 function _automationInboxBadgeCount() {
   let n = 0;
   _AUTOMATION_INBOX_KEYS.forEach(k => {
+    if (_AUTOMATION_INBOX_BADGE_EXCLUDED.indexOf(k) >= 0) return; // held has its own card count
     if (Object.prototype.hasOwnProperty.call(_automationInboxCounts, k)) { n += _automationInboxCounts[k]; return; }
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl && ctl.state && ctl.state.hasData && !(k === 'automation_questions' && _automationQuestionsState.history)) n += _automationInboxCountOf(k, ctl.state.data);
@@ -43861,7 +46755,7 @@ function _automationBadgeLabel(n) {
 // The badge is updated in place: no redraw of the body or the bar.
 function _automationUpdateInboxBadge() {
   if (typeof document === 'undefined') return;
-  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge');
+  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge, .projects-subtabs [data-projects-subtab="inbox"] .automation-subtab-badge');
   if (!el) return;
   const n = _automationInboxBadgeCount();
   el.textContent = String(n);
@@ -43878,7 +46772,7 @@ function _automationInboxLoaderActive() {
   return _automataNormalizeTab() === 'automation';
 }
 function _automationInboxLoaders() {
-  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()];
+  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader(), _automationHeldAutomataLoader()];
 }
 // Start the Inbox polling behind another sub-tab: only the loaders that are
 // not already running are loaded.
@@ -43919,6 +46813,17 @@ const _AUTOMATION_SUBTABS = [
       </div>
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <!-- Held Automata: their own group card. The count on the head is the
+           group count; held never feeds the Inbox needs-review badge or the
+           triage (failed/blocked) count. -->
+      <div id="automationHeldAutomataCard" class="prd-capacity-card held-automata-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <div class="cap-title">${escHtml(t('held_automata_inbox_title'))}</div>
+          <span id="automationHeldAutomataCount" class="held-automata-count" style="display:none;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--text2);"></span>
+          ${heldAutomataHelpLink()}
+        </div>
+        <div id="automationHeldAutomataBody"></div>
+      </div>
       ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
@@ -44020,8 +46925,13 @@ function _automationBadgeHTML(s) {
   return `<span class="automation-subtab-badge" aria-label="${escHtml(_automationBadgeLabel(n))}" style="${n > 0 ? '' : 'display:none;'}">${n}</span>`;
 }
 
-function _automationSubtabsBarHTML() {
+function _automationSubtabsBarHTML(opts) {
   const st = _automationState;
+  if (opts && opts.projectsStyle) {
+    return `<div class="projects-subtabs" role="tablist" aria-label="${escHtml(t('projects_subtabs_label'))}">`
+      + _AUTOMATION_SUBTABS.map(s => `<button type="button" role="tab" class="projects-subtab${st.subtab === s.id ? ' active' : ''}" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-projects-subtab="${s.id}" onclick="selectProjectsOverviewSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
+      + `</div>`;
+  }
   return `<div class="output-tabs automation-subtabs" role="tablist">`
     + _AUTOMATION_SUBTABS.map(s => `
         <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
@@ -44031,13 +46941,13 @@ function _automationSubtabsBarHTML() {
 
 // The Automation sub-tab's body: the second-row sub-tab bar first, then the
 // body of the sub-tab that is selected.
-function _automationBodyHTML() {
+function _automationBodyHTML(opts) {
   _automationNormalizeSubtab();
   const st = _automationState;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === st.subtab)
     || _AUTOMATION_SUBTABS.find(s => s.id === _AUTOMATION_DEFAULT_SUBTAB)
     || _AUTOMATION_SUBTABS[0];
-  return _automationSubtabsBarHTML()
+  return _automationSubtabsBarHTML(opts)
     + `\n      ` + def.bodyHTML();
 }
 
@@ -44060,7 +46970,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
+  const all = ['automation', 'automation_protected_paths', 'automation_pending_items', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_branch_reap', 'automation_cleanup', 'automation_uncommitted_work', 'automation_release_readiness', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -44079,7 +46989,7 @@ function _automationStopLoaders(keys) {
 function _tabStripReveal(stripEl) {
   try {
     if (!stripEl || typeof stripEl.querySelector !== 'function') return;
-    const btn = stripEl.querySelector('.output-tab.active');
+    const btn = stripEl.querySelector('.output-tab.active') || stripEl.querySelector('.projects-subtab.active');
     if (!btn) return;
     if (typeof btn.scrollIntoView === 'function') {
       btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
@@ -44105,7 +47015,7 @@ function _tabStripFade(stripEl) {
 }
 function _tabStripsRevealAll() {
   try {
-    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
+    document.querySelectorAll('.automata-tabs-bar, .automation-subtabs, .projects-subtabs, .projects-tabs-bar, .tab-strip-scroll').forEach(_tabStripReveal);
   } catch (e) { /* cosmetic only */ }
 }
 window._tabStripReveal = _tabStripReveal;
@@ -44773,6 +47683,22 @@ function _automationCleanupLoader() {
   });
 }
 
+// _automationBranchReapLoader reads the branch reaper report on the Automata
+// Events sub-tab, under the safe-to-delete and cleanup cards. The read lists
+// the worktree base repository and the backup refs, so it polls slowly like
+// the safe-to-delete read; its failed state is the list loader's banner. The
+// report is a preview — the only write is the per-entry Restore button, which
+// posts the branch to POST /api/autonomous/branch-reap/restore.
+function _automationBranchReapLoader() {
+  return window._listLoaders.automation_branch_reap || listLoader({
+    key: 'automation_branch_reap', el: 'automationBranchReapCard', url: '/api/autonomous/branch-reap', pollMs: 60000,
+    timeoutMs: 45000,
+    failedText: msg => t('branch_reap_failed', [msg]),
+    active: () => !!document.getElementById('automationBranchReapCard'),
+    render: report => window.branchReapCardHtml(report),
+  });
+}
+
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
 // Housekeeping sub-tab. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
@@ -45414,6 +48340,113 @@ function _questionAnswerSubmit(id, currentAnswerId, chosenOptionId, quote) {
 }
 window._questionAnswerSubmit = _questionAnswerSubmit;
 
+// ── quick-reply → open question routing ──────────────────────────────────────
+// quickReplyRoute is the single gate every Sessions-page quick reply goes
+// through before a label's text is typed into a session (the card quick
+// commands, the session quick commands, the chat Yes/No/Stop chips, and the
+// alerts quick-reply select). It checks whether this session has an open
+// question and routes the reply there instead of typing it:
+//   - no open question for the session → the caller's type-into-session
+//     fallback runs, exactly as before;
+//   - one open question and the reply matches one of its options (text
+//     equal to an option id or label, case-insensitive, plus the small
+//     approve/reject synonym set) → the option is posted to
+//     POST /api/questions/{id}/answer with surface pwa and nothing is
+//     typed into the session;
+//   - one open question but no matching option, or more than one open
+//     question → the reply is refused with a plain message (naming the
+//     pressed label and the question's option labels, or pointing to the
+//     Questions page) and nothing is sent anywhere;
+//   - a failed answer (409 no longer open, 400 the server refusing the
+//     text) → the server's message shows as a toast and nothing is typed.
+// On success the toast names the option that was chosen and the question
+// card refreshes through window.refreshAutomationQuestions when it exists.
+// The typeIntoSession callback is the caller's previous send path; it runs
+// only in the no-question case.
+const _QUICK_REPLY_SYNONYM_GROUPS = [
+  ['yes', 'approve', 'approved'],
+  ['no', 'reject', 'rejected'],
+];
+
+// _quickReplyQuestionForSession reports whether a question record belongs
+// to the session a quick reply was pressed for. The record's session_id
+// may carry the short or the full id, so both sides compare on the raw id
+// and on the last dash segment.
+function _quickReplyQuestionForSession(q, sessionId) {
+  const qid = q && q.session_id ? String(q.session_id) : '';
+  const sid = String(sessionId || '');
+  if (!qid || !sid) return false;
+  if (qid === sid) return true;
+  const short = n => String(n).split('-').pop();
+  return qid === short(sid) || short(qid) === short(sid);
+}
+window._quickReplyQuestionForSession = _quickReplyQuestionForSession;
+
+// _quickReplyOptionFor resolves a pressed quick reply (its label and the
+// text it would type) against one question's options and returns the
+// matched option's id, or '' when it must not guess: no match, or more
+// than one option matching. A direct hit is the option's id or label
+// equal to the label or the value, case-insensitive; a synonym hit is the
+// approve/approved/yes and reject/rejected/no groups, so "Approved" and
+// "yes" both resolve to a Yes option.
+function _quickReplyOptionFor(options, label, value) {
+  const cands = [label, value]
+    .map(w => String(w == null ? '' : w).trim().toLowerCase())
+    .filter(Boolean);
+  const opts = (Array.isArray(options) ? options : []).filter(o => o && (o.id || o.label));
+  if (!cands.length || !opts.length) return '';
+  const direct = opts.filter(o => cands.includes(String(o.id).toLowerCase()) || cands.includes(String(o.label || '').toLowerCase()));
+  if (direct.length === 1) return String(direct[0].id);
+  if (direct.length > 1) return '';
+  for (const c of cands) {
+    const group = _QUICK_REPLY_SYNONYM_GROUPS.find(g => g.includes(c));
+    if (!group) continue;
+    const m = opts.filter(o => group.includes(String(o.id).toLowerCase()) || group.includes(String(o.label || '').toLowerCase()));
+    if (m.length === 1) return String(m[0].id);
+    if (m.length > 1) return '';
+  }
+  return '';
+}
+window._quickReplyOptionFor = _quickReplyOptionFor;
+
+function quickReplyRoute(sessionId, label, value, typeIntoSession) {
+  const sid = String(sessionId || '');
+  const fallback = typeof typeIntoSession === 'function' ? typeIntoSession : null;
+  const runFallback = () => { if (fallback) fallback(); };
+  if (!sid) { runFallback(); return Promise.resolve(); }
+  return apiFetch('/api/questions?state=open&limit=50')
+    .catch(() => null)
+    .then(body => {
+      const open = ((body && Array.isArray(body.questions)) ? body.questions : [])
+        .filter(q => _quickReplyQuestionForSession(q, sid));
+      if (!open.length) { runFallback(); return; }
+      if (open.length > 1) {
+        showToast(String(t('quick_reply_multiple_questions') || 'This session has more than one open question. Answer them on the Questions page (Automation view).'), 'error', 6000);
+        return;
+      }
+      const q = open[0];
+      const optionId = _quickReplyOptionFor(q.options, label, value);
+      if (!optionId) {
+        const labels = (Array.isArray(q.options) ? q.options : [])
+          .map(o => (o && (o.label || o.id)) ? String(o.label || o.id) : '')
+          .filter(Boolean).join(', ');
+        showToast(String(t('quick_reply_refused_no_option') || "Quick reply %1$s doesn't match any option of this session's open question. Options: %2$s")
+          .replace('%1$s', String(label || value || '')).replace('%2$s', labels), 'error', 6000);
+        return;
+      }
+      return _questionAnswerSubmit(q.id, '', optionId, '')
+        .then(() => {
+          const optLabel = _questionAnswerOptionLabel(q.options, optionId) || optionId;
+          showToast(String(t('quick_reply_answered') || 'Answered with option %1$s').replace('%1$s', optLabel), 'success');
+          if (typeof window.refreshAutomationQuestions === 'function') window.refreshAutomationQuestions();
+        })
+        .catch(err => {
+          showToast(_questionAnswerErrorMessage(err), 'error', 6000);
+        });
+    });
+}
+window.quickReplyRoute = quickReplyRoute;
+
 // _questionContextSafeViewerURL gives the viewer link back only when it is a
 // same-origin relative link: it starts with a single slash and carries no
 // backslash, whitespace or control characters. Anything else is '' and the
@@ -45720,6 +48753,67 @@ window.heldQuestionsCardHtml = function(body) {
       <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e, true)).join('')}</div></div>`;
   }
   return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+
+// _automationHeldQuestionsLoader is the held section on GET
+// /api/autonomous/held-questions, polled at the same cadence as the
+// cards beside it. The report always carries the server's effective
+// mode (shadow when unset); when the operator-question subsystem is
+// disabled the route answers 503 and the failed line paints — the card
+// needs no disabled sentinel of its own.
+// _automationHeldAutomataLoader is the Held Automata group card on GET
+// /api/autonomous/held (the held group: expired first, every row keeping
+// reason, condition and look-again wording from the one read view). The
+// group has its own card count and is kept out of the Inbox needs-review
+// badge and of the triage failed/blocked count.
+function _automationHeldAutomataLoader() {
+  return window._listLoaders.automation_held_automata || listLoader({
+    key: 'automation_held_automata', el: 'automationHeldAutomataBody', url: '/api/autonomous/held', pollMs: 5000,
+    failedText: msg => t('held_automata_inbox_failed', [msg]),
+    active: _automationInboxLoaderActive,
+    onData: data => { _automationInboxCountSet('automation_held_automata', data); window._heldAutomataUpdateCount(); },
+    render: body => window.heldAutomataListHtml(_inboxScopeData('automation_held_automata', body)),
+  });
+}
+
+// _heldAutomataUpdateCount paints the group count on the card head when the
+// card exists; it is safe to call from onData before the tab has mounted.
+function _heldAutomataUpdateCount() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('automationHeldAutomataCount');
+  if (!el) return;
+  const ctl = window._listLoaders && window._listLoaders.automation_held_automata;
+  const n = (ctl && ctl.state && ctl.state.hasData && ctl.state.data) ? _automationInboxCountOf('automation_held_automata', ctl.state.data) : 0;
+  el.textContent = String(n);
+  el.style.display = n > 0 ? '' : 'none';
+}
+window._heldAutomataUpdateCount = _heldAutomataUpdateCount;
+
+// heldAutomataListHtml renders the Held Automata group: one row per held
+// Automaton with reason, condition, held by/at, the look-again line (or
+// the expired line) and a Release button. Empty state from the locale.
+window.heldAutomataListHtml = function(body) {
+  const held = (body && Array.isArray(body.held)) ? body.held : [];
+  if (!held.length) return `<div class="held-automata-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_automata_inbox_empty'))}</div>`;
+  const rows = held.map(function(v) {
+    if (!v || typeof v !== 'object') return '';
+    const id = String(v.id || '');
+    const title = v.title || id;
+    const cond = v.condition ? `<div style="color:var(--text2);font-size:11px;"><b>${escHtml(t('automaton_hold_condition_label'))}:</b> ${escHtml(v.condition)}</div>` : '';
+    const exp = v.expired ? `<div class="held-automata-expired" style="font-size:11px;color:var(--warning,#d9a);"><b>${escHtml(t('automaton_hold_expired'))}</b></div>` : '';
+    const look = v.until && !v.expired ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('automaton_hold_until_label'))}: ${escHtml(v.next_look_text || new Date(v.until).toLocaleString())}</div>` : '';
+    const by = [v.held_by ? escHtml(t('automaton_hold_by')) + ': ' + escHtml(v.held_by) : '', v.held_at ? escHtml(t('automaton_hold_at')) + ': ' + escHtml(new Date(v.held_at).toLocaleString()) : ''].filter(Boolean).join(' · ');
+    const btn = id ? `<button type="button" class="btn-primary" style="font-size:11px;padding:2px 10px;" title="${escHtml(t('automaton_hold_tooltip_release'))}" onclick="event.stopPropagation(); if (typeof automataRelease === 'function') automataRelease('${escHtml(id)}')">${escHtml(t('automaton_hold_release'))}</button>` : '';
+    return `<div class="held-automata-row" data-held-prd="${escHtml(id)}" style="padding:8px 0;border-top:1px solid rgba(128,128,128,.2);display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;min-width:0;">
+      <div style="flex:1 1 220px;min-width:0;">
+        <div style="font-weight:600;font-size:12px;overflow-wrap:anywhere;">${escHtml(title)} <span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(id)}</span></div>
+        ${v.reason ? `<div style="font-size:12px;"><b>${escHtml(t('automaton_hold_reason_label'))}:</b> ${escHtml(v.reason)}</div>` : ''}
+        ${cond}${exp}${look}${by ? `<div style="font-size:11px;color:var(--text2);">${by}</div>` : ''}
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
+  return `<div class="held-automata-body" style="display:flex;flex-direction:column;min-width:0;">${rows}</div>`;
 };
 
 // _automationHeldQuestionsLoader is the held section on GET
@@ -49556,9 +52650,14 @@ function switchAlertTab(tab) {
 }
 
 function alertSendCmd(sessID, command) {
-  apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
-    .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
-    .catch(e => showToast('Error: ' + e.message, 'error'));
+  // Routed through the open-question gate: with an open question for this
+  // session the reply answers it (nothing typed); with none it sends the
+  // text into the session, exactly as before.
+  quickReplyRoute(sessID, command, command, () => {
+    apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
+      .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
+      .catch(e => showToast('Error: ' + e.message, 'error'));
+  });
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
@@ -50820,12 +53919,32 @@ function renderStatsData(el, data) {
         ['stats_supervisor_watch_poll_age', 'Last poll (s ago)', (data.supervisor_watch_last_poll_age_seconds || 0) < 0 ? '-' : (data.supervisor_watch_last_poll_age_seconds || 0)],
         ['stats_supervisor_watch_agreed_days', 'Days of full agreement', data.supervisor_watch_agreed_days || 0],
       ];
+      // Per-band wait stats: one row per band that actually waits an
+      // Automaton (its waiting count, its oldest wait in minutes, its
+      // stalled share); a band that waits nothing is left out of the card
+      // entirely, and so is the whole section when the daemon reports no
+      // band rows at all. A stalled share tints the row like the alert
+      // rows above it.
+      const swBandKeys = { high: 'stats_supervisor_watch_band_high', medium: 'stats_supervisor_watch_band_medium', low: 'stats_supervisor_watch_band_low' };
+      const swBands = Array.isArray(data.supervisor_watch_priority_bands)
+        ? data.supervisor_watch_priority_bands.filter(b => b && (b.waiting || 0) > 0)
+        : [];
+      const swBandLines = swBands.map(b => {
+        const label = t(swBandKeys[b.band] || ('stats_supervisor_watch_band_' + (b.band || '')));
+        const name = (label && label.indexOf('stats_supervisor_watch_band_') !== 0) ? label : ('Band ' + (b.band || ''));
+        const row = t('stats_supervisor_watch_band_row', [b.waiting || 0, b.oldest_waiting_minutes || 0, b.stalled || 0]);
+        const value = (row && row.indexOf('%1') === -1)
+          ? row
+          : ((b.waiting || 0) + ' waiting (oldest ' + (b.oldest_waiting_minutes || 0) + ' min, ' + (b.stalled || 0) + ' stalled)');
+        const warn = (b.stalled || 0) > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(name)}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(value)}</span></div>`;
+      }).join('');
       const swLines = swRows.map(r => {
         const warn = (r[0] === 'stats_supervisor_watch_alerted' || r[0] === 'stats_supervisor_watch_would_alert') && r[2] > 0;
         return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
-        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}${swBandLines}</div></div>`;
     }
     // Supervisor loop card: whether the loop is on, the jobs enabled, the stored
     // runs by outcome, the retries used and the age of the last run. Left out
@@ -56895,6 +60014,12 @@ function showFedPeerForm(entry) {
     if (ciEl) ciEl.value = Array.isArray(entry.channel_identity) ? entry.channel_identity.join(', ') : (entry.channel_identity || '');
     if (tlsSkipVerifyEl) tlsSkipVerifyEl.checked = !!entry.tls_skip_verify;
   }
+  // Certificate pin (tls_cert_fingerprint) — same round-trip discipline as
+  // fingerprint_sync: editing pre-fills the saved pin, adding clears any
+  // stale value — and the warning line / mutual exclusion follow the box.
+  const pinEl = document.getElementById('fedPeerFormTLSCertFingerprint');
+  if (pinEl) pinEl.value = (entry && entry.tls_cert_fingerprint) ? entry.tls_cert_fingerprint : '';
+  tlsPinPairSync('fedPeerForm');
 }
 window.showFedPeerForm = showFedPeerForm;
 
@@ -56919,6 +60044,7 @@ function submitFedPeerForm() {
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const tlsCertFingerprint = ((document.getElementById('fedPeerFormTLSCertFingerprint') || {}).value || '').trim();
   const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
   // Observer pull protocol. observer_pull is always sent explicitly on PUT
   // (the server merge keeps existing values for omitted keys, so an
@@ -56941,15 +60067,17 @@ function submitFedPeerForm() {
       editBody.observer_pull_timeout_s = observerPullTimeout;   // 0 = server default
     }
     if (token) editBody.token = token;
+    if (tlsCertFingerprint) editBody.tls_cert_fingerprint = tlsCertFingerprint;
     if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
     if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
     apiFetch('/api/federation/peers/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(editBody) })
-      .then(() => { hideFedPeerForm(); loadFederationPeersPanel(); })
+      .then(d => { _surfaceResponseWarnings(d); hideFedPeerForm(); loadFederationPeersPanel(); })
       .catch(err => { if (errEl) { errEl.textContent = err.message || String(err); errEl.style.display = ''; } });
     return;
   }
 
   const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
+  if (tlsCertFingerprint) body.tls_cert_fingerprint = tlsCertFingerprint;
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend
@@ -56974,8 +60102,9 @@ function submitFedPeerForm() {
       return;
     }
     if (!resp.ok) { resp.text().then(t => { if (errEl) { errEl.textContent = t; errEl.style.display = ''; } }); return; }
-    hideFedPeerForm();
-    loadFederationPeersPanel();
+    const finishPost = () => { hideFedPeerForm(); loadFederationPeersPanel(); };
+    if (resp.json) resp.json().then(d => { _surfaceResponseWarnings(d); finishPost(); }).catch(finishPost);
+    else finishPost();
   }).catch(err => {
     if (errEl) { errEl.textContent = String(err); errEl.style.display = ''; }
   });
@@ -56989,6 +60118,7 @@ function testFedPeer(name) {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
+    _surfaceResponseWarnings(d);
     const msg = d.ok ? `OK — ${d.latency_ms}ms (${d.version || 'unknown version'})` : `FAIL: ${d.error || 'no error'}`;
     showToast('federation peer test: ' + name + ' → ' + msg);
   }).catch(err => showToast('test error: ' + String(err)));
@@ -59485,9 +62615,110 @@ function _sessionFind(fullId) {
 function _renderSessionDetailTagRow(sess) {
   const el = document.getElementById('sessionDetailTagRow');
   if (!el || !sess) return;
-  const chips = _sessionTagChipsHTML(sess);
-  el.innerHTML = chips || '';
-  el.style.display = chips ? 'flex' : 'none';
+  const list = _sessionTagChipList(sess);
+  const chips = list.join('');
+  const phone = _sessionsPhoneWidth();
+  if (!chips) {
+    el.innerHTML = ''; el.style.display = 'none';
+    if (phone) _paintSessionDetailHeaderIcons(sess.full_id || sess.id);
+    return;
+  }
+  if (!phone) { el.innerHTML = chips; el.style.display = 'flex'; return; }
+  _paintSessionDetailHeaderIcons(sess.full_id || sess.id);
+  const showing = _sessionDetailHeaderOpen === 'tags';
+  el.innerHTML = showing ? '<div class="session-detail-popover" style="display:flex;flex-wrap:wrap;gap:6px;">' + chips + '</div>' : '';
+  el.style.display = showing ? 'flex' : 'none';
+}
+
+// Phone-width header icons (Tags, Scheduled). The open popover is one
+// module-level in-memory value: '' (none), 'tags' or 'scheduled'. It is never
+// written to web storage and there is no setting for it.
+let _sessionDetailHeaderOpen = '';
+
+function _sessionDetailNextRun(items) {
+  let best = null;
+  (items || []).forEach(sc => {
+    const d = sc && sc.run_at ? new Date(sc.run_at) : null;
+    if (d && !isNaN(d.getTime()) && d.getFullYear() >= 2000 && (best === null || d < best)) best = d;
+  });
+  return best;
+}
+
+// _sessionDetailHeaderIconsHTML renders the two header buttons. Pure: takes
+// {tagCount, jobs, open, tr} (tr is an optional (key, fallback, args) helper)
+// and returns markup. A button with a zero count is left out.
+function _sessionDetailHeaderIconsHTML(o) {
+  o = o || {};
+  const tx = typeof o.tr === 'function' ? o.tr : (k, f) => f;
+  const fmt = (n) => n; // counts are plain integers
+  const tagCount = Number(o.tagCount) || 0;
+  const jobs = Array.isArray(o.jobs) ? o.jobs : [];
+  const out = [];
+  const btn = (kind, glyph, count, label, tip) => {
+    const isOpen = o.open === kind;
+    return `<button type="button" class="session-detail-icon-btn${isOpen ? ' is-active' : ''}" data-kind="${kind}" onclick="_sessionDetailHeaderToggle('${kind}')" aria-expanded="${isOpen ? 'true' : 'false'}" aria-label="${escHtml(label)}" title="${escHtml(tip)}"><span aria-hidden="true">${glyph}</span><span class="session-detail-icon-badge">${fmt(count)}</span></button>`;
+  };
+  if (tagCount > 0) {
+    const label = tx('session_detail_tags_button_label', 'Tags: %1$s', [tagCount]);
+    out.push(btn('tags', '&#127991;', tagCount, label, label));
+  }
+  if (jobs.length > 0) {
+    const label = tx('session_detail_scheduled_button_label', 'Scheduled jobs: %1$s', [jobs.length]);
+    const nx = _sessionDetailNextRun(jobs);
+    const tip = nx ? tx('session_detail_next_run', 'next') + ' ' + nx.toLocaleString() : label;
+    out.push(btn('scheduled', '&#128339;', jobs.length, label, tip));
+  }
+  return out.join('');
+}
+window._sessionDetailHeaderIconsHTML = _sessionDetailHeaderIconsHTML;
+
+function _paintSessionDetailHeaderIcons(fullId) {
+  const host = document.getElementById('sessionDetailHeaderIcons');
+  if (!host) return;
+  if (!_sessionsPhoneWidth()) { host.innerHTML = ''; return; }
+  const sess = _sessionFind(fullId);
+  const tagCount = sess ? _sessionTagChipList(sess).length : 0;
+  const jobs = _schedLastItems.get(fullId) || [];
+  host.innerHTML = _sessionDetailHeaderIconsHTML({
+    tagCount, jobs, open: _sessionDetailHeaderOpen,
+    tr: (k, f, a) => { const v = t(k, a); return (v === undefined || v === null || v === k) ? f.replace('%1$s', a ? a[0] : '') : v; },
+  });
+}
+
+function _sessionDetailRepaintHeader() {
+  const sid = state.activeSession || '';
+  const sess = _sessionFind(sid);
+  if (sess) _renderSessionDetailTagRow(sess);
+  _renderSessionSchedules(sess ? (sess.full_id || sess.id) : sid);
+}
+
+// Document listeners for Escape / outside tap are attached lazily, once, the
+// first time a header popover is opened, so nothing is registered at load.
+let _sessionDetailHeaderListening = false;
+function _sessionDetailHeaderListen() {
+  if (_sessionDetailHeaderListening) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _sessionDetailHeaderListening = true;
+  document.addEventListener('keydown', (e) => { if (e && e.key === 'Escape') _sessionDetailHeaderClose(); });
+  document.addEventListener('click', (e) => {
+    if (!_sessionDetailHeaderOpen) return;
+    const tg = e && e.target;
+    if (tg && typeof tg.closest === 'function' && tg.closest('.session-detail-icon-btn, .session-detail-popover')) return;
+    _sessionDetailHeaderClose();
+  });
+}
+
+function _sessionDetailHeaderToggle(kind) {
+  _sessionDetailHeaderListen();
+  _sessionDetailHeaderOpen = _sessionDetailHeaderOpen === kind ? '' : kind;
+  _sessionDetailRepaintHeader();
+}
+window._sessionDetailHeaderToggle = _sessionDetailHeaderToggle;
+
+function _sessionDetailHeaderClose() {
+  if (!_sessionDetailHeaderOpen) return;
+  _sessionDetailHeaderOpen = '';
+  _sessionDetailRepaintHeader();
 }
 
 window.openSessionTagsModal = function(fullId) {
@@ -59586,7 +62817,7 @@ const _TAG_DRILL_BELOW = 720;      // drill-down under this width; sections from
 const _TAG_COLLAPSE_ABOVE = 8;     // more top-level tags than this: sections start closed
 const _TAG_CRUMB_LEVELS = 3;       // deeper paths collapse their middle crumbs
 const _TAG_AUTOMATA_STATUS_BADGES = {
-  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'blocked', 'completed'],
+  active: ['draft', 'planning', 'needs_review', 'approved', 'running', 'paused', 'held', 'blocked', 'completed'],
   history: ['cancelled', 'rejected', 'archived'],
 };
 

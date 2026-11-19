@@ -17,6 +17,10 @@ function harness(route, byId = {}) {
   sandbox.setInterval = () => 0;
   sandbox.clearInterval = () => {};
   sandbox.AbortController = AbortController;
+  // Per-row card elements are not in this stub DOM: a lookup that finds none
+  // makes the list repaint whole, which is what these tests read.
+  const baseById = sandbox.document.getElementById;
+  sandbox.document.getElementById = id => (/^prdRow_|^prdPanelMeta$/.test(id) ? null : baseById(id));
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n = sandbox._i18n || {};

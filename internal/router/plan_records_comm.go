@@ -3,8 +3,8 @@
 // Signal / Telegram without curl. The verbs proxy the REST surface
 // (internal/server/plan_records.go) through the loopback helpers:
 //
-//	autonomous plan-records [registry-row|finding] [project=P] [state=S]
-//	autonomous plan-record list [registry-row|finding] [project=P] [state=S]
+//	autonomous plan-records [registry-row|finding] [project=P] [state=S[,S...]]
+//	autonomous plan-record list [registry-row|finding] [project=P] [state=S[,S...]]
 //		ten newest records, one per line: the title first, then the id,
 //		the project, the state and the old row number. A read.
 //	autonomous plan-record get <ref>
@@ -33,6 +33,8 @@
 //	autonomous plan attach <plan> automaton|automation|finding <id>
 //	autonomous plan detach <plan> automaton|automation|finding <id>
 //		link or unlink one; a link held elsewhere is refused and named.
+//	The release plan verbs (themes, archive, restore, unattributed, migrate
+//	release, attach with several ids) are in plans_release_comm.go.
 //	"arcs" is accepted in place of "plan" (autonomous arcs list <project> …).
 //	Each verb calls the loopback REST route, so chat runs the same code as REST.
 
@@ -51,7 +53,7 @@ import (
 const (
 	// planRecordsUsage is the usage line for the plan record comm verbs; a bad
 	// verb or a missing argument replies with it.
-	planRecordsUsage = "usage: autonomous plan-records [registry-row|finding] [project=P] [state=S] | plan-record get <ref> | plan-record create <json> | plan-record update <ref> <json> | plan-record search <text> | plan-record import [dry-run] [project=P] [source=registry|findings|all] [policy=suffix|rename|skip]"
+	planRecordsUsage = "usage: autonomous plan-records [registry-row|finding] [project=P] [state=S[,S...]] | plan-record get <ref> | plan-record create <json> | plan-record update <ref> <json> | plan-record search <text> | plan-record import [dry-run] [project=P] [source=registry|findings|all] [policy=suffix|rename|skip]"
 
 	// planVerbUsage is the usage line for the plan verbs.
 	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id>  (arcs works in place of plan)"
@@ -125,7 +127,8 @@ func (r *Router) handlePlanRecordsVerb(verb string, args []string) {
 }
 
 // planRecordsFilterArgs reads the optional kind word and the project= and
-// state= filters of a list.
+// state= filters of a list; state= may be one state or a comma-separated
+// list, which the daemon parses and checks.
 func planRecordsFilterArgs(args []string) (segs []string, q url.Values, ok bool) {
 	q = url.Values{"limit": {strconv.Itoa(planRecordsMaxLines)}}
 	segs = []string{"registry-rows", "findings"}
@@ -189,12 +192,15 @@ func (r *Router) planRecordsList(args []string) {
 		return
 	}
 	var parts []string
+	var lastRefuse error
 	for _, seg := range segs {
 		out, err := r.commGet("/api/plan-records/"+seg, q)
 		if err != nil {
 			// A state that fits only one kind is refused by the other one;
-			// when both were asked that is not a failure.
+			// when both were asked that is not a failure as long as at least
+			// one collection still answers.
 			if len(segs) > 1 && q.Get("state") != "" && strings.HasPrefix(err.Error(), "HTTP 400") {
+				lastRefuse = err
 				continue
 			}
 			r.reply("autonomous plan-records failed", err.Error())
@@ -217,6 +223,12 @@ func (r *Router) planRecordsList(args []string) {
 		parts = append(parts, text)
 	}
 	if len(parts) == 0 {
+		if q.Get("state") != "" && lastRefuse != nil {
+			// Every collection refused the state filter: say so with the
+			// daemon's plain refusal instead of an empty list.
+			r.reply("autonomous plan-records failed", lastRefuse.Error())
+			return
+		}
 		parts = append(parts, "No plan records to show.")
 	}
 	r.reply("autonomous plan-records", strings.Join(parts, "\n"))
@@ -603,8 +615,20 @@ func (r *Router) handlePlanVerb(args []string) {
 		r.planMove(rest)
 	case "attach", "detach":
 		r.planLink(sub, rest)
+	case "themes":
+		r.planThemes(rest)
+	case "theme":
+		r.planTheme(rest)
+	case "archive":
+		r.planArchive(rest)
+	case "restore":
+		r.planRestore(rest)
+	case "unattributed":
+		r.planUnattributed(rest)
+	case "migrate":
+		r.planMigrate(rest)
 	default:
-		r.reply("autonomous plan failed", planVerbUsage)
+		r.reply("autonomous plan failed", planVerbUsage+" | "+planReleaseVerbUsage)
 	}
 }
 
@@ -803,6 +827,13 @@ func (r *Router) planMoveAutomaton(plan, automaton string, pos int) {
 }
 
 func (r *Router) planLink(verb string, args []string) {
+	// Several ids, or a theme, is the list form of attach (plans_release_comm.go).
+	if verb == "attach" {
+		if words, kv := planKV(args, "theme"); len(words) > 3 || kv["theme"] != "" {
+			r.planAttachMany(args)
+			return
+		}
+	}
 	if len(args) != 3 {
 		r.reply("autonomous plan failed", planVerbUsage)
 		return

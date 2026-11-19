@@ -121,7 +121,7 @@ Selected core tools:
 | Tool | Description |
 |------|-------------|
 | `list_sessions` | List all active AI sessions on this host |
-| `start_session` | Start a new AI session (supports `caller_session_id`, `kill_children`, `permission_mode`) |
+| `start_session` | Start a new AI session (supports `model`, `effort`, `name`, `caller_session_id`, `kill_children`, `permission_mode`) |
 | `session_output` | Get the last N lines of output from a session |
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
@@ -132,10 +132,13 @@ Selected core tools:
 | `cost_charts` | The combined usage report over the spend ledger and Automaton attempts: cost over time, tool usage (a count per group, never a tool name) and retries and failure categories joined into one payload (`cost_over_time`, `tool_usage`, `failures`), each as `GET /api/cost/series`, `GET /api/cost/tool-usage` and `GET /api/cost/failures` return it; money is one total per billing unit, never added across units; optional `group_by` (automaton, project, model or automation — a view that does not know it keeps its default and the payload's notes say so) and `window` (such as `36h`, `7d`, `2w`); read-only |
 | `llm_add` / `llm_update` | Add or change an LLM registry entry; both accept `billing_mode` (`api`, `allowance` or `local`) — an unknown value is refused, an empty one is resolved from the `usage.billing` profile, then the kind default. `llm_get` and `llm_list` return the stored `billing_mode` |
 | `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | Autonomous PRD lifecycle |
+| `autonomous_prd_hold` / `autonomous_prd_release_hold` | Put one Automaton on an operator hold (`id`, required `reason`, optional `condition` and `until` — RFC 3339 time, date or duration; a second call extends the hold) or release it (it returns to its previous status, nothing starts) |
+| `autonomous_held` | Read the Held group: every Automaton on hold with its reason, condition and look-again line, expired first; read-only |
+| `autonomous_held_migrate` | List blocked or failed Automata that look like they are waiting on purpose and put the chosen `ids` on hold; dry run (or no ids) lists only, a real run needs ids and your `reason` |
 | `question_raise` | raise an operator question to this daemon's operator (the operator-question channel) |
 | `question_list` | list the daemon's stored operator questions, optionally filtered (the poll read) |
 | `project_list` | list the registered project aliases with their record fields |
-| `project_upsert` | register or update a project alias and its record (owner, repository, default branch, plans, target, lane defaults, weekly share, branch retention, major trigger); an omitted field keeps its stored value |
+| `project_upsert` | register or update a project alias and its record (default backend, description, owner, repository, default branch, plans, target, lane defaults, weekly share, branch retention, major trigger). A field left out — `description` and `default_backend` included — keeps its stored value; an explicit empty value clears it. `policy` is written as sent; absent there, it clears the stored policy |
 | `project_set_arcs` | replace a project's ordered plan list (`automation_id`, `priority`, `state`); `[]` clears it |
 | `plan_create` | create a plan in a project (`project`, `title`, optional `goal`) |
 | `plan_reorder` | set the plan priority order (`plans`, first plan first) |
@@ -154,8 +157,10 @@ Selected core tools:
 | `autonomous_decision_record_list` / `autonomous_decision_record_get` | List or read decision records: `state` (`open`, `answered` or `withdrawn`), `prd_id`, `limit` (1–1000, default 100); listing also returns the daemon's folder-watch status; read-only, needs `autonomous:read` |
 | `plan_record_create` / `plan_record_update` / `plan_record_import` | Write plan records (registry rows and findings kept by the daemon): create or change one, or import the plans registry and findings files. `kind` is `registry-row` or `finding`; `ref` is an id, `row <n>`, a title or a unique title prefix; import previews unless `dry_run` is `false` |
 | `plan_record_list` / `plan_record_get` / `plan_record_search` | List one kind, read one record, or search titles and notes across both kinds (`project`, `state`, `limit`, `offset`; the daemon caps a page at 500) |
-| `housekeeping_repairs` | Read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`) the mode in effect (`off`, `report`, `on`), what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe; no arguments, read-only. Change a mode with `config_set`, key `autonomous.housekeeping_repairs.<group>` |
+| `housekeeping_repairs` | Read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) the mode in effect (`off`, `report`, `on`), what a report-mode pass would do, what an on-mode pass did, and the cases that failed or were skipped as unsafe; no arguments, read-only. Change a mode with `config_set`, key `autonomous.housekeeping_repairs.<group>` |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
+| `autonomous_prd_tasks` | One page of one Automaton's task rows (`limit`, `cursor`) |
+| `autonomous_prd_archive` / `autonomous_archive` | Read one finished Automaton's archive (`id`); report (dry run, the default) or perform (`dry_run=false`) the archive of finished Automata |
 | `autonomous_event_kinds` | List every lifecycle event kind a subscription can match, grouped, with each kind's description and whether it wakes the supervisor by default (read-only, no parameters) |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_prd_set_project` | Link an Automaton to a configured project (`id`, `project`); an empty project clears the link and an unknown name is refused with the configured names |
@@ -185,6 +190,7 @@ Selected core tools:
 | `autonomous_merge` | Read the Automaton merge state: the `merge_pending_mode` in effect (`off`, `shadow` or `on`), the alert threshold in minutes (`alert_minutes`, `0` = off), one entry per finished Automaton with a work branch and its state (`merged`, `pending`, `needs_look`, `empty` or `unknown`), and in `shadow` mode the decisions the check would have acted on; takes no parameters, read-only, nothing is merged, deleted or pushed |
 | `autonomous_merge_shadow_status` | Read the shadow merge plan state (Phase 4, shadow mode): per project the stored plans (`applied` always `false`), the stored comparisons (empty until the post-ship flow persists them) and the matched/different comparison counts per release size (`patch`, `minor`, `major`, `none`); optional `project`, read-only, reads stores only — runs no git, merges nothing, files nothing |
 | `autonomous_safe_to_delete` | Read the safe-to-delete report for Automaton work branches and worktrees: `safe` (can be cleaned up), `held` (must stay: not merged yet, needs a look, or a worktree with uncommitted changes) and `held_dirty`; takes no parameters, read-only, never deletes anything |
+| `autonomous_unlanded_work` | Read the archived Automaton branches with work that is not on the default branch: a `counts` block first (`total`, `by_state` — landed, pending, live, unlanded; `by_age` — under_one_day, under_one_week, older; `oldest_pending`), then one entry per branch with the Automaton, the branch, the commits not landed, the last activity, the recommendation (`landed`, `superseded` or `needs_decision`) and the reason; takes no parameters, read-only — keeping, archiving and deleting are not MCP tools |
 | `supervisor_watch_list` | Read the supervisor watch: the `mode` in effect (`off`, `shadow` or `on`; an unset mode reads `shadow`, which reports only and never acts), `last_poll_at`, the stored `findings` (open first, most recently seen first: `kind`, `subject`, the operator line, first and last seen, the shadow would-alert mark and the raised-alert instant) and the `comparison` against the supervisor script's record; takes no arguments, read-only |
 | `supervisor_watch_stats` | Read the supervisor watch as numbers: `mode`, `last_poll_at`, `last_poll_age_seconds` (-1 when it never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved` and `agreed_days`; takes no arguments, read-only |
 | `supervisor_loop_jobs` | Read the supervisor loop's jobs: the loop's `enabled` state and, per job, its `name`, `kind` (`mechanical` or `model`), the model job's style, backend and model, whether it is enabled, and its last outcome and run instant; takes no arguments, read-only |
@@ -301,6 +307,6 @@ A remote AI agent (e.g. running in a cloud function) can:
 This enables fully autonomous AI workflows that delegate coding tasks to
 datawatch-managed AI sessions on your development machines.
 
-- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role and task kind, the latest start-up averages per profile and role, and `in_force`, the profile each role and task kind starts with now. Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
+- `worker_profile_status` — read-only: built-in worker profile names, the defaults per role, task kind and session kind, the latest start-up averages per profile and role, and `in_force`, the profile each of them starts with now (thirteen entries). Profiles are set with `config_set` on `autonomous.worker_profile*`; an Automaton's profile with `autonomous_prd_set_worker_profile`.
 - `secret_scan_config_get` / `secret_scan_config_set` — read and change the push-time secret scan (`git.secret_scan`); the setter validates the mode, detector names and fingerprints.
 - `secret_scan_stats` — read the daemon's pre-push secret-scan counters (`runs`, `findings`, `shadow_reports`, `refusals`, `last_run_at`, `last_refusal_at`) plus the effective `git.secret_scan` mode; proxies `GET /api/git/secret-scan/stats`. Counters are in-memory since daemon start and reset on restart.

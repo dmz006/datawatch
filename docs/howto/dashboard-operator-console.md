@@ -30,7 +30,7 @@ where the operator acts on it:
 | Section | What it reads | Where you act on it |
 |---|---|---|
 | `questions_waiting` | Open operator questions (the question channel, held questions and worker-marker questions) | the PWA questions view |
-| `held_blocked` | Automata stuck in a failed or blocked triage state, plus uncommitted-work holds | the held questions / held state views |
+| `held_blocked` | Automata stuck in a failed or blocked triage state, plus uncommitted-work holds; Automata an operator put on [hold](automaton-hold.md) are shown as "N held (not counted as stuck)" | the held questions / held state views |
 | `lanes` | Lane fill status and the capacity admission wait queue | the lanes view |
 | `usage` | The burn guard state and the usage calculator projection | the usage view |
 | `ci_release` | The running and latest release, the ship policy, and the repo CI watch records (the failing and hung runs are listed on the card) | the releases view, the repo CI watch in Settings |

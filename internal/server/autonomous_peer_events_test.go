@@ -64,7 +64,7 @@ func newPeerEventsHarness(t *testing.T, enabled bool) *peerEventsHarness {
 		Settings: func() autonomous.ForwardSettings {
 			return autonomous.ForwardSettings{Enabled: true, MaxAttempts: 3, Timeout: 2 * time.Second}
 		},
-		NewClient:    func(_ bool, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
+		NewClient:    func(_ bool, _ string, timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} },
 		Publish:      func(ev autonomous.LifecycleEvent) { h.mu.Lock(); h.seen = append(h.seen, ev); h.mu.Unlock() },
 		PollInterval: time.Millisecond,
 	})

@@ -21,30 +21,30 @@ import (
 
 // Memory represents a single stored memory record.
 type Memory struct {
-	ID         int64     `json:"id"`
-	SessionID  string    `json:"session_id,omitempty"`
-	ProjectDir string    `json:"project_dir"`
-	Content    string    `json:"content"`
-	Summary    string    `json:"summary,omitempty"`
-	Role       string    `json:"role"`       // "session", "manual", "learning", "output_chunk"
-	Wing       string    `json:"wing,omitempty"`       // project/person grouping (BL55)
-	Room       string    `json:"room,omitempty"`       // topic within a wing (BL55)
-	Hall       string    `json:"hall,omitempty"`       // standardized type: facts/events/discoveries/preferences/advice (BL55)
+	ID         int64  `json:"id"`
+	SessionID  string `json:"session_id,omitempty"`
+	ProjectDir string `json:"project_dir"`
+	Content    string `json:"content"`
+	Summary    string `json:"summary,omitempty"`
+	Role       string `json:"role"`           // "session", "manual", "learning", "output_chunk"
+	Wing       string `json:"wing,omitempty"` // project/person grouping (BL55)
+	Room       string `json:"room,omitempty"` // topic within a wing (BL55)
+	Hall       string `json:"hall,omitempty"` // standardized type: facts/events/discoveries/preferences/advice (BL55)
 	// v5.26.72 — full mempalace spatial schema.
-	Floor      string    `json:"floor,omitempty"`      // org/workspace above wing
-	Shelf      string    `json:"shelf,omitempty"`      // subtopic within a room
-	Box        string    `json:"box,omitempty"`        // per-author bundling within a shelf
+	Floor string `json:"floor,omitempty"` // org/workspace above wing
+	Shelf string `json:"shelf,omitempty"` // subtopic within a room
+	Box   string `json:"box,omitempty"`   // per-author bundling within a shelf
 	// Source — corpus_origin port. "operator", "session", "channel:slack",
 	// "mcp:remember", "import:claude-code", etc. Empty == legacy row.
-	Source     string    `json:"source,omitempty"`
+	Source string `json:"source,omitempty"`
 	// LastHitAt — last time this row surfaced in a Search top-K.
 	// Drives similarity-stale eviction. Zero == never hit.
-	LastHitAt  int64     `json:"last_hit_at,omitempty"`
+	LastHitAt int64 `json:"last_hit_at,omitempty"`
 	// Pinned (Mempalace QW#2, v5.26.70) — operator-marked memories
 	// that always surface in L1 critical-facts even when their
 	// vector-similarity rank is low. Useful for project conventions
 	// and non-obvious gotchas the operator wants always-loaded.
-	Pinned     bool      `json:"pinned,omitempty"`
+	Pinned bool `json:"pinned,omitempty"`
 	// Namespace isolates memories per F10 Project Profile so workers
 	// only see their own writes (sprint 6 federation). Default
 	// "__global__" preserves the pre-F10 single-namespace behaviour;
@@ -58,7 +58,7 @@ type Memory struct {
 	// Populated only by ListRecent/ListFiltered/Search — the 3 read paths
 	// the PWA's memory browser actually uses, not every Memory-returning
 	// method in this file.
-	Tags       string    `json:"tags,omitempty"`
+	Tags string `json:"tags,omitempty"`
 }
 
 // DefaultNamespace is what Save / SaveWithMeta tag rows with when
@@ -70,9 +70,9 @@ const DefaultNamespace = "__global__"
 // Store is the SQLite-backed memory store.
 type Store struct {
 	db      *sql.DB
-	walPath string   // write-ahead log file path
+	walPath string // write-ahead log file path
 	walMu   sync.Mutex
-	encKey  []byte   // 32-byte XChaCha20 key; nil = no encryption
+	encKey  []byte // 32-byte XChaCha20 key; nil = no encryption
 }
 
 // NewStore opens or creates a SQLite memory database at the given path.
@@ -163,30 +163,30 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	// Migration v1.4.0: add content_hash column for deduplication
-	db.Exec(`ALTER TABLE memories ADD COLUMN content_hash TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN content_hash TEXT DEFAULT ''`)           //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_hash ON memories(content_hash)`) //nolint:errcheck
 	// Migration v1.5.0: add wing/room/hall columns for spatial organization (BL55)
-	db.Exec(`ALTER TABLE memories ADD COLUMN wing TEXT DEFAULT ''`) //nolint:errcheck
-	db.Exec(`ALTER TABLE memories ADD COLUMN room TEXT DEFAULT ''`) //nolint:errcheck
-	db.Exec(`ALTER TABLE memories ADD COLUMN hall TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN wing TEXT DEFAULT ''`)           //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN room TEXT DEFAULT ''`)           //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN hall TEXT DEFAULT ''`)           //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_wing ON memories(wing)`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_room ON memories(room)`) //nolint:errcheck
 	// Migration v5.26.70 (Mempalace QW#2): add pinned column for L1 boost.
-	db.Exec(`ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0`)           //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(pinned)`) //nolint:errcheck
 	// F10 S6.1: per-Project-Profile namespace for memory federation.
 	// DEFAULT '__global__' so existing rows carry forward into the
 	// global namespace + the pre-F10 single-namespace queries keep
 	// matching them.
 	db.Exec(`ALTER TABLE memories ADD COLUMN namespace TEXT NOT NULL DEFAULT '__global__'`) //nolint:errcheck
-	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace)`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace)`)     //nolint:errcheck
 	// Backfill any nullable historical rows.
 	db.Exec(`UPDATE memories SET namespace = '__global__' WHERE namespace IS NULL OR namespace = ''`) //nolint:errcheck
 	// BL99 — closets/drawers chain. drawer_id links a closet (summary
 	// row) to its drawer (verbatim row) so the small/fast summary
 	// embedding gets hit first; the large verbatim is fetched on-
 	// demand when the operator drills in.
-	db.Exec(`ALTER TABLE memories ADD COLUMN drawer_id INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN drawer_id INTEGER DEFAULT 0`)           //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_drawer ON memories(drawer_id)`) //nolint:errcheck
 	// Migration v5.26.72 — full mempalace spatial schema.
 	//
@@ -196,9 +196,9 @@ func migrate(db *sql.DB) error {
 	// All default to '' so pre-v5.26.72 rows carry forward as
 	// "no extra dim set" — queries without a filter on the new
 	// columns return the same rows they did before.
-	db.Exec(`ALTER TABLE memories ADD COLUMN floor TEXT DEFAULT ''`) //nolint:errcheck
-	db.Exec(`ALTER TABLE memories ADD COLUMN shelf TEXT DEFAULT ''`) //nolint:errcheck
-	db.Exec(`ALTER TABLE memories ADD COLUMN box   TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN floor TEXT DEFAULT ''`)            //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN shelf TEXT DEFAULT ''`)            //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN box   TEXT DEFAULT ''`)            //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_floor ON memories(floor)`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_shelf ON memories(shelf)`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_box   ON memories(box)`)   //nolint:errcheck
@@ -206,18 +206,18 @@ func migrate(db *sql.DB) error {
 	// stay '' — any new write without an explicit Source picks
 	// it up from the role (manual → "operator", session → "session",
 	// etc.) at the SaveWithNamespace boundary.
-	db.Exec(`ALTER TABLE memories ADD COLUMN source TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN source TEXT DEFAULT ''`)             //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`) //nolint:errcheck
 	// last_hit_at — populated by Search when this row appears in
 	// the top-K result set. Drives the similarity-stale sweeper
 	// (mempalace's sweeper.py port). Default 0 (epoch) so brand-
 	// new rows aren't immediately eviction candidates.
-	db.Exec(`ALTER TABLE memories ADD COLUMN last_hit_at INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN last_hit_at INTEGER DEFAULT 0`)             //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_last_hit ON memories(last_hit_at)`) //nolint:errcheck
 	// GH#192 D78a — tags column. Comma-separated free text, set via
 	// SetTags after the row is created (mirrors SetPinned/PinnableBackend
 	// below) — Remember/Save's own signature is intentionally untouched.
-	db.Exec(`ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT ''`)           //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_tags ON memories(tags)`) //nolint:errcheck
 	// schema_version table — closes the migrate.py audit partial.
 	// Each migration above is idempotent already; this table lets
@@ -472,6 +472,7 @@ func (s *Store) ListWings() (map[string]int, error) {
 //   - shared:    namespaces = [profile.namespace, "__global__"]
 //   - sync-back: same as shared, but writes back to parent
 //   - ephemeral: not federated; worker queries only its own namespace
+//
 // Empty `namespaces` falls back to the default namespace so misuse
 // at boundaries doesn't accidentally union the entire memory store.
 func (s *Store) SearchInNamespaces(namespaces []string, queryVec []float32, topK int) ([]Memory, error) {
@@ -829,15 +830,24 @@ func (s *Store) ApplyRetention(policy RetentionPolicy) int64 {
 }
 
 // ListForReindex returns all memory IDs and content for batch re-embedding.
-func (s *Store) ListForReindex() ([]struct{ ID int64; Content string }, error) {
+func (s *Store) ListForReindex() ([]struct {
+	ID      int64
+	Content string
+}, error) {
 	rows, err := s.db.Query(`SELECT id, content FROM memories ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
-	var result []struct{ ID int64; Content string }
+	var result []struct {
+		ID      int64
+		Content string
+	}
 	for rows.Next() {
-		var r struct{ ID int64; Content string }
+		var r struct {
+			ID      int64
+			Content string
+		}
 		if rows.Scan(&r.ID, &r.Content) == nil {
 			r.Content = s.decryptField(r.Content)
 			result = append(result, r)
@@ -1042,11 +1052,11 @@ type MemoryStats struct {
 // Stats returns aggregate metrics about the memory store.
 func (s *Store) Stats() MemoryStats {
 	var ms MemoryStats
-	s.db.QueryRow(`SELECT COUNT(*) FROM memories`).Scan(&ms.TotalCount)                              //nolint:errcheck
-	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='manual'`).Scan(&ms.ManualCount)          //nolint:errcheck
-	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='session'`).Scan(&ms.SessionCount)        //nolint:errcheck
-	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='learning'`).Scan(&ms.LearningCount)      //nolint:errcheck
-	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='output_chunk'`).Scan(&ms.ChunkCount)     //nolint:errcheck
+	s.db.QueryRow(`SELECT COUNT(*) FROM memories`).Scan(&ms.TotalCount)                           //nolint:errcheck
+	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='manual'`).Scan(&ms.ManualCount)      //nolint:errcheck
+	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='session'`).Scan(&ms.SessionCount)    //nolint:errcheck
+	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='learning'`).Scan(&ms.LearningCount)  //nolint:errcheck
+	s.db.QueryRow(`SELECT COUNT(*) FROM memories WHERE role='output_chunk'`).Scan(&ms.ChunkCount) //nolint:errcheck
 	// SQLite page_count * page_size gives DB file size
 	s.db.QueryRow(`SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&ms.DBSizeBytes) //nolint:errcheck
 	ms.Encrypted = s.IsEncrypted()
@@ -1162,8 +1172,8 @@ func (s *Store) walLog(operation string, params map[string]interface{}) {
 	if err != nil {
 		return
 	}
-	defer f.Close() //nolint:errcheck
-	f.Write(data)   //nolint:errcheck
+	defer f.Close()       //nolint:errcheck
+	f.Write(data)         //nolint:errcheck
 	f.Write([]byte("\n")) //nolint:errcheck
 }
 
@@ -1196,22 +1206,22 @@ func (s *Store) WALRecent(n int) []WALEntry {
 // F10 S6.3 — Wing/Room/Hall + Namespace round-trip with import so
 // sync-back preserves spatial structure + per-Project-Profile bucket.
 type ExportMemory struct {
-	ID         int64    `json:"id"`
-	SessionID  string   `json:"session_id"`
-	ProjectDir string   `json:"project_dir"`
-	Content    string   `json:"content"`
-	Summary    string   `json:"summary"`
-	Role       string   `json:"role"`
-	Wing       string   `json:"wing,omitempty"`
-	Room       string   `json:"room,omitempty"`
-	Hall       string   `json:"hall,omitempty"`
-	Namespace  string   `json:"namespace,omitempty"`
+	ID         int64  `json:"id"`
+	SessionID  string `json:"session_id"`
+	ProjectDir string `json:"project_dir"`
+	Content    string `json:"content"`
+	Summary    string `json:"summary"`
+	Role       string `json:"role"`
+	Wing       string `json:"wing,omitempty"`
+	Room       string `json:"room,omitempty"`
+	Hall       string `json:"hall,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
 	// Embedding is the JSON-serialised float32 vector. Round-tripped
 	// through Export/Import so federated search hits imported rows
 	// (S6.3 sync-back requires this — without the embedding the row
 	// matches no `embedding IS NOT NULL` query).
 	Embedding []float32 `json:"embedding,omitempty"`
-	CreatedAt string   `json:"created_at"`
+	CreatedAt string    `json:"created_at"`
 }
 
 // Export writes all memories as a JSON array to the writer.

@@ -14,7 +14,7 @@ import (
 
 func (s *Server) toolUsageBackoffStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_backoff_status",
-		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) the effective config (mode, max_wait_minutes), and the rate-limit pattern-drift guard (patterns_version, patterns_stale, claude_cli_version — the text printed by the claude tool's version command). patterns_stale turns true whenever the effective patterns change since the last operator recheck, and also when the claude tool version text changes. A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked."),
+		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) the effective config (mode, max_wait_minutes, reserve_for_review, reserve_tokens_per_hour), and the rate-limit pattern-drift guard (patterns_version, patterns_stale, claude_cli_version — the text printed by the claude tool's version command). patterns_stale turns true whenever the effective patterns change since the last operator recheck, and also when the claude tool version text changes. A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked. The reserve array carries the current-window per-hour reserve usage (backend, tokens_used) for each backed-off backend; it is omitted when the daemon does not run the review-reserve gate or no flag is live."),
 	)
 }
 func (s *Server) handleUsageBackoffStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

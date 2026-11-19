@@ -37,10 +37,12 @@ classified and handled differently.
 
 | Category | Meaning |
 |---|---|
-| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, unparseable response, a stalled worker). Retrying the identical call against a healthy session would likely produce a different outcome. |
+| `infra` | The judging/executing mechanism itself never completed its job (session timeout/crash, an LLM call that failed before producing output, a stalled worker). Retrying the identical call against a healthy session would likely produce a different outcome. |
 | `content` | The mechanism ran to completion and produced a real judgment — the work itself was found deficient. |
 | `scope` | The spec itself violates a structural constraint before any worker/judge acts on content. Retrying the identical spec unchanged reproduces the identical violation. |
 | `policy` | An operator-configured gate (e.g. a quality-gate regression) deliberately intervened by design. |
+
+There is one more category that appears on planning-failure records but never on a retry budget: **`invalid-response`** — the mechanism produced a response that the daemon could not use, and re-running it the same way would only reproduce it. A decompose whose *output* fails to parse (or is too large to parse) is recorded with source `decompose-parse` and category `invalid-response`: terminal, `retryable: false`, outside the `infra` budget. The contrast that matters for decompose: a decompose **LLM call** that fails before producing output is source `decompose-llm`, category `infra`, and takes the ordinary infra-retry path — the session died, so a healthy one may do better; but a decompose that **wrote a plan the daemon cannot parse** is a written verdict, and the PRD rolls back to `draft` with the raw output kept for inspection (see [decompose-async.md](decompose-async.md) "When the decompose output cannot be parsed").
 
 ## Default behavior
 
@@ -91,13 +93,18 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   `awaiting_approval` exactly like normal decompose output. Once it
   completes, the PRD-completion check re-fires automatically.
 - **`infra`/`scope`, during decompose itself** (the planning LLM call
-  failing, its response failing to parse, or a tooled plan skipping a
-  required verification script): the SAME retry budget and categories
-  apply here too — decompose is not a separate mechanism. The failed
-  attempt's own error text is fed into the next attempt's prompt
+  failing — source `decompose-llm`, category `infra` — or a tooled plan
+  skipping a required verification script): the SAME retry budget and
+  categories apply here too — decompose is not a separate mechanism. The
+  failed attempt's own error text is fed into the next attempt's prompt
   ("Your previous attempt failed: ..."), the same single-use-hint
   lifecycle a task's `RetryHint` already uses. The Automaton stays
-  visibly `planning` while this happens; only a genuinely exhausted
+  visibly `planning` while this happens. A decompose output that **does**
+  come back but fails to parse is different: source `decompose-parse`,
+  category `invalid-response` — terminal, no infra retry — because the
+  model wrote the plan and the daemon simply cannot use it; re-running
+  the identical call would reproduce the identical output. Only a
+  genuinely exhausted
   decompose attempt rolls it back to `draft` for an operator to
   revise. `scope`'s default budget of 0 means a verification-script
   violation still fails on the first attempt by default — an

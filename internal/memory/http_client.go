@@ -47,12 +47,12 @@ const (
 // env (DATAWATCH_BOOTSTRAP_URL + DATAWATCH_TOKEN); the namespace +
 // mode come from the per-spawn DATAWATCH_MEMORY_* envs.
 type HTTPClient struct {
-	BaseURL   string     // parent base URL (DATAWATCH_BOOTSTRAP_URL)
-	Token     string     // optional bearer token (DATAWATCH_TOKEN)
-	Namespace string     // worker's namespace (DATAWATCH_MEMORY_NAMESPACE)
-	Profile   string     // optional Project Profile name; used for
-	                     // server-side cross-profile expansion (BL101)
-	Mode      MemoryMode // federation mode
+	BaseURL   string // parent base URL (DATAWATCH_BOOTSTRAP_URL)
+	Token     string // optional bearer token (DATAWATCH_TOKEN)
+	Namespace string // worker's namespace (DATAWATCH_MEMORY_NAMESPACE)
+	Profile   string // optional Project Profile name; used for
+	// server-side cross-profile expansion (BL101)
+	Mode MemoryMode // federation mode
 
 	HTTP *http.Client // optional override; defaults to a 30s client
 

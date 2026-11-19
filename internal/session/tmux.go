@@ -19,6 +19,7 @@ type TmuxAPI interface {
 	SendKeys(session, keys string) error
 	SendKeysWithSettle(session, keys string, settle time.Duration) error
 	SendKeysLiteral(session, data string) error
+	SendEnter(session string) error // a single Enter keypress, no text
 	ResizePane(session string, cols, rows int) error
 	WindowSize(session string) (cols, rows int, err error) // v8.37.3 — lets ResizeTmux skip a no-op resize
 	CapturePaneVisible(session string) (string, error)
@@ -266,6 +267,7 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 		settle = defaultSendSettle
 	}
 	keys = trimTrailingNewlines(keys)
+	sent := keys
 	// Chunk large inputs: tmux rejects send-keys -l arguments above ~16 KB.
 	numChunks := (len(keys) + tmuxSendChunk - 1) / tmuxSendChunk
 	for len(keys) > 0 {
@@ -282,6 +284,11 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 		}
 	}
 	time.Sleep(settleForChunks(settle, numChunks))
+	return submitPastedInput(t, session, sent)
+}
+
+// SendEnter presses Enter once in the tmux session, with no text.
+func (t *TmuxManager) SendEnter(session string) error {
 	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
 }
 

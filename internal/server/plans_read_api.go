@@ -74,6 +74,12 @@ type planRow struct {
 	AutomatonIDs  []string        `json:"automaton_ids"`
 	FindingCount  int             `json:"finding_count"`
 	Next          *planNextMarker `json:"next,omitempty"`
+	// PlanKind is "release" for a release plan, Release is its release label,
+	// and Archived marks a plan taken out of the default lists.
+	PlanKind   string `json:"plan_kind,omitempty"`
+	Release    string `json:"release,omitempty"`
+	Archived   bool   `json:"archived,omitempty"`
+	ArchivedAt string `json:"archived_at,omitempty"`
 }
 
 func (s *Server) planRowFor(d planrecords.PlanDigest, points map[string]float64) planRow {
@@ -83,6 +89,8 @@ func (s *Server) planRowFor(d planrecords.PlanDigest, points map[string]float64)
 		Progress:      newPlanProgress(d.Done, len(d.Automata)),
 		AutomationIDs: d.AutomationIDs, AutomatonIDs: make([]string, 0, len(d.Automata)),
 		FindingCount: d.Summary.FindingCount,
+		PlanKind:     string(d.Summary.PlanKind), Release: d.Summary.Release,
+		Archived: d.Summary.Archived, ArchivedAt: d.Summary.ArchivedAt,
 	}
 	if row.AutomationIDs == nil {
 		row.AutomationIDs = []string{}
@@ -121,7 +129,8 @@ func (s *Server) automatonPoints() map[string]float64 {
 		return c.data
 	}
 	now := time.Now()
-	c.data = s.costRollupPoints(mgr, now, rollupMaxWindowDays)
+	revision := mgr.Store().Revision() // read before the entries
+	c.data = s.rollupPoints(mgr, mgr.Store().SummaryEntries(), revision, now, rollupMaxWindowDays)
 	c.at = now
 	return c.data
 }
@@ -213,7 +222,11 @@ func (s *Server) handleProjectPlans(w http.ResponseWriter, r *http.Request) {
 	if bpg.Limit == 0 {
 		bpg.Limit = pg.Limit
 	}
-	view := s.planRecords.ProjectPlans(name, pg, bpg)
+	scope, ok := archiveScopeOf(w, r)
+	if !ok {
+		return
+	}
+	view := s.planRecords.ProjectPlansIn(name, pg, bpg, scope)
 	points := s.automatonPoints()
 	rows := make([]planRow, 0, len(view.Plans))
 	for _, d := range view.Plans {
@@ -269,6 +282,17 @@ func (s *Server) handleProjectOverviewSummary(w http.ResponseWriter, r *http.Req
 		}
 	}
 	entry := s.cfg.Projects[name]
+	counts := map[string]any{
+		"plans":    map[string]any{"total": ov.PlansTotal, "backlog": ov.Backlog, "archived": ov.ArchivedPlans, "by_state": ov.Plans},
+		"records":  map[string]any{"total": ov.RowsTotal + ov.FindingsTotal},
+		"rows":     map[string]any{"total": ov.RowsTotal, "by_state": ov.Rows},
+		"findings": map[string]any{"total": ov.FindingsTotal, "by_state": ov.Findings},
+	}
+	// The Automata no release plan holds. The key is left out while the
+	// Automata manager is not available to count them.
+	if n, ok := s.unattributedAutomata(name); ok {
+		counts["unattributed"] = map[string]any{"automata": n}
+	}
 	writeJSONOK(w, map[string]any{
 		"header": map[string]any{
 			"project": name, "dir": entry.Dir, "generated_at": time.Now().UTC().Format(time.RFC3339),
@@ -278,12 +302,7 @@ func (s *Server) handleProjectOverviewSummary(w http.ResponseWriter, r *http.Req
 		},
 		"active_plans": lines,
 		"next":         next,
-		"counts": map[string]any{
-			"plans":    map[string]any{"total": ov.PlansTotal, "backlog": ov.Backlog, "by_state": ov.Plans},
-			"records":  map[string]any{"total": ov.RowsTotal + ov.FindingsTotal},
-			"rows":     map[string]any{"total": ov.RowsTotal, "by_state": ov.Rows},
-			"findings": map[string]any{"total": ov.FindingsTotal, "by_state": ov.Findings},
-		},
+		"counts":       counts,
 	})
 }
 
@@ -344,7 +363,7 @@ func (s *Server) handlePlanAutomata(w http.ResponseWriter, r *http.Request) {
 		next = &planNextMarker{AutomatonID: d.Next.ID, Title: d.Next.Title}
 	}
 	writeJSONOK(w, map[string]any{
-		"plan":     map[string]any{"title": d.Summary.Title, "id": d.Summary.ID, "state": string(d.Summary.State)},
+		"plan":     planBlock(d.Summary),
 		"progress": newPlanProgress(d.Done, len(d.Automata)),
 		"next":     next,
 		"automata": rows,
@@ -465,6 +484,10 @@ type browseRow struct {
 	PlanID       string   `json:"plan_id,omitempty"`
 	PlanTitle    string   `json:"plan_title,omitempty"`
 	AutomatonIDs []string `json:"automaton_ids"`
+	// PlanKind and Release say whether the holding plan is a release plan and
+	// which release it stands for.
+	PlanKind string `json:"plan_kind,omitempty"`
+	Release  string `json:"release,omitempty"`
 }
 
 // handlePlanRecordBrowse serves GET /api/plan-records/browse.
@@ -486,23 +509,40 @@ func (s *Server) handlePlanRecordBrowse(w http.ResponseWriter, r *http.Request) 
 		f.Kind = k
 	}
 	if v := q.Get("state"); v != "" {
-		st := planrecords.State(v)
-		if (f.Kind == planrecords.KindFinding || !planrecords.ValidState(planrecords.KindRegistryRow, st)) &&
-			(f.Kind == planrecords.KindRegistryRow || !planrecords.ValidState(planrecords.KindFinding, st)) {
-			planRecordsError(w, http.StatusBadRequest, "state "+strconv.Quote(v)+" is not a valid state for this kind")
+		kinds := []planrecords.Kind{planrecords.KindRegistryRow, planrecords.KindFinding}
+		if f.Kind != "" {
+			kinds = []planrecords.Kind{f.Kind}
+		}
+		words, err := planrecords.ParseStateList(v, "state", stateWords(kinds))
+		if err != nil {
+			planRecordsError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		f.State = st
+		if len(words) == 0 {
+			planRecordsError(w, http.StatusBadRequest, "state must be one of "+strings.Join(stateWords(kinds), ", "))
+			return
+		}
+		f.States = statesFromWords(words)
 	}
 	rows, total := s.planRecords.Browse(f)
 	out := make([]browseRow, 0, len(rows))
+	kinds := map[string]planrecords.Record{} // holding plan id -> plan, read once per page
 	for _, b := range rows {
 		sm := b.Summary
-		out = append(out, browseRow{
+		row := browseRow{
 			Title: sm.Title, ID: sm.ID, UID: sm.UID, Kind: string(sm.Kind), Project: sm.Project,
 			State: string(sm.State), LegacyNumber: sm.LegacyNumber, UpdatedAt: sm.UpdatedAt,
 			PlanID: b.PlanID, PlanTitle: b.PlanName, AutomatonIDs: b.Automata,
-		})
+		}
+		if b.PlanID != "" {
+			plan, seen := kinds[b.PlanID]
+			if !seen {
+				plan, _ = s.planRecords.Resolve(b.PlanID, "")
+				kinds[b.PlanID] = plan
+			}
+			row.PlanKind, row.Release = string(plan.PlanKind), plan.Release
+		}
+		out = append(out, row)
 	}
 	writeJSONOK(w, map[string]any{"records": out, "page": pageMeta(pg, total)})
 }

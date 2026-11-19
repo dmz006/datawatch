@@ -349,13 +349,25 @@ The mode changes how sessions are drawn **with or without a grouping**: with
 an axis selected each group body is drawn in it. Tiles and Compact are the
 same grid at two sizes; List is the row layout.
 
-Two details worth knowing:
+Three details worth knowing:
 
 - The choice is **per device** (per browser). It is stored in this browser's local
   storage (`cs_sessions_view_mode`) and does not travel with federation
   peers or other devices. Each of your devices keeps its own mode.
 - In **tiles** mode the grid keeps following the viewport width on resizes,
   so rotating a tablet re-lays the tiles out without a reload.
+- **Stale stored state cannot break the toggle.** The remembered mode is
+  validated against the three known modes whenever it is read — on page
+  load and when a saved view applies one. A value left over from an older
+  datawatch version or a hand-edited local storage is not one of the three,
+  so it is ignored and the page falls back to the viewport default (list
+  below 600 px, tiles at 600 px and wider), which the toggle shows as the
+  active button. All three buttons still switch the mode and re-draw the
+  list, and your next choice overwrites the stale value — no site-data
+  reset is needed. The companion half of the fix: since the service worker
+  is now registered per release (`/sw.js?v=<release>`), a reload after an
+  upgrade always fetches the new app code, not an old cached copy — see the
+  *PWA updates on a datawatch release* section of [operations.md](../operations.md#pwa-updates-on-a-datawatch-release).
 
 ### View mode with no grouping, and the Tree toggle
 
@@ -738,6 +750,44 @@ automation:` in the CLI and `list_sessions {group_by: "tag", tag_prefix:
 session serve" cut of the list — and the same goes for any prefix present
 in your tag registry.
 
+## When the Tiles, Compact and List buttons do nothing: Reset browser state
+
+If the view-mode buttons on the Sessions page stop responding — no button
+active, or a tap does nothing — the browser is still running a saved copy of
+the app from before the last release. Two things already happen for you:
+
+- **The app upgrades itself.** Each release ships its own service worker and
+  cache (registered at `/sw.js?v=<release>`); when the new worker activates
+  it deletes the older caches and the page reloads **at most once per
+  upgrade**. The reload waits while you are mid-thing (typing in an input,
+  the terminal focused, an unsent draft) and then applies itself; the
+  "Update available — tap to reload" banner is the manual tap for the
+  meantime.
+- **Bad saved settings are dropped to their defaults.** Every saved value on
+  the page (view mode, grouping, filters, saved views, search) is validated
+  on load; an unrecognized one — left over from an older release or a
+  corrupt write — falls back to the default and is removed from storage, and
+  one bad value never blocks the rest.
+
+If a page still behaves like the old release, the manual fix is in
+**Settings → About**:
+
+- The Version card shows the release this page was **loaded with** beside
+  the release the daemon reports, in a quiet line. A mismatch means this
+  browser's copy of the app is out of line with the daemon — most often
+  because you are still on the old copy — and the **Reset browser state**
+  button below clears that copy.
+- The **Reset browser state** button clears this app's saved settings and
+  cached files in this browser — its own storage keys, its caches and its
+  service worker — and then reloads the page fresh; the reload always
+  happens, exactly once, even if one of the cleanup steps fails. It is a
+  browser-state reset, not a server action: it never touches running
+  sessions, Automata or any server data, and any other saved keys under the
+  daemon address are left as they are.
+
+(For a stuck cache the legacy console escape hatch `forcePWAUpdate()` still
+works too — it performs the same reset and hard reload.)
+
 ## All options, on one screen
 
 | Control | Where | Per-device? | Notes |
@@ -745,7 +795,7 @@ in your tag registry.
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
 | Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
-| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
+| View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; a stale stored value is ignored and the viewport default applies, so the toggle always shows one active button; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
 | Collapse a group, fold all | PWA group header, **Fold all** button in the toolbar line | yes (`cs_sessions_collapsed_groups`, keyed by axis + prefix) | Fold all appears only while a grouping with openable groups is active; body still renders in the active mode |
 | Show more (page) | PWA, under the list and under each group | no | 60 per page by default, `shown/total` counter, resets on filter change |
@@ -777,9 +827,28 @@ in your tag registry.
 - **I see a tile, not a row, and I want rows back.** Choose **List** in the
   view mode select — the choice sticks on that device. On phones the default
   is already List.
+- **The mode toggle looks broken after an upgrade (no button active, or a
+  click does nothing).** That is a stale value in the browser's local
+  storage from an older version. The page now validates the remembered mode
+  on load and falls back to the viewport default (list below 600 px, tiles
+  at 600 px and wider), so a reload is enough and the toggle shows that
+  mode as active; your next choice overwrites the stale value. If it still
+  looks wrong after a reload, tap **Reset browser state** in Settings →
+  About (see
+  [the section above](#when-the-tiles-compact-and-list-buttons-do-nothing-reset-browser-state))
+  — or clear the site data for the daemon address (key
+  `cs_sessions_view_mode`).
 - **My saved view isn't on my other device.** Saved views are per device
   by design; recreate it from the Views section of the Filters sheet. The *data* it reads (groups,
   counts, mixes) is identical on every channel and every peer.
+- **The page still looks like the old version after an upgrade.** New
+  releases ship a versioned service worker (`/sw.js?v=<release>`) with its
+  own cache, so an upgrade normally applies itself: the page reloads at
+  most once per upgrade, and when you are mid-thing (typing, terminal
+  focused, an unsent draft) the "Update available — tap to reload" banner
+  waits until you are idle. The manual escape hatch is `forcePWAUpdate()`
+  in the browser console — see the *PWA updates on a datawatch release*
+  section of [operations.md](../operations.md#pwa-updates-on-a-datawatch-release).
 - **The list looks short and I did not filter.** Check the badge on the
   **Filters** button and the search box: a remembered search or an active
   filter narrows the list (the `N of M` count shows it). Clear the search

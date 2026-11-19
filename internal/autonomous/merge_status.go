@@ -1,6 +1,8 @@
 // Automaton merge status: the read model behind GET /api/autonomous/merge.
-// It lists the completed Automata that have a work branch, with the state the
-// merge-pending pass last compared them at. Every state shown comes from the
+// It lists the Automata the merge-pending pass covers (completed, and while
+// merge_pending_include_terminal is on archived, needs_review, blocked and
+// failed) that have a work branch, with the state the pass last compared
+// them at. Every state shown comes from the
 // Coordinator's in-memory comparison cache, so a read never runs git and
 // nothing here adds a persisted field to an Automaton.
 package autonomous
@@ -18,11 +20,14 @@ import (
 // base repo is configured for Automata, so there is no repository to inspect.
 var ErrMergeNoBaseRepo = errors.New("no worktree base repo is configured for Automata")
 
-// MergeStatusEntry is one completed Automaton with a work branch.
+// MergeStatusEntry is one covered Automaton with a work branch.
 type MergeStatusEntry struct {
 	AutomatonID string `json:"automaton_id"`
 	Name        string `json:"name"`
-	Branch      string `json:"branch"`
+	// AutomatonState is the Automaton's own state (completed, archived,
+	// needs_review, blocked or failed).
+	AutomatonState string `json:"automaton_state,omitempty"`
+	Branch         string `json:"branch"`
 	// State is the cached merge comparison state; unknown until the pass has
 	// compared the branch.
 	State        string `json:"state"`
@@ -47,6 +52,13 @@ type MergeStatus struct {
 	Automata []MergeStatusEntry `json:"automata"`
 	// ShadowDecisions is newest first; empty unless the mode is shadow.
 	ShadowDecisions []MergeShadowDecision `json:"shadow_decisions"`
+	// ShadowDecisionsTotal is how many shadow decisions have been made, over
+	// the whole persisted history (not only the kept list).
+	ShadowDecisionsTotal int `json:"shadow_decisions_total"`
+	// ShadowDecisionsFalse is how many of those decisions said would_alert
+	// and were later found false: the episode ended with the branch empty or
+	// needing a look rather than merged.
+	ShadowDecisionsFalse int `json:"shadow_decisions_false"`
 	// PipelineRuns lists the merge pipeline runs, newest first, each with the
 	// steps it ran. It is filled whatever the merge-pending mode is.
 	PipelineRuns []MergePipelineRun `json:"pipeline_runs"`
@@ -134,15 +146,16 @@ func (m *Manager) MergeStatus() MergeStatus {
 		return out
 	}
 
+	includeTerminal := cfg.Automation.EffectiveMergePendingIncludeTerminal()
 	for _, prd := range m.store.ListPRDs() {
-		if prd.Status != PRDCompleted || prd.Git.Branch == "" {
+		if !mergePendingCovers(prd.Status, includeTerminal) || prd.Git.Branch == "" {
 			continue
 		}
 		name := prd.Title
 		if name == "" {
 			name = prd.ID
 		}
-		e := MergeStatusEntry{AutomatonID: prd.ID, Name: name, Branch: prd.Git.Branch, State: MergeStateUnknown}
+		e := MergeStatusEntry{AutomatonID: prd.ID, Name: name, AutomatonState: string(prd.Status), Branch: prd.Git.Branch, State: MergeStateUnknown}
 		if cmp, ok := c.mergeCached(prd.Git.Branch); ok {
 			e.State, e.CommitsAhead, e.Base = cmp.State, cmp.Ahead, cmp.Base
 		}
@@ -155,6 +168,16 @@ func (m *Manager) MergeStatus() MergeStatus {
 				wouldAlert = out.AlertMinutes > 0 && !c.now().Before(since.Add(time.Duration(out.AlertMinutes)*time.Minute))
 			}
 			e.WouldAlert = &wouldAlert
+		} else if prd.Status != PRDCompleted {
+			// the other covered states keep their episode in memory
+			if ep, ok := c.mergeEpisodeFor(prd.ID); ok && pending {
+				since := ep.since
+				e.PendingSince = &since
+				if ep.alertedAt != nil {
+					at := *ep.alertedAt
+					e.AlertedAt = &at
+				}
+			}
 		} else if t := prd.Triage; pending && t != nil && t.Status == TriageStatusMergePending {
 			first := t.FirstSeenAt
 			e.PendingSince = &first
@@ -167,6 +190,9 @@ func (m *Manager) MergeStatus() MergeStatus {
 	if mode == config.MergePendingModeShadow {
 		out.ShadowDecisions = c.MergeShadowDecisions(0)
 	}
+	// the counts are reported in on mode too, so a switch from shadow to on
+	// still shows how the shadow run went
+	out.ShadowDecisionsTotal, out.ShadowDecisionsFalse = c.shadowRecords().counts()
 	return out
 }
 

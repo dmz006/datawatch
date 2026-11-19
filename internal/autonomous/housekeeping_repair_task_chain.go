@@ -536,6 +536,9 @@ func (o ManagerChainOps) ChainTasks(_ context.Context) []ChainTask {
 		switch prd.Status {
 		case PRDCompleted, PRDRejected, PRDCancelled, PRDArchived:
 			continue
+		case PRDHeld:
+			// The tasks of a held Automaton are never reset or repaired.
+			continue
 		}
 		for _, s := range prd.Story {
 			for _, t := range s.Tasks {

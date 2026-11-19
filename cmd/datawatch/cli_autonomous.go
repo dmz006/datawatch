@@ -78,6 +78,21 @@ Subcommands:
                                   (read only; without an id every Automaton's, newest first)
   safe-to-delete [--json]         Automaton branches and worktrees that are safe to delete, and those held back
                                   (report only, nothing is deleted)
+  branch-reap [--json]            The branch reap report: the task sub-branches that would be reaped, the
+                                  ones held, and every backup ref under refs/datawatch/reap-backup/
+                                  (report only, nothing is backed up, deleted or restored)
+  branch-reap-run [--json]        Perform one branch reap pass: each listed branch is backed up first,
+                                  then deleted; held branches are listed (a reaper needs the merge base repo)
+  branch-reap-restore <branch> [--json]
+                                  Recreate one reaped branch from its newest backup ref
+  remote-reap [--json]            The remote reap report on origin: the Automaton work branches that would be
+                                  deleted from origin, the ones held, and every backup ref under
+                                  refs/datawatch/remote-reap-backup/ (report only, nothing on origin is touched)
+  remote-reap-run [--json]        Perform one remote reap pass: each qualifying branch is backed up first, its
+                                  backup is verified, then deleted on origin (report only while
+                                  autonomous.remote_reap_enabled is unset); a reaper needs the merge base repo
+  remote-reap-restore <branch> [--json]
+                                  Recreate one remotely reaped branch from its newest backup ref
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
@@ -241,6 +256,7 @@ Subcommands:
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
 		newAutonomousPRDListCmd(),
+		newAutonomousPRDTasksCmd(),
 		newAutonomousPRDCreateCmd(),
 		newAutonomousPRDGetCmd(),
 		newAutonomousPRDPlanCmd(),
@@ -248,6 +264,8 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousLandingKeepCmd(),
+		newAutonomousLandingDropCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDPlanReviewCmd(),
@@ -299,6 +317,10 @@ Subcommands:
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
 		newAutonomousCompletedMigrateCmd(),
+		newAutonomousPRDHoldCmd(),
+		newAutonomousPRDReleaseHoldCmd(),
+		newAutonomousHeldCmd(),
+		newAutonomousHeldMigrateCmd(),
 		newAutonomousDefectCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
@@ -336,6 +358,7 @@ Subcommands:
 		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
 		newAutonomousEventLogCmd(),
+		newAutonomousArchiveCmd(),
 		newAutonomousPeerEventsCmd(),
 		newAutonomousEventKindsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
@@ -355,6 +378,12 @@ Subcommands:
 		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
+		newAutonomousBranchReapCmd(),
+		newAutonomousBranchReapRunCmd(),
+		newAutonomousBranchReapRestoreCmd(),
+		newAutonomousRemoteReapCmd(),
+		newAutonomousRemoteReapRunCmd(),
+		newAutonomousRemoteReapRestoreCmd(),
 		newAutonomousCleanupCmd(),
 		// Decompose lint surface (config, dry-run, stored findings).
 		newAutonomousLintCmd(),
@@ -791,6 +820,12 @@ Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
 
+Daily unlanded-work alert, by JSON key (also settable with
+datawatch config set autonomous.<key> <value>):
+
+  unlanded_alert_enabled          true|false: raise an alert when Automaton branches waiting to land pass the threshold (default true)
+  unlanded_alert_threshold        whole number >= 0 of waiting branches that triggers the alert (default 3)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:
@@ -881,7 +916,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 				if _, err := daemonJSONBody(http.MethodPut, "/api/config", planningPatch); err != nil {
 					return err
 				}
-				fmt.Printf("autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
+				fmt.Fprintf(os.Stderr, "autonomous.planning_restart_policy = %v\n", planningPatch["autonomous.planning_restart_policy"])
 				if len(body) == 0 {
 					return nil
 				}
@@ -925,22 +960,31 @@ func printDeprecatedFields(resp []byte) {
 }
 
 func newAutonomousPRDListCmd() *cobra.Command {
-	var status, shipped string
+	var status, shipped, cursor string
+	var full bool
+	var limit int
 	cmd := &cobra.Command{
-		Use:   "prd-list",
-		Short: "List all PRDs (newest first); --status (may include shipped) or --shipped true|false narrows",
-		Long: `List all PRDs (newest first).
+		Use:     "prd-list",
+		Aliases: []string{"list"},
+		Short:   "List Automata as summaries (newest first); --full returns whole records, --status / --shipped narrow",
+		Long: `List Automata (newest first).
 
-By default this prints the full list. With --status or --shipped it
-switches to the summary list and narrows: --status takes comma-separated
-statuses, matched against the displayed status (an Automaton whose work
-landed shows as "completed"); "shipped" is still accepted and selects
-records that carry a shipped record; --shipped true keeps
-only PRDs that carry shipped state, --shipped false only ones that do
-not; with neither set the server's autonomous.shipped.filter_default
-view applies (all / shipped / unshipped).`,
-		RunE: func(*cobra.Command, []string) error {
-			q, err := prdListQuery(status, shipped)
+By default this prints the summary list: one small row per Automaton, built
+from the summary index, with no task detail. Read one Automaton's tasks with
+"datawatch autonomous tasks <id>".
+
+--full returns whole records instead. With --limit (or --cursor) that is one
+page of whole records; without either it is every record, the heavy form.
+--limit and --cursor page the list: pass the next_cursor of one reply as the
+--cursor of the next.
+
+--status takes comma-separated statuses, matched against the displayed
+status (an Automaton whose work landed shows as "completed"); "shipped" is
+still accepted and selects records that carry a shipped record; --shipped true keeps only Automata that carry shipped state,
+--shipped false only ones that do not; with neither set the server's
+autonomous.shipped.filter_default view applies (all / shipped / unshipped).`,
+		RunE: func(c *cobra.Command, _ []string) error {
+			q, err := prdListQueryOpts(status, shipped, full, limit, cursor)
 			if err != nil {
 				return err
 			}
@@ -953,30 +997,42 @@ view applies (all / shipped / unshipped).`,
 				return err
 			}
 			if len(body) > 0 {
-				prettyPrint(body)
+				prettyPrintTo(c.OutOrStdout(), body)
 			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			note := c.ErrOrStderr()
 			for _, line := range autonomous.PlanningFailureListLines(body) {
-				fmt.Println("planning failed: " + line)
+				_, _ = fmt.Fprintln(note, "planning failed: "+line)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
-	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped PRDs (default: the server's autonomous.shipped.filter_default view)")
+	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped Automata (default: the server's autonomous.shipped.filter_default view)")
+	cmd.Flags().BoolVar(&full, "full", false, "Return whole records instead of summaries (heavy without --limit)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Rows per page (daemon default when omitted)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Page cursor: the next_cursor of the previous reply")
 	return cmd
 }
 
-// prdListQuery builds the PRD list query from the --status / --shipped
-// flags. Neither set = the full list (no query, the original full=1 call
-// shape). One or the other = the server-side filtered summary list: status
-// takes comma-separated statuses and may include shipped (the shipped-state
-// bucket, selected by the record's merge commit — not the stored status);
-// shipped true keeps only PRDs that carry shipped state, false only ones
-// that do not. Status and shipped are ANDed; shipped=true remains gated by
-// autonomous.shipped enabled on the daemon.
+// prdListQuery builds the list query from --status / --shipped alone: the
+// summary list, no full flag, no paging.
 func prdListQuery(status, shipped string) (url.Values, error) {
+	return prdListQueryOpts(status, shipped, false, 0, "")
+}
+
+// prdListQueryOpts builds the Automata list query. The default is the summary
+// list (no full key). full adds full=true for whole records. limit > 0 and a
+// non-empty cursor page the list. status takes comma-separated statuses and
+// may include shipped (the shipped-state bucket, selected by the record's
+// merge commit — not the stored status); shipped true keeps only Automata that
+// carry shipped state, false only ones that do not. Status and shipped are
+// ANDed; shipped=true remains gated by autonomous.shipped enabled on the
+// daemon.
+func prdListQueryOpts(status, shipped string, full bool, limit int, cursor string) (url.Values, error) {
 	status = strings.Trim(strings.TrimSpace(status), ",")
-	switch v := strings.ToLower(strings.TrimSpace(shipped)); v {
+	sh := strings.ToLower(strings.TrimSpace(shipped))
+	switch sh {
 	case "", "all":
 		// empty: no shipped narrowing; all: the daemon default view.
 	case "true", "false":
@@ -984,20 +1040,84 @@ func prdListQuery(status, shipped string) (url.Values, error) {
 	default:
 		return nil, fmt.Errorf("shipped: must be true or false (got %q); shipped means the PRD's work has landed (its merge commit is recorded), and it is independent of status", shipped)
 	}
+	if limit < 0 {
+		return nil, fmt.Errorf("limit: must be 1 or more (got %d)", limit)
+	}
 	q := url.Values{}
-	if status == "" && strings.ToLower(strings.TrimSpace(shipped)) == "" {
-		q.Set("full", "1")
-		return q, nil
+	if full {
+		q.Set("full", "true")
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if c := strings.TrimSpace(cursor); c != "" {
+		q.Set("cursor", c)
 	}
 	if status != "" {
 		q.Set("status", status)
 	}
-	switch strings.ToLower(strings.TrimSpace(shipped)) {
-	case "", "all":
-	default:
-		q.Set("shipped", strings.ToLower(strings.TrimSpace(shipped)))
+	if sh == "true" || sh == "false" {
+		q.Set("shipped", sh)
 	}
 	return q, nil
+}
+
+// prdTasksPath builds the paged-tasks path for one Automaton:
+// GET /api/autonomous/prds/{id}/tasks?limit&cursor&story&status.
+func prdTasksPath(id string, limit int, cursor, story, status string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("automaton id is required")
+	}
+	if limit < 0 {
+		return "", fmt.Errorf("limit: must be 1 or more (got %d)", limit)
+	}
+	q := url.Values{}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if c := strings.TrimSpace(cursor); c != "" {
+		q.Set("cursor", c)
+	}
+	if v := strings.TrimSpace(story); v != "" {
+		q.Set("story", v)
+	}
+	if v := strings.Trim(strings.TrimSpace(status), ","); v != "" {
+		q.Set("status", v)
+	}
+	p := "/api/autonomous/prds/" + url.PathEscape(id) + "/tasks"
+	if len(q) > 0 {
+		p += "?" + q.Encode()
+	}
+	return p, nil
+}
+
+func newAutonomousPRDTasksCmd() *cobra.Command {
+	var limit int
+	var cursor, story, status string
+	cmd := &cobra.Command{
+		Use:     "tasks <automaton-id>",
+		Aliases: []string{"prd-tasks"},
+		Short:   "Read one page of one Automaton's tasks (--limit, --cursor)",
+		Long: `Read one page of one Automaton's task rows: identity, state, timing, the
+sessions that ran each task and a short error. The reply carries total (the
+tasks that match the filters) and next_cursor; pass next_cursor as --cursor to
+read the next page. --story narrows to one story, --status to a comma list of
+task statuses.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			p, err := prdTasksPath(args[0], limit, cursor, story, status)
+			if err != nil {
+				return err
+			}
+			return daemonGet(p)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "Tasks per page (daemon default 50, max 500)")
+	cmd.Flags().StringVar(&cursor, "cursor", "", "Page cursor: the next_cursor of the previous reply")
+	cmd.Flags().StringVar(&story, "story", "", "Only tasks of this story id")
+	cmd.Flags().StringVar(&status, "status", "", "Comma-separated task statuses to keep")
+	return cmd
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {
@@ -1077,12 +1197,13 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := c.OutOrStdout()
 			if len(body) > 0 {
-				prettyPrint(body)
+				prettyPrintTo(c.OutOrStdout(), body)
 			}
+			// Plain-text notes go to standard error so standard output stays pure JSON.
+			out := c.ErrOrStderr()
 			for _, block := range rulesReviewOutcomeBlocks(body) {
-				fmt.Print(block)
+				_, _ = fmt.Fprint(out, block)
 			}
 			for _, line := range autonomous.PlanningFailureLines(body) {
 				_, _ = fmt.Fprintln(out, line)
@@ -1090,8 +1211,11 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}
+			if line := autonomous.LandingLineFromPRD(body); line != "" {
+				_, _ = fmt.Fprintln(out, line)
+			}
 			if line := prdReviewLine(body); line != "" {
-				fmt.Println(line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdParallelLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
@@ -1282,6 +1406,64 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "operator-supplied rejection reason")
+	return cmd
+}
+
+// newAutonomousLandingKeepCmd — landing state: record that the Automaton's
+// work branch is kept unmerged on purpose (its landing record moves from
+// pending to kept, with who decided and why). The landing record (state,
+// commit, actor, at, reason) already rides on `autonomous prd-get`; these
+// two commands are the operator decisions on a pending record.
+func newAutonomousLandingKeepCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-keep <id>",
+		Short: "Record that an Automaton's branch is kept unmerged on purpose",
+		Long: "Record that the Automaton's work branch is kept unmerged on purpose: its landing record moves from " +
+			"pending to kept, named with who decided and the reason. The landing record (state, commit, actor, at, reason) " +
+			"is part of the Automaton's read (autonomous prd-get prints it as the landing line); this command changes it. " +
+			"A reason is required. A branch that has already landed cannot be kept, and a record that is already " +
+			"kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/keep", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work is not being merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
+	return cmd
+}
+
+// newAutonomousLandingDropCmd — landing state: record that the Automaton's
+// work branch is dropped and its work will not be merged (pending to
+// dropped, with who decided and why).
+func newAutonomousLandingDropCmd() *cobra.Command {
+	var reason, actor string
+	cmd := &cobra.Command{
+		Use:   "prd-landing-drop <id>",
+		Short: "Record that an Automaton's branch is dropped and its work will not be merged",
+		Long: "Record that the Automaton's work branch is dropped and its work will not be merged: its landing record " +
+			"moves from pending to dropped, named with who decided and the reason. The landing record (state, commit, " +
+			"actor, at, reason) is part of the Automaton's read (autonomous prd-get prints it as the landing line); this " +
+			"command changes it. A reason is required. A branch that has already landed cannot be kept or dropped, and a " +
+			"record that is already kept or dropped is refused.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			req := map[string]string{"actor": actor, "reason": reason}
+			if actor == "" {
+				req["actor"] = "operator"
+			}
+			body, _ := json.Marshal(req)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/landing/drop", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the work will not be merged (required)")
+	cmd.Flags().StringVar(&actor, "actor", "operator", "who is deciding")
 	return cmd
 }
 
@@ -2077,7 +2259,7 @@ and inherit from its guardrail profile or the global default set.
 
 Valid kinds:
   prd.active prd.approved prd.archived prd.blocked prd.cancelled prd.completed
-  prd.draft prd.failed prd.needs_review prd.paused prd.planning prd.rejected
+  prd.draft prd.failed prd.held prd.needs_review prd.paused prd.planning prd.rejected
   prd.revisions_asked prd.running
   task.awaiting_approval task.blocked task.cancelled task.completed task.failed
   task.in_progress task.pending task.queued task.review_needed task.running_tests

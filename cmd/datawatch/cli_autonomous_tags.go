@@ -68,7 +68,7 @@ func newAutonomousAttentionCmd() *cobra.Command {
 		Use:   "attention",
 		Short: "List the Automata that need attention (blocked, needs_review and paused by default, plus any with a task held for review); a completion review outcome prints as a short block",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/attention", nil)
 			if err != nil {
 				return err
@@ -77,10 +77,11 @@ func newAutonomousAttentionCmd() *cobra.Command {
 				fmt.Println("ok")
 				return nil
 			}
-			prettyPrint(body)
+			prettyPrintTo(c.OutOrStdout(), body)
 			if !asJSON {
+				// Notes go to standard error so standard output stays pure JSON.
 				for _, block := range rulesReviewOutcomeBlocks(body) {
-					fmt.Print(block)
+					_, _ = fmt.Fprint(c.ErrOrStderr(), block)
 				}
 			}
 			return nil

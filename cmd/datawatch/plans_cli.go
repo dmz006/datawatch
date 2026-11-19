@@ -9,6 +9,11 @@
 //	plans detach <plan> --automaton|--automation|--finding ID
 //	                                            POST /api/plans/{ref}/detach
 //	plans migrate [--apply]                     POST /api/plans/migrate
+//	plans migrate --release --project P         POST /api/plans/migrate (mode release)
+//
+// `datawatch plan` is the same command as `datawatch plans`. The release plan
+// commands (themes, archive, restore, unattributed, attach with several ids,
+// row-plans) are in plans_cli_release.go.
 //
 // `datawatch projects arcs` stays as a deprecated alias: it prints a note and
 // runs the plans list (or, with --set, still replaces the arcs).
@@ -105,8 +110,9 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 
 func newPlansCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "plans",
-		Short: "Plans: the work to come, linked to Automations and Automata",
+		Use:     "plans",
+		Aliases: []string{"plan"},
+		Short:   "Plans: the work to come, linked to Automations and Automata",
 		Long: `Plans group the work to come. A plan links down to Automations and Automata.
 
   datawatch plans list <project> [--limit N] [--json]
@@ -116,8 +122,14 @@ func newPlansCmd() *cobra.Command {
   datawatch plans attach <plan> (--automaton ID | --automation ID | --finding REF)
   datawatch plans detach <plan> (--automaton ID | --automation ID | --finding REF)
   datawatch plans migrate [--apply] [--json]
+  datawatch plan migrate --release --project P [--apply --preview-id ID]
+  datawatch plan theme list|add|rename|remove|place|unplace|reorder <plan> ...
+  datawatch plan archive <plan> [--reason TEXT] [--protect PLAN]
+  datawatch plan restore <plan>
+  datawatch plan unattributed [--project P]
+  datawatch plan row-plans list|convert
 
-A plan is named by its id or its title. Reorder lists the plans first, in the
+(plan and plans are the same command.) A plan is named by its id or its title. Reorder lists the plans first, in the
 order they should have; the rest keep their order after them. reorder-automata
 must list every Automaton of the plan once. The reply shows what runs next:
 blocked and held Automata are skipped. An Automaton, Automation or finding that
@@ -129,21 +141,51 @@ the old row order). It previews by default; add --apply to write. A plan or
 link that already exists is never changed, so a second --apply changes nothing.
 No arc, row or config key is deleted.
 
+A release plan stands for one release and holds that release's Automata, grouped
+in themes. migrate --release files a project's Automata under release plans and
+themes; it previews, prints a preview id, and writes only when run again with
+--apply and that --preview-id. See docs/howto/plan-records.md (Release plans and
+themes).
+
 When the daemon reports 404, plan records are turned off: set
 autonomous.plan_records.enabled to true in the daemon config.`,
 	}
 	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansReorderCmd(),
 		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd())
+	cmd.AddCommand(newPlansReleaseCmds()...)
 	return cmd
 }
 
 func newPlansMigrateCmd() *cobra.Command {
 	var apply, jsonOut bool
+	rel := releaseMigrateFlags{}
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Build plans from the older project plan lists and registry rows (previews unless --apply)",
-		Args:  cobra.NoArgs,
+		Short: "Build plans from the older project plan lists and registry rows, or (--release) file Automata under release plans (previews unless --apply)",
+		Long: `Without --release, build plans from the older project plan lists and registry rows.
+It previews by default; add --apply to write.
+
+With --release, file a project's Automata under release plans and themes by the
+migration's own rules: it creates the current and next release plans, attaches each
+Automaton to the release it belongs to and places it in a theme. An Automaton held
+by another plan is refused and left alone. It previews by default and prints a
+preview id. To write, run the same command again with --apply and that
+--preview-id; with --apply and no --preview-id it prints the preview and refuses to
+write, and a stale id (the plans changed since the preview) is refused by the
+daemon. --marks overrides where one Automaton is filed, as a JSON object of
+Automaton id to {"release","theme"}. ` + plansReleaseDocs,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if rel.release {
+				rel.apply, rel.jsonOut = apply, jsonOut
+				return runReleaseMigrateCmd(cmd, rel)
+			}
+			for name, v := range map[string]string{"--project": rel.project, "--current-release": rel.cur,
+				"--next-release": rel.next, "--marks": rel.marks, "--preview-id": rel.pid} {
+				if strings.TrimSpace(v) != "" {
+					return fmt.Errorf("%s belongs to --release", name)
+				}
+			}
 			out, err := daemonJSONBody(http.MethodPost, "/api/plans/migrate", map[string]any{"apply": apply})
 			if err != nil {
 				return err
@@ -157,6 +199,12 @@ func newPlansMigrateCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "Write the plans and links; without it only a preview prints")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the raw JSON")
+	cmd.Flags().BoolVar(&rel.release, "release", false, "File Automata under release plans and themes instead of building plans from arcs and rows")
+	cmd.Flags().StringVar(&rel.project, "project", "", "With --release: the project to migrate (required)")
+	cmd.Flags().StringVar(&rel.cur, "current-release", "", "With --release: the current release label")
+	cmd.Flags().StringVar(&rel.next, "next-release", "", "With --release: the next release label")
+	cmd.Flags().StringVar(&rel.marks, "marks", "", `With --release: JSON object of Automaton id to {"release","theme"} that overrides the filing`)
+	cmd.Flags().StringVar(&rel.pid, "preview-id", "", "With --release and --apply: the preview id of the preview you read")
 	return cmd
 }
 
@@ -393,28 +441,6 @@ func addPlansLinkFlags(cmd *cobra.Command) {
 	cmd.Flags().String("automaton", "", "The Automaton id")
 	cmd.Flags().String("automation", "", "The Automation id")
 	cmd.Flags().String("finding", "", "The finding id or title")
-}
-
-func newPlansAttachCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "attach <plan> (--automaton ID | --automation ID | --finding REF)",
-		Short: "Attach an Automaton, an Automation or a finding to a plan",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			kind, id, err := plansLinkFlags(cmd)
-			if err != nil {
-				return err
-			}
-			if _, err := daemonJSONBody(http.MethodPost, "/api/plans/"+url.PathEscape(args[0])+"/attach",
-				map[string]any{"kind": kind, "id": id}); err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Attached %s %s to plan %s\n", kind, id, args[0])
-			return nil
-		},
-	}
-	addPlansLinkFlags(cmd)
-	return cmd
 }
 
 func newPlansDetachCmd() *cobra.Command {

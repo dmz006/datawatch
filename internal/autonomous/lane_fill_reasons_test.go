@@ -458,3 +458,53 @@ func TestLaneFillStaleOnModeNeverStartsOrDecomposesIt(t *testing.T) {
 		t.Fatalf("stale Automata must not be started or decomposed even in on mode: %v", calls)
 	}
 }
+
+func TestLaneFillReasonPlanCoverageBlockedRefusesNeedsReview(t *testing.T) {
+	c := lfrCand("aaaa0100", PRDNeedsReview, lfrNow)
+	c.CoverageGateBlocked = true
+	r := lfrRefused(laneFillTestConfig(), c)
+	if !r.Refusal.Refused() || r.Refusal.Code != LaneFillReasonPlanCoverageBlocked {
+		t.Fatalf("refusal = %+v, want code %s", r.Refusal, LaneFillReasonPlanCoverageBlocked)
+	}
+	for _, want := range []string{"blocks approval", "re-decompose", "acknowledge"} {
+		if !strings.Contains(r.Refusal.Text, want) {
+			t.Errorf("text must contain %q, got %q", want, r.Refusal.Text)
+		}
+	}
+	// Without the gate flag the same candidate is eligible: the rule fires on
+	// the stored-record failure, not on the status alone.
+	fresh := lfrCand("aaaa0101", PRDNeedsReview, lfrNow)
+	if code, _ := EvaluateLaneFillEligibility(laneFillTestConfig(), fresh, lfrNow); code != "" {
+		t.Fatalf("a needs_review candidate without a failing coverage record must stay eligible, got %q", code)
+	}
+}
+
+func TestLaneFillReasonPlanCoverageBlockedIgnoresOtherStatuses(t *testing.T) {
+	for _, st := range []PRDStatus{PRDDraft, PRDApproved, PRDPlanning, PRDRunning, PRDCompleted} {
+		c := lfrCand("aaaa0102", st, lfrNow)
+		c.CoverageGateBlocked = true
+		code, _ := EvaluateLaneFillEligibility(laneFillTestConfig(), c, lfrNow)
+		if code == LaneFillReasonPlanCoverageBlocked {
+			t.Errorf("%s: code = %q; the gate blocks approval only, so it never refuses a %s candidate", st, code, st)
+		}
+	}
+}
+
+func TestLaneFillReasonPlanCoverageBlockedLosesToHold(t *testing.T) {
+	for _, st := range []PRDStatus{PRDNeedsReview, PRDHeld} {
+		c := lfrCand("aaaa0103", st, lfrNow)
+		c.CoverageGateBlocked = true
+		c.HoldReason = "operator hold: do not run"
+		r := lfrRefused(laneFillTestConfig(), c)
+		if st == PRDHeld {
+			if r.Refusal.Code != LaneFillReasonOperatorHold {
+				t.Errorf("%s: code = %q, want %s — the hold wins", st, r.Refusal.Code, LaneFillReasonOperatorHold)
+			}
+		} else if r.Refusal.Code != LaneFillReasonHeld {
+			t.Errorf("%s: code = %q, want %s — the hold wins", st, r.Refusal.Code, LaneFillReasonHeld)
+		}
+		if !strings.Contains(r.Refusal.Text, "operator hold") {
+			t.Errorf("%s: text = %q", st, r.Refusal.Text)
+		}
+	}
+}

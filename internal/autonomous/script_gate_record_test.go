@@ -66,6 +66,31 @@ func TestGateDurableFailureExitCode(t *testing.T) {
 	}
 }
 
+func TestGateDurableNoSpaceReportsTempFolderFull(t *testing.T) {
+	dir, check, _ := gateRecordFixture(t, "echo open /dev/shm/x: no space left on device\nexit 2\n")
+	res := RunScriptGate(context.Background(), check, dir, 20*time.Second)
+	if res.Passed || res.ExitCode != 2 {
+		t.Fatalf("got %+v", res)
+	}
+	if res.Reason != "temporary folder full" {
+		t.Fatalf("want reason temporary folder full, got %q", res.Reason)
+	}
+	if !strings.Contains(res.Output, "no space left on device") {
+		t.Fatalf("output missing the no-space line: %q", res.Output)
+	}
+}
+
+func TestGateDurableEnospcPhraseReportsTempFolderFull(t *testing.T) {
+	dir, check, _ := gateRecordFixture(t, "echo write: ENOSPC\nexit 4\n")
+	res := RunScriptGate(context.Background(), check, dir, 20*time.Second)
+	if res.Passed || res.ExitCode != 4 {
+		t.Fatalf("got %+v", res)
+	}
+	if res.Reason != "temporary folder full" {
+		t.Fatalf("want reason temporary folder full, got %q", res.Reason)
+	}
+}
+
 func TestGateDurableTimeoutEndsGroup(t *testing.T) {
 	dir, check, _ := gateRecordFixture(t, "sleep 30\n")
 	start := time.Now()

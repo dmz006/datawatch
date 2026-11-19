@@ -633,6 +633,14 @@ func (a *API) SetConfig(v any) error {
 			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
 		}
 	}
+	// unlanded_alert_enabled / unlanded_alert_threshold — the daily
+	// pending-branch alert. A present enabled key must be a JSON boolean and
+	// a present threshold a whole number >= 0, checked before any merge so
+	// every write path (REST, MCP, comm) refuses a bad value the same way.
+	// null or absent leaves the current value.
+	if verr := validateUnlandedAlertPatch(raw); verr != nil {
+		return verr
+	}
 	// request_watch is checked with the same rules as PUT /api/config, so
 	// every write path (REST, MCP, comm) refuses a bad value the same way
 	// before anything is merged. An omitted or null block passes.
@@ -850,6 +858,18 @@ func (a *API) TasksForSelection(prd *PRD, sel ObjectTagSelection) TasksView {
 	return FilterTasksView(BuildTasksView(prd), sel)
 }
 
+// ReadAutomatonArchive loads the archive of one Automaton on request.
+func (a *API) ReadAutomatonArchive(id string) (*PRDArchive, error) {
+	return a.M.ReadAutomatonArchive(id)
+}
+
+// PlanAutomatonArchive is the archive dry-run report; it writes nothing.
+func (a *API) PlanAutomatonArchive() ArchivePlan { return a.M.PlanAutomatonArchive() }
+
+// RunAutomatonArchive archives every eligible finished Automaton after a
+// verified backup.
+func (a *API) RunAutomatonArchive() (ArchiveReport, error) { return a.M.RunAutomatonArchive() }
+
 // PlanningFailureView returns the planning failure of prd for the read
 // surfaces, or nil when the last planning attempt did not fail.
 func (a *API) PlanningFailureView(prd *PRD) *PlanningFailure {
@@ -953,6 +973,13 @@ func (a *API) releaseRunLocked(id string) {
 func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 	if _, ok := a.prdStatus(id); !ok {
 		return false, fmt.Errorf("prd %q not found", id)
+	}
+	// A held Automaton is refused before a slot is claimed or prep can change
+	// its status: nothing starts it until the operator releases the hold.
+	if p, ok := a.M.Store().GetPRD(id); ok {
+		if err := a.M.refuseHeld(p); err != nil {
+			return false, err
+		}
 	}
 	execs := a.spawnFn != nil && a.verify != nil
 	var ctx context.Context
@@ -1078,6 +1105,40 @@ func (a *API) Resume(id, actor string) (any, error) {
 	if err := a.Run(id); err != nil {
 		return nil, err
 	}
+	return updated, nil
+}
+
+// Hold puts an Automaton on hold through Manager.Hold. A held Automaton waits
+// by operator decision; nothing here starts an executor.
+func (a *API) Hold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.Hold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ExtendHold changes the hold on a held Automaton through Manager.ExtendHold.
+// It does not start an executor.
+func (a *API) ExtendHold(id string, req HoldRequest, actor string) (any, error) {
+	updated, err := a.M.ExtendHold(id, req, actor)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return updated, nil
+}
+
+// ReleaseHold ends a hold through Manager.ReleaseHold and restores the status
+// the Automaton had. It does not start an executor; the operator runs the
+// Automaton afterwards if it should run.
+func (a *API) ReleaseHold(id, actor, note string) (any, error) {
+	updated, err := a.M.ReleaseHold(id, actor, note)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
 	return updated, nil
 }
 
@@ -1262,7 +1323,7 @@ func (a *API) resumeAfterInfraRecovery(prdID string, before PRDStatus, since tim
 	}
 	recovered := false
 	for i := len(p.Decisions) - 1; i >= 0 && !p.Decisions[i].At.Before(since); i-- {
-		if p.Decisions[i].Kind == infraDependentsRecoveredKind {
+		if p.Decisions[i].Kind == infraDependentsRecoveredKind || p.Decisions[i].Kind == dependentsRecoveredKind {
 			recovered = true
 			break
 		}
@@ -2518,6 +2579,19 @@ func (a *API) MigrateCompleted(dryRun bool, limit int, id string) (any, error) {
 	return report, nil
 }
 
+// HoldMigrationCandidates lists the blocked or failed Automata that look like
+// they should be on hold. It reads data and writes nothing.
+func (a *API) HoldMigrationCandidates() []HoldMigrationCandidate {
+	return a.M.HoldMigrationCandidates()
+}
+
+// MigrateToHold puts the Automata the operator chose on hold with the reason
+// the operator supplied (see Manager.MigrateToHold). It runs only when the
+// operator asks; nothing in the package calls it on its own.
+func (a *API) MigrateToHold(opts HoldMigrationOpts) (HoldMigrationReport, error) {
+	return a.M.MigrateToHold(opts)
+}
+
 // SweepTags re-derives the system tags of every existing Automata object
 // and session under the tags.placement settings in effect now (see
 // Manager.SweepTags for the full contract): the REST tag-sweep route and
@@ -2747,4 +2821,46 @@ func (a *API) ProjectLinkBackfill(apply bool) ProjectLinkBackfillReport {
 // LatestProjectLinkBackfill returns the latest backfill report, if any.
 func (a *API) LatestProjectLinkBackfill() (ProjectLinkBackfillReport, bool) {
 	return a.M.LatestProjectLinkBackfill()
+}
+
+// SummaryIndexEntries returns the summary index (no record is read). The
+// server list handlers use it to answer a list without building any record.
+func (a *API) SummaryIndexEntries() []SummaryEntry { return a.M.Store().SummaryEntries() }
+
+// SummaryIndexRevision is the index revision; it moves on every change.
+func (a *API) SummaryIndexRevision() uint64 { return a.M.Store().Revision() }
+
+// NotifyEffectiveForEntry resolves the effective notify-events tier of one
+// indexed Automaton, the same answer ListPRDs gives for its record.
+func (a *API) NotifyEffectiveForEntry(e SummaryEntry) NotifyEventSet {
+	return a.M.ResolveNotifyEvents(&PRD{NotifyEvents: e.NotifyEvents, GuardrailProfile: e.GuardrailProfile})
+}
+
+// ReapPreview, ReapRun and ReapRestore — the task sub-branch reaper behind
+// GET /api/autonomous/branch-reap, POST .../branch-reap/run and
+// POST .../branch-reap/restore (and the MCP, CLI and comm surfaces on top).
+// Without them the routes' interface checks fail and answer 503 in a running
+// daemon, because the daemon installs the API, not the Manager.
+func (a *API) ReapPreview(ctx context.Context) (ReapReport, []ReapBackup, error) {
+	return a.M.ReapPreview(ctx)
+}
+func (a *API) ReapRun(ctx context.Context) (ReapReport, error) { return a.M.ReapRun(ctx) }
+func (a *API) ReapRestore(ctx context.Context, branch string) (string, string, error) {
+	return a.M.ReapRestore(ctx, branch)
+}
+
+// RemoteReapPreview, RemoteReapRun and RemoteReapRestore — the Automaton
+// work-branch remote reaper behind GET /api/autonomous/remote-reap, POST
+// .../remote-reap/run and POST .../remote-reap/restore (and the MCP, CLI
+// and comm surfaces on top). Without them the routes' interface checks
+// fail and answer 503 in a running daemon, because the daemon installs the
+// API, not the Manager.
+func (a *API) RemoteReapPreview(ctx context.Context) (RemoteReapSurfaceReport, []ReapBackup, error) {
+	return a.M.RemoteReapPreview(ctx)
+}
+func (a *API) RemoteReapRun(ctx context.Context) (RemoteReapReport, error) {
+	return a.M.RemoteReapRun(ctx)
+}
+func (a *API) RemoteReapRestore(ctx context.Context, branch string) (RemoteReapRestoreResult, error) {
+	return a.M.RemoteReapRestore(ctx, branch)
 }

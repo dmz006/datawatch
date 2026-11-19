@@ -40,7 +40,7 @@ func csdManager(t *testing.T) *Manager {
 // The working tree is left on the base branch, clean.
 func csdRepo(t *testing.T) (string, string, string) {
 	t.Helper()
-	dir := uwRepo(t) // git init plus the committed source file base.txt
+	dir := uwRepo(t)                         // git init plus the committed source file base.txt
 	writeRulesFile(t, dir, baseRulesContent) // AGENT.md with the real rules body
 	uwGit(t, dir, "add", "AGENT.md")
 	uwGit(t, dir, "commit", "-q", "-m", "rules")

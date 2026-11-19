@@ -4,7 +4,7 @@ Date: 2026-11-03
 Task: task-7db40001 (auto-fix rules-review findings, attempt 1)
 Status: done — the only thing still owed at merge is the spec-read-full-and-guard.sh live
 sandbox run (see "Remaining gate debt"); the gate report is at
-docs/plans/reports/2026-11-03-auto-fix-rules-review-final-gate.md
+docs/plans/reports/archive/2026-11/2026-11-03-auto-fix-rules-review-final-gate.md
 
 ## What the rules review flagged
 
@@ -125,7 +125,7 @@ Planned (this directory):
 ## Remaining gate debt (the one line the gate report now carries)
 
 The final gate report is written:
-`docs/plans/reports/2026-11-03-auto-fix-rules-review-final-gate.md` — it shows every
+`docs/plans/reports/archive/2026-11/2026-11-03-auto-fix-rules-review-final-gate.md` — it shows every
 unit and guard row green (above) and states explicitly that the live half of
 `spec-read-full-and-guard.sh` was **not run** in the verification suite: the suite
 stopped at the failed docs gate and recorded the rest as pending, while the earlier

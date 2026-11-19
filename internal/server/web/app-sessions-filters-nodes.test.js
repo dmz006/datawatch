@@ -25,7 +25,7 @@ const WEB_DIR = __dirname;
 const APP_JS = path.join(WEB_DIR, 'app.js');
 
 const HOST = 'dev-box';           // the local host's real name
-const PEER = 'ralfthewise';       // a federated peer, by the name it is registered under
+const PEER = 'remotenode';   // a federated peer, by the name it is registered under (generic placeholder)
 
 function local(id, extra) {
   return Object.assign({

@@ -209,8 +209,12 @@ func (r Request) candidateNames() []string {
 
 // Lease is a held slot set.
 type Lease struct {
-	Holder    string    `json:"holder"`
-	PRDID     string    `json:"prd_id"`
+	Holder string `json:"holder"`
+	PRDID  string `json:"prd_id"`
+	// Role is the dispatch role the lease was admitted under; empty is
+	// RoleWorker (the zero value), so leases admitted before roles were
+	// recorded count as worker. Read by heldByRoleLocked.
+	Role      Role      `json:"role,omitempty"`
 	Pools     []string  `json:"pools"`
 	Node      string    `json:"node,omitempty"`
 	Model     string    `json:"model,omitempty"`
@@ -320,7 +324,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
+// RoleBackpressure, AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
 // VerifierHeadroom)
 // is invoked while the ledger lock is held. Each must therefore be a fast
 // in-memory read: it must never call back
@@ -343,6 +347,15 @@ type Options struct {
 	// requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
+	// RoleBackpressure is a soft block for autonomous requests that sees the
+	// requesting role and the pool's live per-role lease counts, so a gate
+	// can refuse some roles while admitting others (for example a role-
+	// aware back-off with a review reserve). heldByRole tallies the pool's
+	// leases by lease role, an empty lease role counting as RoleWorker; the
+	// hook reads only the arguments passed to it, never the ledger back.
+	// Requests marked Interactive skip it. Called under the lock: in-memory
+	// state only.
+	RoleBackpressure func(pool string, role Role, heldByRole map[Role]int) (blocked bool, reason string)
 	// HeldBackpressure is a soft block for autonomous requests that needs the
 	// pool's current usage. Both numbers come from the ledger itself: held is
 	// the count of leases naming the pool (l.leases) and limit is the value set
@@ -562,6 +575,21 @@ func (l *Ledger) heldLocked(pool string) int {
 	return n
 }
 
+// heldByRoleLocked tallies the pool's leases by lease role, an empty lease
+// role counting as RoleWorker (the zero value). Caller holds l.mu.
+func (l *Ledger) heldByRoleLocked(pool string) map[Role]int {
+	out := make(map[Role]int)
+	for _, ls := range l.leases {
+		for _, p := range ls.Pools {
+			if p == pool {
+				out[ls.Role]++
+				break
+			}
+		}
+	}
+	return out
+}
+
 // optOn reads an Options switch: nil means on.
 func optOn(f func() bool) bool { return f == nil || f() }
 
@@ -695,7 +723,8 @@ func (l *Ledger) adoptionPendingLocked() string {
 func (l *Ledger) blockReasonLocked(req Request) string {
 	now := l.opt.Clock.Now()
 	for _, p := range req.Pools {
-		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
+		lim := l.limits[p]
+		if lim > 0 && l.usedLocked(p) >= lim {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
@@ -704,11 +733,36 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
 		}
+		// Workers rank below verifiers in the wait queue, so by raw order a
+		// verifier would be granted the pool's last free slot out from under
+		// a worker queued for the same pool — starving the worker that does
+		// the work the verifier reviews. Hold that last slot for the queued
+		// worker(s); the verifier is admitted when the worker drains, or via
+		// its own verifier pool or the review reserve. A finished task
+		// rekeying its OWN lease (verify/judge) never acquires a fresh slot,
+		// so this rule never blocks the hand-off that fixes the full-pool
+		// deadlock.
+		if req.Role == RoleVerifier {
+			if hs := l.workerWaitersLocked(p); len(hs) > 0 && l.usedLocked(p) == lim-1 {
+				if name, ok := strings.CutPrefix(p, "node:"); ok {
+					return fmt.Sprintf("waiting for node %s: last slot held for queued worker(s) %s", name, strings.Join(hs, ","))
+				}
+				if name, ok := strings.CutPrefix(p, "node-verify:"); ok {
+					return fmt.Sprintf("waiting for node %s: last verifier slot held for queued worker(s) %s", name, strings.Join(hs, ","))
+				}
+				return fmt.Sprintf("pool %s: last slot held for queued worker(s) %s", p, strings.Join(hs, ","))
+			}
+		}
 		if why := l.rateBlockLocked(p, now); why != "" {
 			return why
 		}
 		if l.opt.Backpressure != nil {
 			if blocked, why := l.opt.Backpressure(p); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
+		if l.opt.RoleBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.RoleBackpressure(p, req.Role, l.heldByRoleLocked(p)); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
@@ -724,6 +778,20 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		}
 	}
 	return ""
+}
+
+// workerWaitersLocked returns the holders of the queued role-worker requests
+// that share pool p (call with l.mu held; p is a pool name). Feeds the
+// last-slot rule in blockReasonLocked: a verifier must not take the pool's
+// last free slot while such a waiter sits in the queue.
+func (l *Ledger) workerWaitersLocked(p string) []string {
+	var out []string
+	for _, w := range l.waiters {
+		if w.req.Role == RoleWorker && sharesPool(w.req.Pools, []string{p}) {
+			out = append(out, w.req.Holder)
+		}
+	}
+	return out
 }
 
 // rankedLocked returns the nodes req may be placed on, in try order: least
@@ -1047,8 +1115,9 @@ func (l *Ledger) Replan() {
 func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 	l.recordWaitEndLocked(w, now)
 	l.leases[req.Holder] = &Lease{
-		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
-		Node: req.Node, Model: req.Model, Acquired: now,
+		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
+		Pools: append([]string(nil), req.Pools...),
+		Node:  req.Node, Model: req.Model, Acquired: now,
 	}
 	l.lastGrant[req.PRDID] = now
 	l.recordRequestsLocked(req.Pools, now)
@@ -1071,6 +1140,18 @@ func (l *Ledger) grantLocked(w *waiter, req Request, now time.Time) {
 // they may call back into the ledger; the Options functions are not so
 // lucky (see Options).
 func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string)) error {
+	return l.AcquireRechecking(ctx, req, timeout, cancelled, onWait, nil)
+}
+
+// AcquireRechecking is Acquire with a per-pass recheck. On every wait pass
+// (each poll tick, after the cancelled check and before the re-dispatch) it
+// calls recheck without the ledger lock held; when recheck returns a request
+// and true, the waiting request is retargeted in place onto it (Retarget: the
+// queue position, wait start and timeout bound are kept, and a placement with
+// room is granted in that same pass). It lets a caller move a task that is
+// already waiting when something it reads has changed since it was queued,
+// without re-queueing it. A nil recheck is plain Acquire.
+func (l *Ledger) AcquireRechecking(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string), recheck func() (Request, bool)) error {
 	l.mu.Lock()
 	if _, held := l.leases[req.Holder]; held {
 		l.mu.Unlock()
@@ -1112,8 +1193,16 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 		case <-w.grant:
 			return nil
 		case <-ctx.Done():
+			l.mu.Lock()
+			why := w.reason
+			l.mu.Unlock()
 			l.remove(w)
-			return ctx.Err()
+			// Wrap, never replace: errors.Is(err, ctx.Err()) still holds, but
+			// the caller also learns what the request was waiting on.
+			if why == "" {
+				return ctx.Err()
+			}
+			return fmt.Errorf("%w: waiting on %s", ctx.Err(), why)
 		case <-deadline:
 			l.mu.Lock()
 			why := w.reason
@@ -1124,6 +1213,11 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			if cancelled != nil && cancelled() {
 				l.remove(w)
 				return context.Canceled
+			}
+			if recheck != nil {
+				if moved, ok := recheck(); ok {
+					l.Retarget(req.Holder, moved)
+				}
 			}
 			l.mu.Lock()
 			l.dispatchLocked()
@@ -1338,7 +1432,8 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	}
 	now := time.Now()
 	ls := &Lease{
-		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
+		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
+		Pools: append([]string(nil), req.Pools...),
 		Model: req.Model, Acquired: now, SessionID: sessionID,
 		NodeUnknown: req.NodeUnknown && req.Node == "",
 	}

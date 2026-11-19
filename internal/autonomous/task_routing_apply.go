@@ -365,7 +365,7 @@ func (m *Manager) TaskRoutingForAutomaton(prdID string) ([]TaskRoutingView, erro
 					dec.Reason = "not routed yet"
 				}
 			}
-			b, mod, src := resolveTaskExecutionLLM(t, st, prd, auto, m.cfg.ExecutionBackend)
+			b, mod, src := resolveTaskExecutionLLM(t, st, prd, auto, executionFallbackBackend(m.cfg, prd))
 			eff := string(t.Effort)
 			if eff == "" {
 				eff = string(st.Effort)

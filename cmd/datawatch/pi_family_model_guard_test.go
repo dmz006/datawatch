@@ -86,11 +86,11 @@ func TestGuardPiFamilySessionModel(t *testing.T) {
 		{
 			// g) non-pi session kind: per-unit override passes through
 			// unchanged (B124 follow-up behavior untouched).
-			name:        "claude-code override passes through",
-			gkind:       "claude-code",
-			gbackend:    "claude-code",
-			unitModel:   "claude-opus-5-5",
-			wantModel:   "claude-opus-5-5",
+			name:      "claude-code override passes through",
+			gkind:     "claude-code",
+			gbackend:  "claude-code",
+			unitModel: "claude-opus-5-5",
+			wantModel: "claude-opus-5-5",
 		},
 		{
 			// h) non-pi session kind without an override: the
@@ -105,12 +105,12 @@ func TestGuardPiFamilySessionModel(t *testing.T) {
 		{
 			// i) non-pi kind is never vetoed by the pinning guard,
 			// even when the global tiers are unset.
-			name:        "opencode no override: fallback, no verdict",
-			gkind:       "opencode",
-			gbackend:    "opencode",
-			unitModel:   "",
+			name:          "opencode no override: fallback, no verdict",
+			gkind:         "opencode",
+			gbackend:      "opencode",
+			unitModel:     "",
 			nonPiFallback: "ollama/whatever",
-			wantModel: "ollama/whatever",
+			wantModel:     "ollama/whatever",
 		},
 	}
 	for _, tt := range tests {
@@ -162,20 +162,20 @@ func TestGuardPiFamilyVerifyModel(t *testing.T) {
 			wantModel: "prov/verifier-model:64k",
 		},
 		{
-			name:      "planning_model resolves when verification_model is unset",
-			vbackend:  "pi-prompt",
+			name:        "planning_model resolves when verification_model is unset",
+			vbackend:    "pi-prompt",
 			cfgPlanning: "prov/planning-model",
-			wantModel: "prov/planning-model",
+			wantModel:   "prov/planning-model",
 		},
 		{
 			// unpaired alias in the first tier: skipped, the tier
 			// after it still resolves — and the error (when nothing
 			// pairs) names every configured key.
-			name: "unpaired alias skipped, planning_model wins",
-			vbackend:  "pi",
-			cfgVerif:  "claude-haiku-5",
+			name:        "unpaired alias skipped, planning_model wins",
+			vbackend:    "pi",
+			cfgVerif:    "claude-haiku-5",
 			cfgPlanning: "prov/planning-model",
-			wantModel: "prov/planning-model",
+			wantModel:   "prov/planning-model",
 		},
 		{
 			name:      "nothing set: setup verdict naming the keys",

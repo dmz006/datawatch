@@ -306,6 +306,32 @@ func TestMCPToolCaps_ResultPanelTools(t *testing.T) {
 	}
 }
 
+func TestUsageBackoffReserveToolCaps(t *testing.T) {
+	// The review-reserve settings ride the existing tools: autonomous_config_set
+	// gains two parameters (no new tool), and usage_backoff_status's body gains
+	// the config fields and the live reserve array (no new tool). So no caps
+	// entry changes, and the existing caps keep covering both surfaces.
+	cap, ok := federation.MCPToolCap["autonomous_config_set"]
+	if !ok {
+		t.Fatal("MCPToolCap[\"autonomous_config_set\"] missing")
+	}
+	if cap != federation.CapAutonomousWrite {
+		t.Errorf("autonomous_config_set mapped to %q, want %q", cap, federation.CapAutonomousWrite)
+	}
+	cap, ok = federation.MCPToolCap["usage_backoff_status"]
+	if !ok {
+		t.Fatal("MCPToolCap[\"usage_backoff_status\"] missing")
+	}
+	if cap != federation.CapConfigRead {
+		t.Errorf("usage_backoff_status mapped to %q, want %q", cap, federation.CapConfigRead)
+	}
+	// The write-side helpers must classify both config writers the same as
+	// every other autonomous config setter.
+	if !federation.IsConfigWriteTool("autonomous_config_set") {
+		t.Error("IsConfigWriteTool(autonomous_config_set) = false, want true")
+	}
+}
+
 func splitLines(s string) []string {
 	var out []string
 	start := 0

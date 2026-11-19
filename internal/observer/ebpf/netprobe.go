@@ -19,10 +19,13 @@
 // definitions for that arch.
 //
 // vmlinux_amd64/vmlinux.h is locally BTF-dumped via:
-//   bpftool btf dump file /sys/kernel/btf/vmlinux format c
+//
+//	bpftool btf dump file /sys/kernel/btf/vmlinux format c
+//
 // vmlinux_arm64/vmlinux.h is sourced from libbpf/vmlinux.h
-//   (https://github.com/libbpf/vmlinux.h) — community-maintained
-//   per-arch BTF dumps. Refresh by replacing the file.
+//
+//	(https://github.com/libbpf/vmlinux.h) — community-maintained
+//	per-arch BTF dumps. Refresh by replacing the file.
 //
 // On hosts without the regenerated object for that arch, the
 // netprobe loader degrades to a noop and host.ebpf.message says so.
