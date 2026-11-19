@@ -1118,6 +1118,33 @@ When you see that alert:
    you want, the task needs to run again on it instead of continuing on the
    resumed session.
 
+## Orphan judge and verifier slots
+
+A judge or verifier can end up holding a slot in the pi-prompt pool (`llm:pi-prompt`)
+with no live session and no node lease. The lane then sits wasted while a node
+is idle. The daemon now frees these on every capacity tick (the same tick that
+reaps leaked leases):
+
+- A `judge:` or `verify:` holder with **no live session and no node lease** is freed.
+- A judge or verifier whose **Automaton is finished** (merged, cancelled or
+  failed) and that has no live session is freed.
+- A holder with a **live session is never freed**, whatever its lease state. The
+  reconcile only releases ledger slots; it never ends or kills a session.
+- A lease younger than one minute counts as having a node lease, so a holder
+  that was just admitted is left alone.
+- Running it again frees nothing more.
+
+**What you see.** One journal line per freed slot
+(`[capacity] reaped leaked lease holder=... pool=... : <reason>`), one alert
+titled `Capacity slot freed` that names the holder in plain words with the short
+id second, and one count on the reaped-leases metric. The reason is
+`no live session and no node lease` or `Automaton finished`.
+
+**Operator review.** The alert is informational. If it repeats for the same
+Automaton, a judge or verifier is being started without a node lease; check the
+node pools and the holder in [Readable holder names](#readable-holder-names).
+There is no setting for this reconcile and nothing to turn on.
+
 ## Readable holder names
 
 You don't need to keep a task-id diary. Wherever the capacity surfaces used
