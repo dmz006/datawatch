@@ -948,6 +948,10 @@ the gate. There is no setting for it: make sure every worker node has
 `golangci-lint` installed. Details are in
 [the verification-scripts how-to](howto/automaton-verification-scripts.md#7-the-verification-lint-gate).
 
+### Orphan judge and verifier slots
+
+Each capacity tick frees pi-prompt (`llm:pi-prompt`) slots held by a `judge:` or `verify:` holder that has no live session and no node lease, or whose Automaton is merged, cancelled or failed with no live session. A holder with a live session is never freed, a lease under one minute old is left alone, and no session is ever ended: only the ledger slot is released. Each freed slot writes one `[capacity] reaped leaked lease` journal line, raises one `Capacity slot freed` alert and increments the reaped-leases metric. There is no setting. Review: a repeating alert for one Automaton means a judge or verifier started without a node lease. See [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+
 ### Verifier node limit
 
 Verifier runs take a lease on the node's own **verifier pool**, not the pool of the workers they check. Each compute node that hosts a local engine gets one verifier slot by default — one verifier at a time in its own pool, running alongside the executor's sessions — so a verification no longer queues behind the worker count on the node. A node that hosts no local engine, or one whose `verifier_slots` is set to `0`, has no verifier pool: a verifier for that node leases its executor pool (the node's `session_slots` / `max_concurrent_sessions` limit) exactly as before. The verifier pool never raises the executor's limit; the two coexist under their own caps, and a node with one GPU runs one verifier at a time by default.
