@@ -5283,6 +5283,85 @@ paths:
         "405": {description: Method not allowed}
         "501": {description: The autonomous manager does not support the numbers}
         "503": {description: Autonomous is disabled}
+  /api/autonomous/archived-unmerged:
+    get:
+      summary: Archived Automata whose branch still holds unmerged commits
+      description: |
+        Lists archived Automata whose work branch still holds commits that never
+        reached the base branch, newest archive first. Each entry has the `title`,
+        `id`, `former_status` (completed, rejected or cancelled), `branch`,
+        `base_branch`, `ahead` (commits not on the base), `archived_at`, `state`
+        (`ahead`, or `unknown` when the comparison could not be made, with the
+        reason in `detail`) and `carried_to` (the draft already carried from it).
+        Git is only read; nothing is deleted or merged. Needs the autonomous read
+        capability when called by a federated peer.
+      operationId: archivedUnmergedList
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The archived Automata with unmerged work
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archived_unmerged:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        former_status: {type: string}
+                        branch: {type: string}
+                        base_branch: {type: string}
+                        ahead: {type: integer}
+                        archived_at: {type: string, format: date-time}
+                        state: {type: string, enum: [ahead, unknown]}
+                        detail: {type: string}
+                        carried_to: {type: string}
+                  total: {type: integer}
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The autonomous manager does not support the finder}
+        "503": {description: Autonomous is disabled}
+  /api/autonomous/archived-unmerged/{id}/carry-forward:
+    post:
+      summary: Carry an archived Automaton's unmerged work forward
+      description: |
+        Creates a new draft that carries the archived record's title, spec and
+        branch name, and returns it. The draft is not approved and has run
+        nothing; the archived record and its branch are not changed, and nothing
+        is merged or deleted. Refused with 409 when the record is not archived,
+        has no branch, the branch is gone, unknown or has nothing ahead of the
+        base, or a draft was already carried from it (send `force: true` to carry
+        again). Needs the autonomous write capability when called by a federated
+        peer.
+      operationId: archivedUnmergedCarryForward
+      tags: [Autonomous]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, description: Carry again even though a draft was already carried}
+                actor: {type: string, description: Who carries it forward; defaults to operator}
+      responses:
+        "200": {description: The new draft Automaton}
+        "400": {description: Bad request body}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No Automaton with that id}
+        "405": {description: Method not allowed}
+        "409": {description: The record cannot be carried forward}
+        "501": {description: The autonomous manager does not support carry-forward}
+        "503": {description: Autonomous is disabled}
   /api/autonomous/prds/{id}/branch-refresh:
     post:
       summary: Set or clear the branch refresh override of an Automaton
@@ -5977,6 +6056,12 @@ paths:
     get:
       summary: Read autonomous config
       description: |
+        `archive_keep_unmerged` (boolean, default true; PUT key
+        `autonomous.archive_keep_unmerged` or `archive_keep_unmerged` here) keeps a
+        finished Automaton whose branch still holds unmerged commits from being
+        archived by the supervisor loop; any value that is not true or false is
+        rejected with 400 and nothing changes. `archive_grace_minutes` (whole
+        number >= 0, default 60) is how long a cancelled Automaton is kept first.
         The response includes the plan-requirement coverage gate settings under
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing

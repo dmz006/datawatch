@@ -2047,6 +2047,7 @@ dashboard arc                    plan summary — stages, lanes, plan usage in p
 dashboard work-map               work map of projects, Automata, tasks and sessions
 dashboard lane-pulse [window]    lane busy/waiting/idle traces and burn panel (window like 6h)
 dashboard series <name> [value]  lane-utilization, throughput-forecast, verifier-health, release-train, review-backlog, defects-per-day
+autonomous archived-unmerged [carry-forward <id> [force]]   archived Automata whose branch still holds unmerged commits; carry-forward starts a new draft on the branch
 autonomous event-log [kind=<k>] [project=<p>] [q=<text>] [limit=<1..10>] [before=<cursor>]   recent Automata events, newest first (time, kind, summary, next action)
 autonomous event-kinds [group=<g>]   every event kind a subscription can match, by group (* wakes the supervisor by default)
 autonomous hold <id> <reason words> [until=<value>] [condition=<words>]   put an Automaton on hold; until is a time, a date or a duration like 72h; quote a multi-word value
