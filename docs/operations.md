@@ -1352,7 +1352,7 @@ Release approval is now a setting, one mode per size of release, under `autonomo
 
 ### Intermittent tests and load patterns
 
-Tests are deterministic; a test that fails and then passes is a defect, not load. The merge check reruns a failed `test` gate once: a pass on rerun is recorded `intermittent`, files one defect record per test and commit, raises one alert named for the test, and does not block the merge (see [housekeeping repairs](howto/automaton-housekeeping-repairs.md) and [merge shadow](howto/merge-shadow.md)). The old CPU load test is removed; `make check-no-load-patterns` (also part of `make lint`) fails on any busy-loop or stress pattern in tests ([testing](testing.md#no-load-patterns-in-tests)). Operator review: every intermittent defect still needs a root-cause fix.
+Tests are deterministic; a test that fails and then passes is a defect, not load. The merge check reruns a failed `test` gate once: a pass on rerun is recorded `intermittent`, files one defect record per test and commit, raises one alert named for the test, and does not block the merge (see [housekeeping repairs](howto/automaton-housekeeping-repairs.md) and [merge shadow](howto/merge-shadow.md)). The old CPU load test is removed; `make check-no-load-patterns` (also part of `make lint`) fails on any busy-loop or stress pattern in tests ([testing](testing.md#no-load-patterns-in-tests)). Operator review: every intermittent defect still needs a root-cause fix. There is no `load_sensitive` gate status: a test that fails only in a full run is handled as an intermittent defect ([merge shadow](howto/merge-shadow.md#the-plans-checks-and-gates)). Operator review: the replay test `internal/mergeshadow/replay_load_only_failure_test.go` does not exist yet.
 
 ### Defect queue
 

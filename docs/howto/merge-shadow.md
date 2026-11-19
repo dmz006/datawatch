@@ -106,15 +106,18 @@ machine up before the run, or excluding the test. How to prove the fix (the
 repeated run under the race detector) is in
 [testing.md](../testing.md#proving-an-intermittent-test-fix).
 
-**Load-sensitive test gate — `load_sensitive` (a status).** To tell a test that
-only fails on a busy machine from one that fails on its own, the daemon runs the
-first `test` pass beside bounded CPU load, and stops that load before the rerun.
-The stop waits for every process in the load process group to exit rather than
-polling for the group to disappear, so a loaded machine can no longer make the
-group look populated and hold the rerun back or end it early. A gate that still
-fails only under load is recorded `load_sensitive`, and the operator decides what
-that test is — a real defect to fix at the root, or a test that needs a different
-home — the Automaton does not decide it.
+**No load-sensitive gate — a test that fails only in a full run is a defect.** The
+daemon does not run the `test` gate beside CPU load, and there is no
+`load_sensitive` gate status: the gate statuses are `pass`, `fail`, `timeout`,
+`skipped` and `intermittent`. A test that fails in a full `go test` run but
+passes alone, or passes on the rerun, is recorded and filed exactly as in the
+intermittent gate above, and is fixed at the root (a shared resource, a
+timing assumption, an unbounded wait), never by loading the machine or
+excluding the test. Operator review: the replay test for this case,
+`internal/mergeshadow/replay_load_only_failure_test.go`, is not in the tree
+today, and no code writes a `load_sensitive` status. Decide whether the replay
+is still wanted; if so it must assert the intermittent path and carry no load
+pattern (`make check-no-load-patterns` fails on one).
 
 **Lint version pin — `lint_version_mismatch` (blocks).** The `lint` gate records
 the local golangci-lint version against the version the trial merge's CI
