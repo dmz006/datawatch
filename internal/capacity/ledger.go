@@ -1479,6 +1479,24 @@ func (l *Ledger) Release(holder string) {
 	}
 }
 
+// ReleaseIf frees holder's lease only when it is still the lease acquired at
+// the given time, so a decision made from an earlier view never frees a newer
+// lease of the same holder. It reports whether a lease was freed and is safe
+// to call repeatedly.
+func (l *Ledger) ReleaseIf(holder string, acquired time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ls, ok := l.leases[holder]
+	if !ok || !ls.Acquired.Equal(acquired) {
+		return false
+	}
+	l.recordLeaseEndLocked(ls, l.opt.Clock.Now())
+	delete(l.leases, holder)
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	return true
+}
+
 // Held reports whether holder has a lease.
 func (l *Ledger) Held(holder string) bool {
 	l.mu.Lock()
