@@ -2126,9 +2126,9 @@ autonomous:
   # require_confirmed_proposal: bool, default true (an absent key reads true).
   #   An implementation Automaton is taken only when a proposal file it names
   #   (docs/plans/<name>.md, read from the base repository) has a line starting
-  #   "Confirmed: yes" in its first 200 lines. The spec names a proposal only
-  #   through an explicit proposal field or line: a docs/plans path on a line
-  #   that also names a proposal counts; a path that is merely mentioned
+  #   "Confirmed: yes" in its first 200 lines. The title or spec names a
+  #   proposal only through an explicit proposal field or line: a docs/plans
+  #   path on a line of the title or the spec that also names a proposal counts; a path that is merely mentioned
   #   names nothing, and the plan folder's README is never a proposal. Otherwise
   #   it is refused as proposal_not_confirmed (the file has no such line) or
   #   proposal_missing (no readable file is named). Research, operational,
