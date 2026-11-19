@@ -183,6 +183,9 @@ autonomous_progress_trend
 autonomous_project_link_backfill
 autonomous_protected_paths
 autonomous_release_readiness
+autonomous_remote_reap
+autonomous_remote_reap_restore
+autonomous_remote_reap_run
 autonomous_repo_ci_watch
 autonomous_request_watch
 autonomous_safe_to_delete

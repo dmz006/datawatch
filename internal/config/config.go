@@ -3698,6 +3698,19 @@ type AutonomousConfig struct {
 	// the default of 30 days; a negative value is a config error. Read
 	// through EffectiveReapedBranchBackupDays.
 	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
+	// RemoteReapEnabled turns the remote branch reap pass from report-only
+	// into one that deletes: an automaton work branch is deleted from
+	// origin only when it is fully merged into the project's default
+	// branch, its tip is older than remote_reap_retention_days whole days,
+	// and the tip is kept in a backup ref that is verified to point at it
+	// before the delete. false or unset (the default) is report-only.
+	RemoteReapEnabled bool `yaml:"remote_reap_enabled,omitempty" json:"remote_reap_enabled,omitempty"`
+	// RemoteReapRetentionDays is how many whole days old the tip of a fully
+	// merged automaton work branch must be before the remote reap pass may
+	// delete it from origin. 0 or unset means the default of 30 days; a
+	// negative value is a config error. Read through
+	// EffectiveRemoteReapRetentionDays.
+	RemoteReapRetentionDays int `yaml:"remote_reap_retention_days,omitempty" json:"remote_reap_retention_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -4371,6 +4384,12 @@ const VerifierHeadroomMaxAgeHoursDefault = 24
 // branch is kept this many days.
 const ReapedBranchBackupDaysDefault = 30
 
+// RemoteReapRetentionDaysDefault is the default of
+// autonomous.remote_reap_retention_days: the tip of a fully merged
+// automaton work branch must be at least this many whole days old before a
+// remote reap pass may delete it from origin.
+const RemoteReapRetentionDaysDefault = 30
+
 // EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
 // with 0, unset or a non-positive value reading the default of 30 days.
 func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
@@ -4378,6 +4397,16 @@ func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
 		return ReapedBranchBackupDaysDefault
 	}
 	return a.ReapedBranchBackupDays
+}
+
+// EffectiveRemoteReapRetentionDays returns autonomous.
+// remote_reap_retention_days, with 0, unset or a non-positive value reading
+// the default of 30 days.
+func (a AutonomousConfig) EffectiveRemoteReapRetentionDays() int {
+	if a.RemoteReapRetentionDays <= 0 {
+		return RemoteReapRetentionDaysDefault
+	}
+	return a.RemoteReapRetentionDays
 }
 
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
@@ -8857,6 +8886,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
 		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
+	}
+	if cfg.Autonomous.RemoteReapRetentionDays < 0 {
+		return fmt.Errorf("autonomous.remote_reap_retention_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.RemoteReapRetentionDays, RemoteReapRetentionDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)

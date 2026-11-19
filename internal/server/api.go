@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.38"
+var Version = "9.182.41"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6906,6 +6906,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
 			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
+			"remote_reap_enabled":             s.cfg.Autonomous.RemoteReapEnabled,
+			"remote_reap_retention_days":      s.cfg.Autonomous.EffectiveRemoteReapRetentionDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
 			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
@@ -8283,6 +8285,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
 		if v, isInt := toInt(raw); !isInt || v < 0 {
 			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
+			return
+		}
+	}
+	// remote_reap_enabled accepts only a JSON boolean: the same
+	// whole-PUT rejection as the switch, so a quoted string or number 400s
+	// rather than being stored.
+	if v, ok := patch["autonomous.remote_reap_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.remote_reap_enabled: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["autonomous.remote_reap_retention_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.remote_reap_retention_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -10991,6 +11008,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// 0 or unset = the default of 30 days.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.ReapedBranchBackupDays = n
+			}
+		case "autonomous.remote_reap_enabled":
+			// Unset defaults to false (report-only); the pass evaluates but
+			// deletes nothing on origin until this is explicitly true.
+			cfg.Autonomous.RemoteReapEnabled = toBool(v)
+		case "autonomous.remote_reap_retention_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.RemoteReapRetentionDays = n
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)

@@ -66,12 +66,17 @@ func grepQuietArg(arg string) bool {
 // A grep that reads a file argument on an unjoined line does not count,
 // nor does a pipeline whose segments never end in a quiet grep.
 func pipedGrepQuiet(raw string) bool {
-	segments := strings.Split(raw, "|")
+	// `||` is the shell's logical or, not a pipe: mask it so it neither
+	// splits the line nor leaves an empty segment behind.
+	segments := strings.Split(strings.ReplaceAll(raw, "||", "\x00\x00"), "|")
 	if len(segments) < 2 {
 		return false
 	}
 	for _, seg := range segments[1:] {
 		fields := strings.Fields(seg)
+		if len(fields) == 0 { // an empty segment, e.g. the one `a || b` leaves between its two pipes
+			continue
+		}
 		if fields[0] == "&" && len(fields) > 1 { // `|&` form
 			fields = fields[1:]
 		}
