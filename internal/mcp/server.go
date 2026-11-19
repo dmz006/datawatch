@@ -864,6 +864,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousBranchReap(), tracked(s.handleAutonomousBranchReap))
 	mcpSrv.AddTool(s.toolAutonomousBranchReapRun(), tracked(s.handleAutonomousBranchReapRun))
 	mcpSrv.AddTool(s.toolAutonomousBranchReapRestore(), tracked(s.handleAutonomousBranchReapRestore))
+
+	// Remote branch reaper: same three, over the branches on origin; the run deletes nothing while autonomous.remote_reap_enabled is unset.
+	mcpSrv.AddTool(s.toolAutonomousRemoteReap(), tracked(s.handleAutonomousRemoteReap))
+	mcpSrv.AddTool(s.toolAutonomousRemoteReapRun(), tracked(s.handleAutonomousRemoteReapRun))
+	mcpSrv.AddTool(s.toolAutonomousRemoteReapRestore(), tracked(s.handleAutonomousRemoteReapRestore))
 	mcpSrv.AddTool(s.toolReleasePushStatus(), tracked(s.handleReleasePushStatus)) // release_push_status: push/tag settings, CI window and last release
 	mcpSrv.AddTool(s.toolAutonomousMergeShadowStatus(), tracked(s.handleAutonomousMergeShadowStatus))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
