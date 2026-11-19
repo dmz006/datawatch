@@ -7006,6 +7006,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// autonomous.merge_shadow — the finish-time shadow merge plan reads
 			// its enabled switch and gate timeout from it.
 			amgr.SetMergeShadowConfig(cfg.Autonomous.MergeShadow)
+			amgr.SetCompletionLandingConfig(cfg.Autonomous.CompletionLanding)
 			// autonomous.shipped.backfill_on_start (default off) — now that the
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.

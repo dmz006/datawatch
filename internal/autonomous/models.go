@@ -396,6 +396,13 @@ type PRD struct {
 	MergedAt        *time.Time `json:"merged_at,omitempty"`
 	MergeCommit     string     `json:"merge_commit,omitempty"`
 	ShippedSource   string     `json:"shipped_source,omitempty"`
+	// NoCodeReason is the explicit statement that this Automaton has no code to
+	// land (research, planning or docs kept outside the repository). A
+	// non-empty value lets the completion landing gate pass without a merge.
+	NoCodeReason string `json:"no_code_reason,omitempty"`
+	// CompletionRefusal is the reason the completion landing gate last refused
+	// a change to completed; cleared when a completion goes through.
+	CompletionRefusal string `json:"completion_refusal,omitempty"`
 	// BlockedReason — a plain sentence saying why the automaton is blocked:
 	// which guardrail verdict blocked it and which judge produced it, or (B165)
 	// why the boot-resume gate parked it (stale activity, removed project

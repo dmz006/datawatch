@@ -3992,6 +3992,10 @@ type AutonomousConfig struct {
 	// See MergeShadowConfig in merge_shadow.go.
 	MergeShadow MergeShadowConfig `yaml:"merge_shadow" json:"merge_shadow"`
 
+	// CompletionLanding — the completion landing gate (autonomous.completion_landing).
+	// See CompletionLandingConfig in completion_landing.go.
+	CompletionLanding CompletionLandingConfig `yaml:"completion_landing" json:"completion_landing"`
+
 	// Automation — knobs for Automation (multi-Automaton orchestration)
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`

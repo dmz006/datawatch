@@ -358,6 +358,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		// CommitPRDIfRev pattern commitRollupStatus uses: only if nobody
 		// rewrote the PRD since this pass observed it and every task is
 		// still terminal (re-checked under the store lock).
+		if allowed, why := m.checkCompletionLanding(ctx, prd, CompletionPathRejudge, v.Outcome, ""); !allowed {
+			return prd, fmt.Errorf("rejudge completion guardrail: prd %s: %s", prd.ID, why)
+		}
 		rev, ok := m.store.PRDRev(prd.ID)
 		if !ok {
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %q not found", prdID)

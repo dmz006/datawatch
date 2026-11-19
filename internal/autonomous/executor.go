@@ -1268,6 +1268,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	// BL451 — commit PRDCompleted first; completion side effects only
 	// run once the status actually landed.
+	// Completion landing gate: refuse to complete unmerged work. The status
+	// stays as it was and the reason is recorded on the Automaton.
+	if allowed, _ := m.checkCompletionLanding(ctx, prd, CompletionPathRollup, "", ""); !allowed {
+		return nil
+	}
 	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed", "")
 	if !ok {
 		return nil

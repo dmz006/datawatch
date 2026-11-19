@@ -479,7 +479,7 @@ func (s *Store) archiveEligibility(p *PRD, now time.Time, retention time.Duratio
 			}
 		}
 	}
-	if p.Git.Branch != "" && !shipped && p.Status != PRDCancelled {
+	if p.Git.Branch != "" && !shipped && p.Status != PRDCancelled && recordedLandingEvidence(p) == "" {
 		return false, "branch " + p.Git.Branch + " is not merged and the record still needs it", true
 	}
 	if !s.rec.active {
