@@ -12,8 +12,11 @@
 // consumed exactly once, budget untouched — while the genuinely
 // no-output (infra) case keeps exactly one bounded retry. These tests
 // pin both sides of that line, plus the decompose-side twin (a plan the
-// session wrote but ParsePlanning could not parse fails on the first
-// attempt, with the parse reason on the returned error).
+// session wrote but ParsePlanning could not parse classifies as a content
+// failure — one bounded content retry with the parse reason riding back to
+// the planner as guidance, the infra budget untouched — and fails the
+// attempt with the parse reason on the returned error once the content
+// budget is spent).
 package autonomous
 
 import (
@@ -111,15 +114,19 @@ func TestRunGuardrailWithInfraRetry_NoOutputInfraVerdict_RetriesOnceThenPasses(t
 	}
 }
 
-func TestDecompose_WrittenButUnparseable_ParsesOnce_FailsImmediatelyWithParseReason(t *testing.T) {
+func TestDecompose_WrittenButUnparseable_RetriedOnceAsContent_ThenFailsWithParseReason(t *testing.T) {
 	// The decompose-side twin of the incident: the session DID write an
 	// output file (the fn returns non-empty content, no error), but the
-	// file is not parseable JSON. That is a written verdict, not an
-	// infra failure — it must fail on the first attempt (no retry, no
-	// discarded-second-plan risk), leave the infra retry budget
-	// untouched, and the returned error must carry ParsePlanning's own
-	// parse reason so the operator sees WHY.
+	// file is not parseable JSON. That is a written verdict, not an infra
+	// failure — the infra retry budget must stay untouched. It IS a
+	// fixable content failure: with the content budget at 1 the parse
+	// error rides back to the planner as the next attempt's guidance, and
+	// only when that budget is spent does the attempt fail — with the
+	// parse reason on the returned error so the operator sees WHY and the
+	// recorded failure carrying the spent, non-retryable-at-that-moment
+	// content category (never invalid-response, never infra).
 	cfg := DefaultConfig()
+	cfg.AutoFixRetries = 1 // exactly one content retry, deterministically
 	calls := 0
 	fn := func(req DecomposeRequest) (string, error) {
 		calls++
@@ -135,8 +142,8 @@ func TestDecompose_WrittenButUnparseable_ParsesOnce_FailsImmediatelyWithParseRea
 	if derr == nil {
 		t.Fatal("Decompose: want the parse failure returned, got success")
 	}
-	if calls != 1 {
-		t.Fatalf("decompose fn called %d times, want EXACTLY 1 — a written-but-unparseable plan must not be retried (retry risks discarding a good second plan)", calls)
+	if calls != 2 {
+		t.Fatalf("decompose fn called %d times, want EXACTLY 2 (one content retry within budget=1 — never an infra retry)", calls)
 	}
 	errText := derr.Error()
 	if !strings.Contains(errText, "parse") {
@@ -153,25 +160,30 @@ func TestDecompose_WrittenButUnparseable_ParsesOnce_FailsImmediatelyWithParseRea
 	if final.RetryCountsByCategory["infra"] != 0 {
 		t.Fatalf("infra retry budget consumed %d — a written-but-unparseable plan is NOT an infra failure and must not consume the infra budget", final.RetryCountsByCategory["infra"])
 	}
+	if final.RetryCountsByCategory["content"] != 1 {
+		t.Fatalf("content retry budget consumed %d, want exactly 1 (the one guided retry)", final.RetryCountsByCategory["content"])
+	}
 	// Failed attempts roll the PRD back to draft so an operator (or a
 	// reset) can re-drive it.
 	if final.Status != PRDDraft {
 		t.Errorf("status = %s, want %s (rolled back after the failed decompose)", final.Status, PRDDraft)
 	}
-	// The failure must be recorded on the PRD — the 2026-10-19 incident
-	// fix's contract is that a written verdict's failure is classified
-	// and visible, never silently dropped: LastDecomposeFailure names the
-	// parse reason and carries the terminal invalid-response category
-	// (NOT infra — that would make the operator believe a healthy retry
-	// could have fixed it), and is not itself retryable.
+	// The failure must be recorded on the PRD — a written verdict's
+	// failure is classified and visible, never silently dropped:
+	// LastDecomposeFailure names the parse reason and carries the content
+	// category (NOT infra — that would make the operator believe a
+	// healthy retry could have fixed it — and NOT invalid-response, the
+	// failure having been a content failure that already got its guided
+	// retry), spent and therefore not itself retryable AT THE MOMENT it is
+	// recorded.
 	if final.LastDecomposeFailure == nil {
 		t.Fatal("LastDecomposeFailure = nil, want the recorded decompose failure")
 	}
-	if final.LastDecomposeFailure.Category != "invalid-response" {
-		t.Errorf("LastDecomposeFailure.Category = %q, want invalid-response (written but unparseable — terminal, never infra)", final.LastDecomposeFailure.Category)
+	if final.LastDecomposeFailure.Category != "content" {
+		t.Errorf("LastDecomposeFailure.Category = %q, want content (written but unparseable — a content judgement, not a terminal invalid-response, never infra)", final.LastDecomposeFailure.Category)
 	}
 	if final.LastDecomposeFailure.Retryable {
-		t.Error("LastDecomposeFailure.Retryable = true, want false (written verdicts are consumed once, not auto-retryable)")
+		t.Error("LastDecomposeFailure.Retryable = true, want false (the content budget was spent at the moment of the recorded failure)")
 	}
 	if !strings.Contains(final.LastDecomposeFailure.Detail, "parse") && !strings.Contains(final.LastDecomposeFailure.Detail, "this is not json at all") {
 		t.Errorf("LastDecomposeFailure.Detail = %q must name the parse failure reason", final.LastDecomposeFailure.Detail)
