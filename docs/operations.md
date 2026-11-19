@@ -5566,6 +5566,16 @@ process. The full cause analysis is in
   ordinary infra-retry path), and a store **persistence** failure is source
   `decompose-persist`, category `infra`, retryable. See
   [howto/retry-policy.md](howto/retry-policy.md).
+- **The journal keeps the daemon's stderr.** Before this fix the daemon
+  redirected its stderr (fd 2) into `<data>/daemon-crash.log` at start, so
+  from boot on the service journal received nothing from the daemon and its
+  ordinary log lines landed in the crash log. Stderr is now left untouched —
+  the journal (and every other stderr consumer) keeps receiving everything —
+  and the runtime's fatal crash output is additionally written to the crash
+  log (Go 1.23+ `debug.SetCrashOutput`). The practical difference: look in
+  the journal (`journalctl -u datawatch`) for the daemon's ordinary log
+  lines, and in `<data>/daemon-crash.log` for the per-start header and the
+  crash dumps only.
 
 ### When the daemon still dies silently
 
