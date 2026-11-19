@@ -168,6 +168,8 @@ Selected core tools:
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
 | `autonomous_progress_trend` | Read the progress trend from the saved daily snapshots; optional `days` (1 to 365, default 30) |
 | `autonomous_overlap_search` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's `title` and `spec`, best match first, with the threshold and mode in force; optional `limit` (1 to 50, default 10); read-only |
+| `archived_unmerged_list` | List archived Automata whose work branch holds commits that never reached the base branch, newest archive first: title, former status, branch, commits ahead and whether a draft was already carried; no arguments, read-only |
+| `archived_unmerged_carry_forward` | Carry an archived Automaton's unmerged work forward as a new unapproved draft with the same title, spec and branch (`id` from `archived_unmerged_list`; `force` carries again if already carried, default false; `actor` is recorded on the new draft, default operator); changes, merges and deletes nothing |
 | `generated_artefacts_get` | Read the generated-artefact switches in effect and each artefact kind with its format and tracked path; read-only |
 | `autonomous_prd_change_record` | Read the change record of an Automaton (`id`): files, packages, settings, routes, locale keys, tests, commands; read-only |
 | `autonomous_prd_generated_artefact` | Preview one generated artefact without writing it (`id`, `kind`: `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`); read-only |
