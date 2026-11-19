@@ -21,11 +21,11 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs sixteen checks — one per finding kind, the
-sixteen (16) finding kinds this howto lists. Fourteen of them are checks the
-supervisor script (`scripts/supervisor-watch.py`) runs by hand today; two
-(`worktree_not_registered` and `verify_script_not_executable`) are new in the
-watch, and the script has several checks of its own the watch does not have yet
+call**, it runs seventeen checks — one per finding kind, the
+seventeen (17) finding kinds this howto lists. Fourteen of them are checks the
+supervisor script (`scripts/supervisor-watch.py`) runs by hand today; three
+(`worktree_not_registered`, `verify_script_not_executable` and
+`completed_unmerged`) are new in the watch, and the script has several checks of its own the watch does not have yet
 — see "Where the watch and the script differ" below. Each thing it finds is kept
 as one **finding** with a stable kind, shown on every surface, and — once the
 watch is switched to `on` — raised through the alert and notify channels you
@@ -54,7 +54,7 @@ reloads a model. It reads, it records, it tells you.
 
 ## What the watch reports
 
-The finding kinds are a fixed vocabulary of the sixteen (16) kinds in the
+The finding kinds are a fixed vocabulary of the seventeen (17) kinds in the
 table below; the names there are exactly what you see in the `kind` field on
 every surface. The **subject** is the stable id the
 finding is about. A kind plus a subject is one finding, so the same problem on
@@ -68,6 +68,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `task_failed` | A task in an Automaton failed. Read the verifier verdict before retrying. | The Automaton id |
 | `task_review_needed` | A task in a running or blocked Automaton is held for a person to review (for example after it used up its attempts). It is read from the tasks themselves, not from the triage record, because the record of an Automaton held for review names no task. | The Automaton id |
 | `automaton_not_merged` | An Automaton finished all of its work, every task completed, and is waiting to be merged. | The Automaton id |
+| `completed_unmerged` | An Automaton reads **Completed** but its branch is not merged into the default branch and its record carries no no-code reason, merge commit, landing record or default-branch work. Automata whose latest judge outcome is block or fail are not counted. The line names the Automaton; the list with the reason per branch is [`GET /api/autonomous/completed-unmerged`](automata-completion-landing.md#finding-the-completed-but-unmerged-ones). Report-only: the watch never merges or reverts. | The Automaton id |
 | `idle_lane_eligible_work` | A lane is idle while Automata work that is eligible to run on it is waiting. This reads the lane fill's own status; the watch applies no eligibility rules of its own. | The lane name |
 | `worktree_no_gomod` | A running Automaton's worktree has no `go.mod`, so its project directory is broken. Only raised for a project that is a Go project. | The Automaton id |
 | `worktree_not_registered` | A running Automaton's project directory is not one of the registered worktrees of its repository. | The Automaton id |

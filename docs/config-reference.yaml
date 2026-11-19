@@ -1902,9 +1902,9 @@ autonomous:
       mode: shadow
     # Supervisor watch: the daemon-side version of the supervisor script
     # (scripts/supervisor-watch.py). On each coordinator poll, with no model
-    # call, it runs sixteen checks and keeps one finding per kind and subject:
+    # call, it runs seventeen checks and keeps one finding per kind and subject:
     # tmux_restart, daemon_inactive, model_not_resident, task_failed,
-    # task_review_needed, automaton_not_merged, idle_lane_eligible_work,
+    # task_review_needed, automaton_not_merged, completed_unmerged, idle_lane_eligible_work,
     # worktree_no_gomod, worktree_not_registered, worktree_silent,
     # verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck,
     # priority_stall (a queued Automaton at or above the priority floor waiting
