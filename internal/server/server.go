@@ -554,6 +554,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Archived Automata whose branch still holds unmerged commits, and the
+	// carry-forward that starts a new draft on that branch.
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged", api.handleArchivedUnmerged)
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged/", api.handleArchivedUnmerged)
 	// Branch refresh numbers: setting, results by Automaton, stopped count.
 	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
 	apiMux.HandleFunc("/api/autonomous/event-kinds", api.handleAutonomousEventKinds)

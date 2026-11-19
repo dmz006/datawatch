@@ -4729,6 +4729,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
+			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.

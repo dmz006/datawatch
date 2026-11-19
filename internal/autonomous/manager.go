@@ -699,6 +699,10 @@ type Config struct {
 	// the supervisor loop archives it (mirrors config.AutonomousConfig). Nil
 	// reads as 60; an explicit 0 archives at once.
 	ArchiveGraceMinutes *int `json:"archive_grace_minutes,omitempty"`
+	// ArchiveKeepUnmerged keeps a finished Automaton whose branch holds
+	// commits not on the base branch (mirrors config.AutonomousConfig). Nil
+	// reads as true.
+	ArchiveKeepUnmerged *bool `json:"archive_keep_unmerged,omitempty"`
 	// CapacityFallthrough admits a task on another idle allowed pool when its
 	// requested pool is full (default off; mirrors config.AutonomousConfig).
 	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`
@@ -1473,13 +1477,16 @@ type Manager struct {
 	// that seeded it; a change of the configured value reseeds.
 	supervisorWatchTmuxBaseline string
 	supervisorWatchTmuxCfg      string
-	supervisorWatchNodes        SupervisorWatchNodeLister
-	supervisorWatchSess         SupervisorWatchSessionLogger
-	supervisorWatchLiveness     SupervisorWatchLivenessSource
-	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
-	supervisorWatchAlerted      map[string]bool
-	supervisorWatchAlertMu      sync.Mutex
-	projectPolicyConcurrency    func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
+	// supervisorWatchArchCache holds recent archived-unmerged branch checks,
+	// so a poll does not re-run git for every archived record. Guarded by mu.
+	supervisorWatchArchCache map[string]supervisorWatchArchivedCheck
+	supervisorWatchNodes     SupervisorWatchNodeLister
+	supervisorWatchSess      SupervisorWatchSessionLogger
+	supervisorWatchLiveness  SupervisorWatchLivenessSource
+	supervisorWatchFindings  func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
+	supervisorWatchAlerted   map[string]bool
+	supervisorWatchAlertMu   sync.Mutex
+	projectPolicyConcurrency func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
 
 	// effectivePolicy is the three-tier policy resolver
 	// (config.ResolveProjectPolicy), injected by the daemon with
@@ -2016,6 +2023,10 @@ type Manager struct {
 	// step (decision_record_sync.go). Guarded by mu. Nil = no decision
 	// records wired; the coordinator tick then skips its reconcile.
 	decisionRecords *DecisionRecords
+
+	// archivedUnmergedGit is the read-only git runner of the archived-unmerged
+	// finder and carry-forward (archived_unmerged.go); nil uses git. Guarded by mu.
+	archivedUnmergedGit MergeGitRunner
 
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a

@@ -358,6 +358,7 @@ Subcommands:
 		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
 		newAutonomousEventLogCmd(),
+		newAutonomousArchivedUnmergedCmd(),
 		newAutonomousArchiveCmd(),
 		newAutonomousPeerEventsCmd(),
 		newAutonomousEventKindsCmd(),
@@ -819,6 +820,11 @@ earlier behaviour):
 Archive grace, by JSON key:
 
   archive_grace_minutes           whole minutes a cancelled Automaton is kept before it is archived (default 60; 0 archives at once; negative or fractional values are rejected)
+
+Archive keep, by JSON key (also settable with
+datawatch config set autonomous.archive_keep_unmerged true|false):
+
+  archive_keep_unmerged           true|false: keep a finished Automaton whose branch still holds unmerged commits from being archived (default true; the branch is never deleted)
 
 Daily unlanded-work alert, by JSON key (also settable with
 datawatch config set autonomous.<key> <value>):
