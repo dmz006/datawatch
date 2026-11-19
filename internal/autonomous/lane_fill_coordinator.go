@@ -539,6 +539,9 @@ type laneFillRaw struct {
 	tasks, tasksDone   int
 	template           bool
 	typ                string
+	// defect is true when the Automaton's kind resolves to a bug/defect, which
+	// is not a design implementation and so has no design proposal to confirm.
+	defect bool
 	// branch and worktreeDir are the recorded Automaton branch and, for an
 	// Automaton that runs in its own worktree, that worktree directory.
 	branch, worktreeDir string
@@ -582,6 +585,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
 				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
 				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
+				defect:        EffectiveKind(p, nil) == PRDKindBug,
 				reviewOutcome: p.RulesReviewOutcome,
 			}
 			if p.Hold != nil {
@@ -719,7 +723,10 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
-			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.spec, proposalRd, c.laneFillProposalWarnOnce)
+			// The body is the title and the spec: a writer's job may be stated in
+			// the title alone, and it must be exempt there too.
+			body := r.title + "\n" + r.spec
+			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.defect, body, proposalRd, c.laneFillProposalWarnOnce)
 		}
 		branches[r.id] = r.branch
 		if r.worktreeDir != "" {
