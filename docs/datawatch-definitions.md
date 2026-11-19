@@ -3518,4 +3518,4 @@ The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate
 
 ## Completion landing gate
 
-The check that refuses a change to Completed unless the Automaton branch is merged into the default branch or the record carries a no-code reason or merge commit. The refusal is stored as `completion_refusal` and a `completion_refused` decision. Older completed Automata with an unmerged branch are reported by the `completed_unmerged` watch finding and `GET /api/autonomous/completed-unmerged`. See [howto/automata-completion-landing.md](howto/automata-completion-landing.md).
+The check that refuses a change to Completed unless the Automaton branch is merged into the default branch or the record carries a no-code reason or merge commit. The refusal is stored as `completion_refusal` and a `completion_refused` decision. Older completed Automata with an unmerged branch are reported by the `completed_unmerged` watch finding and `GET /api/autonomous/completed-unmerged`. See [howto/automaton-completion-landing.md](howto/automaton-completion-landing.md).

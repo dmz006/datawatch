@@ -89,6 +89,7 @@ POST   /api/automations/{id}/shipped       record the Automation's shipped state
 GET    /api/autonomous/shipped/counts      per-status shipped counts (PRD + Automation buckets) plus the in-force autonomous.shipped settings
 POST   /api/autonomous/shipped/backfill[?dry_run=true]  one backfill pass over the base repository's default-branch merge history; dry_run scans and reports without writing
 POST   /api/autonomous/completed/migrate[?dry_run=true&limit=N&id=ID]  move cancelled Automata and Automations whose work is already merged to Completed; dry_run reports without writing; 409 while a final gate runs; never touches a session
+GET    /api/autonomous/completed-unmerged  Automata that read Completed while their branch never landed on the default branch: `{"completed_unmerged": [{id, branch, detail}], "count": N}`, sorted by id; read-only. Walk-through: [howto/automaton-completion-landing.md](../howto/automaton-completion-landing.md)
 GET    /api/dashboard/cards/shipped        live payload for the dashboard Shipped card (system card in the factory layout); the companion app renders it through the parity item below
 
 # Guardrail Library + Profiles
