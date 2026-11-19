@@ -4903,9 +4903,9 @@ A regression is **confirmed by one re-run** before it is reported:
   whole command is re-run once.
 
 Only the tests that fail again, by name, count as the regression and are
-listed in `failing_tests`. If none fails again the result is `STABLE` (a
-flaky failure). If the re-run itself is unusable, the gate is invalid, not a
-regression.
+listed in `failing_tests`. If none fails again the result is `STABLE` (an
+intermittent failure, the kind the test-rerun gate records as `intermittent`).
+If the re-run itself is unusable, the gate is invalid, not a regression.
 
 ### gate_disagreement (default `warn`)
 

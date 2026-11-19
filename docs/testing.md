@@ -79,7 +79,7 @@ Tests must not burn CPU or generate stress. `scripts/check-no-load-patterns.sh` 
 
 The check is part of the local pre-tag run on the build host, not a CI step. Run it with `make check-no-load-patterns` (it also runs its fixture test, `scripts/check-no-load-patterns_test.sh`); `make lint` depends on it, so a normal `make lint` before pushing a tag covers it.
 
-## Proving a flaky-test fix
+## Proving an intermittent-test fix
 
 A test that failed once and passed on the rerun is a real intermittent failure — a race, an unbounded wait, a shared resource or a timing assumption — never "load": a passing rerun proves the failure is intermittent, it does not remove it. It is never fixed by a retry, a longer sleep, loading the machine up before the run, or excluding the test; fix the root cause in the test or the code it exercises.
 
