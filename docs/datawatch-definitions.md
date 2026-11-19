@@ -1994,9 +1994,10 @@ not a second mechanism. See
 `autonomous.scan.fix_loop_max_retries`) — the option that turns a failing
 scan into an automated fix attempt. Both keys are off/zero by default
 (`fix_loop_enabled: false`, `fix_loop_max_retries: 0`): with the loop off,
-a failing scan is just a failing scan. When it is on, a scan of an Automaton
-with findings at or above `autonomous.scan.fail_on_severity` drives the
-loop: open one corrective task for the findings (a child Automaton whose
+a failing scan is just a failing scan. When it is on, a `scan/fixloop` run
+scans the Automaton first, and findings at or above
+`autonomous.scan.fail_on_severity` drive the fix cycle: open one corrective
+task for the findings (a child Automaton whose
 spec is built from them, linked to the scanned Automaton, starting from its
 setup), execute it, re-scan — repeating for up to
 `fix_loop_max_retries` fix-and-rescan cycles (the initial scan is not one of
@@ -2013,9 +2014,9 @@ final hold) is in the scanned Automaton's decision log under actor
 scan, `scan_fix` for the single fix task). Not the same as
 `autonomous.infra_retry` (that retries tasks whose *machinery* failed,
 free) — the fix loop reacts to the *work* failing its quality scan and pays
-a budget. Set the two keys from YAML, the PWA (Settings → Automata, *Scan & Quality Gate
-Configuration* card: the *Scan fix loop* toggle plus
-*Fix loop max retries*), `PUT /api/autonomous/scan/config` (partial body
+a budget. Set the two keys from YAML, the PWA (Settings → Automata, *Guardrail Library*
+card: the *Auto-fix loop* toggle plus *Fix loop max retries*; each row saves
+itself the moment it changes), `PUT /api/autonomous/scan/config` (partial body
 OK), `datawatch autonomous scan-config-set fix_loop_enabled=true
 fix_loop_max_retries=3`, the `autonomous_scan_config_set` MCP tool, or the
 comm channel's autonomous verbs, and they apply to scan runs from that moment
