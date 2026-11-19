@@ -743,6 +743,18 @@ All refusals say why: a missing actor or reason is refused with the requirement 
 
 A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
 
+**On a live daemon.** Found 2026-11-18 and fixed: before the fix, a running
+daemon answered 503 — `the autonomous manager does not expose the branch
+reaper` — on all three routes **even when** `autonomous.worktree_base_repo` was
+set, because the daemon's API wrapper did not carry the reaper's methods. Every
+surface in the table below failed with it, and that is why the repository kept
+piling up finished Automata while cleanup lagged. The daemon now wires the
+reaper in with the routes, so with a base repo set the report, the pass and the
+restore work on a live daemon; the 503 now means only that the base repo is
+unset. On a daemon upgraded across the gap, the first move is to read the
+report and run a pass once the list reads as expected (see the review item
+below); the reaper does not catch up on its own.
+
 The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
 Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
 in the repository. The **branch reaper** removes those leftovers once the parent
@@ -840,6 +852,12 @@ task sub-branches. (That a Keep record leaves task sub-branches unprotected is o
 
 ### Still needs your review
 
+- **Backlog from the wiring gap (fixed 2026-11-18).** Until the fix, all three
+  routes answered 503 on a live daemon even with a base repo set, so no report
+  could be read and no pass could be run from any surface, and completed
+  Automata kept piling up. On a daemon that has the fix, verify the first pass
+  by hand — read the report, confirm the list is what you expect, run the
+  pass, and spot-check one restore before trusting it at scale.
 - **Nothing runs a pass on a timer, and the expiry has no caller.** The
   report, the pass and the restore are all operator-triggered (above), but no
   schedule runs a reap pass and nothing calls the backup-ref expiry — the refs
