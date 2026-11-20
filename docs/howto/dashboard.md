@@ -78,17 +78,19 @@ Or from any session card / Automata card via the `⊞` icon button.
 
 At 600px wide or less the Dashboard changes layout so nothing is out of reach:
 
-- **Stat bar wraps.** The stat bar at the top flows onto a second row instead of
-  running off the edge, so the **+ Card** and **Edit** buttons stay on screen.
+- **Stat bar wraps.** The stat bar at the top flows onto more lines instead of
+  running off the edge, each counter stays whole, and the **+ Card** and **Edit**
+  buttons stay on screen.
 - **One page scroll.** The whole Dashboard scrolls as a single page inside the
   view, not in a short scroll box of its own. The card grid grows to fit its
   cards, so every card can be reached. The bottom padding that keeps the last
   card clear of the new-session button is kept.
-- **Columns.** Cards sit in two columns up to 600px and one column at 480px or
-  less. A card marked full-width spans both columns.
+- **Columns.** On a phone the cards fill one full-width column with the same side
+  gutter as every other page; a card's wide or tall size is ignored.
 
-No setting controls this; it is layout only (`style.css`, no `app.js` change).
-Covered by `app-dash-phone-statbar.test.js` and `app-dash-phone-grid-height.test.js`.
+No setting controls this; it is layout only. The page shares the phone layout
+of every other page: see [Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width).
+Covered by `app-dash-phone-statbar.test.js`, `app-dash-phone-grid-height.test.js` and `app-phone-layout-consistency.test.js`.
 
 ## Two happy paths
 
