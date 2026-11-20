@@ -81,6 +81,7 @@ func TestJudgePromptSurface_MCPSetSendsValuesIncludingZero(t *testing.T) {
 		res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
 			"judge_prompt_file_threshold_lines":              val,
 			"judge_delivery_wait_per_thousand_lines_seconds": val,
+			"judge_timeout_per_thousand_lines_seconds":       val,
 		}))
 		if err != nil || res.IsError {
 			t.Fatalf("set %v: err=%v res=%+v", val, err, res)
@@ -140,6 +141,36 @@ func TestJudgePromptSurface_MCPSetRejectsOutOfRange(t *testing.T) {
 			if calls != 0 {
 				t.Errorf("%s=%v: %d REST calls made for a rejected value", k.key, bad, calls)
 			}
+		}
+	}
+}
+
+// TestJudgeSplitSurface: the judge time limit growth setting is in the config
+// set schema and is sent to PUT /api/config, with 0 kept as 0.
+func TestJudgeSplitSurface(t *testing.T) {
+	const key = "judge_timeout_per_thousand_lines_seconds"
+	found := false
+	for _, k := range judgePromptKeys {
+		if k.key == key && k.max == 3600 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("%s missing from the judge prompt key table", key)
+	}
+	for _, val := range []float64{0, 600} {
+		var got map[string]any
+		s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &got)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{key: val}))
+		if err != nil || res.IsError {
+			t.Fatalf("set %v: err=%v res=%+v", val, err, res)
+		}
+		if v, ok := got["autonomous."+key]; !ok || v != val {
+			t.Errorf("autonomous.%s = %v (present=%v), want %v", key, v, ok, val)
 		}
 	}
 }

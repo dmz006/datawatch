@@ -11,6 +11,7 @@ var judgePromptCLIKeys = []struct {
 }{
 	{"judge-prompt-file-threshold-lines", "judge_prompt_file_threshold_lines", 250, 100000},
 	{"judge-delivery-wait-per-thousand-lines-seconds", "judge_delivery_wait_per_thousand_lines_seconds", 45, 3600},
+	{"judge-timeout-per-thousand-lines-seconds", "judge_timeout_per_thousand_lines_seconds", 900, 3600},
 }
 
 func applyJudgeFlag(t *testing.T, flag string, val string) (map[string]any, error) {
@@ -65,6 +66,23 @@ func TestJudgePromptSurfaceCLIHelpListsFlagAndKey(t *testing.T) {
 			if !strings.Contains(help, f) {
 				t.Errorf("config-set help lacks %s", f)
 			}
+		}
+	}
+}
+
+// TestJudgeSplitSurface: the config-set flag carries the judge time limit
+// growth setting, keeps 0, and rejects a negative or too large value.
+func TestJudgeSplitSurface(t *testing.T) {
+	const flag, key = "judge-timeout-per-thousand-lines-seconds", "judge_timeout_per_thousand_lines_seconds"
+	for _, v := range []int{0, 600, 3600} {
+		body, err := applyJudgeFlag(t, flag, itoa(v))
+		if err != nil || body[key] != v {
+			t.Fatalf("%d: body=%v err=%v", v, body, err)
+		}
+	}
+	for _, v := range []int{-1, 3601} {
+		if _, err := applyJudgeFlag(t, flag, itoa(v)); err == nil {
+			t.Errorf("--%s %d accepted", flag, v)
 		}
 	}
 }
