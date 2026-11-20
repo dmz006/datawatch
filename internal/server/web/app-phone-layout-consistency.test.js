@@ -515,3 +515,159 @@ test('Dashboard stat bar children can shrink and the page cannot scroll sideways
   const page = declarations(rulesFor(phoneScope, '.phone-page').join(';'));
   assert.ok(page.some(d => d.prop === 'overflow-x' && d.value === 'hidden'), '.phone-page overflow-x: hidden');
 });
+
+// ── 6. Feature-level guards on the branch's own CSS and app.js lines ───────
+//
+// Each test names one feature the shared phone layout adds and asserts its
+// distinctive selector or line is still in the source. Removing the feature
+// from style.css or app.js makes the matching test fail.
+
+const hasDecl = (decls, prop, value) => decls.some(d => d.prop === prop && d.value === value);
+const declsOf = (scope, sel) => declarations(rulesFor(scope, sel).join(';'));
+
+test('CSS: the -inset and -alerts page classes give the desktop padding their views used inline', () => {
+  assert.ok(hasDecl(declsOf(baseScope, '.phone-page-inset'), 'padding', '12px 16px'), '.phone-page-inset padding');
+  assert.ok(hasDecl(declsOf(baseScope, '.phone-page-inset-lg'), 'padding', '16px'), '.phone-page-inset-lg padding');
+  assert.ok(hasDecl(declsOf(baseScope, '.phone-page-alerts'), 'padding', '12px'), '.phone-page-alerts padding');
+});
+
+test('CSS: the phone query defines the card padding and gap tokens and zeroes the alerts page padding', () => {
+  const root = declarations(rulesFor(phoneScope, ':root').join(';'));
+  assert.ok(hasDecl(root, '--phone-card-padding', '12px 14px'), '--phone-card-padding: 12px 14px');
+  assert.ok(hasDecl(root, '--phone-gap', '8px'), '--phone-gap: 8px');
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page-alerts'), 'padding', '0'), '.phone-page-alerts padding: 0 on a phone');
+});
+
+test('CSS: a page nested in a page adds no second gutter', () => {
+  const nested = declsOf(phoneScope, '.phone-page .phone-page');
+  assert.ok(hasDecl(nested, 'padding-left', '0'), '.phone-page .phone-page padding-left: 0');
+  assert.ok(hasDecl(nested, 'padding-right', '0'), '.phone-page .phone-page padding-right: 0');
+});
+
+test('CSS: the Settings page uses the shared vertical rhythm', () => {
+  const decls = declsOf(phoneScope, '.phone-page .settings-view');
+  assert.ok(hasDecl(decls, 'padding', '12px 0'), '.phone-page .settings-view padding: 12px 0');
+  assert.ok(hasDecl(decls, 'gap', 'var(--phone-gap)'), '.phone-page .settings-view gap: var(--phone-gap)');
+});
+
+test('CSS: PRD and alert cards use the shared card padding and gap', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-card'), 'padding', 'var(--phone-card-padding)'), '.phone-card padding');
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .prd-card'), 'padding', 'var(--phone-card-padding)'), 'prd-card padding');
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .alert-card'), 'padding', 'var(--phone-card-padding)'), 'alert-card padding');
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .prd-card'), 'margin', 'var(--phone-gap) 0'), 'prd-card margin');
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .alert-card'), 'margin', '0 0 var(--phone-gap)'), 'alert-card margin');
+});
+
+test('CSS: Settings section cards are full width on a phone', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .settings-section'), 'width', '100%'), '.phone-page .settings-section width: 100%');
+});
+
+test('CSS: Dashboard stat bar and tag filter share the phone gutter', () => {
+  for (const sel of ['.phone-page .dboard-stat-bar', '.phone-page .dboard-tag-filter']) {
+    const decls = declsOf(phoneScope, sel);
+    assert.ok(hasDecl(decls, 'padding-left', 'var(--phone-gutter)'), `${sel} padding-left: gutter`);
+    assert.ok(hasDecl(decls, 'padding-right', 'var(--phone-gutter)'), `${sel} padding-right: gutter`);
+  }
+});
+
+test('CSS: the Dashboard cards wrapper drops its inset and the card grid is one full-width column', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.dboard-cards.phone-page'), 'padding-left', '0'), '.dboard-cards.phone-page padding-left: 0');
+  assert.ok(hasDecl(declsOf(phoneScope, '.dboard-cards.phone-page'), 'padding-right', '0'), '.dboard-cards.phone-page padding-right: 0');
+  const grid = declsOf(phoneScope, '.phone-page .dboard-card-grid');
+  assert.ok(hasDecl(grid, 'grid-template-columns', '1fr'), 'card grid: one column');
+  assert.ok(hasDecl(grid, 'gap', 'var(--phone-gap)'), 'card grid gap: var(--phone-gap)');
+  assert.ok(hasDecl(grid, 'padding', 'var(--phone-gap) var(--phone-gutter)'), 'card grid padding');
+});
+
+test('CSS: Dashboard cards span one column each, overriding the inline span', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.phone-page .dboard-card[data-cs]'), 'grid-column', 'span 1'), 'data-cs cards: grid-column span 1');
+});
+
+test('CSS: Dashboard stat bar is a row with its own gap and the placement filter fits the phone', () => {
+  const bar = declsOf(phoneScope, '.dboard-stat-bar');
+  assert.ok(hasDecl(bar, 'flex-wrap', 'wrap'), '.dboard-stat-bar flex-wrap: wrap');
+  assert.ok(hasDecl(bar, 'row-gap', '4px'), '.dboard-stat-bar row-gap: 4px');
+  assert.ok(hasDecl(bar, 'column-gap', '10px'), '.dboard-stat-bar column-gap: 10px');
+  const buttons = declsOf(phoneScope, '.dboard-stat-bar > button');
+  assert.ok(hasDecl(buttons, 'white-space', 'nowrap') && hasDecl(buttons, 'flex', '0 0 auto'), 'stat bar buttons do not wrap or grow');
+  assert.ok(hasDecl(declsOf(phoneScope, '#dashStatBurnRate'), 'border-left', 'none'), '#dashStatBurnRate drops its desktop divider');
+  assert.ok(hasDecl(declsOf(phoneScope, '#dashPlacementFilter'), 'max-width', '100%'), '#dashPlacementFilter max-width: 100%');
+  assert.ok(hasDecl(declsOf(phoneScope, '#dashPlacementSelect'), 'max-width', '100%'), '#dashPlacementSelect max-width: 100%');
+});
+
+test('CSS: filter rows lay their children out as shrinkable flex items', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.timeline-card-filters > select'), 'flex', '1 1 140px'), 'filter select grows from 140px');
+  assert.ok(hasDecl(declsOf(phoneScope, '.plan-records-controls > input'), 'flex', '1 1 140px'), 'filter input grows from 140px');
+  assert.ok(hasDecl(declsOf(phoneScope, '.project-gantt-toolbar'), 'gap', '6px'), 'filter rows keep a 6px gap');
+});
+
+test('CSS: wide Gantt content scrolls inside its own wrapper', () => {
+  assert.ok(hasDecl(declsOf(phoneScope, '.project-gantt-scroll'), 'max-width', '100%'), '.project-gantt-scroll max-width: 100%');
+});
+
+// The phone rules only matter if app.js renders the element they target.
+test('CSS selectors added for the phone layout target elements that app.js renders', () => {
+  const targets = [
+    'id="dashStatBurnRate"', 'id="dashPlacementFilter"', 'id="dashPlacementSelect"',
+    'dboard-card-grid', 'dboard-tag-filter', 'project-gantt-scroll', 'data-cs=',
+    'id="automataEventsFilters"', 'obs-filter-row', 'project-gantt-toolbar',
+  ];
+  for (const t of targets) assert.ok(appSource.includes(t), `app.js renders ${t}`);
+});
+
+// Line-level guards: the distinctive class strings the branch adds to app.js.
+const APP_LINES = [
+  ['Projects empty list', 'id="projectsView" class="phone-page phone-page-inset-lg"'],
+  ['Projects picker', 'class="projects-view phone-page phone-page-inset"'],
+  ['Projects focus page from a project', '<div class="phone-page phone-page-inset">${page}</div>'],
+  ['Projects focus page from an Automation', 'class="view-content automation-detail phone-page" style="position:relative;"'],
+  ['Automation detail shell', 'class="view-content automation-detail phone-page" style="position:relative;">${inner}</div>`;'],
+  ['Automation form', 'class="view-content automation-form phone-page"'],
+  ['Automation form loading state', 'class="view-content automation-form phone-page" style="position:relative;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}'],
+  ['PRD detail page', 'class="view-content phone-page" style="position:relative;">\n    <div class="prd-breadcrumb"'],
+  ['Sessions list', 'paint(`<div class="view-content phone-page" style="position:relative;">\n    <div class="sessions-watermark">'],
+  ['Alerts page', 'view.innerHTML = `<div class="view-content phone-page">'],
+  ['Alerts list', 'id="alertsList" class="phone-page-alerts"'],
+  ['Dashboard root', '<div class="dboard-cards phone-page" id="dashboardWrap">'],
+  ['Settings page', 'view.innerHTML = `\n    <div class="view-content phone-page">\n      <div class="settings-tabs-bar'],
+  ['Observer page', 'view.innerHTML = `<div class="view-content phone-page">\n    <div class="settings-view">'],
+];
+
+for (const [name, line] of APP_LINES) {
+  test(`app.js: ${name} carries the shared phone page class`, () => {
+    assert.ok(appSource.includes(line), `missing: ${line.split('\n')[0]}`);
+  });
+}
+
+test('app.js: each Sessions list state wears phone-page, not only the loaded list', () => {
+  const sessionsRoots = appSource.match(/class="view-content phone-page" style="position:relative;"/g) || [];
+  assert.ok(sessionsRoots.length >= 4, `found ${sessionsRoots.length} phone-page view roots in the Sessions paths`);
+});
+
+// Rendered output of the views that render synchronously: the class lands in
+// the markup a phone actually receives.
+test('rendered: the Alerts list wrapper is phone-page-alerts', () => {
+  const { sb, els } = freshView();
+  sb.renderAlertsView();
+  assert.match(els.view.innerHTML, /id="alertsList" class="phone-page-alerts"/);
+});
+
+test('rendered: the Projects picker and focus pages carry the phone page classes', () => {
+  const { sb } = freshView();
+  assert.match(sb._projectsPickerHTML([{ name: 'alpha' }], 'alpha', ''), /id="projectsView" class="projects-view phone-page phone-page-inset"/);
+  assert.match(sb._projectsFocusPageHTML({ from: 'project', id: 'alpha', title: 't', loading: true, rows: [] }), /^<div class="phone-page phone-page-inset">/);
+  assert.match(sb._projectsFocusPageHTML({ from: 'automation', id: 'a1', title: 't', loading: true, rows: [] }), /class="view-content automation-detail phone-page"/);
+});
+
+test('rendered: the Automation detail shell and form carry phone-page', () => {
+  const { sb } = freshView();
+  assert.match(sb._automationDetailShell('<p>x</p>'), /^<div class="view-content automation-detail phone-page"/);
+  assert.match(sb._automationFormHTML(), /class="view-content automation-form phone-page"/);
+});
+
+test('rendered: the Dashboard wrapper is the phone-page cards root', () => {
+  const { sb, els, run } = freshView();
+  run("state.activeView = 'dashboard'");
+  sb.renderDashboardView();
+  assert.match(els.view.innerHTML, /<div class="dboard-cards phone-page" id="dashboardWrap">/);
+});
