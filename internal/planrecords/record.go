@@ -65,6 +65,9 @@ const (
 	MaxProjectRunes   = 64
 	MaxIDRunes        = 64
 	MaxGoalRunes      = 2000
+	// MaxPlanTitleRunes is the longest title a plan takes when it is named
+	// by the plans migration or renamed by hand. Plan titles are one line.
+	MaxPlanTitleRunes = 100
 	MaxLinkedItems    = 500
 	MaxOrder          = 1_000_000
 	// MaxReleaseRunes bounds a release plan's release label.
@@ -145,11 +148,19 @@ type Record struct {
 	// Plan fields (kind plan only). Order is the priority order, lowest first;
 	// Automations, Automata and Findings are the links down, in display order.
 	// They change only through the store's Attach, Detach and Reorder methods.
-	Goal        string   `json:"goal,omitempty"`
-	Order       int      `json:"order,omitempty"`
-	Automations []string `json:"automations,omitempty"`
-	Automata    []string `json:"automata,omitempty"`
-	Findings    []string `json:"findings,omitempty"`
+	Goal  string `json:"goal,omitempty"`
+	Order int    `json:"order,omitempty"`
+	// SetByHand is true when the plan's status was written through the update
+	// path with an explicit state. The roll-up keeps such a status; a roll-up
+	// write never sets it.
+	SetByHand bool `json:"set_by_hand,omitempty"`
+	// TitleSetByHand is true when the plan was renamed through RenamePlan or
+	// an update that changed its title. The plans migration never changes the
+	// title of such a plan.
+	TitleSetByHand bool     `json:"title_set_by_hand,omitempty"`
+	Automations    []string `json:"automations,omitempty"`
+	Automata       []string `json:"automata,omitempty"`
+	Findings       []string `json:"findings,omitempty"`
 	// LinkInfo keeps the title and state last reported for a linked Automaton
 	// or Automation, keyed "automaton:<id>" or "automation:<id>", so lists and
 	// search never read the linked item itself.
@@ -197,6 +208,9 @@ type Patch struct {
 	// PlanKind and Release apply to plans only.
 	PlanKind *PlanKind
 	Release  *string
+	// SetByHand sets or clears the plan's set_by_hand marker. Left nil, an
+	// explicit State on a plan sets it.
+	SetByHand *bool
 	// Actor names who made the change for the audit event.
 	Actor string
 }
@@ -382,7 +396,7 @@ func (r *Record) validatePlanFields() error {
 		return invalid("goal longer than %d characters", MaxGoalRunes)
 	}
 	planOnly := r.Goal != "" || r.Order != 0 || len(r.Automations) > 0 || len(r.Automata) > 0 ||
-		len(r.Findings) > 0 || len(r.LinkInfo) > 0 || r.PlanKind != PlanKindOrdinary || r.Release != "" || len(r.Themes) > 0
+		len(r.Findings) > 0 || len(r.LinkInfo) > 0 || r.PlanKind != PlanKindOrdinary || r.Release != "" || len(r.Themes) > 0 || r.TitleSetByHand
 	if planOnly && r.Kind != KindPlan {
 		return invalid("goal, order, links down, plan kind, release and themes apply to plans only")
 	}

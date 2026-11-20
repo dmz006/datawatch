@@ -20,7 +20,7 @@ const (
 )
 
 // maxMigratedTitleRunes bounds a migrated plan's whole title, "Plan: " included.
-const maxMigratedTitleRunes = 100
+const maxMigratedTitleRunes = MaxPlanTitleRunes
 
 const migratedTitlePrefix = "Plan: "
 

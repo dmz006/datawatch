@@ -142,9 +142,11 @@ Selected core tools:
 | `project_set_arcs` | replace a project's ordered plan list (`automation_id`, `priority`, `state`); `[]` clears it |
 | `plan_create` | create a plan in a project (`project`, `title`, optional `goal`) |
 | `plan_reorder` | set the plan priority order (`plans`, first plan first) |
+| `plan_rename` / `plan_edit` | rename a plan (`plan`, `title`) or set its goal (`plan`, `goal`; empty clears it) |
 | `plan_reorder_automata` | set the run order of a plan's Automata (`plan`, `automata`) |
 | `plan_attach` / `plan_detach` | link or unlink an Automaton, Automation or finding (`plan`, `kind`, `id`) |
 | `plan_migrate` | build plans from the older plan list (arcs) and registry rows; previews unless `apply` is `true` |
+| `plan_rollup` | roll plan statuses up from their linked Automata and Automations (`project`, `dry_run`); a status set by hand is kept |
 | `project_rollup` | a project's plans with their Automata, task progress, points and throughput (optional `window`, days) |
 | `project_history` | one page of a project's finished Automata, daily progress and Gantt rows (`limit`, `cursor`) |
 | `project_timeline` | one level of a project's timeline: start, end, status and dependencies per plan, Automaton and task, plus Automaton chain edges (`level`, `parent`, `automaton`, `focus`, `limit`, `cursor`) |
