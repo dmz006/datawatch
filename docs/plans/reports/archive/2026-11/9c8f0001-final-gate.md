@@ -22,7 +22,7 @@ git diff --quiet "$(git merge-base HEAD main)" HEAD -- internal/server/web/app.j
 echo ok
 ```
 
-Run from the PRD task worktree (`/home/dmz/.datawatch/prd-worktrees/9c8f0001`), where `.datawatch/verify/` lives; the guard, its self-test, the smoke static check and the untouched-file check were independently re-run on this branch's worktree with the same result.
+Run from the PRD task worktree (the Automaton task worktree), where `.datawatch/verify/` lives; the guard, its self-test, the smoke static check and the untouched-file check were independently re-run on this branch's worktree with the same result.
 
 ## Guard self-test (4 cases)
 
@@ -68,7 +68,7 @@ Expected on a `main` build: the priority-stalls route ships with branch `automat
 ## Live guard demo (e19b0001 branch — the actual violation)
 
 ```
-$ cd /home/dmz/.datawatch/prd-worktrees/e19b0001   # branch automaton/e19b0001
+$ cd <worktree of e19b0001>   # branch automaton/e19b0001
 $ bash <docs-branch>/scripts/check-no-pwa-when-spec-forbids.sh <e19b-spec.md>
 forbidden PWA change: internal/server/web/app.js
 rc=1   (exit 1 = violation detected)
