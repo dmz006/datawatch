@@ -190,14 +190,12 @@ day's result.
 
 - **Four watch-only kinds.** `worktree_not_registered`,
   `verify_script_not_executable`, `main_checkout_automaton` and
-  `archived_unmerged` are watch-only: the
-  script never prints a
-  line for any of them, so the comparison cannot match
-  them. Whenever one is
-  open, the comparison lists it under **only the watch**, and that day does not
-  count toward the days of full agreement. Treat each as a real finding to look
-  at (or fix) rather than as a disagreement to chase, and expect a quiet day to
-  be the only kind that can agree fully.
+  `archived_unmerged` are watch-only: the script never prints a line for any
+  of them, so the comparison cannot match them. Whenever one is open, the
+  comparison lists it under **only the watch**, and that day does not count
+  toward the days of full agreement. Treat each as a real finding to look at
+  (or fix) rather than as a disagreement to chase, and expect a quiet day to be
+  the only kind that can agree fully.
 - **Script checks the watch does not cover.** The script also prints: a model
   host that is unreachable, a node holding sessions against its limit
   (balancing), a capacity lease held without a reason, idle compute nodes while
