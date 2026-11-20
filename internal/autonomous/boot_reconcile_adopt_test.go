@@ -83,24 +83,29 @@ func TestBootResumeAdoptsThreeLiveTasksOverCapOnce(t *testing.T) {
 	}
 }
 
-// A verify hand-off re-keys each worker lease to verify:<task>. A later
-// adoption pass over the same live sessions (a resume of the PRD, or the
-// executor's skip-spawn path) must find the hand-off lease and leave the count
-// at three instead of adding a second lease under the task key.
-func TestAdoptAfterVerifyHandoffKeepsOneLeasePerSession(t *testing.T) {
+// Entering verifying releases each worker lease, and the verifier then takes
+// verify:<task>. A later adoption pass over the same live sessions (a resume of
+// the PRD, or the executor's skip-spawn path) must find those verifier leases
+// and leave the count at three instead of adding a second lease under the task
+// key.
+func TestAdoptAfterVerifyEntryKeepsOneLeasePerSession(t *testing.T) {
 	m, prd, led := adoptedPoolFixture(t, TaskVerifying)
 
 	m.resetInProgressTasksForResume(prd)
 	wantAdoptedOnce(t, prd, led, "boot pass")
 
-	for _, tk := range prd.Story[0].Tasks {
-		if !m.HandoffVerifyLease(tk.ID, "pi-prompt", "m") {
-			t.Fatalf("verify hand-off of %s failed", tk.ID)
+	// Three verifiers need three pi-prompt slots; the fixture caps the pool at 2.
+	led.SetLimit("pi-prompt", 3)
+	for i := range prd.Story[0].Tasks {
+		tk := &prd.Story[0].Tasks[i]
+		m.releaseWorkerLeaseForVerify(tk)
+		if err := led.Acquire(context.Background(), capacity.Request{Holder: VerifyHolder(tk.ID), PRDID: prd.ID, Pools: []string{"host", "pi-prompt"}, Role: capacity.RoleVerifier}, 0, nil, nil); err != nil {
+			t.Fatalf("verifier admission of %s failed: %v", tk.ID, err)
 		}
 	}
 	st := led.Snapshot()
 	if len(st.Leases) != 3 {
-		t.Fatalf("after hand-off want 3 leases, got %+v", st.Leases)
+		t.Fatalf("after verify entry want 3 leases, got %+v", st.Leases)
 	}
 
 	m.resetInProgressTasksForResume(prd)
