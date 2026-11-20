@@ -1079,19 +1079,27 @@ The same text, from the same source, on every surface:
   with the pools, node and session it holds; `usage_backoff` and `budgets`
   carry the flags and the dollar windows.
 - **`GET /api/capacity`** (MCP `capacity_status`): the same task views under
-  `tasks.waiting` and `tasks.running`, next to `pools`, `leases`, `waiting`
-  (the raw ledger queue), `backoff` (each flag with `until`, `reason` and
-  `reset_known`) and `budgets`. Add `?prd_id=<id>` to scope it to one
-  Automaton.
+  `tasks.waiting` and `tasks.running`, and `tasks.verifying` for tasks in
+  verification, next to `pools`, `leases`, `waiting` (the raw ledger queue),
+  `backoff` (each flag with `until`, `reason` and `reset_known`) and
+  `budgets`. `tasks.verifying` is always an array. Each entry has `state`:
+  `verifying` when its verifier holds a slot, or `waiting_for_verifier` when
+  it is queued for one, and then `wait_reason` says why. Add `?prd_id=<id>`
+  to scope it to one Automaton.
 - **Automata task detail (PWA):** a waiting task shows the cause chip, the
   reason text and, when known, `(Resets at <time>)`; a running task shows a
   `Holds:` line with its pools and node.
 - **Status tab (PWA, session view):** the same wait row, labelled
   *Waiting on*, and the same `Holds:` line, for a session that belongs to an
   Automaton task.
+- **Capacity card (PWA):** a *Verifying* list under the queue, one row per
+  task in verification, marked `verifying` or `waiting for a verifier slot`.
+  The Automata waiting for a worker slot stay in the queue list.
 - **`datawatch capacity`** (add `--json` for the raw body): prints
   `Queued tasks (n):` with each reason and how long it has waited,
-  `Running tasks (n):` with what each holds, `Back-off:` and `Budgets:`.
+  `Running tasks (n):` with what each holds, `Verifying (n):` for tasks in
+  verification (each marked `verifying`, or with its verifier-slot wait
+  reason), `Back-off:` and `Budgets:`.
 - **`capacity`** (chat command): the same text as the CLI.
 
 A task parked on an external condition also appears under running tasks with

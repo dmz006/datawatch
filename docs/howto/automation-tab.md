@@ -228,7 +228,8 @@ never blanks the cards.
   counts what is waiting on you.
 - **Resources:** the three usage cards in a row (weekly allowance, pace line,
   burn per day), the capacity and queue card (the pools and their usage, any
-  usage back-off, budgets, and the Automata waiting for capacity), the lane fill
+  usage back-off, budgets, the Automata waiting for capacity, and the tasks in
+  verification with their verifier-slot wait), the lane fill
   card (one row per lane, with its node) and the Automata ship status
   card (the push, tag and release steps). The infrastructure retries and the
   Automata checks cards (the four report-only checks) are in the Events tab.
