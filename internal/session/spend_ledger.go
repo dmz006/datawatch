@@ -54,6 +54,7 @@ func (m *Manager) upsertLedger(sess *Session) {
 		CacheRead:     int64(snap.CacheReadTokens),
 		CacheCreation: int64(snap.CacheCreationTokens),
 		ToolCalls:     int64(snap.ToolCalls),
+		ActiveSeconds: snap.ActiveSeconds(activeClock()),
 	}
 	if IsLocalBackend(snap.BackendFamily) {
 		var rd LocalUsageReader = LogUsageReader{}
