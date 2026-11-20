@@ -3148,8 +3148,14 @@ or Settings, and it has no REST, MCP, CLI, chat or web app surface.
 `internal/server/web/app.js` and only on the five fixed phrases, and nothing
 runs it automatically against a real branch — decide whether it should join
 a decomposition lint, a verification step or the merge helper, and whether
-the `app.js`-only scope is the bar. See
-[howto/no-pwa-when-spec-forbids.md](howto/no-pwa-when-spec-forbids.md).
+the `app.js`-only scope is the bar. The offending branch, `automaton/e19b0001`,
+still changes `app.js` (the `'priority_stall'` line in the Events lifecycle
+filter) against a spec that says `no PWA change` — keeping or removing that
+line is the operator's call at merge, and the guard fails it (exit 1) until
+resolved. See
+[howto/no-pwa-when-spec-forbids.md](howto/no-pwa-when-spec-forbids.md) and
+the gate evidence in
+[9c8f0001 final gate](plans/reports/archive/2026-11/9c8f0001-final-gate.md).
 
 ---
 
