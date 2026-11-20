@@ -31,6 +31,18 @@ datawatch plans migrate --apply    # write
 | Open, names none | One backlog plan, ordered by the old row number. |
 | Open, no name can be derived | Listed under *needs review*; no plan is created. |
 
+If the Automaton a closed row names is not yet on a release plan item, the
+row is skipped with the reason `history: the Automaton is not on a release plan
+item yet; no plan was made for the closed row`; no plan is made for it. Run the release migration first, then the
+plans migration again, to link it.
+
+## Review before you apply
+
+- Read the *needs review* and *conflicts* lists in the preview; neither is
+  written, and conflicts name what holds the item.
+- Read the *history without an Automaton* list: those closed rows stay history
+  and are never turned into plans.
+
 Text in a status column, such as a date and a version (`2026-11-10 v9.5.1
 shipped`), is never used as a title.
 
