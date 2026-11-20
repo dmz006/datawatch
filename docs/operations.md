@@ -755,6 +755,16 @@ plus one per open Automaton at or above `auto_lanes_special_priority` (default
 1), never above `auto_lanes_max` (1 to 8, default 2) and never below one —
 `datawatch usage auto-lanes status` / `set`, or `GET /api/usage/autolanes`.
 
+### Automata Resources restyle: operator review
+
+The Resources, Progress and costs and Housekeeping sub-tabs of Settings → Automata
+now use one card style. No setting, endpoint, CLI verb, MCP tool or comm verb
+changed. Before relying on the restyle, check each sub-tab by eye and in the
+four non-English locales (de, es, fr, ja): a raw translation key on screen is a
+missing translation and a defect. The full checklist is in
+[howto/automata-resources.md](howto/automata-resources.md#operator-review-after-the-restyle).
+Nothing in this review changes a setting.
+
 ### Burn guard
 
 The burn guard compares the projected weekly burn with the usage calculator's
