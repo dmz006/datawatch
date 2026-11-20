@@ -231,7 +231,8 @@ never blanks the cards.
   burn per day; see
   [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs)) —
   the capacity and queue card (the pools and their usage, any usage back-off,
-  budgets, and the Automata waiting for capacity), the lane fill card (one row
+  budgets, the Automata waiting for capacity, and the tasks in verification
+  with their verifier-slot wait), the lane fill card (one row
   per lane, with its node) and the Automata ship status card (a line saying
   what shipping is, tiles for the push, tag and CI watch steps with their mode
   words, the tag format, remote and CI workflow names, and the outcomes;

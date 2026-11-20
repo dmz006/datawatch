@@ -354,20 +354,22 @@ func (s *nodeStory) spawn(ctx context.Context, req autonomous.SpawnRequest) (aut
 	}
 	s.mu.Lock()
 	s.spawned[req.TaskID] = true
+	gate := s.gates[req.TaskID]
 	s.mu.Unlock()
-	return autonomous.SpawnResult{SessionID: session}, nil
-}
-
-// verify holds the worker on its node until the test releases the task.
-func (s *nodeStory) verify(ctx context.Context, _ *autonomous.PRD, task *autonomous.Task) (autonomous.VerificationResult, error) {
-	s.mu.Lock()
-	gate := s.gates[task.ID]
-	s.mu.Unlock()
+	// The worker session runs, and its node lease is held, until the test
+	// releases the task. The lease is freed when the session ends and the task
+	// enters verifying, so the worker must stay in spawn to keep its node.
 	select {
 	case <-gate:
 	case <-ctx.Done():
-		return autonomous.VerificationResult{}, ctx.Err()
+		return autonomous.SpawnResult{}, ctx.Err()
 	}
+	return autonomous.SpawnResult{SessionID: session}, nil
+}
+
+// verify passes at once: a worker leaves its node when its session ends and the
+// task enters verifying, so the node hold is modelled by spawn.
+func (s *nodeStory) verify(_ context.Context, _ *autonomous.PRD, _ *autonomous.Task) (autonomous.VerificationResult, error) {
 	return autonomous.VerificationResult{OK: true, Summary: "ok"}, nil
 }
 

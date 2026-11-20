@@ -749,6 +749,10 @@ func (a *API) Status() any { return a.M.Status() }
 // so AutonomousAPI fakes need no change.
 func (a *API) TaskVisibility() ([]TaskWaitView, []TaskHoldView) { return a.M.TaskVisibility() }
 
+// TaskVerifyingViews returns the tasks in verification (see
+// Manager.TaskVerifyingViews), read by the server through an optional interface.
+func (a *API) TaskVerifyingViews() []TaskVerifyView { return a.M.TaskVerifyingViews() }
+
 // ResolveHolder resolves a raw capacity holder id into an operator-readable
 // name (capacity_titles.go). Like TaskVisibility it is read through an
 // optional interface by the server, so AutonomousAPI fakes need no change.
