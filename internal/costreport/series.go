@@ -254,6 +254,9 @@ func seriesKey(g SeriesGroupBy, e spendledger.Entry, projectOf func(string) stri
 		k = e.Backend
 	}
 	if k == "" {
+		if g == SeriesByAutomaton || g == SeriesByProject {
+			return noAutomatonKey(e.Role)
+		}
 		return UnattributedKey
 	}
 	return k

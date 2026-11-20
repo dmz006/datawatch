@@ -244,3 +244,28 @@ func TestCostReportLedgerCountsDeletedSessions(t *testing.T) {
 		t.Errorf("unattributed = %d/%d, want only the no-automaton entry 10/5", un.TokensIn, un.TokensOut)
 	}
 }
+
+// TestCostReportSupervisorUnknownAndAutomatonLines — a supervisor entry lands
+// under "Supervisor and other", an unknown one under "unattributed", an
+// Automaton entry under its Automaton.
+func TestCostReportSupervisorUnknownAndAutomatonLines(t *testing.T) {
+	now := time.Now()
+	led := fakeSpendLedger{
+		{SessionID: "sup00001", Role: spendledger.RoleSupervisor, Backend: "claude-code", StartedAt: now, EndedAt: now, TokensIn: 7},
+		{SessionID: "unk00001", Role: spendledger.RoleOther, Backend: "ollama", StartedAt: now, EndedAt: now, TokensIn: 3},
+		{SessionID: "aut00001", AutomatonID: "prd-1", TaskID: "t1", Role: spendledger.RoleWorker, Backend: "claude-code", StartedAt: now, EndedAt: now, TokensIn: 5},
+	}
+	rep, err := costreport.Build(config.CostReportConfig{},
+		costreport.Request{GroupBy: costreport.GroupByAutomaton, Until: now.Add(time.Second)},
+		managerCostSource{ledger: led}, nil, nil, nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, r := range rep.Rows {
+		got[r.Key] = r.TokensIn
+	}
+	if got[costreport.SupervisorOtherKey] != 7 || got[costreport.UnattributedKey] != 3 || got["prd-1"] != 5 {
+		t.Fatalf("rows = %v", got)
+	}
+}

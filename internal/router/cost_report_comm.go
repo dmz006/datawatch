@@ -35,6 +35,7 @@ type costReportReply struct {
 	Attribution *struct {
 		AutomatonLaunched int    `json:"automaton_launched"`
 		Unattributed      int    `json:"unattributed"`
+		NoAutomatonNoRole int    `json:"no_automaton_no_role"`
 		OK                bool   `json:"ok"`
 		Note              string `json:"note"`
 	} `json:"attribution"`
@@ -94,6 +95,7 @@ func formatCostReportText(body string) string {
 			state = "UNATTRIBUTED"
 		}
 		l := fmt.Sprintf("attribution: %s, %d of %d Automaton-launched sessions unattributed", state, a.Unattributed, a.AutomatonLaunched)
+		l += fmt.Sprintf("; %d with no Automaton and no role", a.NoAutomatonNoRole)
 		if a.Note != "" {
 			l += " (" + a.Note + ")"
 		}

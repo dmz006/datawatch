@@ -49,6 +49,20 @@ const (
 // "unattributed" read as a name, not a missing one.
 const UnattributedKey = "unattributed"
 
+// SupervisorOtherKey is the automaton-grouping row key (and series line)
+// for spend with no Automaton id whose role is supervisor or another known
+// non-Automaton role; UnattributedKey is kept for spend whose owner is
+// truly unknown (no Automaton id and no role).
+const SupervisorOtherKey = "Supervisor and other"
+
+// noAutomatonKey picks the key for spend with a blank Automaton id.
+func noAutomatonKey(role string) string {
+	if role == "" || role == "other" || machineryRoles[role] {
+		return UnattributedKey
+	}
+	return SupervisorOtherKey
+}
+
 // UnreleasedKey is the release-grouping key for work that has not shipped
 // yet.
 const UnreleasedKey = "unreleased"
@@ -581,7 +595,7 @@ func groupKey(g GroupBy, r Record, since time.Time, weekStart time.Weekday) stri
 	switch g {
 	case GroupByAutomaton:
 		if r.AutomatonID == "" {
-			return UnattributedKey
+			return noAutomatonKey(r.Role)
 		}
 		return r.AutomatonID
 	case GroupByAutomation:

@@ -6035,5 +6035,6 @@
   "unlanded_counts_under_one_week": "%1$s under a week",
   "unlanded_counts_older": "%1$s older",
   "unlanded_counts_oldest": "Oldest pending: %1$s (%2$s), %3$s",
+  "cost_charts_supervisor_and_other": "Supervisor and other",
   "unlanded_counts_over_threshold": "Above alert threshold: %1$s pending (threshold %2$s)"
 }
