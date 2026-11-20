@@ -1,21 +1,23 @@
 # Release plans and supervisor status
 
-**Date:** 2026-11-19 (evening)
+**Date:** 2026-11-19 (night update)
 **Version:** none (status document; plan-document commits are exempt from the version bump)
 **Replaces:** the 2026-11-15 plan listing and the 2026-11-19 morning open-work listing, both kept only in the supervisor scratch folder and now out of date.
 
-Read this page for where the build stands: the two release plans, what shipped today, what is open and why, how the supervisor itself is run, and what is being done to make that cheaper. Titles lead; the short record id follows in brackets so a row can be found on the Automata page.
+Read this page for where the build stands: the two release plans, what shipped today, what is open and why, how the supervisor itself is run, and what is being done to make that cheaper. Titles lead; the short record id follows so a row can be found on the Automata page. Every open row has a **Kind**: Bug (a defect), Feature (new capability), Maintenance, or Other (design, audit, placeholder and release-stage records).
 
 ## Release plans
 
 | Plan | State | Progress | Next up |
 |---|---|---|---|
-| Release 10.0 | in_progress | 289 of 406 done (71%) | {'automaton_id': 'a7f20001', 'title': 'Fix open high and critical CodeQL alerts'} |
-| Release 11.0 | planned | 3 of 24 done (12%) | {'automaton_id': '14310001', 'title': 'Stale browser state cannot break the Sessions view-mode buttons'} |
+| Release 10.0 | in_progress | 289 of 406 done (71 percent) | {'automaton_id': 'a7f20001', 'title': 'Fix open high and critical CodeQL alerts'} |
+| Release 11.0 | planned | 3 of 24 done (12 percent) | {'automaton_id': '14310001', 'title': 'Stale browser state cannot break the Sessions view-mode buttons'} |
 
-Release 10.0 members by state: archived 314, completed 25, needs_review 22, draft 16, blocked 10, failed 5, cancelled 5, approved 5, running 3, revisions_asked 1.
+Release 10.0 members by state: archived 314, completed 25, needs_review 22, draft 15, blocked 10, cancelled 7, failed 5, held 5, running 2, revisions_asked 1.
 
-Reading the progress figure honestly: on 2026-11-15 the plan read 286 of 318 done (89%). Today it reads 289 of 406 (71%). The total grew by 88 because new work (defects found while building, follow-ups, backfilled records) was attached to the plan, while the done count moved by only 3. The percentage fell because the plan grew, not because finished work was lost. The 25 completed records are finished and waiting to be archived; some cannot be archived yet (see the supervisor loop section).
+Open work in 10.0 by kind: Bug 40, Other 11, Feature 9.
+
+Reading the progress figure honestly: on 2026-11-15 the plan read 286 of 318 done (89 percent). Today it reads 289 of 406 (71 percent). The total grew by 88 because new work (defects found while building, follow-ups, backfilled records) was attached to the plan, while the done count moved by only 3. The percentage fell because the plan grew, not because finished work was lost. Completed records are finished and waiting to be archived; some cannot be archived yet (see the supervisor loop section).
 
 ## What shipped today
 
@@ -39,106 +41,124 @@ The 9.182.43 image fix was merged with the local image scan overridden (the 2026
 
 ## Open work in Release 10.0
 
-### Running now (3)
+All open records now carry a title (a title is what the Automata page shows; about 60 drafts, blocked and failed records had none and showed no details until tonight). Two duplicate drafts and three stub records left from supervisor hotfixes were cancelled; their work is shipped.
 
-| Priority | Work | Record |
-|---|---|---|
-| 90 | Live restart check and records for keeping planning across a restart | 73630001 |
-| 80 | Repair three failing PWA end-to-end stories | 2acf0001 |
-| 80 | Guard no-PWA specs and smoke-test the priority-stalls surfaces | 9c8f0001 |
+### Running now (2)
 
-### Approved, waiting to start (5)
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Bug | 80 | Repair three failing PWA end-to-end stories | 2acf0001 |
+| Bug | 80 | Lean sessions list datawatch tools and richer changelog draft | 60440001 |
 
-| Priority | Work | Record |
-|---|---|---|
-| 80 | Scan fix loop route contract, docs and parity coverage | fc920001 |
-| 80 | Guard script rename and shutdown-cause stop-match check | ecc10001 |
-| 80 | Fix docs_list_howtos returning no how-tos on a sandbox daemon | a4280001 |
-| 80 | Fix web UI load failure in the sandbox daemon and fail fast in the runner | 21130001 |
-| 80 | Mobile-fit nav icon clipping and server dropdown tap target | 9cdb0001 |
+### On hold (5)
+
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Bug | 80 | Scan fix loop route contract, docs and parity coverage | fc920001 |
+| Bug | 80 | Guard script rename and shutdown-cause stop-match check | ecc10001 |
+| Bug | 80 | Fix docs_list_howtos returning no how-tos on a sandbox daemon | a4280001 |
+| Bug | 80 | Fix web UI load failure in the sandbox daemon and fail fast in the runner | 21130001 |
+| Bug | 80 | Mobile-fit nav icon clipping and server dropdown tap target | 9cdb0001 |
 
 ### Waiting for approval (decomposed) (22)
 
-| Priority | Work | Record |
-|---|---|---|
-| 90 | Keep planning Automata in planning across a daemon restart | 04b60001 |
-| 70 | Release leaked capacity slots, sweep them, and show slots and lease state | af960001 |
-| 60 | Supervisor watch worktree check uses the Automaton's own project | e0770001 |
-| 20 | Plan-coverage unresolved-file extraction fix | 234e0001 |
-| 20 | Working llm models add, remove and list on every surface | 10980001 |
-| 20 | Launcher answers the development-channels confirmation and verifies the task text | cfb30001 |
-| 20 | Schedule CLI goes through the daemon | 6acd0001 |
-| 20 | The schedule list shows fires, last fire time and result for schedules that fire | 674d0001 |
-| 20 | Whole-title changelog entries | f6430001 |
-| 20 | Memory-bounded merge test runs | db6f0001 |
-| 20 | Gate runner ignores launcher files and worktrees generate the docs-index embed asset | 440c0001 |
-| 20 | Loaded-model retry on placement refusal | 52b40001 |
-| 20 | Merged Automata reach Completed whatever their review state | 96180001 |
-| 20 | Close the remaining CodeQL high and critical alerts | 0be70001 |
-| 20 | Scan settings writes take effect, persist, and refuse what they cannot apply | 44230001 |
-| 20 | Untracked verifier inputs are committed or named at task start | 0d0e0001 |
-| 20 | Completion landing setting autonomous.completion_landing.enabled on every config surface | 2c5d0001 |
-| 20 | Document priority_stalls in the Cursor MCP tools table and guard the table | 4ae00001 |
-| 20 | Real evidence in the generated gate report | 04a00001 |
-| 20 | Judge timeout hold replay, honest review state and large-diff judging | e3420001 |
-| 20 | Decompose lint catches generated gate script faults | 88980001 |
-| 20 | Confine the session-end reap to descendants of the session | 45f10001 |
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Bug | 90 | Keep planning Automata in planning across a daemon restart | 04b60001 |
+| Bug | 70 | Release leaked capacity slots, sweep them, and show slots and lease state | af960001 |
+| Bug | 60 | Supervisor watch worktree check uses the Automaton's own project | e0770001 |
+| Bug | 20 | Plan-coverage unresolved-file extraction fix | 234e0001 |
+| Bug | 20 | Working llm models add, remove and list on every surface | 10980001 |
+| Bug | 20 | Launcher answers the development-channels confirmation and verifies the task text | cfb30001 |
+| Bug | 20 | Schedule CLI goes through the daemon | 6acd0001 |
+| Bug | 20 | The schedule list shows fires, last fire time and result for schedules that fire | 674d0001 |
+| Bug | 20 | Whole-title changelog entries | f6430001 |
+| Bug | 20 | Memory-bounded merge test runs | db6f0001 |
+| Bug | 20 | Gate runner ignores launcher files and worktrees generate the docs-index embed asset | 440c0001 |
+| Bug | 20 | Loaded-model retry on placement refusal | 52b40001 |
+| Bug | 20 | Merged Automata reach Completed whatever their review state | 96180001 |
+| Bug | 20 | Close the remaining CodeQL high and critical alerts | 0be70001 |
+| Bug | 20 | Scan settings writes take effect, persist, and refuse what they cannot apply | 44230001 |
+| Bug | 20 | Untracked verifier inputs are committed or named at task start | 0d0e0001 |
+| Bug | 20 | Completion landing setting autonomous.completion_landing.enabled on every config surface | 2c5d0001 |
+| Bug | 20 | Document priority_stalls in the Cursor MCP tools table and guard the table | 4ae00001 |
+| Bug | 20 | Real evidence in the generated gate report | 04a00001 |
+| Bug | 20 | Judge timeout hold replay, honest review state and large-diff judging | e3420001 |
+| Bug | 20 | Decompose lint catches generated gate script faults | 88980001 |
+| Bug | 20 | Confine the session-end reap to descendants of the session | 45f10001 |
 
 ### Spec revised, waiting for a fresh plan (1)
 
-| Priority | Work | Record |
-|---|---|---|
-| 85 | Supervisor session start and managed restart | 3b270001 |
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Feature | 85 | Supervisor session start and managed restart | 3b270001 |
 
-### Drafts (not decomposed) (16)
+### Drafts (not decomposed) (15)
 
-| Priority | Work | Record |
-|---|---|---|
-| 85 | (untitled record) | e1940001 |
-| 80 | (untitled record) | 38090001 |
-| 70 | (untitled record) | 09c30001 |
-| 70 | (untitled record) | c8f50001 |
-| 65 | (untitled record) | 13cf0001 |
-| 60 | (untitled record) | 08170001 |
-| 60 | (untitled record) | 32100001 |
-| 60 | (untitled record) | 94560001 |
-| 55 | (untitled record) | e81e0001 |
-| 50 | (untitled record) | 526f0001 |
-| 40 | (untitled record) | 8a3e0001 |
-| 40 | (untitled record) | 64650001 |
-| 20 | (untitled record) | 70ae0001 |
-| 20 | (untitled record) | 929d0001 |
-| 20 | (untitled record) | f3540001 |
-| 20 | (untitled record) | 3c680001 |
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Feature | 85 | One status view of a project's work in the order it will run, for a session | e1940001 |
+| Other | 70 | Infrastructure faults in the judge and verifier are treated as findings against the work | 09c30001 |
+| Other | 70 | The pi planner's replies fail to parse about one time in three | c8f50001 |
+| Other | 65 | Tasks added with add-task have no pinned model and placement refuses them | 13cf0001 |
+| Other | 60 | First CodeQL hardening round shipped and the scanner then reported twelve alerts | 08170001 |
+| Other | 60 | CodeQL check stayed red for two hours after a fix, with no code cause | 32100001 |
+| Feature | 60 | Make the judge and verifier time limit follow the size of the review and the backend | 94560001 |
+| Other | 55 | Worker-written final-gate and verification scripts fail for the same three reasons | e81e0001 |
+| Other | 50 | The pi pool cap of three does not match the two single-engine compute nodes | 526f0001 |
+| Other | 40 | Settings that ship off or in shadow lack definitions entries | 8a3e0001 |
+| Other | 40 | Unbounded reads in the MCP tools (question list and repair-dependencies return too much) | 64650001 |
+| Feature | 20 | Make the Projects and Plans pages create through the shared floating button and a | 70ae0001 |
+| Feature | 20 | Add a dependency to an existing task, and stop repair-dependencies returning the whole record | 929d0001 |
+| Feature | 20 | Choose a supervisor session for a project and an optional plan at launch | f3540001 |
+| Bug | 20 | Wire the roll-up performance guard script into a workflow (held until the fast Projects pages wo | 3c680001 |
 
 ### Blocked (10)
 
-| Priority | Work | Record |
-|---|---|---|
-| 90 | Fix the shadows: plan size and version, changelog source, stored comparison, missing-plan reason | f31d0001 |
-| 90 | Residue cleanup after Automaton merge | 18990001 |
-| 80 | Make the internal/autonomous race-detector run pass | d5060001 |
-| 80 | Fix eBPF generated-code drift with pinned toolchain | e3060001 |
-| 80 | Lean sessions list datawatch tools and richer changelog draft | 60440001 |
-| 20 | Move Automata configuration into Settings and replace the usage calculator with small dashboards | 9f8f0001 |
-| 20 | Merge scripts in the repository with shadow pipeline comparison | 71f80001 |
-| 20 | (untitled record) | 2fa30001 |
-| 20 | Configuration parity audit and CI gate | 70900001 |
-| - | BL433 — PWA performance audit under load (design/audit pass) | 049f4713 |
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Bug | 90 | Fix the shadows: plan size and version, changelog source, stored comparison, missing-plan reason | f31d0001 |
+| Bug | 90 | Residue cleanup after Automaton merge | 18990001 |
+| Bug | 80 | Make the internal/autonomous race-detector run pass | d5060001 |
+| Bug | 80 | Fix eBPF generated-code drift with pinned toolchain | e3060001 |
+| Bug | 80 | Guard no-PWA specs and smoke-test the priority-stalls surfaces | 9c8f0001 |
+| Feature | 20 | Move Automata configuration into Settings and replace the usage calculator with small dashboards | 9f8f0001 |
+| Feature | 20 | Merge scripts in the repository with shadow pipeline comparison | 71f80001 |
+| Bug | 20 | Remove a tracked symlink that holds an absolute home path | 2fa30001 |
+| Feature | 20 | Configuration parity audit and CI gate | 70900001 |
+| Other | - | BL433 — PWA performance audit under load (design/audit pass) | 049f4713 |
 
 ### Failed (5)
 
-| Priority | Work | Record |
-|---|---|---|
-| 90 | Remove the remote reap PWA part and document its settings | c07b0001 |
-| 90 | (untitled record) | 27720001 |
-| 80 | Plans migration: history rows, real titles, explained conflicts, full counts | bcf30001 |
-| 80 | Scope the supervisor watch worktree check to datawatch worktrees | a92a0001 |
-| 80 | Make the full release smoke pass on main | 87620001 |
+| Kind | Priority | Work | Record |
+|---|---|---|---|
+| Bug | 90 | Remove the remote reap PWA part and document its settings | c07b0001 |
+| Bug | 90 | Document the remote reap settings in the config reference and implementation guide | 27720001 |
+| Other | 80 | Plans migration: history rows, real titles, explained conflicts, full counts | bcf30001 |
+| Bug | 80 | Scope the supervisor watch worktree check to datawatch worktrees | a92a0001 |
+| Bug | 80 | Make the full release smoke pass on main | 87620001 |
 
 ## Release 11.0
 
 Planned, 3 of 24 done. Members by state: archived 8, needs_review 6, blocked 5, draft 4, cancelled 1. The blocked ones are the model evaluation runs and designs, parked until after the 10.0 release by the operator.
+
+| Kind | State | Work | Record |
+|---|---|---|---|
+| Other | blocked | BL422 — Claude model/effort tiering eval for dev-Automaton tasks (eval only, no policy change) | f6a38c29 |
+| Other | blocked | BL437 — Recurring, hardware-aware LLM model/effort evaluation (design pass) | fea73c82 |
+| Other | blocked | [eval] model-tiering 20261015-r1 | 38b69678 |
+| Other | blocked | [eval] open-model-matrix 20261015-r10 | 3be9c0e5 |
+| Other | blocked | [eval] open-model-matrix 20261015-r7 | 9a1a8666 |
+| Other | draft | BL460 — Implement the unaddressed recommendations from the open-LLM research (PRD a2833a5e, comp | 404726a8 |
+| Feature | draft | Design and gap report for running local-model agents | e3780001 |
+| Other | draft | Harness enhancement planning documents (eval sweep, eval DAG nodes, red-team validator) | 0fb4e302 |
+| Other | draft | Research and design: datawatch as infrastructure for Hermes Agent | 79890001 |
+| Feature | needs_review | Actionable Automata Inbox | 18980001 |
+| Feature | needs_review | Authentication and multi-user design proposal | 2fbf0001 |
+| Feature | needs_review | Git hosts: settings, readiness, GitLab, release, CI watch and tags | 7bd50001 |
+| Other | needs_review | Personal agents with personality and decision-making (held placeholder) | 2c9a27e2 |
+| Other | needs_review | Register the individual-builder harness research and its enhancement proposals | 316c41e1 |
+| Other | needs_review | Register the openrig.dev adoption research as a held item | 36729dd7 |
 
 ## What went wrong today and where it stands
 
