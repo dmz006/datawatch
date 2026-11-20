@@ -163,3 +163,38 @@ func TestFailedSaveLeavesMemoryUnchanged(t *testing.T) {
 		t.Fatal("horizon changed after failed save")
 	}
 }
+
+func TestLocalTokensRoundTripAndOldFiles(t *testing.T) {
+	c := &fakeClock{time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
+	dir := t.TempDir()
+	l := newLedger(t, dir, c)
+	if err := l.Upsert(Entry{SessionID: "loc", Role: RoleWorker, StartedAt: c.t, Local: true, LocalTokensIn: 4, LocalTokensOut: 2, TokensReported: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Upsert(Entry{SessionID: "cl", Role: RoleWorker, StartedAt: c.t, TokensIn: 8}); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Entry{}
+	for _, e := range newLedger(t, dir, c).Entries() {
+		got[e.SessionID] = e
+	}
+	if e := got["loc"]; !e.Local || e.LocalTokensIn != 4 || e.LocalTokensOut != 2 || !e.TokensReported || e.TokensIn != 0 {
+		t.Fatalf("local entry: %+v", e)
+	}
+	if e := got["cl"]; e.Local || e.TokensReported || e.LocalTokensIn != 0 || e.TokensIn != 8 {
+		t.Fatalf("claude entry changed: %+v", e)
+	}
+}
+
+func TestLocalNotReportedKeepsZeroTokens(t *testing.T) {
+	c := &fakeClock{time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
+	dir := t.TempDir()
+	l := newLedger(t, dir, c)
+	if err := l.Upsert(Entry{SessionID: "nr", Role: RoleWorker, StartedAt: c.t, Local: true, ToolCalls: 5}); err != nil {
+		t.Fatal(err)
+	}
+	e := newLedger(t, dir, c).Entries()[0]
+	if !e.Local || e.TokensReported || e.LocalTokensIn != 0 || e.ToolCalls != 5 {
+		t.Fatalf("not-reported entry: %+v", e)
+	}
+}
