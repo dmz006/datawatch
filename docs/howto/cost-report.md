@@ -109,9 +109,10 @@ input:
 - **Cache read and created** — prompt-cache tokens. A cache read is priced at a
   tenth of the input rate and a cache creation at 1.25 times it, so they are shown
   on their own columns and are never folded into `tokens_in`.
-- **Local-model tokens** — the tokens of pi and ollama sessions. A pi session's
-  tokens come from its own session log. They appear in the totals and the
-  local column; they never produce a USD figure.
+- **Local-model tokens** — the tokens of pi and ollama sessions. They are read
+  from the session's own output log (the trailing part of it, where the
+  backend wrote its usage counts). They appear in the totals and the local
+  column; they never produce a USD figure.
 
 ## Local tokens, tool calls and active seconds
 
