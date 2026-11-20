@@ -331,6 +331,13 @@ placed under the project its Automaton resolves to, in this order:
 3. **Its project directory**: the last part of the directory path names the
    project.
 
+**A project name is never an Automaton id.** The Automaton's own id is skipped
+at every step: a project link or directory name equal to that id is ignored and
+the walk moves on to the next step, so the Project grouping never shows an
+Automaton id as a project name. A project name that equals a *different*
+Automaton's id is not filtered out by this rule; see the operator-review note
+in [automata-cost.md](automata-cost.md#cost-grouped-by-project).
+
 An Automaton that resolves to none of these, or a session with no Automaton at
 all, has no project, so its spend lands on one line named **unassigned**. There
 is only one such line, however many Automata lack a project. The Projects
