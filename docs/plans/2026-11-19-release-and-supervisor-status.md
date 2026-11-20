@@ -160,6 +160,69 @@ Planned, 3 of 24 done. Members by state: archived 8, needs_review 6, blocked 5, 
 | Other | needs_review | Register the individual-builder harness research and its enhancement proposals | 316c41e1 |
 | Other | needs_review | Register the openrig.dev adoption research as a held item | 36729dd7 |
 
+## Finished work that is not on main
+
+Found tonight by comparing every archived, completed and cancelled Automaton with `main`. **42** of them have a branch whose changes are not in `main` (checked two ways: the commit patches are absent, and for ten spot-checked UI branches none of the distinctive added code lines exist in `main`). The Automata page shows these as finished or archived, so the work looks done while the product does not have it. This is why several things asked for in the web app are not visible: the compact header with server and scope icons (it replaces the two server dropdowns), consistent phone page layout across all views, the Automata Resources, Progress and Housekeeping restyle, plan status roll-up and plan rename and edit, the Sessions toolbar fixes, Automation parallel chains, and more. The branches still exist, locally and on the remote, so nothing is lost and all of it can be landed.
+
+Of the 42, 3 merge cleanly into `main` today and 39 conflict (they are 5 to 34 days old; most need rebasing). The 2026-11-14 inventory (`2026-11-14-archived-unmerged-automata-inventory.md`) found the same problem and planned its fix; the daemon work from that plan (landing records, the unlanded-work list, keep and drop) shipped, but the old branches themselves were never landed.
+
+| Date | Kind | Work | State | Against main | Record |
+|---|---|---|---|---|---|
+| 10-15 | Other | Ship v9.1.9: autonomous task session-name prefix closeout | archived | conflicts with main | dc6c597b |
+| 10-18 | Other | Runs leave no debris: clean tests, harness self-cleanup, safe auto-commits | archived | conflicts with main | 0631deb1 |
+| 10-18 | Other | Decompose: resolve every depends_on entry at store time and warn about plan paths naming m | archived | conflicts with main | a354e98a |
+| 10-18 | Other | Flag undeclared file changes in Automata tasks: per-task visible warning + alert, optional | archived | conflicts with main | a8500001 |
+| 10-18 | Other | (untitled record) | archived | conflicts with main | e2120001 |
+| 10-19 | Other | Sonnet plan review before approval | archived | conflicts with main | 06120001 |
+| 10-19 | Other | Fix the default PRD quality gate so it runs, validates its baseline and stops failing pass | archived | conflicts with main | 91dc0001 |
+| 10-19 | Other | Voice transcription long-recording failure: root-cause fix + streaming long-form design pa | archived | conflicts with main | 928f0001 |
+| 10-19 | Other | Automatic spec-to-plan coverage check after every decompose | archived | conflicts with main | bb590001 |
+| 10-19 | Other | Close the documentation gaps for the shipped lifecycle-event notification sinks (v9.3.0) | archived | conflicts with main | f56e0001 |
+| 10-20 | Other | Refuse LLM settings changes while a plan is running | archived | conflicts with main | 4ce40001 |
+| 10-20 | Other | Fix long-recording voice transcription and design streaming long-form voice input | archived | conflicts with main | c2b60001 |
+| 10-20 | Other | Fix PWA /api/schedules request flood | archived | conflicts with main | cece0001 |
+| 10-30 | Feature | Deploy after ship: a configured post-ship build, install, restart and health check | archived | conflicts with main | 90d60001 |
+| 11-02 | Bug | Deflake round five: await question raise notifications before temp dir cleanup | archived | conflicts with main | 4e190001 |
+| 11-03 | Feature | Verifier cap above 1 requires a measured headroom check | archived | conflicts with main | b20f0001 |
+| 11-07 | Other | Agent mail between peers: design pass | cancelled | merges cleanly | ac690001 |
+| 11-08 | Bug | Send an empty system_tags array on summary rows and legacy list records, and align the doc | archived | conflicts with main | 13f00001 |
+| 11-09 | Feature | Installable packs for standard tasks and Automaton templates | archived | conflicts with main | 72bc0001 |
+| 11-11 | Bug | Pi stall reporting, fast failure and node preflight | archived | conflicts with main | 72d10109 |
+| 11-11 | Bug | Finalise session records whose process is gone and make every session list agree | archived | conflicts with main | 72d1017e |
+| 11-12 | Feature | Trace retention follows the session | archived | conflicts with main | a1a30001 |
+| 11-13 | Bug | Route each task to a lane at admission | archived | conflicts with main | 2b340001 |
+| 11-13 | Bug | Consistent phone page layout across all views | archived | conflicts with main | 33160001 |
+| 11-13 | Bug | Core automation stability 3: planner avoids foreseeable task and check failures | archived | conflicts with main | 41050001 |
+| 11-13 | Feature | Automata Resources, Progress and costs, Housekeeping in datawatch style | archived | conflicts with main | 6e980001 |
+| 11-13 | Bug | Sessions toolbar fixes: closable Filters panel and icon view buttons | archived | conflicts with main | 6eac0001 |
+| 11-13 | Feature | Plan status roll-up and plan rename/edit | archived | conflicts with main | 71660001 |
+| 11-13 | Feature | Core automation stability 1: automatic gate repair | archived | conflicts with main | 8b7a0001 |
+| 11-13 | Feature | Automation parallel chains, concurrency limit, decision-wait and stage gating | archived | conflicts with main | 9f830001 |
+| 11-13 | Bug | Lane fill frees lanes held by idle Automata | archived | conflicts with main | d0460001 |
+| 11-13 | Bug | Core automation stability 2: archive only merged work | archived | conflicts with main | e5700001 |
+| 11-14 | Feature | Compact header: server and project/plan scope icons with modals | archived | conflicts with main | 1d470001 |
+| 11-14 | Bug | Stop the tracker writing RTK instructions into rules files | archived | conflicts with main | 26720001 |
+| 11-14 | Feature | Per-LLM and per-model usage hold and burn guard | archived | conflicts with main | 3a640001 |
+| 11-15 | Bug | Archive-based trivy scan for the agent-base build and scan gate | archived | conflicts with main | 4f450001 |
+| 11-17 | Bug | (untitled record) | cancelled | merges cleanly | 21030001 |
+| 11-17 | Bug | (untitled record) | completed | conflicts with main | 964b0001 |
+| 11-18 | Bug | Completed requires a landed branch | completed | conflicts with main | 769e0001 |
+| 11-18 | Feature | Daemon-side priority stall wake with blocker and action | completed | conflicts with main | e19b0001 |
+| 11-18 | Bug | Harden the paths behind the eight open scanner findings | completed | conflicts with main | eb010001 |
+| 11-18 | Bug | Deterministic stop of the merge-shadow test load process group | completed | merges cleanly | f0e10001 |
+
+The last five (completed, from 2026-11-17 and 2026-11-18) are recent merges still waiting on the supervisor, not old losses.
+
+## Audit of everything asked for (plan)
+
+Everything is now managed from datawatch, so the audit checks that each thing asked for exists there and is on `main`.
+
+1. **Landing audit** (done): every Automaton against `main`, as above.
+2. **Code presence audit** (mechanical, no model): for every archived or completed Automaton, test that the distinctive lines it added exist in `main`; list the ones that do not, including branches already removed.
+3. **Registry and plan audit** (mechanical): every original tracker row against a plan and a live Automaton. The migration preview shows 920 rows already carried over, 18 not yet created and 30 name conflicts; 441 Automata belong to no plan.
+4. **Request audit**: every operator request quoted in the handover plan, the question queue and the design documents against a record that is open or landed.
+5. **Landing work**: rebase each conflicting branch as its own Automaton (operator-requested web app work first), merge the clean ones through the supervisor chain, and have the daemon refuse to archive an Automaton whose branch is not on `main` (the completed-requires-a-landed-branch Automaton, itself still unlanded).
+
 ## What went wrong today and where it stands
 
 | Problem | Cause found | State |
