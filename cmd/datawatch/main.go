@@ -15086,6 +15086,12 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 							fmt.Sprintf("Schedule %s could not start its session (%d in a row): %v — %s.", sc.ID, n, err, next))
 					}
 				} else {
+					// Stamp the requested launch role (e.g. the lean
+					// supervisor profile) on the spawned session, server-side.
+					if ds.LaunchRole != "" && sess.LaunchRole == "" {
+						sess.LaunchRole = ds.LaunchRole
+						_ = mgr.SaveSession(sess) //nolint:errcheck // best-effort metadata
+					}
 					_ = store.MarkDone(sc.ID, false)
 					_ = store.RecordFire(sc.ID, sess.FullID, "spawned")
 					fmt.Printf("[scheduler] spawned session (type=%s sched=%s sess=%s task=%q)\n", sc.Type, sc.ID, sess.FullID, ds.Task)
