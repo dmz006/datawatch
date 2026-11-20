@@ -395,6 +395,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newPlanRecordCmd(), // plan records: registry rows and findings
 		newPlansCmd(),      // plans: migrate arcs and registry rows into plan records
 		newSupervisorLoopCmd(),
+		newSupervisorSetupCmd(),
 		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
