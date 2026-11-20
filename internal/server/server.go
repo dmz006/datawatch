@@ -554,6 +554,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Archived Automata whose branch still holds unmerged commits, and the
+	// carry-forward that starts a new draft on that branch.
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged", api.handleArchivedUnmerged)
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged/", api.handleArchivedUnmerged)
 	// Branch refresh numbers: setting, results by Automaton, stopped count.
 	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
 	apiMux.HandleFunc("/api/autonomous/event-kinds", api.handleAutonomousEventKinds)
@@ -654,6 +658,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
 	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap", api.handleAutonomousRemoteReap)                       // remote branch reaper: would-reap / would-hold preview on origin plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/remote-reap/run", api.handleAutonomousRemoteReapRun)                // remote branch reaper: perform one pass (backup first, verify, then delete on origin; report-only while remote_reap_enabled is unset) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap/restore", api.handleAutonomousRemoteReapRestore)        // remote branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list

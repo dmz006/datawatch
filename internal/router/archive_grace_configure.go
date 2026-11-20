@@ -12,3 +12,14 @@ func checkArchiveGraceValue(value string) error {
 	_, err := config.ParseArchiveGraceMinutes(value)
 	return err
 }
+
+// archiveKeepUnmergedKey is the configure key that keeps a finished Automaton
+// whose branch still holds unmerged commits from being archived.
+const archiveKeepUnmergedKey = "autonomous.archive_keep_unmerged"
+
+// checkArchiveKeepUnmergedValue refuses a value that is not true or false,
+// using the same parser as the REST write.
+func checkArchiveKeepUnmergedValue(value string) error {
+	_, err := config.ParseArchiveKeepUnmerged(value)
+	return err
+}

@@ -54,9 +54,76 @@ An Automaton is archived when all of these hold:
   completed record whose work branch is not merged is skipped and never forced.
   It is picked up on a later run once it qualifies.
 
-A cancelled Automaton also waits for its own short grace period before it
-becomes eligible; see [operations.md](../operations.md) for
-`autonomous.archive_grace_minutes`.
+A cancelled Automaton has no grace of its own in this batch archive: cancelling stamps its update time, so a freshly cancelled one is simply skipped as newer than the retention window and picked up once it is old enough. The `autonomous.archive_grace_minutes` grace is a separate thing — it delays only the supervisor loop's close step for a cancelled record (below), not this batch archive; see [operations.md](../operations.md) for it.
+
+## The supervisor loop's guard on unmerged branch work
+
+Separate from this batch archive, the supervisor loop's *close finished
+records* step — which archives a completed, rejected or cancelled record on
+its own schedule — now keeps **every one of those three states** while its
+branch still holds commits that are not on the base branch, not just a
+cancelled one. Completed, rejected and cancelled records are all kept while
+the branch holds unmerged work; the held record and the reason ride on the
+step's run record, which counts how many records it kept for unmerged branch
+work, split by the state kept, and the close log line names the record and
+the reason (the branch's commits ahead of base, or — when the check could
+not compare — the reason it could not tell). The check is read-only and
+conservative: a branch that is gone, or a branch with nothing ahead of base,
+lets the record go; anything it cannot tell is kept. For completed and
+rejected records you can release the guard with
+`autonomous.archive_keep_unmerged: false` (unset reads `true`); a cancelled
+record keeps its guard either way, and its grace is the
+`autonomous.archive_grace_minutes` setting. Your own archive through this howto
+is unaffected by either: it archives whenever the eligibility above holds.
+
+The guard only keeps the record. It **never deletes a branch and never merges
+one** — it performs no git write at all, only the read-only branch
+comparison. A record stays until you archive it, its work is merged, or its
+branch is deleted.
+
+### Finding archived Automata that hold unmerged work
+
+Once a record *is* archived — by this batch archive or by the loop after you
+released its guard — the unmerged work is still on the branch. The
+archived-unmerged finder lists every archived record whose branch still holds
+commits that are not on the base branch (newest archive first), each with its
+title, former status, branch and how many commits are ahead; a branch the
+comparison could not make is listed with its reason. It is a read — git is
+only read, and it changes nothing, deletes nothing and merges nothing.
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/archived-unmerged` |
+| CLI | `datawatch autonomous archived-unmerged` (or `--json` for the body untouched) |
+| MCP | `archived_unmerged_list` |
+| Chat | `autonomous archived-unmerged` |
+
+The supervisor watch raises the same work as the `archived_unmerged`
+finding, so the Automata and Automation surfaces name it without you running
+anything; see [automation-supervisor-watch.md](automation-supervisor-watch.md).
+
+### Carrying one forward as a new draft
+
+To keep the work instead of merging it, carry the archived record forward:
+a new draft is created with the archived record's title, spec and branch,
+linked back to it (its `carried_from_id`), and the reply gives you the new draft. It
+is not approved and has run nothing; the archived record and its branch are
+not changed, and nothing is merged or deleted. It is refused when the record
+is not archived, carries no branch, the branch is gone or has nothing ahead
+of base, the comparison could not be made, or the record was already carried
+(pass `--force` to carry it a second time).
+
+| Surface | How |
+|---|---|
+| REST | `POST /api/autonomous/archived-unmerged/{id}/carry-forward` (body `{force, actor}`) |
+| CLI | `datawatch autonomous archived-unmerged carry-forward <id> [--force]` |
+| MCP | `archived_unmerged_carry_forward` |
+| Chat | `autonomous archived-unmerged carry-forward <id> [force]` |
+
+The route and tool mapping is in [api-mcp-mapping.md](../api-mcp-mapping.md)
+and the command reference is in [commands.md](../commands.md).
+See [operations.md](../operations.md) (*Keep unmerged branch work on
+archive*) and [the supervisor loop howto](supervisor-loop.md).
 
 ## Run the archive: dry run first, then apply
 
@@ -118,6 +185,7 @@ need to open it by hand.
 |---|---|---|
 | `autonomous.archive.enabled` | `true` | Lets the daemon archive finished Automata on its own, at low frequency and never while an Automaton write is in progress. Set it to `false` and only `datawatch autonomous archive --apply` archives. |
 | `autonomous.archive.retention_days` | `30` (a value of `0` means 30) | How many days old a finished Automaton must be before it is archived. A negative number is refused. |
+| `autonomous.archive_keep_unmerged` | `true` | Read by the supervisor loop's close step, not by this batch archive: while `true` (the default) it keeps a completed or rejected Automaton whose branch holds commits that are not on the base branch. See above. |
 
 Both change live, with no restart:
 
@@ -136,8 +204,9 @@ They are also settable from the web app (Settings, General, Autonomous), from
 | Symptom | Cause and fix |
 |---|---|
 | The dry run lists nothing | No finished Automaton is older than the retention window, or the ones that are old are skipped (running task, open session, unmerged branch). Lower `autonomous.archive.retention_days` or finish the work first |
-| An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is a cancelled one still inside its grace period |
+| An Automaton you expected is not in the report | It is not completed, shipped or cancelled yet, or it is still inside the retention window (a fresh cancel stamps the update time, so it counts as new) |
 | `--id` answers "automaton is not archived" | That Automaton has not been archived. Run the dry run to see whether it qualifies |
+| A finished Automaton the supervisor loop never closes | Its branch still holds commits that are not on the base branch (the loop keeps completed, rejected and cancelled records in that case). Merge the branch, delete it, or — for completed and rejected ones — set `autonomous.archive_keep_unmerged: false`; a cancelled one additionally needs its grace to have passed |
 | The apply run stops with a backup error | One backup copy did not verify by size and SHA-256. Nothing was changed. Check free disk space and run it again |
 | The daemon does not archive by itself | `autonomous.archive.enabled` is `false`. Set it to `true`, or apply by hand |
 

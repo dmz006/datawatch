@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.39"
+var Version = "9.182.49"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6853,6 +6853,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"archive_grace_minutes":                s.cfg.Autonomous.ArchiveGraceMinutesOrDefault(),
+			"archive_keep_unmerged":                s.cfg.Autonomous.ArchiveKeepUnmergedOrDefault(),
 			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
 			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
 			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
@@ -6905,6 +6906,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verifier_min_free_mem_mb":        s.cfg.Autonomous.EffectiveVerifierMinFreeMB(),
 			"verifier_headroom_max_age_hours": int(s.cfg.Autonomous.EffectiveVerifierHeadroomMaxAge() / time.Hour),
 			"reaped_branch_backup_days":       s.cfg.Autonomous.EffectiveReapedBranchBackupDays(),
+			"remote_reap_enabled":             s.cfg.Autonomous.RemoteReapEnabled,
+			"remote_reap_retention_days":      s.cfg.Autonomous.EffectiveRemoteReapRetentionDays(),
 			"security_scan":                   s.cfg.Autonomous.SecurityScan,
 			"security_scan_extensions":        s.cfg.Autonomous.SecurityScanExtensions,
 			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
@@ -7764,6 +7767,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Archive keep-unmerged: true or false; anything else rejects the whole PUT.
+	if v, ok := patch["autonomous.archive_keep_unmerged"]; ok {
+		if _, verr := config.ParseArchiveKeepUnmerged(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
 	if verr := validateProgressPatch(patch); verr != nil {
@@ -8282,6 +8292,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.reaped_branch_backup_days"]; ok {
 		if v, isInt := toInt(raw); !isInt || v < 0 {
 			http.Error(w, "autonomous.reaped_branch_backup_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
+			return
+		}
+	}
+	// remote_reap_enabled accepts only a JSON boolean: the same
+	// whole-PUT rejection as the switch, so a quoted string or number 400s
+	// rather than being stored.
+	if v, ok := patch["autonomous.remote_reap_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			http.Error(w, "autonomous.remote_reap_enabled: must be a boolean (true or false)", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw, ok := patch["autonomous.remote_reap_retention_days"]; ok {
+		if v, isInt := toInt(raw); !isInt || v < 0 {
+			http.Error(w, "autonomous.remote_reap_retention_days: must be a whole number >= 0 (0 or unset = default 30 days)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -10876,6 +10901,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, err := config.ParseArchiveGraceMinutes(v); err == nil {
 				cfg.Autonomous.ArchiveGraceMinutes = &n
 			}
+		case "autonomous.archive_keep_unmerged":
+			if b, err := config.ParseArchiveKeepUnmerged(v); err == nil {
+				cfg.Autonomous.ArchiveKeepUnmerged = &b
+			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
@@ -10986,6 +11015,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// 0 or unset = the default of 30 days.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.ReapedBranchBackupDays = n
+			}
+		case "autonomous.remote_reap_enabled":
+			// Unset defaults to false (report-only); the pass evaluates but
+			// deletes nothing on origin until this is explicitly true.
+			cfg.Autonomous.RemoteReapEnabled = toBool(v)
+		case "autonomous.remote_reap_retention_days":
+			// 0 or unset = the default of 30 days.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.RemoteReapRetentionDays = n
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)

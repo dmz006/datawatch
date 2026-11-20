@@ -1,0 +1,3 @@
+### Fixed
+
+- A finished task no longer retries its merge forever when its branch is missing or untracked files block the merge. If the task branch is gone but the task worktree still holds the finished commit (a detached HEAD, or a worktree that is a clone of its own), the daemon brings the commit over and recreates the branch, and moves a branch forward to a newer detached commit. If an untracked file in the Automaton worktree would be overwritten by the merge, an identical copy is dropped and a different one is moved aside, never deleted, under `.datawatch/merge-aside/<task id>/`. If nothing is left to recover, the merge says so and changes nothing.

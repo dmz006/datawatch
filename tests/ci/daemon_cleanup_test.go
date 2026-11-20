@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -172,6 +173,12 @@ func dcFakeDaemon(t *testing.T, bash, cfgPath string) int {
 	t.Helper()
 	cmd := exec.Command(bash, "-c",
 		fmt.Sprintf("exec -a 'datawatch start --foreground --config %s' sleep 300", cfgPath))
+	// The fixture lives in its own process group. This suite runs on a
+	// shared host where daemon cleanup from other sessions group-signals
+	// recorded pids; with every fixture a group leader no group-scoped
+	// signal can ever reach the test binary or a process outside the
+	// fixture's own tree.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = dcEnv()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -276,6 +283,10 @@ esac
 				// at SIG_IGN exactly as under nohup.
 				cmd = exec.Command(bash, "-c", `trap "" `+tc.ignore+`; exec "$0" "$@"`, bash, driverPath)
 			}
+			// The whole driver tree (driver and its daemons) runs in its own
+			// process group so group-scoped signals from the shared host can
+			// never reach the test binary (see dcFakeDaemon).
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Dir = root
 			cmd.Env = dcEnv(
 				"DW_FIX="+fix,
@@ -531,6 +542,8 @@ time.sleep(300)
 
 	cmd := exec.Command(bash, "-c",
 		fmt.Sprintf("exec -a 'datawatch start --foreground --config %s' %s %s %d", cfg, python, py, port))
+	// Private process group; see dcFakeDaemon.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = dcEnv()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -827,4 +840,33 @@ func TestRepoDaemonScriptsPassAudit(t *testing.T) {
 	if !strings.Contains(out, "OK: no daemon cleanup violations") {
 		t.Fatalf("audit output lacks the OK line:\n%s", out)
 	}
+}
+
+// TestMain survives a stray external SIGTERM on a shared host. Daemon
+// cleanup from other sessions group-signals pids they recorded at launch;
+// when one of those pids was freed and later reused as a process group id
+// on this host, the signal lands on this test binary mid-run (it did once,
+// killing the whole package run). A single such signal is a sweep aimed at
+// a dead pid: it is logged with the process lineage for attribution and
+// ignored so the run can finish. A repeat is treated as a genuine stop
+// request, so a deliberate kill still terminates the run.
+func TestMain(m *testing.M) {
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, syscall.SIGTERM)
+	go func() {
+		n := 0
+		for range term {
+			n++
+			fmt.Fprintf(os.Stderr,
+				"[daemon_cleanup_test] external SIGTERM %d (pid=%d pgid=%d ppid=%d ppid_cmd=%q); %s\n",
+				n, os.Getpid(), func() int { g, _ := syscall.Getpgid(0); return g }(),
+				os.Getppid(), dcCmdline(os.Getppid()),
+				"first sweep tolerated; a second will terminate")
+			if n >= 2 {
+				signal.Stop(term)
+				_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+			}
+		}
+	}()
+	os.Exit(m.Run())
 }

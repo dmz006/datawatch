@@ -141,3 +141,20 @@ func (s *Server) handleAutonomousPRDScanRules(_ context.Context, req mcpsdk.Call
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- autonomous_prd_scan_fixloop --------------------------------------------
+
+func (s *Server) toolAutonomousPRDScanFixloop() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_scan_fixloop",
+		mcpsdk.WithDescription("Scan-fix loop — re-scan the PRD's project; while the scan still has findings at or above the fail-on severity, open a corrective fix child PRD for the findings, execute it, and re-scan, up to fix_loop_max_retries attempts (0 = no attempts). A failing scan with the retries spent leaves the Automaton on hold, and the reason names the findings that remain. With fix_loop_enabled off it behaves like a plain scan."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID to scan and, if failing, fix")),
+	)
+}
+func (s *Server) handleAutonomousPRDScanFixloop(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/scan/fixloop", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
