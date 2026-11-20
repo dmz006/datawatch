@@ -481,7 +481,7 @@ The window form and the rest of the message shapes are specified in
    /api/sessions?view=summary...` request in the Fetch/XHR filter, not from a
    new large WebSocket message.
 
-The Playwright story TS-816 (group `wire`) checks these budgets
+The Playwright `wire` group checks these budgets
 automatically against the seeded fixture. See
 [testing/README.md](../testing/README.md).
 

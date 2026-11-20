@@ -396,7 +396,7 @@ With **Group by** set to none, **List**, **Tiles** and **Compact** always draw
 three different layouts: list rows, a tile grid, and a smaller tile grid.
 The **Tree** button (which groups sessions under their parent by lineage) is a
 variant of **List** only. Earlier builds kept a saved Tree choice (stored as
-`cs_session_tree_view` in this browser) over the mode toggle, and the Tree
+`cs_session_tree_view` in this browser) over the view mode buttons, and the Tree
 button is hidden while the toolbar is collapsed, so a stale Tree choice could
 make Tiles and Compact look identical to List with nothing visible to switch
 off. That is fixed in two ways:
@@ -814,7 +814,7 @@ works too — it performs the same reset and hard reload.)
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
-| Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
+| Server picker (All / this server / each federated peer) | PWA toolbar server select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | button toggles open/closed, also closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row (three icon buttons, the active one marked) | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; a stale stored value is ignored and the viewport default applies, so the toggle always shows one active button; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode tap |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |
@@ -848,7 +848,7 @@ works too — it performs the same reset and hard reload.)
 - **I see a tile, not a row, and I want rows back.** Choose **List** in the
   view mode buttons — the choice sticks on that device. On phones the default
   is already List.
-- **The mode toggle looks broken after an upgrade (no button active, or a
+- **The view mode buttons look broken after an upgrade (no button active, or a
   click does nothing).** That is a stale value in the browser's local
   storage from an older version. The page now validates the remembered mode
   on load and falls back to the viewport default (list below 600 px, tiles
@@ -898,6 +898,12 @@ After this change lands, check these three things on the build in use:
 3. **Phone layout of the one-line toolbar.** At 360 px wide the whole toolbar
    (server select, search, Filters, Fold all and the three view buttons) stays
    on one line with no wrapping and no horizontal page scroll.
+4. **Toolbar server select stays in step with the header.** Picking a host in
+   the Sessions server select re-renders the page against that host, and the
+   header dropdown then shows the same choice (and the reverse). Confirm this on
+   a two-host setup, and that a remembered choice is restored after a reload.
+   The mobile apps do not have a toolbar server select yet; parity is tracked in
+   datawatch-app.
 
 ## Related guides
 
