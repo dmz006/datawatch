@@ -49,4 +49,14 @@ and model groupings. Under the Project grouping it has no row of its own: that
 spend has no project either, so it is counted on the unassigned line. Nothing is
 back-filled. The details are in [cost-report.md](cost-report.md#grouping-by-project).
 
+A project name is never an Automaton id. An Automaton's own id, when it appears
+as its project link or as its directory name, is skipped and the lookup falls
+through to the next step.
+
+> **Operator review:** the id guard covers only the Automaton's own id. A
+> project link that names a *different* Automaton's id is still used as the
+> project name by the series builder. Confirm this case before relying on the
+> Project grouping for mixed data; the rule is described in
+> [cost-report.md](cost-report.md#grouping-by-project).
+
 The cards are read-only and need no settings.
