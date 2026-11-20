@@ -390,7 +390,7 @@ test('the one-line toolbar holds search, Filters, fold-all and view mode in one 
   assert.ok(start >= 0);
   const top = html.slice(start, html.indexOf('<div class="session-list">'));
   const order = ['sessions-search-row', 'id="sessionFilterInput"',
-    'class="sessions-filters-slot"', 'id="sessionsFiltersBtn"', 'sessions-fold-all', 'id="sessionsViewSelect"']
+    'class="sessions-filters-slot"', 'id="sessionsFiltersBtn"', 'sessions-fold-all', 'class="sessions-view-buttons"']
     .map(k => top.indexOf(k));
   assert.ok(order.every(i => i >= 0), 'all toolbar parts are inside the top row');
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
@@ -398,10 +398,11 @@ test('the one-line toolbar holds search, Filters, fold-all and view mode in one 
   // one entry point, so the toolbar carries no server select.
   assert.doesNotMatch(top, /ServerDropdown|server-select|onServerDropdownChange/);
   assert.doesNotMatch(html, /id="sessionsServerDropdown"/, 'no Sessions server select anywhere on the page');
-  // The view control is one native select carrying the three modes.
-  assert.match(top, /<select id="sessionsViewSelect"[\s\S]*onchange="_sessionsSetViewMode\(this\.value\)"[\s\S]*<\/select>/);
+  // The view control is one role=group of three native buttons (list, tiles, compact).
+  assert.match(top, /<div class="sessions-view-buttons" role="group"/);
+  assert.match(top, /onclick="_sessionsSetViewMode\('tiles'\)"/);
   for (const m of ['list', 'tiles', 'compact']) {
-    assert.match(top, new RegExp('<option value="' + m + '"'), `view select offers ${m}`);
+    assert.match(top, new RegExp('data-mode="' + m + '"'), `view control offers ${m}`);
   }
   // fold-all is the compact icon button with tooltip + aria text.
   assert.match(top, /class="sessions-fold-all"[\s\S]*title="Fold every group"[\s\S]*aria-pressed/);
@@ -426,13 +427,17 @@ test('the toolbar is laid out as a single non-wrapping row at every width', () =
   assert.match(search, /min-width:\s*0/); // the only flexible member, so it absorbs the slack
   assert.match(rule('.sessions-topbar .sessions-fold-all'), /flex:\s*0 0 auto/);
   assert.match(CSS, /\.sessions-topbar \.sessions-fold-all\[aria-pressed="true"\]/); // pressed style
-  assert.match(CSS, /\.sessions-topbar \.sessions-view-select \{/);
-  // The phone media block still exists for the tighter gaps, not the layout.
+  assert.match(CSS, /\.sessions-topbar \.sessions-view-buttons \{[^}]*flex:\s*0 0 auto/);
+  assert.match(CSS, /\.sessions-topbar \.sessions-view-btn \{[^}]*flex:\s*0 0 auto/);
+  assert.match(CSS, /\.sessions-topbar \.sessions-view-btn\.active/);
+  assert.match(CSS, /var\(--accent\)/);
+  // The phone media block still exists for the tighter cap, not the layout.
   const blocks = [];
   const re = /@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g;
   let m;
   while ((m = re.exec(CSS))) blocks.push(m[1]);
   const phone = blocks.join('\n');
   assert.doesNotMatch(CSS, /sessions-server-select/, 'no rule for a Sessions server select remains');
+  assert.match(phone, /\.sessions-topbar \.sessions-view-buttons \{[^}]*max-width:\s*30%/);
   assert.match(phone, /\.sessions-filters-label \{ display: none; \}/);
 });
