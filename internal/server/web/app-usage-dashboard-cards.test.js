@@ -30,7 +30,7 @@ test('Resources renders the three cards in a single wrapping row', () => {
   assert.match(src, /function _usageCalcCardsRowHtml\(a\) \{\s*const cards = _usageCalcAllowanceCard\(a\) \+ _usageCalcPaceCard\(a\) \+ _usageCalcBurnCard\(a\);\s*return cards \? `<div class="usage-cards">/);
   assert.match(src, /const row = _usageCalcCardsRowHtml\(a\);/);
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  assert.match(css, /\.usage-cards \{ display: flex; flex-wrap: wrap;/);
+  assert.match(css, /\.usage-cards \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(220px, 1fr\)\);/);
   assert.match(src, /id="automationUsageCard"/);
 });
 

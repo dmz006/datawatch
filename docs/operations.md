@@ -732,7 +732,7 @@ tasks in any status, stay locked.
 
 The usage calculator advises how many lanes the weekly provider allowance can
 carry. It never stops or slows a lane. Keys live under `usage.calculator.`;
-`usage.calculator.variant` (kept for compatibility; the PWA now always draws the three usage cards),
+`usage.calculator.variant` (kept for compatibility; the PWA now always draws the one usage calculator card with its three graphs),
 `policy`, `safety_points` (default 5), `cost_per_task_points`, `baseline_per_24h`,
 `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone` (a zone name, never a
 fixed offset) and `keeper` (the federation peer that keeps the shared
@@ -742,7 +742,7 @@ readings). Settings apply without a restart.
 |--------|-----|
 | **YAML config** | `usage.calculator.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.calculator.<key> <value>`; `datawatch usage advice` |
-| **Web UI** | The usage page (one verdict sentence and three fixed-size cards: weekly allowance, pace line, burn per day), the same cards on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
+| **Web UI** | The usage page (one card: a verdict sentence and three fixed-size graphs — weekly allowance, pace line, burn per day), the same three graphs on the Resources sub-tab and as dashboard cards; every setting is in Settings → General → Automata |
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
@@ -754,6 +754,16 @@ start and hourly sets the Claude lanes' in-flight cap to the advice's lanes
 plus one per open Automaton at or above `auto_lanes_special_priority` (default
 1), never above `auto_lanes_max` (1 to 8, default 2) and never below one —
 `datawatch usage auto-lanes status` / `set`, or `GET /api/usage/autolanes`.
+
+### Automata Resources restyle: operator review
+
+The Resources, Progress and costs and Housekeeping sub-tabs of Settings → Automata
+now use one card style. No setting, endpoint, CLI verb, MCP tool or comm verb
+changed. Before relying on the restyle, check each sub-tab by eye and in the
+four non-English locales (de, es, fr, ja): a raw translation key on screen is a
+missing translation and a defect. The full checklist is in
+[howto/automata-resources.md](howto/automata-resources.md#operator-review-after-the-restyle).
+Nothing in this review changes a setting.
 
 ### Burn guard
 
@@ -781,7 +791,7 @@ The **pace_line policy** for the weekly and the window usage sits beside the lad
 |--------|-----|
 | **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
-| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage page and the Monitor tab |
+| **Web UI** | Settings → General → Automata → Usage burn guard (the burn guard card on the usage page is read-only and links there); the **Burn guard** stat card on the usage page and in the Monitor panel |
 | **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
 | **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
 | **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |
@@ -833,17 +843,17 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 
 Beside the report, three read-only views draw the same recorded spend and the task attempts over time: **cost over time** (`GET /api/cost/series`, grouped by Automaton, project or model, bucketed by hour or day), **tool usage** (`GET /api/cost/tool-usage`, the same grouping, with a count of tool calls per group and never a tool name, because the ledger records only a count per session) and **retries and failure categories** (`GET /api/cost/failures`, grouped by project, Automation or Automaton, counted per week and per category). The cost view keeps billing units apart exactly as the report does: money is a separate line per unit (dollars on an `api` entry, points and percent on an `allowance` entry, nothing on a `local` entry) and is never added across units; with no rate or monthly price set, or `show_usd_estimates` off, only tokens are drawn. The same 31-day ledger limit applies, and a window that reaches past it reports the spend as unknown, not zero. Retries count each task once and restart when a task is reset, so the figure is a floor.
 
-The combined usage report joins the three bodies: `datawatch cost charts [--group-by <g>] [--window <d>] [--json]`, the comm channel `cost charts [group_by=<g>] [window=<d>]` and the read-only MCP `cost_charts` tool (`analytics:read`). A grouping one view does not know leaves that view on its default and the report says so. The Automata page shows the four chart cards (cost over time, tool usage, retries and failure categories, combined report) in the cost area of its **Progress and cost** tab; a card with no data or no view is not drawn and its reason and next action appear at the top of the **Events** tab. There is no new setting: the views read the existing `cost_report.*` keys and each LLM entry's `billing_mode`. Reading guidance: [howto/cost-report.md](howto/cost-report.md#the-chart-cards-on-the-automata-page); reference: [api/cost.md](api/cost.md#cost-series-get-apicostseries).
+The combined usage report joins the three bodies: `datawatch cost charts [--group-by <g>] [--window <d>] [--json]`, the comm channel `cost charts [group_by=<g>] [window=<d>]` and the read-only MCP `cost_charts` tool (`analytics:read`). A grouping one view does not know leaves that view on its default and the report says so. The Automata page shows the four titled chart cards (cost over time, tool usage, retries and failure categories, combined report) in the cost area of its **Progress and cost** tab, each with its own controls row — grouping, window, tokens-or-money, plus a **Series** choice (top 5, 10, 20 or All, 10 by default) that draws the chosen groups by total and folds the rest into one **Other** line or row so nothing is dropped; the cost and tool-usage legends show or hide a series in that card without a new request, and series are named by their label, an Automaton's title rather than its id. A card with no data or no view is not drawn and its reason and next action appear at the top of the **Events** tab. There is no new setting: the views read the existing `cost_report.*` keys and each LLM entry's `billing_mode`; the Series choice and the hidden series are page state, not settings. Reading guidance: [howto/cost-report.md](howto/cost-report.md#the-chart-cards-on-the-automata-page); reference: [api/cost.md](api/cost.md#cost-series-get-apicostseries).
 
 | Surface | How |
 |--------|-----|
 | **CLI** | `datawatch cost charts [--group-by automaton\|project\|model\|automation] [--window 7d] [--json]` |
-| **Web UI** | The four chart cards on the Automata page, **Progress and cost** tab; grouping, window and tokens-or-money controls above them |
+| **Web UI** | The four chart cards on the Automata page, **Progress and cost** tab; grouping, window and tokens-or-money controls above them, repeated on each card with a Series (top-N) control |
 | **REST API** | `GET /api/cost/series`, `GET /api/cost/tool-usage`, `GET /api/cost/failures` |
 | **MCP** | `cost_charts` (read-only) |
 | **Comm channel** | `cost charts [group_by=<g>] [window=<d>]` |
 
-**Still to review (operator):** the cards were built from tests and the REST bodies, not checked on a live daemon with real spend. Confirm on the **Progress and cost** tab that the card order and placement suit you, that a bundled-plan entry and an `api` entry draw as separate money charts with the right unit labels, and that a hidden card's reason shows in **Events**. The `model` grouping is the backend name (the ledger records no finer model name), and the web UI offers Project, Automation and Automaton only.
+**Still to review (operator):** the cards were built from tests and the REST bodies, not checked on a live daemon with real spend. Confirm on the **Progress and cost** tab that the card order and placement suit you, that a bundled-plan entry and an `api` entry draw as separate money charts with the right unit labels, that a hidden card's reason shows in **Events**, that the Series choice folds the groups you expect into the **Other** line or row and that the legend tiles hide and restore their series, and that the legend and tables name your Automata by title, not by id. The `model` grouping is the backend name (the ledger records no finer model name), and the web UI offers Project, Automation and Automaton only.
 
 ### Dashboard series cards
 
@@ -8909,7 +8919,7 @@ report never sums dollars and points: each row and the report body carry
 `claude-code` allowance. The usage advice payload carries one unit label key per
 backend (`unit_labels`, keyed by LLM name; `usage_unit_dollars` and
 `usage_unit_points` are locale keys in all five locales, `none` has no label); the
-web usage cards do not read it yet. See
+the web usage calculator card and the three dashboard graph cards do not read it yet. See
 [howto/llm-registry.md](howto/llm-registry.md#what-the-billing-mode-changes),
 [howto/cost-report.md](howto/cost-report.md#dollars-and-points-are-never-added-together),
 [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards) and

@@ -38380,10 +38380,13 @@ function _usageCalcWrite(method, path, body) {
     });
 }
 
-// The usage page body: one plain-language verdict sentence above up to three small
-// cards (weekly allowance, pace line, burn per day). The reading and extra credit
-// forms live in Settings; this page only reads the advice body and draws it. A card
-// whose data is off, empty or never set is not drawn.
+// The usage page body: one card. The card head holds the title, the "?" help
+// entry and the Refresh button; the body holds the plain-language verdict
+// sentence above up to three compact graph tiles (weekly allowance, pace line,
+// burn per day) in a responsive grid, one column on phones. The reading and
+// extra credit forms live in Settings; this page only reads the advice body and
+// draws it. A tile whose data is off, empty or never set is not drawn. The burn
+// guard has its own card and is not drawn inside this one.
 // opts: error, loading.
 const USAGE_CALC_DOCS_HREF = '/diagrams.html#docs/howto/usage-calculator.md';
 window.usageCalcHelpToggle = function (btn) {
@@ -38505,8 +38508,7 @@ window.usageCalcFrameHtml = function (body, opts) {
     if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
-  parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
-  return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
+  return `<div class="card usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
 function _usageCalcVerdictHtml(res, active) {
@@ -39187,13 +39189,12 @@ function usageCalcRerender() {
 }
 
 // ── Burn guard card ─────────────────────────────────────────────────────────
-// The burn guard (GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config,
-// POST /api/usage/burn-guard/run) watches the weekly burn against the pace line and
-// climbs or steps back a ladder of rungs. This card draws what the status body says
-// and writes settings back through the config endpoint; it computes nothing itself.
-// The effort ceiling is read-only here: it is set per Automaton with the effort-ceiling
-// tools. Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNGS = ['lower_inflight', 'route_pi_prompt', 'hold_claude'];
+// The burn guard (GET /api/usage/burn-guard, POST /api/usage/burn-guard/run) watches
+// the weekly burn against the pace line and climbs or steps back a ladder of rungs.
+// This card is read-only: it draws what the status body says and links into the
+// burn guard section of the Settings page (Automata tab) where config is edited.
+// It computes nothing itself. The effort ceiling is still read from the status body.
+// Auto-refresh uses a window-level interval variable, never a DOM-held timer.
 const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
@@ -39206,13 +39207,30 @@ function _burnGuardN(v, digits) {
   return Number.isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
 }
 
-// burnGuardCardHtml(status, config, opts) draws the card. Every value is escaped.
+// The tile reports the guard's "last check" as its last reported tick time.
+// A missing or unparseable timestamp renders the localized "never".
+function _burnGuardLastCheckText(st) {
+  const at = st && st.last_tick_at;
+  if (at === undefined || at === null || at === '') return String(t('burn_guard_last_check_none'));
+  const ms = new Date(at).getTime();
+  if (!Number.isFinite(ms)) return String(at);
+  return timeAgo(ms);
+}
+
+// burnGuardCardHtml(status, config, opts) draws the compact read-only status tile:
+// the guard's on/off state, when it last checked, the state/rung, the projection
+// and the last decision. It links into the burn guard section of the Settings page
+// rather than hosting the settings controls. `config` is accepted for backward
+// compatibility but is not drawn. Every value is escaped; nothing is written here.
 window.burnGuardCardHtml = function (status, config, opts) {
   opts = opts || {};
   const st = status || null;
   const cfg = config || {};
   const head = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<div style="font-weight:600;">${escHtml(t('burn_guard_title'))}${docsLink('howto/burn-guard.md', t('burn_guard_help'))}</div>` +
+    `<div style="font-weight:600;display:flex;align-items:center;gap:6px;min-height:16px;">` +
+      `${escHtml(t('burn_guard_title'))}` +
+      `<a href="/diagrams.html#docs/howto/burn-guard.md" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_help_tip'))}" aria-label="${escHtml(t('burn_guard_help'))}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>` +
+    `</div>` +
     `<button type="button" class="btn-secondary" data-burn-guard="run" style="font-size:12px;padding:4px 10px;" onclick="burnGuardRunNow()">${escHtml(t('burn_guard_run_now'))}</button></div>`;
   const parts = [head];
   if (opts.error) parts.push(`<div role="alert" data-burn-guard="error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('burn_guard_error', [opts.error]))}</div>`);
@@ -39220,6 +39238,11 @@ window.burnGuardCardHtml = function (status, config, opts) {
   if (!st) {
     if (!opts.error) parts.push(`<div data-burn-guard="loading" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_loading'))}</div>`);
   } else {
+    const enabledText = st.enabled ? t('burn_guard_enabled_on') : t('burn_guard_enabled_off');
+    parts.push(`<div class="burn-guard-tile" data-burn-guard="tile" data-enabled="${escHtml(String(!!st.enabled))}" style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;padding:6px 8px;border:1px solid var(--border,#333);border-radius:6px;">` +
+      `<span data-burn-guard="enabled" style="font-size:12px;font-weight:600;">${escHtml(enabledText)}</span>` +
+      `<span data-burn-guard="last-check" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_last_check'))} ${escHtml(_burnGuardLastCheckText(st))}</span>` +
+      `</div>`);
     const stateKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_STATE_KEYS, st.state) ? BURN_GUARD_STATE_KEYS[st.state] : '';
     const stateText = stateKey ? t(stateKey) : String(st.state || '');
     const rungKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, st.rung) ? BURN_GUARD_RUNG_KEYS[st.rung] : '';
@@ -39248,39 +39271,24 @@ window.burnGuardCardHtml = function (status, config, opts) {
     }
     if (st.last_error) parts.push(`<div data-burn-guard="last-error" style="font-size:12px;color:var(--error,#ef4444);">${escHtml(st.last_error)}</div>`);
   }
-  parts.push(window.burnGuardSettingsHtml(cfg));
+  parts.push(window.burnGuardSettingsHtml());
   return `<div class="usage-calc-section burn-guard-card" data-burn-guard="card" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">${parts.join('')}</div>`;
 };
 
-window.burnGuardSettingsHtml = function (cfg) {
-  cfg = cfg || {};
-  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder : BURN_GUARD_RUNGS;
-  const order = ladder.concat(BURN_GUARD_RUNGS.filter(r => !ladder.includes(r)));
-  const rows = order.map((r, i) => {
-    const on = ladder.includes(r);
-    const label = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, r) ? t(BURN_GUARD_RUNG_KEYS[r]) : String(r);
-    return `<div data-rung="${escHtml(r)}" style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;">` +
-      `<label style="display:flex;align-items:center;gap:6px;flex:1;"><input type="checkbox" data-rung-on="${escHtml(r)}"${on ? ' checked' : ''} onchange="burnGuardSaveLadder()"><span>${escHtml(label)}</span></label>` +
-      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_up'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',-1)"${i === 0 ? ' disabled' : ''}>↑</button>` +
-      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_down'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',1)"${i === order.length - 1 ? ' disabled' : ''}>↓</button></div>`;
-  }).join('');
-  const ceil = cfg.effort_ceiling && typeof cfg.effort_ceiling === 'object' ? cfg.effort_ceiling : {};
-  const ceilRows = Object.keys(ceil).sort().map(k => `<span data-ceiling-kind="${escHtml(k)}" style="margin-right:10px;">${escHtml(k)}: ${escHtml(String(ceil[k]))}</span>`).join('');
-  const retry = cfg.retry_limit_claude === undefined || cfg.retry_limit_claude === null ? '' : String(cfg.retry_limit_claude);
-  const margin = cfg.margin_points === undefined || cfg.margin_points === null ? '' : String(cfg.margin_points);
-  const gap = cfg.max_projection_gap_points === undefined || cfg.max_projection_gap_points === null ? '' : String(cfg.max_projection_gap_points);
-  return `<div class="burn-guard-settings" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">` +
-    `<div style="font-weight:600;font-size:12px;">${escHtml(t('burn_guard_settings_title'))}</div>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardEnabled"${cfg.enabled ? ' checked' : ''} onchange="burnGuardSaveField('enabled')"><span>${escHtml(t('burn_guard_enabled'))}</span></label>` +
-    `<label style="font-size:12px;">${escHtml(t('burn_guard_margin'))} <input id="burnGuardMargin" type="number" min="0" step="any" value="${escHtml(margin)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('margin_points')"></label>` +
-    `<div style="font-size:12px;">${escHtml(t('burn_guard_ladder'))}</div><div id="burnGuardLadder">${rows}</div>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardStepBack"${cfg.step_back ? ' checked' : ''} onchange="burnGuardSaveField('step_back')"><span>${escHtml(t('burn_guard_step_back'))}</span></label>` +
-    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardAskOnChange"${cfg.ask_on_change ? ' checked' : ''} onchange="burnGuardSaveField('ask_on_change')"><span>${escHtml(t('burn_guard_ask_on_change'))}</span><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_ask_on_change_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
-    `<label style="font-size:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${escHtml(t('burn_guard_max_projection_gap'))} <input id="burnGuardMaxProjectionGap" type="number" min="0" max="100" step="any" value="${escHtml(gap)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('max_projection_gap_points')"><a href="/diagrams.html#docs/howto/burn-guard.md#settings" target="_blank" rel="noopener" title="${escHtml(t('burn_guard_max_projection_gap_help'))}" aria-label="Help" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a></label>` +
-    `<label style="font-size:12px;">${escHtml(t('burn_guard_retry_limit'))} <input id="burnGuardRetryLimit" type="number" min="0" max="20" step="1" value="${escHtml(retry)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('retry_limit_claude')"></label>` +
-    `<div data-burn-guard="effort-ceiling" style="font-size:12px;"><span>${escHtml(t('burn_guard_effort_ceiling'))}</span> ${ceilRows || escHtml(t('burn_guard_ceiling_none'))}</div>` +
-    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_ceiling_hint'))}</div>` +
+// The burn guard settings no longer live in this card. This draws only the link
+// that takes the operator to the burn guard section of the Settings page
+// (Automata tab); nothing here edits config.
+window.burnGuardSettingsHtml = function () {
+  return `<div data-burn-guard="settings" style="display:flex;align-items:center;gap:8px;font-size:12px;padding-top:2px;">` +
+    `<a href="#" data-burn-guard="settings-link" onclick="burnGuardOpenSettings();return false;" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:12px;">${escHtml(t('burn_guard_settings_title'))} ↗</a>` +
     `</div>`;
+};
+
+// Deep-links into the burn guard section of the Settings page (Automata tab).
+// Reuses the same helper the project settings links use: navigate to settings,
+// switch to the Automata tab, expand the section and scroll it into view.
+window.burnGuardOpenSettings = function () {
+  return _projectsOpenSettings('usage_burn_guard', 'automata');
 };
 
 function _burnGuardPaint() {
@@ -39293,8 +39301,11 @@ function _burnGuardPaint() {
 }
 
 window.burnGuardRefresh = function () {
-  return Promise.all([apiFetch('/api/usage/burn-guard'), apiFetch('/api/usage/burn-guard/config')]).then(r => {
-    _burnGuard.status = r[0]; _burnGuard.config = r[1]; _burnGuard.error = '';
+  // Read-only card: it draws the status body only, so refresh fetches just that.
+  // The config body is no longer polled here; the settings are edited in the
+  // burn guard section of the Settings page.
+  return apiFetch('/api/usage/burn-guard').then(status => {
+    _burnGuard.status = status; _burnGuard.error = '';
     _burnGuardPaint();
   }).catch(err => {
     _burnGuard.error = err && err.message ? err.message : String(err);
@@ -39302,63 +39313,10 @@ window.burnGuardRefresh = function () {
   });
 };
 
-// Writes go to the config endpoint, then the card refetches both bodies.
-function _burnGuardPut(body) {
-  return apiFetch('/api/usage/burn-guard/config', { method: 'PUT', body: JSON.stringify(body) })
-    .then(() => { _burnGuard.message = t('burn_guard_saved'); return window.burnGuardRefresh(); })
-    .catch(err => { _burnGuard.error = err && err.message ? err.message : String(err); _burnGuardPaint(); });
-}
-
-window.burnGuardSaveField = function (key) {
-  const num = id => { const e = document.getElementById(id); return e ? Number(e.value) : NaN; };
-  const chk = id => { const e = document.getElementById(id); return !!(e && e.checked); };
-  let body;
-  if (key === 'enabled') body = { enabled: chk('burnGuardEnabled') };
-  else if (key === 'step_back') body = { step_back: chk('burnGuardStepBack') };
-  else if (key === 'ask_on_change') body = { ask_on_change: chk('burnGuardAskOnChange') };
-  else if (key === 'margin_points') body = { margin_points: num('burnGuardMargin') };
-  else if (key === 'max_projection_gap_points') {
-    // An empty field is not 0: 0 turns the gap check off, so blank is refused.
-    const e = document.getElementById('burnGuardMaxProjectionGap');
-    body = { max_projection_gap_points: e && String(e.value).trim() !== '' ? num('burnGuardMaxProjectionGap') : NaN };
-  }
-  else if (key === 'retry_limit_claude') body = { retry_limit_claude: num('burnGuardRetryLimit') };
-  else return;
-  if (key === 'margin_points' || key === 'retry_limit_claude' || key === 'max_projection_gap_points') {
-    const v = body[key];
-    if (!Number.isFinite(v) || v < 0 || (key === 'max_projection_gap_points' && v > 100) || (key === 'retry_limit_claude' && (v > 20 || !Number.isInteger(v)))) {
-      _burnGuard.error = t('burn_guard_invalid_number');
-      _burnGuardPaint();
-      return;
-    }
-  }
-  return _burnGuardPut(body);
-};
-
-function _burnGuardLadderFromDom() {
-  const host = document.getElementById('burnGuardLadder');
-  if (!host) return [];
-  return Array.from(host.querySelectorAll('[data-rung]')).filter(row => {
-    const cb = row.querySelector('input[type=checkbox]');
-    return cb && cb.checked;
-  }).map(row => row.getAttribute('data-rung'));
-}
-
-window.burnGuardSaveLadder = function () {
-  const ladder = _burnGuardLadderFromDom();
-  if (!ladder.length) { _burnGuard.error = t('burn_guard_ladder_empty'); _burnGuardPaint(); return; }
-  return _burnGuardPut({ ladder });
-};
-
-window.burnGuardMoveRung = function (rung, delta) {
-  const cfg = _burnGuard.config || {};
-  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder.slice() : BURN_GUARD_RUNGS.slice();
-  const i = ladder.indexOf(rung);
-  const j = i + delta;
-  if (i < 0 || j < 0 || j >= ladder.length) return;
-  const tmp = ladder[i]; ladder[i] = ladder[j]; ladder[j] = tmp;
-  return _burnGuardPut({ ladder });
-};
+// The burn guard's config controls no longer live in this card, so it performs no
+// writes: the config PUT, the field saver, the ladder saver and the rung mover
+// have been removed. Config is edited only in the burn guard section of the
+// Settings page, which polls and saves itself.
 
 window.burnGuardRunNow = function () {
   return apiFetch('/api/usage/burn-guard/run', { method: 'POST' }).then(res => {
@@ -42638,9 +42596,10 @@ function _checksShipFindingsHtml(findings) {
   return shown + more;
 }
 
-function _checksShipCardShell(cls, titleKey, helpKey, lines, findings) {
+function _checksShipCardShell(cls, titleKey, helpKey, lines, findings, findingsHtml) {
+  const body = (findingsHtml !== undefined) ? findingsHtml : _checksShipFindingsHtml(findings);
   const head = `<div class="cap-title">${escHtml(t(titleKey))}${_checksShipHelpLink(helpKey)}</div>`;
-  return `<div class="prd-capacity-card ${cls}" style="min-width:0;">${head}${_cleanupLine(t('checks_ship_read_only'))}${lines.join('')}${_checksShipFindingsHtml(findings)}</div>`;
+  return `<div class="prd-capacity-card ${cls}" style="min-width:0;">${head}${_cleanupLine(t('checks_ship_read_only'))}${lines.join('')}${body}</div>`;
 }
 
 window.checksCardHtml = function(status) {
@@ -42656,19 +42615,84 @@ window.checksCardHtml = function(status) {
   return _checksShipCardShell('checks-card', 'checks_card_title', 'checks_findings_card', lines, s.findings);
 };
 
+// _shipStepTile draws one compact tile for a ship step: the plain step name
+// on top and the mode word below it. off, shadow and on all read as words
+// through _checksShipModeText; an unknown value shows as given.
+function _shipStepTile(labelKey, mode) {
+  return `<div class="ship-step-tile" role="listitem" style="flex:1 1 90px;max-width:150px;min-width:0;border:1px solid rgba(128,128,128,.35);border-radius:8px;padding:5px 10px;text-align:center;overflow-wrap:anywhere;">` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t(labelKey))}</div>` +
+    `<div style="font-size:13px;font-weight:600;overflow-wrap:anywhere;">${escHtml(_checksShipModeText(mode))}</div></div>`;
+}
+
+// _shipStepTiles is the push / tag / CI-watch row: three wrapping tiles, so
+// on a phone width they stack into two rows instead of squeezing the words.
+function _shipStepTiles(p) {
+  return `<div class="ship-step-tiles" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(128,128,128,.25);">` +
+    _shipStepTile('ship_tile_push', p.push) +
+    _shipStepTile('ship_tile_tag', p.tag) +
+    _shipStepTile('ship_tile_ci_watch', p.ci_watch) +
+    '</div>';
+}
+
+// _shipMetaLine is the short secondary line: tag format, remote and the CI
+// workflow names, each part omitted when it is empty. Tag format, remote and
+// workflows are where the steps point, not what they did — one line.
+function _shipMetaLine(p) {
+  const wf = Array.isArray(p.ci_workflows) ? p.ci_workflows.map(String).filter(w => w !== '').join(', ') : '';
+  const parts = [];
+  if (p.tag_format) parts.push(t('ship_meta_format', [String(p.tag_format)]));
+  if (p.remote) parts.push(t('ship_meta_remote', [String(p.remote)]));
+  if (wf) parts.push(t('ship_meta_workflows', [wf]));
+  return parts.length ? _cleanupLine(parts.join(' · ')) : '';
+}
+
+// _shipFindingsLabel resolves the plain Automaton title a finding's prd id
+// names in the Automata list the page already holds; '' when unknown, and
+// the caller keeps the id only as the last-resort fallback.
+function _shipFindingsLabel(prdId) {
+  const id = String(prdId || '');
+  if (!id) return '';
+  let title = '';
+  if (typeof _automataTitle === 'function') title = _automataTitle(id);
+  if (!title && typeof _automataState !== 'undefined' && _automataState && Array.isArray(_automataState.allPrds)) {
+    const prd = _automataState.allPrds.find(x => x && x.id === id);
+    if (prd && typeof prd.title === 'string' && prd.title.trim()) title = prd.title;
+  }
+  return (typeof title === 'string' && title.trim() && title.trim() !== id) ? title.trim() : '';
+}
+
+// _shipFindingsHtml is the ship card's findings rows: newest first (the body
+// arrives sorted; the bound keeps it so), each row the Automaton's title and
+// the outcome sentence the daemon recorded. No source names, no policy
+// vocabulary — the finding text already says what happened.
+function _shipFindingsHtml(findings) {
+  const list = Array.isArray(findings) ? findings.filter(f => f && typeof f === 'object') : [];
+  if (!list.length) return `<div class="checks-ship-empty ship-finding-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('checks_ship_no_findings'))}</div>`;
+  const shown = list.slice(0, CHECKS_SHIP_MAX_FINDINGS).map(f => {
+    const when = _triageTime(f.at);
+    const label = _shipFindingsLabel(f.prd_id) || String(f.prd_id || '');
+    return `<div class="checks-ship-finding ship-finding" style="padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+      `<span style="color:var(--text2);">${escHtml(when)}</span> <strong>${escHtml(label)}</strong> ${escHtml(String(f.text || ''))}</div>`;
+  }).join('');
+  const more = list.length > CHECKS_SHIP_MAX_FINDINGS ? _cleanupLine(t('checks_ship_more', [list.length - CHECKS_SHIP_MAX_FINDINGS])) : '';
+  return shown + more;
+}
+
+// shipCardHtml is reworked around reading: one plain-language line says what
+// shipping is (push, tag, CI watch and what each mode means), the three
+// steps are compact tiles of step name and mode word, the tag format / remote /
+// workflow names are one short secondary line, and the recorded outcomes are
+// rows of Automaton title and sentence, newest first. It is kept — unlike a
+// bare policy dump — because it carries recorded outcomes and an explanation.
 window.shipCardHtml = function(status) {
   const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
   const p = (s.policy && typeof s.policy === 'object') ? s.policy : {};
-  const wf = Array.isArray(p.ci_workflows) ? p.ci_workflows.map(String).join(', ') : '';
   const lines = [
-    _cleanupLine(t('ship_policy_push', [_checksShipModeText(p.push)])),
-    _cleanupLine(t('ship_policy_tag', [_checksShipModeText(p.tag)])),
-    _cleanupLine(t('ship_policy_ci_watch', [_checksShipModeText(p.ci_watch)])),
-    _cleanupLine(t('ship_policy_tag_format', [String(p.tag_format || '')])),
-    _cleanupLine(t('ship_policy_remote', [String(p.remote || '')])),
-    _cleanupLine(wf ? t('ship_policy_ci_workflows', [wf]) : t('ship_policy_ci_workflows_none')),
+    _cleanupLine(t('ship_card_explain')),
+    _shipStepTiles(p),
+    _shipMetaLine(p),
   ];
-  return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings);
+  return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings, _shipFindingsHtml(s.findings));
 };
 
 // ── Trace card (session view and Automaton view) ────────────────────────────
@@ -46939,11 +46963,19 @@ const COST_CHARTS_DOC_HREF = '/diagrams.html#docs/howto/cost-report.md';
 const COST_CHARTS_GROUPS = ['project', 'automation', 'automaton'];
 const COST_CHARTS_WINDOWS = ['7d', '14d', '30d', '8w'];
 const COST_CHARTS_METRICS = ['tokens', 'money'];
-// Bounds: lines drawn per chart, points per line (neighbouring buckets are
-// summed past this), table rows per card, and Events entries kept.
-const COST_CHARTS_MAX_LINES = 6;
+// Bounds and the Top-N control. Points per line are fixed: neighbouring
+// buckets are summed past COST_CHARTS_MAX_POINTS. How many series a card
+// draws is the operator's choice instead of a fixed six: the control offers
+// COST_CHARTS_TOPN_OPTIONS (0 is "all"), default COST_CHARTS_TOPN_DEFAULT.
+// Whatever the control leaves out of the drawing is folded into the one
+// "Other" series (key COST_CHARTS_OTHER_KEY), whose total carries them, so
+// nothing is dropped. A series the operator hides stays named in the
+// legend, and costChartsKeyLabel resolves an Automaton id back to its
+// title in legends, tooltips and table rows.
 const COST_CHARTS_MAX_POINTS = 60;
-const COST_CHARTS_MAX_ROWS = 8;
+const COST_CHARTS_TOPN_OPTIONS = [5, 10, 20, 0];
+const COST_CHARTS_TOPN_DEFAULT = 10;
+const COST_CHARTS_OTHER_KEY = '__cost_charts_other__';
 const COST_CHARTS_COLOURS = ['#7c3aed', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#64748b'];
 const COST_CHARTS_VIEWS = ['cost', 'tools', 'failures', 'report'];
 // Locale keys by choice, listed whole so each can be found by search.
@@ -46956,6 +46988,8 @@ const COST_CHARTS_CARD_IDS = {
 
 const _costCharts = {
   group: 'project', window: '7d', metric: 'tokens',
+  topN: COST_CHARTS_TOPN_DEFAULT,   // how many series each card draws (0 = all)
+  hidden: { cost: {}, tools: {}, failures: {}, report: {} },   // per-card hidden series keys
   loading: false, loaded: false, gen: 0,
   data: null,   // { cost, tools, failures }, each { body } | { error } | { unsupported }
   events: [],   // the Events entries of the cards that are not shown
@@ -46969,6 +47003,34 @@ function _ccNum(n) {
   return String(Math.round(n));
 }
 function _ccMoney(n) { return (Number(n) || 0).toFixed(2); }
+
+// _automataTitle finds the title of the Automaton an id names in the
+// Automata list the page already holds ('' when unknown). No fetch is made.
+function _automataTitle(id) {
+  if (typeof _automataState !== 'undefined' && _automataState && Array.isArray(_automataState.allPrds)) {
+    const prd = _automataState.allPrds.find(p => p && p.id === id);
+    if (prd && typeof prd.title === 'string' && prd.title.trim()) return prd.title;
+  }
+  return '';
+}
+
+// costChartsKeyLabel names a series in operator-facing text: the readable
+// label the server sent, else the Automaton's title, else the raw key. An
+// id only ever appears where no title is known. Plain strings (failure
+// categories) pass through untouched.
+function costChartsKeyLabel(entry) {
+  if (entry && typeof entry === 'object') {
+    const key = String(entry.key != null ? entry.key : '');
+    const label = typeof entry.label === 'string' ? entry.label.trim() : '';
+    if (key === COST_CHARTS_OTHER_KEY) return t('cost_charts_other');
+    if (label && label !== key) return label;
+    const title = _automataTitle(key);
+    if (title) return title;
+    return key;
+  }
+  return String(entry == null ? '' : entry);
+}
+window.costChartsKeyLabel = costChartsKeyLabel;
 
 // _ccReduce sums neighbouring values so a line never has more than max points.
 function _ccReduce(values, max) {
@@ -47019,17 +47081,35 @@ function _ccFigure(units, unit) {
   return Number(unit === 'dollars' ? u.dollars : u.points) || 0;
 }
 
-// costChartsLines turns a series-shaped body into the lines to draw: one per
-// group, the value of each bucket by pick(point), the largest totals first,
-// at most COST_CHARTS_MAX_LINES, each with at most COST_CHARTS_MAX_POINTS.
-function costChartsLines(body, pick, keep) {
+// costChartsLines turns a series-shaped body into the lines to draw: one
+// per group, the value of each bucket by pick(point), the largest totals
+// first. Series the operator hid (opts.hidden[view]) are left out, the
+// Top-N choice (opts.topN, 0 is all) bounds the rest and the remainder is
+// folded into the one "Other" line so its total is still drawn. Each line
+// has at most COST_CHARTS_MAX_POINTS.
+function costChartsLines(body, pick, keep, opts) {
+  opts = opts || {};
   const groups = (body && Array.isArray(body.groups)) ? body.groups : [];
-  const all = groups.filter(g => !keep || keep(g)).map(g => {
-    const raw = (Array.isArray(g.points) ? g.points : []).map(p => Number(pick(p)) || 0);
-    return { key: String(g.key), total: raw.reduce((a, b) => a + b, 0), values: _ccReduce(raw, COST_CHARTS_MAX_POINTS) };
-  });
+  const hidden = (opts.hidden && opts.hidden.cost) || (opts.hidden && opts.hidden.tools) || {};
+  const topN = Number(opts.topN) || 0;
+  const entry = g => ({ key: String(g.key), label: typeof g.label === 'string' ? g.label : '' });
+  const hiddenLines = groups.filter(g => hidden[String(g.key)]).map(entry);
+  const all = groups
+    .filter(g => !hidden[String(g.key)])
+    .filter(g => !keep || keep(g))
+    .map(g => {
+      const raw = (Array.isArray(g.points) ? g.points : []).map(p => Number(pick(p)) || 0);
+      return Object.assign(entry(g), { total: raw.reduce((a, b) => a + b, 0), values: _ccReduce(raw, COST_CHARTS_MAX_POINTS) });
+    });
   all.sort((a, b) => b.total - a.total);
-  return { lines: all.slice(0, COST_CHARTS_MAX_LINES), total: all.length };
+  const kept = topN > 0 ? all.slice(0, topN) : all.slice();
+  const rest = topN > 0 ? all.slice(topN) : [];
+  const lines = kept.slice();
+  if (rest.length) {
+    lines.push({ key: COST_CHARTS_OTHER_KEY, label: '', total: rest.reduce((a, l) => a + l.total, 0),
+      values: rest[0].values.map((_, i) => rest.reduce((a, l) => a + (l.values[i] || 0), 0)) });
+  }
+  return { lines, hiddenLines, total: all.length, folded: rest.length };
 }
 
 // _costChartsLinesSVG draws lines on a shared time axis, extending
@@ -47061,7 +47141,7 @@ function _costChartsLinesSVG(spec) {
   spec.lines.forEach((l, li) => {
     const colour = COST_CHARTS_COLOURS[li % COST_CHARTS_COLOURS.length];
     const pts = l.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-    const tip = `${l.key} · ${fmt(l.total)}`;
+    const tip = `${costChartsKeyLabel(l)} · ${fmt(l.total)}`;
     svg += `<polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"><title>${escHtml(tip)}</title></polyline>`;
     const last = l.values.length - 1;
     if (last >= 0) svg += `<circle cx="${x(last).toFixed(1)}" cy="${y(l.values[last]).toFixed(1)}" r="2.5" fill="${colour}"><title>${escHtml(tip)}</title></circle>`;
@@ -47106,43 +47186,62 @@ function _costChartsBarsSVG(spec) {
   return `<svg class="cost-charts-svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escHtml(t('cost_charts_chart_aria', [spec.axis]))}" style="display:block;margin-top:4px;">${svg}</svg>`;
 }
 
-function _ccLegend(keys) {
-  return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${keys.map((k, i) =>
-    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>${escHtml(String(k))}</span>`).join('')}</div>`;
+// _ccLegend names the series. In a toggleable card (view set) every named
+// series is a tile that shows or hides it in this card's drawing; a hidden
+// tile is struck through but keeps its name, and the Other series is a
+// plain entry because its parts are already in the drawing.
+function _ccLegend(entries, view, hidden) {
+  const hiddenMap = view && hidden ? (hidden[view] || {}) : null;
+  return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${entries.map((e, i) => {
+    const key = e && typeof e === 'object' && e.key != null ? String(e.key) : String(e);
+    const swatch = `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>`;
+    if (view && key !== COST_CHARTS_OTHER_KEY) {
+      const off = hiddenMap ? hiddenMap[key] === true : false;
+      return `<button type="button" class="cost-charts-legend-tile${off ? ' cost-charts-legend-tile-off' : ''}" aria-pressed="${off ? 'false' : 'true'}" title="${escHtml(t('cost_charts_legend_toggle'))}" onclick="window.costChartsToggleSeries('${view}', '${escHtml(key)}')">${swatch}<span>${escHtml(costChartsKeyLabel(e))}</span></button>`;
+    }
+    return `<span>${swatch}${escHtml(costChartsKeyLabel(e))}</span>`;
+  }).join('')}</div>`;
 }
 
 function _ccBoundedNote(shown, total) {
   return total > shown ? `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_groups', [shown, total]))}</div>` : '';
 }
 
-function _ccLineChart(buckets, picked, axis, money) {
-  return `<div class="cost-charts-chart">${_costChartsLinesSVG({ buckets, lines: picked.lines, axis, money })}${_ccLegend(picked.lines.map(l => l.key))}${_ccBoundedNote(picked.lines.length, picked.total)}</div>`;
+function _ccLineChart(buckets, picked, axis, money, view, hidden) {
+  const shown = picked.lines.length - (picked.folded ? 1 : 0);
+  // The legend lists the drawn lines and every hidden series, so a hidden
+  // series keeps its name (struck through) even though it is not drawn.
+  const legendEntries = picked.lines.concat(picked.hiddenLines || []);
+  return `<div class="cost-charts-chart">${_costChartsLinesSVG({ buckets, lines: picked.lines, axis, money })}${_ccLegend(legendEntries, view, hidden)}${_ccBoundedNote(shown, picked.total)}</div>`;
 }
 
 // _ccCostBody draws cost over time. Tokens are one chart. Money is one chart
 // per billing unit, each axis labelled with its unit and billing mode, so
 // dollars and points are never drawn on one axis or added together.
-function _ccCostBody(series, metric) {
+function _ccCostBody(series, metric, opts) {
+  opts = opts || {};
+  const hidden = opts.hidden || {};
   const buckets = Array.isArray(series.buckets) ? series.buckets : [];
   const units = costChartsMoneyUnits(series);
   let html = '';
   if (metric === 'money' && units.length) {
     units.forEach(u => {
       const picked = costChartsLines(series, p => _ccFigure(p.units, u.unit),
-        g => Array.isArray(g.unit_totals) && g.unit_totals.some(x => x && x.unit === u.unit));
-      html += _ccLineChart(buckets, picked, costChartsUnitLabel(u.unit, u.billing_mode), true);
+        g => Array.isArray(g.unit_totals) && g.unit_totals.some(x => x && x.unit === u.unit), opts);
+      html += _ccLineChart(buckets, picked, costChartsUnitLabel(u.unit, u.billing_mode), true, 'cost', hidden);
     });
   } else {
-    html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens), costChartsUnitLabel(null, ''), false);
+    html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens, null, opts), costChartsUnitLabel(null, ''), false, 'cost', hidden);
     if (metric === 'money') html += `<div class="cost-charts-money-off" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_money_off'))}</div>`;
   }
   if (series.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(series.unknown_spend_note)}</div>`;
   return html;
 }
 
-function _ccToolsBody(body) {
+function _ccToolsBody(body, opts) {
+  opts = opts || {};
   const buckets = Array.isArray(body.buckets) ? body.buckets : [];
-  let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls), t('cost_charts_unit_tool_calls'), false);
+  let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls, null, opts), t('cost_charts_unit_tool_calls'), false, 'tools', opts.hidden);
   html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.tool_names_note || t('cost_charts_tool_names_note'))}</div>`;
   if (body.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.unknown_spend_note)}</div>`;
   return html;
@@ -47172,17 +47271,28 @@ function _ccTable(head, rows, total) {
   return `<table class="cost-charts-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;"><thead><tr style="color:var(--text2);">${th}</tr></thead><tbody>${rows.map(tr).join('')}</tbody>${foot}</table>`;
 }
 
-function _ccFailuresBody(f) {
+function _ccFailuresBody(f, opts) {
+  opts = opts || {};
   const stacks = costChartsWeekStacks(f);
   let html = `<div class="cost-charts-chart">${_costChartsBarsSVG({ weeks: stacks.weeks, categories: stacks.categories, axis: t('cost_charts_unit_attempts') })}${_ccLegend(stacks.categories)}</div>`;
-  const groups = Array.isArray(f.groups) ? f.groups : [];
-  const rows = groups.slice(0, COST_CHARTS_MAX_ROWS).map(g => {
-    const top = Array.isArray(g.categories) && g.categories[0] ? `${g.categories[0].category} (${g.categories[0].attempts})` : '';
-    return [escHtml(String(g.label || g.key)), String(g.attempts || 0), String(g.tasks || 0), String(g.retries || 0), escHtml(top)];
-  });
+  const groups = (Array.isArray(f.groups) ? f.groups : []).map(g => ({
+    key: String(g.key), label: typeof g.label === 'string' ? g.label : '',
+    attempts: Number(g.attempts) || 0, tasks: Number(g.tasks) || 0, retries: Number(g.retries) || 0,
+    top: Array.isArray(g.categories) && g.categories[0] ? `${g.categories[0].category} (${g.categories[0].attempts})` : '' }));
+  const hidden = (opts.hidden && opts.hidden.failures) || {};
+  const visible = groups.filter(g => !hidden[g.key]);
+  const topN = Number(opts.topN) || 0;
+  const kept = topN > 0 ? visible.slice(0, topN) : visible.slice();
+  const rest = topN > 0 ? visible.slice(topN) : [];
+  const rows = kept.map(g => [escHtml(costChartsKeyLabel(g)), String(g.attempts), String(g.tasks), String(g.retries), escHtml(g.top)]);
+  if (rest.length) {
+    rows.push([escHtml(t('cost_charts_other')),
+      String(rest.reduce((a, g) => a + g.attempts, 0)), String(rest.reduce((a, g) => a + g.tasks, 0)), String(rest.reduce((a, g) => a + g.retries, 0)),
+      escHtml(rest.map(g => costChartsKeyLabel(g)).join(', '))]);
+  }
   html += _ccTable([t('cost_charts_col_group'), t('cost_charts_col_attempts'), t('cost_charts_col_tasks'), t('cost_charts_col_retries'), t('cost_charts_col_top_category')], rows,
     [escHtml(t('cost_charts_total')), String(f.total_attempts || 0), String(f.total_tasks || 0), String(f.total_retries || 0), '']);
-  if (groups.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, groups.length]))}</div>`;
+  if (visible.length > kept.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [kept.length, visible.length]))}</div>`;
   if (f.retry_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(f.retry_note)}</div>`;
   return html;
 }
@@ -47211,19 +47321,50 @@ function costChartsReportRows(data) {
   return list;
 }
 
-function _ccReportBody(data) {
-  const all = costChartsReportRows(data);
-  const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
+// _ccMoneyCell renders the money of one row or total, one line per unit so
+// dollars and points are never added together.
+function _ccMoneyCell(units) {
+  if (!units || !units.length) return '—';
+  return units.map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('');
+}
+
+// _ccSumMoney adds the money of several rows per unit and billing mode,
+// for the Other row of the report table.
+function _ccSumMoney(rows) {
+  const map = {};
+  rows.forEach(r => (r.money || []).forEach(u => {
+    if (!u) return;
+    const k = u.unit + '\u0000' + (u.billing_mode || '');
+    const e = map[k] || (map[k] = { unit: u.unit, billing_mode: u.billing_mode, dollars: 0, points: 0 });
+    if (u.unit === 'dollars') e.dollars += Number(u.dollars) || 0;
+    else e.points += Number(u.points) || 0;
+  }));
+  return Object.values(map).filter(u => (u.unit === 'dollars' && u.dollars > 0) || (u.unit === 'points' && u.points > 0));
+}
+
+function _ccReportBody(data, opts) {
+  opts = opts || {};
   const dash = '—';
-  const moneyCell = r => r.money.map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash;
   const num = v => (v == null ? dash : escHtml(_ccNum(v)));
-  const rows = all.slice(0, COST_CHARTS_MAX_ROWS).map(r => [
-    escHtml(r.label || r.key), num(r.tokens), moneyCell(r), num(r.calls), num(r.attempts), num(r.retries)]);
-  const totalMoney = cost ? costChartsMoneyUnits(cost).map(u => `<div>${escHtml(costChartsUnitLabel(u.unit, u.billing_mode))}: ${escHtml(_ccMoney(u.unit === 'dollars' ? u.dollars : u.points))}</div>`).join('') || dash : dash;
+  const hidden = (opts.hidden && opts.hidden.report) || {};
+  const visible = costChartsReportRows(data).filter(r => !hidden[r.key]);
+  const topN = Number(opts.topN) || 0;
+  const kept = topN > 0 ? visible.slice(0, topN) : visible.slice();
+  const rest = topN > 0 ? visible.slice(topN) : [];
+  const rows = kept.map(r => [escHtml(costChartsKeyLabel(r)), num(r.tokens), _ccMoneyCell(r.money), num(r.calls), num(r.attempts), num(r.retries)]);
+  if (rest.length) {
+    const sumCell = k => {
+      const vs = rest.map(r => r[k]).filter(v => v != null);
+      return vs.length ? escHtml(_ccNum(vs.reduce((a, v) => a + v, 0))) : dash;
+    };
+    rows.push([escHtml(t('cost_charts_other')), sumCell('tokens'), _ccMoneyCell(_ccSumMoney(rest)), sumCell('calls'), sumCell('attempts'), sumCell('retries')]);
+  }
+  const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
+  const totalMoney = cost ? _ccMoneyCell(costChartsMoneyUnits(cost)) : dash;
   const sumTokens = cost ? (cost.groups || []).reduce((a, g) => a + (Number(g.tokens) || 0), 0) : null;
   const total = [escHtml(t('cost_charts_total')), num(sumTokens), totalMoney, num(tools ? tools.total_tool_calls : null), num(fails ? fails.total_attempts : null), num(fails ? fails.total_retries : null)];
   let html = _ccTable([t('cost_charts_col_group'), t('cost_charts_col_tokens'), t('cost_charts_col_money'), t('cost_charts_col_tool_calls'), t('cost_charts_col_attempts'), t('cost_charts_col_retries')], rows, total);
-  if (all.length > rows.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [rows.length, all.length]))}</div>`;
+  if (visible.length > kept.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [kept.length, visible.length]))}</div>`;
   return html;
 }
 
@@ -47291,17 +47432,31 @@ function costChartsHelpLink() {
   return ` <a href="${COST_CHARTS_DOC_HREF}" target="_blank" rel="noopener" class="docs-link cost-charts-help" title="${escHtml(tip)}" aria-label="${escHtml(t('cost_charts_help_label'))}" onclick="event.stopPropagation()" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>`;
 }
 
-function _ccCardHtml(view, card, data, metric) {
+// _ccCardControlsHtml is the compact selector row of one card: grouping,
+// period, metric and the Top-N series count. Every select writes the shared
+// state and repaints, so the rows of the cards never disagree.
+function _ccCardControlsHtml(view, st) {
+  const iid = suffix => 'costCharts' + view.charAt(0).toUpperCase() + view.slice(1) + suffix;
+  const opt = (v, cur, label) => `<option value="${escHtml(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${escHtml(String(label))}</option>`;
+  const topnCur = Number(st.topN) || 0;
+  return `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_group'))} <select id="${iid('Group')}" onchange="window.costChartsSetGroup(this.value)" style="font-size:12px;">${COST_CHARTS_GROUPS.map(g => opt(g, st.group, t(COST_CHARTS_GROUP_KEYS[g]))).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_window'))} <select id="${iid('Window')}" onchange="window.costChartsSetWindow(this.value)" style="font-size:12px;">${COST_CHARTS_WINDOWS.map(w => opt(w, st.window, w)).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_label_metric'))} <select id="${iid('Metric')}" onchange="window.costChartsSetMetric(this.value)" style="font-size:12px;">${COST_CHARTS_METRICS.map(m => opt(m, st.metric, t(COST_CHARTS_METRIC_KEYS[m]))).join('')}</select></label>`
+    + `<label style="display:inline-flex;align-items:center;gap:4px;">${escHtml(t('cost_charts_topn_label'))} <select id="${iid('Series')}" onchange="window.costChartsSetTopN(this.value)" style="font-size:12px;">${COST_CHARTS_TOPN_OPTIONS.map(o => opt(o === 0 ? 'all' : String(o), topnCur, o === 0 ? t('cost_charts_topn_all') : String(o))).join('')}</select></label>`;
+}
+
+function _ccCardHtml(view, card, data, st) {
   let body = '';
-  if (view === 'cost') body = _ccCostBody(data.cost.body, metric);
-  else if (view === 'tools') body = _ccToolsBody(data.tools.body);
-  else if (view === 'failures') body = _ccFailuresBody(data.failures.body);
-  else body = _ccReportBody(data);
+  if (view === 'cost') body = _ccCostBody(data.cost.body, st.metric, st);
+  else if (view === 'tools') body = _ccToolsBody(data.tools.body, st);
+  else if (view === 'failures') body = _ccFailuresBody(data.failures.body, st);
+  else body = _ccReportBody(data, st);
   const sep = ' · ';
   return `<div id="${COST_CHARTS_CARD_IDS[view]}" class="cost-charts-card prd-capacity-slot" data-view="${view}" data-state="${card.state}" style="margin:6px 0 0;">`
-    + `<div class="cap-title">${escHtml(_ccTitle(view))}${costChartsHelpLink()}</div>`
+    + `<div class="cap-title card-head">${escHtml(_ccTitle(view))}${costChartsHelpLink()}</div>`
     + `<div class="cost-charts-purpose" style="font-size:12px;color:var(--text2);">${escHtml(_ccPurpose(view))}</div>`
     + `<div class="cost-charts-status" style="font-size:12px;margin-top:2px;"><strong>${escHtml(t('cost_charts_label_state'))}:</strong> ${escHtml(_ccStateText(card.state))}${sep}<strong>${escHtml(t('cost_charts_label_reason'))}:</strong> ${escHtml(_ccResolve(card.reason))}${sep}<strong>${escHtml(t('cost_charts_label_next'))}:</strong> ${escHtml(_ccResolve(card.next))}</div>`
+    + `<div class="cost-charts-controls" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;margin-top:4px;">${_ccCardControlsHtml(view, st)}</div>`
     + body
     + `</div>`;
 }
@@ -47322,13 +47477,14 @@ function _ccControlsHtml(st, hidden) {
 // costChartsCardsHtml is the pure renderer for the whole area: the controls,
 // then each card that has data. data is null while the first load runs.
 window.costChartsCardsHtml = function(data, opts) {
-  const st = Object.assign({ group: 'project', window: '7d', metric: 'tokens' }, opts || {});
+  const st = Object.assign({ group: 'project', window: '7d', metric: 'tokens', topN: COST_CHARTS_TOPN_DEFAULT,
+    hidden: { cost: {}, tools: {}, failures: {}, report: {} } }, opts || {});
   if (!data) return `${_ccControlsHtml(st, 0)}<div class="cost-charts-loading" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_charts_loading'))}</div>`;
   const model = costChartsModel(data, st);
   let html = '';
   let hidden = 0;
   COST_CHARTS_VIEWS.forEach(v => {
-    if (model[v].state === 'shown') html += _ccCardHtml(v, model[v], data, st.metric);
+    if (model[v].state === 'shown') html += _ccCardHtml(v, model[v], data, st);
     else hidden++;
   });
   return _ccControlsHtml(st, hidden) + html;
@@ -47425,6 +47581,27 @@ window.costChartsSetMetric = function(m) {
     _costCharts.events = costChartsEventEntries(costChartsModel(_costCharts.data, _costCharts), _costCharts, new Date().toISOString());
     _costChartsPaint();
   }
+};
+// The Top-N choice only changes how many of the loaded series each card
+// draws ('all' is 0): the remainder folds into the Other line or row, no
+// new request.
+window.costChartsSetTopN = function(v) {
+  const topN = v === 'all' ? 0 : (Number(v) || 0);
+  if (COST_CHARTS_TOPN_OPTIONS.indexOf(topN) < 0 || topN === (_costCharts.topN || 0)) return;
+  _costCharts.topN = topN;
+  if (_costCharts.data) _costChartsPaint();
+};
+// Showing or hiding one series keeps it in the loaded data and named in the
+// legend (its tile is struck through) and drops it from this card's drawing
+// only: no new request.
+window.costChartsToggleSeries = function(view, key) {
+  if (COST_CHARTS_VIEWS.indexOf(view) < 0) return;
+  const k = String(key || '');
+  if (!k || k === COST_CHARTS_OTHER_KEY) return;
+  if (!_costCharts.hidden) _costCharts.hidden = { cost: {}, tools: {}, failures: {}, report: {} };
+  const h = _costCharts.hidden[view] || (_costCharts.hidden[view] = {});
+  h[k] = !h[k];
+  if (_costCharts.data) _costChartsPaint();
 };
 window._costChartsState = _costCharts;
 
