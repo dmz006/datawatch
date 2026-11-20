@@ -63,15 +63,37 @@ type ReviewResult struct {
 	// are omitted when no judge problem is recorded.
 	JudgeOutcome     string `json:"judge_outcome,omitempty"`
 	JudgeOutcomeText string `json:"judge_outcome_text,omitempty"`
+	// Judged says whether a judge actually judged the work: false for a
+	// timed_out (and pending) review, true for blocked and passed.
+	Judged bool `json:"judged"`
+	// Backends lists the backends the judge tried for a timed_out review, each
+	// with how its attempt ended (timed_out, no_slot or could_not_start).
+	Backends []ReviewBackend `json:"backends,omitempty"`
+}
+
+// ReviewBackend is one judge attempt behind a timed_out review.
+type ReviewBackend struct {
+	Backend string `json:"backend"`
+	Outcome string `json:"outcome"`
 }
 
 // withJudgeOutcome copies the judge outcome kind and its wording from the
 // PRD's rules review outcome onto r. Nothing is set when the kind is empty.
 func withJudgeOutcome(r ReviewResult, prd *PRD) ReviewResult {
-	if prd == nil || prd.RulesReviewOutcome == nil {
+	if prd == nil || (prd.RulesReviewOutcome == nil && r.State != ReviewStateTimedOut) {
+		return r
+	}
+	if prd.RulesReviewOutcome == nil {
+		r.JudgeOutcome = JudgeKindTimedOut
+		r.JudgeOutcomeText = judgeOutcomeWording(JudgeKindTimedOut)
 		return r
 	}
 	kind := prd.RulesReviewOutcome.JudgeOutcome
+	if r.State == ReviewStateTimedOut {
+		// The newest block is a judge-timeout hold: the work was not judged,
+		// whatever an older real block left on the stored outcome.
+		kind = JudgeKindTimedOut
+	}
 	if kind == "" {
 		return r
 	}
@@ -149,16 +171,18 @@ func reviewStateOf(prd *PRD) ReviewResult {
 			res.State = ReviewStateTimedOut
 			res.Cause = timeoutHoldCause(*latestBlock)
 			res.Action = timeoutHoldAction(prd, *latestBlock)
+			res.Backends = timeoutHoldAttempts(*latestBlock)
 			return res
 		}
 		res.State = ReviewStateBlocked
+		res.Judged = true
 		res.Cause = realBlockCause(*latestBlock)
 		res.Action = ReviewActionFix
 		return res
 	}
 
 	if latestPass != nil {
-		return ReviewResult{State: ReviewStatePassed, Attempts: reviewAttemptCount(*latestPass)}
+		return ReviewResult{State: ReviewStatePassed, Judged: true, Attempts: reviewAttemptCount(*latestPass)}
 	}
 
 	// No pass and no block: pending. The newest warning, when there is
@@ -235,9 +259,9 @@ func timeoutHoldLimit(v GuardrailVerdict) string {
 func timeoutHoldCause(v GuardrailVerdict) string {
 	names := timeoutHoldBackends(v)
 	if len(names) == 0 {
-		return "judge timed out on every backend it tried"
+		return "not judged: the judge timed out on every backend it tried"
 	}
-	cause := fmt.Sprintf("judge timed out on %d backend(s): %s", len(names), strings.Join(names, ", "))
+	cause := fmt.Sprintf("not judged: the judge timed out on %d backend(s): %s", len(names), strings.Join(names, ", "))
 	if limit := timeoutHoldLimit(v); limit != "" {
 		cause += ", limit " + limit
 	}
@@ -273,4 +297,21 @@ func realBlockCause(v GuardrailVerdict) string {
 		return "guardrail " + v.Guardrail + " returned " + v.Outcome
 	}
 	return fmt.Sprintf("guardrail %s returned %s: %s", v.Guardrail, v.Outcome, detail)
+}
+
+// timeoutHoldAttempts lists every backend the held judge tried with its attempt
+// outcome, from the structured attempt records.
+func timeoutHoldAttempts(v GuardrailVerdict) []ReviewBackend {
+	var out []ReviewBackend
+	for _, a := range v.JudgeAttempts {
+		if a.Backend == "" {
+			continue
+		}
+		oc := a.Outcome
+		if oc == "" {
+			oc = JudgeOutcomeTimedOut
+		}
+		out = append(out, ReviewBackend{Backend: a.Backend, Outcome: oc})
+	}
+	return out
 }

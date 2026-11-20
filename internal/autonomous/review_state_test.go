@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -55,12 +56,14 @@ func TestReviewStateOfTimeoutHold(t *testing.T) {
 	prd := &PRD{ID: "r1", Verdicts: []GuardrailVerdict{*reviewHold(reviewT2)}}
 	got := ReviewStateOf(prd)
 	want := ReviewResult{
-		State:    ReviewStateTimedOut,
-		Cause:    "judge timed out on 2 backend(s): claude-code, qwen, limit 30m0s",
-		Action:   ReviewActionRetry,
-		Attempts: 2,
+		State:        ReviewStateTimedOut,
+		Cause:        "not judged: the judge timed out on 2 backend(s): claude-code, qwen, limit 30m0s",
+		Action:       ReviewActionRetry,
+		Attempts:     2,
+		JudgeOutcome: JudgeKindTimedOut, JudgeOutcomeText: "judge timed out",
+		Backends: []ReviewBackend{{"claude-code", JudgeOutcomeTimedOut}, {"qwen", JudgeOutcomeTimedOut}},
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
@@ -128,9 +131,10 @@ func TestReviewStateOfRealBlockStaysBlocked(t *testing.T) {
 		State:    ReviewStateBlocked,
 		Cause:    "guardrail rules returned block: missing version bump",
 		Action:   ReviewActionFix,
+		Judged:   true,
 		Attempts: 0,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
@@ -145,10 +149,12 @@ func TestReviewStateOfMixedHistory(t *testing.T) {
 			name: "real block then a newer hold keeps the hold",
 			vs:   []GuardrailVerdict{*reviewBlock(reviewT0), *reviewHold(reviewT1)},
 			want: ReviewResult{
-				State:    ReviewStateTimedOut,
-				Cause:    "judge timed out on 2 backend(s): claude-code, qwen, limit 30m0s",
-				Action:   ReviewActionRetry,
-				Attempts: 2,
+				State:        ReviewStateTimedOut,
+				Cause:        "not judged: the judge timed out on 2 backend(s): claude-code, qwen, limit 30m0s",
+				Action:       ReviewActionRetry,
+				Attempts:     2,
+				JudgeOutcome: JudgeKindTimedOut, JudgeOutcomeText: "judge timed out",
+				Backends: []ReviewBackend{{"claude-code", JudgeOutcomeTimedOut}, {"qwen", JudgeOutcomeTimedOut}},
 			},
 		},
 		{
@@ -158,18 +164,19 @@ func TestReviewStateOfMixedHistory(t *testing.T) {
 				State:    ReviewStateBlocked,
 				Cause:    "guardrail rules returned block: missing version bump",
 				Action:   ReviewActionFix,
+				Judged:   true,
 				Attempts: 0,
 			},
 		},
 		{
 			name: "pass after an older block supersedes it",
 			vs:   []GuardrailVerdict{*reviewBlock(reviewT0), *reviewPass(reviewT1)},
-			want: ReviewResult{State: ReviewStatePassed, Attempts: 0},
+			want: ReviewResult{State: ReviewStatePassed, Judged: true, Attempts: 0},
 		},
 		{
 			name: "pass after an older hold supersedes the hold",
 			vs:   []GuardrailVerdict{*reviewHold(reviewT0), *reviewPass(reviewT1)},
-			want: ReviewResult{State: ReviewStatePassed, Attempts: 0},
+			want: ReviewResult{State: ReviewStatePassed, Judged: true, Attempts: 0},
 		},
 		{
 			name: "only a warning is pending with the warning as cause",
@@ -189,7 +196,7 @@ func TestReviewStateOfMixedHistory(t *testing.T) {
 	for _, tc := range table {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ReviewStateOf(&PRD{ID: "mixed", Verdicts: tc.vs})
-			if got != tc.want {
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
@@ -222,11 +229,11 @@ func TestReviewStateOfNoVerdictsAndNilPRD(t *testing.T) {
 		"no verdicts": {ID: "r9"},
 		"one level":   {ID: "r10", Story: []Story{{ID: "s1"}}},
 	} {
-		if got := ReviewStateOf(prd); got != (ReviewResult{State: ReviewStatePending}) {
+		if got := ReviewStateOf(prd); !reflect.DeepEqual(got, ReviewResult{State: ReviewStatePending}) {
 			t.Errorf("%s: got %+v, want a cause-free pending state", name, got)
 		}
 	}
-	if got := ReviewStateOf(nil); got != (ReviewResult{State: ReviewStatePending}) {
+	if got := ReviewStateOf(nil); !reflect.DeepEqual(got, ReviewResult{State: ReviewStatePending}) {
 		t.Fatalf("nil PRD: got %+v, want a cause-free pending state", got)
 	}
 }
