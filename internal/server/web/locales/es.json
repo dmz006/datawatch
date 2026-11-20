@@ -6051,5 +6051,20 @@
   "cost_charts_other": "Otro",
   "cost_charts_topn_label": "Series",
   "cost_charts_topn_all": "Todas",
-  "cost_charts_legend_toggle": "Mostrar u ocultar esta serie"
+  "cost_charts_legend_toggle": "Mostrar u ocultar esta serie",
+  "plans_browser_by_hand": "definido a mano",
+  "plans_browser_by_hand_hint": "Este estado se definió a mano, por eso el cálculo a partir de los autómatas del plan lo conserva.",
+  "plans_edit_status_label": "Estado",
+  "plans_edit_rename": "Renombrar",
+  "plans_edit_goal": "Editar objetivo",
+  "plans_edit_rename_label": "Nuevo título para este plan",
+  "plans_edit_goal_label": "Objetivo de este plan",
+  "plans_edit_save": "Guardar",
+  "plans_edit_saving": "Guardando…",
+  "plans_edit_cancel": "Cancelar",
+  "plans_edit_counter": "%1$s de %2$s caracteres",
+  "plans_edit_title_required": "Un plan necesita un título.",
+  "plans_edit_title_one_line": "El título de un plan es de una sola línea.",
+  "plans_edit_title_too_long": "El título de un plan tiene como máximo %1$s caracteres.",
+  "plans_edit_goal_too_long": "Un objetivo tiene como máximo %1$s caracteres."
 }
