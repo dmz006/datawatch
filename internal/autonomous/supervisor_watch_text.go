@@ -85,6 +85,8 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 		return fmt.Sprintf("the verify script of Automaton %s is not executable: run its check manually", subject), nil
 	case SupervisorWatchMainCheckoutDirty:
 		return fmt.Sprintf("the main checkout %s has uncommitted tracked files: any Automaton ship will abort until they are committed", subject), nil
+	case SupervisorWatchMainCheckoutAutomaton:
+		return fmt.Sprintf("Automaton %s is open while its project directory is the main checkout: recreate it without a project directory so it runs isolated in its own worktree", subject), nil
 	case SupervisorWatchCIRed:
 		return fmt.Sprintf("CI run %s is red: triage the failure before shipping more Automata", subject), nil
 	case SupervisorWatchCISTuck:
