@@ -1,7 +1,6 @@
 package planrecords
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -14,10 +13,25 @@ const (
 	// TitleFromLinked means the row had no title, so the plan takes the title
 	// of the Automaton or Automation the row names.
 	TitleFromLinked = "linked"
-	// TitleFellBack means the row held no real title, so the plan is named
-	// after the row's key and marked untitled.
+	// TitleFellBack means no name could be derived from the row. The row is
+	// listed under NeedsReviewLabel and no plan is created for it.
 	TitleFellBack = "fallback"
 )
+
+// NeedsReviewLabel is the exact label under which a row with no derivable
+// name is listed in the preview. Such a row is never created on apply.
+const NeedsReviewLabel = "needs review"
+
+// clauseEndRe ends the first clause of a description.
+var clauseEndRe = regexp.MustCompile(`[,;:]\s|\s[-–—]\s|[.!?](?:\s|$)`)
+
+// firstClause returns the text of s up to its first clause break.
+func firstClause(s string) string {
+	if loc := clauseEndRe.FindStringIndex(s); loc != nil {
+		s = s[:loc[0]]
+	}
+	return strings.TrimSpace(s)
+}
 
 // maxMigratedTitleRunes bounds a migrated plan's whole title, "Plan: " included.
 const maxMigratedTitleRunes = 100
@@ -76,32 +90,48 @@ func realRowTitle(cell string) string {
 // rowTitleCandidates lists the cells of a row that may hold its title: the
 // stored title first, then the title-like columns kept in the body.
 func rowTitleCandidates(r Record) []string {
+	out, _ := rowTitleCells(r)
+	return out
+}
+
+// rowTitleCells is rowTitleCandidates plus, for each cell, whether it is a
+// description-like column that gives only its first clause.
+func rowTitleCells(r Record) ([]string, []bool) {
 	out := []string{r.Title}
+	clause := []bool{false}
 	for _, ln := range strings.Split(r.Body, "\n") {
 		name, val, ok := strings.Cut(ln, ":")
 		if !ok || !bodyTitleFields[strings.ToLower(strings.TrimSpace(name))] {
 			continue
 		}
 		out = append(out, strings.TrimSpace(val))
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "description", "summary", "goal":
+			clause = append(clause, true)
+		default:
+			clause = append(clause, false)
+		}
 	}
-	return out
+	return out, clause
 }
 
 // migratedRowTitle names the plan made for a registry row. It takes the real
 // title from the row (see realRowTitle), one line, at most 100 characters in
-// all, and says which way it was found. A row with no real title is named
-// from its key: "Plan: (untitled row 15)".
+// all, and says which way it was found. The title column comes first, else the
+// first clause of the description; never the status column. A row with no
+// derivable name returns TitleFellBack and an empty title.
 func migratedRowTitle(r Record) (title, source string) {
-	for _, c := range rowTitleCandidates(r) {
-		if t := realRowTitle(c); t != "" {
+	cells, clause := rowTitleCells(r)
+	for i, c := range cells {
+		t := realRowTitle(c)
+		if t != "" && clause[i] {
+			t = firstClause(t)
+		}
+		if t != "" {
 			return clipRunes(migratedTitlePrefix+t, maxMigratedTitleRunes), TitleDerived
 		}
 	}
-	key := r.ID
-	if r.LegacyNumber > 0 {
-		key = fmt.Sprintf("%d", r.LegacyNumber)
-	}
-	return fmt.Sprintf("%s(untitled row %s)", migratedTitlePrefix, key), TitleFellBack
+	return "", TitleFellBack
 }
 
 // linkedPlanTitle makes a plan title from the title of an Automaton or
