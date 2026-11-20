@@ -38,6 +38,7 @@ func (m *Manager) upsertLedger(sess *Session) {
 		SessionID:   snap.FullID,
 		AutomatonID: snap.AutomatonID,
 		TaskID:      snap.TaskID,
+		Project:     snap.SpendProject,
 		Role:        role,
 		Backend:     snap.BackendFamily,
 		StartedAt:   snap.CreatedAt,

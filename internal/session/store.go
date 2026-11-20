@@ -376,8 +376,10 @@ type Session struct {
 	// ledger. TaskID (above) is the owning task.
 	AutomatonID string `json:"automaton_id,omitempty"`
 	SpendRole   string `json:"spend_role,omitempty"`
-	TaskID      string `json:"task_id,omitempty"`
-	StoryID     string `json:"story_id,omitempty"`
+	// SpendProject is the project a supervisor session belongs to.
+	SpendProject string `json:"spend_project,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	StoryID      string `json:"story_id,omitempty"`
 	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
 	// so the completion commit can use it without parsing Name.
 	TaskTitle string `json:"task_title,omitempty"`
