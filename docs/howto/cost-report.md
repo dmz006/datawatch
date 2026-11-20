@@ -363,7 +363,7 @@ tokens. Work whose owner has *not shipped yet* lands under the **`unreleased`**
   row instead of being dropped, and a group that spans different releases
 carries the `mixed` key with `units` blank.
 - **`units` is on the row.** Each `release` row carries `units`, the count of
-  shipped units (PRDs / Automations) that release contains, from the daemon's
+  shipped units (Automata / Automations) that release contains, from the daemon's
   shipped-unit state — that is the roll-up: sessions and tokens *per released
   unit* are yours to divide out, and the `unreleased` row tells you how far
   behind the ships the work is.
