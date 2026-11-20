@@ -9,6 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
+const { pickerRows } = require('./testutil_fake_dom');
 
 const APP_JS = path.join(__dirname, 'app.js');
 const PEER = 'pi-node';
@@ -75,13 +76,12 @@ function loadApp() {
   return sandbox;
 }
 
-// Renders the header dropdown as the app would (the same _serverPickerBar
-// markup _initServerDropdown/renderServerDropdown write to #serverDropdown
-// in index.html) -- the test harness has no header DOM, so inspect the
-// markup directly. Returns the peer's <option> tag.
+// Opens the picker modal as the app would (the rows _loadServerPickerModalList
+// paints) -- the test harness has no real DOM, so inspect the markup directly.
+// Returns the peer row's opening <button> tag.
 function peerOptionMarkup(sandbox) {
-  const all = sandbox._serverPickerBar({});
-  const re = new RegExp(`<option value="${PEER}"[^>]*>`, 'g');
+  const all = pickerRows(sandbox).html;
+  const re = new RegExp(`<button[^>]*data-server-name="${PEER}"[^>]*>`, 'g');
   return all.match(re) || [];
 }
 
@@ -95,11 +95,11 @@ test('selectServer re-renders the About view with the peer selected and proxies 
   assert.ok(sandbox.__written.some(h => typeof h === 'string' && h.includes('settings-section')),
     'About view (Settings render) must be re-rendered after the switch');
 
-  // The peer's dropdown option carries the selection.
+  // The peer's picker row carries the selection.
   const tags = peerOptionMarkup(sandbox);
-  assert.ok(tags.length > 0, `peer option for ${PEER} must be rendered`);
-  assert.ok(tags[0].includes('selected'), `peer option must be marked selected: ${tags[0]}`);
-  assert.ok(tags[0].includes('aria-current="true"'), 'active peer option must be aria-current');
+  assert.ok(tags.length > 0, `peer row for ${PEER} must be rendered`);
+  assert.ok(tags[0].includes('is-active'), `peer row must be marked active: ${tags[0]}`);
+  assert.ok(tags[0].includes('aria-current="true"'), 'active peer row must be aria-current');
 
   // The About version read goes through the host-aware path for the peer.
   assert.equal(vm.runInContext('state.activeServer', sandbox), PEER);

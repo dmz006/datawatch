@@ -1,12 +1,12 @@
 ---
 docs:
   index: true
-  topics: [autonomous, automata, automation, events, event log, supervisor watch, lane fill, infrastructure retries, checks, cleanup, safe to delete, repo ci watch, error, next action, quiet]
+  topics: [autonomous, automata, automation, events, event log, supervisor watch, lane fill, infrastructure retries, checks, cleanup, safe to delete, repo ci watch, error, next action, quiet, header scope, project filter, plan filter]
 ---
 
 # Automata Events
 
-The **Events** tab is the third sub-tab of the Automata view (after
+The **Events** tab is a sub-tab of the Automata view (after Projects,
 Automation and Automata). It is one newest-first stream of what the daemon
 watches and does for you: supervisor watch findings, lane fill decisions,
 infrastructure retries, Automata check findings, the safe-to-delete and
@@ -72,7 +72,9 @@ directly.
 **In the PWA**
 
 - **Kind** chips toggle one or more event kinds on and off: no chip picked means every kind shows, several picked means an event matches *any* of the picked kinds, and a second tap on a picked chip removes exactly that one. They are multi-select, like the state chip sets on the Projects pages.
-- **Project** narrows the list to one project; *All projects* clears it.
+- **Project** narrows the list to one project; *All projects* clears it. While
+  a header scope is active, the scope's project is used instead (see
+  [the header scope](#the-header-scope-and-the-events-stream), below).
 - **Search events** matches text in the summary, detail, project and the
   Automaton/Automation names, case-insensitively.
 - **Load more** fetches the next page of older events.
@@ -83,12 +85,38 @@ The Automata sub-tab bar, including **Events**, stays on one line and scrolls
 sideways instead of wrapping; the active tab scrolls into view. See
 [Automation tab](automation-tab.md) for the phone layout.
 
-**Events and the Inbox scope.** The Events stream is not scoped by the
-project picked on the Projects sub-tab: it lists every project until you use
-the **Project** filter above. The **Inbox** badge and its cards follow the
-selected project instead, and the Overview counts everything waiting on you.
-That scope is a display rule of the web app only; the REST, CLI and comm reads
-below always return every event.
+### The header scope and the Events stream
+
+The Events sub-tab follows the **scope** you chose with the funnel button in the
+header (see [The header scope button](projects-tab.md#the-header-scope-button)).
+It is a display rule of the web app only; the REST, CLI and comm reads below
+always return every event.
+
+| Scope | What the Events sub-tab shows |
+|---|---|
+| **All** | Every project's events, narrowed only by the filters above. The **Project** filter works as before |
+| A project | Only that project's events. The web app sends the project as the `project=` filter, so the count, the paging and **Load more** all follow that project. The **Project** filter shows the scope's project selected; while the scope is on, the scope wins over the filter, so clear the scope to look at another project |
+| A project and a plan | The project's events, then only the rows that name the plan's Automation or one of its Automata. The daemon has no plan filter, so the page hides the other rows itself |
+
+While a scope is active, the usual **Filtered to \<scope\>** banner with a
+**Clear** button sits above the stream. **Clear**, or the **All** row of the
+scope window, brings every project back.
+
+**Paging note for a plan scope.** A plan hides most of a full page, so when the
+visible rows come back short of a full page and older events remain, the page
+reads the next pages by itself and merges them in, up to ten extra pages, so
+the plan's rows are not stranded behind **Load more**. If the plan has few
+events, the page can show fewer than a full page even though **Load more**
+remains; press it to read further back. A project scope does not need this,
+because the daemon already pages only that project's rows.
+
+The cost chart entries that the Events stream shows at the top are not tied to
+a project, so they are left out while a project or plan scope (or the Project
+filter) is on.
+
+**The Inbox follows the scope too.** The **Inbox** badge and its cards count only
+the items of the scoped project (and plan); under **All** they count everything
+waiting on you. See [What the Inbox counts](automation-tab.md#what-the-inbox-counts).
 
 **On every other surface**
 
