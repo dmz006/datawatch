@@ -306,6 +306,14 @@ type capacityResponse struct {
 type capacityTasksJSON struct {
 	Waiting []autonomous.TaskWaitView `json:"waiting"`
 	Running []autonomous.TaskHoldView `json:"running"`
+	// Verifying lists tasks in verification; always an array.
+	Verifying []autonomous.TaskVerifyView `json:"verifying"`
+}
+
+// taskVerifyingProvider is the optional autonomous-manager capability that
+// supplies the tasks in verification.
+type taskVerifyingProvider interface {
+	TaskVerifyingViews() []autonomous.TaskVerifyView
 }
 
 // capacityLeaseJSON is one lease in the capacity response: the raw id
@@ -391,12 +399,25 @@ func (s *Server) holderNames() holderNameProvider {
 // nil, when the autonomous subsystem is not wired or has none). With prdID
 // set, only that PRD's tasks.
 func (s *Server) taskVisibility(prdID string) capacityTasksJSON {
-	out := capacityTasksJSON{Waiting: []autonomous.TaskWaitView{}, Running: []autonomous.TaskHoldView{}}
+	out := capacityTasksJSON{Waiting: []autonomous.TaskWaitView{}, Running: []autonomous.TaskHoldView{}, Verifying: []autonomous.TaskVerifyView{}}
+	res := s.holderNames()
+	if vp, ok := s.autonomousMgr.(taskVerifyingProvider); ok {
+		for _, v := range vp.TaskVerifyingViews() {
+			if prdID != "" && v.PRDID != prdID {
+				continue
+			}
+			if res != nil && v.Readable == "" {
+				n := res.ResolveHolder(v.TaskID)
+				v.Readable = n.Readable
+				v.ShortID = n.ShortID
+			}
+			out.Verifying = append(out.Verifying, v)
+		}
+	}
 	p, ok := s.autonomousMgr.(taskVisibilityProvider)
 	if !ok {
 		return out
 	}
-	res := s.holderNames()
 	waiting, running := p.TaskVisibility()
 	for _, w := range waiting {
 		if prdID != "" && w.PRDID != prdID {

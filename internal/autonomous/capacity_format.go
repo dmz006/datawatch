@@ -87,8 +87,9 @@ type capacityBody struct {
 	Backoff []capacityBackoffView `json:"backoff"`
 	Budgets []BudgetStatus        `json:"budgets"`
 	Tasks   struct {
-		Waiting []TaskWaitView `json:"waiting"`
-		Running []TaskHoldView `json:"running"`
+		Waiting   []TaskWaitView   `json:"waiting"`
+		Running   []TaskHoldView   `json:"running"`
+		Verifying []TaskVerifyView `json:"verifying"`
 	} `json:"tasks"`
 	Verifier *VerifierStatsView `json:"verifier"`
 }
@@ -158,6 +159,17 @@ func FormatCapacityText(body []byte) (string, error) {
 			fmt.Fprintf(&b, " - running %s", waitedFor(now, h.Since))
 			if h.Note != "" {
 				fmt.Fprintf(&b, " (%s)", h.Note)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if len(c.Tasks.Verifying) > 0 {
+		fmt.Fprintf(&b, "Verifying (%d):\n", len(c.Tasks.Verifying))
+		for _, v := range c.Tasks.Verifying {
+			fmt.Fprintf(&b, "  %s: %s", taskLine(v.Readable, v.ShortID, v.TaskTitle, v.TaskID, firstNonEmpty(v.PRDTitle, v.PRDID)), v.State)
+			if v.WaitReason != "" {
+				fmt.Fprintf(&b, " - %s", v.WaitReason)
 			}
 			b.WriteString("\n")
 		}

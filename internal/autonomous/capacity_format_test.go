@@ -259,6 +259,50 @@ func TestJudgeCapacityText(t *testing.T) {
 	}
 }
 
+// A body with tasks in verification prints a Verifying section: each task by
+// its readable name (short id as the secondary reference), its state, and the
+// wait reason for a task queued for a verifier slot. A body with no
+// verifying tasks (older daemon) prints no section at all.
+func TestCapacityText_VerifyingSection(t *testing.T) {
+	CapacityTextClock = func() time.Time { return time.Date(2026, 10, 22, 17, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { CapacityTextClock = time.Now })
+
+	out, err := FormatCapacityText([]byte(`{
+"pools":[],"leases":[],"waiting":[],
+"tasks":{
+"waiting":[],"running":[],
+"verifying":[
+{"task_id":"taaaaaaaaaaaaaa","prd_id":"pa","prd_title":"Ship billing","task_title":"Add exports",
+ "readable":"Ship billing / Add exports (taaaaaaa)","short_id":"taaaaaaa",
+ "node":"b","since":"2026-10-22T16:55:00Z","state":"verifying"},
+{"task_id":"tbccccccccccccc","prd_id":"pb","prd_title":"Plan be","task_title":"Wire the retry path",
+ "readable":"Plan be / Wire the retry path (tbcccccc)","short_id":"tbcccccc",
+ "since":"2026-10-22T16:50:00Z","state":"waiting_for_verifier","wait_reason":"pool llm:ollama full"}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Verifying (2):",
+		// Readable name, then the state: the running verifier's line.
+		"Ship billing / Add exports (taaaaaaa): verifying",
+		// Queued line: state plus the wait reason.
+		"Plan be / Wire the retry path (tbcccccc): waiting_for_verifier - pool llm:ollama full",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// A body with no verifying key (older daemon) prints no section and no
+	// state wording at all.
+	out, err = FormatCapacityText([]byte(`{"pools":[],"tasks":{"waiting":[],"running":[]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "Verifying") {
+		t.Fatalf("older body must not print a Verifying section:\n%s", out)
+	}
+}
+
 // A body whose adoption hold has ended carries the node-engine reason in the
 // ledger waiter and the queued task alike; the text prints it and nothing of
 // the stale adoption wording.
