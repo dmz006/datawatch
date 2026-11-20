@@ -113,7 +113,7 @@ test('the sub-tab row scrolls inside its own box and does not widen its parent',
 test('the selector and toolbar row wrap and shrink; the checkbox label may wrap on a phone', () => {
   const sb = load();
   const html = sb._projectsPickerHTML([FULL], 'acme', '');
-  assert.match(html, /id="projectsView" class="projects-view"/);
+  assert.match(html, /id="projectsView" class="projects-view phone-page phone-page-inset"/);
   assert.match(html, /class="projects-toolbar"/);
   assert.match(html, /id="projectsPicker" class="projects-picker"/);
   assert.match(html, /<label for="projectsShowEmpty" class="projects-show-empty"/);
