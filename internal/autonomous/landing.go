@@ -258,6 +258,96 @@ func (m *Manager) RunLandingMigrationOnce(ctx context.Context, opts LandingMigra
 	return n, err
 }
 
+// landingAncestorActor is the distinct actor named on a landing record that
+// the ancestor check flips from pending to landed.
+const landingAncestorActor = "landing_ancestor"
+
+// CheckLandingAncestor re-checks one Automaton whose landing record is still
+// pending and which has a branch: it resolves the default branch of the base
+// repository (m.archivedBaseRepo()) with defaultBranchForRepo, then asks git
+// (through m.archivedUnmergedGitRunner(), so tests inject a fake) whether the
+// branch is an ancestor of the default branch (merge-base --is-ancestor). An
+// exit success means the branch has landed on the default branch; any other
+// answer, a missing branch, an empty base repository or a git error means
+// not landed, and the record is left pending, so an unknown state never
+// loses a branch. When it has landed, it resolves the merge commit - the
+// first merge commit on the default branch that contains the branch tip
+// (rev-list --ancestry-path --merges --reverse) for a merge-commit landing,
+// the branch tip itself for a fast-forward - records it with
+// markLandingLandedLocked under the landingAncestorActor name and persists
+// the PRD. It reports whether the record now reads landed.
+func (m *Manager) CheckLandingAncestor(ctx context.Context, id string) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	repo := strings.TrimSpace(m.archivedBaseRepo())
+	if repo == "" {
+		return false
+	}
+	p, ok := m.store.GetPRD(id)
+	if !ok {
+		return false
+	}
+	var branch string
+	m.readLocked(func() { branch = landingPendingBranch(p) })
+	if branch == "" {
+		return false // no branch, or the landing is not pending
+	}
+	git := m.archivedUnmergedGitRunner()
+	base, err := defaultBranchForRepo(ctx, git, repo)
+	if err != nil {
+		return false // the default branch is unknown: never guess
+	}
+	// merge-base --is-ancestor exits 0 only when branch is on the ancestry
+	// path of base: the branch has landed. Anything else (not an ancestor,
+	// missing ref, git failure) is not landed.
+	if _, err := git.Run(ctx, repo, "merge-base", "--is-ancestor", branch, base); err != nil {
+		return false
+	}
+	tipOut, err := git.Run(ctx, repo, "rev-parse", "refs/heads/"+branch)
+	if err != nil {
+		return false
+	}
+	tip := strings.TrimSpace(tipOut)
+	if tip == "" {
+		return false
+	}
+	commit := ""
+	if mb, err := git.Run(ctx, repo, "merge-base", branch, base); err == nil && strings.TrimSpace(mb) == tip {
+		commit = tip // fast-forward: the tip is on the default branch itself
+	}
+	if commit == "" {
+		out, err := git.Run(ctx, repo, "rev-list", "--ancestry-path", "--merges", "--reverse", tip+".."+base)
+		if err != nil {
+			return false
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				commit = line // first merge on the default branch containing the tip
+				break
+			}
+		}
+		if commit == "" {
+			return false
+		}
+	}
+	now := time.Now()
+	changed := false
+	m.store.WithLock(func() {
+		changed = markLandingLandedLocked(p, commit, landingAncestorActor, now)
+		if changed {
+			p.UpdatedAt = now
+		}
+	})
+	if !changed {
+		return true // the record already reads landed
+	}
+	if err := m.store.SavePRD(p); err != nil {
+		return false
+	}
+	return true
+}
+
 // StartLandingMigration runs RunLandingMigrationOnce in a goroutine at daemon
 // start, so the read-only git checks never block or fail startup.
 func (m *Manager) StartLandingMigration() {
