@@ -290,3 +290,22 @@ func TestMergeSumsCostAcrossAutomatons(t *testing.T) {
 		t.Fatalf("estimate/notes/ids wrong: %+v", m.Cost)
 	}
 }
+
+func TestMergeBaseSurvivesSaveLoadAndMerge(t *testing.T) {
+	dir := t.TempDir()
+	rec := &ChangeRecord{TaskID: "t1", AutomatonID: "a", BaseRef: "abc1234567", BaseHow: "merge_base"}
+	if err := Save(dir, "t1", rec); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir, "t1")
+	if err != nil || got.BaseRef != "abc1234567" || got.BaseHow != "merge_base" {
+		t.Fatalf("load: %+v %v", got, err)
+	}
+	m := Merge(&ChangeRecord{}, got, &ChangeRecord{BaseRef: "later", BaseHow: "task_start"})
+	if m.BaseRef != "abc1234567" || m.BaseHow != "merge_base" {
+		t.Errorf("merge: %+v", m)
+	}
+	if e := Merge(&ChangeRecord{}); e.BaseRef != "" {
+		t.Errorf("empty merge carries base: %+v", e)
+	}
+}

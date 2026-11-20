@@ -157,6 +157,10 @@ func (m *Manager) buildAndSaveRecord(prd *PRD, t *Task) error {
 	if dir == "" || base == "" {
 		return fmt.Errorf("no base ref or project dir recorded")
 	}
+	how := "task_start"
+	if mb, err := m.mergeBaseWithBaseBranch(context.Background(), prd, dir, m.baseCommitRunner()); err == nil && mb != "" {
+		base, how = mb, "merge_base"
+	}
 	var src changerecord.DiffSource
 	if mk != nil {
 		src = mk(dir, base)
@@ -169,6 +173,7 @@ func (m *Manager) buildAndSaveRecord(prd *PRD, t *Task) error {
 	}
 	rec.TaskID = t.ID
 	rec.AutomatonID = prd.ID
+	rec.BaseRef, rec.BaseHow = base, how
 	rec.Timestamp = m.genNow()
 	if err := changerecord.Save(m.dataDir, t.ID, rec); err != nil {
 		return err

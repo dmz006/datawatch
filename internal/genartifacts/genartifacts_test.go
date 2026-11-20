@@ -272,3 +272,22 @@ func TestGateReportCostSection(t *testing.T) {
 		t.Errorf("no estimate expected:\n%s", got)
 	}
 }
+
+func TestMergeBaseLineInDrafts(t *testing.T) {
+	o := Options{Root: t.TempDir()}
+	rec := fullRecord()
+	rec.BaseRef = "0123456789abcdef"
+	for _, k := range []Kind{ChangelogDraft, ParityDraft, TrackerRows} {
+		got, _, err := Render(k, rec, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, "Base: merge base with main (012345678)") {
+			t.Errorf("%s missing base line:\n%s", k, got)
+		}
+		plain, _, _ := Render(k, fullRecord(), o)
+		if strings.Contains(plain, "merge base with main") {
+			t.Errorf("%s prints a base for a record without one", k)
+		}
+	}
+}
