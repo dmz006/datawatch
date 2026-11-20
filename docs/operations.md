@@ -3234,6 +3234,22 @@ See [`howto/alerts-and-notifications.md`](howto/alerts-and-notifications.md#mess
 - The parity-status row for this change marks Android and iPhone as not
   built; update it once the companion-app parity issue lands.
 
+### Phone page layout (all views)
+
+At phone width (a viewport of 600 px or less, or a touch screen) every
+top-level PWA page shares the Sessions list's geometry: one 12 px side
+gutter, full-width cards (12 px 14 px padding, 8 px gap) and no sideways
+page scroll. The Dashboard stat bar wraps with each counter kept whole and
+the burn-rate summary on its own line, and the filter and control rows
+wrap instead of overflowing. The values are the CSS custom properties
+`--phone-gutter`, `--phone-card-padding` and `--phone-gap` in
+`internal/server/web/style.css`.
+
+There is no config, API or migration and desktop layout is unchanged.
+Because the PWA is embedded in the daemon binary, rebuild and restart the
+daemon and hard-refresh the PWA tab to serve it. Operator how-to:
+[`howto/navigation-mobile-fit.md`](howto/navigation-mobile-fit.md#page-layout-at-phone-width).
+
 ### Alerts tab (help link, state row, refresh)
 
 The PWA's Alerts tab was tidied for a narrow phone viewport (operator
@@ -8949,3 +8965,13 @@ On a phone (600 px or less) the **Automata → Projects** page must not scroll s
 - **Test daemons.** `go test` runs with `TMUX` and `TMUX_TMPDIR` removed; the runner starts no daemon of its own.
 - **Tests.** `tests/test-pre-tag.sh` runs in `make test`.
 
+
+## Phone layout merge review
+
+Review this before relying on the web app on a phone. The change is layout only: no setting, REST, MCP, CLI or comm form, and desktop layout is unchanged. Android and iPhone are not covered; track parity in datawatch-app.
+
+- **Every page shares one phone layout.** At 600 px or less, or on a touch screen, Sessions, Automata (every sub-tab, an Automaton's page and the form), Projects, Alerts, Observer, Dashboard and Settings use the same side gutter, card width, card padding and gap, and the same page width. No page may scroll sideways; only a tab strip or a wide box (such as the Gantt chart) scrolls inside itself. The three spacing values are `--phone-gutter`, `--phone-card-padding` and `--phone-gap` in `style.css`. See [howto/navigation-mobile-fit.md](howto/navigation-mobile-fit.md#page-layout-at-phone-width).
+- **Merged late, after main moved on.** The phone layout branch was merged after main had taken several other Automaton merges, so it was brought up to date with main and the result re-checked, and its test was then updated so it fails if the change is lost (`internal/server/web/app-phone-layout-consistency.test.js`, plus the Projects phone overflow test).
+- **Conflicts resolved in the merge.** Six files conflicted and were resolved by keeping both sides: `CHANGELOG.md`, `docs/datawatch-definitions.md`, `docs/howto/README.md`, `docs/operations.md`, `internal/server/web/app.js` and `internal/server/web/style.css`. Read these once more: the shared `phone-page` class is still on every page root in `app.js`, the phone rules in `style.css` are present once and not doubled, and the other sides' entries in the four text files are all still there.
+- **Page checks on a phone.** Hard refresh first so the browser loads the current `style.css` and `app.js`. At 360, 390 and 412 px check each page: Sessions, each Automata sub-tab (Projects, Automation, Automata, Events, Templates), Alerts, Observer, Dashboard and Settings. On each, confirm the same side margins as Sessions, full-width cards, no sideways page scroll, and a tab strip that scrolls on its own line. On the Dashboard confirm the counters wrap with each value whole, the burn-rate line sits on its own line and the cards fill one column. Then compare against desktop width and confirm it looks as before.
+- **Docs re-read after the merge.** The navigation, dashboard, Sessions tiles and grouping, how-to index and definitions pages read correctly; the Dashboard phone section was brought in line with the shared layout.
