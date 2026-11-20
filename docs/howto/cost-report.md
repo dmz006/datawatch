@@ -490,7 +490,7 @@ page.
 |---|---|---|
 | **Cost over time** | A line per group: tokens, or money | Money is one chart per billing unit. Each axis is labelled with its unit and billing mode, for example dollars on an API-metered backend and points on a bundled plan, so units are never drawn together or added. When no rate or monthly price is set, or USD estimates are off, tokens are drawn and the card says so |
 | **Tool usage** | A line per group: tool calls | Counts only, never tool names |
-| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
+| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group. An attempt with no recorded category is drawn as `uncategorized` | Retries count each task once and restart when a task is reset. Categories are recorded when an attempt is recorded and filled in for older attempts at each daemon start, so `uncategorized` should only be left for attempts with no reason, summary or verifier issue; see [Failure categories](failed-attempt-cost.md#failure-categories) |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
 Each chart draws the chosen number of series — the groups with the largest
@@ -510,6 +510,41 @@ table are drawn.
 A card whose data is empty, or whose view the daemon cannot supply, is not
 drawn. Its reason and next action appear as an entry at the top of the **Events**
 tab instead, so a missing chart is always explained.
+
+### Failure categories on the failures card
+
+A category is derived when the attempt is recorded, from the end reason and
+the failure text (the summary and the verifier's issues). The first rule that
+matches wins:
+
+| Order | Attempt as recorded | Category |
+|---|---|---|
+| 1 | Already has a category (the verifier or executor named it, for example `content`, `scope`, `security`, `judging` or `invalid-response`) | Kept as it is |
+| 2 | No end reason, no summary and no verifier issue | Blank, drawn as `uncategorized` |
+| 3 | End reason `cancelled_by_operator` | `none` |
+| 4 | Summary or verifier text contains `merge refused` or `commit failed` | `policy` |
+| 5 | End reason `verifier_failed` | `code_or_test` |
+| 6 | End reason `stalled` | `hung` |
+| 7 | End reason `session_died`, `daemon_restart`, `launch_refused` or `adopted_then_failed` | `infra` |
+| 8 | End reason `executor_error` with text containing `timeout`, `timed out` or `no output` | `infra` |
+| 9 | Any other attempt with a summary or verifier issue | `code_or_test` |
+| 10 | Anything else (for example a completed attempt with no text) | `none` |
+
+Rule 4 is checked before the end reason, so a refused merge is `policy` even
+when the end reason is `verifier_failed`.
+
+Stored attempts with a blank category are filled in by one backfill pass at
+each daemon start, in the background, never blocking startup. It is
+idempotent: an attempt that already has a category is not touched, so a rerun
+changes nothing. An attempt that has no end reason, no summary and no
+verifier issue stays blank and is drawn as `uncategorized` — that is now
+*all* that an `uncategorized` attempt means: there was no reason to derive a
+category from. `GET /api/cost/failures` counts those as
+`uncategorized_attempts`, so for attempts recorded from now on that number
+should be 0 or near it, and the backfill log line
+(`attempt_category_backfill: report {...}`) is the place to read what a
+daemon-start pass left behind. The full treatment, with how to read the
+attempt record, is in [Failure categories](failed-attempt-cost.md#failure-categories).
 
 ## All access methods
 

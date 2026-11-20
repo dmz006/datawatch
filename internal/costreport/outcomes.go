@@ -319,6 +319,9 @@ type Failures struct {
 	TotalAttempts int `json:"total_attempts"`
 	TotalTasks    int `json:"total_tasks"`
 	TotalRetries  int `json:"total_retries"`
+	// UncategorizedAttempts counts in-window attempts whose category was blank
+	// (read as UncategorizedFailure), so the gap shows beside TotalAttempts.
+	UncategorizedAttempts int `json:"uncategorized_attempts"`
 	// UndatedAttempts counts attempts that recorded no time, so they are in
 	// no week and in no total.
 	UndatedAttempts int `json:"undated_attempts"`
@@ -425,6 +428,7 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 	allCats := map[string]int{}
 	allTasks := map[string]int{}
 	undated := 0
+	uncategorized := 0
 	for _, r := range records {
 		if r.At.IsZero() {
 			undated++
@@ -437,6 +441,7 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 		cat := strings.TrimSpace(r.Category)
 		if cat == "" {
 			cat = UncategorizedFailure
+			uncategorized++
 		}
 		key, label := failureKey(req.GroupBy, r)
 		a := accs[key]
@@ -514,17 +519,18 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 		totalRetries += rt
 	}
 	return &Failures{
-		GroupBy:         req.GroupBy,
-		Window:          req.Window.String(),
-		Since:           since,
-		Until:           until,
-		Weeks:           weeks,
-		Groups:          groups,
-		Categories:      sortCategoryCounts(allCats),
-		TotalAttempts:   total,
-		TotalTasks:      len(allTasks),
-		TotalRetries:    totalRetries,
-		UndatedAttempts: undated,
-		RetryNote:       RetryNote,
+		GroupBy:               req.GroupBy,
+		Window:                req.Window.String(),
+		Since:                 since,
+		Until:                 until,
+		Weeks:                 weeks,
+		Groups:                groups,
+		Categories:            sortCategoryCounts(allCats),
+		TotalAttempts:         total,
+		TotalTasks:            len(allTasks),
+		TotalRetries:          totalRetries,
+		UncategorizedAttempts: uncategorized,
+		UndatedAttempts:       undated,
+		RetryNote:             RetryNote,
 	}, nil
 }
