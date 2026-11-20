@@ -33,9 +33,19 @@ var generatedLockFiles = []string{
 // merge base to the branch tip, so uncommitted worktree edits are not seen.
 // Binary files count 0.
 func JudgeDiffLines(ctx context.Context, prd *PRD, projectDir string) (int, error) {
+	out, err := judgeNumstat(ctx, prd, projectDir)
+	if err != nil {
+		return 0, err
+	}
+	return sumNumstat(out)
+}
+
+// judgeNumstat returns `git diff --numstat` of the Automaton's branch against
+// its merge base, with generated lock files left out.
+func judgeNumstat(ctx context.Context, prd *PRD, projectDir string) (string, error) {
 	branch := strings.TrimSpace(prd.Git.Branch)
 	if branch == "" {
-		return 0, fmt.Errorf("judge diff size: automaton %s has no branch yet", prd.ID)
+		return "", fmt.Errorf("judge diff size: automaton %s has no branch yet", prd.ID)
 	}
 	base := strings.TrimSpace(prd.Git.BaseBranch)
 	if base == "" {
@@ -44,11 +54,11 @@ func JudgeDiffLines(ctx context.Context, prd *PRD, projectDir string) (int, erro
 
 	mergeBase, err := judgeGit(ctx, projectDir, "merge-base", base, branch)
 	if err != nil {
-		return 0, fmt.Errorf("judge diff size: merge base of %s and %s: %w", base, branch, err)
+		return "", fmt.Errorf("judge diff size: merge base of %s and %s: %w", base, branch, err)
 	}
 	mergeBase = strings.TrimSpace(mergeBase)
 	if mergeBase == "" {
-		return 0, fmt.Errorf("judge diff size: no merge base between %s and %s", base, branch)
+		return "", fmt.Errorf("judge diff size: no merge base between %s and %s", base, branch)
 	}
 
 	args := []string{"diff", "--numstat", mergeBase, branch, "--", "."}
@@ -57,9 +67,9 @@ func JudgeDiffLines(ctx context.Context, prd *PRD, projectDir string) (int, erro
 	}
 	out, err := judgeGit(ctx, projectDir, args...)
 	if err != nil {
-		return 0, fmt.Errorf("judge diff size: diff %s..%s: %w", mergeBase, branch, err)
+		return "", fmt.Errorf("judge diff size: diff %s..%s: %w", mergeBase, branch, err)
 	}
-	return sumNumstat(out)
+	return out, nil
 }
 
 // sumNumstat adds the added and deleted columns of `git diff --numstat`

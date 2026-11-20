@@ -7013,8 +7013,13 @@ paths:
         in lines above which the prompt is delivered as a file; 0 always sends the
         full prompt. `judge_delivery_wait_per_thousand_lines_seconds` (whole number
         0 to 3600; PUT key `autonomous.judge_delivery_wait_per_thousand_lines_seconds`)
-        is the extra delivery wait per thousand prompt lines. Out-of-range values
-        are rejected with 400.
+        is the extra delivery wait per thousand prompt lines.
+        `judge_timeout_per_thousand_lines_seconds` (whole number 0 to 3600, default
+        600; PUT key `autonomous.judge_timeout_per_thousand_lines_seconds`) is the
+        extra judge time limit per thousand changed lines for a diff above the size
+        threshold, capped at four times the base limit; 0 adds nothing. A diff above
+        the threshold is judged in groups of files, each with its own limit.
+        Out-of-range values are rejected with 400.
         `priority_by_kind` is the kind → capacity-queue priority table:
         kind name → integer, higher values line up closer to the front.
         Shipped defaults: bug=80, maintenance=70, feature=20, other=0

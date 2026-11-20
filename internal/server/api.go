@@ -6846,6 +6846,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Judge prompt delivery: the stored values (0 = always send the full prompt / no extra wait).
 			"judge_prompt_file_threshold_lines":              s.cfg.Autonomous.JudgePromptFileThresholdLines,
 			"judge_delivery_wait_per_thousand_lines_seconds": s.cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds,
+			// Judge time limit growth: stored value, 0 = the limit never grows with the diff.
+			"judge_timeout_per_thousand_lines_seconds": s.cfg.Autonomous.JudgeTimeoutPerThousandLinesSeconds,
 			// Strong-first judge routing: the named strong backend (empty =
 			// the last judge-policy entry) and the per-commit verdict cache
 			// flag (unset reads the default, true).
@@ -10842,6 +10844,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 && n <= 3600 {
 				cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds = n
 			}
+		case "autonomous.judge_timeout_per_thousand_lines_seconds":
+			// Range checked up front by validateJudgePromptDeliveryPatch.
+			if n, ok := toInt(v); ok && n >= 0 && n <= 3600 {
+				cfg.Autonomous.JudgeTimeoutPerThousandLinesSeconds = n
+			}
 		case "autonomous.judge_strong_backend":
 			// Stored trimmed; empty clears the strong-first routing. Type
 			// checked up front by validateJudgeStrongRoutingPatch.
@@ -12924,11 +12931,13 @@ func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
 // validateJudgePromptDeliveryPatch checks the judge prompt delivery keys in a
 // config patch: autonomous.judge_prompt_file_threshold_lines is a whole number
 // from 0 to 100000, autonomous.judge_delivery_wait_per_thousand_lines_seconds a
-// whole number from 0 to 3600.
+// whole number from 0 to 3600, autonomous.judge_timeout_per_thousand_lines_seconds
+// a whole number from 0 to 3600.
 func validateJudgePromptDeliveryPatch(patch map[string]interface{}) error {
 	for key, max := range map[string]float64{
 		"autonomous.judge_prompt_file_threshold_lines":              100000,
 		"autonomous.judge_delivery_wait_per_thousand_lines_seconds": 3600,
+		"autonomous.judge_timeout_per_thousand_lines_seconds":       3600,
 	} {
 		v, ok := patch[key]
 		if !ok {

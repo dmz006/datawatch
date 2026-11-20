@@ -635,6 +635,15 @@ The judge sees the same text either way.
   judge run waits for a long prompt to be delivered, added for every 1000 lines
   of the prompt. The default is `60` seconds. `0` adds no extra wait. Whole
   number, 0 to 3600.
+- **Judge extra time limit per 1000 changed lines**
+  (`autonomous.judge_timeout_per_thousand_lines_seconds`): extra seconds added
+  to the judge time limit for every 1000 changed lines, when the change is above
+  the judge size threshold. The limit never goes past four times the base limit
+  (`autonomous.judge_timeout_seconds`). The default is `600` seconds. `0` adds
+  nothing, so the limit stays the base limit. Whole number, 0 to 3600. A change
+  above the threshold is also judged in groups of files, one judge run per
+  group, each with its own limit; a group that times out holds the Automaton for
+  review and never hides a problem another group found.
 
 A value outside the range, or one that is not a whole number, is refused with a
 message and the saved value stays.
