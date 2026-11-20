@@ -1610,13 +1610,11 @@ func wireJudgeAdmission(amgr *autonomous.Manager, judges *verifierRegistry) {
 // channel. priority maps a session id to its capacity priority; verifiers
 // tracks the running verifier leases.
 func wireVerifierAdmission(amgr *autonomous.Manager, priority func(sessionID string) int, verifiers *verifierRegistry) {
-	// The verifier takes its lease through AdmitJudge. Its hand-off (the
-	// worker's lease re-keyed to verify:<task> so the task keeps one slot from
-	// spawn through verification, on the same node) is Manager.HandoffVerifyLease's
-	// logic (judgeHandoff): the worker's lease is
-	// handed over when the verifier can run on it (keeping the worker's node),
-	// otherwise the worker's slot is released first and the verifier acquires
-	// its own. The node is the one the verifier holds, "" for a one-node entry.
+	// The verifier takes its own lease through AdmitJudge. The task released its
+	// worker lease when it entered verifying, so the verifier waits for a
+	// verifier slot holding no worker slot; a worker lease still present is
+	// released, never handed over. The node is the one the verifier holds, ""
+	// for a one-node entry.
 	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), string, error) {
 		holder := autonomous.VerifyHolder(taskID)
 		node, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
@@ -1639,8 +1637,8 @@ func wireVerifierAdmission(amgr *autonomous.Manager, priority func(sessionID str
 	// just bounds how long a genuinely-busy candidate is given before
 	// the caller moves on to the next one.
 	// The probe runs AdmitJudge with a short wait: the worker's lease is
-	// handed over or released first (idempotent), so a candidate either takes
-	// its own slot or does not, never a second slot on top of the worker's.
+	// released first (idempotent), so a candidate either takes its own slot or
+	// does not, never a second slot on top of the worker's.
 	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), string, bool) {
 		holder := autonomous.VerifyHolder(taskID)
 		node, release, err := amgr.AdmitJudge(ctx, autonomous.JudgeAdmit{
@@ -1655,8 +1653,8 @@ func wireVerifierAdmission(amgr *autonomous.Manager, priority func(sessionID str
 	}
 
 	// verifierCapacityFits is the dry run of the same admission, for a verifier
-	// that waits and re-runs its policy: the worker lease is already released or
-	// handed over by then, so WorkerHolder is empty and only the verifier's own
+	// that waits and re-runs its policy: the worker lease is already released
+	// by then, so WorkerHolder is empty and only the verifier's own
 	// pools count. The priority is the task session's, as in the probe above.
 	verifierCapacityFits = func(backend, model, taskID, prdID string) bool {
 		return amgr.JudgeFits(autonomous.JudgeAdmit{

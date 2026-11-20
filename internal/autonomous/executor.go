@@ -210,6 +210,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.refuseHeld(prd); err != nil {
 		return err
 	}
+	if m.finishIfMerged(prd) {
+		return nil
+	}
 	if err := m.refuseMainCheckout(prd); err != nil {
 		return err
 	}
@@ -1598,6 +1601,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					t.AdoptedSession = false
 					t.Status = TaskVerifying
 				})
+				m.releaseWorkerLeaseForVerify(t)
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -2067,6 +2071,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				oldStatus = t.Status
 				t.Status = TaskVerifying
 			})
+			m.releaseWorkerLeaseForVerify(t)
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}

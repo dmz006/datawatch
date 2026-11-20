@@ -239,12 +239,13 @@ path) and `autonomous.backoff_max_wait_minutes`
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md` and `docs/howto/usage-backoff.md`.
 
-A related admission fix, in the same area: a task's guardrail judge no longer queues
-behind the task's own worker lease. When a judge starts it inherits that lease (holder
-`judge:<unit>`, `internal/autonomous/judge_capacity.go` `JudgeAdmit.WorkerHolder`): on
-a node with a verifier pool the worker lease is released and the judge takes a
-`node-verify:<node>` slot; otherwise the lease is re-keyed to the judge's holder in
-place. No fresh slot is taken and the task is never counted twice.
+A related admission rule, in the same area: a task's guardrail judge never queues
+behind the task's own worker lease, and the lease is never handed over to it. The task
+releases its worker lease when it enters `verifying` (`releaseWorkerLeaseForVerify`,
+`internal/autonomous/capacity.go`); a `JudgeAdmit.WorkerHolder` lease still present when
+the judge starts is released in `AdmitJudge` (`internal/autonomous/judge_capacity.go`),
+and the judge then acquires its own `judge:<unit>` lease (on `node-verify:<node>` where
+the node has a verifier pool). See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).
 
 Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
 block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),

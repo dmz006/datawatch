@@ -49,8 +49,10 @@ func TestCapacity_ParallelTasksNeverExceedNodeLimit(t *testing.T) {
 		return SpawnResult{SessionID: "s-" + r.TaskID}, nil
 	}
 	verify := func(_ context.Context, _ *PRD, tk *Task) (VerificationResult, error) {
-		time.Sleep(30 * time.Millisecond)
+		// The worker lease is released when the task enters verifying, so the
+		// worker session count ends here.
 		atomic.AddInt32(&cur, -1)
+		time.Sleep(30 * time.Millisecond)
 		return VerificationResult{OK: true}, nil
 	}
 	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
