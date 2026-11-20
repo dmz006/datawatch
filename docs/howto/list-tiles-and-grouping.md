@@ -27,11 +27,12 @@ following it when you resize (wide: Tiles, mid: Compact, narrow: List). Once
 you press a button, that choice wins on this device and the window width no
 longer changes it.
 
-The Sessions list carries the same three modes, chosen from the **view
-mode select** in its one-line toolbar (a dropdown showing the mode in use,
-replacing the former three-button toggle). Its viewport default is **List**
-under 600 px and **Tiles** at 600 px and wider, and once you pick a mode it
-wins on that device under the same per-device rule. See [Sessions tiles,
+The Sessions list carries the same three modes, chosen from the three icon
+buttons (List, Tiles, Compact) at the end of its one-line toolbar — the
+active button is marked, and tapping a button switches the mode. Its
+viewport default is **List** under 600 px and **Tiles** at 600 px and
+wider, and once you pick a mode it wins on that device under the same
+per-device rule. See [Sessions tiles,
 grouping and saved views](sessions-tiles-and-grouping.md#view-modes).
 
 ## Group the list
