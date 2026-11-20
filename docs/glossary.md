@@ -81,9 +81,14 @@ The Python that runs aider inside the agent-aider container image: a uv-managed 
 
 A file a task declared (planned, generated or under its write directories)
 that the repository's ignore rules ignore and git does not track, such as a
-report under `.datawatch/reports/`. The task commit stages it with
-`git add -f` instead of failing, so it is committed with the task; the
-uncommitted-work check never lists an ignored, untracked file as leftover
+report under `.datawatch/reports/`. The task commit checks each listed path
+with `git check-ignore` and skips an ignored, untracked one instead of failing;
+it is never force-staged. The note `skipped because it is git-ignored: <list>`
+is information only: it is carried in the hold reason and audit record when the
+task is held or warned, and is not stored when the task completes cleanly. No
+commit is made when every listed path is ignored. A generated script meant to
+travel with the work must be listed outside the ignored `.datawatch` folder.
+The uncommitted-work check never lists an ignored, untracked file as leftover
 work. A commit that still fails reports git's exit status and output in the
 hold reason (up to 1000 characters). A tracked file is always staged normally. See
 [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).

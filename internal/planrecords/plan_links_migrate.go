@@ -22,7 +22,10 @@ import (
 //     becomes a backlog plan ordered by its old row number.
 //
 // It is a dry run unless Apply is set. It never overwrites an existing link
-// and never touches a plan created earlier: each plan it creates carries a
+// A registry row that is shipped, done or closed is history and never becomes
+// a plan: when it names an Automaton it is linked (as a registry row) to the
+// plan that holds that Automaton, and when it names none it is listed under
+// HistoryWithoutAutomaton. It never touches a plan created earlier: each plan it creates carries a
 // "migrated-from" link naming its source, so a second apply finds the plan
 // again and changes nothing. It deletes no arc, row or config key.
 
@@ -102,6 +105,12 @@ type MigrateItem struct {
 	LinkID   string `json:"link_id,omitempty"`
 	Order    int    `json:"order,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// HeldBy, on a conflict, names the plan or link that already holds the
+	// item, so the operator can see what stands in the way.
+	HeldBy string `json:"held_by,omitempty"`
+	// WouldChange, on a conflict, says what the migration would have done had
+	// the conflict not been there. Nothing of it was written.
+	WouldChange string `json:"would_change,omitempty"`
 	// TitleSource is "derived" or "fallback" for a plan made from a registry
 	// row: whether its title was found in the row or the row had none.
 	TitleSource string `json:"title_source,omitempty"`
@@ -115,9 +124,17 @@ type MigrateReport struct {
 	WouldLink       []MigrateItem `json:"would_link"`
 	SkippedExisting []MigrateItem `json:"skipped_existing"`
 	Conflicts       []MigrateItem `json:"conflicts"`
-	// TitlesDerived and TitlesFellBack count the plans made from registry
-	// rows: titles found in the row, and rows with no title that were named
-	// "(untitled row N)". A plan that already exists is counted in neither.
+	// HistoryWithoutAutomaton lists the shipped, done or closed rows that name
+	// no Automaton. They are history, never backlog plans, so they are only
+	// listed (with their titles), in a preview and after an apply alike.
+	HistoryWithoutAutomaton []MigrateItem `json:"history_without_automaton"`
+	// NeedsReview lists, under the label "needs review", the open rows from
+	// which no name could be derived. No plan is created for them on apply.
+	NeedsReview []MigrateItem `json:"needs_review"`
+	// TitlesDerived counts the plans made from registry rows with a title
+	// found in the row. TitlesFellBack counts rows with none (they are listed
+	// in NeedsReview and not created). A plan that already exists is counted
+	// in neither.
 	// TitlesFromLinked counts plans titled from the Automaton or Automation
 	// the row names, because the row had no title of its own.
 	TitlesDerived    int `json:"titles_derived"`
@@ -130,8 +147,23 @@ func (r MigrateReport) Counts() map[string]int {
 	return map[string]int{
 		"would_create": len(r.WouldCreate), "would_link": len(r.WouldLink),
 		"skipped_existing": len(r.SkippedExisting), "conflicts": len(r.Conflicts),
-		"titles_derived": r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
+		"history_without_automaton": len(r.HistoryWithoutAutomaton),
+		"needs_review":              len(r.NeedsReview),
+		"titles_derived":            r.TitlesDerived, "titles_from_linked": r.TitlesFromLinked, "titles_fell_back": r.TitlesFellBack,
 	}
+}
+
+// Summary is the one-line count every preview and apply prints: created,
+// linked, already present, history without an Automaton, needs review and
+// conflicts. A preview counts what would be done; an apply what was done.
+func (r MigrateReport) Summary() string {
+	create, link := "would create", "would link"
+	if r.Applied {
+		create, link = "created", "linked"
+	}
+	return fmt.Sprintf("%s %d, %s %d, already present %d, history without an Automaton %d, needs review %d, conflicts %d",
+		create, len(r.WouldCreate), link, len(r.WouldLink), len(r.SkippedExisting),
+		len(r.HistoryWithoutAutomaton), len(r.NeedsReview), len(r.Conflicts))
 }
 
 var migrateMu sync.Mutex
@@ -144,7 +176,7 @@ func Migrate(opts MigrateOptions) (MigrateReport, error) {
 	rep := MigrateReport{
 		Applied:     opts.Apply,
 		WouldCreate: []MigrateItem{}, WouldLink: []MigrateItem{},
-		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{},
+		SkippedExisting: []MigrateItem{}, Conflicts: []MigrateItem{}, HistoryWithoutAutomaton: []MigrateItem{}, NeedsReview: []MigrateItem{},
 	}
 	if opts.Store == nil {
 		return rep, errors.New("planrecords: migrate needs a store")
@@ -260,8 +292,31 @@ func (m *migrator) add(list *[]MigrateItem, it MigrateItem) {
 	*list = append(*list, it)
 }
 
-func (m *migrator) conflict(it MigrateItem, why string) {
+// wouldChange describes what the migration meant to write for an item.
+func wouldChange(it MigrateItem) string {
+	var parts []string
+	if it.Source == migrateSourceArc || it.Source == migrateSourceRowBacklog || it.PlanID == "" {
+		parts = append(parts, fmt.Sprintf("create the plan %q", it.Title))
+	}
+	if it.LinkKind != "" && it.LinkID != "" {
+		to := fmt.Sprintf("the plan %q", it.Title)
+		if it.PlanID != "" && it.Source == migrateSourceRow {
+			to = "plan " + it.PlanID
+		}
+		parts = append(parts, fmt.Sprintf("link the %s %s to %s", it.LinkKind, it.LinkID, to))
+	}
+	if len(parts) == 0 {
+		return "change nothing"
+	}
+	return strings.Join(parts, " and ")
+}
+
+// conflict records a conflict: why it is one, the plan or link that already
+// holds the item (heldBy) and what the migration would have changed.
+func (m *migrator) conflict(it MigrateItem, why, heldBy string) {
 	it.Reason = why
+	it.HeldBy = heldBy
+	it.WouldChange = wouldChange(it)
 	m.add(&m.rep.Conflicts, it)
 }
 
@@ -299,7 +354,7 @@ func (m *migrator) arcs() {
 			LinkKind: linkAutomation, LinkID: id, Order: clampOrder(a.Priority),
 		}
 		if id == "" || !projectRe.MatchString(a.Project) {
-			m.conflict(it, "the arc has no Automation id or its project name is not valid")
+			m.conflict(it, "the arc has no Automation id or its project name is not valid", "nothing; the arc itself is not valid")
 			continue
 		}
 		if t, ok := m.holder(linkAutomation, id); ok {
@@ -315,7 +370,7 @@ func (m *migrator) arcs() {
 			continue
 		}
 		if ex, ok := m.titleTaken(a.Project, title); ok {
-			m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+			m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 			continue
 		}
 		m.createAndLink(it, Record{
@@ -418,6 +473,17 @@ func (m *migrator) rows() {
 			Source: migrateSourceRow, SourceRef: r.ID, Title: title, Project: r.Project,
 			Order: clampOrder(r.LegacyNumber), TitleSource: titleSource,
 		}
+		if IsClosed(KindRegistryRow, r.State) {
+			m.history(it, r, refs, hasPlan, plan)
+			continue
+		}
+		if titleSource == TitleFellBack && !hasPlan {
+			it.Title = NeedsReviewLabel
+			it.Reason = NeedsReviewLabel + ": no name could be derived from the title or description; no plan is created"
+			m.rep.NeedsReview = append(m.rep.NeedsReview, it)
+			m.rep.TitlesFellBack++
+			continue
+		}
 		if len(refs) == 0 {
 			it.Source = migrateSourceRowBacklog
 			switch {
@@ -450,7 +516,7 @@ func (m *migrator) rows() {
 				continue
 			}
 			if ex, ok := m.titleTaken(r.Project, title); ok {
-				m.conflict(ri, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+				m.conflict(ri, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 				continue
 			}
 			created, ok := m.createAndLinkRow(ri, r, marker, title, ref)
@@ -460,6 +526,56 @@ func (m *migrator) rows() {
 			}
 		}
 	}
+}
+
+// history handles a shipped, done or closed row. It never creates a plan.
+func (m *migrator) history(it MigrateItem, r Record, refs []foundRef, hasPlan bool, plan Record) {
+	if len(refs) == 0 {
+		it.Source = migrateSourceRowBacklog
+		if hasPlan {
+			it.PlanID = plan.ID
+		}
+		it.Reason = "history: the row is closed and names no Automaton"
+		m.rep.HistoryWithoutAutomaton = append(m.rep.HistoryWithoutAutomaton, it)
+		return
+	}
+	for _, ref := range refs {
+		ri := it
+		ri.LinkKind, ri.LinkID = ref.kind, ref.id
+		var holder PlanRef
+		var ok bool
+		if ref.kind == linkAutomation {
+			holder, ok = m.s.PlanOfAutomation(ref.id)
+		} else {
+			holder, ok = m.s.PlanOf(ref.id)
+		}
+		if !ok {
+			m.skip(ri, "history: the Automaton is not on a release plan item yet; no plan was made for the closed row")
+			continue
+		}
+		ri.PlanID = holder.ID
+		if m.rowHeld(holder.UID, r.UID) {
+			m.skip(ri, fmt.Sprintf("the closed row is already linked to the plan %q", holder.Title))
+			continue
+		}
+		if !m.opts.Apply {
+			m.add(&m.rep.WouldLink, ri)
+			continue
+		}
+		if _, err := m.s.AttachRow(holder.UID, r.UID); err != nil {
+			m.conflict(ri, "cannot link the closed row: "+err.Error(), fmt.Sprintf("plan %s %q", holder.ID, holder.Title))
+			continue
+		}
+		m.add(&m.rep.WouldLink, ri)
+	}
+}
+
+// rowHeld reports whether the plan already holds the row as a registry row.
+func (m *migrator) rowHeld(planUID, rowUID string) bool {
+	m.s.mu.RLock()
+	defer m.s.mu.RUnlock()
+	p, ok := m.s.byUID[planUID]
+	return ok && hasLink(p.Links, LinkKindRegistryRow, rowUID)
 }
 
 // heldBy reports whether plan lists the ref.
@@ -481,7 +597,7 @@ func rowPlanRecord(r Record, marker, title string) Record {
 
 func (m *migrator) createPlan(it MigrateItem, r Record, marker, title string) {
 	if ex, ok := m.titleTaken(r.Project, title); ok {
-		m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID))
+		m.conflict(it, fmt.Sprintf("a record titled %q already exists in the project (%s); left as it is", title, ex.ID), fmt.Sprintf("record %s %q", ex.ID, ex.Title))
 		return
 	}
 	if !m.opts.Apply {
@@ -492,7 +608,7 @@ func (m *migrator) createPlan(it MigrateItem, r Record, marker, title string) {
 	rec.Actor = m.opts.Actor
 	made, err := m.s.Create(rec)
 	if err != nil {
-		m.conflict(it, "cannot create the plan: "+err.Error())
+		m.conflict(it, "cannot create the plan: "+err.Error(), "nothing; the store refused the plan")
 		return
 	}
 	m.markers[marker] = made
@@ -526,7 +642,7 @@ func (m *migrator) createAndLinkKind(it MigrateItem, rec Record, kind, id string
 	rec.Actor = m.opts.Actor
 	made, err := m.s.Create(rec)
 	if err != nil {
-		m.conflict(it, "cannot create the plan: "+err.Error())
+		m.conflict(it, "cannot create the plan: "+err.Error(), "nothing; the store refused the plan")
 		return Record{}, false
 	}
 	it.PlanID, it.Order = made.ID, made.Order
@@ -570,9 +686,9 @@ func (m *migrator) attach(it MigrateItem, planUID, kind, id string, info LinkInf
 	if err != nil {
 		var lc *ErrLinkConflict
 		if errors.As(err, &lc) {
-			m.conflict(it, err.Error())
+			m.conflict(it, err.Error(), "plan "+lc.Holder)
 		} else {
-			m.conflict(it, "cannot link: "+err.Error())
+			m.conflict(it, "cannot link: "+err.Error(), "nothing; the store refused the link")
 		}
 		return false
 	}

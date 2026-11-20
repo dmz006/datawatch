@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source, loading, cache, retry, performance]
+  topics: [projects, project-record, arcs, priority, state, target, lanes, weekly-share, retention, progress, history, timeline, project-link, project-membership, automata-without-a-project, backfill, set-project, project-source, loading, cache, retry, performance, header scope, scope button, scope modal, filter active]
 exec_steps:
   - tool: project_list
     description: List the registered projects. Each entry carries its directory, its default backend and its stored policy. Read-only
@@ -136,12 +136,112 @@ Project  "core-api"
    the **Show empty** checkbox wrap onto their own line, long event lines, paths
    and card text wrap, and wide code or table content scrolls inside its own box
    instead of widening the page. Only the page sub-tab strip scrolls sideways.
-   The Inbox count follows this picker too: with a project picked it counts only
-   that project's items, and under **Overview** it counts all projects (see
+   This picker is the header scope seen from inside the page (see
+   [The header scope button](#the-header-scope-button)), so the Inbox count
+   follows it too: with a project picked it counts only that project's items,
+   and under **Overview** it counts all projects (see
    [What the Inbox counts](automation-tab.md#what-the-inbox-counts)).
 
 3. **Fill in the record.** Set the owner, the target and the lane defaults, then
    the plans. Each step is shown in the walkthrough.
+
+## The header scope button
+
+The fixed app header carries a **scope button** (`id="headerScopeBtn"`, a funnel
+icon) that replaces the old project and plan selectors. The scope is what the
+Automata pages are filtered to: **All**, one **project**, or one **plan** of a
+project (a plan is one of the project's plans; choosing it implies its project).
+It sits next to the [server icon button](multi-servers.md#switch-between-servers-header-server-button)
+in the same compact header, and the layout checks for both buttons are in the
+[Operator review](multi-servers.md#operator-review) checklist on that page.
+
+- **Where it shows.** Only on the **Automata** view, on every one of its
+  sub-tabs (Projects, Automation, Automata, Events, Templates). On every other
+  page it is hidden, and the scope you chose is kept while it is hidden.
+- **The badge.** While a project or plan is chosen a small dot sits on the icon
+  (its text, **Filter active**, is read out by screen readers); with **All**
+  chosen there is no badge.
+- **Its name.** The button's tooltip and accessible name read
+  **Scope: \<label\>**, where the label is **All**, the project name, or
+  *project / plan*. A plan is labelled with its Automation's name, else the
+  title of the plan record that lists it, else its Automation id.
+- **On a phone** only the icon (and the dot) show, so the header does not wrap.
+
+### Choose a scope
+
+Press the button to open the **Scope** window. It is a dialog like the server
+window: keyboard focus moves into it (onto the active row), **Tab** stays inside,
+and **Escape**, **Close** or a click outside closes it and returns focus to the
+button. A **?** link in its title opens this page.
+
+1. The first row is **All**.
+2. Under **Project** is one row per registered project. A project with no plans
+   is chosen at once and the window closes.
+3. A project that has plans opens them under **Plan** when you pick it: **All
+   plans** first (the project as a whole), then one row per plan. Choosing a plan
+   row applies it and closes the window. When a plan scope is already active the
+   window opens with that project's plans showing.
+4. The current choice is marked, and a line at the bottom says the Templates
+   sub-tab is shown for every project and plan.
+
+While the project list is still loading the window shows a loading mark; if the
+list cannot be read, the window says so and **All** still works.
+
+### What the scope changes
+
+| Scope | What changes |
+|---|---|
+| **All** | Nothing is filtered; pages are exactly as before |
+| A project | The Projects pages (Overview, Plans, Records, Gantt, Unassigned, History, Events), the Automata list, the Events sub-tab, the Inbox and the Automations list show only that project's work |
+| A project and a plan | The same, narrowed to the plan's Automation, its Automata and the plan records that list it. The plan has no unassigned Automata (the page says so), and the History page keeps only the plan's finished Automata, because the daily snapshots belong to the whole project |
+
+When a project or plan is chosen, a **Filtered to \<scope\>** banner with a
+**Clear** button sits at the top of each filtered page. **Clear** sets the scope
+back to **All** at once, and so does the **All** row in the window.
+
+Pages that are not per project are not filtered and say so in a one-line note,
+shown only while a scope is active: the **Templates** sub-tab (**Templates are
+shown for every project and plan.**) and the global Automation sub-tabs
+(**Resources**, **Progress and cost** and **Housekeeping**: **This section
+applies to every project and plan.**). Details for each page are in
+[Automation tab](automation-tab.md#the-header-scope-on-the-automation-sub-tabs),
+[Automata Events](automata-events.md#the-header-scope-and-the-events-stream) and
+[Automata timeline](automata-timeline.md#the-header-scope-and-the-project-timeline).
+
+### Remembered per device, and the address
+
+The scope is remembered per browser (local storage key `dw_scope`; nothing is
+stored on the daemon, and no setting or restart is involved). If local storage
+is blocked, the scope lives in memory until you reload.
+
+On the Projects sub-tab the scope also shows in the address, and an address can
+set it:
+
+| Address | Scope |
+|---|---|
+| `#projects/<name>` | The project, on its Overview page |
+| `#projects/<name>/<subtab>` | The project, on that page (`plans`, `records`, `gantt`, `unassigned`, `history` or `events`) |
+| `#projects/<name>?plan=<automation-id>` and `#projects/<name>/<subtab>?plan=<automation-id>` | The project narrowed to that plan, on that page |
+| `#projects` | **All** (the cross-project Overview); opening it clears the scope |
+
+The address is rewritten without adding a browser history entry whenever the
+scope or the page sub-tab changes. A plan appears in the address only for the
+project the page is showing. With no address at all, the remembered scope is
+kept.
+
+A saved project that has since been removed, or a plan that is no longer one of
+the project's plans, falls back to **All** (or to the project, for a missing
+plan) once the project list has loaded, and the fallback is saved. A project list
+that fails to load never clears the scope.
+
+### The in-page project picker stays in sync
+
+The **Project** picker at the top of the Projects sub-tab is the same scope seen
+from inside the page. Picking a project there sets the scope to that project (no
+plan), and picking **Overview** sets it to **All**; picking a project or plan in
+the header window changes the picker, the page and the address together. The
+scope is the one source of truth, so the picker, the button's label and badge, the
+banner and the address never disagree.
 
 ## Manage projects in the web app
 
@@ -819,10 +919,11 @@ reference is [project-automation-policy](project-automation-policy.md).
 | Action | Where |
 |---|---|
 | Open the sub-tab | Bottom navigation **Automata**, then the **Projects** sub-tab (first, left of **Automation**); the old Projects link and `#projects` land here |
-| Pick a project | **Project** picker at the top (the same Overview picker as before); **Overview** is the cross-project view |
+| Pick a project | **Project** picker at the top of the Projects sub-tab (**Overview** is the cross-project view), or the header **scope button**, which filters every Automata page to that project (and plan) — see [The header scope button](#the-header-scope-button) |
 | Switch between the Overview sub-tabs (Inbox, Automations, ...) | With **Overview** picked, the strip under the picker; the choice is remembered in this browser |
-| Open a project directly | Address `#projects/<name>`; the last project you opened is remembered in this browser |
-| Open a page sub-tab directly | Address `#projects/<name>/<subtab>` with `plans` (the old `arcs` still works), `records`, `gantt`, `unassigned`, `history` or `events`; no sub-tab in the address opens **Overview**, and the old `policy` falls back to it |
+| Filter by project and plan everywhere on Automata | Header **scope button** (funnel icon, Automata view only) opens the **Scope** window with **All**, a project and a plan; the dot on the icon and the *Filtered to …* banner show an active scope; **Clear** in the banner or **All** removes it; remembered in this browser (`dw_scope`) |
+| Open a project (and plan) directly | Address `#projects/<name>`, or `#projects/<name>?plan=<automation-id>` for one plan; opening it sets the header scope. The last project you opened is remembered in this browser |
+| Open a page sub-tab directly | Address `#projects/<name>/<subtab>` (add `?plan=<automation-id>` for a plan) with `plans` (the old `arcs` still works), `records`, `gantt`, `unassigned`, `history` or `events`; no sub-tab in the address opens **Overview**, and the old `policy` falls back to it |
 | Switch between Overview, Plans, Records, Gantt, Unassigned, History and Events | The strip of page sub-tabs under the project name; the choice is remembered in this browser |
 | Change the range of the Gantt | Gantt header: **All time**, 90, 30 or 7 days; wheel to zoom, drag to pan |
 | Show or hide dependency edges | Gantt header **Edges** (on by default; also on the Focus page); **All edges** shows every drawn edge instead of the first 120; hover or tab to a bar to highlight its edges |
@@ -1109,6 +1210,9 @@ untranslated native review pending as with the other labels here.
 
 - [automation-tab.md](automation-tab.md): the Automation view, where the
   Automations of a project are listed and run
+- [multi-servers.md](multi-servers.md#switch-between-servers-header-server-button): the
+  neighbouring header server icon button, and the `## Operator review`
+  checklist for the compact header
 - [project-automation-policy.md](project-automation-policy.md): the project tier
   of the policy and its precedence
 - [merge-pipeline.md](merge-pipeline.md): the merge pipeline and the major release

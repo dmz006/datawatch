@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automation, automata, pipeline, pwa]
+  topics: [automation, automata, pipeline, pwa, header scope, scope, filter active, inbox]
 ---
 # How-to: the Automation view
 
@@ -100,19 +100,53 @@ with its short name so the title fits one line. See
 On the Automations sub-tab, one card per Automation, ordered by status (active,
 blocked, paused, draft, completed, cancelled) and then by name.
 
+### The header scope on the Automation sub-tabs
+
+The funnel **scope button** in the app header (see
+[The header scope button](projects-tab.md#the-header-scope-button)) is shown on
+every sub-tab of the Automata view, the Automation sub-tab included. Its choice
+is **All**, one project, or one plan of a project, and it is remembered in this
+browser. While a project or plan is chosen the icon carries a dot and the filtered
+pages show a **Filtered to \<scope\>** banner with a **Clear** button. Under
+**All** nothing changes.
+
+Some of the five Automation sub-tabs are cut by the scope and some are global:
+
+| Sub-tab | With a scope active |
+|---|---|
+| **Inbox** | Filtered. The badge and every card count only the scoped project's (or plan's) items; see [What the Inbox counts](#what-the-inbox-counts) |
+| **Automations** | Filtered. A project scope lists the Automations of that project; a plan scope lists only that plan's Automation. The status badges, history toggle and search work on what remains |
+| **Resources** | **Global.** Capacity, lane fill, usage and ship status are shared across every project, so the sub-tab is not filtered and shows the note **This section applies to every project and plan.** |
+| **Progress and cost** | **Global.** The same note; the figures cover every project and plan |
+| **Housekeeping** | **Global.** Uncommitted work, protected paths and pending items are shown for every project and plan, with the same note |
+
+The first row of sub-tabs is cut the same way: the **Automata** list is
+filtered (a project scope keeps the Automata linked to that project; a plan scope
+keeps the Automata that are members of the plan's Automation), the **Events**
+sub-tab follows the scope (see [Automata events](automata-events.md#the-header-scope-and-the-events-stream)),
+and **Templates** is global and shows **Templates are shown for every project and
+plan.** The notes appear only while a scope is active; under **All** these pages
+are exactly as before. The scope is a display rule of the web app only: REST, MCP,
+the CLI and the comm channel return everything.
+
 ### What the Inbox counts
 
 The badge on the Inbox tab and the lists under it always agree, because both are cut
-by the same scope. The scope follows the **Project** picker on the Projects sub-tab:
+by the same scope. The scope is the header scope; on the Projects sub-tab it is the
+same thing as the **Project** picker, so choosing a project in either place gives
+the same Inbox:
 
-- **Overview, or any other sub-tab.** Nothing is cut. The badge counts everything
+- **All (the Overview).** Nothing is cut. The badge counts everything
   waiting on you in every project, and its tooltip and screen-reader label read
   *N waiting on you across all projects*.
-- **One project selected on the Projects sub-tab.** The badge and each card (open
+- **One project in scope.** The badge and each card (open
   questions, held questions, Triage, security failure report and the supervisor
   watch findings) keep only the items that belong to that project, and the label
-  reads *N waiting on you*. Changing the picker, or the `#projects` address,
-  recounts from the data already loaded; nothing is fetched again.
+  reads *N waiting on you*. This holds on every sub-tab, not just the Projects
+  sub-tab. Changing the scope, or the `#projects` address, recounts from the data
+  already loaded; nothing is fetched again.
+- **One plan in scope.** The same, narrowed to the items that name the plan's
+  Automation or one of its Automata.
 
 An item belongs to a project by its link first: a `project:<name>` system tag on the
 item, or on the Automaton the item names. Only when no such tag exists is the
