@@ -143,3 +143,43 @@ func TestDefectQueueTinyFixLane(t *testing.T) {
 		t.Fatalf("tiny fix listed as a batch: %v", list)
 	}
 }
+
+// A defect whose project is an absolute path must never leak that path into
+// the created Automaton: the batch is created with an empty project dir
+// (worktree mode) and the project name stays in the batch meta for grouping.
+func TestDefectProjectDirNotCopiedIntoBatch(t *testing.T) {
+	h, amgr := newWiredDefectQueue(t)
+	absProject := t.TempDir()
+	code, body := defectDo(t, h, http.MethodPost, "/api/autonomous/defects/intake",
+		`{"id":"d1","title":"stall on reconnect","project":"`+absProject+`","area":"web","files":["internal/server/api.go"],"kind":"rule_tweak","priority":2}`)
+	if code != http.StatusOK || body["route"] != autonomouspkg.IntakeRouteNewBatch {
+		t.Fatalf("intake = %d %v, want 200 new_batch", code, body)
+	}
+	batchID := body["batch_id"].(string)
+	prd, ok := amgr.Store().GetPRD(batchID)
+	if !ok {
+		t.Fatalf("batch %s not found", batchID)
+	}
+	if prd.ProjectDir != "" {
+		t.Fatalf("batch ProjectDir = %q, want empty (worktree mode); the project name stays in the batch meta", prd.ProjectDir)
+	}
+}
+
+// Same for the tiny-fix lane: an absolute-path project must not become the
+// tiny-fix Automaton's project dir.
+func TestDefectProjectDirNotCopiedIntoTinyFix(t *testing.T) {
+	h, amgr := newWiredDefectQueue(t)
+	absProject := t.TempDir()
+	code, body := defectDo(t, h, http.MethodPost, "/api/autonomous/defects/intake",
+		`{"id":"t1","title":"flaky assertion","project":"`+absProject+`","files":["internal/x/x_test.go"],"kind":"test_only"}`)
+	if code != http.StatusOK || body["route"] != autonomouspkg.IntakeRouteTinyFix {
+		t.Fatalf("intake = %d %v, want 200 tiny_fix", code, body)
+	}
+	prd, ok := amgr.Store().GetPRD(body["batch_id"].(string))
+	if !ok {
+		t.Fatalf("tiny-fix automaton %s not found", body["batch_id"])
+	}
+	if prd.ProjectDir != "" {
+		t.Fatalf("tiny-fix ProjectDir = %q, want empty (worktree mode); the project name stays in the defect meta", prd.ProjectDir)
+	}
+}
