@@ -260,3 +260,66 @@ func TestCostSeriesProjectOf(t *testing.T) {
 		t.Fatalf("project grouping wrong: %+v", s.Groups)
 	}
 }
+
+// TestAutomatonProjectPrecedence pins the order: project tag, then the
+// parent's project, then the project directory, then blank.
+func TestAutomatonProjectPrecedence(t *testing.T) {
+	parent := &autonomous.PRD{ID: "par", SystemTags: []string{"project:gamma"}, ProjectDir: "/work/parentdir"}
+	by := prdIndex([]*autonomous.PRD{parent})
+
+	tagged := &autonomous.PRD{ID: "c1", SystemTags: []string{"project:alpha"}, ParentPRDID: "par", ProjectDir: "/work/beta"}
+	if got := automatonProject(tagged, by); got != "alpha" {
+		t.Errorf("project tag must win over parent and dir: %q", got)
+	}
+
+	inherits := &autonomous.PRD{ID: "c2", ParentPRDID: "par", ProjectDir: "/work/beta"}
+	if got := automatonProject(inherits, by); got != "gamma" {
+		t.Errorf("parent's project must win over own dir: %q", got)
+	}
+
+	dirOnly := &autonomous.PRD{ID: "c3", ParentPRDID: "missing", ProjectDir: "/work/beta"}
+	if got := automatonProject(dirOnly, by); got != "beta" {
+		t.Errorf("unknown parent must fall to project dir: %q", got)
+	}
+
+	bare := &autonomous.PRD{ID: "c4", ParentPRDID: "missing"}
+	if got := automatonProject(bare, by); got != "" {
+		t.Errorf("no project anywhere must be blank: %q", got)
+	}
+}
+
+// TestAutomatonProjectCycleTerminates feeds a parent cycle with no project
+// anywhere and one with a directory; both must return.
+func TestAutomatonProjectCycleTerminates(t *testing.T) {
+	a := &autonomous.PRD{ID: "ca", ParentPRDID: "cb"}
+	b := &autonomous.PRD{ID: "cb", ParentPRDID: "ca"}
+	by := prdIndex([]*autonomous.PRD{a, b})
+	if got := automatonProject(a, by); got != "" {
+		t.Errorf("cycle with no project: %q", got)
+	}
+
+	withDir := &autonomous.PRD{ID: "da", ParentPRDID: "db", ProjectDir: "/w/dirdelta"}
+	by = prdIndex([]*autonomous.PRD{withDir, {ID: "db", ParentPRDID: "da"}})
+	if got := automatonProject(withDir, by); got != "dirdelta" {
+		t.Errorf("cycle must fall back to own dir: %q", got)
+	}
+}
+
+// TestCostSeriesProjectOfUnlinkedIsBlank checks the lookup the series
+// builder groups by: an Automaton with no project resolves to blank, and
+// an unknown id does too.
+func TestCostSeriesProjectOfUnlinkedIsBlank(t *testing.T) {
+	of := costSeriesProjectOf([]*autonomous.PRD{
+		{ID: "loose"},
+		{ID: "dirOnly", ProjectDir: "/work/delta"},
+	})
+	if got := of("loose"); got != "" {
+		t.Errorf("unlinked Automaton: %q", got)
+	}
+	if got := of("dirOnly"); got != "delta" {
+		t.Errorf("dir Automaton: %q", got)
+	}
+	if got := of("absent"); got != "" {
+		t.Errorf("unknown id: %q", got)
+	}
+}
