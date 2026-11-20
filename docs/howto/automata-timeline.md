@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, timeline, gantt, intervals, projection, projects]
+  topics: [autonomous, timeline, gantt, intervals, projection, projects, header scope, project filter, plan filter]
 exec_steps:
   - tool: autonomous_timeline
     description: Read the interval chart of the Automata that moved recently, across all projects
@@ -219,6 +219,38 @@ it currently offers `automaton` and `automation`, which are not kinds the
 chart recognises — the chart's kind is `feature`, `bug` or `other`, the
 value the REST, MCP and CLI surfaces take. That mismatch is flagged under
 [Common pitfalls](#common-pitfalls).
+
+## The header scope and the project timeline
+
+The funnel **scope button** in the app header (see
+[The header scope button](projects-tab.md#the-header-scope-button)) filters the
+**project timeline**: the Gantt page of the Projects sub-tab, which draws one
+project's plans, their Automata and their tasks. It does not change the chart
+that the CLI, the comm channel, REST and MCP draw, and it does not change the
+*Automaton Timeline* dashboard card, which keeps its own five filters; the scope
+is a display rule of the web app only.
+
+| Scope | What the project timeline shows |
+|---|---|
+| **All** | The Projects sub-tab shows the cross-project **Overview**, which has no timeline; nothing is filtered |
+| A project | That project's timeline: every plan, with its Automata and tasks below. Choosing the project in the scope window and picking it in the page's **Project** picker are the same choice |
+| A project and a plan | One row: the plan. Its Automata and tasks open below it as usual. Dependency edges are not drawn, because there is no second plan row to connect to |
+
+A **Filtered to \<scope\>** banner with **Clear** sits above the chart while a
+scope is active.
+
+**Paging note for a plan scope.** The timeline route pages the plans of a
+project and has no plan filter, so for a plan scope the page picks the plan out
+of each page it reads. If the plan is not on the first page and more pages
+remain, the page reads the next ones by itself, up to ten extra pages, and stops
+as soon as it has the plan; the plan is one row, so there is nothing more to
+**Load more**. A reply that arrives after you changed the scope is dropped, so a
+slow read for an old scope never paints over the new one. The rows below a plan
+are read for that plan only and need no filtering.
+
+The **History** page follows the scope too: with a plan scope it lists only that
+plan's finished Automata, and leaves out the daily project snapshots, which have
+no plan.
 
 ## Where to read it
 
