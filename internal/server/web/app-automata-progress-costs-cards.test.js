@@ -235,3 +235,21 @@ test('operator-facing card text says Automaton, never PRD, and leaks no tracker 
   assert.ok(visible.includes('>Automation<') || visible.includes('>Automaton<'), 'grouping names the operator vocabulary');
   assert.ok(!/BL\d{3,}/.test(visible), 'no tracker id in visible text');
 });
+
+// ── card style shared with the Resources sub-tab ───────────────────────────
+// The four cost cards are the same card style as the Resources sub-tab cards:
+// the shared prd-capacity-slot class with the 6px top margin the Resources
+// slots use. A change that drops the class or margin fails here.
+test('the cost cards use the Resources sub-tab card style: prd-capacity-slot with a 6px top margin', () => {
+  const { sb } = load();
+  const html = render(sb);
+  for (const id of ['costChartsCostCard', 'costChartsToolsCard', 'costChartsFailuresCard', 'costChartsReportCard']) {
+    const card = cardHtml(html, id);
+    const root = card.match(/^id="[^"]*" class="([^"]*)"[^>]*style="([^"]*)"/);
+    assert.ok(root, id + ' has a card root with class and style');
+    assert.ok(root[1].split(/\s+/).includes('prd-capacity-slot'), id + ' carries the prd-capacity-slot card class');
+    assert.ok(/margin:\s*6px\b/.test(root[2]), id + ' has the 6px top margin of the Resources cards');
+  }
+  const app = fs.readFileSync(APP_PATH, 'utf8');
+  assert.ok(app.includes('id="automationUsageCard" class="prd-capacity-slot"'), 'the Resources sub-tab cards use the same class');
+});
