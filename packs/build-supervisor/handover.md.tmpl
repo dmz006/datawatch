@@ -1,0 +1,38 @@
+# Supervisor handover: {{project}}
+Assembled: {{assembled_at}}
+
+## Build context
+- Profile: {{profile}}
+- Tool servers: {{tool_servers}}
+- Project directory: {{project_dir}}
+- Model: {{model}}
+
+## Rules
+### Default build supervisor pack
+{{default_pack}}
+
+### Project rules pack
+{{project_pack}}
+
+### Project rules file
+{{project_rules_file}}
+
+## Pinned state
+{{state_record}}
+
+## Corrections in force
+{{corrections}}
+
+## Direction
+{{#each plans}}
+### {{order}}. {{title}} [{{state}}]
+Goal: {{goal}}
+Next: {{next_work}}
+{{#each work}}
+- {{title}} ({{state}}){{#if blocked}} BLOCKED: {{blocked_reason}}{{/if}}
+{{/each}}
+{{/each}}
+
+## First steps
+1. Read the state record above.
+2. Run your tick (see the tick definitions), then write what you checked back to the state record.
