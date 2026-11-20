@@ -1,6 +1,10 @@
 package supervisorloop
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // Setting keys.
 const (
@@ -271,4 +275,137 @@ func IsKey(key string) bool {
 		}
 	}
 	return false
+}
+
+// SupervisorSettings are the per-project supervisor choices: how often it
+// ticks, which model it runs on, how much context it may carry, and which
+// findings wake it. Only Sonnet and Haiku models are accepted.
+type SupervisorSettings struct {
+	// TickCadence is how often the supervisor wakes on its schedule.
+	TickCadence time.Duration
+	// Model is the explicit model name; it must name a Sonnet or Haiku model.
+	Model string
+	// ContextLimit is the most context tokens a supervisor session may hold.
+	ContextLimit int
+	// ContextAgeLimit is the longest a supervisor session may live before it
+	// is replaced by a fresh one.
+	ContextAgeLimit time.Duration
+	// WakeFindings are the finding kinds that wake a supervisor at once.
+	WakeFindings []string
+}
+
+// SupervisorSettings bounds and defaults.
+const (
+	DefaultSupervisorModel           = "claude-sonnet-5-5"
+	DefaultSupervisorTickCadence     = 20 * time.Minute
+	MinSupervisorTickCadence         = time.Minute
+	MaxSupervisorTickCadence         = 24 * time.Hour
+	DefaultSupervisorContextLimit    = 150000
+	MinSupervisorContextLimit        = 1000
+	MaxSupervisorContextLimit        = 1000000
+	DefaultSupervisorContextAgeLimit = 6 * time.Hour
+	MinSupervisorContextAgeLimit     = time.Minute
+	MaxSupervisorContextAgeLimit     = 7 * 24 * time.Hour
+)
+
+// DefaultSupervisorWakeFindings returns the default wake finding kinds.
+func DefaultSupervisorWakeFindings() []string {
+	return []string{"prd.blocked", "task.review_needed", "task.failed", "task.final_gate_failed"}
+}
+
+// DefaultSupervisorSettings returns the documented defaults.
+func DefaultSupervisorSettings() SupervisorSettings {
+	return SupervisorSettings{
+		TickCadence: DefaultSupervisorTickCadence, Model: DefaultSupervisorModel,
+		ContextLimit: DefaultSupervisorContextLimit, ContextAgeLimit: DefaultSupervisorContextAgeLimit,
+		WakeFindings: DefaultSupervisorWakeFindings(),
+	}
+}
+
+// ValidateSupervisorModel accepts only an explicit Sonnet or Haiku model name.
+func ValidateSupervisorModel(model string) error {
+	m := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case m == "":
+		return fmt.Errorf("model: must name a Sonnet or Haiku model")
+	case strings.Contains(m, "opus"):
+		return fmt.Errorf("model: %q is not allowed; use a Sonnet or Haiku model", model)
+	case strings.Contains(m, "sonnet") || strings.Contains(m, "haiku"):
+		return nil
+	}
+	return fmt.Errorf("model: %q must name a Sonnet or Haiku model", model)
+}
+
+// Validate refuses a bad value and names the offending field.
+func (s SupervisorSettings) Validate() error {
+	if s.TickCadence < MinSupervisorTickCadence || s.TickCadence > MaxSupervisorTickCadence {
+		return fmt.Errorf("tick_cadence: must be between %s and %s, got %s", MinSupervisorTickCadence, MaxSupervisorTickCadence, s.TickCadence)
+	}
+	if err := ValidateSupervisorModel(s.Model); err != nil {
+		return err
+	}
+	if s.ContextLimit < MinSupervisorContextLimit || s.ContextLimit > MaxSupervisorContextLimit {
+		return fmt.Errorf("context_limit: must be between %d and %d, got %d", MinSupervisorContextLimit, MaxSupervisorContextLimit, s.ContextLimit)
+	}
+	if s.ContextAgeLimit < MinSupervisorContextAgeLimit || s.ContextAgeLimit > MaxSupervisorContextAgeLimit {
+		return fmt.Errorf("context_age_limit: must be between %s and %s, got %s", MinSupervisorContextAgeLimit, MaxSupervisorContextAgeLimit, s.ContextAgeLimit)
+	}
+	if len(s.WakeFindings) > MaxWakeKinds {
+		return fmt.Errorf("wake_findings: at most %d entries, got %d", MaxWakeKinds, len(s.WakeFindings))
+	}
+	for _, f := range s.WakeFindings {
+		if strings.TrimSpace(f) == "" {
+			return fmt.Errorf("wake_findings: entries must not be empty")
+		}
+	}
+	return nil
+}
+
+// SupervisorOverrides are optional per-project values; a nil or empty field
+// keeps the default.
+type SupervisorOverrides struct {
+	TickCadence     *time.Duration
+	Model           *string
+	ContextLimit    *int
+	ContextAgeLimit *time.Duration
+	WakeFindings    []string
+}
+
+// OverridesSource supplies the per-project overrides for a project.
+type OverridesSource interface {
+	SupervisorOverrides(project string) (SupervisorOverrides, bool, error)
+}
+
+// LoadSupervisorSettings reads the project's overrides over the defaults and
+// validates the result. An unknown project yields the defaults.
+func LoadSupervisorSettings(src OverridesSource, project string) (SupervisorSettings, error) {
+	s := DefaultSupervisorSettings()
+	if src == nil {
+		return s, nil
+	}
+	o, ok, err := src.SupervisorOverrides(project)
+	if err != nil {
+		return SupervisorSettings{}, fmt.Errorf("load supervisor overrides: %w", err)
+	}
+	if ok {
+		if o.TickCadence != nil {
+			s.TickCadence = *o.TickCadence
+		}
+		if o.Model != nil {
+			s.Model = *o.Model
+		}
+		if o.ContextLimit != nil {
+			s.ContextLimit = *o.ContextLimit
+		}
+		if o.ContextAgeLimit != nil {
+			s.ContextAgeLimit = *o.ContextAgeLimit
+		}
+		if len(o.WakeFindings) > 0 {
+			s.WakeFindings = append([]string(nil), o.WakeFindings...)
+		}
+	}
+	if err := s.Validate(); err != nil {
+		return SupervisorSettings{}, err
+	}
+	return s, nil
 }
