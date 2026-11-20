@@ -80,21 +80,25 @@ if ! curl "${curl_args[@]}" "$BASE/api/health" >/dev/null 2>&1; then
   exit 2
 fi
 
-REST_UP=0   # 1 once the GET probe has a usable route (200 or a 405-able state)
+REST_UP=0     # 1 once the GET probe answered 200 with a stalls array
+REST_ABSENT=0 # 1 when the daemon answered 404/503: the endpoint is absent or
+              # disabled in this build, so the 405, MCP and CLI probes skip
+              # with it (the binary under test came from the same build)
 REST_N=0
 PS_POST="000"
 
 # ---------------------------------------------------------------------------
 # Probe 1: GET /api/autonomous/priority-stalls → 200 + `stalls` array.
-# 404/503 = endpoint absent or disabled → skip (probe 2 rides on the route
-# existing, so it skips too).
+# 404/503 = endpoint absent or disabled in this build → skip (the 405, MCP
+# and CLI probes ride on the route existing, so they skip too).
 # ---------------------------------------------------------------------------
 PS_BODY=$(curl "${curl_args[@]}" "${auth_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/priority-stalls" 2>/dev/null || true)
 PS_CODE=$(echo "$PS_BODY" | tail -n1)
 PS_JSON=$(echo "$PS_BODY" | sed '$d')
 
 if [[ "$PS_CODE" == "404" || "$PS_CODE" == "503" ]]; then
-  skipped "REST — GET /api/autonomous/priority-stalls: HTTP $PS_CODE (endpoint absent or disabled); the 405 and CLI probes skip with it"
+  REST_ABSENT=1
+  skipped "REST — GET /api/autonomous/priority-stalls: HTTP $PS_CODE (endpoint absent or disabled); the 405, MCP and CLI probes skip with it"
 elif [[ "$PS_CODE" == "200" ]] && echo "$PS_JSON" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -123,10 +127,14 @@ fi
 
 # ---------------------------------------------------------------------------
 # Probe 3: MCP — a spawned stdio `datawatch mcp` must list priority_stalls
-# in its tools/list.  No binary → skip (same as the other smoke scripts'
+# in its tools/list.  The daemon answers the same route probe 1 hit, so an
+# absent endpoint there means the binary under test is the same build and
+# skips with it; no binary at all → skip (same as the other smoke scripts'
 # stdio probe).
 # ---------------------------------------------------------------------------
-if [[ -z "$DW_BIN" ]]; then
+if [[ "$REST_ABSENT" -eq 1 ]]; then
+  skipped "MCP — the daemon has no priority-stalls route (HTTP $PS_CODE), so the tool-list probe (same build) skips"
+elif [[ -z "$DW_BIN" ]]; then
   skipped "MCP — no datawatch binary (set DW_BIN=path to probe priority_stalls in tools/list)"
 else
   MCP_RAW=$(mktemp)
@@ -138,7 +146,7 @@ else
     printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
     sleep 2
-  } | (command -v timeout >/dev/null 2>&1 && timeout 90 "$DW_BIN" mcp "${MCP_ARGS[@]}" || "$DW_BIN" mcp "${MCP_ARGS[@]}") > "$MCP_RAW" 2>"$MCP_ERR"
+  } | (command -v timeout >/dev/null 2>&1 && timeout 90 "$DW_BIN" mcp ${MCP_ARGS[@]+"${MCP_ARGS[@]}"} || "$DW_BIN" mcp ${MCP_ARGS[@]+"${MCP_ARGS[@]}"}) > "$MCP_RAW" 2>"$MCP_ERR"
   if python3 - "$MCP_RAW" <<'PY' 2>/dev/null
 import sys
 from json import JSONDecoder
@@ -174,11 +182,12 @@ fi
 # Probe 4: CLI — `datawatch autonomous priority-stalls --json` prints a
 # `stalls` array.  (The flag order is exactly `autonomous priority-stalls
 # [--json]`; the daemon answers the same route as probe 1.)  No binary →
-# skip; the route itself absent/disabled → skip (it is the same daemon
-# route probe 1 found missing, not a CLI defect to fail on here).
+# skip; the route itself absent/disabled in this build → skip (it is the
+# same daemon route probe 1 found missing, not a CLI defect to fail on
+# here).
 # ---------------------------------------------------------------------------
-if [[ "$REST_UP" -ne 1 && "$PS_CODE" != "200" && "$failed" -ne 1 ]]; then
-  skipped "CLI — the REST route is absent/disabled, so the CLI probe (same daemon route) skips"
+if [[ "$REST_ABSENT" -eq 1 ]]; then
+  skipped "CLI — the REST route is absent/disabled (HTTP $PS_CODE), so the CLI probe (same daemon route) skips"
 elif [[ -z "$DW_BIN" ]]; then
   skipped "CLI — no datawatch binary (set DW_BIN=path to probe the autonomous priority-stalls command)"
 else
