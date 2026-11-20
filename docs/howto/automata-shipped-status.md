@@ -369,7 +369,22 @@ and the merge helper script runs a `completed_mark` step after it records the
 shipped state, so a merged Automaton ends Completed from the start. The full
 walk-through is in [Show finished Automata as Completed](automata-completed-migration.md).
 
-## 8. What shipped does not do
+## 8. Merged work stays finished across a daemon restart
+
+An Automaton whose record carries a merge time (`merged_at`) and a merge
+commit (`merge_commit`) and whose branch is contained in main is finished as
+**Completed** on daemon restart and at run start: the daemon completes it
+without re-running its work, and its rules-review judge is not started
+again, so a deploy restart no longer repeats judging on an empty diff. An
+Automaton whose `merge_commit` is not in main still gets its judge: the
+check is a read-only containment test, and any missing record, missing
+repository or git error changes nothing, so the normal run path — with its
+judge — still runs. The completed record gets one decision-log line (kind
+`merged_branch_finish`) saying that no further work or review was started.
+Already completed, cancelled or archived records are never touched by this
+check. What to expect after a restart is in [operations.md](../operations.md#merged-work-stays-finished-across-a-daemon-restart).
+
+## 9. What shipped does not do
 
 - Recording shipped state does not change a stored status — recording and backfill both leave it
   alone (a shipped completed stays `completed`; a shipped cancelled stays
