@@ -178,7 +178,7 @@ skipped by the rules below that read a script; the warn rule
 | `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
 | `verify_script_pipefail_grep_q` | block | With `pipefail` on, a pipeline ends in a quiet grep and can read as a false no-match. | Write the output to a file, then run `grep -q` on the file. |
-| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path another story or task in the plan changes. | Make the allowed list cumulative over the whole plan. |
+| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path the plan names (a story or task title, spec, file list or verification script). | Make the allowed list cumulative over the whole plan. |
 | `fixed_calendar_date_in_test` | warn | The task asks for a test that uses a fixed calendar date, which passes now and fails later. | Take times from the current time with an offset, or an injected clock. |
 
 **Operator note.** The rows fall in three groups:
@@ -263,7 +263,7 @@ by running the script. Each finding names the script (repo-relative), the line
 | `verify_script_syntax` | `<shell> -n` reports a syntax error in a script whose shebang names `bash`, `sh`, `dash`, `ksh` or `zsh`. At most one finding per script. A script whose interpreter is not installed is not flagged. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | The script calls a helper with one shell (for example `sh helper.sh`) while the helper's shebang names another (`#!/usr/bin/env bash`). Helpers that cannot be read, or have no shell shebang, are skipped. | Call the helper with the shell its shebang names, or run it directly. |
 | `verify_script_pipefail_grep_q` | The script enables `pipefail` (`set -o pipefail`, `set -euo pipefail`) and pipes into a quiet grep (`-q`, `-qE`, `-Eq`, `--quiet`, also after `\|&`). grep exits at the first match, the upstream command gets a broken pipe, and the check reads as a false no-match. | Write the pipeline's output to a file, then test the file with `grep -q`. |
-| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path that some story or task in the **whole plan** changes. Files named by the built-in standard tasks count as covered (a templated path is cut to its static folder). A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
+| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path the **whole plan** names: a story or task title, a spec, a planned or generated file list, or a verification script. A Go file the plan names that already has a `_test.go` sibling in the tree drags that test file in with it. Files named by the built-in standard tasks count as covered (a templated path is cut to its static folder), and a folder exemption covers everything under it; glob entries (`*`) are allowed in the list. A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
 
 **Where they run.** The preflight runs in two places, and every finding it
 raises has severity `block`:
