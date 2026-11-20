@@ -7315,6 +7315,47 @@ print(("gone" if "'"$TR_NAME"'" not in d["profiles"] else "present") + ":" + d["
 fi
 
 # ---------------------------------------------------------------------------
+# Priority-stalls surface — the standalone script carries the probes
+#   1. GET /api/autonomous/priority-stalls → 200 with a `stalls` array
+#      (404/503 = endpoint absent/disabled → section skips)
+#   2. POST on the same route → 405 (read-only surface)
+#   3. stdio MCP tools/list contains the `priority_stalls` tool
+#   4. `datawatch autonomous priority-stalls --json` prints a `stalls` array
+# Every probe is read-only: nothing here starts a session or wakes the
+# supervisor.
+H "Priority stalls — GET /api/autonomous/priority-stalls, the priority_stalls MCP tool and the priority-stalls CLI command"
+PS_SCRIPT="$(dirname "$0")/release-smoke-priority-stalls.sh"
+if [[ -x "$PS_SCRIPT" ]]; then
+  PS_ENV=("DATAWATCH_BASE=$BASE" "DATAWATCH_TOKEN=$TOK" "DATAWATCH_INSECURE=${DATAWATCH_INSECURE:-}")
+  # Local mode: the MCP/CLI probes must run against this repo's build.  If
+  # there is no build, force-skip those two probes instead of discovering
+  # an unrelated installed copy (DW_BIN_REQUIRED).
+  if [[ -n "${_DW_BIN:-}" ]]; then
+    PS_ENV+=("DW_BIN=$_DW_BIN")
+    if [[ "$EXTERNAL_DAEMON" -eq 0 && -n "${TEST_CONFIG:-}" ]]; then
+      PS_ENV+=("DW_CONFIG=$TEST_CONFIG")
+    fi
+  elif [[ "$EXTERNAL_DAEMON" -eq 0 ]]; then
+    PS_ENV+=("DW_BIN_REQUIRED=1")
+  fi
+  if PS_OUT=$(env "${PS_ENV[@]}" bash "$PS_SCRIPT" 2>&1); then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      ok "${line#OK: }"
+    done <<< "$PS_OUT"
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      skip "priority-stalls probe skipped (endpoint absent/disabled, daemon unreachable, or no datawatch binary): $(echo "$PS_OUT" | tr '\n' ' ' | sed 's/SKIP: //g' | head -c 400)"
+    else
+      ko "priority-stalls probe failed: $(echo "$PS_OUT" | tr '\n' ' ' | head -c 400)"
+    fi
+  fi
+else
+  skip "release-smoke-priority-stalls.sh missing; priority-stalls probe deferred"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

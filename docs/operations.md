@@ -3107,6 +3107,56 @@ letting them accumulate. Reference:
 extend the `gofmt -l` argument list if new top-level trees appear. See
 [howto/gofmt-check.md](howto/gofmt-check.md).
 
+### no-PWA-when-spec-forbids guard
+
+`scripts/check-no-pwa-when-spec-forbids.sh <spec-file> [base-ref]` refuses a
+change set that touches `internal/server/web/app.js` when the task spec
+forbids a PWA change. It was added after a real Automaton branch (e19b0001,
+daemon-side priority stall wake) modified the PWA although its own spec
+forbade any PWA change. It is development tooling for the repository, not a
+daemon feature: the daemon never runs it, it has no setting in `config.yaml`
+or Settings, and it has no REST, MCP, CLI, chat or web app surface.
+
+- **What it checks.** The spec is lowercased and matched as substrings
+  against a closed list of five phrases — `no pwa change`, `no pwa part`,
+  `forbade any pwa change`, `forbids any pwa change`, `must not change the
+  pwa`. Only then is the change set examined: `git diff --name-only` against
+  the base ref (default the merge base of `HEAD` and `main`, or an explicit
+  second argument), which covers committed and working-tree changes alike, is
+  failed on when the exact path `internal/server/web/app.js` appears in it.
+  Other PWA files (`style.css`, `index.html`, the locale bundles) do not trip
+  it.
+- **Outcome.** Exit `0` when the spec does not forbid a PWA change or `app.js`
+  is untouched; exit `1` printing exactly `forbidden PWA change:
+  internal/server/web/app.js` on stderr; exit `2` on a wrong argument count,
+  a missing spec file, an undeterminable default base ref, or a failed
+  `git diff`. The guard is read-only — it never reverts or edits anything; a
+  refusal is fixed by reworking the branch so the PWA is untouched, or by
+  amending the spec if the PWA work is actually wanted.
+- **Where it runs.** Run it by hand against a branch's spec file and the base
+  ref it branched from. Its self-test, `tests/test-no-pwa-when-spec-forbids.sh`
+  (a throwaway `mktemp -d` git repo, four cases asserting the exit code and
+  the exact stderr line), is one of the entries in the `test:` target of the
+  `Makefile` (`make test`). It is not part of `make lint`, the local pre-tag
+  run, or any CI workflow job.
+- **Not configurable.** The phrase list, the audited path and the default
+  base ref are fixed in the script. Extend the `grep -qx` match list if the
+  intent is "no PWA file at all", and the phrase list plus a self-test case
+  if specs express the prohibition differently.
+
+**Operator review:** the guard fails only on the exact path
+`internal/server/web/app.js` and only on the five fixed phrases, and nothing
+runs it automatically against a real branch — decide whether it should join
+a decomposition lint, a verification step or the merge helper, and whether
+the `app.js`-only scope is the bar. The offending branch, `automaton/e19b0001`,
+still changes `app.js` (the `'priority_stall'` line in the Events lifecycle
+filter) against a spec that says `no PWA change` — keeping or removing that
+line is the operator's call at merge, and the guard fails it (exit 1) until
+resolved. See
+[howto/no-pwa-when-spec-forbids.md](howto/no-pwa-when-spec-forbids.md) and
+the gate evidence in
+[9c8f0001 final gate](plans/reports/archive/2026-11/9c8f0001-final-gate.md).
+
 ---
 
 ## 8. Web UI Features
