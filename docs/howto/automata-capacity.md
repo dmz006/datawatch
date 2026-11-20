@@ -1118,6 +1118,69 @@ When you see that alert:
    you want, the task needs to run again on it instead of continuing on the
    resumed session.
 
+## Orphan judge and verifier slots
+
+A judge or verifier can end up holding a slot in the pi-prompt pool (`llm:pi-prompt`)
+with no live session and no node lease. The lane then sits wasted while a node
+is idle. The common leak is already closed at the source — when the daemon
+frees a task's capacity, it releases the task's verifier lease along with it —
+and whatever still slips through, the daemon frees on every capacity tick (the
+same tick that reaps leaked leases):
+
+- A `judge:` or `verify:` holder with **no live session and no node lease** is freed.
+- A judge or verifier whose **Automaton is finished** (merged, cancelled or
+  failed) and that has no live session is freed.
+- A holder with a **live session is never freed**, whatever its lease state. The
+  reconcile only releases ledger slots; it never ends or kills a session.
+- A lease younger than the **slot reconcile grace** counts as having a node
+  lease, so a holder that was just admitted is left alone. The grace is set by
+  `autonomous.capacity_slot_reconcile_grace_seconds` (default 60; minimum 10;
+  `0` reads the default). Values 1 to 9 and negative values are refused on every
+  surface.
+- Running it again frees nothing more.
+
+**What you see.** One journal line per freed slot
+(`[capacity] reaped leaked lease holder=... pool=...: <reason>`), one alert
+titled `Capacity slot freed` whose body reads `Freed a pi-prompt worker
+(llm:pi-prompt) slot held by <holder>: <reason>` with the holder in plain
+words and the short id second, and one count on the reaped-leases metric. The
+reason is `no live session and no node lease` or `Automaton finished`.
+
+**Operator review.** The alert is informational. If it repeats for the same
+Automaton, a judge or verifier is being started without a node lease; check the
+node pools and the holder in [Readable holder names](#readable-holder-names).
+
+**Setting.** `autonomous.capacity_slot_reconcile_grace_seconds` (default 60,
+minimum 10, `0` = 60) is the only knob. It is read live, so no restart is
+needed. Set it with the Web settings field *Slot reconcile grace*,
+`datawatch config set autonomous.capacity_slot_reconcile_grace_seconds <n>`,
+`PUT /api/config`, the comm `configure` verb or the MCP `autonomous_config_set`
+tool. Raise it only if the alert fires for holders that were admitted just
+before the check; a longer grace delays the release of a truly leaked slot by
+the same amount. Nothing is turned on or off by it, and it never ends a
+session.
+
+### Confirming a freed slot
+
+A judge or verifier can keep holding a pool slot after its session ended or
+its Automaton merged. Every ten seconds the daemon checks the pi-prompt pool
+and frees a `judge:` or `verify:` slot that is past the slot reconcile grace
+and has no live session and no node lease, or whose Automaton is finished. Each freed
+slot raises an alert that says which slot was freed and why. A slot whose
+session is still running is never freed, and the reconcile never ends a
+session.
+
+To confirm:
+
+1. Open the alert list and find the `Capacity slot freed` alert. Read the
+   slot it names and the reason (`no live session and no node lease`, or
+   `Automaton finished`).
+2. Open the capacity view (`datawatch capacity`, or the Capacity and budget
+   card) and check that the pool's held count dropped by one and that the
+   holder is no longer listed.
+3. If the holder is still listed, its session is still running, so it was
+   correctly left alone.
+
 ## Readable holder names
 
 You don't need to keep a task-id diary. Wherever the capacity surfaces used

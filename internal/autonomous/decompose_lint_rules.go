@@ -44,7 +44,9 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // at lint time: verify_script_unknown_flag checks each invoked
 // command's own `--help` for the long flags the script passes, and
 // verify_script_text_not_in_spec requires every checked markdown
-// heading or output phrase to appear verbatim in the task spec. Both
+// heading or output phrase to appear verbatim in the task spec or in
+// equivalent wording (every content word present after stopword
+// removal and simple inflection folding). Both
 // stay out of the way by design — commands the environment cannot
 // find, and help output that cannot be read, are skipped silently —
 // and, like every rule here, an operator keeps them off by listing

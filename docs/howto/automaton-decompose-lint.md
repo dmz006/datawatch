@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question, allowlist, phrase check]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
@@ -144,13 +144,13 @@ and never name a particular project, repository or home directory.
 | `verify_script_docs_without_sync` | block | a verification script that checks docs, the embedded docs copy (`internal/server/web/docs`) or how-to coverage (`check-docs-sync`, `check-howto-coverage`, `docs/howto`) but never runs `make sync-docs`, directly or through a sourced helper. The finding names the script path |
 | `artefact_files_allowed` | block | a verification script that does a changed-file-set check without exempting the generated artefacts (changelog draft, parity draft, gate report) the daemon writes per Automaton — the final gate re-runs the script on the cumulative tree where those files are present, so a file-set check without them can only fail. Fix: exclude `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-files computation |
 | `final_gate_artefact_allowed` | block | a verification script that asserts the whole changed-file set against a finite list with no guard for the final gate re-running it on the cumulative tree. Fix: check only the files this task adds, or skip the file-set check when the final gate re-runs the script |
-| `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help (`--help`, then `-h`, then the bare command, each under a bounded timeout). A command that does not resolve, a probe that fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
-| `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not name verbatim — a heading also anchors with its leading `#` stripped. Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
+| `script_invokes_known_flag` | block | a verification script that invokes a command with a long flag the command's own help does not list as a whole option: the rule resolves the command on PATH and probes its help with `prefix --help` only (never `-h`, never the bare prefix), under a 5-second timeout, in its own process group, with its output capped at 64 KiB. A command that does not resolve, a probe that times out, fails or prints nothing, short flags and a script that does not exist yet are all skipped — the rule skips on uncertainty rather than guessing. The finding names the script path and the offending invocation |
+| `check_matches_spec_text` | block | a verification script (directly or through a sourced helper, one level deep) that checks for a markdown heading (a quoted string of one to six `#` followed by a space, as quoted or in a sed address like `/## Gates/`) or the exact gate output format `Final answer` / `Verification summary` that the task's own spec does not state — verbatim or in equivalent wording, the same words in any order. A heading also anchors with its leading `#` stripped (a spec that says “gates section” anchors a check of `## Gates`). Quoted literals of arbitrary words and quotes on non-check lines never fire, and a script that does not exist yet is skipped. The finding names the script path and the unanchored checked item |
 | `final_gate_without_script` | block | a `final_gate` task with no verification script, no `verification_script_reason` and no usable report path |
 | `verify_script_artefact_files` | block | a verification script that flags unexpected changed files without exempting the daemon-generated artefact folders (`docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/`) and `CHANGELOG.md`; the same fault as `artefact_files_allowed`, detected by the shape of the changed-set check rather than by a literal artefact-path scan, so the two can both fire on one script |
 | `verify_script_final_gate_rerun` | block | a script that holds the whole changed-file set to a finite allow-list with no guard for the final gate rerunning it on the cumulative tree; the sibling of `final_gate_artefact_allowed` with the guard recognition (env var, `--final` argument, add-only check) of the stability checks |
 | `verify_script_unknown_flag` | block | a verification script that passes a long flag to a command (or subcommand) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted; commands the environment cannot find, or whose help it cannot read, are skipped |
-| `verify_script_text_not_in_spec` | block | a verification script that greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec; the spec is the contract, so an expectation stated nowhere is unverifiable |
+| `verify_script_text_not_in_spec` | block | a verification script that greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase the task spec does not state — verbatim or in equivalent wording; the spec is the contract, so an expectation stated nowhere is unverifiable |
 | `no_verification_script` | warn | a task with no verification script |
 | `unexecutable_verification_script` | warn | a task whose verification script is a command string, or (when the Automaton's project directory is known) a script file that is missing, not executable or without a shebang; a script the task lists in its own files is not flagged |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
@@ -181,19 +181,30 @@ project directory (and any helper it sources, one level deep) and name the
   file-set check when the final gate re-runs the script.
 - `script_invokes_known_flag` — fires when the script invokes a command with
   a long flag the command's own help does not list as a whole option. The
-  rule probes the real binary's help (`--help`, then `-h`, then the bare
-  command, bounded by a timeout); anything it cannot establish — an
-  unresolvable command, a hung or silent probe, short flags, a missing
-  script — is skipped, never guessed. The finding names the offending
-  invocation.
+  rule probes the real binary's help with `prefix --help` only (never `-h`,
+  never the bare prefix), under a 5-second timeout, in its own process
+  group, with its output capped at 64 KiB; anything it cannot establish —
+  an unresolvable command, a hung or silent probe, short flags, a missing
+  script — is skipped, never guessed. The bounds are not decoration: the
+  2026-11-18 daemon abort (SIGABRT, core dump) was a help-probe fallback
+  that ran the command's bare prefix with no working directory, no process
+  group and no output cap, and a long-running command in that position grew
+  the daemon's memory until the Go runtime aborted the process; the probe
+  is now `--help`-only and bounded, and a bad decompose output can no longer
+  abort the daemon either (the parse-plus-lint step runs under a panic
+  guard and a parse failure records source `decompose-parse`, category
+  `invalid-response` — see [howto/retry-policy.md](retry-policy.md) and
+  [howto/decompose-async.md](decompose-async.md)). The finding names the
+  offending invocation.
 - `check_matches_spec_text` — fires when the script (or a helper it sources)
   asserts a markdown heading, or the exact gate output formats `Final answer`
-  / `Verification summary`, that the task's own spec does not name verbatim (a
-  heading also anchors with its leading `#` stripped); a spec that names the
-  heading it asks for (or says "the final answer" and the script checks
-  `Final answer`) anchors, and arbitrary words never match. Fix: state the
-  exact heading and format the script checks in the task spec that asks for
-  it. The finding names the script path and the unanchored checked item.
+  / `Verification summary`, that the task's own spec does not state, verbatim
+  or in equivalent wording (stop words and simple plural/verb endings fold, and
+  word order does not matter; a heading also anchors with its leading `#`
+  stripped). A spec that says “the final answer” anchors a check of `Final
+  answer`, and a spec that says “carry a gates section” anchors `## Gates`; a
+  content word the spec never states anchors nothing. Fix: state the heading
+  and format the script checks in the task spec — the same words are enough. The finding names the script path and the unanchored checked item.
 - `final_gate_without_script` — fires on a `final_gate` task that has no
   script, no `verification_script_reason` and no usable report path. Fix: give
   it a script, a report path, or a reason.
@@ -209,9 +220,10 @@ project directory (and any helper it sources, one level deep) and name the
   `<command> --help`), or rephrase the check. Commands the environment cannot
   find are not checked — the rule stays out of the way rather than guessing.
 - `verify_script_text_not_in_spec` — fires when the script greps or compares
-  against a markdown heading or a multi-word output phrase that does not appear
-  verbatim in the task spec. Fix: state the exact heading or the exact format
-  being checked, word for word, in the task spec.
+  against a markdown heading or a multi-word output phrase the task spec does
+  not state, verbatim or in equivalent wording. Fix: state the heading or the
+  format being checked in the task spec — the same words are enough, in any
+  order.
 
 ### The unknown-flag and spec-text rules, by id
 
@@ -223,7 +235,7 @@ id** and the specific offending flag or text.
 | Rule id | What fault it catches | How to fix the flagged script |
 |---|---|---|
 | `verify_script_unknown_flag` | the script passes a long flag to a command — or one of its subcommands — that the installed binary's own `--help` output does not list, so the assertion cannot hold on the machine that will run it | validate the flags against the binary's help (`<command> --help`, or the subcommand's help), keep only the flags the installed binary actually accepts, and drop or rephrase any that do not; commands the environment cannot find are skipped by the rule, never guessed at |
-| `verify_script_text_not_in_spec` | the script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec — an expectation stated nowhere is unverifiable, and the check fails the moment the wording differs | state the **exact heading** being checked (or the exact phrase and format) in the task spec, word for word, so the check asserts against a contract that exists in the plan |
+| `verify_script_text_not_in_spec` | the script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase the task spec does not state, verbatim or in equivalent wording — an expectation stated nowhere is unverifiable | state the **heading** being checked (or the phrase and format) in the task spec, in the same words — any order and wording — so the check asserts against a contract that exists in the plan |
 
 The finding is a pointer at the script, not a verdict on the work: edit the
 script as the column says, then confirm with a dry run of the Automaton's
@@ -252,6 +264,30 @@ allowed-file list). Its findings are `block`, sit beside the rule-pack
 findings, and are not rules you can override; they still run, and record, when
 the mode is `off`. The dry run does not include them. See
 [Preflight checks for planner-written scripts](automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+
+## 3a. Final gate allowlist and meaning-based phrase checks
+
+Two script checks compare against what the task specs actually say.
+
+**Allowlist.** A final gate that restricts changed files must build its
+allowlist from every path the task specs and the investigation name, plus the
+existing tests those changes need and the generated changelog and parity draft
+files — never from a guessed directory list. The rule `verify_script_allowed_files`
+now also fails when a task spec names a file the gate's allowlist rejects.
+Glob entries (`docs/*`) and generated-folder prefixes are accepted as coverage.
+
+Worked example: a task spec says "edit `internal/foo/bar.go` and `docs/howto/x.md`".
+A gate whose allowlist lists only `internal/foo/bar.go` fails the rule, naming
+`docs/howto/x.md` and the task whose spec names it. Add that path (or a covering
+glob such as `docs/howto/*`), plus `internal/foo/bar_test.go` if it exists, and
+the finding clears.
+
+**Phrase checks.** `verify_script_text_not_in_spec` and the spec-anchor check
+compare the *meaning* of a checked phrase, not one literal wording. Filler words
+are dropped, and word order, re-wording and plural or tense variants do not
+matter: if every key word of the phrase appears in the spec, the spec states it.
+Example: a script checking "tests passed" is anchored by a spec that says
+"the test suite must pass".
 
 ## 4. Writing your own rules — a worked example
 
@@ -318,12 +354,12 @@ hold for the same task. The leaves:
 | `verification_script_docs_without_sync` | assert the script checks docs / embedded docs / how-to coverage without running `make sync-docs`; skipped when the script file does not exist |
 | `verification_script_artefact_files_allowed` | assert the script's changed-file-set check does not exempt the generated artefacts the daemon writes per Automaton (changelog draft, parity draft, gate report); skipped when the script file does not exist |
 | `verification_script_final_gate_artefact_allowed` | assert the script asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; skipped when the script file does not exist |
-| `verification_script_invokes_unknown_flag` | assert the script invokes a command with a long flag the command's own help does not list as a whole option; the command is probed on PATH with a bounded timeout and an unresolvable, hung or silent command is skipped, never guessed |
+| `verification_script_invokes_unknown_flag` | assert the script invokes a command with a long flag the command's own help does not list as a whole option; the command is probed on PATH with `--help` only, under a bounded timeout, and an unresolvable, hung or silent command is skipped, never guessed |
 | `fixed_calendar_date_in_test` | assert the task writes a test (a test file in its files list, or an Add/Write title naming a test) and its spec contains a fixed `YYYY-MM-DD` date |
 | `verification_script_artefact_files` | assert the script flags unexpected changed files without exempting the daemon-generated artefact folders and `CHANGELOG.md`; skipped when the script file does not exist |
 | `verification_script_final_gate_rerun` | assert the script checks the whole changed-file set against a finite allow-list with no final-gate rerun guard; skipped when the script file does not exist |
 | `verification_script_unknown_flag` | assert the script passes a long flag, to an invoked command or subcommand, the command's own `--help` output does not list; commands the environment cannot find are not checked, and unreadable help output is skipped |
-| `verification_script_text_not_in_spec` | assert the script greps or compares against a markdown heading or a multi-word output phrase that the task spec does not contain verbatim; text the script generates (echo/printf writes, comments) is not an assertion; skipped when the script file does not exist |
+| `verification_script_text_not_in_spec` | assert the script greps or compares against a markdown heading or a multi-word output phrase the task spec does not state, verbatim or in equivalent wording; text the script generates (echo/printf writes, comments) is not an assertion; skipped when the script file does not exist |
 | `kind` | assert the task kind (for example `final_gate`), case-insensitive |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |

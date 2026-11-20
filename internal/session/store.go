@@ -156,6 +156,12 @@ type Session struct {
 	ChannelPort      int               `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
 	ThreadIDs        map[string]string `json:"thread_ids,omitempty"`    // per-backend thread IDs for threaded messaging
 	Profile          string            `json:"profile,omitempty"`       // named profile used to launch this session
+	// WorkerProfile is the worker profile this session was started with
+	// (nil when the session was launched without one). Retained on the
+	// record so restart/resume re-applies the same profile and the launch
+	// hook can read the session's MCP selection; it is what keeps a
+	// profiled (e.g. lean) session on its profile across restarts.
+	WorkerProfile *workerprofile.WorkerProfile `json:"worker_profile,omitempty"`
 	// AppliedFields records, per worker-profile field (mcp, tools, skills,
 	// context, model, effort), what the launch backend actually did with it
 	// at start time (workerprofile.RecordApplied). Set from

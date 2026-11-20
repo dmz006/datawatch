@@ -26,7 +26,7 @@ func TestClassifyTaskCommitPathsUnsafePaths(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			add, pathspec, _, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
+			add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
 			if len(skipped) != 0 {
 				t.Errorf("%q must not be skipped, got %v", tc.path, skipped)
 			}
@@ -80,7 +80,7 @@ func TestClassifyTaskCommitPathsPathGuardTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			add, pathspec, _, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
+			add, pathspec, skipped := classifyTaskCommitPaths(context.Background(), wt, []string{tc.path})
 			if tc.wantAdd && (len(add) != 1 || len(pathspec) != 1) {
 				t.Errorf("want add+pathspec, got add=%v pathspec=%v", add, pathspec)
 			}

@@ -319,6 +319,39 @@ On a bundled plan the dollar figure is `api_equivalent_usd`, labeled **“bundle
 | `release` | Release (with `units` — the shipped units — per row; work not yet shipped lands under `unreleased`) |
 | `week` | Week, using `cost_report.week_start` (Monday by default, or Sunday) |
 
+### Grouping by project
+
+The Project grouping (`group_by=project` on the cost series, the **Project**
+choice in the chart cards) draws one line per project. Each session's spend is
+placed under the project its Automaton resolves to, in this order:
+
+1. **The Automaton's project link**, the project name set on the Automaton.
+2. **Its parent Automaton's project**, followed up the parent chain. A spawned
+   child counts toward its parent's project; the walk is capped and cannot loop.
+3. **Its project directory**: the last part of the directory path names the
+   project.
+
+**A project name is never an Automaton id.** The Automaton's own id is skipped
+at every step: a project link or directory name equal to that id is ignored and
+the walk moves on to the next step, so the Project grouping never shows an
+Automaton id as a project name. A project name that equals a *different*
+Automaton's id is not filtered out by this rule; see the operator-review note
+in [automata-cost.md](automata-cost.md#cost-grouped-by-project).
+
+An Automaton that resolves to none of these, or a session with no Automaton at
+all, has no project, so its spend lands on one line named **unassigned**. There
+is only one such line, however many Automata lack a project. The Projects
+sub-tab's Unassigned page lists those Automata one by one (see
+[projects-tab.md](projects-tab.md#the-page-sub-tabs)); the cost line only sums
+their spend. The glossary entry is **Unassigned (project line)** in
+[datawatch-definitions.md](../datawatch-definitions.md).
+
+**Unattributed still means spend with no owner.** It is the row for spend whose
+owner field is blank under the Automaton, Automation and model groupings. The
+Project grouping has no separate unattributed line: spend with no Automaton
+owner has no project either, so it is counted on the **unassigned** line. Either
+way the spend is not dropped and is not backfilled.
+
 ### The per-release roll-up
 
 `group_by release` is the roll-up for “what did each release cost”. The
@@ -330,7 +363,7 @@ tokens. Work whose owner has *not shipped yet* lands under the **`unreleased`**
   row instead of being dropped, and a group that spans different releases
 carries the `mixed` key with `units` blank.
 - **`units` is on the row.** Each `release` row carries `units`, the count of
-  shipped units (PRDs / Automations) that release contains, from the daemon's
+  shipped units (Automata / Automations) that release contains, from the daemon's
   shipped-unit state — that is the roll-up: sessions and tokens *per released
   unit* are yours to divide out, and the `unreleased` row tells you how far
   behind the ships the work is.
@@ -441,12 +474,17 @@ default.
 
 ## The chart cards on the Automata page
 
-The Automata page shows the combined usage report as four cards, in the cost
-report area of its **Progress and cost** tab. A row of controls above them
-sets the grouping (Project, Automation or Automaton), the window (7 days to 8
-weeks) and whether the first chart shows tokens or money. Every card has a
-one-line purpose, a state, a reason and a next action, and a **?** that opens
-this page.
+The Automata page shows the combined usage report as four titled cards, in
+the cost report area of its **Progress and cost** tab. A row of controls
+above them sets the grouping (Project, Automation or Automaton), the window
+(7 days to 8 weeks) and **Show** — tokens or money for the cost-over-time chart, and offers
+a **Refresh**. Each card repeats the same three controls in its own row, and
+adds a **Series** choice: the top **5**, **10** or **20** groups, or
+**All** (10 by default). The choices are one shared state written by every
+card's row, so the cards never disagree, and every choice repaints the
+loaded data without a new request. Every card has a title, a one-line
+purpose, a state, a reason and a next action, and a **?** that opens this
+page.
 
 | Card | What it draws | Notes |
 |---|---|---|
@@ -455,10 +493,19 @@ this page.
 | **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
-Each chart draws at most six lines and sixty points per line, and each table
-at most eight rows; the card says when more groups exist. Cost over time and
-tool usage are not recorded per Automation, so under that grouping only the
-failures chart and the combined table are drawn.
+Each chart draws the chosen number of series — the groups with the largest
+totals first — and folds the rest into one **Other** line, so nothing is
+dropped and the card says how many of the groups it is showing; with
+**All** every group is a line. Each series carries at most sixty points. The
+cost and tool-usage legends name every series as a tile you click to show or
+hide it in that card's drawing only; a hidden series keeps its name in the
+legend, struck through, and the **Other** line is a plain entry, not a tile.
+Each table shows the same number of groups and folds the rest into one
+**Other** row, saying how many of its rows it is showing. Every series is
+named by its label — an Automaton's title, never its id, the id only where
+no title is known. Cost over time and tool usage are not recorded per
+Automation, so under that grouping only the failures chart and the combined
+table are drawn.
 
 A card whose data is empty, or whose view the daemon cannot supply, is not
 drawn. Its reason and next action appear as an entry at the top of the **Events**

@@ -28,6 +28,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +121,9 @@ type SupervisorLoopSteps struct {
 	// archiveBranchCheck, when non-nil, names a record that must not be
 	// archived this pass even when it is otherwise ready (a branch that must
 	// be kept). Nil (the default) archives everything eligible.
-	archiveBranchCheck func(*PRD) bool
+	// It returns whether to keep, plus the commits ahead of the base (0 when
+	// the state is unknown).
+	archiveBranchCheck func(*PRD) (bool, int)
 	// mergeGit is the git runner the branch check uses. Nil means the
 	// production runner; tests inject a fake.
 	mergeGit MergeGitRunner
@@ -134,6 +137,7 @@ type SupervisorLoopSteps struct {
 	cancelSeen    map[string]time.Time // first pass that saw a cancelled record with no cancel decision
 	lastDeployed  string               // newest shipped release already deployed
 	lastConflict  string               // newest merge conflict recorded
+	heldReasons   map[string]string    // transient: record id -> why the last close pass kept it
 }
 
 // NewSupervisorLoopSteps registers the steps over the coordinator. engine
@@ -306,6 +310,9 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	closed := 0
 	held := 0
 	kept := 0
+	keptBy := map[PRDStatus]int{}
+	reasons := map[string]string{}
+	keepUnmerged := s.archiveKeepUnmerged()
 	now := s.now()
 	grace := s.archiveGraceMinutes()
 	// Read status and cancel time under the store lock: the executor and the
@@ -344,9 +351,17 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		}
 		// A cancelled record past its grace is still kept while its branch
 		// holds commits that are not on the base branch.
-		if f.status == PRDCancelled && s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
-			kept++
-			continue
+		// Completed and rejected records get the same check in the pass they
+		// reached their state, unless autonomous.archive_keep_unmerged is off.
+		// Cancelled keeps its guard whatever that setting says.
+		if s.archiveBranchCheck != nil && (f.status == PRDCancelled || keepUnmerged) {
+			if keep, ahead := s.archiveBranchCheck(p); keep {
+				kept++
+				keptBy[f.status]++
+				reasons[p.ID] = fmt.Sprintf("branch %s has unmerged work (%d ahead)", p.Git.Branch, ahead)
+				log.Printf("[autonomous] supervisor-loop: kept %s (%s): branch %s, %d commits ahead of base", p.ID, f.status, p.Git.Branch, ahead)
+				continue
+			}
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))
@@ -357,6 +372,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	// Forget first-seen times of records no longer cancelled, so a later
 	// cancel of the same record starts a fresh grace.
 	s.mu.Lock()
+	s.heldReasons = reasons
 	for id := range s.cancelSeen {
 		if !live[id] {
 			delete(s.cancelSeen, id)
@@ -368,9 +384,39 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		detail += fmt.Sprintf(" (held %d cancelled within the %d-minute grace)", held, grace)
 	}
 	if kept > 0 {
-		detail += fmt.Sprintf(" (kept %d cancelled with unmerged branch work)", kept)
+		if n := keptBy[PRDCancelled]; n > 0 {
+			detail += fmt.Sprintf(" (kept %d cancelled with unmerged branch work)", n)
+		}
+		for _, st := range []PRDStatus{PRDCompleted, PRDRejected} {
+			if n := keptBy[st]; n > 0 {
+				detail += fmt.Sprintf(" (kept %d %s with unmerged branch work)", n, st)
+			}
+		}
 	}
 	return detail, errors.Join(errs...)
+}
+
+// archiveKeepUnmerged reads autonomous.archive_keep_unmerged live; unset is true.
+func (s *SupervisorLoopSteps) archiveKeepUnmerged() bool {
+	if s == nil || s.c == nil || s.c.m == nil {
+		return config.DefaultArchiveKeepUnmerged
+	}
+	cfg := s.c.m.Config()
+	if cfg.ArchiveKeepUnmerged == nil {
+		return config.DefaultArchiveKeepUnmerged
+	}
+	return *cfg.ArchiveKeepUnmerged
+}
+
+// HeldReason is why the latest close pass kept record id (empty when it did
+// not). Transient and in memory only; never persisted.
+func (s *SupervisorLoopSteps) HeldReason(id string) string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.heldReasons[id]
 }
 
 // archiveGraceMinutes reads autonomous.archive_grace_minutes live from the

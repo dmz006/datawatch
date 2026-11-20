@@ -86,6 +86,10 @@ func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 	a.spawnFn = spawn
 	a.verify = verify
 	a.M.SetStuckRunningHooks(a.refireRollup, a.executorLive)
+	// The scan-fix loop's run step needs the same executor pair (scan_fix_loop.go).
+	a.M.SetFixLoopRun(func(ctx context.Context, prdID string) error {
+		return a.M.Run(ctx, prdID, a.spawnFn, a.verify)
+	})
 	a.execWG.Add(1)
 	go func() {
 		defer a.execWG.Done()
@@ -149,12 +153,11 @@ func (a *API) productionPlanningResumeHooks() planningResumeHooks {
 //   - ingest_output: the planner ended with a complete, parsable output. The
 //     plan is ingested through the normal decompose path, and a decision says
 //     it was recovered from the output file.
-//   - restart_planning: the policy is restart, or the planner left no usable
-//     output. The planner record is cleared, PlanningRestartedOnce is set and
-//     planning starts again exactly once. When the flag is already set the
-//     Automaton goes to draft instead.
-//   - reset to draft: the policy is draft, or no reader is wired, or a restart
-//     was already used.
+//   - restart: the planner session is gone and left no usable output. The
+//     planner record is cleared and the decompose starts again.
+//
+// The decision is ResolvePlannerResume. No path counts a failure, records a
+// failure or sets the Automaton to draft: it stays in planning.
 //
 // Every live planner session of the PRD that no reader owns is killed on every
 // path, and the decision says how many were killed.
@@ -166,64 +169,43 @@ func (a *API) bootResumePlanning(prd *PRD) {
 // outcomes can be tested with fakes.
 func (a *API) bootResumePlanningWith(prd *PRD, h planningResumeHooks) {
 	var plannerID, outputFile string
-	var restartedOnce bool
 	a.M.store.WithLock(func() {
 		plannerID, outputFile = prd.PlannerSessionID, prd.PlannerOutputFile
-		restartedOnce = prd.PlanningRestartedOnce
 	})
 	policy := config.NormalizePlanningRestartPolicy(a.M.Config().PlanningRestartPolicy)
-	in := PlanningResumeInput{
-		Policy:               a.M.Config().PlanningRestartPolicy,
-		HasPlannerRecord:     plannerID != "",
-		SessionAlive:         plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID),
-		AlreadyRestartedOnce: restartedOnce,
+	alive := plannerID != "" && plannerSessionLive(a.M.liveDecomposeSessions(prd.ID), plannerID)
+	if plannerID != "" && !alive {
+		// A planner that ended with a complete, parsable plan is ingested as a
+		// normal decompose result; the Automaton moves on without a new planner.
+		if raw := h.readOutput(prd, outputFile); ClassifyPlannerOutput(raw) == OutputCompleteParsable {
+			if err := h.ingest(prd.ID, string(raw)); err == nil {
+				a.M.ClearPlannerSession(prd.ID)
+				orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+				h.recordDecision(BootResumeEntry{
+					PRDID: prd.ID, Outcome: "planning_ingested", At: time.Now(),
+					Reason: fmt.Sprintf("plan recovered from the planner output file %s: the planner session had ended with complete, parsable output, so it was ingested as a normal decompose result and no new planner ran. %s", outputFile, orphanNote(orphans)),
+				})
+				return
+			} else {
+				fmt.Printf("[autonomous] boot-resume: prd=%s: ingest of the recorded planner output failed: %v\n", prd.ID, err)
+			}
+		}
 	}
-	var raw []byte
-	if in.HasPlannerRecord && !in.SessionAlive {
-		raw = h.readOutput(prd, outputFile)
-		in.OutputState = ClassifyPlannerOutput(raw)
-	}
-	action, reason := DecidePlanningResumeWithReason(in)
+	action, reason := ResolvePlannerResume(alive)
 	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart: %s (action=%s)\n", prd.ID, reason, action)
 
-	switch action {
-	case ActionAttachReader:
+	if action == PlannerResumeReattach {
 		if a.M.reattachPlanner(prd.ID, plannerID, outputFile) {
-			a.M.killOrphanDecomposeSessions(prd.ID, plannerID)
-			return
-		}
-	case ActionIngestOutput:
-		err := h.ingest(prd.ID, string(raw))
-		if err == nil {
-			a.M.ClearPlannerSession(prd.ID)
-			orphans := a.M.killOrphanDecomposeSessions(prd.ID)
+			orphans := a.M.killOrphanDecomposeSessions(prd.ID, plannerID)
 			h.recordDecision(BootResumeEntry{
-				PRDID: prd.ID, Outcome: "planning_ingested", At: time.Now(),
-				Reason: fmt.Sprintf("plan recovered from the planner output file %s: the planner session had ended with complete, parsable output, so it was ingested as a normal decompose result and no new planner ran. %s", outputFile, orphanNote(orphans)),
+				PRDID: prd.ID, Outcome: "planning_reattached", At: time.Now(),
+				Reason: fmt.Sprintf("%s. %s", reason, orphanNote(orphans)),
 			})
 			return
 		}
-		fmt.Printf("[autonomous] boot-resume: prd=%s: ingest of the recorded planner output failed: %v\n", prd.ID, err)
-	case ActionRestartPlanning:
-		if !restartedOnce {
-			a.restartPlanningOnBoot(prd, h, reason, policy)
-			return
-		}
-		reason += "; planning was already restarted once for this Automaton, so it is reset to draft"
+		reason = "the planner session is still alive but no reader could be attached, so the Automaton stays in planning and the decompose is started again"
 	}
-
-	// Reset to draft: the fallback for every other path.
-	a.M.ClearPlannerSession(prd.ID)
-	a.M.store.WithLock(func() { prd.Status = PRDDraft })
-	if a.M.store.SavePRD(prd) == nil {
-		a.M.emitPRDStatus(prd, PRDPlanning, nil, nil)
-	}
-	orphans := a.M.killOrphanDecomposeSessions(prd.ID)
-	h.recordDecision(BootResumeEntry{
-		PRDID: prd.ID, Outcome: "planning_reset_to_draft", At: time.Now(),
-		Reason: fmt.Sprintf("%s; policy=%s; reset to draft. %s", reason, policy, orphanNote(orphans)),
-	})
-	fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
+	a.restartPlanningOnBoot(prd, h, reason, policy)
 }
 
 // restartPlanningOnBoot starts planning again for prd, exactly once: it kills
@@ -239,7 +221,7 @@ func (a *API) restartPlanningOnBoot(prd *PRD, h planningResumeHooks, reason, pol
 	})
 	h.recordDecision(BootResumeEntry{
 		PRDID: prd.ID, Outcome: "planning_restarted", At: time.Now(),
-		Reason: fmt.Sprintf("%s; policy=%s; planning is started again once and planning_restarted_once is now set, so a further restart falls back to draft. %s%s", reason, policy, orphanNote(orphans), a.M.bootBackoffNote(prd.DecompositionProfile)),
+		Reason: fmt.Sprintf("%s; policy=%s; the Automaton stays in planning and the decompose is started again. %s%s", reason, policy, orphanNote(orphans), a.M.bootBackoffNote(prd.DecompositionProfile)),
 	})
 	fmt.Printf("[autonomous] boot-resume: prd=%s planning restarted once (policy=%s)\n", prd.ID, policy)
 	h.startDecompose(prd.ID)
@@ -745,6 +727,9 @@ func (a *API) SetConfig(v any) error {
 	if cfg.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("config: capacity_adoption_wait_seconds must be >= 0")
 	}
+	if g := cfg.CapacitySlotReconcileGraceSeconds; g < 0 || (g > 0 && g < 10) {
+		return fmt.Errorf("config: capacity_slot_reconcile_grace_seconds must be 0 (default 60) or at least 10")
+	}
 	// max_engines_per_node is clamped to 1 the same way config load does
 	// (config.Load normalizes anything below 1), so every write path agrees.
 	if cfg.MaxEnginesPerNode < 1 {
@@ -910,6 +895,17 @@ func (a *API) DecomposeStreaming(id string, cb func(index, total int, story any)
 func (a *API) Run(id string) error {
 	_, err := a.runLocked(id, nil)
 	return err
+}
+
+// ScanFixLoop runs the scan-fix loop for one Automaton: scan; while
+// the scan still has findings at or above the fail-on severity, open a
+// corrective task for them, execute it, and re-scan — up to
+// fix_loop_max_retries attempts from the current scan config. With the
+// retries spent and the scan still failing, the Automaton is put on
+// hold and the reason names the findings that remain. The report is
+// always returned with an outcome (clean, fixed, held or error).
+func (a *API) ScanFixLoop(id string) (any, error) {
+	return a.M.RunScanFixLoop(id)
 }
 
 // prdStatus reads a PRD's status under the Manager mutex, the lock executor
@@ -2834,4 +2830,33 @@ func (a *API) SummaryIndexRevision() uint64 { return a.M.Store().Revision() }
 // indexed Automaton, the same answer ListPRDs gives for its record.
 func (a *API) NotifyEffectiveForEntry(e SummaryEntry) NotifyEventSet {
 	return a.M.ResolveNotifyEvents(&PRD{NotifyEvents: e.NotifyEvents, GuardrailProfile: e.GuardrailProfile})
+}
+
+// ReapPreview, ReapRun and ReapRestore — the task sub-branch reaper behind
+// GET /api/autonomous/branch-reap, POST .../branch-reap/run and
+// POST .../branch-reap/restore (and the MCP, CLI and comm surfaces on top).
+// Without them the routes' interface checks fail and answer 503 in a running
+// daemon, because the daemon installs the API, not the Manager.
+func (a *API) ReapPreview(ctx context.Context) (ReapReport, []ReapBackup, error) {
+	return a.M.ReapPreview(ctx)
+}
+func (a *API) ReapRun(ctx context.Context) (ReapReport, error) { return a.M.ReapRun(ctx) }
+func (a *API) ReapRestore(ctx context.Context, branch string) (string, string, error) {
+	return a.M.ReapRestore(ctx, branch)
+}
+
+// RemoteReapPreview, RemoteReapRun and RemoteReapRestore — the Automaton
+// work-branch remote reaper behind GET /api/autonomous/remote-reap, POST
+// .../remote-reap/run and POST .../remote-reap/restore (and the MCP, CLI
+// and comm surfaces on top). Without them the routes' interface checks
+// fail and answer 503 in a running daemon, because the daemon installs the
+// API, not the Manager.
+func (a *API) RemoteReapPreview(ctx context.Context) (RemoteReapSurfaceReport, []ReapBackup, error) {
+	return a.M.RemoteReapPreview(ctx)
+}
+func (a *API) RemoteReapRun(ctx context.Context) (RemoteReapReport, error) {
+	return a.M.RemoteReapRun(ctx)
+}
+func (a *API) RemoteReapRestore(ctx context.Context, branch string) (RemoteReapRestoreResult, error) {
+	return a.M.RemoteReapRestore(ctx, branch)
 }

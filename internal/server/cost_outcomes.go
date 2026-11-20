@@ -171,7 +171,9 @@ func costFailureRecords(mgr *autonomous.Manager) []costreport.FailureRecord {
 	}
 
 	var out []costreport.FailureRecord
-	for _, p := range mgr.Store().ListPRDs() {
+	allPRDs := mgr.Store().ListPRDs()
+	projectOf := costSeriesProjectOf(allPRDs)
+	for _, p := range allPRDs {
 		if p == nil {
 			continue
 		}
@@ -188,7 +190,7 @@ func costFailureRecords(mgr *autonomous.Manager) []costreport.FailureRecord {
 		if auto != nil {
 			automationID, automationName = auto.ID, auto.Name
 		}
-		project := automatonProject(p)
+		project := projectOf(p.ID)
 		for _, st := range p.Story {
 			for _, t := range st.Tasks {
 				for _, at := range t.Attempts {

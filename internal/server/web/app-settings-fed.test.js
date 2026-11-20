@@ -66,10 +66,12 @@ test('Settings: server switching is wired into the view via the server rows (the
   assert.ok(html.length > 0, 'Settings server list should have rendered');
   // A Settings server row switches to the peer through selectServer.
   assert.ok(html.includes(`selectServer('host-a')`), `a Settings server row should call selectServer for the peer; got: ${html}`);
-  // The old chip bar is gone: the picker is the one header <select id="serverDropdown">,
-  // built by _serverPickerBar, and the view never injects it into itself.
+  // The old chip bar is gone: the picker is the one header server button
+  // (#serverPickerBtn) opening the picker modal, and the view never injects
+  // it into itself.
   assert.equal(typeof sandbox._injectServerPickerBar, 'undefined', '_injectServerPickerBar should no longer exist');
-  assert.equal(typeof sandbox._serverPickerBar, 'function', '_serverPickerBar should build the header dropdown');
+  assert.equal(typeof sandbox._serverPickerBar, 'undefined', '_serverPickerBar is gone: the header server button replaced it');
+  assert.equal(typeof sandbox.openServerPickerModal, 'function', 'openServerPickerModal should be the one picker entry point');
 });
 
 test('loadConfigStatus: a federated capability error reaches the card, not a generic "Config unavailable"', async () => {

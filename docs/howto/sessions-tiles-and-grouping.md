@@ -31,15 +31,18 @@ same groups, counts and state mixes.
 ## What it is
 
 The Sessions page keeps all of its main controls in **one compact toolbar
-line** that never splits into multiple rows, at any width: a **server
-select** (All servers, this server, one entry per enabled peer), a
+line** that never splits into multiple rows, at any width: a
 **search** box, a **Filters** button (with a badge counting what is active),
 a **Fold all** button (while a grouping with openable groups is active) and
-a **view mode select** with the three modes **List / Tiles / Compact**. One
-line below the toolbar, the **Tree** and **History** buttons sit with the
+a **view mode select** with the three modes **List / Tiles / Compact**. The
+toolbar has **no server selector**: choosing the server (All servers, this
+server or one peer) is the **server icon button in the fixed header**, the same
+on every page (see
+[multi-servers](multi-servers.md#switch-between-servers-header-server-button)).
+One line below the toolbar, the **Tree** and **History** buttons sit with the
 clickable **🌐 <name>** indicator that appears only while a federated server
 is the active one and returns you to this server when clicked (see
-[multi-servers](multi-servers.md#switch-between-servers-header-dropdown)). Behind the Filters
+[multi-servers](multi-servers.md#switch-between-servers-header-server-button)). Behind the Filters
 button sit the grouping and saved-view controls. Three independent dials come out
 of that:
 
@@ -63,10 +66,11 @@ its controls packed into fewer rows. There is no new setting, and the
 daemon, REST, MCP, CLI and comm channel behave exactly as before.
 
 ```
-header (fixed, every page):   …  [ ▾ All servers │ This server │ server-a │ server-b ]
+header (fixed, every page):   …  [ ▤ ● server icon ]  → opens the Servers window:
+                                  All │ This server │ server-a │ server-b
 
-Sessions (one toolbar line, at phone and wide widths):
-┌─[ ▾ All servers ] [ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
+Sessions (one toolbar line, at phone and wide widths; no server select):
+┌─[ Search…  ] [ Filters (2) ] [ ⊟ Fold all ] [ ▾ Tiles ]
 │  (⊟ Fold all shows only while a grouping is active; the line below the
 │   toolbar carries Tree and History — and the 🌐 server-a indicator,
 │   shown only while a federated server is active)
@@ -102,8 +106,7 @@ per-device UI preference or a read-only API parameter.
 ## Setup
 
 There is nothing to configure. Open the PWA, go to **Sessions**, and the
-one-line toolbar is already at the top of the list: the **server select**,
-the search box, the **Filters** button and the **view mode select** (List /
+one-line toolbar is already at the top of the list: the search box, the **Filters** button and the **view mode select** (List /
 Tiles / Compact), plus the **Fold all** button while a grouping is active. The
 **Tree** and **History** buttons sit on the line below the toolbar, with
 the 🌐 indicator while a federated server is the active one — that line
@@ -117,23 +120,23 @@ If you only need one of the three, jump to the matching section:
 - want the grid of tiles → [View modes](#view-modes)
 - want the tag / prefix / Automaton cut → [Grouping](#grouping)
 - want to keep a cut for later → [Saved views](#saved-views)
-- want to read the same cut from another channel → [All channels](#all-channels-the-shared-read)
+- want to read the same cut from another channel → [All channels](#all-channels--the-shared-read)
 
 ## The toolbar row
 
 Everything you need to find sessions sits in one non-splitting line at the
-top of the page, at any width, in this order: **server select**, **search**,
+top of the page, at any width, in this order: **search**,
 **Filters**, **Fold all** (while grouping) and the **view mode select**:
 
-- **Server select** — the line starts with the Sessions page's own server
-dropdown (an **All servers** entry, **This server**, and one entry per
-enabled peer; a peer whose reachability check failed is marked
-`(unreachable)`): picking an entry re-renders the page you're on against
-that server (its sessions, its counts, its search text), and picking the
-active one is a no-op. It is the same shared picker as the header dropdown
-— choosing an entry in one updates the other, and both ride on the one
-page-wide selection. See [multi-servers: Switch between
-servers](multi-servers.md#switch-between-servers-header-dropdown).
+- **No server select here** — the Sessions page has no server selector of its
+  own. Use the **server icon button in the header**, on every page: it opens a
+  window listing **All**, **This server** and one row per enabled peer (a peer
+  whose reachability check failed is marked `(unreachable)`); on a touch
+  screen a three-finger swipe up opens the same window. Picking a row
+  re-renders the page you're on against that server (its sessions, its counts,
+  its search text), and picking the active one is a no-op. See
+  [multi-servers: Switch between
+  servers](multi-servers.md#switch-between-servers-header-server-button).
 - **Search box** — type to narrow the list. It matches a session's name, its
   id, its backend, its tag text and its state, so `claude`, `a1f2`,
   `automation:` or `waiting` all work. While a search is active the page
@@ -151,7 +154,7 @@ toggle. Described next under [View modes](#view-modes).
 - **One line below the toolbar** — the **Tree** and **History** buttons sit
   on their own line, with the clickable **🌐 <name>** indicator while a
   federated server is the active one: clicking it returns you to this
-  server (picking **This server** in either server dropdown does the same).
+  server (picking **This server** in the header server picker does the same).
   That line is behind the header's 🔍 *search & filters* button (right side of
   the header bar): hidden by default, shown after you switch it on for
   this browser.
@@ -270,18 +273,20 @@ with no new setting, endpoint, MCP tool, CLI command or chat verb.
 
 ### The one-line rule on the other pages
 
-The toolbar is an instance of a one-line rule: a page's server select, its
+The toolbar is an instance of a one-line rule: a page's
 search box (taking the free width) and its compact controls sit on one
 non-wrapping line under the page heading. When a page has no page-level
 search or filters, or its controls need more room than a phone-width
 non-wrapping line allows, the page is left as it is and the reason is
 recorded in the code next to the page's header render. The rule was
 inspected for the four adjacent pages, and on each of them the fallback
-applied — their layouts are unchanged:
+applied — their toolbars are unchanged (the pages do share the Sessions
+list's side gutter and card width at phone width; see
+[Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width)):
 
-- **Alerts** — it has the shared header server select and always-visible
+- **Alerts** — it has the shared header server button and always-visible
   search/filter controls, but the labelled filter chips, the search input,
-  the labelled sort toggle, the icon action buttons and the server select
+  the labelled sort toggle and the icon action buttons
   together exceed one phone-width non-wrapping line → the page keeps its
   current layout, filter logic and handlers.
 - **Automata** — its search and filter controls exist only inside the
@@ -291,9 +296,11 @@ applied — their layouts are unchanged:
 - **Observer** — a scrolling settings page with no page-level search or
   filters; the Memory Browser's controls are scoped to that section →
   unchanged.
-- **Dashboard** — its stat bar is already one non-wrapping line carrying
-  the placement filter and the icon-sized buttons, there is no text search
-  and no room for another line → unchanged.
+- **Dashboard** — there is no text search, so the one-line rule does not
+  apply. At phone width its stat bar wraps onto more lines (each counter
+  stays whole, the burn-rate summary takes its own line) instead of being
+  one non-wrapping line; see
+  [Page layout at phone width](navigation-mobile-fit.md#page-layout-at-phone-width).
 
 ## View modes
 
@@ -570,8 +577,7 @@ same groups, the same counts and state mixes, wherever you read them:
 
 ### PWA (web UI)
 
-The Sessions page controls above: the one-line toolbar (server select,
-search, Filters with its badge, Fold all while grouping is active, view mode
+The Sessions page controls above: the one-line toolbar (search, Filters with its badge, Fold all while grouping is active, view mode
 select) and the Tree / History line (with the 🌐 indicator while a federated
 server is active), the Filters sheet (Group by with the
 tag-prefix entries, Views, status chips, and the grouped, searchable Tags
@@ -793,7 +799,7 @@ works too — it performs the same reset and hard reload.)
 | Control | Where | Per-device? | Notes |
 |---|---|---|---|
 | Search (name, id, backend, tag text, state) | PWA toolbar row | text remembered per device | shows `N of M` while active |
-| Server picker (All / this server / each federated peer) | PWA toolbar select (and the header dropdown) | no — page-wide, not per device; defaults to the local server on load | one shared picker: the toolbar select and the header dropdown are the same selection, so choosing an entry in one updates the other; **All** aggregates local + federated; not one of the sheet's filters |
+| Server picker (All / this server / each federated peer) | header server icon button (opens the Servers window; the Sessions page has no second selector) | page-wide, not part of the Sessions toolbar; remembered per browser (`dw_server_choice`), so a reload starts on the same entry | one shared picker: the header server button is the only server selector, on every page; **All** aggregates local + federated; not one of the sheet's filters |
 | Filters sheet (Group by, Views, status chips) | PWA Filters button | no | closes on tap outside, close button or Escape; badge counts active filters |
 | View mode (list / tiles / compact) | PWA toolbar row | yes (`cs_sessions_view_mode`) | viewport default: list < 600 px, tiles ≥ 600 px; tiles reflow on resize; a stale stored value is ignored and the viewport default applies, so the toggle always shows one active button; with no grouping the three modes always differ, and the Tree toggle (`cs_session_tree_view`) applies to List only and is cleared by any mode click |
 | Group by (none / state / node / project / tag / tag+prefix / automaton) | PWA, REST `group_by`+`tag_prefix`, MCP `group_by`+`tag_prefix`, CLI `--group-by`/`--tag-prefix`, comm `sessions groups [axis] [tag-prefix]` | axis choice is remembered on this device in the PWA and restored after a reload and after list refreshes; the read is stateless | unknown axis refused; `tag_prefix` only on the tag axis |

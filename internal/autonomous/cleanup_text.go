@@ -117,6 +117,41 @@ func cleanupSkippedText(m map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
+// worktreeHoldsText renders the holds the worktree pass placed on
+// uncommitted work: the reason for each one, the exact files the hold
+// is keyed on, and the single action that releases it (matching what
+// the pass keyed it on). "" when the pass left no such hold behind.
+func worktreeHoldsText(skips []WorktreeCleanupSkipped) string {
+	if len(skips) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	any := false
+	for _, s := range skips {
+		if s.ReleaseAction == "" {
+			continue
+		}
+		any = true
+		subject := s.Branch
+		if s.Worktree != "" {
+			subject = s.Worktree
+		}
+		fmt.Fprintf(&b, "  worktree hold at %s: %s\n", subject, s.Detail)
+		if len(s.Files) > 0 {
+			names := strings.Join(s.Files, ", ")
+			if len(s.Files) > 8 {
+				names = strings.Join(s.Files[:8], ", ") + fmt.Sprintf(", … (%d total)", len(s.Files))
+			}
+			b.WriteString("    held files: " + names + "\n")
+		}
+		b.WriteString("    released by: " + s.ReleaseAction + "\n")
+	}
+	if !any {
+		return ""
+	}
+	return b.String()
+}
+
 func cleanupPassText(label string, ps CleanupPassStatus) string {
 	if ps.LastRun == nil {
 		return fmt.Sprintf("  %s pass: not run yet", label)
@@ -146,6 +181,7 @@ func RenderCleanupStatus(st CleanupStatus) string {
 	fmt.Fprintf(&b, "Automaton cleanup (disk alert threshold: %d%%):\n", st.DiskAlertPercent)
 	b.WriteString(cleanupPassText("worktrees", st.Worktrees) + "\n")
 	b.WriteString(cleanupPassText("temp", st.Temp) + "\n")
+	b.WriteString(worktreeHoldsText(st.LastWorktreeSkips))
 	if st.WorktreeDisk == nil && st.TempDisk == nil {
 		b.WriteString("  disks: no readings yet\n")
 	} else {

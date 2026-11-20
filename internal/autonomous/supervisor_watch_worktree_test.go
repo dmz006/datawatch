@@ -137,6 +137,9 @@ func TestSupervisorWatchWorktreeNoGomod(t *testing.T) {
 			supervisorWatchWorktreeBase: true, // the project is Go
 			dirHealthy:                  true, // p-2's worktree has the file
 		},
+		worktrees: map[string][]string{
+			supervisorWatchWorktreeBase: {supervisorWatchWorktreeBase, dirMissing, dirHealthy},
+		},
 	}
 	w := NewSupervisorWatchWorktree(fs, fixedSupervisorWatchClock{now: time.Unix(1_700_000_000, 0)},
 		nil, SupervisorWatchConfig{Mode: SupervisorWatchModeShadow},
@@ -421,6 +424,58 @@ func TestSupervisorWatchWorktreeNonGoProject(t *testing.T) {
 		supervisorWatchWorktreeBase)
 	if got := wNonGo.CheckNoGomod([]*PRD{p}); got != nil {
 		t.Fatalf("non-Go project: expected no worktree_no_gomod findings, got %+v", got)
+	}
+}
+
+// TestSupervisorWatchWorktreeNoGomodScope — worktree_no_gomod is raised
+// only for a registered datawatch worktree of the base repository.
+func TestSupervisorWatchWorktreeNoGomodScope(t *testing.T) {
+	const otherRepo = "/elsewhere/other-repo"
+	newW := func(fsys *fakeSupervisorWatchWorktreeFS) *SupervisorWatchWorktree {
+		return NewSupervisorWatchWorktree(fsys, fixedSupervisorWatchClock{now: time.Unix(1_700_000_000, 0)},
+			nil, SupervisorWatchConfig{Mode: SupervisorWatchModeShadow}, supervisorWatchWorktreeBase)
+	}
+	registered := map[string][]string{
+		supervisorWatchWorktreeBase: {supervisorWatchWorktreeBase, supervisorWatchWorktreeDir},
+	}
+
+	// (1) another repository's folder without go.mod: no finding.
+	other := supervisorWatchWorktreePRD("o", otherRepo, supervisorWatchWorktreeActiveTask("1", "s-o"))
+	w := newW(&fakeSupervisorWatchWorktreeFS{
+		gomod:     map[string]bool{supervisorWatchWorktreeBase: true},
+		worktrees: registered,
+	})
+	if got := w.CheckNoGomod([]*PRD{other}); got != nil {
+		t.Errorf("other repository: expected no findings, got %+v", got)
+	}
+
+	// (2) registered worktree without go.mod: one finding.
+	wt := supervisorWatchWorktreePRD("1", supervisorWatchWorktreeDir, supervisorWatchWorktreeActiveTask("1", "s-1"))
+	got := w.CheckNoGomod([]*PRD{wt, other})
+	if len(got) != 1 || got[0].Kind != SupervisorWatchWorktreeNoGomod || got[0].Subject != "p-1" {
+		t.Errorf("registered worktree without go.mod: got %+v", got)
+	}
+
+	// (3) registered worktree with go.mod: none.
+	wHas := newW(&fakeSupervisorWatchWorktreeFS{
+		gomod: map[string]bool{
+			supervisorWatchWorktreeBase: true,
+			supervisorWatchWorktreeDir:  true,
+		},
+		worktrees: registered,
+	})
+	if got := wHas.CheckNoGomod([]*PRD{wt}); got != nil {
+		t.Errorf("registered worktree with go.mod: expected none, got %+v", got)
+	}
+
+	// (4) unreadable worktree list: none.
+	wErr := newW(&fakeSupervisorWatchWorktreeFS{
+		gomod:        map[string]bool{supervisorWatchWorktreeBase: true},
+		worktrees:    registered,
+		worktreesErr: map[string]error{supervisorWatchWorktreeBase: errors.New("git missing")},
+	})
+	if got := wErr.CheckNoGomod([]*PRD{wt}); got != nil {
+		t.Errorf("unreadable list: expected none, got %+v", got)
 	}
 }
 

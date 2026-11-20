@@ -11,11 +11,26 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { buildSandbox, loadScript, makeStubElement } = require('./testutil_browser_stub');
 
-// Wall-clock waits: under node --test the testutil flushAsync()
-// (setImmediate phases) does not reliably interleave with the
-// setTimeout(0) fetch-stub microtask chain inside app.js — the PRD
-// settings modal mount + save toasts land only after a real-time wait.
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Event-driven waits: app.js's promise chains advance one host event-loop
+// tick per stubbed fetch (setupApp's fetch stub resolves via setTimeout(0)),
+// and the sandbox's own timers are no-ops (sandbox.setTimeout = () => 0).
+// A fixed wall-clock sleep therefore raced the chain — under parallel test
+// load a 25 ms window can elapse before the handful of host timer phases
+// had run, and "modal element should be appended" fired early (the
+// historical flake). until() instead yields to the event loop until the
+// exact sandbox-observable condition the test then asserts holds, bounded
+// by a deadline so a real regression fails fast with a precise reason.
+const until = (predicate, what, deadlineMs = 4000) => new Promise((resolve, reject) => {
+  const start = Date.now();
+  const tick = () => {
+    if (predicate()) return resolve();
+    if (Date.now() - start >= deadlineMs) {
+      return reject(new Error('timed out after ' + deadlineMs + 'ms waiting for: ' + what));
+    }
+    setTimeout(tick, 1);
+  };
+  tick();
+});
 
 const APP_JS = path.join(__dirname, 'app.js');
 const LOCALES_DIR = path.join(__dirname, 'locales');
@@ -273,9 +288,10 @@ test('settings modal: explicit list renders non-inherit with checked rows only',
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) {
     diag(s); throw e;
   }
-  await sleep(25);
-  // Mount path: apiFetch(prd) → ensureLLMModelLists → _prdMountModal → body.appendChild → form submit listener.
-  assert.ok(!!s.modal(), 'modal element should be appended');
+  // Mount path: apiFetch(prd) → ensureLLMModelLists() → _prdMountModal →
+  // body.appendChild; the submit listener is registered synchronously with
+  // the append, so waiting for the modal is also waiting for the handler.
+  await until(() => !!s.modal() && s.modal().innerHTML.includes('prdSettingsNotifyInherit'), 'PRD settings modal appended ("modal element should be appended")');
   const html = s.modal().innerHTML;
   assert.match(html, /id="prdSettingsNotifyInherit"/, 'inherit checkbox present');
   assert.doesNotMatch(html, /id="prdSettingsNotifyInherit" checked/, 'inherit not selected for an explicit list');
@@ -313,9 +329,9 @@ test('settings modal: stored [] renders inherit ON with all rows disabled', asyn
     },
   });
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) { diag(s); throw e; }
-  await sleep(25);
+  await until(() => !!s.modal(), 'PRD settings modal appended ("modal element should be appended")');
   const modalEl = s.modal();
-  ea(s, !!modalEl, 'modal element should be appended');
+  assert.ok(!!modalEl, 'modal element should be appended');
   const html = modalEl.innerHTML;
   assert.match(html, /id="prdSettingsNotifyInherit" checked/, 'inherit checkbox checked when the PRD stores an empty list');
   assert.equal((html.match(/data-notify-kind[^>]*disabled>/g) || []).length, 40, 'every kind row disabled in inherit mode');
@@ -340,13 +356,16 @@ test('settings modal: saving with inherit ON POSTs an empty list to set_notify_e
     },
   });
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) { diag(s); throw e; }
-  await sleep(25);
+  await until(() => !!s.modal(), 'PRD settings modal appended (submit listener registered)');
   // Invoke the mounted form's submit handler (same path as the Save button).
   const form = s.sandbox.document.getElementById('prdModalForm');
   const handler = form.__listeners && form.__listeners.submit;
   ea(s, !!(form.__listeners && form.__listeners.submit), 'form submit listener registered by _prdMountModal (save-inherit-ON)');
   handler({ preventDefault() {} });
-  await sleep(25);
+  // The success toast is produced by the save handler's .then, which
+  // settles on a later host event-loop tick; wait for that exact condition
+  // instead of hoping 25ms outlasts the chain.
+  await until(() => s.toasts.some(x => x.type === 'success' && /notification events saved/i.test(x.msg)), 'success toast after saving with inherit ON');
   const put = s.calls.find(c => c.url === '/api/autonomous/prds/p1/set_notify_events' && c.method === 'POST');
   assert.ok(put, 'set_notify_events called');
   assert.deepEqual(put.body, { notify_events: [] });
@@ -370,15 +389,17 @@ test('settings modal: saving with inherit OFF POSTs the checked kinds; no call w
     },
   });
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) { diag(s); throw e; }
-  await sleep(25);
+  await until(() => !!s.modal(), 'PRD settings modal appended (submit listener registered)');
   {
     const form = s.sandbox.document.getElementById('prdModalForm');
     const handler = form.__listeners && form.__listeners.submit;
     ea(s, !!handler, 'form submit listener registered by _prdMountModal (save-OFF)');
     handler({ preventDefault() {} });
   }
-  await sleep(25);
   const put = s.calls.find(c => c.url.endsWith('/set_notify_events'));
+  // The PUT is recorded synchronously at dispatch; drain the save tail
+  // (success toast) so the test ends with no in-flight chains.
+  await until(() => s.toasts.some(x => x.type === 'success' && /saved/i.test(x.msg)), 'success toast after explicit save');
   ea(s, !!put, 'set_notify_events called (save-OFF)');
   assert.deepEqual(put.body, { notify_events: ['prd.blocked'] });
 
@@ -398,9 +419,11 @@ test('settings modal: saving with inherit OFF POSTs the checked kinds; no call w
     },
   });
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s2.sandbox); } catch (e) { diag(s2); throw e; }
-  await sleep(25);
+  await until(() => !!s2.modal(), 'PRD settings modal appended (s2 no-op save)');
+  // The no-op save path is fully synchronous (diff empty → close, no API
+  // call) and apiFetch records calls at dispatch, so the negative assert
+  // below needs no wait at all.
   s2.sandbox.document.getElementById('prdModalForm').__listeners.submit({ preventDefault() {} });
-  await sleep(25);
   assert.ok(!s2.calls.some(c => c.url.endsWith('/set_notify_events')), 'no-op save must not call the API');
 });
 
@@ -420,9 +443,11 @@ test('settings modal: failed save surfaces the localized failure toast', async t
     },
   });
   try { vm.runInContext(`openPRDSettingsModal('p1')`, s.sandbox); } catch (e) { diag(s); throw e; }
-  await sleep(25);
+  await until(() => !!s.modal(), 'PRD settings modal appended (submit listener registered)');
   s.sandbox.document.getElementById('prdModalForm').__listeners.submit({ preventDefault() {} });
-  await sleep(25);
+  // The 400 rejection settles on a later host tick; wait for the error
+  // toast the save handler's .catch produces.
+  await until(() => s.toasts.some(x => x.type === 'error' && /Could not save notification events/i.test(x.msg)), 'failure toast after failed save');
   assert.ok(s.calls.some(c => c.url.endsWith('/set_notify_events')), 'save attempted');
   const bad = s.toasts.find(x => x.type === 'error');
   assert.ok(bad, 'error toast shown');
@@ -445,7 +470,8 @@ test('guardrail profile panel: renders the profile notify line and edit action',
     },
   });
   vm.runInContext(`loadGuardrailProfilesPanel()`, s.sandbox);
-  await sleep(25);
+  // The panel render happens in the fetch promise's .then; wait for it.
+  await until(() => /Standard/.test(panelEl.innerHTML), 'guardrail profiles panel rendered');
   const html = panelEl.innerHTML;
   assert.match(html, /Standard/);
   assert.match(html, /Notification events: prd\.blocked, prd\.failed/, 'profile with explicit kinds lists them');
@@ -469,9 +495,12 @@ test('guardrail profile edit: PUTs name/description/guardrails along with notify
   });
   s.sandbox.prompt = (msg) => msg && /Notification events/i.test(msg) ? 'prd.blocked, prd.failed' : (msg && /Profile name/i.test(msg) ? 'Standard' : '');
   vm.runInContext(`loadGuardrailProfilesPanel()`, s.sandbox);
-  await sleep(25);
+  // The edit handler reads the fetched profile off window; wait for the
+  // fetch to settle into _guardrailProfiles before dispatching the edit.
+  await until(() => Array.isArray(s.sandbox._guardrailProfiles) && s.sandbox._guardrailProfiles.some(p => p.id === 'g1'), 'fetched profile list on window._guardrailProfiles');
   vm.runInContext(`guardrailProfileEditNotify('g1')`, s.sandbox);
-  await sleep(25);
+  // The PUT is recorded at dispatch; wait for the success toast it leads to.
+  await until(() => s.toasts.some(x => x.type === 'success' && /notification events saved/i.test(x.msg)), 'success toast after profile notify edit');
   const put = s.calls.find(c => c.url === '/api/autonomous/guardrail_profiles/g1' && c.method === 'PUT');
   ea(s, !!put, 'PUT issued (guardrail profile edit)');
   assert.deepEqual(put.body, { name: 'Standard', description: 'core', guardrails: ['quality'], notify_events: ['prd.blocked', 'prd.failed'] });
@@ -492,7 +521,10 @@ test('guardrail profile create: third prompt is the notify-events CSV and travel
     return ''; // guardrail list prompt
   };
   vm.runInContext(`guardrailProfileOpenCreate()`, s.sandbox);
-  await sleep(25);
+  // Prompts and the POST are recorded synchronously at dispatch; settle the
+  // post-create panel refresh (loadGuardrailProfilesPanel stores the list
+  // on window) so the test ends with no in-flight chains.
+  await until(() => Array.isArray(s.sandbox._guardrailProfiles), 'post-create panel refresh settled');
   assert.ok(prompts.some(p => /Notification events/i.test(p)), 'a third prompt asks for notification events (blank = inherit)');
   const post = s.calls.find(c => c.url === '/api/autonomous/guardrail_profiles' && c.method === 'POST');
   assert.ok(post, 'profile create POST');
@@ -510,7 +542,10 @@ test('guardrail profile delete: confirmed DELETE hits the profile endpoint', asy
   });
   s.sandbox.confirm = () => { confirmed = true; return true; };
   vm.runInContext(`guardrailProfileDelete('g1')`, s.sandbox);
-  await sleep(25);
+  // DELETE is recorded at dispatch; settle the post-delete panel refresh
+  // (loadGuardrailProfilesPanel stores the list on window) so the test
+  // ends with no in-flight chains.
+  await until(() => Array.isArray(s.sandbox._guardrailProfiles), 'post-delete panel refresh settled');
   assert.ok(confirmed, 'confirm() dialog asked');
   assert.ok(s.calls.some(c => c.url === '/api/autonomous/guardrail_profiles/g1' && c.method === 'DELETE'), 'DELETE issued');
 });

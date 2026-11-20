@@ -69,6 +69,10 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 		return fmt.Sprintf("a task in Automaton %s is waiting for review", subject), nil
 	case SupervisorWatchAutomatonNotMerged:
 		return fmt.Sprintf("Automaton %s finished all of its work but is not merged", subject), nil
+	case SupervisorWatchArchivedUnmerged:
+		// The check-side text (SupervisorWatchArchivedUnmergedText) carries
+		// the title, branch and ahead count; this fallback names the remedy.
+		return fmt.Sprintf("archived Automaton %s has commits on its branch that are not on the base: carry it forward to keep the work", subject), nil
 	case SupervisorWatchIdleLaneEligibleWork:
 		return fmt.Sprintf("lane %s is idle while Automata work that is eligible to run is waiting", subject), nil
 	case SupervisorWatchWorktreeNoGomod:
@@ -81,6 +85,8 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 		return fmt.Sprintf("the verify script of Automaton %s is not executable: run its check manually", subject), nil
 	case SupervisorWatchMainCheckoutDirty:
 		return fmt.Sprintf("the main checkout %s has uncommitted tracked files: any Automaton ship will abort until they are committed", subject), nil
+	case SupervisorWatchMainCheckoutAutomaton:
+		return fmt.Sprintf("Automaton %s is open while its project directory is the main checkout: recreate it without a project directory so it runs isolated in its own worktree", subject), nil
 	case SupervisorWatchCIRed:
 		return fmt.Sprintf("CI run %s is red: triage the failure before shipping more Automata", subject), nil
 	case SupervisorWatchCISTuck:
@@ -117,4 +123,16 @@ func SupervisorWatchUnverifiedNote(text string) string {
 		return supervisorWatchUnverifiedNoteText
 	}
 	return text + "; " + supervisorWatchUnverifiedNoteText
+}
+
+// SupervisorWatchArchivedUnmergedText is the one-line text of an
+// archived_unmerged finding: the Automaton title and id, its branch, how many
+// commits it is ahead of the base, and the carry-forward remedy.
+func SupervisorWatchArchivedUnmergedText(id, title, branch string, ahead int) string {
+	title = strings.Join(strings.Fields(title), " ")
+	if title == "" {
+		title = id
+	}
+	return fmt.Sprintf("archived Automaton %q (%s) has branch %s with %d commits not on the base: run carry-forward %s to start a new draft on that branch",
+		title, id, branch, ahead, id)
 }

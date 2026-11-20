@@ -73,6 +73,24 @@ When documenting a test, use this table format:
 - Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`, for example `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-unscoped-tmux.sh`.
 - `scripts/check-no-unscoped-tmux.sh` enforces these rules. It runs in `make lint`, in CI, and as a check when a PRD is decomposed. A line that only holds fixture text and is never run against tmux may carry a `tmux-scope-ok` marker.
 
+## No load patterns in tests
+
+Tests must not burn CPU or generate stress. `scripts/check-no-load-patterns.sh` scans Go `*_test.go` files, `testdata/`, `scripts/tests/`, `tests/` and the `*.test.js` files under `internal/server/web` for shell busy loops (`while :; do :; done`, `while true; do :; done`), `yes > /dev/null`, `stress`, `stress-ng`, `cpuburn`, `dd if=/dev/zero of=/dev/null`, empty Go `for {}` spin loops, `runtime.GOMAXPROCS`-wide worker fan-outs described as load, and the helper names `startConcurrentLoad` and `loadWorkers`. It prints every `file:line` hit and exits non-zero. There is no allow-list; use a deterministic fake instead of real load.
+
+The check is part of the local pre-tag run on the build host, not a CI step. Run it with `make check-no-load-patterns` (it also runs its fixture test, `scripts/check-no-load-patterns_test.sh`); `make lint` depends on it, so a normal `make lint` before pushing a tag covers it.
+
+## Proving an intermittent-test fix
+
+A test that failed once and passed on the rerun is a real intermittent failure — a race, an unbounded wait, a shared resource or a timing assumption — never "load": a passing rerun proves the failure is intermittent, it does not remove it. It is never fixed by a retry, a longer sleep, loading the machine up before the run, or excluding the test; fix the root cause in the test or the code it exercises.
+
+A fix is not proven by one green run: rerun the failing test alone, with the race detector on and a repeated count of 200,
+
+```sh
+go test ./internal/session/ -race -count=200 -run TestName
+```
+
+and the proof is zero failures and zero race reports across all 200 runs. The test gate that records `intermittent` (failed first, passed on rerun) has already filed the defect record against the test and commit and raised an alert named for the test, so the failure is never hidden behind a green merge — see [the intermittent test gate](howto/merge-shadow.md#the-plans-checks-and-gates) and [the Housekeeping repairs howto](howto/automaton-housekeeping-repairs.md). And the test itself never starts CPU burners, stress loops or heavy parallel load; [No load patterns in tests](#no-load-patterns-in-tests) is what enforces that.
+
 ## Temp directory hygiene for tests
 
 Tests share one operating-system temp directory, and a suite that leaves its scratch
@@ -181,6 +199,45 @@ templates or testdata fixtures go in the script's `ALLOW_LIST` (exact
 repo-relative paths or glob patterns). Its shell tests live in
 `scripts/check-no-config-copies_test.sh`
 (`bash scripts/check-no-config-copies_test.sh`).
+
+## Lean session datawatch tools (fake MCP server test + smoke section)
+
+A lean profile launch defers the datawatch tools behind tool search: the launch pins the session to its own `worker-mcp.json` (a single `datawatch` entry) and sets `ENABLE_TOOL_SEARCH=true` in the claude process's environment, so the tools are discoverable by name without standing in the session's tool list (see [worker session profiles](howto/worker-session-profiles.md)). Proving that guarantee needs two layers, because a launch-command-only assertion — checking that the command typed into the pane carries `--mcp-config worker-mcp.json` and the `ENABLE_TOOL_SEARCH=true` assignment, which `TestLeanSupervisorLaunch_MCPToolsReachableAndContextSmall` and the server-side launch tests do — only proves the daemon *intended* the lean surface. It says nothing about whether the session actually started the MCP server, served the datawatch tools over stdio, or ran with the variable set.
+
+### The fake MCP server test
+
+`internal/llm/claudecode/lean_mcp_fake_server_test.go` closes that loop: it actually starts the MCP server configured in `worker-mcp.json` and asks it for its tool list, then asserts what a claude binary honoring `--mcp-config` would see. The pieces:
+
+- **The fake server is the test binary re-executed itself.** The `worker-mcp.json` entry's command is the test executable, and when the config's env block sets `LEAN_FAKE_MCP_TEST_SERVER`, `TestLeanFakeMCPServer` speaks newline-delimited JSON-RPC over stdio (initialize, initialized, tools/list); in a plain run it skips, so a normal `go test` of the package is unaffected.
+- **The fake claude binary** (a shell script) honors `--mcp-config` exactly like the real binary would: it starts the configured server, plays a minimal MCP client (initialize / initialized / tools/list), and records the tool names it saw plus the `ENABLE_TOOL_SEARCH` value it was given into a result file.
+- **The assertions.** `TestLeanFakeMCPLaunch_ServesDatawatchTools` requires all four datawatch tools — `memory_recall`, `question_list`, `supervisor_watch_stats`, `usage_backoff_set` — to come back over stdio, the server to exit clean, and `ENABLE_TOOL_SEARCH=true` to be set. `TestLeanFakeMCPLaunch_WrongServerCommandYieldsNoTools` is the failure shape: a `worker-mcp.json` pointing at a server command that does not exist must not crash the launch or the claude binary; it reports no tools, which is exactly what "connected but tools not listed" looks like to the operator.
+
+Run it with:
+
+```sh
+go test ./internal/llm/claudecode/ -run 'TestLeanFakeMCP' -v
+```
+
+### The smoke section: `lean session datawatch tools`
+
+`scripts/release-smoke.sh` has a live section headed `== lean session datawatch tools ==` (section id `lean` for `SMOKE_ONLY`) that checks the same guarantee against a running daemon:
+
+1. **Start a supervisor-kind session over REST** — `/api/sessions/start` with an explicit model (a claude-code launch without one is refused up front), as an interactive session so the checks have a stable observation window.
+2. **Wait for `worker-mcp.json`** to appear in the session's project directory (45 s). If it never does, the section reads the session's recorded `profile_fallback_reason` and fails naming it — a profile that did not apply is never confused with a server that does not serve.
+3. **Confirm `ENABLE_TOOL_SEARCH=true` in the session's claude process environment.** The section finds the session's process by its `--add-dir <project dir>` argument and reads `/proc/<pid>/environ`; the variable is a shell assignment typed into the pane, so it never appears in any process's argument list, and an argv search is the wrong probe, not evidence it is absent.
+4. **Launch the `datawatch` entry exactly as `worker-mcp.json` names it** and list its tools over MCP stdio (a bounded exchange with its own deadline). The check passes only when `memory_recall`, `supervisor_watch_stats`, `question_list` and `usage_backoff_set` are all present, and names the missing ones otherwise.
+5. **Kill the session** (the smoke cleanup remains the backstop).
+
+The section spawns a real claude-code session, so it is gated: it runs only when `DW_MAJOR=1` and the daemon's `/api/backends` reports the claude-code backend as available; otherwise it skips and names the gate. Run the full smoke, or select just this section:
+
+```sh
+DW_MAJOR=1 bash scripts/release-smoke.sh
+DW_MAJOR=1 SMOKE_ONLY=lean bash scripts/release-smoke.sh
+```
+
+**Keeping the expected list in sync.** Those four tool names are hard-coded in three places: the assertions in `internal/llm/claudecode/lean_mcp_fake_server_test.go`, the `lean` section of `scripts/release-smoke.sh`, and this description. If the datawatch MCP tool surface changes, update all three together — a check failing while the server is healthy is usually this list being out of date, not a broken lean launch.
+
+What a passing lean session looks like, and what a fallback reason on the session record means, are in [Checking a lean session](howto/worker-session-profiles.md#checking-a-lean-session) and [What a fallback reason means](howto/worker-session-profiles.md#what-a-fallback-reason-means).
 
 ## Secret references in LLM API keys (call-time resolution)
 
@@ -429,6 +486,13 @@ two checkers plus a set of regression tests.
   every exit path. All of them run under `go test ./tests/ci/` (and therefore
   `go test ./...`) with the multiplexer environment variables removed, and every
   daemon they start is ended by its recorded pid before the test finishes.
+  Because the suite also runs on a shared host, every fixture daemon and driver
+  tree starts in its own process group (`SysProcAttr{Setpgid: true}`) so a
+  group-scoped signal aimed at a recorded pid can never reach the test binary,
+  and the suite's `TestMain` tolerates one stray external SIGTERM — logged with
+  the process lineage (`pid`/`pgid`/`ppid`/ppid cmdline) — while a second one
+  still stops the run (see the [daemon cleanup suite SIGTERM flake](#daemon-cleanup-suite-sigterm-flake-2026-11-16)
+  note).
 
 ### Verified
 
@@ -2652,4 +2716,52 @@ A run on a running sandbox daemon (a real task moved between pools, and a restar
 | **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go test -race -count=1 -v -run 'TestPeerDown' ./internal/autonomous/`; stress the recovering test with `go test -race -count=10 -run 'TestPeerDownRecovers' ./internal/autonomous/`; and run the placement tests that use the fake advisor, `go test -race -count=1 -run 'TestPlacementAskDedupesAcrossAttempts\|TestPlacementPinsTaskNode\|TestPlacementTaskPinIsRespected' ./internal/autonomous/`. |
 | **Expected** | All `TestPeerDown*` subtests pass under the race detector with no data race report; `TestPeerDownRecovers` passes every repeat run; the three placement tests pass under `-race`. |
 | **Actual** | All six subtests of `TestPeerDownDoesNotBlockLocalDelivery` and `TestPeerDownRecovers` passed under `-race` (`ok`, `TestPeerDownRecovers` at 0.02s); `TestPeerDownRecovers` passed 10 of 10 under `-race -count=10`; the three placement tests passed under `-race` (`ok`). Note: a *full* package run at `-race` still fails, in a different test — `TestPlanningRequeue_Table` reads the planner pair through `plannerPairFor` (`planning_requeue.go:86`) unlocked while `Manager.SetPRDLLM` writes it (`manager.go:6743`) — a production-side race tracked by the sibling story "Make the `internal/autonomous` race detector run pass" (d5060001), not by this flake's fix; the targeted runs above do not trip it. |
+| **Result** | PASS |
+
+## Lifecycle overflow drop-count flake (2026-11-16)
+
+### BUG: the overflow test asserted a dispatcher-wide counter that moved with every other subscriber's scheduling
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestLifecycle_QueueOverflowDropsNotBlocks` asserted the dispatcher-wide `droppedTotal` — the sum of drops over *all* subscribers — so the total moved with the scheduling of every other live subscriber (including the Manager's built-in `lifeHistory` recorder, which is always a concurrent subscriber and may drop its own burst events when its goroutine lags); in the runs that failed, the count the assertion depended on had been dropped by the recorder, which is exactly the regression the global-counter design could never have pinned. Fix (test-side, `internal/autonomous/lifecycle_event_test.go`): `TestLifecycle_DropCountsArePerSubscriber` pins the regression with per-subscriber counters — two dedicated subscribers parked at *different* queue occupancy (A holds one event with its queue holding one more, B has consumed two with an empty queue), a burst of `2×queue + extra` events is emitted, and both `dropped` counters are asserted exactly, while the third, uncontrolled concurrent subscriber (lifeHistory) is allowed to drop freely. The now-dead dispatcher-wide `droppedTotal` helper was removed from `internal/autonomous/lifecycle_event.go`; the per-subscriber accounting (`dropped` / `droppedEvents`), the 256-slot queue and the never-block guarantee are unchanged, and no setting, command, surface or product behavior changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go test -count=1 -v -run '^TestLifecycle_DropCountsArePerSubscriber$' ./internal/autonomous/`, then the stress repeat `go test -count=10 -run '^TestLifecycle_DropCountsArePerSubscriber$' ./internal/autonomous/`. |
+| **Expected** | Each parked subscriber's drop counter reads back exactly its own drops (A: queue + extra + 1, B: queue + extra) while lifeHistory drops unrestricted, and the test passes every repeat run. |
+| **Actual** | Targeted run PASS on 2026-11-16 (`ok github.com/dmz006/datawatch/internal/autonomous`), both parked subscribers at their exact counts; the `-count=10` repeat all passed. |
+| **Result** | PASS |
+
+## Daemon cleanup suite SIGTERM flake (2026-11-16)
+
+### BUG: a stray group SIGTERM from another session on the shared host killed the daemon-cleanup package run
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestLeftoverDaemonGuardListening` died once exactly this way (`signal: terminated` on the test binary mid-run). The suite runs on a shared host where daemon cleanup from other datawatch sessions group-signals the pids it recorded at launch; when one of those pids was freed and later reused as a process-group id, the signal landed on the running test binary and killed the whole package run. Fix (test-side only, `tests/ci/daemon_cleanup_test.go`): (1) every fixture daemon — the fake daemon and the python listening daemon — and the bash driver trees now start with `SysProcAttr{Setpgid: true}`, so each tree is its own process-group leader and no group-scoped signal aimed at a recorded pid can reach the test binary (this also makes the daemon library's "a daemon is its own process group" assumption hold for these tests); (2) a `TestMain` tolerates one stray external SIGTERM — it is logged to stderr with the process lineage (`pid`/`pgid`/`ppid`/ppid cmdline) for attribution and the run continues to finish — while a second SIGTERM is treated as a genuine stop request and terminates the run, so a deliberate kill still works. No production cleanup behavior, rule or surface changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go vet ./tests/ci/`, then the targeted suite `go test -count=1 -run 'TestDaemonCleanupHelper\|TestLeftoverDaemonGuard\|TestLeftoverDaemonGuardListening\|TestDaemonCleanupAudit\|TestRepoDaemonScriptsPassAudit' ./tests/ci/`. |
+| **Expected** | vet is clean and all five tests pass; a stray external SIGTERM during the run is logged with the lineage and survived, while a second one still stops the run. |
+| **Actual** | All five tests passed on 2026-11-16 (`ok github.com/dmz006/datawatch/tests/ci 66.7s`). The fix commit additionally records the shared-host reproduction: a stray SIGTERM during the run was logged and survived with all subtests passing, a second SIGTERM stopped the run, `go vet` was clean, `tests/ci` + `internal/shutdowncause` passed 20 repeats, and the repo's verify scripts ran 100×/200× green. |
+| **Result** | PASS |
+
+## PWA notify-events test sleep flake (2026-11-16)
+
+### BUG: fixed wall-clock `sleep(25)` waits raced the fetch-stub event-loop chain
+
+| Field | Details |
+|-------|---------|
+| **Description** | `internal/server/web/app-notify-events.test.js` awaited fixed `sleep(25)`s after triggering the PRD settings modal mount and the save toasts, on the assumption that the sandbox's `flushAsync()` (setImmediate phases) reliably interleaved with app.js's `setTimeout(0)`-based fetch-stub chain (the sandbox's own timers are no-ops). Under parallel test load the 25 ms window could elapse before those host timer phases had run, and "modal element should be appended" fired early — the historical flake. Fix (test-side only): the fixed sleeps were replaced by an event-driven `until(predicate, what, deadline)` helper that yields to the event loop until the *exact* sandbox-observable condition the test then asserts holds (the modal appended, the success/error toast present), bounded by a 4 s deadline so a real regression fails fast with a precise reason. `app.js`, the `testutil_browser_stub.js` fixture and every notified/product surface are unchanged. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `node --test internal/server/web/app-notify-events.test.js`, and a five-repeat loop of the same command. |
+| **Expected** | 17/17 tests pass, including the modal-mount and toast assertions, in every run. |
+| **Actual** | One pass: 17 pass / 0 fail (353 ms); five further repeat runs all passed (2026-11-16). |
+| **Result** | PASS |
+
+## Signal child procscan test lifetime flake (2026-10-31)
+
+### BUG: the child could exit before the parent's procscan attribution check, and failures were unreadable
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestSignalChildProcScan` (`internal/shutdowncause/signal_child_test.go`, unix) re-executes the test binary as a child, which sends the parent SIGTERM by PID; the parent then attributes the signal, and on the `/proc` fallback path it checks the test's child pid and cmdline among the procscan candidates. The child's old lifetime was `time.Sleep(3 * time.Second)` after the kill — under load it could exit before the parent ran that attribution check (and could outlive a hung run as an orphan), so the procscan assertion raced the child's lifetime. Fix (test-side only, `internal/shutdowncause/signal_child_test.go`): the child now stays alive while the parent holds its stdin pipe open — it blocks on `io.Copy(io.Discard, os.Stdin)`, which returns on the EOF the parent's cleanup produces when it closes the pipe, so the child cannot exit between sending SIGTERM and the procscan check and can never outlive a hung run — bounded by a 120-second safety cap; the wait for the SIGTERM grew from 5 to 30 seconds with the child's pid and expected cmdline in the failure; and every procscan-path failure now renders the candidates in a stable `pid=N cmdline="..."` form plus the captured cause, source, sender pid and cmdline (previously `%+v` of the candidates alone). No production behavior changed — the signal-capture, `Capture`, `CandidatesFor` and startup-line product paths are untouched, and no setting, command, surface or read surface changed. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: `go vet ./internal/shutdowncause/`, then the targeted repeat `go test -count=5 -run '^TestSignalChildProcScan$' ./internal/shutdowncause/`. |
+| **Expected** | vet is clean and the test passes every repeat run: the SIGTERM arrives within 30 seconds, the capture reports `terminated`, and on the procscan path the child pid with the test binary in its cmdline is among the candidates while every failing message names the candidates, the cause and its source. |
+| **Actual** | `go test -count=5 -run '^TestSignalChildProcScan$' ./internal/shutdowncause/` was `ok` (0.09s) on 2026-11-16; `go vet ./internal/shutdowncause/` clean. |
 | **Result** | PASS |

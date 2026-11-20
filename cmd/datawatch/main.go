@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.39"
+var Version = "9.182.62"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -452,8 +452,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 
 // installCrashLog wires runtime crash diagnostics so silent daemon deaths
 // (Go fatal errors like "concurrent map writes", cgo segfaults, OOM, etc.)
-// leave a stack trace on disk. Stderr is duplicated to <data>/daemon-crash.log
-// and GOTRACEBACK=crash forces the runtime to dump all goroutines on a fatal.
+// leave a stack trace on disk. GOTRACEBACK=crash forces the runtime to dump
+// all goroutines on a fatal, and debug.SetCrashOutput gives that crash output
+// an extra copy in <data>/daemon-crash.log while fd 2 (and the journal that
+// reads it) keeps receiving stderr untouched.
 func installCrashLog() {
 	debug.SetTraceback("crash")
 	cfg, _ := loadConfig()
@@ -472,10 +474,15 @@ func installCrashLog() {
 	// Tag the start of this process so multiple crashes are distinguishable.
 	_, _ = fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
 		Version, os.Getpid(), time.Now().Format(time.RFC3339))
-	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
-	// and "fatal error:" messages directly to fd 2, bypassing log packages.
-	// Implementation lives in main_unix.go / main_windows.go.
-	dupStderrTo(f)
+	// Have the runtime write its panic stacks and "fatal error:" messages to
+	// the crash file as well as fd 2 (Go 1.23+ debug.SetCrashOutput), instead
+	// of duplicating fd 2 over the file — that way the journal still sees
+	// everything the runtime prints on a fatal error. A failure here just
+	// leaves the crash file without the runtime dump; the journal copy is
+	// unaffected.
+	if err := installCrashOutput(f); err != nil {
+		fmt.Fprintln(os.Stderr, "datawatch: crash log: install crash output:", err)
+	}
 }
 
 // resolveConfigPath returns the effective config file path.
@@ -1717,6 +1724,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				} else {
 					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
 				}
+			} else if profileSaysDatawatch := sess.WorkerProfile != nil &&
+				sess.ProfileFallbackReason == "" &&
+				sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName); profileSaysDatawatch {
+				// A profiled claude-code launch (e.g. a lean one selecting the
+				// datawatch MCP server) starts with --strict-mcp-config pinned
+				// to the profile's MCP selection, read from this project's
+				// .mcp.json — so this session's per-session bridge must be
+				// available there. A session whose profile already fell back
+				// (ProfileFallbackReason set) launches profile-less; it must
+				// not carry the entry, since without --strict-mcp-config that
+				// entry would be loaded. Write the datawatch entry with THIS
+				// session's scoped token env plus any profile-selected extras;
+				// the profile launch flags themselves are applied in the
+				// backend's own launch path.
+				dwEnv := make(map[string]string, len(sessionChannelEnv)+2)
+				for k, v := range sessionChannelEnv {
+					dwEnv[k] = v
+				}
+				dwEnv["CLAUDE_SESSION_ID"] = sess.FullID
+				dwEnv["DATAWATCH_CHANNEL_PORT"] = "0"
+				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, dwEnv, extraMCPSpecs); err != nil {
+					debugf("profile .mcp.json datawatch entry: %v", err)
+				} else {
+					fmt.Printf("[channel] session %s: profile MCP=%q — wrote %s entry to %s/.mcp.json\n",
+						sess.FullID, sess.WorkerProfile.MCP.Mode, channel.ProjectMCPEntryName, sess.ProjectDir)
+				}
 			} else {
 				// Remove any legacy "datawatch" global entry left by older daemon
 				// versions — it would otherwise spawn a second bridge on port 7433.
@@ -1906,6 +1939,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}()
 			}
 			if sess.BackendFamily == "claude-code" {
+				// A profile owned this session's .mcp.json datawatch entry
+				// (written by the pre-launch hook above) — remove it so a
+				// later profile-less session that starts in this project dir
+				// does not inherit a dead session's bridge config. Best
+				// effort; the running bridge process is unaffected.
+				if sess.WorkerProfile != nil && sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName) && sess.ProjectDir != "" {
+					if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, channel.ProjectMCPEntryName); err != nil {
+						debugf("profile .mcp.json datawatch cleanup: %v", err)
+					}
+				}
 				go func() {
 					defer func() {
 						if p := recover(); p != nil {
@@ -4722,6 +4765,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			ArchiveGraceMinutes:              acfgIn.ArchiveGraceMinutes,
+			ArchiveKeepUnmerged:              acfgIn.ArchiveKeepUnmerged,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// priority_by_kind (autonomous.priority_by_kind): the
 			// kind→capacity-priority table ResolvePriority resolves against.
@@ -7149,6 +7193,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// refusals and shadow finding reports for Automaton pushes
 			// land in the operator audit log, redacted fields only.
 			amgr.SetSecretScanAuditFn(secretScanSink)
+			// Remote branch reap (autonomous.remote_reap_enabled /
+			// autonomous.remote_reap_retention_days): while the switch is off or
+			// unset (the default) the pass evaluates but touches nothing on origin
+			// and the report says report_only. The closure — not its result — is
+			// stored, so the switch and the retention window are read live on
+			// every pass; a runtime config set applies with no restart (the same
+			// live-config pattern as the push settings above).
+			amgr.SetRemoteReapSettings(func() (bool, int) {
+				return cfg.Autonomous.RemoteReapEnabled, cfg.Autonomous.EffectiveRemoteReapRetentionDays()
+			})
 			// Defect intake (autonomous.defect_intake_automation):
 			// when an Automaton is filed with kind bug and the setting names
 			// an Automation, it is offered to that Automation's bugs stage
@@ -7731,6 +7785,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
+			seedLiveCheckJudgeSlot(ctx, capLedger)
 			// Pin-time model check: refuse (or warn on) a worker or verifier
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
