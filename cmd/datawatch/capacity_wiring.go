@@ -1509,6 +1509,21 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			fmt.Printf("[capacity] reaped leaked lease holder=%s session=%s: %s\n", h, sessionOf[h], whys[h])
 			metrics.CapacityLeasesReaped.Inc()
 		}
+		// Orphan-slot reconcile: frees judge and verifier slots with no live
+		// session and no node lease, or whose Automaton finished. It only
+		// releases ledger slots; it never ends a session.
+		runSlotReconcile(slotReconcileDeps{
+			Ledger:   led,
+			Sessions: sessionLiveFn(func(id string) bool { return sessionRunning(mgr, id) }),
+			Nodes:    ledgerNodeLease{now: time.Now},
+			Done:     managerAutomatonFinished(amgr),
+			HolderName: func(h string) string {
+				return autonomous.DisplayHolderName(amgr.ResolveHolder(h))
+			},
+			Alert: alertFn,
+			Logf:  func(f string, a ...any) { fmt.Printf(f, a...) },
+			Count: metrics.CapacityLeasesReaped.Inc,
+		})
 		st := led.Snapshot()
 		metrics.CapacityWaiting.Set(float64(len(st.Waiting)))
 		for _, p := range st.Pools {

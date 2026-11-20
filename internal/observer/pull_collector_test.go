@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -484,4 +485,51 @@ func TestObserverPullCollector_SnapshotSortedByName(t *testing.T) {
 	if _, ok := c.Last("missing"); ok {
 		t.Fatal("Last(missing) = found, want not found")
 	}
+}
+
+// TestPullCollector_AttemptNeverVisibleWithoutOutcome holds a fetch open and
+// checks that no attempt time is visible until the outcome is published with
+// it, then that the first non-zero attempt time already carries the outcome.
+func TestPullCollector_AttemptNeverVisibleWithoutOutcome(t *testing.T) {
+	clock := newFixedClock()
+	reg := newTickerRegistry()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	f := newFakePullFetcher(func(name string, ctx context.Context) (*StatsResponse, error) {
+		entered <- struct{}{}
+		<-release
+		return nil, NewPullHTTPError(403, "denied")
+	})
+	c := newTestCollector(f, clock, reg)
+	t.Cleanup(c.Stop)
+
+	c.SetTargets([]PullTarget{{Name: "a", Interval: time.Hour, Timeout: time.Hour, Enabled: true}})
+	waitForFetch(t, entered, "fetch of a to be entered")
+
+	// Fetch is held open: no attempt time may be visible.
+	if st, ok := c.Last("a"); ok && !st.LastAttemptAt.IsZero() {
+		t.Fatalf("Last LastAttemptAt = %v while fetch in flight, want zero", st.LastAttemptAt)
+	}
+	for _, st := range c.Snapshot() {
+		if !st.LastAttemptAt.IsZero() {
+			t.Fatalf("Snapshot %q LastAttemptAt = %v while fetch in flight, want zero", st.Name, st.LastAttemptAt)
+		}
+	}
+
+	close(release)
+
+	// Poll with a single Last read per iteration; the first non-zero attempt
+	// time must already carry the forbidden outcome.
+	for i := 0; i < 50_000_000; i++ {
+		st, ok := c.Last("a")
+		if ok && !st.LastAttemptAt.IsZero() {
+			if !st.Stale || st.StaleReason != ReasonForbidden {
+				t.Fatalf("attempt visible without outcome: Stale=%v StaleReason=%q, want true/%q",
+					st.Stale, st.StaleReason, ReasonForbidden)
+			}
+			return
+		}
+		runtime.Gosched()
+	}
+	t.Fatal("LastAttemptAt never became non-zero")
 }

@@ -1648,6 +1648,11 @@ type Manager struct {
 	ruleEditorFn scan.RuleEditorFn
 	scanResults  sync.Map // prdID → *scan.Result
 
+	// scan_fix_loop.go — the executor the scan-fix loop's run step
+	// uses; nil until SetFixLoopRun wires the real spawn/verify pair
+	// (HTTP API), after which the fallback is status-only.
+	fixLoopRun FixLoopRunFn
+
 	// BL406 Phase 4 — injectable so tests can fake the GitHub call
 	// without shelling out to the real `gh` binary (that layer already
 	// has its own direct unit tests in internal/git). nil means "use

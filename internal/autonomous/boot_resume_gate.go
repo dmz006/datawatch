@@ -36,7 +36,7 @@ const bootResumeDefaultMaxAgeSeconds = 3600
 // without digging through daemon logs.
 type BootResumeEntry struct {
 	PRDID      string    `json:"prd_id"`
-	Outcome    string    `json:"outcome"` // "resumed" | "parked" | "resumed_by_operator"
+	Outcome    string    `json:"outcome"` // "resumed" | "parked" | "resumed_by_operator" | "planning_reattached" | "planning_restarted" | "planning_ingested"
 	AgeSeconds int64     `json:"age_seconds"`
 	Reason     string    `json:"reason"`
 	At         time.Time `json:"at"`

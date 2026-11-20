@@ -238,17 +238,17 @@ func TestPlanningRestartOnceGoneSessionNoOutput(t *testing.T) {
 
 	got = f.run(t)
 
-	if len(f.starts) != 1 {
-		t.Fatalf("second pass restarted planning again: starts = %v", f.starts)
+	if len(f.starts) != 2 {
+		t.Fatalf("second pass must start the decompose again: starts = %v", f.starts)
 	}
-	if got.Status != PRDDraft {
-		t.Fatalf("second pass status = %s, want %s", got.Status, PRDDraft)
+	if got.Status != PRDPlanning {
+		t.Fatalf("second pass status = %s, want %s", got.Status, PRDPlanning)
 	}
-	if len(f.decisionsWith("planning_restarted")) != 1 {
-		t.Fatalf("a second planning_restarted decision was recorded: %+v", f.decisions)
+	if len(f.decisionsWith("planning_restarted")) != 2 {
+		t.Fatalf("want a planning_restarted decision per pass: %+v", f.decisions)
 	}
-	if ds := f.decisionsWith("planning_reset_to_draft"); len(ds) != 1 || !strings.Contains(ds[0].Reason, "already used") {
-		t.Fatalf("decisions = %+v, want planning_reset_to_draft naming the already-used restart", f.decisions)
+	if len(f.decisionsWith("planning_reset_to_draft")) != 0 {
+		t.Fatalf("a restart must never reset to draft: %+v", f.decisions)
 	}
 }
 
@@ -323,17 +323,17 @@ func TestPlanningRestartPolicyValues(t *testing.T) {
 
 		got := f.run(t)
 
-		if f.hookCalls != 0 || len(f.starts) != 0 {
-			t.Fatalf("draft must not attach a reader or restart: hookCalls=%d starts=%v", f.hookCalls, f.starts)
+		if f.hookCalls != 0 || len(f.starts) != 1 {
+			t.Fatalf("a live planner is restarted without a reader: hookCalls=%d starts=%v", f.hookCalls, f.starts)
 		}
 		if len(f.killed) != 1 || f.killed[0] != "dec-live" {
 			t.Fatalf("killed = %v, want the unowned planner killed as an orphan", f.killed)
 		}
-		if got.Status != PRDDraft {
-			t.Fatalf("status = %s, want %s", got.Status, PRDDraft)
+		if got.Status != PRDPlanning {
+			t.Fatalf("status = %s, want %s", got.Status, PRDPlanning)
 		}
-		if ds := f.decisionsWith("planning_reset_to_draft"); len(ds) != 1 {
-			t.Fatalf("decisions = %+v, want exactly one planning_reset_to_draft", f.decisions)
+		if ds := f.decisionsWith("planning_restarted"); len(ds) != 1 {
+			t.Fatalf("decisions = %+v, want exactly one planning_restarted", f.decisions)
 		}
 	})
 

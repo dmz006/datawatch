@@ -45678,6 +45678,7 @@ function _renderScanResult(el, prdId, r) {
       <span style="color:var(--text2);font-size:11px;">${count} ${escHtml(t('scan_findings')||'findings')} · ${escHtml(r.at ? new Date(r.at).toLocaleString() : '')}</span>
       ${r.verdict !== 'pass' && count > 0 ? `
         <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="createScanFixPRD(${idJ})">${escHtml(t('scan_fix_prd')||'Create Fix Automaton')}</button>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="runScanFixLoop(${idJ})">${escHtml(t('scan_fixloop')||'Run Fix Loop')}</button>
         <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="proposeScanRules(${idJ})">${escHtml(t('scan_propose_rules')||'Propose AGENT.md Rules')}</button>
       ` : ''}
     </div>
@@ -45713,6 +45714,49 @@ window.createScanFixPRD = function(prdId) {
       if (prd && prd.id) renderPRDDetailView(prd.id);
     })
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+function _fixLoopResultText(rep) {
+  if (!rep) return (t('scan_fixloop')||'Fix loop') + '…';
+  // Disabled loop: the endpoint returns a plain scan result (verdict,
+  // findings) instead of a fix-loop report.
+  if (rep.outcome === undefined) {
+    const n = (rep.findings||[]).length;
+    return (t('scan_fixloop_disabled')||'Auto-fix loop is disabled, so this ran a plain scan: ')
+      + (rep.verdict||'') + ' — ' + n + ' ' + (t('scan_findings')||'findings');
+  }
+  const n = (rep.attempts||[]).length;
+  switch (rep.outcome) {
+    case 'fixed':
+      return (t('scan_fixloop_fixed')||'Fix loop done: scan now passes after') + ' ' + n + (t('scan_fixloop_attempts')||' fix attempt(s)');
+    case 'clean':
+      return t('scan_fixloop_clean')||'Scan passes — nothing to fix';
+    case 'held':
+      return (t('scan_fixloop_held')||'Fix loop spent its retries; the Automaton is on hold:') + ' ' + (rep.hold_reason||'');
+    default:
+      return (rep.error || (t('scan_fixloop')||'Fix loop') + ': ' + (rep.outcome||''));
+  }
+}
+
+window.runScanFixLoop = function(prdId) {
+  el: {
+    const el = document.getElementById('prdScanResult_' + prdId);
+    if (el) el.innerHTML = `<span style="opacity:0.7;">${escHtml(t('scan_fixloop_running')||'Running fix loop…')}</span>`;
+  }
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan/fixloop', { method: 'POST' })
+    .then(rep => {
+      const text = _fixLoopResultText(rep);
+      const ok = rep && (rep.outcome === 'fixed' || rep.outcome === 'clean');
+      showToast(text, ok ? 'success' : 'error', 6000);
+      // The Automaton may now be held (or freshly scanning): refresh the
+      // detail view when this Automaton is the one on screen.
+      if (String(window._automataDetailId || '') === String(prdId)) renderPRDDetailView(prdId);
+    })
+    .catch(e => {
+      const el = document.getElementById('prdScanResult_' + prdId);
+      if (el) el.innerHTML = `<span style="opacity:0.7;color:var(--error);">${escHtml(String(e.message||e))}</span>`;
+      showToast(String(e.message||e), 'error');
+    });
 };
 
 window.proposeScanRules = function(prdId) {
