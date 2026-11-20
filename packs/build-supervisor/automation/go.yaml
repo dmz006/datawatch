@@ -1,0 +1,13 @@
+# Go build automation module. Chosen when the project directory holds go.mod.
+stack: go
+detect:
+  files: [go.mod]
+build: go build ./...
+test: go test ./...
+lint: go vet ./...
+format_check: gofmt -l .
+verify_before_commit: [build, test, lint, format_check]
+rules:
+  - Run the build and the tests before calling work done; a package without tests is not done.
+  - Run every command with the tmux variables removed (env -u TMUX -u TMUX_TMPDIR).
+  - A new package carries a package comment.
