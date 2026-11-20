@@ -1,8 +1,10 @@
 package supervisorloop
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaults(t *testing.T) {
@@ -168,5 +170,123 @@ func TestArchiveCancelledAfterMinutesZeroAccepted(t *testing.T) {
 	}
 	if err := s.Validate(); err != nil {
 		t.Errorf("Validate 0: %v", err)
+	}
+}
+
+type fakeOverrides struct {
+	byProject map[string]SupervisorOverrides
+	err       error
+}
+
+func (f fakeOverrides) SupervisorOverrides(p string) (SupervisorOverrides, bool, error) {
+	o, ok := f.byProject[p]
+	return o, ok, f.err
+}
+
+func TestSupervisorDefaultsValid(t *testing.T) {
+	if err := DefaultSupervisorSettings().Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateSupervisorModel(t *testing.T) {
+	cases := []struct {
+		model string
+		bad   bool
+	}{
+		{"claude-sonnet-5-5", false}, {"claude-haiku-5-5", false}, {"Sonnet", false},
+		{"claude-opus-5-5", true}, {"OPUS", true}, {"", true}, {"gpt-x", true}, {"sonnet-opus", true},
+	}
+	for _, c := range cases {
+		err := ValidateSupervisorModel(c.model)
+		if (err != nil) != c.bad {
+			t.Errorf("%q: err=%v, bad=%v", c.model, err, c.bad)
+		}
+	}
+}
+
+func TestSupervisorValidateTable(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(*SupervisorSettings)
+		want string
+	}{
+		{"ok", func(*SupervisorSettings) {}, ""},
+		{"cadence low", func(s *SupervisorSettings) { s.TickCadence = time.Second }, "tick_cadence"},
+		{"cadence high", func(s *SupervisorSettings) { s.TickCadence = 48 * time.Hour }, "tick_cadence"},
+		{"opus", func(s *SupervisorSettings) { s.Model = "claude-opus-5-5" }, "model"},
+		{"ctx low", func(s *SupervisorSettings) { s.ContextLimit = 1 }, "context_limit"},
+		{"ctx high", func(s *SupervisorSettings) { s.ContextLimit = 1 << 30 }, "context_limit"},
+		{"age low", func(s *SupervisorSettings) { s.ContextAgeLimit = 0 }, "context_age_limit"},
+		{"age high", func(s *SupervisorSettings) { s.ContextAgeLimit = 365 * 24 * time.Hour }, "context_age_limit"},
+		{"empty finding", func(s *SupervisorSettings) { s.WakeFindings = []string{" "} }, "wake_findings"},
+		{"too many", func(s *SupervisorSettings) { s.WakeFindings = make([]string, MaxWakeKinds+1) }, "wake_findings"},
+	}
+	for _, c := range cases {
+		s := DefaultSupervisorSettings()
+		c.mut(&s)
+		err := s.Validate()
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: want error naming %q, got %v", c.name, c.want, err)
+		}
+	}
+}
+
+func TestLoadSupervisorSettings(t *testing.T) {
+	cad := 5 * time.Minute
+	haiku := "claude-haiku-5-5"
+	opus := "claude-opus-5-5"
+	limit := 50000
+	age := 2 * time.Hour
+	badCad := time.Second
+	cases := []struct {
+		name    string
+		src     OverridesSource
+		project string
+		check   func(SupervisorSettings) bool
+		wantErr bool
+	}{
+		{"nil source", nil, "p", func(s SupervisorSettings) bool { return s.Model == DefaultSupervisorModel }, false},
+		{"unknown project", fakeOverrides{}, "p", func(s SupervisorSettings) bool { return s.TickCadence == DefaultSupervisorTickCadence }, false},
+		{"full override", fakeOverrides{byProject: map[string]SupervisorOverrides{"p": {
+			TickCadence: &cad, Model: &haiku, ContextLimit: &limit, ContextAgeLimit: &age, WakeFindings: []string{"task.failed"},
+		}}}, "p", func(s SupervisorSettings) bool {
+			return s.TickCadence == cad && s.Model == haiku && s.ContextLimit == limit && s.ContextAgeLimit == age &&
+				len(s.WakeFindings) == 1 && s.WakeFindings[0] == "task.failed"
+		}, false},
+		{"partial override keeps defaults", fakeOverrides{byProject: map[string]SupervisorOverrides{"p": {Model: &haiku}}}, "p",
+			func(s SupervisorSettings) bool {
+				return s.Model == haiku && s.ContextLimit == DefaultSupervisorContextLimit && len(s.WakeFindings) == len(DefaultSupervisorWakeFindings())
+			}, false},
+		{"other project untouched", fakeOverrides{byProject: map[string]SupervisorOverrides{"q": {Model: &haiku}}}, "p",
+			func(s SupervisorSettings) bool { return s.Model == DefaultSupervisorModel }, false},
+		{"opus rejected", fakeOverrides{byProject: map[string]SupervisorOverrides{"p": {Model: &opus}}}, "p", nil, true},
+		{"bad cadence rejected", fakeOverrides{byProject: map[string]SupervisorOverrides{"p": {TickCadence: &badCad}}}, "p", nil, true},
+		{"source error", fakeOverrides{err: errors.New("boom")}, "p", nil, true},
+	}
+	for _, c := range cases {
+		s, err := LoadSupervisorSettings(c.src, c.project)
+		if (err != nil) != c.wantErr {
+			t.Errorf("%s: err=%v", c.name, err)
+			continue
+		}
+		if !c.wantErr && !c.check(s) {
+			t.Errorf("%s: unexpected settings %+v", c.name, s)
+		}
+	}
+}
+
+func TestLoadSupervisorSettingsDoesNotAliasOverride(t *testing.T) {
+	in := []string{"task.failed"}
+	s, err := LoadSupervisorSettings(fakeOverrides{byProject: map[string]SupervisorOverrides{"p": {WakeFindings: in}}}, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in[0] = "changed"
+	if s.WakeFindings[0] != "task.failed" {
+		t.Fatal("settings alias the override slice")
 	}
 }
