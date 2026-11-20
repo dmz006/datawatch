@@ -17,7 +17,9 @@
 // cap. off mode does nothing whatsoever.
 //
 // The sweep is deliberately more conservative than the end path: a file it
-// is not certain it owns is kept and recorded as skipped with its reason.
+// is not certain it owns is kept and recorded as skipped with its reason,
+// and a folder it cannot even read (a private directory under the temp
+// root) is skipped — never followed into, never counted as a failure.
 
 package autonomous
 
@@ -50,6 +52,7 @@ const (
 	tempSkipNotRetained = "not-retained"  // ended, but not yet past the retention window
 	tempSkipLimit       = "limit"         // the per-pass cap was already reached
 	tempSkipNotTempRoot = "not-temp-root" // outside the temp root (defensive; the walk should not reach it)
+	tempSkipUnreadable  = "unreadable"    // a folder the sweep cannot read: skipped, never counted as a failure
 )
 
 // TempSweepResult is the outcome of one sweep pass.
@@ -94,8 +97,10 @@ type TempSessionProbe interface {
 // does nothing even as far as walking; report lists would-removes and
 // removes nothing; on removes at most maxRemovals paths per pass (0 =
 // unlimited); the walk is rooted at tempRoot and nothing outside it is
-// ever touched; symlinks are recorded as skipped and never followed; and
-// every refusal lands in Errors with the path left in place.
+// ever touched; symlinks are recorded as skipped and never followed; a
+// folder the daemon cannot read is skipped with an unreadable reason, not
+// counted as a failure; and every other refusal lands in Errors with the
+// path left in place.
 func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxRemovals int, now func() time.Time, probe TempSessionProbe) TempSweepResult {
 	res := TempSweepResult{
 		Mode:    mode,
@@ -165,7 +170,14 @@ func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxR
 			}
 			bytesFreed, err := removeTempPath(full)
 			if err != nil {
-				res.Errors[full] = err // left in place
+				if os.IsPermission(err) {
+					// The folder refused a read: it is unreadable to the
+					// daemon, so it is skipped, not counted as a failure,
+					// and left in place.
+					res.Skipped[full] = tempSkipUnreadable
+				} else {
+					res.Errors[full] = err // left in place
+				}
 				return
 			}
 			scratch.ForgetPath(full)
@@ -177,9 +189,16 @@ func SweepDaemonTemp(tempRoot string, retention time.Duration, mode string, maxR
 
 	walkErr := filepath.WalkDir(root, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// A path that cannot even be stat'd is not removable — record
-			// it and keep walking.
-			if full != root {
+			// A path the walk cannot inspect is not removable — record it
+			// and keep walking. A permission refusal means a private
+			// folder the daemon has no business in (owned by someone else
+			// under the temp root): it is skipped with its own reason, not
+			// counted as a failure, so an unreadable folder does not
+			// produce repeated failures on every pass. Any other refusal
+			// (the path vanished mid-walk) stays a genuine error.
+			if os.IsPermission(err) {
+				res.Skipped[full] = tempSkipUnreadable
+			} else if full != root {
 				res.Errors[full] = err
 			}
 			return nil

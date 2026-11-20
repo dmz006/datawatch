@@ -101,8 +101,21 @@ one does not, the entry is left exactly as it is and the reason is recorded.
   never touched.
 - **No live session** is working in the worktree or bound to the Automaton, and
   no live lease holds the worktree.
-- The worktree has **no uncommitted changes**. This is checked again at the
-  moment of removal, not trusted from an earlier look.
+- The worktree has **no uncommitted changes the cleanup cannot explain**,
+  re-checked at the moment of removal, not trusted from an earlier look. The
+  one kind of uncommitted content the cleanup does understand: harness files
+  its own workers leave behind — the per-session MCP discovery file, the
+  injected skills folder and launcher files, and the backends' own settings
+  and caches (`.mcp.json`, `.aider.conf.yml`, `.aider.chat.history.md`,
+  `.aider.tags.cache.*`, `.goose/`, `.gemini/`, `.opencode/`,
+  `opencode.json`). When those are the only untracked files in the work tree,
+  the entry is treated as clean and the pass may remove it; the files the
+  cleanup resolved are listed on the removal (as `resolved_files`) so a later
+  "what did that free?" read is answerable. A changed tracked file, or an
+  untracked file the cleanup cannot name as harness, is never treated as
+  generated content and holds the pass — a project that tracks any of those
+  names in its working tree keeps the full protection, and an untracked file
+  the cleanup does not recognize is your work, so it stays.
 - Every commit on the branch is **already on the project's default branch**.
   This is also checked again at removal time. A branch with work that exists
   nowhere else is never removed. If the default branch cannot be worked out, the
@@ -119,11 +132,16 @@ one does not, the entry is left exactly as it is and the reason is recorded.
 - Only branches in the `automaton/` namespace are ever considered. Branches you
   made yourself are not.
 
-Removal itself is the cautious form of the git commands: `git worktree remove`
-without `--force`, then `git branch -d` (never `-D`). If git refuses either one,
-the entry stays and the refusal is recorded with its error; the next pass tries
-again. Every removal is written to the Automaton's triage record and the audit
-log, so you can reconstruct what was removed, when and why.
+Removal itself is the cautious form of the git commands, with one narrow
+exception. `git worktree remove` runs **strict** — without `--force` — so that
+git itself confirms the work tree holds no untracked files before it goes
+away. The one case a strict removal cannot work — a work tree whose only
+untracked files are the harness files above — removes with `--force`, and the
+files it resolved are recorded on the removal and in the audit entry. The
+branch side is unchanged: `git branch -d`, never `-D`. If git refuses either
+one, the entry stays and the refusal is recorded with its error; the next
+pass tries again. Every removal is written to the Automaton's triage record
+and the audit log, so you can reconstruct what was removed, when and why.
 
 **Which branch counts as the default.** The cleanup uses the Automaton's own
 base branch when one was set for it. Otherwise it asks git for the default
@@ -137,8 +155,11 @@ temporary directory, only at names carrying the daemon's own `datawatch-` prefix
 and removes a path only if the daemon **recorded creating that exact path for a
 session that is no longer alive and ended more than the retention window ago**.
 A prefixed name the daemon has no record of is skipped as foreign. A session
-whose state is unknown counts as alive. A symbolic link is never followed and
-never removed. Nothing outside the temporary directory is touched. Because the
+whose state is unknown counts as alive. A path the file system refuses —
+unreadable while the sweep is walking, or refused while it is removing — is
+left in place and counted as **skipped for reason `unreadable`**, not as a
+failure; any other error still lands in the pass's errors. A symbolic link is
+never followed and never removed. Nothing outside the temporary directory is touched. Because the
 record of what the daemon created is kept in memory, scratch left behind by an
 earlier daemon process (one that crashed, or ran before a restart) is not
 attributed and is left alone; remove those by hand if you want them gone.
@@ -385,6 +406,7 @@ and, for the whole status:
 | `disk_alert_percent` | The threshold you set, in force |
 | `disk_alert` | True while either disk is at or above its own threshold, as of the last check |
 | `last_disk_alert_at` | When the alert last actually fired; absent until it has |
+| `last_worktree_skips` | The worktrees pass's latest held entries (each `branch`, `worktree`, `reason`, `detail`, and where present the held `files` and the `release_action` that frees the hold); absent when nothing was held |
 | `biggest_temp_folders` | While the temp disk is at or above its threshold: the top five folders directly in the temp folder, each as `path`, `size`, `held`, `liveness_known`. Absent until the first such reading, and cleared once the disk drops back below its threshold |
 
 Keys with no value are **absent**, not `null`.
@@ -432,10 +454,14 @@ daemon log are where to look.
 ## What it never does
 
 It never removes a branch with commits that are not on the default branch,
-never removes a worktree with uncommitted changes, never touches a running or
-unfinished Automaton, never uses `--force` or `-D`, never removes anything
-outside the `automaton/` branch namespace or the daemon's own scratch files,
-and never follows a symbolic link. It never removes a cache folder whose age
+never removes a worktree still holding a changed tracked file or an untracked
+file it cannot name as harness, never touches a running or unfinished
+Automaton, removes a work tree with `--force` only in that harness-file case
+and never deletes a branch with `-D`, never removes anything outside the
+`automaton/` branch namespace or the daemon's own scratch files, and never
+follows a symbolic link. It also does not hide what it leaves: an entry held
+only because of uncommitted work is reported with the exact files holding it
+and the one action that releases it (below). It never removes a cache folder whose age
 it cannot read or whose liveness it cannot prove — on platforms without a
 readable `/proc`, that is all of them — and the disk alert never removes
 anything, in any mode. The no-space gate reason (temporary folder full) is
@@ -455,6 +481,22 @@ status can say *why* entries are held instead of only counting them. The status
 carries `skipped_by_reason` on the `worktrees` pass: a map from reason to count
 (absent when nothing was skipped). A removal the file system refused for
 permission is counted under `permission_denied`.
+
+**A held entry carries its fix.** The pass never reports only that a worktree
+was held. When an entry is held because of uncommitted work, the skipped entry
+carries `files` — the exact untracked paths the cleanup could not classify as
+harness — and `release_action`, the one plain action that frees the hold:
+commit the work or discard those files so the work tree is clean, and the
+next worktree cleanup pass resolves the entry and the hold lifts. An entry
+held under a safety report carries the same pair, with the action named for
+the report's state. The status keeps the pass's latest of these as
+`last_worktree_skips` (each entry: `branch`, `worktree`, `reason`, `detail`,
+and where present `files` and `release_action`), and the read renders each
+held entry that carries a release action as a plain line — which worktree it
+is, why it is held, the held files and the one action that frees it (entries
+without a release action, like a young branch, only appear in `skipped` and
+`skipped_by_reason`). So "skipped" tells you what to do next, not only what
+was left.
 
 **Permission errors.** A build or test sometimes leaves read-only files in a
 worktree (a read-only module cache, for example), and git then cannot delete the
@@ -496,6 +538,26 @@ routes described in **These routes work on the live daemon** below: with
 Automata enabled the live daemon serves it, and it is refused only while
 Automata are off (**503** `autonomous disabled`) or when a federated peer's
 token lacks the autonomous write capability (**403**).
+
+**Still worth your review.** Two things in the skip model change what a quiet
+status means, so look at both before trusting "nothing was left":
+
+- **Harness-resolved removals.** A work tree whose only untracked files are
+  generated harness files is now removed (with `--force`, those files recorded
+  as `resolved_files`). If one of your workers intentionally leaves an
+  untracked, harness-named file in a work tree — an assistant chat history, a
+  tool config you want to keep — that file now goes away with the work tree.
+  Such a file only survives if you land it (commit it) or keep it tracked
+  elsewhere. The files each removal resolved are on the removal record (as
+  `resolved_files`) and in its audit entry (`resolved_files`), so check the
+  audit for the first few `on` passes.
+- **Unreadable temp paths are skips, not failures.** A temp path the file
+  system refuses to walk or remove is counted under the temp pass's `skipped`
+  (reason `unreadable`) and left in place — it is *not* in `failed`, so a pass
+  with no errors can still be holding a path the sweep never manages to get
+  to. If the temp disk grows while the temp pass reports zero failures, look
+  for an `unreadable` path and fix the cause (permissions, a stuck mount);
+  the sweep will then remove it on a later pass once it is readable.
 
 ## Unlanded branches (finished work that never reached the default branch)
 
@@ -743,6 +805,18 @@ All refusals say why: a missing actor or reason is refused with the requirement 
 
 A short operator guide to this reaper is [Reap contained task branches](reap-contained-branches.md).
 
+**On a live daemon.** Found 2026-11-18 and fixed: before the fix, a running
+daemon answered 503 — `the autonomous manager does not expose the branch
+reaper` — on all three routes **even when** `autonomous.worktree_base_repo` was
+set, because the daemon's API wrapper did not carry the reaper's methods. Every
+surface in the table below failed with it, and that is why the repository kept
+piling up finished Automata while cleanup lagged. The daemon now wires the
+reaper in with the routes, so with a base repo set the report, the pass and the
+restore work on a live daemon; the 503 now means only that the base repo is
+unset. On a daemon upgraded across the gap, the first move is to read the
+report and run a pass once the list reads as expected (see the review item
+below); the reaper does not catch up on its own.
+
 The worktrees pass removes the Automaton's own `automaton/<id>` work branch.
 Every task that ran in parallel mode also left **its** branch (`worktree_branch`)
 in the repository. The **branch reaper** removes those leftovers once the parent
@@ -840,6 +914,12 @@ task sub-branches. (That a Keep record leaves task sub-branches unprotected is o
 
 ### Still needs your review
 
+- **Backlog from the wiring gap (fixed 2026-11-18).** Until the fix, all three
+  routes answered 503 on a live daemon even with a base repo set, so no report
+  could be read and no pass could be run from any surface, and completed
+  Automata kept piling up. On a daemon that has the fix, verify the first pass
+  by hand — read the report, confirm the list is what you expect, run the
+  pass, and spot-check one restore before trusting it at scale.
 - **Nothing runs a pass on a timer, and the expiry has no caller.** The
   report, the pass and the restore are all operator-triggered (above), but no
   schedule runs a reap pass and nothing calls the backup-ref expiry — the refs

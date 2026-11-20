@@ -7,8 +7,113 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **The daemon's stderr stays in the service journal, and the crash log keeps its job.** The daemon no longer redirects its stderr (fd 2) into `<data>/daemon-crash.log` at start — before this fix the journal received nothing from the daemon after boot and its ordinary log lines landed in the crash log. Stderr is left untouched, so the journal (and any other stderr consumer) keeps receiving everything as before; the runtime's fatal crash output is additionally written to the crash log with Go 1.23+ `debug.SetCrashOutput` (`GOTRACEBACK=crash` unchanged, all-goroutine dump on a fatal). `<data>/daemon-crash.log` therefore now holds the per-start header and the crash dumps only, not the daemon's ordinary log lines; a SIGABRT core image is still recovered with `coredumpctl`. Docs: the decompose-async how-to, the decompose-abort operations section and the definitions glossary entry.
+- **A decompose that aborts the daemon can no longer happen.** Two unbounded paths are now bounded and the third is guarded: (1) the decompose-lint `script_invokes_known_flag` rule probes only `prefix --help` — never `-h`, never the bare prefix — in a fresh scratch directory, its own process group, a 5-second timeout, a 64 KiB output cap and a bounded pipe wait, and skips anything it cannot establish instead of guessing; this closes the 2026-11-18 path where an unbounded fallback ran a bare prefix and grew the daemon's memory until the Go runtime aborted the process (SIGABRT, core dump); (2) a decompose output above 8 MiB is refused before it is parsed; (3) the parse-and-lint step runs under a panic guard, so a Go panic in the parser or the lint is recovered and recorded as the named planning failure `decompose output unparseable: <reason>` — source `decompose-parse`, category `invalid-response`, terminal and not retryable, the PRD rolls back to `draft`, one warning alert, and the raw output is kept at `<data>/autonomous/scratch/<prd-id>/decompose-output.json.failed`. Docs: the decompose-async how-to, the decompose-lint and retry-policy how-tos, the decompose-abort operations section and the definitions glossary entry; the investigation is tracked in `.datawatch/reports/decompose-abort-cause.md`.
 - **Stale browser state can no longer break the Sessions view-mode buttons.** The Sessions page validates the remembered List / Tiles / Compact mode against the three known modes whenever it is read — on page load and when a saved view applies one. A value left over from an older datawatch version (or a hand-edited local storage) is ignored and the viewport default applies (list below 600 px, tiles at 600 px and wider): the toggle always shows one active button, every button still switches the mode and re-draws the list, and the next choice overwrites the stale value. No new setting, endpoint or daemon change; the choice stays per device (`cs_sessions_view_mode`). Docs: the Sessions tiles-and-grouping how-to (view modes, options table, troubleshooting), the tag browser operations notes and the definitions updated.
 - **A stale service worker can no longer pin the PWA on an old build.** The worker is now registered per release at `/sw.js?v=<release>` (a distinct worker URL per release; a page that registers before it knows the release number adopts the versioned URL once it does), and its cache name is derived from the same version, so each release owns its own cache. A genuine upgrade purges the older caches and the affected page reloads at most once — and only when it is not mid-thing (typing, terminal focused, an unsent draft, or still active within the last 30 seconds); otherwise the existing "Update available — tap to reload" banner waits until the page is idle. A no-op re-activation never reloads a tab, and the `forcePWAUpdate()` console escape hatch is unchanged. Docs: operations (PWA updates on a datawatch release), the PWA setup guide and the definitions.
+- **Lane fill no longer mis-gates proposal-writing and defect Automata.** The lane fill proposal gate now takes an Automaton's proposal to be the `docs/plans/<name>.md` path named on an explicit proposal field or line in its title or spec — a path that is merely mentioned elsewhere names no proposal, and the plan folder's README is never one. Defect, research, operational and personal Automata are exempt from the gate, as is any Automaton whose title or spec states that its own job is to write the proposal: such an Automaton is never gated on the `Confirmed: yes` line of the proposal it is producing. In particular, an authoring Automaton that states its job in its title alone is now exempt too, and an Automaton that names its proposal in its title alone is no longer refused as `proposal_missing`. No new keys, endpoints or settings; the gate and its reason codes are unchanged. Docs: the lane fill how-to, the lane fill operations notes, the Eligibility reason definition and the lane fill block of the config reference.
+
+## v9.182.50 — Configurable grace period for the orphan slot reconcile
+
+### Changed
+
+- Configurable grace period for the orphan slot reconcile.
+
+## v9.182.49 — Keep planning Automata in planning across a daemon restart
+
+### Changed
+
+- Keep planning Automata in planning across a daemon restart.
+
+## v9.182.48 — Pull report never shows an attempt without its outcome
+
+### Changed
+
+- Pull report never shows an attempt without its outcome.
+
+## v9.182.47 — Free orphaned pi-pool slots held by judges and verifiers
+
+### Changed
+
+- Free orphaned pi-pool slots held by judges and verifiers.
+
+## v9.182.46 — Make the scan fix loop settings work and document them
+
+### Changed
+
+- Make the scan fix loop settings work and document them.
+
+## v9.182.45 — Archive guard covers every terminal state
+
+### Changed
+
+- Archive guard covers every terminal state.
+
+## v9.182.44 — Remove the CPU burner and fix intermittent tests at their root
+
+### Changed
+
+- Remove the CPU burner and fix intermittent tests at their root.
+
+## v9.182.43 — b2d40001
+
+### Security
+
+- The agent-base image no longer fails its blocking scan. The GitHub CLI inside it is rebuilt from source, and it was built with Go 1.27.3, whose standard library carries a HIGH vulnerability (CVE-2026-97054, the HTTP/1 request body limit). It is now built with Go 1.27.4, which has the fix. The Go toolchain floor check now rejects 1.27.3 and 1.26.10 as well, so a repository pin cannot slip back.
+
+## v9.182.42 — 26f60001
+
+### Fixed
+
+- A finished task no longer retries its merge forever when its branch is missing or untracked files block the merge. If the task branch is gone but the task worktree still holds the finished commit (a detached HEAD, or a worktree that is a clone of its own), the daemon brings the commit over and recreates the branch, and moves a branch forward to a newer detached commit. If an untracked file in the Automaton worktree would be overwritten by the merge, an identical copy is dropped and a different one is moved aside, never deleted, under `.datawatch/merge-aside/<task id>/`. If nothing is left to recover, the merge says so and changes nothing.
+
+## v9.182.41 — Repair the Automaton cleanup passes: reaper wiring, skip resolution, remote reap, temp swe
+
+### Changed
+
+- Repair the Automaton cleanup passes: reaper wiring, skip resolution, remote reap, temp swe.
+
+## v9.182.40 — Decompose output abort fix and crash diagnostics
+
+### Changed
+
+- Decompose output abort fix and crash diagnostics.
+
+## v9.182.39 — 49910001
+
+### Fixed
+
+- The verification-script pre-flight no longer panics on a shell `||`. It read an empty segment and aborted the whole daemon whenever a decompose ran it (a crash loop on 2026-11-18). `||` is now treated as the logical or, not a pipe, and empty segments are skipped.
+
+## v9.182.38 — Lean supervisor session sees datawatch tools
+
+### Changed
+
+- Lean supervisor session sees datawatch tools.
+
+## v9.182.37 — Fix lane fill proposal gate for proposal-writing and defect Automata
+
+### Changed
+
+- Fix lane fill proposal gate for proposal-writing and defect Automata.
+
+## v9.182.36 — Stop generated verify scripts failing clean final gates
+
+### Changed
+
+- Stop generated verify scripts failing clean final gates.
+
+## v9.182.35 — Fix image-refresh agent-base Trivy scan
+
+### Changed
+
+- Fix image-refresh agent-base Trivy scan.
+
+## v9.182.34 — Session detail header icons for tags and scheduled jobs
+
+### Changed
+
+- Session detail header icons for tags and scheduled jobs.
 
 ## v9.182.33 — Verification-script pre-flight and fixed-date decompose lint
 

@@ -152,6 +152,7 @@ data:
   with pull off that has never pushed. Shadow rows contribute no data and
   are excluded from the envelope aggregate and the meta-peer buckets.
 - `pull` — object: `{enabled, stale, stale_reason, last_success_at, last_attempt_at, interval_s}`. A pull-only peer's `last_push_at` is its last successful pull.
+- `last_attempt_at` is the start time of the most recent completed fetch attempt, and it is published in the same step as that attempt's outcome (`stale`, `stale_reason`, `last_success_at`). A fetch still in flight changes none of these, so a row never shows a new attempt time beside the previous attempt's outcome. Read `last_attempt_at` and `stale_reason` together as one reading.
 
 A peer that is both push-registered and pull-target appears exactly once.
 A pulled peer is bindable to a Compute Node through the usual attach

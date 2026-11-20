@@ -197,6 +197,80 @@ func TestLifecycle_QueueOverflowDropsNotBlocks(t *testing.T) {
 	}
 }
 
+// TestLifecycle_DropCountsArePerSubscriber pins the regression the old
+// TestLifecycle_QueueOverflowDropsNotBlocks flaked on: it asserted the
+// dispatcher-wide droppedTotal, so the total moved with the scheduling of
+// every OTHER subscriber (including the Manager's built-in lifeHistory
+// recorder, which is always a live concurrent subscriber and may drop its
+// own burst events when its goroutine lags). Per-subscriber counters make
+// each saturation exact. Here both dedicated subscribers are parked at
+// different queue occupancy, and a third, uncontrolled concurrent
+// subscriber (lifeHistory, started by lifecycleBus) is allowed to drop
+// freely; the assertion is on the two parked counters only — something the
+// global-counter design could never express.
+func TestLifecycle_DropCountsArePerSubscriber(t *testing.T) {
+	m := &Manager{}
+	d := m.lifecycleBus() // also starts the built-in lifeHistory recorder
+	defer d.Close()
+
+	const extra = 7
+	release := make(chan struct{})
+	barrierA := make(chan struct{})
+	barrierB := make(chan struct{})
+
+	// A parks on its very first delivery (e0); its queue then holds e1.
+	a, cancelA := d.subscribeCounted(LifecycleFilter{}, func(LifecycleEvent) {
+		close(barrierA)
+		<-release
+	})
+	// B parks on its second delivery (e1); its queue is then empty.
+	callsB := 0
+	b, cancelB := d.subscribeCounted(LifecycleFilter{}, func(LifecycleEvent) {
+		callsB++
+		if callsB == 2 {
+			close(barrierB)
+			<-release
+		}
+	})
+	defer func() {
+		close(release)
+		cancelA()
+		cancelB()
+	}()
+
+	m.emit(taskEvent(-2)) // e0
+	m.emit(taskEvent(-1)) // e1
+	<-barrierA            // A holds e0; its queue holds e1
+	<-barrierB            // B consumed e0 and e1; its queue is empty
+
+	const burst = 2*lifecycleQueueSize + extra
+	emitDone := make(chan struct{})
+	go func() {
+		for i := 0; i < burst; i++ {
+			m.emit(taskEvent(i))
+		}
+		close(emitDone)
+	}()
+	// Safety net only, not an assertion: publish never blocks, so
+	// reaching this far is a genuine hang, not a scheduling flake.
+	select {
+	case <-emitDone:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("emit blocked on a full subscriber queue")
+	}
+
+	// A already had one queue slot occupied (e1), so it dropped one more.
+	wantA := lifecycleQueueSize + extra + 1
+	wantB := lifecycleQueueSize + extra
+	if got := int(a.dropped.Load()); got != wantA {
+		t.Fatalf("subscriber A dropped %d, want %d (queue occupancy: A=1 slot, B=0; lifeHistory unconstrained)", got, wantA)
+	}
+	if got := int(b.dropped.Load()); got != wantB {
+		t.Fatalf("subscriber B dropped %d, want %d", got, wantB)
+	}
+}
+
 func TestLifecycle_Cancel(t *testing.T) {
 	m := &Manager{}
 	defer m.lifecycleBus().Close()

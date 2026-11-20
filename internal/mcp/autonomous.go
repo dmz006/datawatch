@@ -295,11 +295,13 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
 		mcpsdk.WithNumber("archive_grace_minutes", mcpsdk.Description("Whole minutes a cancelled Automaton is kept before the supervisor loop archives it (default 60; 0 archives at once; negative or fractional values are rejected)")),
+		mcpsdk.WithBoolean("archive_keep_unmerged", mcpsdk.Description("Keep a finished (completed, rejected or cancelled) Automaton whose work branch still holds commits not on the base branch from being archived (default true; false lets it archive; the branch itself is never deleted)")),
 		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
 		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
 		mcpsdk.WithBoolean("capacity_adopt_before_admit", mcpsdk.Description("After a restart, admit resumed workers before any new work (default true)")),
 		mcpsdk.WithNumber("capacity_adoption_wait_seconds", mcpsdk.Description("Longest wait, in seconds, for resumed workers to be adopted after a restart (default 30; negative values are rejected)")),
+		mcpsdk.WithNumber("capacity_slot_reconcile_grace_seconds", mcpsdk.Description("How long, in seconds, a capacity slot may look unmatched to a live worker before it is reconciled away (default 60, minimum 10; 0 = default; values 1-9 and negative values are rejected)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_tokens", mcpsdk.Description("Rate ceiling on each LLM: most tokens it may use per rolling window; 0 = no tokens ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_window_seconds", mcpsdk.Description("Rolling window length in seconds for the two rate ceilings (0 = default 3600)")),
@@ -870,6 +872,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["capacity_adoption_wait_seconds"]; ok {
 			body["capacity_adoption_wait_seconds"] = int(req.GetFloat("capacity_adoption_wait_seconds", 0))
 		}
+		if _, ok := args["capacity_slot_reconcile_grace_seconds"]; ok {
+			body["capacity_slot_reconcile_grace_seconds"] = int(req.GetFloat("capacity_slot_reconcile_grace_seconds", 0))
+		}
 	}
 	// Presence-aware and forwarded as given (negatives included) so the REST
 	// write is the one place that rejects them.
@@ -883,6 +888,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["archive_grace_minutes"]; ok {
 			body["archive_grace_minutes"] = req.GetFloat("archive_grace_minutes", 0)
+		}
+		if _, ok := args["archive_keep_unmerged"]; ok {
+			body["archive_keep_unmerged"] = req.GetBool("archive_keep_unmerged", true)
 		}
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {

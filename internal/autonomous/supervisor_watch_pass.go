@@ -140,6 +140,7 @@ func (m *Manager) supervisorWatchRawFindings(now time.Time, cfg SupervisorWatchC
 	out = append(out, work.CheckTaskFailed()...)
 	out = append(out, work.CheckTaskReviewNeeded()...)
 	out = append(out, work.CheckAutomatonNotMerged()...)
+	out = append(out, m.supervisorWatchArchivedUnmerged(now)...)
 	out = append(out, work.CheckIdleLane()...)
 	out = append(out, work.CheckCIRed()...)
 	out = append(out, work.CheckCISTuck()...)
