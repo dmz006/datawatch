@@ -1,0 +1,17 @@
+# Default build supervisor pack. The daemon reads rules.md as the
+# default layer of every supervisor handover; handover.md.tmpl is the
+# template a supervisor's start-up text follows; the three tick files
+# say what each recurring pass does; automation/ holds one module per
+# build stack. A project pack layers on top and wins on conflict.
+name: build-supervisor
+description: Rules, handover template, tick definitions and stack-aware build automation for a build supervisor
+rules: rules.md
+handover: handover.md.tmpl
+ticks:
+  watch: watch.yaml
+  window_guard: window-guard.yaml
+  full: tick.yaml
+automation:
+  go: automation/go.yaml
+  python: automation/python.yaml
+  docs_site: automation/docs-site.yaml

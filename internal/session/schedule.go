@@ -119,6 +119,11 @@ type DeferredSession struct {
 	// carried server-side into the spawned session's Session.ScheduleName
 	// so results/sessions can be grouped per schedule_name.
 	ScheduleName string `json:"schedule_name,omitempty"` // originating schedule entry name
+	// LaunchRole, when set, is carried server-side into the spawned
+	// session's Session.LaunchRole — e.g. "supervisor" so the spawned pass
+	// takes the lean supervisor profile instead of a full worker.
+	// Empty leaves the session untagged.
+	LaunchRole string `json:"launch_role,omitempty"`
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -301,6 +306,10 @@ type AddSpawnOptions struct {
 	Ephemeral    bool      // reap workspace directory when session is deleted (default true)
 	Subprocess   bool      // run task as subprocess (exit code = completion, no TUI scraping)
 	Git          bool      // opt in to git init/snapshot/commit (default false)
+	// LaunchRole, when non-empty, is recorded on DeferredSession so the
+	// fire path stamps the spawned session's launch role (e.g.
+	// supervisorloop.LaunchRoleSupervisor for the lean supervisor profile).
+	LaunchRole string
 }
 
 // AddSpawn schedules an ephemeral one-shot session to start at a future time or
@@ -308,7 +317,11 @@ type AddSpawnOptions struct {
 func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.addSpawnLocked(opts)
+}
 
+// addSpawnLocked is AddSpawn's body; callers hold s.mu.
+func (s *ScheduleStore) addSpawnLocked(opts AddSpawnOptions) (*ScheduledCommand, error) {
 	id, err := randomID()
 	if err != nil {
 		return nil, err
@@ -344,10 +357,34 @@ func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error
 			Subprocess:   opts.Subprocess,
 			Git:          opts.Git,
 			ScheduleName: opts.ScheduleName,
+			LaunchRole:   opts.LaunchRole,
 		},
 	}
 	s.entries = append(s.entries, sc)
 	return sc, s.save()
+}
+
+// EnsureNamedSpawn is the idempotent named set-up for recurring spawns:
+// it returns the pending spawn schedule named opts.ScheduleName, adding it
+// from opts only when no pending spawn under that name exists yet. A second
+// call for the same name returns the existing entry (created == false)
+// instead of adding a second one.
+func (s *ScheduleStore) EnsureNamedSpawn(opts AddSpawnOptions) (sc *ScheduledCommand, created bool, err error) {
+	if opts.ScheduleName == "" {
+		return nil, false, fmt.Errorf("ensure named spawn: ScheduleName is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.Type == SchedTypeSpawn && e.State == SchedPending && e.ScheduleName == opts.ScheduleName {
+			return e, false, nil
+		}
+	}
+	nsc, aerr := s.addSpawnLocked(opts)
+	if aerr != nil {
+		return nil, false, aerr
+	}
+	return nsc, true, nil
 }
 
 // DuePendingSessions returns pending deferred sessions (new_session or spawn type)

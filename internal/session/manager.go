@@ -7158,10 +7158,21 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			if name == "" {
 				name = sc.ScheduleName
 			}
+			attach := false
 			if name != "" && newSess.ScheduleName == "" {
 				newSess.ScheduleName = name
+				attach = true
+			}
+			// Carry the requested launch role (e.g. the lean supervisor
+			// profile) from DeferredSession onto the spawned session,
+			// server-side like the schedule name.
+			if ds.LaunchRole != "" && newSess.LaunchRole == "" {
+				newSess.LaunchRole = ds.LaunchRole
+				attach = true
+			}
+			if attach {
 				if err := m.store.Save(newSess); err != nil {
-					fmt.Printf("[schedule] persist schedule_name on %s: %v\n", newSess.FullID, err)
+					fmt.Printf("[schedule] persist spawn metadata on %s: %v\n", newSess.FullID, err)
 				}
 			}
 			_ = m.schedStore.MarkDone(sc.ID, false)
