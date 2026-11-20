@@ -73,16 +73,30 @@ test('the checks card shows each check mode, the findings and the read-only note
   assert.ok(html.includes('Read only.'), html);
 });
 
-test('the ship card shows the modes, the tag format, the remote, the workflows and the outcomes', () => {
-  const html = call(loadApp({}), 'window.shipCardHtml(_v)', shipStatus());
+test('the ship card explains itself, tiles the three steps and reads findings as title and sentence', () => {
+  const sb = loadApp({});
+  vm.runInContext("_automataState.allPrds.push({ id: 'a1b2c3d4', title: 'Fix the parser' });", sb);
+  const html = call(sb, 'window.shipCardHtml(_v)', shipStatus());
   assert.ok(html.includes('Automata ship status'), html);
-  assert.ok(html.includes('Push: on'), html);
-  assert.ok(html.includes('Tag: shadow (record only)'), html);
-  assert.ok(html.includes('CI watch: off'), html);
-  assert.ok(html.includes('Tag format: v{version}'), html);
-  assert.ok(html.includes('Remote: origin'), html);
-  assert.ok(html.includes('CI workflows: release.yaml'), html);
+  // The plain-language line under the title says what shipping is and what
+  // each mode word means.
+  assert.ok(html.includes('When an Automaton is finished the daemon ships it'), html);
+  assert.ok(html.includes('off (does nothing), shadow (records what it would do) or on (acts)'), html);
+  // Three compact step tiles: plain step name and the mode word.
+  assert.ok(html.includes('ship-step-tiles'), html);
+  assert.ok(/>Push</.test(html), html);
+  assert.ok(/>Tag</.test(html), html);
+  assert.ok(/>CI watch</.test(html), html);
+  assert.ok(html.includes('shadow (record only)'), html);
+  // Tag format, remote and workflow names: one short secondary line.
+  assert.ok(html.includes('Tag format v{version} · Remote origin · CI release.yaml'), html);
+  // Findings are rows: the Automaton's title, then the outcome sentence.
+  assert.ok(html.includes('Fix the parser'), 'title shown: ' + html);
   assert.ok(html.includes('pushed to origin'), html);
+  // With no title known the row still shows an id fallback, not nothing.
+  const sb2 = loadApp({});
+  const html2 = call(sb2, 'window.shipCardHtml(_v)', shipStatus());
+  assert.ok(html2.includes('a1b2c3d4'), html2);
 });
 
 test('both cards read as empty for a missing or malformed body and say no findings', () => {
@@ -92,7 +106,7 @@ test('both cards read as empty for a missing or malformed body and say no findin
     const s = call(sb, 'window.shipCardHtml(_v)', bad);
     assert.ok(c.includes('No findings recorded.'), String(bad));
     assert.ok(s.includes('No findings recorded.'), String(bad));
-    assert.ok(s.includes('CI workflows: none configured'), String(bad));
+    assert.ok(s.includes('When an Automaton is finished the daemon ships it'), String(bad));
   }
 });
 
@@ -166,7 +180,7 @@ test('the loaders read their routes and draw into the Overview slots', async () 
     assert.ok(sb.__calls.includes('/api/autonomous/checks'), String(sb.__calls));
     assert.ok(sb.__calls.includes('/api/autonomous/ship'), String(sb.__calls));
     assert.ok(cSlot.innerHTML.includes('Pre-start verifier: on'), cSlot.innerHTML);
-    assert.ok(sSlot.innerHTML.includes('Remote: origin'), sSlot.innerHTML);
+    assert.ok(sSlot.innerHTML.includes('Remote origin'), sSlot.innerHTML);
   } finally {
     c.stop();
     s.stop();
