@@ -69,12 +69,13 @@ test('the popover toggle opens and closes', () => {
 
 test('card sizes are bounded in style.css with fixed width, height and max-width', () => {
   const css = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-  const card = /\.usage-card\s*\{([^}]*)\}/.exec(css);
+  const card = /^\.usage-card\s*\{([^}]*)\}/m.exec(css);
   assert.ok(card, '.usage-card rule');
   assert.match(card[1], /(^|[\s;])width:\s*\d+px/);
   assert.match(card[1], /(^|[\s;])height:\s*\d+px/);
   assert.match(card[1], /max-width:\s*100%/);
-  assert.match(/\.usage-cards\s*\{([^}]*)\}/.exec(css)[1], /flex-wrap:\s*wrap/);
+  assert.match(css, /\.usage-cards\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/);
+  assert.match(css, /@media\s*\(max-width:\s*600px\)\s*\{[^{]*\.usage-cards\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(/\.usage-card-chart\s*\{([^}]*)\}/.exec(css)[1], /max-width:\s*\d+px/);
 });
 
