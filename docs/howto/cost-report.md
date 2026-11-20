@@ -319,6 +319,32 @@ On a bundled plan the dollar figure is `api_equivalent_usd`, labeled **“bundle
 | `release` | Release (with `units` — the shipped units — per row; work not yet shipped lands under `unreleased`) |
 | `week` | Week, using `cost_report.week_start` (Monday by default, or Sunday) |
 
+### Grouping by project
+
+The Project grouping (`group_by=project` on the cost series, the **Project**
+choice in the chart cards) draws one line per project. Each session's spend is
+placed under the project its Automaton resolves to, in this order:
+
+1. **The Automaton's project link**, the project name set on the Automaton.
+2. **Its parent Automaton's project**, followed up the parent chain. A spawned
+   child counts toward its parent's project; the walk is capped and cannot loop.
+3. **Its project directory**: the last part of the directory path names the
+   project.
+
+An Automaton that resolves to none of these, or a session with no Automaton at
+all, has no project, so its spend lands on one line named **unassigned**. There
+is only one such line, however many Automata lack a project. The Projects
+sub-tab's Unassigned page lists those Automata one by one (see
+[projects-tab.md](projects-tab.md#the-page-sub-tabs)); the cost line only sums
+their spend. The glossary entry is **Unassigned (project line)** in
+[datawatch-definitions.md](../datawatch-definitions.md).
+
+**Unattributed still means spend with no owner.** It is the row for spend whose
+owner field is blank under the Automaton, Automation and model groupings. The
+Project grouping has no separate unattributed line: spend with no Automaton
+owner has no project either, so it is counted on the **unassigned** line. Either
+way the spend is not dropped and is not backfilled.
+
 ### The per-release roll-up
 
 `group_by release` is the roll-up for “what did each release cost”. The
