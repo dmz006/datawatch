@@ -6035,5 +6035,13 @@
   "unlanded_counts_under_one_week": "%1$s unter einer Woche",
   "unlanded_counts_older": "%1$s älter",
   "unlanded_counts_oldest": "Ältester ausstehender: %1$s (%2$s), %3$s",
-  "unlanded_counts_over_threshold": "Über der Alarmschwelle: %1$s ausstehend (Schwelle %2$s)"
+  "unlanded_counts_over_threshold": "Über der Alarmschwelle: %1$s ausstehend (Schwelle %2$s)",
+  "cost_charts_unit_local_tokens": "Tokens lokaler Modelle (eigene Achse, keine Claude-Tokens, ohne Preis)",
+  "cost_charts_tokens_not_reported": "%1$s lokale Sitzung(en) haben keine Tokens gemeldet (unbekannt, nicht null).",
+  "cost_charts_tool_calls_not_reported": "%1$s lokale Sitzung(en) haben keine Tool-Aufrufe gemeldet (unbekannt, nicht null).",
+  "cost_charts_active_time": "Aktive Zeit: %1$s",
+  "cost_charts_col_local_tokens": "Tokens lokaler Modelle",
+  "cost_charts_col_active": "Aktive Zeit",
+  "cost_charts_not_reported_marker": "nicht gemeldet (%1$s)",
+  "cost_report_not_reported": "nicht gemeldet (%1$s)"
 }

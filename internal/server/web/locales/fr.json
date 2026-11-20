@@ -6035,5 +6035,13 @@
   "unlanded_counts_under_one_week": "%1$s de moins d'une semaine",
   "unlanded_counts_older": "%1$s plus anciennes",
   "unlanded_counts_oldest": "Plus ancienne en attente : %1$s (%2$s), %3$s",
-  "unlanded_counts_over_threshold": "Au-dessus du seuil d'alerte : %1$s en attente (seuil %2$s)"
+  "unlanded_counts_over_threshold": "Au-dessus du seuil d'alerte : %1$s en attente (seuil %2$s)",
+  "cost_charts_unit_local_tokens": "jetons de modèles locaux (axe propre, pas des jetons Claude, sans prix)",
+  "cost_charts_tokens_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué de jetons (inconnu, pas zéro).",
+  "cost_charts_tool_calls_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué d'appels d'outils (inconnu, pas zéro).",
+  "cost_charts_active_time": "Temps actif : %1$s",
+  "cost_charts_col_local_tokens": "Jetons de modèles locaux",
+  "cost_charts_col_active": "Temps actif",
+  "cost_charts_not_reported_marker": "non communiqué (%1$s)",
+  "cost_report_not_reported": "non communiqué (%1$s)"
 }

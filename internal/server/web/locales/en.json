@@ -1170,7 +1170,7 @@
   "new_session_profile_label": "Profile",
   "new_session_worker_profile_label": "Worker profile",
   "new_session_worker_profile_auto": "Auto (daemon rules: daemon-wide profile, then session-kind default)",
-  "new_session_worker_profile_hint": "What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings \u003e Worker session profiles.",
+  "new_session_worker_profile_hint": "What a worker session starts with: its MCP servers, tools, skills, project context, model and effort. The profile in force per role, task kind and session kind is shown in Settings > Worker session profiles.",
   "new_session_recent_sessions": "Recent sessions",
   "new_session_resume_id_ph": "Session ID or name…",
   "new_session_resume_label": "Resume previous (optional)",
@@ -6035,5 +6035,13 @@
   "unlanded_counts_under_one_week": "%1$s under a week",
   "unlanded_counts_older": "%1$s older",
   "unlanded_counts_oldest": "Oldest pending: %1$s (%2$s), %3$s",
-  "unlanded_counts_over_threshold": "Above alert threshold: %1$s pending (threshold %2$s)"
+  "unlanded_counts_over_threshold": "Above alert threshold: %1$s pending (threshold %2$s)",
+  "cost_charts_unit_local_tokens": "local-model tokens (own axis, not Claude tokens, no price)",
+  "cost_charts_tokens_not_reported": "%1$s local session(s) did not report tokens (unknown, not zero).",
+  "cost_charts_tool_calls_not_reported": "%1$s local session(s) did not report tool calls (unknown, not zero).",
+  "cost_charts_active_time": "Active time: %1$s",
+  "cost_charts_col_local_tokens": "Local-model tokens",
+  "cost_charts_col_active": "Active time",
+  "cost_charts_not_reported_marker": "not reported (%1$s)",
+  "cost_report_not_reported": "not reported (%1$s)"
 }
