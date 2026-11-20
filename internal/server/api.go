@@ -646,6 +646,8 @@ type Server struct {
 	autonomousEvents PendingEventsAPI
 	// supervisorLoop serves the supervisor-loop run history and manual runs.
 	supervisorLoop SupervisorLoopControl
+	// supervisorSetup serves the supervisor set-up, state-record and correction routes.
+	supervisorSetup *SupervisorSetupDeps
 	// peerEvents backs /api/autonomous/peer-events (nil: 503).
 	peerEvents PeerEventControl
 	// supervisorWake is the record behind GET /api/supervisor-loop/wake.
