@@ -14457,7 +14457,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck]
+          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, main_checkout_automaton, ci_red, ci_stuck]
           description: What the finding is about, one of the stable finding kinds
         subject: {type: string, description: "The stable id the finding is about: an Automaton id, a node name, a lane name, a CI run id, or the main checkout's path"}
         text: {type: string, description: The operator-facing line for the finding; empty when not set}

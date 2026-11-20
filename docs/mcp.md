@@ -271,6 +271,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Lifecycle subscriptions | `autonomous_peer_events`, `autonomous_peer_events_control`, `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`, `autonomous_event_kinds` |
 | Search before create | `autonomous_overlap_search` |
+| Archived unmerged work | `archived_unmerged_list`, `archived_unmerged_carry_forward` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -2019,6 +2020,19 @@ stored on the record under `follow_up` with a `status` of `done`,
 `skipped` or `error` and a one-line `result`.
 
 ---
+
+### `archived_unmerged_list` / `archived_unmerged_carry_forward`
+
+Find archived Automata whose work branch still holds commits that never reached the base branch, and carry that work forward as a new draft. Both proxy the archived-unmerged REST routes; the how-to is [howto/automata-archive.md](howto/automata-archive.md#finding-archived-automata-that-hold-unmerged-work).
+
+- `archived_unmerged_list` — read-only, no parameters. `GET /api/autonomous/archived-unmerged`. Reply: `archived_unmerged` (newest archive first; each entry has `id`, `title`, `former_status`, `branch`, `base_branch`, `ahead`, `archived_at`, `state`, `detail` when the comparison failed, and `carried_to` when a draft was already carried from it) and `total`. A branch that could not be compared is listed with its reason, not dropped.
+- `archived_unmerged_carry_forward` — `POST /api/autonomous/archived-unmerged/{id}/carry-forward`. Parameters: `id` (required, from `archived_unmerged_list`), `force` (boolean, default false; carry again when a draft was already carried), `actor` (recorded on the new draft, default `operator`). It creates a new draft with the same title, spec and branch, linked back by `carried_from_id`. The draft is not approved and has run nothing. The archived record and its branch are not changed, and nothing is merged or deleted. Refused when the record is not archived, has no branch, the branch is gone or has nothing ahead, the comparison failed, or it was already carried and `force` is not set.
+
+**Example:**
+```
+archived_unmerged_list()
+archived_unmerged_carry_forward(id="done-1", actor="operator")
+```
 
 ### `autonomous_overlap_search`
 

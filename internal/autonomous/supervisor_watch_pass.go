@@ -131,6 +131,7 @@ func (m *Manager) supervisorWatchRawFindings(now time.Time, cfg SupervisorWatchC
 	out = append(out, host.CheckModelNotResident()...)
 	out = append(out, host.CheckVerifyScriptNotExecutable(SupervisorWatchRunningUnits(prds))...)
 	out = append(out, host.CheckMainCheckoutDirty()...)
+	out = append(out, m.supervisorWatchMainCheckoutAutomaton(prds)...)
 
 	work := NewSupervisorWatchWork(
 		supervisorWatchPRDLister{prds: prds},
@@ -457,7 +458,8 @@ func supervisorWatchAutomatonScoped(kind SupervisorWatchKind) bool {
 		SupervisorWatchWorktreeNoGomod,
 		SupervisorWatchWorktreeNotRegistered,
 		SupervisorWatchWorktreeSilent,
-		SupervisorWatchVerifyScriptNotExecutable:
+		SupervisorWatchVerifyScriptNotExecutable,
+		SupervisorWatchMainCheckoutAutomaton:
 		return true
 	}
 	return false
