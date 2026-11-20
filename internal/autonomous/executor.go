@@ -1598,6 +1598,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					t.AdoptedSession = false
 					t.Status = TaskVerifying
 				})
+				m.releaseWorkerLeaseForVerify(t)
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -2067,6 +2068,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				oldStatus = t.Status
 				t.Status = TaskVerifying
 			})
+			m.releaseWorkerLeaseForVerify(t)
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}

@@ -193,8 +193,9 @@ func TestManager_HandoffVerifyLease_NoWorkerLeaseRefused(t *testing.T) {
 
 // TestExecutor_TaskInVerifyHoldsExactlyOneLease is the end-to-end property:
 // while the worker session is idle and the verifier runs, the task holds
-// exactly one capacity lease — its worker slot re-keyed to
-// "verify:<taskID>" — and nothing is left holding after the run.
+// exactly one capacity lease — the verifier's own "verify:<taskID>", taken
+// after the worker lease was released on entering verifying — and nothing is
+// left holding after the run.
 func TestExecutor_TaskInVerifyHoldsExactlyOneLease(t *testing.T) {
 	m, api, led := capFixture(t, 1)
 	prd := createHandoffPRD(t, m, "opencode", "")
@@ -215,8 +216,8 @@ func TestExecutor_TaskInVerifyHoldsExactlyOneLease(t *testing.T) {
 	if h.verifyCalls() != 1 {
 		t.Fatalf("verify called %d times, want 1", h.verifyCalls())
 	}
-	if h.handoffCount() != 1 {
-		t.Fatalf("worker lease handoff happened %d times, want 1", h.handoffCount())
+	if h.handoffCount() != 0 {
+		t.Fatalf("worker lease handoff happened %d times, want 0 (released on entering verifying)", h.handoffCount())
 	}
 	if leaks != 0 {
 		t.Fatalf("verify phase held a lease count other than 1 in %d of %d call(s)", leaks, h.verifyCalls())

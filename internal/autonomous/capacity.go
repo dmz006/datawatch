@@ -1052,6 +1052,25 @@ func (m *Manager) releaseForRelaunch(t *Task) string {
 	return prev
 }
 
+// releaseWorkerLeaseForVerify frees the worker's capacity lease (holder = task
+// id) once the worker session has ended and the task enters verifying, so the
+// verifier waits for its own slot without holding a worker slot. It leaves the
+// verify:<task> holder alone and keeps t.ComputeNode and t.SessionID, which the
+// verifier uses to follow the worker's node. Safe when capacity is off or no
+// lease is held.
+func (m *Manager) releaseWorkerLeaseForVerify(t *Task) {
+	if t == nil {
+		return
+	}
+	m.mu.Lock()
+	led := m.capacity
+	m.mu.Unlock()
+	if led == nil {
+		return
+	}
+	led.Release(t.ID)
+}
+
 // releaseCapacity frees the lease held under holder (safe when none is held).
 // Given a task id it also frees the task's verifier lease, because a worker
 // lease that was handed to the verifier lives under VerifyHolder(taskID) and
