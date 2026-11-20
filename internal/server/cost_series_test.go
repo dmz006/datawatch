@@ -103,7 +103,7 @@ func TestCostSeries_GroupByModelCarriesUnits(t *testing.T) {
 	}
 }
 
-func TestCostSeries_GroupByProjectWithoutManagerIsUnattributed(t *testing.T) {
+func TestCostSeries_GroupByProjectWithoutManagerIsUnassigned(t *testing.T) {
 	s := bl90Server(t)
 	s.costReportLedger = seriesLedger(time.Now())
 	rr, got := getCostSeries(t, s, "?group_by=project&window=24h")

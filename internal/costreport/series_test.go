@@ -160,9 +160,9 @@ func TestSeriesGroupByAutomatonProjectModel(t *testing.T) {
 	if got := groupByKey(t, byProject, "beta").Tokens; got != 400 {
 		t.Fatalf("beta = %d", got)
 	}
-	// no automaton, and an automaton with no known project, both unattributed
+	// no automaton, and an automaton with no known project, both unassigned
 	if got := groupByKey(t, byProject, UnassignedKey).Tokens; got != 800+1600 {
-		t.Fatalf("unattributed project = %d", got)
+		t.Fatalf("unassigned project = %d", got)
 	}
 
 	byModel := req(SeriesByModel)
