@@ -213,6 +213,29 @@ Of the 42, 3 merge cleanly into `main` today and 39 conflict (they are 5 to 34 d
 
 The last five (completed, from 2026-11-17 and 2026-11-18) are recent merges still waiting on the supervisor, not old losses.
 
+## Why the features you asked for are not being built
+
+Reading the operator questions (127 answered, 48 withdrawn, 25 open) against the open work shows a second cause beside the unlanded branches. Priority comes from the Automaton's kind: `autonomous.priority_by_kind` is bug 80, maintenance 70, feature 20, other 0. The supervisor's standing mission (the operator's direction of 2026-11-18, quoted in a question answer) is to approve and run priority 80 and above first. A feature therefore sits at priority 20 and is never picked: the watch's stall floor is 80, so a priority 20 feature never even shows as stalled. Features asked for are filed, decomposed and left waiting for approval while bug fixes of the build tooling run. Examples at priority 20 and waiting: organize the Projects page by plan (7b700001), make the Projects and Plans pages create through the shared floating button (70ae0001), the actionable Automata inbox, the working-models commands on every surface, the schedule list showing fires and results, and the authentication design.
+
+Operator decisions that the questions record and that the findings above touch:
+
+- 2026-11-12, Projects tab: sub-tabs, "give me the list of tabs we would have and lets get the order right". Shipped: Overview, Plans, Records, Gantt, Unassigned, History, Events. The earlier documents named a Policy sub-tab and an Arcs sub-tab; neither is in the build (Arcs became Plans; Policy settings go to Settings by a later answer).
+- 2026-11-12, "yes lets do a plan sub-tab in projects for plans": shipped.
+- 2026-11-12, the phone server selector: the compact header with server and scope icons is one of the 42 branches not on main.
+- 2026-11-17, "The backlogs are supposed to be tied to plans. So there should be a plan for everything": 441 Automata belong to no plan, and the Automaton that organizes the Projects page by plan is at priority 20.
+- 2026-11-17, "Unless I say post 10.0 or 11.0 is all 10.0": every unshipped item belongs in 10.0 unless the operator parks it.
+- 2026-11-11, the held final stages (parity backfill, dead-code audit, naming audit, integration guide, release close-out, definitions backfill, federated placement test, classification validation, release audit): kept held until every 10.0 bug and feature is done. They are now titled so they can be read.
+
+Open questions to go through with the operator once the missing work is found (25):
+
+| Group | Count | What is asked |
+|---|---|---|
+| Uncommitted files left in a worktree or task | 10 | Keep, commit or drop leftover files of finished or held Automata |
+| A branch could not be brought up to date with main | 7 | Resolve by hand, retry later or leave alone. The branches are the old unlanded ones, for example the git hosts work (23 conflicting files) and the fast Projects and Automata pages (20 files) |
+| A task changed protected paths | 3 | Approve or reject a change to a build file or rule file |
+| Pi template tasks refused | 2 | Route template tasks to the model the nodes serve, allow a model swap, or keep overriding by hand. Recommended: route |
+| Settings and daemon | 3 | The crash-loop lint rule, whether a new supervisor setting gets a PWA field, and a merge-shadow Automaton that is now mostly obsolete |
+
 ## Audit of everything asked for (plan)
 
 Everything is now managed from datawatch, so the audit checks that each thing asked for exists there and is on `main`.
