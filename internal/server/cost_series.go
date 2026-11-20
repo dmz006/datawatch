@@ -29,40 +29,78 @@ import (
 // carries in its system tags ("project:<name>").
 const projectTagPrefix = "project:"
 
-// automatonProject names the project an Automaton belongs to: its project
-// tag when it carries one, otherwise the name of its project directory,
-// otherwise "".
-func automatonProject(p *autonomous.PRD) string {
-	if p == nil {
-		return ""
-	}
+// maxProjectParentDepth bounds how far a parent chain is followed.
+const maxProjectParentDepth = 8
+
+// projectTagName returns the project named by the Automaton's project tag,
+// or "". A tag whose value equals the Automaton's own id is no link.
+func projectTagName(p *autonomous.PRD) string {
 	for _, tag := range p.SystemTags {
-		if name := strings.TrimSpace(strings.TrimPrefix(tag, projectTagPrefix)); strings.HasPrefix(tag, projectTagPrefix) && name != "" {
-			return name
+		if !strings.HasPrefix(tag, projectTagPrefix) {
+			continue
 		}
-	}
-	if dir := strings.TrimSpace(p.ProjectDir); dir != "" {
-		if base := filepath.Base(filepath.Clean(dir)); base != "." && base != string(filepath.Separator) {
-			return base
+		name := strings.TrimSpace(strings.TrimPrefix(tag, projectTagPrefix))
+		if name != "" && name != p.ID {
+			return name
 		}
 	}
 	return ""
 }
 
-// costSeriesProjectOf builds the Automaton-to-project lookup the series
-// builder groups by project with. An Automaton the store does not know
-// resolves to "" and lands under "unattributed".
-func costSeriesProjectOf(prds []*autonomous.PRD) func(string) string {
-	byID := make(map[string]string, len(prds))
-	for _, p := range prds {
-		if p == nil {
-			continue
-		}
-		if name := automatonProject(p); name != "" {
-			byID[p.ID] = name
+// projectDirName returns the base name of the Automaton's project
+// directory, or "" (never the Automaton's own id).
+func projectDirName(p *autonomous.PRD) string {
+	dir := strings.TrimSpace(p.ProjectDir)
+	if dir == "" {
+		return ""
+	}
+	base := filepath.Base(filepath.Clean(dir))
+	if base == "." || base == string(filepath.Separator) || base == p.ID {
+		return ""
+	}
+	return base
+}
+
+// automatonProject names the project an Automaton belongs to: its project
+// tag, else its parent Automaton's project (followed through byID, bounded
+// and cycle-safe), else the base name of its project directory, else "".
+func automatonProject(p *autonomous.PRD, byID map[string]*autonomous.PRD) string {
+	return automatonProjectWalk(p, byID, map[string]bool{}, 0)
+}
+
+func automatonProjectWalk(p *autonomous.PRD, byID map[string]*autonomous.PRD, seen map[string]bool, depth int) string {
+	if p == nil {
+		return ""
+	}
+	if name := projectTagName(p); name != "" {
+		return name
+	}
+	seen[p.ID] = true
+	if parentID := strings.TrimSpace(p.ParentPRDID); parentID != "" && depth < maxProjectParentDepth && !seen[parentID] {
+		if name := automatonProjectWalk(byID[parentID], byID, seen, depth+1); name != "" && name != p.ID {
+			return name
 		}
 	}
-	return func(id string) string { return byID[id] }
+	return projectDirName(p)
+}
+
+// prdIndex maps Automaton id to Automaton.
+func prdIndex(prds []*autonomous.PRD) map[string]*autonomous.PRD {
+	byID := make(map[string]*autonomous.PRD, len(prds))
+	for _, p := range prds {
+		if p != nil {
+			byID[p.ID] = p
+		}
+	}
+	return byID
+}
+
+// costSeriesProjectOf builds the Automaton-to-project lookup the series
+// builder groups by project with. An Automaton that resolves to no project
+// resolves to "" and lands under "unassigned".
+func costSeriesProjectOf(prds []*autonomous.PRD) func(string) string {
+	byID := prdIndex(prds)
+	return func(id string) string { return automatonProject(byID[id], byID) }
 }
 
 // handleCostSeries — GET /api/cost/series. Validate group_by, window and
