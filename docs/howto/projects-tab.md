@@ -151,6 +151,9 @@ The fixed app header carries a **scope button** (`id="headerScopeBtn"`, a funnel
 icon) that replaces the old project and plan selectors. The scope is what the
 Automata pages are filtered to: **All**, one **project**, or one **plan** of a
 project (a plan is one of the project's plans; choosing it implies its project).
+It sits next to the [server icon button](multi-servers.md#switch-between-servers-header-server-button)
+in the same compact header, and the layout checks for both buttons are in the
+[Operator review](multi-servers.md#operator-review) checklist on that page.
 
 - **Where it shows.** Only on the **Automata** view, on every one of its
   sub-tabs (Projects, Automation, Automata, Events, Templates). On every other
@@ -1207,6 +1210,9 @@ untranslated native review pending as with the other labels here.
 
 - [automation-tab.md](automation-tab.md): the Automation view, where the
   Automations of a project are listed and run
+- [multi-servers.md](multi-servers.md#switch-between-servers-header-server-button): the
+  neighbouring header server icon button, and the `## Operator review`
+  checklist for the compact header
 - [project-automation-policy.md](project-automation-policy.md): the project tier
   of the policy and its precedence
 - [merge-pipeline.md](merge-pipeline.md): the merge pipeline and the major release

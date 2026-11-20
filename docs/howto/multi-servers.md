@@ -271,16 +271,44 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 > [operations.md](../operations.md), under "Still to review (operator)"
 > in the multi-server section.
 
-> **Still to review (operator): header icons.** The server icon button,
-> its status dot and the **Servers** window, and the funnel **scope button**
-> with its **Scope** window (see
-> [The header scope button](projects-tab.md#the-header-scope-button)), are
-> pinned by PWA tests but have not been checked in a live browser. Confirm on
-> the build in use: the header no longer wraps on a phone, the dot colours
-> tell This server / peer / All / unreachable apart, the three-finger swipe
-> opens the same window, and the scope button shows only on Automata pages.
+## Operator review
 
-Behaviours worth knowing:
+The compact header's controls — the server icon button and its status
+dot, the **Servers** window, the funnel scope button and its **Scope**
+window (see [The header scope button](projects-tab.md#the-header-scope-button))
+— are pinned by PWA tests but a running browser is the only place to see
+the layout and the colours. Before treating the compact header as
+settled, check on the build in use:
+
+- **Merge conflict resolutions.** This branch carries the compact header
+together with the regression tests that fail if the header change is
+lost, merged with the rest of the work on this branch (the merge of
+`main`). Confirm the resolved result reads as one coherent story: the
+server icon button and the scope button are each documented once, this
+page and [projects-tab.md](projects-tab.md#the-header-scope-button)
+still cross-link, the regression tests still pass, and nothing either
+side of the merge documented was dropped from the resolved result.
+- **Phone-width header.** On a phone the header no longer wraps: the
+server button shrinks to icon and status dot (its name label hides at
+600 px and below, while the row in the **Servers** window, the
+**Showing: <name>** line and the tooltip still say which server is
+active), the scope button stays icon-only with its small **Filter
+active** badge, and the three-finger swipe still opens the same
+**Servers** window at that width. Nothing wraps, overlaps or produces a
+horizontal scrollbar down to 320 px.
+- **Unreachable-peer dot.** The dot colours tell This server / peer / All /
+unreachable apart (green / blue / light-blue / warning). With a peer
+that is not answering selected, the header server button's dot turns to
+the warning colour and its tooltip reads **(unreachable)**; the peer's
+row stays listed and selectable in the **Servers** window (never
+disabled), **All servers** and **This server** never carry the marker,
+and the dot returns to its normal colour as soon as you are off the
+peer that is not answering.
+- **Scope button placement.** The scope button shows only on the
+Automata pages, as [projects-tab.md](projects-tab.md#the-header-scope-button)
+describes, and the server icon button appears on every view.
+
+## Behaviours worth knowing
 
 - **Re-selecting the active server is a no-op.** Choosing the entry that is
   already active does not reload the view, refetch data or reset scroll
