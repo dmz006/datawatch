@@ -145,6 +145,8 @@ type costReportRow struct {
 	ToolCalls            int      `json:"tool_calls"`
 	SpanSeconds          float64  `json:"span_seconds"`
 	ActiveSeconds        float64  `json:"active_seconds"`
+	LocalTokens          int      `json:"local_tokens"`
+	TokensNotReported    int      `json:"tokens_not_reported_sessions"`
 	WindowNote           string   `json:"window_note"`
 	USDEstimate          *float64 `json:"usd_estimate"`
 	APIEquivalentUSD     *float64 `json:"api_equivalent_usd"`
@@ -172,8 +174,11 @@ func printCostReport(body []byte) error {
 		return fmt.Errorf("parse cost report: %w", err)
 	}
 
-	var anyUSD, anyAPI, anyUnits, anyBilling bool
+	var anyUSD, anyAPI, anyUnits, anyBilling, anyLocal bool
 	for _, r := range rep.Rows {
+		if r.LocalTokens > 0 || r.TokensNotReported > 0 {
+			anyLocal = true
+		}
 		if r.USDEstimate != nil {
 			anyUSD = true
 		}
@@ -202,6 +207,16 @@ func printCostReport(body []byte) error {
 		func(r costReportRow) string { return strconv.Itoa(r.ToolCalls) },
 		func(r costReportRow) string { return formatSeconds(r.SpanSeconds) },
 		func(r costReportRow) string { return formatSeconds(r.ActiveSeconds) },
+	}
+	if anyLocal {
+		// Local tokens are their own unit: never added to the Claude columns.
+		header += "\tlocal_tokens"
+		rowFns = append(rowFns, func(r costReportRow) string {
+			if r.TokensNotReported > 0 {
+				return fmt.Sprintf("%d (%d sessions: tokens not reported)", r.LocalTokens, r.TokensNotReported)
+			}
+			return strconv.Itoa(r.LocalTokens)
+		})
 	}
 	if anyUSD {
 		header += "\tusd"
