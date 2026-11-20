@@ -116,7 +116,10 @@ test('(a) #headerScopeBtn exists once, as a real button with an accessible name'
   assert.match(tag, /aria-label="[^"]+"/);
   assert.match(tag, /aria-haspopup="dialog"/);
   assert.match(tag, /aria-expanded="false"/);
+  // The button opens the scope modal through openScopeModal, and that global exists.
+  assert.match(tag, /onclick="openScopeModal\(\)"/, 'the button is wired to openScopeModal()');
   const sb = load();
+  assert.equal(typeof sb.openScopeModal, 'function', 'openScopeModal is a global function in app.js');
   sb.renderScopeButton();
   const expected = EN.header_scope_button_label.replace('%1$s', EN.header_scope_all);
   assert.equal(btn(sb).getAttribute('aria-label'), expected, 'the name is header_scope_button_label with the scope label');
