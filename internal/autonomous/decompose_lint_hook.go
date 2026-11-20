@@ -195,6 +195,29 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 	return title, raw, stories
 }
 
+// parseAndLintDecompose is the parse-plus-lint step both decompose paths
+// (and the re-attached planner ingest) share: ParsePlanning, then
+// decomposeLintHook. A parse failure is returned as ParsePlanning gave it. A
+// Go panic in either step is recovered and returned as the named
+// DecomposeOutputError, so one bad plan fails its Automaton through
+// failDecomposeAttempt instead of aborting the daemon. The caller records the
+// failure; it is a written verdict, never an infra retry.
+func (m *Manager) parseAndLintDecompose(prd *PRD, raw string, retry decomposeRetryStep) (title, outRaw string, stories []Story, err error) {
+	outRaw = raw
+	err = guardDecomposeOutput(raw, func() error {
+		t, s, perr := ParsePlanning(raw)
+		if perr != nil {
+			return perr
+		}
+		title, outRaw, stories = m.decomposeLintHook(prd, t, raw, s, retry)
+		return nil
+	})
+	if err != nil {
+		return "", raw, nil, err
+	}
+	return title, outRaw, stories, nil
+}
+
 // decomposeLintTemplateCfg wraps the manager's task-templates mirror
 // (m.cfg.TaskTemplates, the config.AutonomousConfig.TaskTemplates
 // surface) into the *config.Config ApplyTaskTemplates expects. A zero

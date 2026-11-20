@@ -108,8 +108,8 @@ func TestScriptInvokesKnownFlag_TimeoutSkipped(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("hung binary: %d findings, want 0 (skipped on timeout): %+v", len(got), got)
 	}
-	if n := scriptHelpProbeAttempts(); n != 3 {
-		t.Errorf("probe attempts = %d, want 3 (--help, -h, bare — each timed out)", n)
+	if n := scriptHelpProbeAttempts(); n != 1 {
+		t.Errorf("probe attempts = %d, want 1 (--help only; it timed out)", n)
 	}
 }
 

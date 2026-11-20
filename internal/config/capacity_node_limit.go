@@ -35,3 +35,20 @@ func (a *AutonomousConfig) CapacityAdoptionWait() time.Duration {
 	}
 	return time.Duration(a.CapacityAdoptionWaitSeconds) * time.Second
 }
+
+// DefaultCapacitySlotReconcileGraceSeconds is how long a fresh lease counts as
+// having a node lease in the orphan-slot reconcile when
+// autonomous.capacity_slot_reconcile_grace_seconds is unset or 0.
+const DefaultCapacitySlotReconcileGraceSeconds = 60
+
+// MinCapacitySlotReconcileGraceSeconds is the smallest accepted non-zero grace.
+const MinCapacitySlotReconcileGraceSeconds = 10
+
+// CapacitySlotReconcileGrace is the effective slot reconcile grace: unset or 0
+// reads as DefaultCapacitySlotReconcileGraceSeconds.
+func (a *AutonomousConfig) CapacitySlotReconcileGrace() time.Duration {
+	if a == nil || a.CapacitySlotReconcileGraceSeconds <= 0 {
+		return DefaultCapacitySlotReconcileGraceSeconds * time.Second
+	}
+	return time.Duration(a.CapacitySlotReconcileGraceSeconds) * time.Second
+}

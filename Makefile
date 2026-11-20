@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: pre-tag build clean clean-test-tmp install lint check-gofmt check-security-ignore-writes check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-leftover-daemons check-go-pins check-internal-refs check-sarif-upload check-leaks check-generated-reports-leaks check-no-config-copies check-plans-links leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs help check-toolchain \
@@ -276,6 +276,11 @@ LEFTOVER_BASELINE ?= .leftover-daemon-baseline.empty
 check-leftover-daemons:
 	bash scripts/check-no-leftover-test-daemons.sh check "$(LEFTOVER_BASELINE)"
 
+# No CPU-burner / stress patterns in test files or helpers.
+check-no-load-patterns:
+	bash scripts/check-no-load-patterns.sh
+	bash scripts/check-no-load-patterns_test.sh
+
 check-service-scope:
 	bash scripts/check-no-production-service-control.sh
 
@@ -344,7 +349,7 @@ check-dependabot-security-only:
 	bash scripts/check-dependabot-security-only.sh
 	bash scripts/check-dependabot-security-only_test.sh
 
-lint: check-tmux check-test-daemons check-dependabot-security-only check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links check-gofmt
+lint: check-tmux check-test-daemons check-no-load-patterns check-dependabot-security-only check-service-scope check-go-pins check-internal-refs check-sarif-upload check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies check-plans-links check-gofmt
 	golangci-lint run ./...
 
 # Local, non-uploading CodeQL run compared with GitHub's alerts. Long running

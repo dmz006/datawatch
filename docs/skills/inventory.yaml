@@ -163,6 +163,8 @@ entries:
   - automation_return_to_draft
   - automation_skip_member
   - automation_update
+  - archived_unmerged_carry_forward
+  - archived_unmerged_list
   - autonomous_archive
   - autonomous_attention_list
   - autonomous_cleanup_status
@@ -250,6 +252,8 @@ entries:
   - /api/autonomous/defects/intake
   - /api/autonomous/defects/tiny-fix/check
   - /api/autonomous/event-log
+  - /api/autonomous/archived-unmerged
+  - /api/autonomous/archived-unmerged/{id}/carry-forward
   - /api/autonomous/events
   - /api/autonomous/generated-artefacts
   - /api/autonomous/guardrail_profiles

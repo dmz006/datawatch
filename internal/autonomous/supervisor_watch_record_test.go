@@ -29,6 +29,7 @@ func TestSupervisorWatchRecordKinds(t *testing.T) {
 		SupervisorWatchTaskFailed:                "task_failed",
 		SupervisorWatchTaskReviewNeeded:          "task_review_needed",
 		SupervisorWatchAutomatonNotMerged:        "automaton_not_merged",
+		SupervisorWatchArchivedUnmerged:          "archived_unmerged",
 		SupervisorWatchIdleLaneEligibleWork:      "idle_lane_eligible_work",
 		SupervisorWatchWorktreeNoGomod:           "worktree_no_gomod",
 		SupervisorWatchWorktreeNotRegistered:     "worktree_not_registered",

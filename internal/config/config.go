@@ -3584,6 +3584,12 @@ type AutonomousConfig struct {
 	// 0 (archive at once) survives omitempty; unset reads as 60 through
 	// ArchiveGraceMinutesOrDefault.
 	ArchiveGraceMinutes *int `yaml:"archive_grace_minutes,omitempty" json:"archive_grace_minutes,omitempty"`
+	// ArchiveKeepUnmerged keeps a finished Automaton (completed, rejected or
+	// cancelled) out of the archive while its branch holds commits that are
+	// not on the base branch. A pointer, so an explicit false survives
+	// omitempty; unset reads as true through ArchiveKeepUnmergedOrDefault.
+	// Read live by the supervisor loop's close step.
+	ArchiveKeepUnmerged *bool `yaml:"archive_keep_unmerged,omitempty" json:"archive_keep_unmerged,omitempty"`
 	// CapacityFallthrough: when a task's requested pool is full while another
 	// allowed pool for the same task is idle, admit it on that other pool and
 	// audit the fall-through. Default false: a task waits for its own pool.
@@ -3607,6 +3613,11 @@ type AutonomousConfig struct {
 	// CapacityAdoptionWaitSeconds bounds the restart wait above. 0 or unset =
 	// 30. Read when the daemon starts.
 	CapacityAdoptionWaitSeconds int `yaml:"capacity_adoption_wait_seconds,omitempty" json:"capacity_adoption_wait_seconds,omitempty"`
+	// CapacitySlotReconcileGraceSeconds is how long a fresh lease counts as
+	// having a node lease in the orphan-slot reconcile, so a just-admitted
+	// holder is never freed. 0 or unset = 60; otherwise at least 10. Read
+	// live on every reconcile pass.
+	CapacitySlotReconcileGraceSeconds int `yaml:"capacity_slot_reconcile_grace_seconds,omitempty" json:"capacity_slot_reconcile_grace_seconds,omitempty"`
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
@@ -3692,6 +3703,19 @@ type AutonomousConfig struct {
 	// the default of 30 days; a negative value is a config error. Read
 	// through EffectiveReapedBranchBackupDays.
 	ReapedBranchBackupDays int `yaml:"reaped_branch_backup_days,omitempty" json:"reaped_branch_backup_days,omitempty"`
+	// RemoteReapEnabled turns the remote branch reap pass from report-only
+	// into one that deletes: an automaton work branch is deleted from
+	// origin only when it is fully merged into the project's default
+	// branch, its tip is older than remote_reap_retention_days whole days,
+	// and the tip is kept in a backup ref that is verified to point at it
+	// before the delete. false or unset (the default) is report-only.
+	RemoteReapEnabled bool `yaml:"remote_reap_enabled,omitempty" json:"remote_reap_enabled,omitempty"`
+	// RemoteReapRetentionDays is how many whole days old the tip of a fully
+	// merged automaton work branch must be before the remote reap pass may
+	// delete it from origin. 0 or unset means the default of 30 days; a
+	// negative value is a config error. Read through
+	// EffectiveRemoteReapRetentionDays.
+	RemoteReapRetentionDays int `yaml:"remote_reap_retention_days,omitempty" json:"remote_reap_retention_days,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -4365,6 +4389,12 @@ const VerifierHeadroomMaxAgeHoursDefault = 24
 // branch is kept this many days.
 const ReapedBranchBackupDaysDefault = 30
 
+// RemoteReapRetentionDaysDefault is the default of
+// autonomous.remote_reap_retention_days: the tip of a fully merged
+// automaton work branch must be at least this many whole days old before a
+// remote reap pass may delete it from origin.
+const RemoteReapRetentionDaysDefault = 30
+
 // EffectiveReapedBranchBackupDays returns autonomous.reaped_branch_backup_days,
 // with 0, unset or a non-positive value reading the default of 30 days.
 func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
@@ -4372,6 +4402,16 @@ func (a AutonomousConfig) EffectiveReapedBranchBackupDays() int {
 		return ReapedBranchBackupDaysDefault
 	}
 	return a.ReapedBranchBackupDays
+}
+
+// EffectiveRemoteReapRetentionDays returns autonomous.
+// remote_reap_retention_days, with 0, unset or a non-positive value reading
+// the default of 30 days.
+func (a AutonomousConfig) EffectiveRemoteReapRetentionDays() int {
+	if a.RemoteReapRetentionDays <= 0 {
+		return RemoteReapRetentionDaysDefault
+	}
+	return a.RemoteReapRetentionDays
 }
 
 // EffectiveVerifierMinFreeMB is the free-memory floor (MB) the verifier cap
@@ -8840,6 +8880,9 @@ func validateLoaded(cfg *Config) error {
 	if cfg.Autonomous.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("autonomous.capacity_adoption_wait_seconds: %d must be >= 0", cfg.Autonomous.CapacityAdoptionWaitSeconds)
 	}
+	if g := cfg.Autonomous.CapacitySlotReconcileGraceSeconds; g != 0 && g < MinCapacitySlotReconcileGraceSeconds {
+		return fmt.Errorf("autonomous.capacity_slot_reconcile_grace_seconds: %d must be 0 (default %d) or at least %d", g, DefaultCapacitySlotReconcileGraceSeconds, MinCapacitySlotReconcileGraceSeconds)
+	}
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)
 	}
@@ -8851,6 +8894,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.ReapedBranchBackupDays < 0 {
 		return fmt.Errorf("autonomous.reaped_branch_backup_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.ReapedBranchBackupDays, ReapedBranchBackupDaysDefault)
+	}
+	if cfg.Autonomous.RemoteReapRetentionDays < 0 {
+		return fmt.Errorf("autonomous.remote_reap_retention_days: %d must be >= 0 (0 or unset = default %d days)", cfg.Autonomous.RemoteReapRetentionDays, RemoteReapRetentionDaysDefault)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
@@ -9688,6 +9734,36 @@ func (a AutonomousConfig) ArchiveGraceMinutesOrDefault() int {
 		return DefaultArchiveGraceMinutes
 	}
 	return *a.ArchiveGraceMinutes
+}
+
+// DefaultArchiveKeepUnmerged is autonomous.archive_keep_unmerged when unset.
+const DefaultArchiveKeepUnmerged = true
+
+// ArchiveKeepUnmergedOrDefault resolves autonomous.archive_keep_unmerged:
+// unset is true, an explicit false stays false.
+func (a AutonomousConfig) ArchiveKeepUnmergedOrDefault() bool {
+	if a.ArchiveKeepUnmerged == nil {
+		return DefaultArchiveKeepUnmerged
+	}
+	return *a.ArchiveKeepUnmerged
+}
+
+// ParseArchiveKeepUnmerged validates a candidate autonomous.archive_keep_unmerged
+// value from a JSON boolean or the text true/false.
+func ParseArchiveKeepUnmerged(v any) (bool, error) {
+	const key = "autonomous.archive_keep_unmerged"
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return false, fmt.Errorf("%s: must be true or false, got %v", key, v)
 }
 
 // ParseArchiveGraceMinutes validates a candidate autonomous.archive_grace_minutes
