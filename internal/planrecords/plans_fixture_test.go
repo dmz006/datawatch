@@ -223,8 +223,8 @@ func TestFixtureMigrationDryRunWritesNothing(t *testing.T) {
 	if countFiles(t, dir) != files || snapshotSummaries(s) != before {
 		t.Fatal("dry run changed the store")
 	}
-	// 2 arcs, 2 rows naming an id, 3 backlog rows; the shipped row is left alone.
-	if len(rep.WouldCreate) != 7 || len(rep.WouldLink) != 4 || len(rep.SkippedExisting) != 1 || len(rep.Conflicts) != 0 {
+	// 2 arcs, 2 rows naming an id, 3 backlog rows; the shipped row is listed as history.
+	if len(rep.WouldCreate) != 7 || len(rep.WouldLink) != 4 || len(rep.SkippedExisting) != 0 || len(rep.HistoryWithoutAutomaton) != 1 || len(rep.Conflicts) != 0 {
 		t.Fatalf("dry run report = %v", rep.Counts())
 	}
 }

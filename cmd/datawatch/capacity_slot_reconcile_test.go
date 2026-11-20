@@ -33,7 +33,7 @@ func TestSlotReconcileFreesOrphanAndKeepsLiveSession(t *testing.T) {
 	freed := runSlotReconcile(slotReconcileDeps{
 		Ledger:     led,
 		Sessions:   sessionLiveFn(func(id string) bool { return id == "s-live" }),
-		Nodes:      ledgerNodeLease{now: time.Now},
+		Nodes:      ledgerNodeLease{now: time.Now, grace: time.Minute},
 		Done:       automatonFinishedFn(func(string) bool { return false }),
 		HolderName: func(h string) string { return "Judging rules: Ship the widget (orphan1)" },
 		Alert:      func(title, body string) { alerts = append(alerts, title+": "+body) },
@@ -54,7 +54,25 @@ func TestSlotReconcileFreesOrphanAndKeepsLiveSession(t *testing.T) {
 			t.Errorf("alert %q missing %q", alerts[0], want)
 		}
 	}
-	if again := runSlotReconcile(slotReconcileDeps{Ledger: led, Sessions: sessionLiveFn(func(id string) bool { return id == "s-live" }), Nodes: ledgerNodeLease{now: time.Now}}); len(again) != 0 {
+	if again := runSlotReconcile(slotReconcileDeps{Ledger: led, Sessions: sessionLiveFn(func(id string) bool { return id == "s-live" }), Nodes: ledgerNodeLease{now: time.Now, grace: time.Minute}}); len(again) != 0 {
 		t.Fatalf("second pass freed %+v", again)
+	}
+}
+
+func TestSlotReconcileGraceFromSetting(t *testing.T) {
+	now := time.Now()
+	grace := 30 * time.Second
+	n := ledgerNodeLease{now: func() time.Time { return now }, grace: grace}
+	young := capacity.Lease{Holder: "h1", Pools: []string{"llm:pi-prompt"}, Acquired: now.Add(-grace / 2)}
+	old := capacity.Lease{Holder: "h2", Pools: []string{"llm:pi-prompt"}, Acquired: now.Add(-2 * grace)}
+	if !n.HasNodeLease(young) {
+		t.Error("a lease younger than the grace must keep its node lease")
+	}
+	if n.HasNodeLease(old) {
+		t.Error("a lease older than the grace with no node pool must not have a node lease")
+	}
+	n.grace = 3 * time.Minute
+	if !n.HasNodeLease(old) {
+		t.Error("a longer grace must cover the older lease")
 	}
 }

@@ -2265,6 +2265,7 @@
   "settings_capacity_adopt_before_admit": "After a restart, admit resumed workers before new work",
   "settings_capacity_fallthrough": "Pool fall-through (admit on another idle allowed pool when the requested one is full)",
   "settings_capacity_adoption_wait": "Restart adoption wait (sec, 0 = 30)",
+  "settings_capacity_slot_reconcile_grace": "Délai de grâce de réconciliation des emplacements (s, défaut 60, min. 10, 0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "Moteurs max. par nœud (1 = un à la fois)",
   "settings_max_concurrent_tasks": "Tâches simultanées max. par Automate (1 = une à la fois)",

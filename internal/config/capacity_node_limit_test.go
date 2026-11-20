@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +72,39 @@ func TestCapacityNodeLimit_AdoptionWaitValidation(t *testing.T) {
 	a := loadYAML(t, "autonomous:\n  capacity_adoption_wait_seconds: 0\n").Autonomous
 	if a.CapacityAdoptionWait() != 30*time.Second {
 		t.Errorf("0 reads as %v, want the 30s default", a.CapacityAdoptionWait())
+	}
+}
+
+func TestCapacitySlotReconcileGrace(t *testing.T) {
+	var unset AutonomousConfig
+	if got := unset.CapacitySlotReconcileGrace(); got != 60*time.Second {
+		t.Errorf("unset grace = %v, want 60s", got)
+	}
+	zero := AutonomousConfig{CapacitySlotReconcileGraceSeconds: 0}
+	if got := zero.CapacitySlotReconcileGrace(); got != 60*time.Second {
+		t.Errorf("0 grace = %v, want 60s", got)
+	}
+	set := AutonomousConfig{CapacitySlotReconcileGraceSeconds: 10}
+	if got := set.CapacitySlotReconcileGrace(); got != 10*time.Second {
+		t.Errorf("10 grace = %v, want 10s", got)
+	}
+	for _, tc := range []struct {
+		n   int
+		bad bool
+	}{{9, true}, {-1, true}, {10, false}, {0, false}, {120, false}} {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "c.yaml")
+		y := "autonomous:\n  capacity_slot_reconcile_grace_seconds: " + strconv.Itoa(tc.n) + "\n"
+		if err := os.WriteFile(p, []byte(y), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(p)
+		if tc.bad {
+			if err == nil || !strings.Contains(err.Error(), "autonomous.capacity_slot_reconcile_grace_seconds") || !strings.Contains(err.Error(), "10") {
+				t.Errorf("grace %d: err = %v, want a rejection naming the key and minimum", tc.n, err)
+			}
+		} else if err != nil {
+			t.Errorf("grace %d: unexpected error %v", tc.n, err)
+		}
 	}
 }

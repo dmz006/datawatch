@@ -1,18 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
 )
-
-// slotReconcileGrace is how long a fresh lease counts as having a node lease,
-// so a holder that was just admitted and has not registered its session yet
-// is never freed.
-const slotReconcileGrace = time.Minute
 
 // sessionLiveFn adapts the session manager's running check to
 // autonomous.SessionLiveness.
@@ -24,10 +22,14 @@ func (f sessionLiveFn) SessionLive(id string) bool { return f(id) }
 // holds a node pool (node:<name>) still has its node lease.
 type ledgerNodeLease struct {
 	now func() time.Time
+	// grace is how long a fresh lease counts as having a node lease, so a
+	// holder that was just admitted and has not registered its session yet is
+	// never freed. It comes from autonomous.capacity_slot_reconcile_grace_seconds.
+	grace time.Duration
 }
 
 func (n ledgerNodeLease) HasNodeLease(ls capacity.Lease) bool {
-	if n.now != nil && n.now().Sub(ls.Acquired) < slotReconcileGrace {
+	if n.now != nil && n.now().Sub(ls.Acquired) < n.grace {
 		return true
 	}
 	for _, p := range ls.Pools {
@@ -111,6 +113,38 @@ func runSlotReconcile(d slotReconcileDeps) []autonomous.FreedSlot {
 		}
 	}
 	return freed
+}
+
+// seedLiveCheckJudgeSlot is the test-only seam behind
+// scripts/slot-reconcile-live-check.sh: when DATAWATCH_LIVE_SEED_JUDGE_SLOT
+// is "1", the daemon acquires exactly one judge slot on the pi-prompt pool
+// at startup. The lease holds no node pool and no session, no Automaton for
+// its unit exists, and the general reaper keeps it alive until spawn grace
+// (minutes) — so its fate is decided by the orphan-slot reconcile alone: it
+// stays held while the slot-reconcile grace
+// (autonomous.capacity_slot_reconcile_grace_seconds) is unelapsed and is
+// freed by the reconcile itself once it has run out, raising the
+// "Capacity slot freed" alert. It never ends a session and releases nothing
+// itself; a failed acquire aborts startup. The production daemon never sets
+// the variable, so this is invisible outside the live check.
+func seedLiveCheckJudgeSlot(ctx context.Context, led *capacity.Ledger) {
+	if os.Getenv("DATAWATCH_LIVE_SEED_JUDGE_SLOT") != "1" {
+		return
+	}
+	unit := os.Getenv("DATAWATCH_LIVE_SEED_JUDGE_UNIT")
+	if unit == "" {
+		unit = "livecheck"
+	}
+	holder := autonomous.JudgeHolder(unit)
+	if err := led.Acquire(ctx, capacity.Request{
+		Holder: holder,
+		PRDID:  unit,
+		Pools:  []string{autonomous.PiPromptPool},
+		Role:   capacity.RoleVerifier,
+	}, 30*time.Second, nil, nil); err != nil {
+		log.Fatalf("[capacity] live-check seed: acquire judge slot for %s: %v", holder, err)
+	}
+	fmt.Printf("[capacity] live-check seeded judge slot holder=%s pool=%s (no node lease, no session)\n", holder, autonomous.PiPromptPool)
 }
 
 // slotPoolLabel renders a ledger pool id in plain words for alert text.
