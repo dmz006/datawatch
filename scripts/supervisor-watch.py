@@ -311,6 +311,22 @@ def release_readiness_lines():
     return out
 
 
+def is_datawatch_worktree(project_dir, prd_id):
+    """True only when project_dir is this Automaton's datawatch worktree (WT/<id>)."""
+    if not project_dir or not prd_id:
+        return False
+    return os.path.normpath(project_dir) == os.path.normpath(os.path.join(WT, prd_id))
+
+
+def worktree_finding(project_dir, prd_id):
+    """Finding text for a datawatch worktree without go.mod; None otherwise."""
+    if not is_datawatch_worktree(project_dir, prd_id):
+        return None
+    if os.path.isfile(os.path.join(WT, prd_id, "go.mod")):
+        return None
+    return "WORKTREE %s has no go.mod (broken project directory)" % prd_id
+
+
 def map_finding(text):
     """(stable finding kind, subject id) for one printed finding line, or None when the line is outside the stable vocabulary the daemon watch understands.
 
@@ -526,9 +542,9 @@ def main(argv=None):
                 findings.append("MERGE READY %s all %d tasks done (review %s): %s" % (p["id"], len(tasks), last, (p.get("title") or "")[:40]))
         if st == "running":
             running.append(p["id"])
-            d = os.path.join(WT, p["id"])
-            if not os.path.isfile(os.path.join(d, "go.mod")):
-                findings.append("WORKTREE %s has no go.mod (broken project directory)" % p["id"])
+            _wt_finding = worktree_finding(p.get("project_dir"), p["id"])
+            if _wt_finding:
+                findings.append(_wt_finding)
             live = [k for k in tasks if k.get("status") in ("in_progress", "verifying")]
             if live:
                 age, measure = newest_activity_measure(p["id"])
