@@ -3610,3 +3610,19 @@ The **pre-tag run** is `make pre-tag` (`scripts/pre-tag.sh`): every release gate
 ### Final gate allowlist
 
 The **final gate allowlist** is the list of changed files a final verification gate lets through. It must cover every path the task specs and the investigation name, plus the existing tests those changes need and the generated changelog and parity draft files — never a guessed directory list. The lint rule `verify_script_allowed_files` fails when a task spec names a file the allowlist rejects; globs and generated-folder prefixes count as coverage. See [decompose lint](howto/automaton-decompose-lint.md#3a-final-gate-allowlist-and-meaning-based-phrase-checks) and [verification scripts](howto/automaton-verification-scripts.md#5b-allowlist-coverage-and-phrase-wording).
+
+### Local tokens
+
+**Local tokens** are the tokens a local-model backend (pi, ollama) used. They are their own unit in the cost report and charts: never priced and never added to Claude tokens. See [howto/cost-report.md](howto/cost-report.md#local-tokens-tool-calls-and-active-seconds) and [api/cost.md](api/cost.md).
+
+### Not reported
+
+**Not reported** marks a session whose backend gave no token or tool-call counts. Its figures are unknown, not zero: they are left out of the local tokens and tool-call totals and counted in `tokens_not_reported_sessions` or `tool_calls_not_reported_sessions` instead.
+
+### Active seconds
+
+**Active seconds** are the time an Automaton's sessions spent working, with idle time taken out, summed per row, chart line and total as `active_seconds`. They are a measure of time, never a cost.
+
+### Tool calls
+
+**Tool calls** are the number of tool invocations a session made, counted per session and never by tool name.
