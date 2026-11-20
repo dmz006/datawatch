@@ -286,6 +286,11 @@ type Session struct {
 	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 	ToolCalls           int `json:"tool_calls,omitempty"`
 
+	// IdleSeconds is the closed waiting_input time; IdleSince is set while
+	// the session is waiting for input (see active_time.go).
+	IdleSeconds float64    `json:"idle_seconds,omitempty"`
+	IdleSince   *time.Time `json:"idle_since,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). It is metadata only: no backend
@@ -837,6 +842,7 @@ func (s *Store) Save(sess *Session) error {
 		s.tagSigs[sess.FullID] = tagSig{prdID: sess.PRDID, tags: append([]string(nil), sess.SystemTags...)}
 		s.tagGen.Add(1)
 	}
+	sess.trackIdle(activeClock())
 	s.sessions[sess.FullID] = sess
 	s.markRecordDirtyLocked(sess.FullID)
 	inline := s.markDirtyLocked()
