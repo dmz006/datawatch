@@ -21,10 +21,11 @@ exec_steps:
 
 The **supervisor watch** is the daemon's standing health check over the Automata
 and the machines that run them. On every coordinator poll, with **no model
-call**, it runs seventeen checks — one per finding kind, the
-seventeen (17) finding kinds this howto lists. Fourteen of them are checks the
-supervisor script (`scripts/supervisor-watch.py`) runs by hand today; three
-(`worktree_not_registered`, `verify_script_not_executable` and
+call**, it runs eighteen checks — one per finding kind, the
+eighteen (18) finding kinds this howto lists. Fourteen of them are checks the
+supervisor script (`scripts/supervisor-watch.py`) runs by hand today; four
+(`worktree_not_registered`, `verify_script_not_executable`,
+`main_checkout_automaton` and
 `archived_unmerged`) are new in the
 watch, and the script has several checks of its own the watch does not have yet
 — see "Where the watch and the script differ" below. Each thing it finds is kept
@@ -55,7 +56,7 @@ reloads a model. It reads, it records, it tells you.
 
 ## What the watch reports
 
-The finding kinds are a fixed vocabulary of the seventeen (17) kinds in the
+The finding kinds are a fixed vocabulary of the eighteen (18) kinds in the
 table below; the names there are exactly what you see in the `kind` field on
 every surface. The **subject** is the stable id the
 finding is about. A kind plus a subject is one finding, so the same problem on
@@ -76,6 +77,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `worktree_silent` | A running Automaton has a task in progress or being verified, but nothing in its worktree and no worker transcript has changed for longer than the silence window (`silent_minutes`, default 60). | The Automaton id |
 | `verify_script_not_executable` | A running Automaton's verify script exists inside its worktree but has no execute permission, so its check cannot run by itself. Run the check manually. | The Automaton id |
 | `main_checkout_dirty` | The main checkout has modified tracked files, so any Automaton ship will abort until they are committed. Untracked files do not count. Not checked while `main_checkout` is empty. | The main checkout path |
+| `main_checkout_automaton` | An open Automaton (a non-terminal status) has a project directory that is the daemon's own main checkout. Approve and run refuse it there, so it cannot run until it is recreated. Recreate the Automaton without a project directory and it runs isolated in its own worktree. An Automaton with no project directory never raises it, and neither does one that is completed, failed, rejected, cancelled or archived. | The Automaton id |
 | `ci_red` | A CI run is red. This is read from the repo CI watch's records — see [automation-repo-ci-watch.md](automation-repo-ci-watch.md) — and nothing new is fetched from the CI service. | The CI run id |
 | `ci_stuck` | A CI run has been in progress abnormally long (the repo CI watch has marked it hung). The Automata release pipeline is stalled until it is done. | The CI run id |
 | `priority_stall` | A high-priority Automaton has been waiting in the queue for more than the stall threshold without a lane picking it up. The line names the Automaton, its priority, how long it has been waiting, the `stall_threshold_minutes` and the `priority_floor`. Only Automata at or above the floor are named, only once the age is past the threshold, and a holding or an already-reported state is not a stall. | The Automaton id |
@@ -186,8 +188,9 @@ The comparison is kind-and-subject against what the script recorded, so these
 differences are expected and are not bugs. Know them before you read the first
 day's result.
 
-- **Three watch-only kinds.** `worktree_not_registered`,
-  `verify_script_not_executable` and `archived_unmerged` are watch-only: the
+- **Four watch-only kinds.** `worktree_not_registered`,
+  `verify_script_not_executable`, `main_checkout_automaton` and
+  `archived_unmerged` are watch-only: the
   script never prints a
   line for any of them, so the comparison cannot match
   them. Whenever one is
@@ -269,7 +272,8 @@ or fractional value is refused and nothing is written.
 
 When a finding about one Automaton is seen for the first time (`task_failed`,
 `task_review_needed`, `automaton_not_merged`, `worktree_no_gomod`,
-`worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`),
+`worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`,
+`main_checkout_automaton`),
 the pass writes the finding's line on that Automaton's triage record as a note
 from the `supervisor_watch` source. An Automaton that is failed or blocked and
 has no triage record yet gets a minimal one carrying the note. A running
@@ -296,7 +300,7 @@ Every key is read live: a change takes effect on the next pass with no restart. 
 value is refused on every write path — an unknown mode, a negative minute
 threshold, a `poll_seconds` below 60, a non-text path or model name — and nothing
 is written. Until `working_model` is set, the `model_not_resident` check stays off
-and the other sixteen are unaffected.
+and the other seventeen are unaffected.
 
 ## The stuck-running message
 
