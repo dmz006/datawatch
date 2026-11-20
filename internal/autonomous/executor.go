@@ -222,6 +222,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if len(prd.Story) == 0 {
 		return fmt.Errorf("prd %q has no stories — call Decompose first", prdID)
 	}
+	// An Automaton held in needs_review by a judge timeout re-runs its
+	// completion review here; nothing is approved.
+	if judgeTimeoutHoldReplayable(prd) {
+		_, err := m.RejudgeCompletionGuardrail(ctx, prdID, "operator", "")
+		return err
+	}
 	// BL191 Q1 (v5.2.0) — Run requires explicit operator approval. Legacy
 	// PRDActive value (pre-v5.2.0 stores) is honored for back-compat so
 	// upgraded daemons don't strand in-flight work.
@@ -240,7 +246,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
 		status := prd.Status
 		m.mu.Unlock()
-		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", prdID, status)
+		return fmt.Errorf("prd %q status %q is not runnable; call /approve first (a needs_review Automaton held by a judge timeout can be run to replay its completion review)", prdID, status)
 	}
 	// BL387 Phase 2b — cross-PRD seeding at first run.
 	// Only fires when PRD is transitioning from approved (not a resume from Running).

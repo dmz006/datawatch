@@ -1027,15 +1027,24 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 			prd.Status = PRDRunning
 		}
 	})
-	if old != PRDApproved && old != PRDActive && old != PRDRunning {
+	replay := judgeTimeoutHoldReplayable(prd)
+	if old != PRDApproved && old != PRDActive && old != PRDRunning && !replay {
 		release()
-		return false, fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, old)
+		return false, fmt.Errorf("prd %q status %q is not runnable; call /approve first (a needs_review Automaton held by a judge timeout can be run to replay its completion review)", id, old)
 	}
-	if err := a.M.Store().SavePRD(prd); err != nil {
-		release()
-		return false, err
+	if replay {
+		// Nothing changes status here; the replay records its own outcome.
+		if !execs {
+			release()
+			return false, nil
+		}
+	} else {
+		if err := a.M.Store().SavePRD(prd); err != nil {
+			release()
+			return false, err
+		}
+		a.M.emitPRDStatus(prd, old, nil, nil)
 	}
-	a.M.emitPRDStatus(prd, old, nil, nil)
 	a.M.EmitPRDUpdate(id)
 	if !execs {
 		return true, nil // executors not configured — status-only mode
@@ -1056,7 +1065,7 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 					var old PRDStatus
 					var revert bool
 					a.M.Store().WithLock(func() {
-						if p.Status != PRDCancelled {
+						if p.Status != PRDCancelled && !judgeTimeoutHoldReplayable(p) {
 							revert = true
 							old = p.Status
 							p.Status = PRDApproved
