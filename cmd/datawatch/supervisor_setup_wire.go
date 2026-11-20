@@ -73,7 +73,7 @@ func (supervisorRulesSource) DefaultPack() (string, error) {
 }
 
 func (r supervisorRulesSource) readProjectFile(project, rel string) (string, bool, error) {
-	dir, err := supervisorSessionLayer{cfg: r.cfg}.ProjectDir(project)
+	dir, err := supervisorSessionLayer(r).ProjectDir(project)
 	if err != nil {
 		return "", false, err
 	}
