@@ -134,6 +134,14 @@ datawatch supervisor-setup correction list --project myproject
 REST is `/api/supervisor-setup/corrections` (and `/promote`), MCP is
 `supervisor_correction`, and chat is `autonomous supervisor-setup correction`.
 
+### A correction that keeps coming back
+
+If the same correction is recorded more than twice, datawatch raises one
+`correction.repeated` finding. Wording is compared after lowercasing and
+dropping punctuation and extra spaces, so a respaced repeat counts. The finding
+means the rule is not reaching the supervisor: promote it to a `standing_rule`
+or fix where it is written, rather than recording it again.
+
 ## Restart and the fallback
 
 A running supervisor is replaced when its context grows past the size limit or
@@ -148,8 +156,10 @@ starting a second session, so repeating a restart is safe. If the new session
 never answers, the restart fails and the old session stays; you get an alert
 and the next scheduled tick tries again.
 
-If a schedule itself goes to the failed state, datawatch alerts you and starts
-a supervisor so the cadence is not silently lost. If nothing else works, run
+Three events also start a supervisor without waiting for the next tick: a
+priority stall, a judge verdict, and a spawn schedule that went to the failed
+state. For a failed schedule datawatch alerts you and starts a supervisor so
+the cadence is not silently lost. If nothing else works, run
 `supervisor-setup run` again: it is idempotent and repairs a missing schedule.
 
 ## Settings and defaults
@@ -196,6 +206,18 @@ afterwards; the next fresh session carries your pack.
 
 Keep a pack free of tracker ids, version numbers, host names and home paths.
 Those go stale, and a supervisor copies what it reads into specs.
+
+## What you must still review
+
+- **Model.** `model` has no safe empty default; set-up refuses to run without a
+  named Sonnet or Haiku model. Check it is the one you want paying for every tick.
+- **Promoted rules.** A `standing_rule` promotion is a commit to the project
+  rules pack. Read that commit; the next fresh session obeys it.
+- **Filed defects.** A `product_defect` correction creates an Automaton. Review
+  it and its workaround before approving it.
+- **Repeat findings.** A `correction.repeated` finding needs a decision from you.
+- **Limits.** The context size and age limits decide how often sessions are
+  replaced; tune them if restarts come too often or too late.
 
 ## See also
 
