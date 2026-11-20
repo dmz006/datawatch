@@ -277,3 +277,91 @@ func TestUncommittedCommitFailureUnstagesAndCarriesGitOutput(t *testing.T) {
 		t.Errorf("audit cause = %q", got)
 	}
 }
+
+// uwCachedEmpty asserts 'git diff --cached --name-only' is empty: a task
+// commit must never leave anything staged, whether it committed or skipped.
+func uwCachedEmpty(t *testing.T, dir string) {
+	t.Helper()
+	if cached := uwGit(t, dir, "diff", "--cached", "--name-only"); cached != "" {
+		t.Errorf("git diff --cached --name-only must be empty, got %q", cached)
+	}
+}
+
+// Case 1: one git-ignored generated file under .datawatch/verify plus two
+// normal files. The commit holds exactly the two normal files; the ignored
+// file is absent from HEAD and from the index; the skipped note names it.
+func TestTaskCommitIgnoredVerifyFileWithTwoNormalFiles(t *testing.T) {
+	dir := uwIgnoredVerifySetup(t)
+	uwWrite(t, dir, "one.txt", "first change\n")
+	uwWrite(t, dir, "two.txt", "second change\n")
+	before := uwGit(t, dir, "rev-parse", "HEAD")
+	const ignored = ".datawatch/verify/a.sh"
+
+	sha, err := DefaultTaskCommit(context.Background(), dir,
+		[]string{"one.txt", ignored, "two.txt"}, "task commit")
+	if err != nil {
+		t.Fatalf("DefaultTaskCommit: %v", err)
+	}
+	after := uwGit(t, dir, "rev-parse", "HEAD")
+	if after == before {
+		t.Fatal("expected a new commit of the two normal files")
+	}
+	if sha != after {
+		t.Errorf("sha %q != HEAD %q", sha, after)
+	}
+
+	names := strings.Fields(uwGit(t, dir, "show", "--name-only", "--format=", "HEAD"))
+	if len(names) != 2 || names[0] != "one.txt" || names[1] != "two.txt" {
+		t.Errorf("commit files = %v, want exactly [one.txt two.txt]", names)
+	}
+	if inHead := uwGit(t, dir, "ls-tree", "-r", "--name-only", "HEAD", "--", ".datawatch"); inHead != "" {
+		t.Errorf("ignored file must be absent from HEAD, got %q", inHead)
+	}
+	if inIndex := uwGit(t, dir, "ls-files", "--cached", "--", ignored); inIndex != "" {
+		t.Errorf("ignored file must be absent from the index, got %q", inIndex)
+	}
+	uwCachedEmpty(t, dir)
+
+	_, _, skipped := classifyTaskCommitPaths(context.Background(), dir,
+		[]string{"one.txt", ignored, "two.txt"})
+	ignoredPaths := skippedIgnoredPaths(context.Background(), dir, skipped)
+	if len(ignoredPaths) != 1 || ignoredPaths[0] != ignored {
+		t.Fatalf("skippedIgnoredPaths = %v, want [%s]", ignoredPaths, ignored)
+	}
+	note := skippedIgnoredPathsNote(ignoredPaths, false)
+	if !strings.Contains(note, ignored) {
+		t.Errorf("skipped note %q must name the ignored path %s", note, ignored)
+	}
+}
+
+// Case 2: only git-ignored files. No commit is made, HEAD is unchanged, the
+// note says nothing was committed, the error is nil, and nothing is staged.
+func TestTaskCommitOnlyIgnoredFilesNoCommit(t *testing.T) {
+	dir := uwIgnoredVerifySetup(t)
+	before := uwGit(t, dir, "rev-parse", "HEAD")
+	const ignored = ".datawatch/verify/a.sh"
+
+	sha, err := DefaultTaskCommit(context.Background(), dir, []string{ignored}, "task commit")
+	if err != nil {
+		t.Fatalf("only ignored files: error must be nil, got %v", err)
+	}
+	if after := uwGit(t, dir, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("no commit expected, HEAD %s -> %s", before, after)
+	}
+	if sha != before {
+		t.Errorf("sha %q must be the unchanged HEAD %q", sha, before)
+	}
+	if inIndex := uwGit(t, dir, "ls-files", "--cached", "--", ignored); inIndex != "" {
+		t.Errorf("ignored file must be absent from the index, got %q", inIndex)
+	}
+	uwCachedEmpty(t, dir)
+
+	_, _, skipped := classifyTaskCommitPaths(context.Background(), dir, []string{ignored})
+	note := skippedIgnoredPathsNote(skippedIgnoredPaths(context.Background(), dir, skipped), true)
+	if !strings.Contains(note, "nothing was committed") {
+		t.Errorf("all-skipped note %q must say nothing was committed", note)
+	}
+	if !strings.Contains(note, ignored) {
+		t.Errorf("all-skipped note %q must name the ignored path", note)
+	}
+}
