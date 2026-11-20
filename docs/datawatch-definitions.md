@@ -1790,6 +1790,29 @@ its open questions await operator review.
 
 **gofmt format check** — the repository's gofmt audit, `scripts/check-gofmt.sh` (Makefile target `check-gofmt`, part of the `lint` target and the local pre-tag run). It lists the Go files under `cmd/` and `internal/` that `gofmt -l` reports as unformatted, excluding files with a `Code generated` header (first five lines) and anything under a `testdata/` or `vendor/` path; any remaining offender is listed with its fix command (`gofmt -w <file>`) and the script exits 1, a clean tree prints OK and exits 0. The script is read-only — it never writes or formats — and `make fmt` (`gofmt -w .`) is the fix. It is not a daemon setting, has no REST/MCP/CLI/PWA surface, and runs as a step of the `test + lint` job in the CI workflow (`.github/workflows/ci.yaml`, every push to `main` and pull request); enforcement additionally comes from the `make lint` battery and the local pre-tag run on the build host. See [howto/gofmt-check.md](howto/gofmt-check.md) and [operations.md](operations.md#gofmt-format-check).
 
+**no-PWA-when-spec-forbids guard** — the guard against a branch changing
+the PWA even when its task spec forbids a PWA change, added after an
+Automaton branch (e19b0001, daemon-side priority stall wake) modified
+`internal/server/web/app.js` although its own spec forbade it.
+`scripts/check-no-pwa-when-spec-forbids.sh <spec-file> [base-ref]`
+lowercases the spec and matches it against a closed list of five phrases
+(`no pwa change`, `no pwa part`, `forbade any pwa change`, `forbids any pwa
+change`, `must not change the pwa`); only then does it refuse (exit 1,
+stderr line `forbidden PWA change: internal/server/web/app.js`) when the
+exact path `internal/server/web/app.js` appears in `git diff --name-only`
+against the base ref (default the merge base of `HEAD` and `main`, or an
+explicit second argument). Exit 0 when the spec does not forbid the PWA or
+`app.js` is untouched; exit 2 on a wrong argument count, a missing spec
+file, an undeterminable default base ref, or a failed `git diff`. The guard
+is read-only, and its self-test, `tests/test-no-pwa-when-spec-forbids.sh`
+(a throwaway `mktemp -d` git repo, four cases asserting the exit code and
+the exact stderr line), is one of the entries in the `test:` target of the
+`Makefile`; the guard itself is run by hand — it is in neither `make lint`
+nor the CI workflows. It is not a daemon setting and has no REST/MCP/CLI/PWA
+surface of its own. See
+[howto/no-pwa-when-spec-forbids.md](howto/no-pwa-when-spec-forbids.md)
+and [operations.md](operations.md#no-pwa-when-spec-forbids-guard).
+
 **Tag selection** — the tags chosen in an Automata list filter, and how they are checked. An object's derived system tags (for example `project:datawatch`) and its assigned tag IDs are pooled; match ANY needs at least one selected tag in the pool, match ALL needs every one, and a selection with no tags matches every object. The check is unchanged by the code-scanning fix, which only removed a computed size hint on the internal lookup set. See [howto/automata-tags.md](howto/automata-tags.md).
 
 **Merge pending** — the state of a finished Automaton whose work branch (`automaton/<id>`) still has commits that are not on `main`, where the check is sure of it: both tests agree that the commits are missing. A branch where the two tests disagree is not merge pending; it is *needs a look*, a separate state. The work is done but has not been merged, so it can look complete while it exists only on its own branch. The merge-pending check works this out with read-only git queries and never merges, deletes or pushes. It is controlled by `autonomous.automation.merge_pending_mode` (`off` by default, `shadow` to record only, `on` to record and alert) and `autonomous.automation.merge_pending_alert_minutes` (30 by default; `0` turns the alert off). With the check `on`, one alert is raised per episode after the branch has waited that long, and merging the branch clears it. The other states are merged, empty (nothing ahead of `main`), needs a look and unknown. The PWA shows a badge on a finished Automaton and on its Automation card; the same state is on REST, MCP, the CLI and the chat verbs as `autonomous merge`. See [operations.md](operations.md) (*Merge-pending check*) and [flow/automation-merge-pending-flow.md](flow/automation-merge-pending-flow.md).
