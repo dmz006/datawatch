@@ -1515,7 +1515,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		runSlotReconcile(slotReconcileDeps{
 			Ledger:   led,
 			Sessions: sessionLiveFn(func(id string) bool { return sessionRunning(mgr, id) }),
-			Nodes:    ledgerNodeLease{now: time.Now},
+			Nodes:    ledgerNodeLease{now: time.Now, grace: cfg.Autonomous.CapacitySlotReconcileGrace()},
 			Done:     managerAutomatonFinished(amgr),
 			HolderName: func(h string) string {
 				return autonomous.DisplayHolderName(amgr.ResolveHolder(h))

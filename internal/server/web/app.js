@@ -26334,6 +26334,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_strict_node_limit', label: 'Strict per-node limit (verifier and resumed workers never over-admit a node)', labelKey: 'settings_capacity_strict_node_limit', type: 'toggle' },
     { key: 'autonomous.capacity_count_pool_by_node', label: 'Count each LLM pool by node', labelKey: 'settings_capacity_count_pool_by_node', type: 'toggle' },
     { key: 'autonomous.capacity_adopt_before_admit', label: 'After a restart, admit resumed workers before new work', labelKey: 'settings_capacity_adopt_before_admit', type: 'toggle' },
+    { key: 'autonomous.capacity_slot_reconcile_grace_seconds', label: 'Slot reconcile grace (sec, default 60, min 10, 0 = 60)', labelKey: 'settings_capacity_slot_reconcile_grace', type: 'number', min: 0, placeholder: '60' },
     { key: 'autonomous.capacity_adoption_wait_seconds', label: 'Restart adoption wait (sec, 0 = 30)', labelKey: 'settings_capacity_adoption_wait', type: 'number', min: 0, placeholder: '30' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },
