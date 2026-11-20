@@ -6051,5 +6051,6 @@
   "cost_charts_other": "Autre",
   "cost_charts_topn_label": "Séries",
   "cost_charts_topn_all": "Toutes",
-  "cost_charts_legend_toggle": "Afficher ou masquer cette série"
+  "cost_charts_legend_toggle": "Afficher ou masquer cette série",
+  "cost_charts_supervisor_and_other": "Superviseur et autres"
 }

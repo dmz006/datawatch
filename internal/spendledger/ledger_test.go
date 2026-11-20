@@ -163,3 +163,18 @@ func TestFailedSaveLeavesMemoryUnchanged(t *testing.T) {
 		t.Fatal("horizon changed after failed save")
 	}
 }
+
+func TestUpsertAcceptsSupervisorRole(t *testing.T) {
+	c := &fakeClock{time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}
+	l := newLedger(t, t.TempDir(), c)
+	if err := l.Upsert(Entry{SessionID: "sv", Role: RoleSupervisor, Project: "proj1", StartedAt: c.t}); err != nil {
+		t.Fatalf("supervisor role rejected: %v", err)
+	}
+	got := l.Entries()
+	if len(got) != 1 || got[0].Role != "supervisor" || got[0].Project != "proj1" {
+		t.Fatalf("supervisor entry not kept: %+v", got)
+	}
+	if err := l.Upsert(Entry{SessionID: "sv2", Role: "supervisors"}); err == nil {
+		t.Fatal("unknown role must still fail")
+	}
+}

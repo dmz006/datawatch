@@ -6864,6 +6864,13 @@ therefore covers all of an Automaton's sessions, and deleting a session does
 not remove its entry. Sessions that ran before this change have no
 attribution and stay under `unattributed`.
 
+In the Automaton grouping, spend with no Automaton id is split by role. Spend
+whose role is `supervisor` (or another known non-Automaton role) shows under
+**Supervisor and other**: it is real, owned work run outside any Automaton.
+Only spend with no Automaton id and no role (blank, or `other`) stays under
+`unattributed`. See
+[the howto](howto/cost-report.md#supervisor-and-other-and-unattributed).
+
 The checks status also reports an `attribution` check: how many
 Automaton-launched ledger sessions carry no automaton id (`unattributed`, with
 their `session_ids`). Read it when an Automaton's cost looks low; a non-zero

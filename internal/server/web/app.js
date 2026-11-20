@@ -47023,12 +47023,14 @@ function costChartsKeyLabel(entry) {
     const key = String(entry.key != null ? entry.key : '');
     const label = typeof entry.label === 'string' ? entry.label.trim() : '';
     if (key === COST_CHARTS_OTHER_KEY) return t('cost_charts_other');
+    if (key === 'Supervisor and other') return t('cost_charts_supervisor_and_other');
     if (label && label !== key) return label;
     const title = _automataTitle(key);
     if (title) return title;
     return key;
   }
-  return String(entry == null ? '' : entry);
+  const plain = String(entry == null ? '' : entry);
+  return plain === 'Supervisor and other' ? t('cost_charts_supervisor_and_other') : plain;
 }
 window.costChartsKeyLabel = costChartsKeyLabel;
 
