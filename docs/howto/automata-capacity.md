@@ -322,6 +322,35 @@ The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
 lease still present when the judge starts is released, not handed over, and the
 judge then waits for its own slot like the verifier does.
 
+## Verifying tasks in the capacity view
+
+A task whose worker session has ended and is verifying keeps its place in the
+Automaton but not its worker lane. Its verification takes a **verifier slot**
+(on the node's verifier slots, or from the verifier pool). If no verifier slot
+is free, the task waits for one without holding a worker slot, so the lane goes
+on to the next task.
+
+A retry after a failed verification is a new start: it goes back through
+admission like any other task and may wait in `waiting_capacity` until a worker
+slot is free.
+
+The capacity view lists every verifying task and says whether it is running its
+verifier or waiting for a slot:
+
+- REST: `tasks.verifying` in `GET /api/capacity`.
+- CLI: `datawatch capacity` (the `Verifying (n):` block).
+- MCP: the `capacity_status` output.
+- PWA: the capacity card under Settings.
+
+**Throughput and sizing.** A lane is now busy only for worker time, so the work
+a lane gets through is bounded by how long workers run, not by how long
+verification takes. Verification load moves to the verifier slots instead. Size
+a node's `verifier_slots` to the number of verifications you expect to overlap,
+roughly the node's worker lanes times the share of a task's time spent
+verifying, rounded up, and keep it within what the node's free memory can hold.
+If the capacity view often shows tasks waiting for a slot, raise it; if it
+never does, lower it. See [Verifier slots](#verifier-slots).
+
 ## An idle verifier is the verifier's own incident
 
 When a task moves to verification and the verifier session goes idle — no
