@@ -33,6 +33,7 @@ type endOutcome struct {
 	revert    bool              // PRD reverted to approved: counts only while the member is running
 	note      string            // branch decision text (a start error names its cause)
 	merged    *mergedMemberNote // set when the merged-member proof decided this end
+	answerID  string            // decision_wait: the operator answer that ended the wait
 }
 
 // prdEnd maps a PRD status onto a member's end. ok is false for the wait
@@ -148,6 +149,12 @@ type stepEffects struct {
 	// mergedAdvance is set when the chain moved on over a cancelled member whose
 	// branch was proved merged; afterAdvance raises the merged-member alert.
 	mergedAdvance *mergedMemberAlert
+	// waits names the decision_wait members that began waiting in this step:
+	// afterAdvance raises (or finds) and links each one's operator question.
+	waits []string
+	// settle holds the question ids of decision_wait members that ended without
+	// being answered or withdrawn: afterAdvance withdraws each one still open.
+	settle []string
 }
 
 // stepper accumulates one step's mutations on a clone of the Automation.
@@ -202,16 +209,34 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 		})
 	}
 	if join := joinOf(a, mem.ID); join != nil {
-		// A fork branch carries no outcome edge: its end is recorded on the join.
+		_, _, chain := branchChainOf(a, mem.ID)
+		tail := len(chain) == 0 || isBranchTail(chain, mem.ID)
 		end := in.end
-		end.edge = ""
-		st.finish(mem, end)
-		note := end.note
-		if note == "" {
-			note = fmt.Sprintf("branch %s ended %s", st.name(mem), end.outcome)
+		if !tail && end.success {
+			// A chain member finished: its own cursor moves to the next chain
+			// member, and no other branch is touched.
+			st.finish(mem, end)
+			note := end.note
+			if note == "" {
+				note = fmt.Sprintf("branch member %s completed; its chain moves on", st.name(mem))
+			}
+			st.decision("branch", note)
+			st.followChain(mem, end)
+		} else {
+			// The branch ends here: the tail finished, or a chain member ended
+			// without success, which ends the whole branch as failed.
+			end.edge = ""
+			st.finish(mem, end)
+			note := end.note
+			if note == "" {
+				note = fmt.Sprintf("branch %s ended %s", st.name(mem), end.outcome)
+			}
+			st.decision("branch", note)
+			if !tail {
+				st.skipChainAfter(chain, mem.ID)
+			}
+			st.evalJoin(join.ID)
 		}
-		st.decision("branch", note)
-		st.evalJoin(join.ID)
 	} else if in.end.direct != "" {
 		st.finish(mem, in.end)
 		st.block(in.end.direct)
@@ -250,8 +275,12 @@ func (st *stepper) finish(mem *AutomationMember, end endOutcome) {
 	mem.FinishedAt = &t
 	mem.Outcome = end.outcome
 	mem.EdgeTaken = end.edge
+	mem.WaitingForStage = ""
 	dropCursor(st.a, mem.ID)
 	st.a.IdleSince = nil
+	if mem.kind() == MemberKindDecisionWait {
+		st.endDecisionWait(mem, end)
+	}
 	st.eff.details = map[string]any{
 		"automation_id": st.a.ID, "from": mem.ID, "edge": end.edge,
 		"outcome": end.outcome, "actor": coordinatorActor,
@@ -267,6 +296,36 @@ func (st *stepper) followEdge(mem *AutomationMember, end endOutcome) {
 	name := st.name(mem)
 	reason := fmt.Sprintf("member %s %s and has no %s edge", name, end.outcome, end.edge)
 	st.follow(mem, edgeTarget(mem, end.edge), end, name, reason)
+}
+
+// followChain moves a finished chain member's branch cursor to the next chain
+// member through its on_complete edge. Only that branch moves; the other
+// branches' cursors and the join are untouched until the tail ends.
+func (st *stepper) followChain(mem *AutomationMember, end endOutcome) {
+	next := automationMember(st.a, mem.OnComplete)
+	if next == nil {
+		st.block(fmt.Sprintf("%s edge names unknown member %s", end.edge, mem.OnComplete))
+		return
+	}
+	st.moved(mem.ID, st.name(mem), next, end)
+	st.enter(next)
+}
+
+// failBranchMember ends chain member b as a failed branch member without a
+// start: its chain is over, so the members behind it are skipped. It does not
+// evaluate the join; the caller does, once every branch it is touching is
+// settled.
+func (st *stepper) failBranchMember(b *AutomationMember, outcome string) {
+	t := st.now
+	b.Status = MemberFailed
+	b.WaitingForStage = ""
+	b.Outcome = outcome
+	b.FinishedAt = &t
+	b.EdgeTaken = ""
+	dropCursor(st.a, b.ID)
+	if _, _, chain := branchChainOf(st.a, b.ID); len(chain) > 0 {
+		st.skipChainAfter(chain, b.ID)
+	}
 }
 
 // follow moves the cursor along an edge to target, or ends the path when target
@@ -340,12 +399,37 @@ func (st *stepper) enter(next *AutomationMember) {
 		st.idle = true
 		return
 	}
+	if st.holdForStage(next) {
+		// An earlier stage still has unfinished members: the cursor holds the
+		// member, which starts when that stage finishes (promoteWaiting).
+		return
+	}
 	if next.kind() == MemberKindPending {
 		// A pending item runs nothing: it holds the cursor, is skipped, or is
 		// passed on when its work is done (pending_item_hold.go).
 		st.enterPending(next)
 		return
 	}
+	if next.kind() == MemberKindDecisionWait {
+		// A decision wait runs nothing, takes no slot and has no budget: it holds
+		// its own cursor until the operator answers (automation_decision_wait.go).
+		st.enterDecisionWait(next)
+		return
+	}
+	if st.holdForSlot(next) {
+		// A max_parallel limit is reached: the cursor holds the member, which
+		// starts when a running member finishes (promoteWaiting).
+		return
+	}
+	st.enterAdmitted(next)
+}
+
+// enterAdmitted starts next once any max_parallel limit has admitted it: the
+// budget gate, then the start for its kind. enter calls it after the slot check,
+// and promoteWaiting calls it for a member whose slot has come.
+func (st *stepper) enterAdmitted(next *AutomationMember) {
+	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	if next.kind() != MemberKindJoin {
 		if v := st.snap[next.ID].verdict; v.Gate {
 			st.budgetGate(next, v)
@@ -370,16 +454,26 @@ func (st *stepper) enter(next *AutomationMember) {
 			return
 		}
 		mode := gateMode(info.prdStatus)
+		join := joinOf(st.a, next.ID)
 		if mode == "" {
+			if join != nil {
+				// A chain member that cannot start ends its branch as failed.
+				st.failBranchMember(next, "gate-denied")
+				st.decision("branch", fmt.Sprintf("branch member %s not started: %s is %s", next.ID, info.name, info.prdStatus))
+				st.evalJoin(join.ID)
+				return
+			}
 			addCursor(st.a, next.ID)
 			st.block(fmt.Sprintf("next member %s is %s", info.name, info.prdStatus))
 			return
 		}
-		st.startPRD(next, mode == "resume", false)
+		st.startPRD(next, mode == "resume", join != nil)
 	case MemberKindAutomation:
-		st.startNested(next, false)
+		st.startNested(next, joinOf(st.a, next.ID) != nil)
 	case MemberKindFork:
 		st.fireFork(next)
+	case MemberKindDecisionWait:
+		st.enterDecisionWait(next)
 	default:
 		st.block(fmt.Sprintf("member %s is a join; a join is reached only through its fork", next.ID))
 	}
@@ -390,6 +484,8 @@ func (st *stepper) startPRD(next *AutomationMember, resume, branch bool) {
 	t := st.now
 	next.Status = MemberRunning
 	next.StartedAt = &t
+	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindPRD, prdID: next.PRDID,
@@ -408,6 +504,8 @@ func (st *stepper) startNested(next *AutomationMember, branch bool) {
 	t := st.now
 	next.Status = MemberRunning
 	next.StartedAt = &t
+	next.WaitingForSlot = false
+	next.WaitingForStage = ""
 	addCursor(st.a, next.ID)
 	st.eff.starts = append(st.eff.starts, memberStart{
 		memberID: next.ID, kind: MemberKindAutomation, childID: next.AutomationID,
@@ -433,6 +531,11 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 	join.StartedAt = &t
 
 	branches := sortedCopy(fork.ForkMembers)
+	if anyMaxParallel(st.a) || st.a.StageGate {
+		// A limit hands the slots out in member order, the same order a waiting
+		// member is started in later; a stage gate releases in the same order.
+		branches = byMemberOrder(st.a, fork.ForkMembers)
+	}
 	results := make(map[string]any, len(branches))
 	for _, bid := range branches {
 		b := automationMember(st.a, bid)
@@ -440,7 +543,22 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 			st.block(fmt.Sprintf("fork %s names unknown branch member %s", fork.ID, bid))
 			return
 		}
+		if st.holdForStage(b, fork.ForkMembers...) {
+			// The branches the fork has not started yet have no cursor, so they are
+			// named as sources: a stage is judged the same whatever the start order.
+			results[bid] = "waiting for stage"
+			continue
+		}
+		if b.kind() == MemberKindDecisionWait {
+			st.enterDecisionWait(b)
+			results[bid] = "waiting for operator"
+			continue
+		}
 		if b.kind() == MemberKindAutomation {
+			if st.holdForSlot(b) {
+				results[bid] = "waiting"
+				continue
+			}
 			st.startNested(b, true)
 			results[bid] = "started"
 			continue
@@ -456,12 +574,13 @@ func (st *stepper) fireFork(fork *AutomationMember) {
 		}
 		mode := gateMode(info.prdStatus)
 		if mode == "" {
-			b.Status = MemberFailed
-			b.Outcome = "gate-denied"
-			b.FinishedAt = &t
-			b.EdgeTaken = ""
+			st.failBranchMember(b, "gate-denied")
 			st.decision("branch", fmt.Sprintf("branch %s not started: %s is %s", b.ID, info.name, info.prdStatus))
 			results[bid] = "gate-denied"
+			continue
+		}
+		if st.holdForSlot(b) {
+			results[bid] = "waiting"
 			continue
 		}
 		st.startPRD(b, mode == "resume", true)
@@ -520,16 +639,19 @@ func joinRule(j *AutomationMember) string {
 
 // classifyBranches sorts a join's branches by their live state: won completed,
 // pending still running or not started, failed ended non-successfully (a
-// missing branch counts as failed). Each list is sorted by member ID.
+// missing branch counts as failed). A branch is a chain named by its tail, and
+// its state is the chain outcome (chainOutcome): the tail's, or the failing
+// member's. Each list is sorted by tail ID.
 func classifyBranches(a *Automation, j *AutomationMember) (won, pending, failed []string) {
 	for _, bid := range sortedCopy(j.JoinMembers) {
-		b := automationMember(a, bid)
-		switch {
-		case b == nil:
-			failed = append(failed, bid)
-		case b.Status == MemberCompleted:
+		chain := []string{bid}
+		if _, _, c := branchChainOf(a, bid); len(c) > 0 {
+			chain = c
+		}
+		switch status, _ := chainOutcome(a, chain); status {
+		case BranchChainCompleted:
 			won = append(won, bid)
-		case b.Status == MemberRunning || b.Status == MemberPending:
+		case BranchChainRunning:
 			pending = append(pending, bid)
 		default:
 			failed = append(failed, bid)
@@ -545,19 +667,30 @@ func classifyBranches(a *Automation, j *AutomationMember) (won, pending, failed 
 func (st *stepper) fireJoin(j *AutomationMember, rule string, won, failed, pending []string) {
 	t := st.now
 	for _, bid := range pending {
-		b := automationMember(st.a, bid)
-		if b == nil {
-			continue
+		chain := []string{bid}
+		if _, _, c := branchChainOf(st.a, bid); len(c) > 0 {
+			chain = c
 		}
-		dropCursor(st.a, bid)
-		if b.Status == MemberRunning {
-			b.Status = MemberCancelled
-		} else {
-			b.Status = MemberSkipped
+		for _, cid := range chain {
+			b := automationMember(st.a, cid)
+			if b == nil {
+				continue
+			}
+			switch b.Status {
+			case MemberRunning:
+				b.Status = MemberCancelled
+				st.settleCancelledDecisionWait(b)
+			case MemberPending, "":
+				b.Status = MemberSkipped
+			default:
+				continue // already terminal
+			}
+			dropCursor(st.a, cid)
+			b.WaitingForStage = ""
+			b.Outcome = "join-fired"
+			b.FinishedAt = &t
+			b.EdgeTaken = ""
 		}
-		b.Outcome = "join-fired"
-		b.FinishedAt = &t
-		b.EdgeTaken = ""
 	}
 	j.Status = MemberCompleted
 	j.Outcome = "joined"
@@ -589,6 +722,7 @@ func (st *stepper) blockJoin(j *AutomationMember, rule string, failed []string, 
 // finalize settles the derived fields and the Decision the step leaves behind.
 func (st *stepper) finalize() {
 	a := st.a
+	st.promoteWaiting()
 	if !automationIsLinear(a) {
 		a.CurrentMemberID = firstCursor(a.ActiveCursors)
 	}
@@ -704,7 +838,9 @@ func cursorsRemain(a *Automation) bool {
 	return false
 }
 
-// joinOf returns the join that collects member id as a branch, or nil.
+// joinOf returns the join that collects member id's branch, or nil. A member
+// is on a branch when it is a join member (the chain tail) or any member of a
+// fork's chain.
 func joinOf(a *Automation, id string) *AutomationMember {
 	for i := range a.Members {
 		m := &a.Members[i]
@@ -717,15 +853,19 @@ func joinOf(a *Automation, id string) *AutomationMember {
 			}
 		}
 	}
+	if _, join, _ := branchChainOf(a, id); join != nil {
+		return join
+	}
 	return nil
 }
 
-// joinFor returns the join paired with fork: the one whose branch set equals
-// the fork's. Validation guarantees exactly one.
+// joinFor returns the join paired with fork: the one whose members are the
+// tails of the fork's chains. Validation guarantees exactly one.
 func joinFor(a *Automation, fork *AutomationMember) *AutomationMember {
+	tails := forkTails(a, fork)
 	for i := range a.Members {
 		m := &a.Members[i]
-		if m.kind() == MemberKindJoin && sameMemberSet(m.JoinMembers, fork.ForkMembers) {
+		if m.kind() == MemberKindJoin && sameMemberSet(m.JoinMembers, tails) {
 			return m
 		}
 	}
