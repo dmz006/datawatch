@@ -149,3 +149,27 @@ are off).
 6. **Guard test.** The guard test's commit said verification had not been run. It
    passes now (see *Checks run in this review*). Keep it in the suite; it is the
    only check that fails if the roll-up or rename change is lost in a later merge.
+
+## Documentation status after this review
+
+The operator-facing reference for the behaviour described above is
+[the plan records how-to](../howto/plan-records.md), with the matching entries in
+[the definitions glossary](../datawatch-definitions.md#plan-records). The glossary
+gained a *Set-by-hand plan* entry in this pass; the how-to gained a pointer back to
+the *Operator must review* list here. Item 1 above (the missing CHANGELOG entries)
+was re-checked: `CHANGELOG.md` still has no roll-up, rename, edit or `set_by_hand`
+entry under `[Unreleased]`. That file is outside this documentation pass and is
+left for the operator.
+
+## Parity surface
+
+| Surface | Status | Reason |
+|---|---|---|
+| REST | Touched | `GET`/`POST /api/plans/rollup`, `PATCH /api/plans/{ref}`, `POST /api/plans/migrate` (method on the route; see item 2). |
+| MCP | Touched | `plan_rollup`, `plan_rename`, `plan_edit`, with the golden tool-name file updated. |
+| CLI | Touched | `datawatch plans rollup`, `rename`, `edit --goal`. |
+| Comm channel | Touched | `autonomous plan rollup`, `plan rename`, `plan edit`. |
+| YAML/config | Excluded | No new configuration key. The roll-up follows the existing `autonomous.plan_records.enabled` switch. |
+| PWA | Touched | Rename, Edit goal, the roll-up and the set-by-hand badge in the Plans browser. |
+| Android | Excluded | Not changed in this merge; plan records are not shown on Android yet (operator item 4). |
+| iPhone | Excluded | Not changed in this merge; plan records are not shown on iPhone yet (operator item 4). |
