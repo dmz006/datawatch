@@ -42,6 +42,41 @@ are in the **Usage burn guard** section. The cards changed only where they are
 drawn and what they show — no new REST, MCP, CLI, comm or chat surface was
 added, and the existing endpoints and verbs are unchanged.
 
+## Operator review after the restyle
+
+The Resources, Progress and costs and Housekeeping sub-tabs of Settings →
+Automata were restyled to one card style. Before you rely on them, look at
+each sub-tab by eye and check the points below. Nothing here changes a setting.
+
+**Resources**
+
+- The usage calculator is one card at the top, followed by the burn guard card.
+- The burn guard card is read-only: it shows the status line and **Run now**,
+  and has no checkboxes or number inputs.
+- The **Burn guard settings** link opens the burn guard section of Settings
+  on the Automata tab, and the link returns you to the same place.
+- Lane fill, Capacity and queue, and Automata ship status each sit in their own
+  card with the same edge, corner and spacing as the usage card.
+
+**Progress and costs**
+
+- The four cost cards (cost, tools, failures and report) use the same card
+  style and top spacing as the Resources cards.
+- Card text says Automaton and Automata, never PRD.
+
+**Housekeeping**
+
+- Each repair group shows its three states (off, report, on) and its hint text.
+- Cards keep their layout with the group hints and help buttons visible.
+
+**Locales (de, es, fr, ja)**
+
+- Switch the web app to each language in turn and check the card titles, the
+  **Burn guard settings** link, the **?** help text and the Housekeeping hints.
+- Every label is translated. A raw key such as `burn_guard_settings_title`
+  showing on screen means a missing translation, and it is a defect to report.
+- Wording and card order match English; only the language changes.
+
 ## See also
 
 - [Usage calculator](usage-calculator.md)
