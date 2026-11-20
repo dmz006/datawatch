@@ -1,6 +1,7 @@
 package costreport
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -392,5 +393,81 @@ func TestParseSeriesWindow(t *testing.T) {
 		if _, err := ParseSeriesWindow(in); err == nil {
 			t.Errorf("%q: want an error", in)
 		}
+	}
+}
+
+// fakeProjectOf is a fake ProjectOf: "linked" belongs to project "alpha",
+// "other" to "beta"; every other Automaton has no project.
+func fakeProjectOf(id string) string {
+	return map[string]string{"linked": "alpha", "other": "beta"}[id]
+}
+
+func TestSeriesProjectUnlinkedAutomatonGoesToUnassigned(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{ledgerEntry("s1", "loose", "aider", now.Add(-time.Hour), 7, 0)}
+	s, err := BuildSeries(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Groups) != 1 || s.Groups[0].Key != UnassignedKey || s.Groups[0].Tokens != 7 {
+		t.Fatalf("want one unassigned line with 7 tokens, got %+v", s.Groups)
+	}
+}
+
+func TestSeriesProjectTwoUnlinkedAutomataShareOneLine(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{
+		ledgerEntry("s1", "loose-1", "aider", now.Add(-time.Hour), 3, 0),
+		ledgerEntry("s2", "loose-2", "aider", now.Add(-2*time.Hour), 4, 0),
+	}
+	s, err := BuildSeries(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Groups) != 1 {
+		t.Fatalf("want one shared line, got %+v", s.Groups)
+	}
+	g := groupByKey(t, s, UnassignedKey)
+	if g.Tokens != 7 || g.Sessions != 2 {
+		t.Fatalf("shared unassigned line = %+v", g)
+	}
+}
+
+func TestSeriesProjectLinkedAutomatonGoesToItsProject(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{ledgerEntry("s1", "linked", "aider", now.Add(-time.Hour), 11, 0)}
+	s, err := BuildSeries(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Groups) != 1 || s.Groups[0].Key != "alpha" || s.Groups[0].Tokens != 11 {
+		t.Fatalf("want one alpha line with 11 tokens, got %+v", s.Groups)
+	}
+}
+
+func TestSeriesProjectNeverKeysByAutomatonID(t *testing.T) {
+	now := time.Now()
+	ids := []string{"linked", "other", "loose-1", "loose-2"}
+	var entries []spendledger.Entry
+	for i, id := range ids {
+		entries = append(entries, ledgerEntry("s"+strconv.Itoa(i), id, "aider", now.Add(-time.Duration(i+1)*time.Hour), 1, 0))
+	}
+	s, err := BuildSeries(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range s.Groups {
+		for _, id := range ids {
+			if g.Key == id {
+				t.Fatalf("automaton id %q used as a project line key: %+v", id, s.Groups)
+			}
+		}
+	}
+	if len(s.Groups) != 3 {
+		t.Fatalf("want alpha, beta and unassigned lines, got %+v", s.Groups)
 	}
 }
