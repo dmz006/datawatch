@@ -59,9 +59,9 @@ func TestReviewStateCommStatusLineDistinguishesTimeoutFromBlock(t *testing.T) {
 		want string
 	}{
 		{`{"review_state":{"state":"timed_out","cause":"the judge timed out on qwen","action":"retry"}}`,
-			"review timed out: the judge timed out on qwen -> retry"},
+			"review timed out, not judged: the judge timed out on qwen -> retry"},
 		{`{"review_state":{"state":"timed_out","cause":"the judge timed out","action":"reroute"}}`,
-			"review timed out: the judge timed out -> reroute"},
+			"review timed out, not judged: the judge timed out -> reroute"},
 		{`{"review_state":{"state":"blocked","cause":"the verdict found a blocking issue","action":"fix"}}`,
 			"review blocked: the verdict found a blocking issue -> fix"},
 		{`{"review_state":{"state":"passed","cause":"","action":""}}`, ""},
@@ -79,5 +79,12 @@ func TestReviewStateCommStatusLineDistinguishesTimeoutFromBlock(t *testing.T) {
 	}
 	if line := reviewStateStatusLine(`{"review_state":{"state":"blocked","cause":"x","action":"fix"}}`); strings.Contains(line, "timed out") {
 		t.Errorf("blocked line %q must not say timed out", line)
+	}
+}
+
+func TestReviewStateCommSaysNotJudged(t *testing.T) {
+	got := reviewStateStatusLine(`{"review_state":{"state":"timed_out","judged":false,"cause":"not judged: the judge timed out on 2 backend(s): a, b","action":"retry","judge_outcome_text":"judge timed out"}}`)
+	if !strings.Contains(got, "not judged") || strings.Contains(got, "found a problem") {
+		t.Errorf("line = %q, want it to say the work was not judged", got)
 	}
 }

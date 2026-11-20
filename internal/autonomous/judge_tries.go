@@ -3,6 +3,7 @@ package autonomous
 import (
 	"fmt"
 	"time"
+	"unicode/utf8"
 )
 
 // Outcomes of one judge attempt on one backend.
@@ -24,6 +25,27 @@ type JudgeAttemptRecord struct {
 	Started  time.Time     `json:"started"`
 	Duration time.Duration `json:"duration"`
 	Outcome  string        `json:"outcome"`
+	// SessionID is the judge session of the attempt, and LastOutput the tail
+	// of what it had printed when the attempt timed out. Both are empty for a
+	// backend that never got a slot or never started a session.
+	SessionID  string `json:"session_id,omitempty"`
+	LastOutput string `json:"last_output,omitempty"`
+}
+
+// JudgeLastOutputMax bounds JudgeAttemptRecord.LastOutput, in bytes.
+const JudgeLastOutputMax = 4096
+
+// TailJudgeOutput keeps the last JudgeLastOutputMax bytes of s, cut at a
+// character boundary.
+func TailJudgeOutput(s string) string {
+	if len(s) <= JudgeLastOutputMax {
+		return s
+	}
+	s = s[len(s)-JudgeLastOutputMax:]
+	for len(s) > 0 && !utf8.RuneStart(s[0]) {
+		s = s[1:]
+	}
+	return s
 }
 
 // JudgeTry is one timed-out attempt kept on the PRD while the judge call it
