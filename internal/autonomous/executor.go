@@ -210,6 +210,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.refuseHeld(prd); err != nil {
 		return err
 	}
+	if m.finishIfMerged(prd) {
+		return nil
+	}
 	if err := m.refuseMainCheckout(prd); err != nil {
 		return err
 	}
