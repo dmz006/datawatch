@@ -200,6 +200,43 @@ repo-relative paths or glob patterns). Its shell tests live in
 `scripts/check-no-config-copies_test.sh`
 (`bash scripts/check-no-config-copies_test.sh`).
 
+## Lean session datawatch tools (fake MCP server test + smoke section)
+
+A lean profile launch defers the datawatch tools behind tool search: the launch pins the session to its own `worker-mcp.json` (a single `datawatch` entry) and sets `ENABLE_TOOL_SEARCH=true` in the claude process's environment, so the tools are discoverable by name without standing in the session's tool list (see [worker session profiles](howto/worker-session-profiles.md)). Proving that guarantee needs two layers, because a launch-command-only assertion — checking that the command typed into the pane carries `--mcp-config worker-mcp.json` and the `ENABLE_TOOL_SEARCH=true` assignment, which `TestLeanSupervisorLaunch_MCPToolsReachableAndContextSmall` and the server-side launch tests do — only proves the daemon *intended* the lean surface. It says nothing about whether the session actually started the MCP server, served the datawatch tools over stdio, or ran with the variable set.
+
+### The fake MCP server test
+
+`internal/llm/claudecode/lean_mcp_fake_server_test.go` closes that loop: it actually starts the MCP server configured in `worker-mcp.json` and asks it for its tool list, then asserts what a claude binary honoring `--mcp-config` would see. The pieces:
+
+- **The fake server is the test binary re-executed itself.** The `worker-mcp.json` entry's command is the test executable, and when the config's env block sets `LEAN_FAKE_MCP_TEST_SERVER`, `TestLeanFakeMCPServer` speaks newline-delimited JSON-RPC over stdio (initialize, initialized, tools/list); in a plain run it skips, so a normal `go test` of the package is unaffected.
+- **The fake claude binary** (a shell script) honors `--mcp-config` exactly like the real binary would: it starts the configured server, plays a minimal MCP client (initialize / initialized / tools/list), and records the tool names it saw plus the `ENABLE_TOOL_SEARCH` value it was given into a result file.
+- **The assertions.** `TestLeanFakeMCPLaunch_ServesDatawatchTools` requires all four datawatch tools — `memory_recall`, `question_list`, `supervisor_watch_stats`, `usage_backoff_set` — to come back over stdio, the server to exit clean, and `ENABLE_TOOL_SEARCH=true` to be set. `TestLeanFakeMCPLaunch_WrongServerCommandYieldsNoTools` is the failure shape: a `worker-mcp.json` pointing at a server command that does not exist must not crash the launch or the claude binary; it reports no tools, which is exactly what "connected but tools not listed" looks like to the operator.
+
+Run it with:
+
+```sh
+go test ./internal/llm/claudecode/ -run 'TestLeanFakeMCP' -v
+```
+
+### The smoke section: `lean session datawatch tools`
+
+`scripts/release-smoke.sh` has a live section headed `== lean session datawatch tools ==` (section id `lean` for `SMOKE_ONLY`) that checks the same guarantee against a running daemon:
+
+1. **Start a supervisor-kind session over REST** — `/api/sessions/start` with an explicit model (a claude-code launch without one is refused up front), as an interactive session so the checks have a stable observation window.
+2. **Wait for `worker-mcp.json`** to appear in the session's project directory (45 s). If it never does, the section reads the session's recorded `profile_fallback_reason` and fails naming it — a profile that did not apply is never confused with a server that does not serve.
+3. **Confirm `ENABLE_TOOL_SEARCH=true` in the session's claude process environment.** The section finds the session's process by its `--add-dir <project dir>` argument and reads `/proc/<pid>/environ`; the variable is a shell assignment typed into the pane, so it never appears in any process's argument list, and an argv search is the wrong probe, not evidence it is absent.
+4. **Launch the `datawatch` entry exactly as `worker-mcp.json` names it** and list its tools over MCP stdio (a bounded exchange with its own deadline). The check passes only when `memory_recall`, `supervisor_watch_stats`, `question_list` and `usage_backoff_set` are all present, and names the missing ones otherwise.
+5. **Kill the session** (the smoke cleanup remains the backstop).
+
+The section spawns a real claude-code session, so it is gated: it runs only when `DW_MAJOR=1` and the daemon's `/api/backends` reports the claude-code backend as available; otherwise it skips and names the gate. Run the full smoke, or select just this section:
+
+```sh
+DW_MAJOR=1 bash scripts/release-smoke.sh
+DW_MAJOR=1 SMOKE_ONLY=lean bash scripts/release-smoke.sh
+```
+
+What a passing lean session looks like, and what a fallback reason on the session record means, are in [Checking a lean session](howto/worker-session-profiles.md#checking-a-lean-session) and [What a fallback reason means](howto/worker-session-profiles.md#what-a-fallback-reason-means).
+
 ## Secret references in LLM API keys (call-time resolution)
 
 **Defect:** an LLM entry whose API key is a `${secret:name}` reference was sent to the provider as the literal text, so the provider answered 401, while a literal key worked.
