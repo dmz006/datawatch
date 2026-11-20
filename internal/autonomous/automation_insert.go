@@ -11,6 +11,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,10 +32,12 @@ const (
 const operatorActor = "operator"
 
 // InsertMemberInput is one request to insert a member into an Automation. It
-// names exactly one of an Automaton (PRDID) or a pending item (PendingItemID).
+// names exactly one of an Automaton (PRDID), a pending item (PendingItemID) or a
+// decision wait (Question).
 type InsertMemberInput struct {
 	PRDID         string // the member Automaton to insert
 	PendingItemID string // the pending item to insert instead; exclusive with PRDID
+	Question      string // inserts a decision_wait member that asks the operator this; exclusive with PRDID and PendingItemID
 	Name          string // optional display name, kept on the pending record, decision and audit
 	// AfterMemberID puts a normal insert directly after that member. Empty means
 	// the end of the chain. An urgent insert always takes the next slot, so it
@@ -53,6 +56,7 @@ type PendingInsert struct {
 	ID            string       `json:"id"`
 	PRDID         string       `json:"prd_id"`
 	PendingItemID string       `json:"pending_item_id,omitempty"` // set, with an empty PRDID, for a pending item insert
+	Question      string       `json:"question,omitempty"`        // set, with no PRDID or pending item, for a decision_wait insert
 	Name          string       `json:"name,omitempty"`
 	Urgent        bool         `json:"urgent,omitempty"`
 	AfterMemberID string       `json:"after_member_id,omitempty"`
@@ -91,6 +95,9 @@ func (p PendingInsert) subject() string {
 	if p.PRDID != "" {
 		return "Automaton " + p.PRDID
 	}
+	if p.Question != "" {
+		return "decision wait " + strconv.Quote(truncateRunes(p.Question, decisionWaitNoteMax))
+	}
 	return "pending item " + p.PendingItemID
 }
 
@@ -106,9 +113,15 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 	if in.Actor == "" {
 		in.Actor = operatorActor
 	}
-	hasPRD, hasItem := strings.TrimSpace(in.PRDID) != "", strings.TrimSpace(in.PendingItemID) != ""
-	if hasPRD == hasItem {
-		return nil, fmt.Errorf("400: an insert needs exactly one of prd_id (an Automaton) or pending_item_id (a pending item)")
+	hasPRD, hasItem, hasQuestion := strings.TrimSpace(in.PRDID) != "", strings.TrimSpace(in.PendingItemID) != "", strings.TrimSpace(in.Question) != ""
+	if n := countTrue(hasPRD, hasItem, hasQuestion); n != 1 {
+		return nil, fmt.Errorf("400: an insert needs exactly one of prd_id (an Automaton), pending_item_id (a pending item) or question (a decision wait)")
+	}
+	if hasQuestion {
+		if len(in.Question) > decisionWaitQuestionMaxBytes {
+			return nil, fmt.Errorf("400: question is %d bytes; the cap is %d", len(in.Question), decisionWaitQuestionMaxBytes)
+		}
+		in.Question = strings.TrimSpace(in.Question)
 	}
 	if in.Urgent && in.AfterMemberID != "" {
 		return nil, fmt.Errorf("an urgent insert takes the next slot; leave after_member_id empty")
@@ -121,9 +134,10 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 	if a.Status != AutomationDraft && strings.TrimSpace(in.Reason) == "" {
 		return nil, fmt.Errorf("an insert into a %s automation needs a reason", a.Status)
 	}
-	if hasItem {
+	switch {
+	case hasItem:
 		err = m.checkInsertPendingItem(a, in.PendingItemID)
-	} else {
+	case hasPRD:
 		err = m.checkInsertPRD(a, in.PRDID)
 	}
 	if err != nil {
@@ -154,7 +168,7 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 		memberID = newAutomationID()
 		if hold {
 			cur.PendingInserts = append(cur.PendingInserts, PendingInsert{
-				ID: memberID, PRDID: in.PRDID, PendingItemID: in.PendingItemID, Name: in.Name, Urgent: in.Urgent,
+				ID: memberID, PRDID: in.PRDID, PendingItemID: in.PendingItemID, Question: in.Question, Name: in.Name, Urgent: in.Urgent,
 				AfterMemberID: in.AfterMemberID, Stage: strings.TrimSpace(in.Stage),
 				Actor: in.Actor, Reason: in.Reason,
 				AddedAt: now, Status: MemberPending,
@@ -162,7 +176,7 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 			controlDecision(cur, controlInsertMember, in.Actor, insertNote("held pending operator approval", memberID, itemTitle, in))
 			return nil
 		}
-		mem := newInsertedMember(memberID, in.PRDID, in.PendingItemID, in.Actor, in.Reason, now)
+		mem := newInsertedMember(memberID, in.PRDID, in.PendingItemID, in.Question, in.Actor, in.Reason, now)
 		mem.Stage = strings.TrimSpace(in.Stage)
 		if err := spliceMember(cur, mem, in.Urgent, in.AfterMemberID); err != nil {
 			return err
@@ -247,6 +261,9 @@ func insertNote(what, memberID, title string, in InsertMemberInput) string {
 		kind = "urgent"
 	}
 	subject := "Automaton " + in.PRDID
+	if in.Question != "" {
+		subject = "decision wait " + strconv.Quote(truncateRunes(in.Question, decisionWaitNoteMax))
+	}
 	if in.PendingItemID != "" {
 		subject = "pending item " + in.PendingItemID
 		if title != "" {
@@ -328,18 +345,33 @@ func checkPendingDuplicate(a *Automation, prdID, itemID string) error {
 	return nil
 }
 
-// newInsertedMember builds the member an insert lands: an Automaton member, or a
+// newInsertedMember builds the member an insert lands: an Automaton member, a
+// decision_wait member when only question is set, or a
 // pending_item member (no prd_id) when only itemID is set. An insert that had an
 // Automaton attached while it was held carries both: it lands as an Automaton
 // member that keeps the pending item as provenance.
-func newInsertedMember(id, prdID, itemID, actor, reason string, at time.Time) AutomationMember {
+func newInsertedMember(id, prdID, itemID, question, actor, reason string, at time.Time) AutomationMember {
 	mem := AutomationMember{ID: id, AddedAt: at, AddedBy: actor, AddedReason: reason, Status: MemberPending, PendingItemID: itemID}
-	if prdID != "" {
+	switch {
+	case prdID != "":
 		mem.PRDID = prdID
-	} else if itemID != "" {
+	case itemID != "":
 		mem.Kind = MemberKindPending
+	case question != "":
+		mem.Kind, mem.Question = MemberKindDecisionWait, question
 	}
 	return mem
+}
+
+// countTrue returns how many of the flags are true.
+func countTrue(flags ...bool) int {
+	n := 0
+	for _, f := range flags {
+		if f {
+			n++
+		}
+	}
+	return n
 }
 
 // pendingItemTitle returns the title of item id, or "" when there is none.
@@ -405,7 +437,7 @@ func (m *Manager) ApproveInsertedMember(id, pendingID, actor string, expectedVer
 			}
 		}
 		oldMembers = append([]AutomationMember(nil), cur.Members...)
-		mem := newInsertedMember(landed.ID, landed.PRDID, landed.PendingItemID, landed.Actor, landed.Reason, time.Now())
+		mem := newInsertedMember(landed.ID, landed.PRDID, landed.PendingItemID, landed.Question, landed.Actor, landed.Reason, time.Now())
 		mem.Stage = strings.TrimSpace(landed.Stage)
 		if err := spliceMember(cur, mem, landed.Urgent, landed.AfterMemberID); err != nil {
 			return err
@@ -507,7 +539,7 @@ func chainTail(a *Automation) (string, error) {
 		if mem.kind() == MemberKindFork {
 			join := ""
 			for _, j := range a.Members {
-				if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, mem.ForkMembers) {
+				if j.kind() == MemberKindJoin && sameMemberSet(j.JoinMembers, forkTails(a, mem)) {
 					join = j.ID
 				}
 			}

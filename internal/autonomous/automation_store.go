@@ -335,6 +335,9 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 		if m.AddedBy == "" {
 			m.AddedBy = "operator"
 		}
+		// A draft has started nothing: a caller cannot hand in a wait the
+		// coordinator owns (see automation_decision_wait.go).
+		m.QuestionID, m.WaitingForOperator = "", false
 	}
 	a.Status = AutomationDraft
 	a.Version = 1

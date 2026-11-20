@@ -244,15 +244,30 @@ func (m *Manager) cancelAutomation(id, actor string, req cancelRequest, expected
 
 	// Members to end after the write; collected inside the mutation so they
 	// come from the version that wins the compare-and-set.
-	var endPRDs, endChildren, inFlightIDs []string
+	var endPRDs, endChildren, inFlightIDs, endQuestions []string
 	updated, err := m.automations.Update(id, expectedVersion, func(a *Automation) error {
 		if err := checkControlStatus(a, []AutomationStatus{AutomationActive, AutomationPaused, AutomationBlocked}); err != nil {
 			return err
 		}
-		endPRDs, endChildren, inFlightIDs = nil, nil, nil
+		endPRDs, endChildren, inFlightIDs, endQuestions = nil, nil, nil, nil
 		now := time.Now()
 		for i := range a.Members {
 			mem := &a.Members[i]
+			if mem.kind() == MemberKindDecisionWait && mem.Status == MemberRunning {
+				// A decision wait runs nothing, so it is not in flight: it is
+				// cancelled whatever cancel_in_flight says, and its operator
+				// question is withdrawn after the write.
+				if mem.QuestionID != "" {
+					endQuestions = append(endQuestions, mem.QuestionID)
+				}
+				mem.WaitingForOperator = false
+				mem.Status = MemberCancelled
+				mem.Outcome = "cancelled"
+				mem.FinishedAt = &now
+				mem.EdgeTaken = ""
+				dropCursor(a, mem.ID)
+				continue
+			}
 			if mem.kind() == MemberKindPending && mem.Status == MemberRunning {
 				// A pending item holds the cursor but runs nothing, so it is not
 				// in flight and nothing needs ending: it is cancelled whatever
@@ -312,6 +327,13 @@ func (m *Manager) cancelAutomation(id, actor string, req cancelRequest, expected
 	if err := m.syncAutomationMembership(id, updated.Members, nil, true); err != nil {
 		failures = append(failures, "release membership: "+err.Error())
 	}
+	if len(endQuestions) > 0 {
+		if c := m.coordinatorOrNil(); c != nil {
+			for _, qid := range endQuestions {
+				c.settleDecisionWaitQuestion(qid, "the Automation was cancelled")
+			}
+		}
+	}
 	for _, prdID := range endPRDs {
 		if m.prdFinished(prdID) {
 			continue // already ended on its own; do not rewrite its outcome
@@ -370,8 +392,8 @@ func (m *Manager) memberCanceller() memberCanceller {
 func inFlightMembers(a *Automation) []AutomationMember {
 	var out []AutomationMember
 	for _, mem := range a.Members {
-		// A pending item member may hold the cursor, but it runs nothing.
-		if mem.Status == MemberRunning && mem.kind() != MemberKindPending {
+		// A pending item or decision wait member may hold the cursor, but it runs nothing.
+		if mem.Status == MemberRunning && mem.kind() != MemberKindPending && mem.kind() != MemberKindDecisionWait {
 			out = append(out, mem)
 		}
 	}

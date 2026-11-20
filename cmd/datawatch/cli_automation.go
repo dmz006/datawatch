@@ -95,6 +95,8 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetBudgetCmd())
 	cmd.AddCommand(newAutomationSetEffortCeilingCmd())
 	cmd.AddCommand(newAutomationSetDecisionAssistantCmd())
+	cmd.AddCommand(newAutomationSetMaxParallelCmd())
+	cmd.AddCommand(newAutomationSetStageGateCmd())
 	cmd.AddCommand(newAutomationImportGraphCmd())
 	cmd.AddCommand(newAutomationOnboardingReportCmd())
 	cmd.AddCommand(newAutomationRequirementsReportCmd())
@@ -187,13 +189,23 @@ func newAutomationGetCmd() *cobra.Command {
 
 func newAutomationCreateCmd() *cobra.Command {
 	var name, description, entry, members string
+	var stageGate bool
+	var maxParallel int
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a draft Automation (members from a JSON file or inline JSON)",
 		Long: `Create a draft Automation. --members takes a JSON array of members, either
 inline (the value starts with "[") or as the path of a file that holds it.
-Members may be prd, fork, join or automation (nested) kinds; the automation_create
-MCP tool documents each member field. The Automation stays a draft until activate.`,
+Members may be prd, fork, join, automation (nested) or decision_wait kinds; the
+automation_create MCP tool documents each member field. A decision_wait member
+carries "question" (what it asks the operator) and holds only its own branch until
+the answer arrives; a fork member may carry "max_parallel". The Automation stays a
+draft until activate.
+--stage-gate makes member stages a gate: a staged member waits while an earlier
+stage still has unfinished members (off by default, where a stage is only a label).
+--max-parallel N runs at most N members at once; a member that would start past the
+limit waits for a free slot (0 or omitted: no limit).
+See docs/howto/automation-chains.md for the limit, the stage gate and decision waits.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{"name": name}
@@ -209,6 +221,15 @@ MCP tool documents each member field. The Automation stays a draft until activat
 					return err
 				}
 				body["members"] = parsed
+			}
+			if cmd.Flags().Changed("stage-gate") {
+				body["stage_gate"] = stageGate
+			}
+			if cmd.Flags().Changed("max-parallel") {
+				if maxParallel < 0 {
+					return fmt.Errorf("--max-parallel must not be negative (0 means no limit)")
+				}
+				body["max_parallel"] = maxParallel
 			}
 			raw, err := automationAPI(http.MethodPost, "/api/automations", body)
 			if err != nil {
@@ -226,6 +247,8 @@ MCP tool documents each member field. The Automation stays a draft until activat
 	cmd.Flags().StringVar(&description, "description", "", "Optional description")
 	cmd.Flags().StringVar(&entry, "entry-member", "", "Member ID where the chain starts")
 	cmd.Flags().StringVar(&members, "members", "", "Members as a JSON array: inline, or the path of a file")
+	cmd.Flags().BoolVar(&stageGate, "stage-gate", false, "Hold a staged member until every earlier stage has finished (default off: a stage is only a label)")
+	cmd.Flags().IntVar(&maxParallel, "max-parallel", 0, "Most members that run at once; a member past the limit waits for a free slot (0 or omitted: no limit)")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -233,6 +256,8 @@ MCP tool documents each member field. The Automation stays a draft until activat
 func newAutomationUpdateCmd() *cobra.Command {
 	var f automationControlFlags
 	var name, description, entry, members string
+	var stageGate bool
+	var maxParallel int
 	var autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
@@ -243,7 +268,12 @@ starts with "[") or as the path of a file that holds it; it replaces the member 
 Auto-tags: --auto-tags on|off switches per-Automation tag assignment, and
 --auto-tags-automation-template, --auto-tags-stage-template and
 --auto-tags-kind-template set the per-Automation label templates (empty or unset
-keeps the daemon default; templates may use {date}, {time}, {automation}, {stage}).`,
+keeps the daemon default; templates may use {date}, {time}, {automation}, {stage}).
+--stage-gate=true holds a staged member until every earlier stage has finished;
+--stage-gate=false makes a stage only a label again. --max-parallel N runs at most
+N members at once; --max-parallel 0 clears the limit. Update replaces the
+description, budget and defaults it is not given; to change only the stage gate or
+the limit on a running Automation use set-stage-gate or set-max-parallel.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := f.body(cmd)
@@ -262,6 +292,15 @@ keeps the daemon default; templates may use {date}, {time}, {automation}, {stage
 					return err
 				}
 				body["members"] = parsed
+			}
+			if cmd.Flags().Changed("stage-gate") {
+				body["stage_gate"] = stageGate
+			}
+			if cmd.Flags().Changed("max-parallel") {
+				if maxParallel < 0 {
+					return fmt.Errorf("--max-parallel must not be negative (0 means no limit)")
+				}
+				body["max_parallel"] = maxParallel
 			}
 			tags, err := automationAutoTagsArg(cmd, autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate)
 			if err != nil {
@@ -286,6 +325,8 @@ keeps the daemon default; templates may use {date}, {time}, {automation}, {stage
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&entry, "entry-member", "", "New entry member ID")
 	cmd.Flags().StringVar(&members, "members", "", "New members as a JSON array: inline, or the path of a file")
+	cmd.Flags().BoolVar(&stageGate, "stage-gate", false, "Stage gate on or off (--stage-gate=false turns it off); omitted keeps the stored value")
+	cmd.Flags().IntVar(&maxParallel, "max-parallel", 0, "Most members that run at once (0 clears the limit); omitted keeps the stored value")
 	cmd.Flags().StringVar(&autoTags, "auto-tags", "", "Auto-tag this Automation: on or off")
 	cmd.Flags().StringVar(&autoTagsAutomationTemplate, "auto-tags-automation-template", "", "Automation label template (empty keeps the daemon default)")
 	cmd.Flags().StringVar(&autoTagsStageTemplate, "auto-tags-stage-template", "", "Stage label template (empty keeps the daemon default)")
@@ -395,6 +436,33 @@ type automationStatusRow struct {
 	// PendingInserts are the row's held inserts awaiting an operator's
 	// approval; empty when the row has none.
 	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
+	// The run-shape limits and what they hold back: waiting members keep their
+	// cursor and are not blocked.
+	MaxParallel        int      `json:"max_parallel"`
+	RunningMembers     int      `json:"running_members"`
+	StageGate          bool     `json:"stage_gate"`
+	WaitingForSlot     []string `json:"waiting_for_slot"`
+	WaitingForStage    []string `json:"waiting_for_stage"`
+	WaitingForOperator []string `json:"waiting_for_operator"`
+}
+
+// automationWaitingText summarizes what a status row holds back, e.g.
+// "2 for a slot, 1 for you"; "-" when nothing waits.
+func automationWaitingText(r automationStatusRow) string {
+	var parts []string
+	if n := len(r.WaitingForSlot); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d for a slot", n))
+	}
+	if n := len(r.WaitingForStage); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d for a stage", n))
+	}
+	if n := len(r.WaitingForOperator); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d for you", n))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
@@ -402,8 +470,18 @@ func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
 		_, err := fmt.Fprintln(w, "no Automations")
 		return err
 	}
+	// The WAITING column appears only when some row holds a member back under a
+	// limit, a stage gate or a decision wait, so a plain chain reads as before.
+	showWaiting := false
+	for _, r := range rows {
+		showWaiting = showWaiting || automationWaitingText(r) != "-"
+	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tCURRENT\tPENDING\tIDLE\tSPEND\tBLOCKED")
+	if showWaiting {
+		_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tCURRENT\tPENDING\tWAITING\tIDLE\tSPEND\tBLOCKED")
+	} else {
+		_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tCURRENT\tPENDING\tIDLE\tSPEND\tBLOCKED")
+	}
 	for _, r := range rows {
 		current := dashIfEmpty(r.CurrentMemberID)
 		if r.CurrentPRDTitle != "" {
@@ -416,6 +494,10 @@ func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
 		spend := "-"
 		if r.CeilingDisplay != "" {
 			spend = fmt.Sprintf("$%.2f / %s", r.SpentUSD, r.CeilingDisplay)
+		}
+		if showWaiting {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", r.ID, r.Name, r.Status, current, r.PendingMembers, automationWaitingText(r), idle, spend, dashIfEmpty(r.BlockedReason))
+			continue
 		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", r.ID, r.Name, r.Status, current, r.PendingMembers, idle, spend, dashIfEmpty(r.BlockedReason))
 	}
@@ -553,6 +635,8 @@ var automationControlOps = map[string]string{
 	"set-effort-ceiling":   "set_effort_ceiling",
 
 	"set-decision-assistant": "set_decision_assistant",
+	"set-max-parallel":       "set_max_parallel",
+	"set-stage-gate":         "set_stage_gate",
 }
 
 // resolveAutomationVersion reads the Automation's current stored version via
@@ -711,14 +795,15 @@ func newAutomationSkipCmd() *cobra.Command {
 func newAutomationInsertCmd() *cobra.Command {
 	var f automationControlFlags
 	var urgent bool
-	var after, stage, pendingItem string
+	var after, stage, pendingItem, kind, question string
 	cmd := &cobra.Command{
-		Use:   "insert <id> [<prd-id> | --pending-item <item-id>]",
+		Use:   "insert <id> [<prd-id> | --pending-item <item-id> | --kind decision-wait --question <text>]",
 		Short: "Insert a member into a running Automation",
 		Long: `Insert a member that runs the given Automaton (prd-id), or, with --pending-item,
 a member that waits on a pending item until an Automaton is attached to it
 (datawatch autonomous pending-item-attach). Give the Automaton or the pending
 item, not both. --reason is required and becomes the member's added reason.
+See docs/howto/automation-chains.md ("Wait for an operator answer on a branch").
 --urgent takes the urgent lane (one urgent member at a time); --after places the
 member after the named member; --stage records a stage label on the member.`,
 		Args: cobra.RangeArgs(1, 2),
@@ -727,17 +812,28 @@ member after the named member; --stage records a stage label on the member.`,
 				return fmt.Errorf("--reason is required to insert a member")
 			}
 			item := strings.TrimSpace(pendingItem)
+			wait, err := insertDecisionWait(kind, question)
+			if err != nil {
+				return err
+			}
 			switch {
+			case wait && (len(args) == 2 || item != ""):
+				return fmt.Errorf("a decision-wait insert takes --question, not an Automaton ID or --pending-item")
+			case wait:
 			case len(args) == 2 && item != "":
 				return fmt.Errorf("give an Automaton ID or --pending-item, not both")
 			case len(args) == 1 && item == "":
-				return fmt.Errorf("give the Automaton ID to insert, or --pending-item <item-id>")
+				return fmt.Errorf("give the Automaton ID to insert, --pending-item <item-id>, or --kind decision-wait --question <text>")
 			}
 			body := f.body(cmd)
 			member := map[string]any{}
-			if item != "" {
+			switch {
+			case wait:
+				member["kind"] = "decision_wait"
+				member["question"] = strings.TrimSpace(question)
+			case item != "":
 				member["pending_item_id"] = item
-			} else {
+			default:
 				member["prd_id"] = args[1]
 			}
 			if stage = strings.TrimSpace(stage); stage != "" {
@@ -756,7 +852,27 @@ member after the named member; --stage records a stage label on the member.`,
 	cmd.Flags().StringVar(&after, "after", "", "Member ID to insert after")
 	cmd.Flags().StringVar(&stage, "stage", "", "Stage label to record on the inserted member")
 	cmd.Flags().StringVar(&pendingItem, "pending-item", "", "Pending item ID to insert instead of an Automaton (sends pending_item_id)")
+	cmd.Flags().StringVar(&kind, "kind", "", "Member kind to insert: decision-wait (with --question); leave unset for an Automaton or a pending item")
+	cmd.Flags().StringVar(&question, "question", "", "The question a decision-wait member asks the operator (at most 4096 bytes)")
 	return cmd
+}
+
+// insertDecisionWait reports whether the --kind and --question flags ask for a
+// decision-wait insert. --kind takes decision-wait (decision_wait is accepted
+// too); --question alone implies it. A kind without a question, a question with
+// another kind, and any other kind are errors.
+func insertDecisionWait(kind, question string) (bool, error) {
+	k := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "_", "-")))
+	q := strings.TrimSpace(question)
+	switch k {
+	case "", "decision-wait":
+	default:
+		return false, fmt.Errorf("--kind %q: only decision-wait can be inserted by kind (give an Automaton ID or --pending-item for the others)", kind)
+	}
+	if k == "decision-wait" && q == "" {
+		return false, fmt.Errorf("--kind decision-wait needs --question <text>")
+	}
+	return q != "", nil
 }
 
 func newAutomationRemoveCmd() *cobra.Command {
@@ -1045,6 +1161,79 @@ off; --clear cannot be combined with the setting flags.`,
 	return cmd
 }
 
+func newAutomationSetMaxParallelCmd() *cobra.Command {
+	var f automationControlFlags
+	var maxParallel int
+	var member string
+	cmd := &cobra.Command{
+		Use:   "set-max-parallel <id> --max-parallel <n>",
+		Short: "Set the most members of an Automation (or one fork's branches) that run at once",
+		Long: `Set the most members of an Automation that run at once. 0 clears the limit (the
+default: no limit). A member that would start past the limit is not started and
+not blocked: it waits for a free slot and starts, in member order, when a running
+member finishes. --member names a fork and limits that fork's branch members
+instead; the smaller of the two limits applies.
+
+This changes only the limit, so it is safe on a running Automation: on an active
+one it takes effect at once (raising or clearing the limit starts waiting members,
+lowering it never stops a running member). Allowed while the Automation is draft,
+active, paused or blocked.
+
+See docs/howto/automation-chains.md ("Limit how many run at once").`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("max-parallel") {
+				return fmt.Errorf("--max-parallel is required: the most members that run at once, 0 for no limit")
+			}
+			if maxParallel < 0 {
+				return fmt.Errorf("--max-parallel must not be negative (0 means no limit)")
+			}
+			body := f.body(cmd)
+			body["max_parallel"] = maxParallel
+			if member != "" {
+				body["member_id"] = member
+			}
+			return runAutomationControl(args[0], "set-max-parallel", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().IntVar(&maxParallel, "max-parallel", 0, "Most members that run at once (0 clears the limit)")
+	cmd.Flags().StringVar(&member, "member", "", "Fork member ID: limit that fork's branches instead of the whole Automation")
+	return cmd
+}
+
+func newAutomationSetStageGateCmd() *cobra.Command {
+	var f automationControlFlags
+	var stageGate bool
+	cmd := &cobra.Command{
+		Use:   "set-stage-gate <id> --stage-gate=<true|false>",
+		Short: "Turn an Automation's stage gate on or off",
+		Long: `Turn the stage gate of an Automation on or off. On, a staged member is not
+started while an earlier stage (ordered by first appearance in the member list)
+still has unfinished members, and starts when that stage finishes; an unstaged
+member is never held. Off (the default), a stage is only a label.
+
+This changes only the gate, so it is safe on a running Automation: on an active
+one it takes effect at once (turning the gate off starts held members; turning it
+on holds members that have not started). Allowed while the Automation is draft,
+active, paused or blocked.
+
+See docs/howto/automation-chains.md ("Hold a later stage until an earlier one finishes").`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("stage-gate") {
+				return fmt.Errorf("--stage-gate is required: --stage-gate=true holds a staged member until every earlier stage has finished, --stage-gate=false makes a stage only a label")
+			}
+			body := f.body(cmd)
+			body["stage_gate"] = stageGate
+			return runAutomationControl(args[0], "set-stage-gate", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().BoolVar(&stageGate, "stage-gate", false, "true holds a staged member until every earlier stage has finished; false makes a stage only a label")
+	return cmd
+}
+
 // automationMembersArg reads the --members value: an inline JSON array when
 // it starts with "[", otherwise the path of a file that holds one.
 func automationMembersArg(v string) ([]map[string]any, error) {
@@ -1112,6 +1301,10 @@ type automationView struct {
 	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 	// DecisionAssistant is the Automation-level decision assistant; absent when off.
 	DecisionAssistant *autonomous.DecisionAssistant `json:"decision_assistant"`
+	// MaxParallel is the most members that run at once (0 or absent: no limit)
+	// and StageGate whether a member's stage holds it back (absent: a label only).
+	MaxParallel int  `json:"max_parallel"`
+	StageGate   bool `json:"stage_gate"`
 	// MergeCommit is the Automation's shipped-state merge commit (empty =
 	// not shipped). The stored status is independent of it: shipped state
 	// never changes Status.
@@ -1133,6 +1326,15 @@ type automationMemberView struct {
 	OnBlocked       string   `json:"on_blocked"`
 	OnFailed        string   `json:"on_failed"`
 	Status          string   `json:"status"`
+	Stage           string   `json:"stage"`
+	// MaxParallel is a fork's own limit on its branch members; Question is what
+	// a decision_wait member asks the operator. The waiting flags are set by the
+	// daemon while the member holds its cursor and has not run.
+	MaxParallel        int    `json:"max_parallel"`
+	Question           string `json:"question"`
+	WaitingForSlot     bool   `json:"waiting_for_slot"`
+	WaitingForStage    string `json:"waiting_for_stage"`
+	WaitingForOperator bool   `json:"waiting_for_operator"`
 }
 
 func printAutomationList(w io.Writer, list []automationView) error {
@@ -1167,12 +1369,18 @@ func printAutomation(w io.Writer, a automationView) error {
 	_, _ = fmt.Fprintf(w, "Active:   %s\n", activeCursorsText(a.ActiveCursors))
 	_, _ = fmt.Fprintf(w, "Members:  %d\n", len(a.Members))
 	_, _ = fmt.Fprintf(w, "Assistant: %s\n", decisionAssistantText(a.DecisionAssistant))
+	if a.MaxParallel > 0 {
+		_, _ = fmt.Fprintf(w, "Max parallel: %d\n", a.MaxParallel)
+	}
+	if a.StageGate {
+		_, _ = fmt.Fprintln(w, "Stage gate: on")
+	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  MEMBER\tKIND\tTARGET\tON COMPLETE\tON BLOCKED\tON FAILED\tSTATUS")
 	for _, m := range a.Members {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			m.ID, memberKindText(m), memberTargetText(m),
-			edgeText(m.OnComplete), edgeText(m.OnBlocked), edgeText(m.OnFailed), dashIfEmpty(m.Status))
+			edgeText(m.OnComplete), edgeText(m.OnBlocked), edgeText(m.OnFailed), memberStatusText(m))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -1238,7 +1446,13 @@ func memberTargetText(m automationMemberView) string {
 	case "automation":
 		return m.AutomationID
 	case "fork":
-		return "branches " + strings.Join(m.ForkMembers, ",")
+		text := "branches " + strings.Join(m.ForkMembers, ",")
+		if m.MaxParallel > 0 {
+			text += fmt.Sprintf(" (max %d at once)", m.MaxParallel)
+		}
+		return text
+	case "decision_wait":
+		return "asks: " + strconv.Quote(truncateForTable(m.Question, 60))
 	case "join":
 		rule := m.OnBranchFailure
 		if rule == "" {
@@ -1248,6 +1462,32 @@ func memberTargetText(m automationMemberView) string {
 	default:
 		return m.PRDID
 	}
+}
+
+// memberStatusText is the member's status for the table, with the reason it
+// holds its cursor when it waits: for a free slot, for an earlier stage or for
+// the operator's answer. Waiting is never shown as blocked.
+func memberStatusText(m automationMemberView) string {
+	switch {
+	case m.WaitingForOperator:
+		return "waiting for you"
+	case m.WaitingForStage != "":
+		return "waiting for stage " + m.WaitingForStage
+	case m.WaitingForSlot:
+		return "waiting for a free slot"
+	}
+	return dashIfEmpty(m.Status)
+}
+
+// truncateForTable cuts s to n runes (adding an ellipsis) so a long question
+// keeps the member table on one line.
+func truncateForTable(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 func activeCursorsText(ids []string) string {
