@@ -87,7 +87,7 @@ candidates so you can repeat the call with an id.
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
 | Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
 | Release plans | `GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `GET /api/projects/{name}/plans?archived=`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme list\|add\|rename\|remove\|place\|unplace\|reorder\|reorder-items`, `archive`, `restore`, `unattributed`, `attach` (several ids), `migrate --release`, `row-plans list\|convert`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|attach\|migrate release`. Web: the release controls of the Plans sub-tab. See *Release plans and themes* and the sections after it. |
-| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
+| Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]` (prints the server summary line verbatim, then lists each kind, including the *needs review* and *history without an Automaton* sections), chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
 
 Each created or changed record writes one `plan_record_created` or
@@ -702,12 +702,15 @@ Nothing here turns on by itself. These are yours to settle:
 
 ## Building plans from arcs and rows
 
-Every preview and every apply starts with one count line: created (would
-create in a preview), linked, already present, history without an Automaton,
-needs review and conflicts. For each conflict the answer also says which plan
-or record already holds the item (`held_by`) and what the migration would have
-changed (`would_change`); nothing of it is written. A second apply changes
-nothing.
+`datawatch plans migrate` prints the server summary line verbatim — created
+(would create in a preview), linked, already present, history without an
+Automaton, needs review and conflicts — and then lists each kind, with a
+section headed `Needs review (N, not made into plans):` and the existing
+`History without an Automaton (N, not made into plans):` section. `--json` is
+unchanged and carries `needs_review`. For each conflict the answer also says
+which plan or record already holds the item (`held_by`) and what the migration
+would have changed (`would_change`); nothing of it is written. A second apply
+changes nothing.
 
 A plan groups work to come and links down to Automations and Automata. The
 migration builds plans from what you already have:
@@ -724,7 +727,8 @@ migration builds plans from what you already have:
   number. A closed row that names none is left out.
 
 It previews by default. Read the lists (would create, would link, left alone,
-conflicts), then apply:
+conflicts) and the two sections for the rows that never become plans (history
+without an Automaton, needs review), then apply:
 
 ```
 datawatch plans migrate            # preview, writes nothing
