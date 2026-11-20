@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -110,6 +113,38 @@ func runSlotReconcile(d slotReconcileDeps) []autonomous.FreedSlot {
 		}
 	}
 	return freed
+}
+
+// seedLiveCheckJudgeSlot is the test-only seam behind
+// scripts/slot-reconcile-live-check.sh: when DATAWATCH_LIVE_SEED_JUDGE_SLOT
+// is "1", the daemon acquires exactly one judge slot on the pi-prompt pool
+// at startup. The lease holds no node pool and no session, no Automaton for
+// its unit exists, and the general reaper keeps it alive until spawn grace
+// (minutes) — so its fate is decided by the orphan-slot reconcile alone: it
+// stays held while the slot-reconcile grace
+// (autonomous.capacity_slot_reconcile_grace_seconds) is unelapsed and is
+// freed by the reconcile itself once it has run out, raising the
+// "Capacity slot freed" alert. It never ends a session and releases nothing
+// itself; a failed acquire aborts startup. The production daemon never sets
+// the variable, so this is invisible outside the live check.
+func seedLiveCheckJudgeSlot(ctx context.Context, led *capacity.Ledger) {
+	if os.Getenv("DATAWATCH_LIVE_SEED_JUDGE_SLOT") != "1" {
+		return
+	}
+	unit := os.Getenv("DATAWATCH_LIVE_SEED_JUDGE_UNIT")
+	if unit == "" {
+		unit = "livecheck"
+	}
+	holder := autonomous.JudgeHolder(unit)
+	if err := led.Acquire(ctx, capacity.Request{
+		Holder: holder,
+		PRDID:  unit,
+		Pools:  []string{autonomous.PiPromptPool},
+		Role:   capacity.RoleVerifier,
+	}, 30*time.Second, nil, nil); err != nil {
+		log.Fatalf("[capacity] live-check seed: acquire judge slot for %s: %v", holder, err)
+	}
+	fmt.Printf("[capacity] live-check seeded judge slot holder=%s pool=%s (no node lease, no session)\n", holder, autonomous.PiPromptPool)
 }
 
 // slotPoolLabel renders a ledger pool id in plain words for alert text.
