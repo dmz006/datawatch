@@ -172,7 +172,9 @@ type surface struct {
 
 type view struct {
 	ID, Title, Summary string
-	RowNumber          string
+	// BaseLine is the short sha of the base, empty when the record has none.
+	BaseLine  string
+	RowNumber string
 
 	CommandsRun, CommandsPassed, CommandsFailed int
 	TestsPassed, TestsFailed                    int
@@ -299,6 +301,9 @@ func buildData(kind Kind, rec *changerecord.ChangeRecord, o Options) view {
 		if kind == ChangelogDraft {
 			v.Summary = derivedSummary(id, names, v.FilesChanged, v.PackagesTouched)
 		}
+	}
+	if rec.BaseRef != "" {
+		v.BaseLine = shortSHA(rec.BaseRef)
 	}
 	v.Screens = screensOf(rec)
 	for _, h := range rec.Highlights {
@@ -556,4 +561,11 @@ func PWAChanged(rec *changerecord.ChangeRecord) bool {
 		}
 	}
 	return false
+}
+
+func shortSHA(s string) string {
+	if len(s) > 9 {
+		return s[:9]
+	}
+	return s
 }

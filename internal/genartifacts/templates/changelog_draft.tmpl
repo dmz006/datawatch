@@ -1,5 +1,7 @@
 ## vX.Y.Z — {{.Title}}
 
 {{.Summary}}
-{{range .Bullets}}
+{{if .BaseLine}}
+Base: merge base with main ({{.BaseLine}})
+{{end}}{{range .Bullets}}
 - {{.}}{{end}}
