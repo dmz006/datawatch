@@ -7585,6 +7585,12 @@ Both reads are GET-only (any other method is 405), answer 503 while Automata are
 
 ---
 
+## Merged work stays finished across a daemon restart
+
+What to expect after a deploy restart: an Automaton whose record carries a merge time (`merged_at`) and a merge commit (`merge_commit`) and whose branch is contained in main is finished as **Completed** on daemon restart and at run start. It is not re-run, and its rules-review judge is not started again — a restart no longer spends a judging session on an empty diff. An Automaton whose `merge_commit` is not in main still gets its judge: the check is a read-only `merge-base --is-ancestor` containment test against the project's base branch, and a missing record, missing repository or git failure changes nothing, so the normal run path still runs. The completed record gets one decision-log line of kind `merged_branch_finish` ("Automaton finished because its merge commit is already in main; no further work or review was started."). There is no setting to turn this off and nothing to configure: it reads only the shipped record fields already described in the [shipped state how-to](howto/automata-shipped-status.md#8-merged-work-stays-finished-across-a-daemon-restart), and already completed, cancelled or archived records are left alone. In the Events feed and decision log you should see the `merged_branch_finish` line for each Automaton this applies to, and no judging session after a restart for one.
+
+---
+
 ## Automaton worktree cleanup (finished work branches, worktrees and daemon temp files)
 
 An Automaton that runs in worktree mode works on its own branch (`automaton/<id>`) in its own worktree under the worktree base repository (`autonomous.worktree_base_repo`), and its worker sessions leave scratch files in the daemon's temporary directory. The cleanup removes what a finished Automaton no longer needs, and only what it is certain it can lose nothing by removing, and watches the disks involved. It is not tied to one repository: it reads the worktree base repository from the config, takes the branch an Automaton's work must be on from that Automaton's own base branch or, failing that, from the default branch the remote records for the repository (`origin/HEAD`), and works for a project whose default branch is `master`, `trunk` or any other name. The operator guide is [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
