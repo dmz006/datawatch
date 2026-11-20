@@ -7018,6 +7018,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			amgr.StartAttemptCategoryBackfill()
 			// autonomous.archive — the finished-Automaton archive reads its
 			// switch and retention at every use; the background pass only reads
 			// and rewrites Automaton record files and never touches a session.
