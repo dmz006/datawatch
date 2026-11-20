@@ -25,6 +25,8 @@ type planMigrateWire struct {
 		WouldLink        []planMigrateItem `json:"would_link"`
 		SkippedExisting  []planMigrateItem `json:"skipped_existing"`
 		Conflicts        []planMigrateItem `json:"conflicts"`
+		HistoryNoAuto    []planMigrateItem `json:"history_without_automaton"`
+		NeedsReview      []planMigrateItem `json:"needs_review"`
 		TitlesDerived    int               `json:"titles_derived"`
 		TitlesFromLinked int               `json:"titles_from_linked"`
 		TitlesFellBack   int               `json:"titles_fell_back"`
@@ -36,6 +38,9 @@ type planMigrateItem struct {
 	LinkKind string `json:"link_kind"`
 	LinkID   string `json:"link_id"`
 	Reason   string `json:"reason"`
+	// HeldBy and WouldChange explain a conflict.
+	HeldBy      string `json:"held_by"`
+	WouldChange string `json:"would_change"`
 }
 
 // handlePlanMigrateVerb answers "autonomous plan-migrate [apply]".
@@ -72,15 +77,37 @@ func planMigrateText(body string) string {
 	if rs.Applied {
 		head, create, link = "Migration", "created", "linked"
 	}
-	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already there %d, conflicts %d, titles derived %d, from linked Automaton %d, fell back %d", head,
-		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting), len(rs.Conflicts),
+	lines := []string{fmt.Sprintf("%s: %s %d, %s %d, already present %d, history without an Automaton %d, needs review %d, conflicts %d (titles derived %d, from linked Automaton %d, fell back %d)", head,
+		create, len(rs.WouldCreate), link, len(rs.WouldLink), len(rs.SkippedExisting),
+		len(rs.HistoryNoAuto), len(rs.NeedsReview), len(rs.Conflicts),
 		rs.TitlesDerived, rs.TitlesFromLinked, rs.TitlesFellBack)}
 	for i, c := range rs.Conflicts {
 		if i >= planRecordsMaxLines {
 			lines = append(lines, fmt.Sprintf("… and %d more conflicts", len(rs.Conflicts)-i))
 			break
 		}
-		lines = append(lines, "conflict: "+strings.Join(strings.Fields(c.Title), " ")+" — "+c.Reason)
+		lines = append(lines, "conflict: "+strings.Join(strings.Fields(c.Title), " ")+" — "+c.Reason+
+			"; held by: "+c.HeldBy+"; would have changed: "+c.WouldChange)
+	}
+	if len(rs.NeedsReview) > 0 {
+		lines = append(lines, fmt.Sprintf("needs review (%d, no name could be derived, not created):", len(rs.NeedsReview)))
+		for i, n := range rs.NeedsReview {
+			if i >= planRecordsMaxLines {
+				lines = append(lines, fmt.Sprintf("… and %d more", len(rs.NeedsReview)-i))
+				break
+			}
+			lines = append(lines, "needs review: "+strings.Join(strings.Fields(n.Reason), " "))
+		}
+	}
+	if len(rs.HistoryNoAuto) > 0 {
+		lines = append(lines, fmt.Sprintf("History without an Automaton (%d, not made into plans):", len(rs.HistoryNoAuto)))
+		for i, h := range rs.HistoryNoAuto {
+			if i >= planRecordsMaxLines {
+				lines = append(lines, fmt.Sprintf("… and %d more", len(rs.HistoryNoAuto)-i))
+				break
+			}
+			lines = append(lines, "  "+strings.Join(strings.Fields(h.Title), " "))
+		}
 	}
 	if !rs.Applied {
 		lines = append(lines, "To write these plans send: autonomous plan-migrate apply")

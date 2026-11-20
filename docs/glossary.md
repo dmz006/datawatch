@@ -54,8 +54,18 @@ through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-t
 A check on every capacity tick that frees a pi-prompt slot held by a judge or
 verifier with no live session and no node lease, or whose Automaton is finished.
 It only releases the slot; it never ends a session, and a holder with a live
-session is never freed. Each freed slot raises a `Capacity slot freed` alert.
-See [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+session is never freed. Each freed slot raises a `Capacity slot freed` alert. A lease younger than the slot reconcile grace
+counts as having a node lease, so a just-admitted holder is left alone. See
+[Slot reconcile grace](#slot-reconcile-grace) and
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+
+## Slot reconcile grace
+
+The setting `autonomous.capacity_slot_reconcile_grace_seconds` (default 60
+seconds, minimum 10, `0` reads the default). It is how long a freshly admitted
+capacity lease counts as having a node lease in the orphan slot reconcile. It
+was a fixed value before this setting existed. See
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
 
 ## Allowed fall-through target
 
@@ -71,9 +81,14 @@ The Python that runs aider inside the agent-aider container image: a uv-managed 
 
 A file a task declared (planned, generated or under its write directories)
 that the repository's ignore rules ignore and git does not track, such as a
-report under `.datawatch/reports/`. The task commit stages it with
-`git add -f` instead of failing, so it is committed with the task; the
-uncommitted-work check never lists an ignored, untracked file as leftover
+report under `.datawatch/reports/`. The task commit checks each listed path
+with `git check-ignore` and skips an ignored, untracked one instead of failing;
+it is never force-staged. The note `skipped because it is git-ignored: <list>`
+is information only: it is carried in the hold reason and audit record when the
+task is held or warned, and is not stored when the task completes cleanly. No
+commit is made when every listed path is ignored. A generated script meant to
+travel with the work must be listed outside the ignored `.datawatch` folder.
+The uncommitted-work check never lists an ignored, untracked file as leftover
 work. A commit that still fails reports git's exit status and output in the
 hold reason (up to 1000 characters). A tracked file is always staged normally. See
 [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md#what-happens-to-each-task).

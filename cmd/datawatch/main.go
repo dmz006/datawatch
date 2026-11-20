@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.49"
+var Version = "9.182.59"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -7749,6 +7749,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
+			seedLiveCheckJudgeSlot(ctx, capLedger)
 			// Pin-time model check: refuse (or warn on) a worker or verifier
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)

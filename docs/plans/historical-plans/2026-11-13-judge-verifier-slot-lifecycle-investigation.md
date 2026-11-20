@@ -160,3 +160,19 @@ The same pass is the right place to log a `node-verify:<node>` lease whose worke
 - Checked by reading: all functions named above. The missed release in 2.1 and the reaper behaviour in section 3 are direct readings, not inference.
 - Not checked: any live daemon state, any capacity snapshot from a running node, and whether a given deployment has pi-family verifier backends without a pinned model (the condition 2.1 needs). Whether the reaper keeps a specific stuck slot in a running daemon depends on whether it matches 2.1; that needs the ledger lease list and the `verifiers` registry from that node.
 - Not changed: no source, test or setting. The fixes above are for a follow-up Automaton.
+
+## Parity surface
+
+The orphan-slot reconcile reads its grace period from `capacity_slot_reconcile_grace_seconds` (default 60, minimum 10, `0` = default) instead of a hard-coded value. Each freed slot raises one `Capacity slot freed` alert. Every surface carries the setting:
+
+| Surface | Status | Detail |
+|---|---|---|
+| YAML | touched | `autonomous.capacity_slot_reconcile_grace_seconds` |
+| REST | touched | `GET`/`PUT /api/config` read and write the key; values 1 to 9 and negatives are refused |
+| MCP | touched | `autonomous_config_set` accepts the key |
+| CLI | touched | `datawatch config set autonomous.capacity_slot_reconcile_grace_seconds <n>` |
+| comm/chat | touched | the `configure` verb, key `autonomous.capacity_slot_reconcile_grace_seconds` |
+| PWA | touched | Settings card field *Slot reconcile grace* |
+| Config reference | touched | `docs/config-reference.yaml` documents the key |
+
+Mobile parity is tracked in datawatch-app.

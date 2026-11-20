@@ -73,8 +73,8 @@ func DetectUncommittedWorkSkipping(ctx context.Context, dir string, run driftGit
 	}
 
 	// A file the repository's own ignore rules ignore and that is not in the
-	// index is not listed as uncommitted work (a task commit stages such a
-	// path only when it is explicitly listed, with git add -f).
+	// index is not listed as uncommitted work (a task commit skips such a
+	// listed path: it is never added, not even with git add -f).
 	// An index check that fails keeps the entry, following the conservative
 	// pattern of classifyTaskCommitPaths.
 	ignoreSet := ignoredUntrackedPaths(ctx, dir, paths)
@@ -443,32 +443,30 @@ type TaskCommitFn func(ctx context.Context, dir string, files []string, message 
 // returns the current HEAD with a nil error. A listed path that was deleted
 // is recorded as a deletion, whether or not the deletion was already staged,
 // and a path that exists nowhere (worktree, index, HEAD) is skipped; a path
-// git ignores that is not in the index is staged with `git add -f --`,
-// because a plain git add would refuse it.
+// git ignores that is not in the index is skipped as well — it is never
+// added, never part of the commit pathspec, and never force-added, so the
+// caller learns about it through the skipped list of
+// classifyTaskCommitPaths (see skippedIgnoredPaths). If a git add or git
+// commit fails, the paths this call staged are unstaged again (git reset)
+// before the error is returned.
 func DefaultTaskCommit(ctx context.Context, dir string, files []string, message string) (string, error) {
 	if dir == "" {
 		return "", errors.New("task commit: empty directory")
 	}
-	add, pathspec, force, _ := classifyTaskCommitPaths(ctx, dir, files)
+	add, pathspec, _ := classifyTaskCommitPaths(ctx, dir, files)
+	if len(pathspec) == 0 {
+		// Every listed path was skipped (git-ignored and untracked, or
+		// present nowhere): nothing was staged and there is nothing to
+		// commit, so no commit is made and nothing is left staged.
+		return taskHeadSHA(ctx, dir)
+	}
 	for start := 0; start < len(add); start += snapshotAddChunk {
 		end := min(start+snapshotAddChunk, len(add))
 		args := append([]string{"add", "--"}, add[start:end]...)
 		if out, err := runGitInCtx(ctx, dir, args...); err != nil {
+			unstageTaskCommitPaths(ctx, dir, add[0:start]...)
 			return "", fmt.Errorf("task commit: git add in %s: %w: %s", dir, err, strings.TrimSpace(out))
 		}
-	}
-	// The force list holds paths a plain `git add` would refuse: git-ignored
-	// and not in the index. git add -f stages exactly them, nothing else; the
-	// commit pathspec below already carries every path.
-	for start := 0; start < len(force); start += snapshotAddChunk {
-		end := min(start+snapshotAddChunk, len(force))
-		args := append([]string{"add", "-f", "--"}, force[start:end]...)
-		if out, err := runGitInCtx(ctx, dir, args...); err != nil {
-			return "", fmt.Errorf("task commit: git add -f in %s: %w: %s", dir, err, strings.TrimSpace(out))
-		}
-	}
-	if len(pathspec) == 0 {
-		return taskHeadSHA(ctx, dir)
 	}
 	// Limit the staged check to the listed files, so changes someone
 	// else staged earlier cannot turn into this commit.
@@ -480,14 +478,29 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 	// else sits in the index.
 	args := append([]string{"commit", "-m", message, "--"}, pathspec...)
 	if out, err := runGitInCtx(ctx, dir, args...); err != nil {
+		unstageTaskCommitPaths(ctx, dir, add...)
 		return "", fmt.Errorf("task commit: git commit in %s: %w: %s", dir, err, strings.TrimSpace(out))
 	}
 	return taskHeadSHA(ctx, dir)
 }
 
+// unstageTaskCommitPaths unstages, with git reset, the paths this commit
+// call staged (the add list of classifyTaskCommitPaths), so that a failed
+// add or commit does not leave them staged. It touches only the given paths
+// — never -A and never "." — and ignores its own errors: the caller is
+// already returning the add or commit failure.
+func unstageTaskCommitPaths(ctx context.Context, dir string, paths ...string) {
+	for start := 0; start < len(paths); start += snapshotAddChunk {
+		end := min(start+snapshotAddChunk, len(paths))
+		args := append([]string{"reset", "-q", "--"}, paths[start:end]...)
+		_, _ = runGitInCtx(ctx, dir, args...)
+	}
+}
+
 // classifyTaskCommitPaths sorts the listed paths into what a plain git add
-// receives (add), what `git add -f --` receives (force), what the commit
-// pathspec receives (pathspec) and what is dropped (skipped). Per path:
+// receives (add), what the commit pathspec receives (pathspec) and what is
+// skipped (skipped): the paths git ignores that are not in the index, and
+// the paths that exist nowhere (worktree, index, HEAD). Per path:
 //  1. A path that lexically escapes the repository (absolute, or starting
 //     with ".." once cleaned) or contains a NUL byte is never skipped: it goes to add and pathspec so git fails
 //     with its own error.
@@ -495,8 +508,8 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 //     through a symlink that escapes dir (the stat is containment-checked) —
 //     goes to add and pathspec, unless it is git-ignored (git check-ignore)
 //     and not in the index (`git ls-files --cached` returns nothing for it):
-//     then it goes to force and pathspec — DefaultTaskCommit stages it with
-//     `git add -f --` instead of a plain add, which would refuse it. A path
+//     then it is skipped — DefaultTaskCommit neither adds it nor commits it,
+//     which is how the caller finds out (see skippedIgnoredPaths). A path
 //     in the index is never skipped, whatever its ignore
 //     status.
 //  3. A path missing from the worktree but present in the index is a tracked
@@ -509,7 +522,7 @@ func DefaultTaskCommit(ctx context.Context, dir string, files []string, message 
 // A git error while probing (anything other than the probe's normal "not
 // found" result) never skips a path; it goes to add and pathspec so the real
 // git error surfaces.
-func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, force, skipped []string) {
+func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, skipped []string) {
 	// Which listed paths the repository's ignore rules ignore, asked of git
 	// check-ignore in chunks of 500. When git cannot answer (error, context
 	// cancel) the set is empty, so no path is dropped below and the real
@@ -540,15 +553,14 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		}
 		if inside, ierr := repoFileInside(dir, rel); ierr == nil {
 			if _, lerr := os.Lstat(inside); lerr == nil {
-				// Git-ignored and untracked (not in the index) cannot be staged
-				// with a plain git add, which refuses them; they go to force,
-				// which DefaultTaskCommit stages with `git add -f --`. A path in
-				// the index is tracked and is kept even if it matches an ignore
+				// Git-ignored and untracked (not in the index) are skipped:
+				// DefaultTaskCommit neither adds them nor puts them in the
+				// commit pathspec, and never force-adds them. A path in the
+				// index is tracked and is kept even if it matches an ignore
 				// rule, and so is a path whose index check failed.
 				if ignoreSet[p] {
 					if cached, cerr := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p); cerr == nil && strings.TrimSpace(cached) == "" {
-						force = append(force, p)
-						pathspec = append(pathspec, p)
+						skipped = append(skipped, p)
 						continue
 					}
 				}
@@ -578,7 +590,38 @@ func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (a
 		}
 		skipped = append(skipped, p)
 	}
-	return add, pathspec, force, skipped
+	return add, pathspec, skipped
+}
+
+// gitPathIgnored reports whether the repository's own ignore rules ignore
+// the repo-relative path p, asked of git per path (git check-ignore -q): git
+// exits 0 when the path is ignored and 1 when it is not. Any other failure
+// (git error, context cancel) reads as "not ignored", so a path whose ignore
+// status cannot be confirmed is still treated as a normal path, following
+// the conservative pattern of ignoredUntrackedPaths.
+func gitPathIgnored(ctx context.Context, dir, p string) bool {
+	_, err := runGitInCtx(ctx, dir, "check-ignore", "-q", "--", p)
+	if err == nil {
+		return true
+	}
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 0
+}
+
+// skippedIgnoredPaths reports which of the given paths are git-ignored, so
+// the manager can split the skipped list of classifyTaskCommitPaths into the
+// paths skipped because the repository ignores them (never added, never
+// committed) and the paths skipped because they exist nowhere. It is the
+// caller-visible half of the skip: the TaskCommitFn signature itself returns
+// only the new HEAD and an error.
+func skippedIgnoredPaths(ctx context.Context, dir string, paths []string) []string {
+	var ignored []string
+	for _, p := range paths {
+		if gitPathIgnored(ctx, dir, p) {
+			ignored = append(ignored, p)
+		}
+	}
+	return ignored
 }
 
 // ignoredUntrackedPaths reports which of the given repo-relative paths the

@@ -3613,6 +3613,11 @@ type AutonomousConfig struct {
 	// CapacityAdoptionWaitSeconds bounds the restart wait above. 0 or unset =
 	// 30. Read when the daemon starts.
 	CapacityAdoptionWaitSeconds int `yaml:"capacity_adoption_wait_seconds,omitempty" json:"capacity_adoption_wait_seconds,omitempty"`
+	// CapacitySlotReconcileGraceSeconds is how long a fresh lease counts as
+	// having a node lease in the orphan-slot reconcile, so a just-admitted
+	// holder is never freed. 0 or unset = 60; otherwise at least 10. Read
+	// live on every reconcile pass.
+	CapacitySlotReconcileGraceSeconds int `yaml:"capacity_slot_reconcile_grace_seconds,omitempty" json:"capacity_slot_reconcile_grace_seconds,omitempty"`
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
@@ -8874,6 +8879,9 @@ func validateLoaded(cfg *Config) error {
 	}
 	if cfg.Autonomous.CapacityAdoptionWaitSeconds < 0 {
 		return fmt.Errorf("autonomous.capacity_adoption_wait_seconds: %d must be >= 0", cfg.Autonomous.CapacityAdoptionWaitSeconds)
+	}
+	if g := cfg.Autonomous.CapacitySlotReconcileGraceSeconds; g != 0 && g < MinCapacitySlotReconcileGraceSeconds {
+		return fmt.Errorf("autonomous.capacity_slot_reconcile_grace_seconds: %d must be 0 (default %d) or at least %d", g, DefaultCapacitySlotReconcileGraceSeconds, MinCapacitySlotReconcileGraceSeconds)
 	}
 	if cfg.Autonomous.VerifierMinFreeMemMB != nil && *cfg.Autonomous.VerifierMinFreeMemMB < 0 {
 		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0 (0 turns the check off)", *cfg.Autonomous.VerifierMinFreeMemMB)

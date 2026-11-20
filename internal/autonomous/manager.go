@@ -727,6 +727,9 @@ type Config struct {
 	CapacityCountPoolByNode     *bool `json:"capacity_count_pool_by_node,omitempty"`
 	CapacityAdoptBeforeAdmit    *bool `json:"capacity_adopt_before_admit,omitempty"`
 	CapacityAdoptionWaitSeconds int   `json:"capacity_adoption_wait_seconds,omitempty"`
+	// CapacitySlotReconcileGraceSeconds mirrors config.AutonomousConfig (0 = 60,
+	// otherwise at least 10).
+	CapacitySlotReconcileGraceSeconds int `json:"capacity_slot_reconcile_grace_seconds,omitempty"`
 	// CapacityRate* mirror config.AutonomousConfig: a per-llm: pool rolling
 	// ceiling on lease grants and recorded tokens (0 = none; window 0 = 3600).
 	CapacityRateRequests      int `json:"capacity_rate_requests,omitempty"`
@@ -1431,6 +1434,10 @@ type Manager struct {
 	// laneUtilUsage supplies plan usage to LaneUtilization (lane_utilization.go).
 	// Guarded by mu; nil means no usage is reported.
 	laneUtilUsage LaneUtilizationUsageSource
+	// mainCheckoutCheck decides whether an Automaton's ProjectDir is the
+	// daemon's own repository main working tree (main_checkout_guard.go).
+	// Guarded by mu; nil = the real stat-based check.
+	mainCheckoutCheck func(prd *PRD) bool
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
 	resourceLimits   *config.ResourceLimitsConfig
@@ -4149,6 +4156,9 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.refuseHeld(prd); err != nil {
+		return nil, err
+	}
+	if err := m.refuseMainCheckout(prd); err != nil {
 		return nil, err
 	}
 	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
