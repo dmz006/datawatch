@@ -4,10 +4,11 @@
 // looks for a markdown heading (a quoted literal of one to six #
 // followed by whitespace, as quoted or as a sed address) or the exact
 // gate output format "Final answer" / "Verification summary" without
-// the task spec naming that heading or format verbatim is flagged: the
-// assertion is anchored to the spec, never to an assumption about
-// output shape. A script that does not exist yet is skipped, exactly
-// like the other verification-script rules.
+// the task spec naming that heading or format — verbatim, or in
+// equivalent wording — is flagged: the assertion is anchored to the
+// spec, never to an assumption about output shape. A script that does
+// not exist yet is skipped, exactly like the other
+// verification-script rules.
 package autonomous
 
 import (
@@ -16,9 +17,110 @@ import (
 	"strings"
 )
 
-// specTextPhrases is the gate output format a spec must name verbatim
-// for a script that checks it: the exact phrases, no variants.
+// specTextPhrases is the gate output format a spec must state for a
+// script that checks it: the exact phrases, or equivalent wording that
+// states the same format.
 var specTextPhrases = []string{"Final answer", "Verification summary"}
+
+// phraseStopWords are words that carry no content of their own and are
+// dropped before a checked phrase and the spec are compared, so a
+// phrase that differs only in filler words from what the spec states
+// is anchored by it. The same set is used for the
+// verify_script_text_not_in_spec rule through phraseMeaningMatches.
+var phraseStopWords = map[string]bool{
+	"a": true, "an": true, "and": true, "for": true, "in": true, "is": true,
+	"of": true, "or": true, "the": true, "to": true, "with": true,
+}
+
+// phraseTrimChars: edge punctuation, quoting and markdown-marker
+// characters that are stripped from both ends of each word before
+// comparison — quotes, brackets, hashes, slashes and the rest, in both
+// ASCII and curly forms. A word made entirely of them (a bare ##) does
+// not count as content.
+const phraseTrimChars = "\t`'\"“”‘’;:,().!?[]{}<>|/\\-=+*^~#"
+
+// phraseContentWords returns s's content words: whitespace tokens,
+// lowercased, edge punctuation and markdown markers trimmed off, with
+// the stop words dropped. A string with no content words returns nil —
+// it can never anchor or fire a finding.
+func phraseContentWords(s string) []string {
+	out := []string{}
+	for _, w := range strings.Fields(strings.ToLower(s)) {
+		w = strings.Trim(w, phraseTrimChars)
+		if w == "" || phraseStopWords[w] {
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// stemCandidates returns the fold variants of one content word: the
+// word itself plus the bases left after stripping simple inflection
+// endings (-ing, -ed, -es, -s; each only when it actually ends in the
+// ending and the base stays at least two letters) and, recursively,
+// the silent-e base (write -> writ, gates -> gat). Two words are
+// considered the same stem when their candidate sets intersect, so
+// pass/passed, test/tests, gate/gates and write/writing all compare
+// equal while unrelated words never collapse.
+func stemCandidates(w string) map[string]bool {
+	out := map[string]bool{w: true}
+	add := func(s string) {
+		if len(s) >= 2 {
+			out[s] = true
+		}
+	}
+	for _, sfx := range []string{"ing", "ed", "es", "s"} {
+		if len(w) > len(sfx)+1 && strings.HasSuffix(w, sfx) {
+			add(w[:len(w)-len(sfx)])
+		}
+	}
+	for s := range out {
+		if len(s) > 3 && strings.HasSuffix(s, "e") {
+			add(s[:len(s)-1])
+		}
+	}
+	return out
+}
+
+// stemWordsEqual reports whether two content words compare equal after
+// the simple plural/verb inflection folds.
+func stemWordsEqual(a, b string) bool {
+	ca := stemCandidates(a)
+	for v := range stemCandidates(b) {
+		if ca[v] {
+			return true
+		}
+	}
+	return false
+}
+
+// phraseMeaningMatches reports whether the spec states the phrase in
+// meaning — word order and surrounding wording aside: every content
+// word of the phrase (after lowercasing, stripping punctuation and
+// markdown markers, dropping the stop words) occurs among the spec's
+// content words under the simple plural/verb inflection folds
+// (stemWordsEqual). A phrase with no content words never matches.
+func phraseMeaningMatches(spec, phrase string) bool {
+	words := phraseContentWords(phrase)
+	if len(words) == 0 {
+		return false
+	}
+	specWords := phraseContentWords(spec)
+	for _, w := range words {
+		matched := false
+		for _, sw := range specWords {
+			if stemWordsEqual(w, sw) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
 
 var (
 	// specTextCheckLineRe marks a line that performs a text check: a
@@ -109,11 +211,13 @@ func isSpecTextPhrase(s string) bool {
 	return false
 }
 
-// specAnchorsItem reports whether the spec names the checked item:
-// verbatim, or — for a heading item carrying # — with the leading #
-// stripped, so a spec that says "the Gates section" anchors a script
-// that greps "## Gates" (and a spec that names "## Gates" anchors a
-// script that greps "Gates").
+// specAnchorsItem reports whether the spec names the checked item —
+// verbatim, or in equivalent wording (see phraseMeaningMatches). A
+// heading item keeps the existing leading-# stripping: a spec that
+// says "the Gates section" anchors a script that greps "## Gates", a
+// spec that names the heading with # anchors a script that greps it
+// without, and a spec that merely states the gate's purpose in other
+// words ("run the gates in the report") anchors both.
 func specAnchorsItem(spec, item string) bool {
 	item = strings.TrimSpace(item)
 	if item == "" {
@@ -123,9 +227,12 @@ func specAnchorsItem(spec, item string) bool {
 		return true
 	}
 	if s := strings.TrimLeft(item, "#\t"); s != "" && s != item {
-		return strings.Contains(spec, s)
+		if strings.Contains(spec, s) {
+			return true
+		}
+		return phraseMeaningMatches(spec, s)
 	}
-	return false
+	return phraseMeaningMatches(spec, item)
 }
 
 // verifyScriptSpecUnanchored returns the first check item the declared

@@ -22,10 +22,12 @@ import (
 //
 //   - verifyScriptTextNotInSpec: the script asserts a markdown
 //     heading (a `# …` line, grepped or compared) or a multi-word
-//     output phrase that does not appear verbatim in the task spec —
-//     an expectation stated nowhere. The task spec is the contract;
-//     the fix is to state the exact heading or format in the spec,
-//     word for word. Text the script generates itself (echoed or
+//     output phrase that the task spec does not state — verbatim, or
+//     in equivalent wording (every content word of the phrase occurs
+//     in the spec after stopword removal and simple plural/verb
+//     inflection folding) — an expectation stated nowhere. The task
+//     spec is the contract; the fix is to state the heading or format
+//     in the spec. Text the script generates itself (echoed or
 //     written on a non-checking line before it is checked) is not an
 //     assertion against it and is not flagged.
 //
@@ -329,7 +331,8 @@ var (
 )
 
 // verifyScriptTextNotInSpec returns the script path, a detail naming
-// the first heading or phrase the spec does not state, and whether the
+// the first heading or phrase the spec does not state — verbatim or in
+// equivalent wording (see phraseMeaningMatches) — and whether the
 // rule fires.
 func verifyScriptTextNotInSpec(dir string, t Task) (path, detail string, ok bool) {
 	path, content, readable := verifyScriptContent(dir, t)
@@ -337,7 +340,7 @@ func verifyScriptTextNotInSpec(dir string, t Task) (path, detail string, ok bool
 		return "", "", false
 	}
 	for _, cl := range scriptTextClaims(content) {
-		if strings.Contains(t.Spec, cl) {
+		if strings.Contains(t.Spec, cl) || phraseMeaningMatches(t.Spec, cl) {
 			continue
 		}
 		return path, fmt.Sprintf("asserts %q, which the task spec does not state", cl), true

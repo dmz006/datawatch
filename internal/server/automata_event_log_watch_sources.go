@@ -39,6 +39,7 @@ var automataWatchAutomatonKinds = map[autonomous.SupervisorWatchKind]bool{
 	autonomous.SupervisorWatchWorktreeNotRegistered:     true,
 	autonomous.SupervisorWatchWorktreeSilent:            true,
 	autonomous.SupervisorWatchVerifyScriptNotExecutable: true,
+	autonomous.SupervisorWatchMainCheckoutAutomaton:     true,
 }
 
 // automataPRDWord matches the internal name, which operator text must not use.
