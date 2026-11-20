@@ -43130,7 +43130,10 @@ window.costReportRowHtml = function(row, opts) {
   }
   if (withLocal) {
     cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
-      String(Number(r.local_tokens) || 0)));
+      (Number(r.tokens_not_reported_sessions) > 0 && !(Number(r.local_tokens) > 0))
+        ? escHtml(t('cost_report_not_reported', [Number(r.tokens_not_reported_sessions)]))
+        : String(Number(r.local_tokens) || 0) + (Number(r.tokens_not_reported_sessions) > 0
+          ? ' <span class="cost-report-not-reported" style="color:var(--text2);">' + escHtml(t('cost_report_not_reported', [Number(r.tokens_not_reported_sessions)])) + '</span>' : '')));
   }
   if (withBilling) {
     const label = (typeof r.billing_label === 'string' && r.billing_label) ? r.billing_label : '';
@@ -47024,6 +47027,25 @@ function _ccNum(n) {
   return String(Math.round(n));
 }
 function _ccMoney(n) { return (Number(n) || 0).toFixed(2); }
+// _ccDuration formats working seconds as "1h 5m", "3m 20s" or "40s".
+function _ccDuration(sec) {
+  sec = Math.round(Number(sec) || 0);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h) return h + 'h ' + m + 'm';
+  return m ? m + 'm ' + s + 's' : s + 's';
+}
+// _ccNotReported is the marker for local sessions that did not report a
+// figure. It is a statement, never a zero.
+function _ccNotReported(n, key) {
+  n = Number(n) || 0;
+  return n > 0 ? `<div class="cost-charts-not-reported" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t(key || 'cost_charts_tokens_not_reported', [n]))}</div>` : '';
+}
+function _ccActiveNote(seconds) {
+  return Number(seconds) > 0 ? `<div class="cost-charts-active" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_active_time', [_ccDuration(seconds)]))}</div>` : '';
+}
+function _ccActiveTotal(body) {
+  return (body && Array.isArray(body.groups) ? body.groups : []).reduce((a, g) => a + (Number(g.active_seconds) || 0), 0);
+}
 
 // _automataTitle finds the title of the Automaton an id names in the
 // Automata list the page already holds ('' when unknown). No fetch is made.
@@ -47044,12 +47066,14 @@ function costChartsKeyLabel(entry) {
     const key = String(entry.key != null ? entry.key : '');
     const label = typeof entry.label === 'string' ? entry.label.trim() : '';
     if (key === COST_CHARTS_OTHER_KEY) return t('cost_charts_other');
+    if (key === 'Supervisor and other') return t('cost_charts_supervisor_and_other');
     if (label && label !== key) return label;
     const title = _automataTitle(key);
     if (title) return title;
     return key;
   }
-  return String(entry == null ? '' : entry);
+  const plain = String(entry == null ? '' : entry);
+  return plain === 'Supervisor and other' ? t('cost_charts_supervisor_and_other') : plain;
 }
 window.costChartsKeyLabel = costChartsKeyLabel;
 
@@ -47255,6 +47279,14 @@ function _ccCostBody(series, metric, opts) {
     html += _ccLineChart(buckets, costChartsLines(series, p => p.tokens, null, opts), costChartsUnitLabel(null, ''), false, 'cost', hidden);
     if (metric === 'money') html += `<div class="cost-charts-money-off" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_money_off'))}</div>`;
   }
+  // Local-model tokens are their own unit on their own axis: never stacked
+  // with Claude tokens and never priced.
+  const localTotal = (Array.isArray(series.groups) ? series.groups : []).reduce((a, g) => a + (Number(g.local_tokens) || 0), 0);
+  if (localTotal > 0 || Number(series.local_tokens) > 0) {
+    html += _ccLineChart(buckets, costChartsLines(series, p => p.local_tokens, g => Number(g.local_tokens) > 0), t('cost_charts_unit_local_tokens'), false);
+  }
+  html += _ccNotReported(series.tokens_not_reported_sessions, 'cost_charts_tokens_not_reported');
+  html += _ccActiveNote(_ccActiveTotal(series));
   if (series.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(series.unknown_spend_note)}</div>`;
   return html;
 }
@@ -47264,6 +47296,7 @@ function _ccToolsBody(body, opts) {
   const buckets = Array.isArray(body.buckets) ? body.buckets : [];
   let html = _ccLineChart(buckets, costChartsLines(body, p => p.tool_calls, null, opts), t('cost_charts_unit_tool_calls'), false, 'tools', opts.hidden);
   html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.tool_names_note || t('cost_charts_tool_names_note'))}</div>`;
+  html += _ccNotReported(body.total_tool_calls_not_reported_sessions, 'cost_charts_tool_calls_not_reported');
   if (body.unknown_spend_note) html += `<div class="cost-charts-note" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(body.unknown_spend_note)}</div>`;
   return html;
 }
@@ -47324,15 +47357,18 @@ function _ccFailuresBody(f, opts) {
 // is not recorded for the grouping leaves its cells blank.
 function costChartsReportRows(data) {
   const rows = new Map();
-  const row = k => { if (!rows.has(k)) rows.set(k, { key: k, label: '', tokens: null, calls: null, attempts: null, retries: null, money: [] }); return rows.get(k); };
+  const row = k => { if (!rows.has(k)) rows.set(k, { key: k, label: '', tokens: null, local: null, notReported: 0, active: null, callsNotReported: 0, calls: null, attempts: null, retries: null, money: [] }); return rows.get(k); };
   const body = v => (data && data[v] && data[v].body) || null;
   const cost = body('cost'), tools = body('tools'), fails = body('failures');
   if (cost) (cost.groups || []).forEach(g => {
     const r = row(String(g.key));
     r.tokens = Number(g.tokens) || 0;
+    r.local = Number(g.local_tokens) || 0;
+    r.notReported = Number(g.tokens_not_reported_sessions) || 0;
+    r.active = Number(g.active_seconds) || 0;
     r.money = (g.unit_totals || []).filter(u => u && ((u.unit === 'dollars' && u.dollars != null) || (u.unit === 'points' && u.points != null)));
   });
-  if (tools) (tools.groups || []).forEach(g => { row(String(g.key)).calls = Number(g.tool_calls) || 0; });
+  if (tools) (tools.groups || []).forEach(g => { const r = row(String(g.key)); r.calls = Number(g.tool_calls) || 0; r.callsNotReported = Number(g.tool_calls_not_reported_sessions) || 0; });
   if (fails) (fails.groups || []).forEach(g => {
     const r = row(String(g.key));
     r.attempts = Number(g.attempts) || 0; r.retries = Number(g.retries) || 0; r.label = g.label || '';
@@ -47372,19 +47408,28 @@ function _ccReportBody(data, opts) {
   const topN = Number(opts.topN) || 0;
   const kept = topN > 0 ? visible.slice(0, topN) : visible.slice();
   const rest = topN > 0 ? visible.slice(topN) : [];
-  const rows = kept.map(r => [escHtml(costChartsKeyLabel(r)), num(r.tokens), _ccMoneyCell(r.money), num(r.calls), num(r.attempts), num(r.retries)]);
+  const mark = n => `<div class="cost-charts-not-reported" style="font-size:10px;">${escHtml(t('cost_charts_not_reported_marker', [n]))}</div>`;
+  const local = r => r.local == null ? dash : ((r.local > 0 ? escHtml(_ccNum(r.local)) : (r.notReported > 0 ? '' : '0')) + (r.notReported > 0 ? mark(r.notReported) : ''));
+  const calls = r => r.calls == null ? dash : ((r.calls > 0 || !r.callsNotReported ? escHtml(_ccNum(r.calls)) : '') + (r.callsNotReported > 0 ? mark(r.callsNotReported) : ''));
+  const rows = kept.map(r => [escHtml(costChartsKeyLabel(r)), num(r.tokens), local(r), _ccMoneyCell(r.money), calls(r), num(r.attempts), num(r.retries), r.active == null ? dash : escHtml(_ccDuration(r.active))]);
   if (rest.length) {
     const sumCell = k => {
       const vs = rest.map(r => r[k]).filter(v => v != null);
       return vs.length ? escHtml(_ccNum(vs.reduce((a, v) => a + v, 0))) : dash;
     };
-    rows.push([escHtml(t('cost_charts_other')), sumCell('tokens'), _ccMoneyCell(_ccSumMoney(rest)), sumCell('calls'), sumCell('attempts'), sumCell('retries')]);
+    const sumOf = k => rest.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    const restLocal = rest.some(r => r.local != null) ? (escHtml(_ccNum(sumOf('local'))) + (sumOf('notReported') > 0 ? mark(sumOf('notReported')) : '')) : dash;
+    const restCalls = rest.some(r => r.calls != null) ? (escHtml(_ccNum(sumOf('calls'))) + (sumOf('callsNotReported') > 0 ? mark(sumOf('callsNotReported')) : '')) : dash;
+    const restActive = rest.some(r => r.active != null) ? escHtml(_ccDuration(sumOf('active'))) : dash;
+    rows.push([escHtml(t('cost_charts_other')), sumCell('tokens'), restLocal, _ccMoneyCell(_ccSumMoney(rest)), restCalls, sumCell('attempts'), sumCell('retries'), restActive]);
   }
   const cost = data.cost && data.cost.body, tools = data.tools && data.tools.body, fails = data.failures && data.failures.body;
   const totalMoney = cost ? _ccMoneyCell(costChartsMoneyUnits(cost)) : dash;
   const sumTokens = cost ? (cost.groups || []).reduce((a, g) => a + (Number(g.tokens) || 0), 0) : null;
-  const total = [escHtml(t('cost_charts_total')), num(sumTokens), totalMoney, num(tools ? tools.total_tool_calls : null), num(fails ? fails.total_attempts : null), num(fails ? fails.total_retries : null)];
-  let html = _ccTable([t('cost_charts_col_group'), t('cost_charts_col_tokens'), t('cost_charts_col_money'), t('cost_charts_col_tool_calls'), t('cost_charts_col_attempts'), t('cost_charts_col_retries')], rows, total);
+  const sumLocal = cost ? (cost.groups || []).reduce((a, g) => a + (Number(g.local_tokens) || 0), 0) : null;
+  const sumNR = cost ? (Number(cost.tokens_not_reported_sessions) || 0) : 0;
+  const total = [escHtml(t('cost_charts_total')), num(sumTokens), sumLocal == null ? dash : (escHtml(_ccNum(sumLocal)) + (sumNR > 0 ? mark(sumNR) : '')), totalMoney, num(tools ? tools.total_tool_calls : null), num(fails ? fails.total_attempts : null), num(fails ? fails.total_retries : null), cost ? escHtml(_ccDuration(_ccActiveTotal(cost))) : dash];
+  let html = _ccTable([t('cost_charts_col_group'), t('cost_charts_col_tokens'), t('cost_charts_col_local_tokens'), t('cost_charts_col_money'), t('cost_charts_col_tool_calls'), t('cost_charts_col_attempts'), t('cost_charts_col_retries'), t('cost_charts_col_active')], rows, total);
   if (visible.length > kept.length) html += `<div class="cost-charts-bounded" style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('cost_charts_more_rows', [kept.length, visible.length]))}</div>`;
   return html;
 }
@@ -47410,8 +47455,8 @@ function costChartsModel(data, opts) {
     const n = (d.body.groups || []).length;
     return { state: 'shown', reason: ['cost_charts_reason_showing', [n, win]], next: ['cost_charts_next_showing'] };
   };
-  cards.cost = viewCard('cost', b => !(b.groups || []).some(g => (Number(g.tokens) || 0) > 0), 'cost_charts_next_widen');
-  cards.tools = viewCard('tools', b => !(Number(b.total_tool_calls) > 0), 'cost_charts_next_widen');
+  cards.cost = viewCard('cost', b => !(b.groups || []).some(g => (Number(g.tokens) || 0) > 0 || (Number(g.local_tokens) || 0) > 0 || (Number(g.tokens_not_reported_sessions) || 0) > 0), 'cost_charts_next_widen');
+  cards.tools = viewCard('tools', b => !(Number(b.total_tool_calls) > 0 || Number(b.total_tool_calls_not_reported_sessions) > 0), 'cost_charts_next_widen');
   cards.failures = viewCard('failures', b => !(Number(b.total_attempts) > 0 || (b.groups || []).length), 'cost_charts_next_widen');
   if (cards.cost.state === 'shown' && opts.metric === 'money' && !_ccHasMoney(data.cost.body)) {
     cards.cost.reason = ['cost_charts_money_off'];

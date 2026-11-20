@@ -21,6 +21,7 @@ const (
 	RoleRulesReview  = "rules_review"
 	RoleVerification = "verification"
 	RoleGuardrail    = "guardrail"
+	RoleSupervisor   = "supervisor"
 	RoleOther        = "other"
 )
 
@@ -29,6 +30,7 @@ type Entry struct {
 	SessionID     string    `json:"session_id"`
 	AutomatonID   string    `json:"automaton_id,omitempty"`
 	TaskID        string    `json:"task_id,omitempty"`
+	Project       string    `json:"project,omitempty"`
 	Role          string    `json:"role"`
 	Backend       string    `json:"backend,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
@@ -39,6 +41,13 @@ type Entry struct {
 	CacheCreation int64     `json:"cache_creation"`
 	ToolCalls     int64     `json:"tool_calls"`
 	ActiveSeconds float64   `json:"active_seconds"`
+
+	// Local-model usage (pi, ollama). Kept apart from the Claude token
+	// fields above so local tokens are never mixed with or priced as Claude's.
+	Local          bool  `json:"local,omitempty"`
+	LocalTokensIn  int64 `json:"local_tokens_in,omitempty"`
+	LocalTokensOut int64 `json:"local_tokens_out,omitempty"`
+	TokensReported bool  `json:"tokens_reported,omitempty"`
 }
 
 type fileFormat struct {
@@ -119,7 +128,7 @@ func (l *Ledger) Upsert(e Entry) error {
 
 func validRole(r string) bool {
 	switch r {
-	case RoleWorker, RoleDecompose, RoleRulesReview, RoleVerification, RoleGuardrail, RoleOther:
+	case RoleWorker, RoleDecompose, RoleRulesReview, RoleVerification, RoleGuardrail, RoleSupervisor, RoleOther:
 		return true
 	}
 	return false

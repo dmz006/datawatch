@@ -206,6 +206,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		started = ended
 	}
 
+	endReason := deriveAttemptEndReason(f, adopted)
 	rec := TaskAttempt{
 		Backend:               backend,
 		Model:                 model,
@@ -214,7 +215,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		EndedAt:               ended,
 		DurationSeconds:       int(ended.Sub(started) / time.Second),
 		Outcome:               f.Outcome,
-		FailureCategory:       f.Category,
+		FailureCategory:       attemptCategoryFor(endReason, f.Outcome, f.Category, f.Summary, f.Verification.Summary, f.Verification.Issues),
 		FailureSummary:        f.Summary,
 		NoRetryReason:         f.NoRetryReason,
 		VerifierSummary:       f.Verification.Summary,
@@ -231,7 +232,7 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		StartupTokens:         EstimateTokens(run.LaunchContext),
 		SessionID:             sessionID,
 		TmuxSession:           tmux,
-		EndReason:             deriveAttemptEndReason(f, adopted),
+		EndReason:             endReason,
 		EndDetail:             f.EndDetail,
 	}
 	if run.LaunchContext != "" {

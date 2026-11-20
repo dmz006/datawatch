@@ -210,6 +210,9 @@ records no finer model name. Spend with no owner lands under `unattributed`.
 | `points[].units[]` | The bucket's money per billing unit, ordered `dollars`, `points`, `none`: `dollars` for metered API spend, `points` and `percent` for a bundled plan, tokens and time only for free local inference. A figure is omitted where no rate or `monthly_price` is set, and all of them where `cost_report.show_usd_estimates` is off |
 | `groups[].unit_totals[]` / `totals_by_unit[]` | The same per-unit totals for a line and for the whole series |
 | `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the spend that is unknown rather than zero |
+| `groups[].local_tokens`, `points[].local_tokens`, `local_tokens` | Local-model tokens for a line, a point and the whole series. Their own unit: never in `tokens`, never priced. Omitted when zero |
+| `tokens_not_reported_sessions` | On a line, a point and the series: local sessions whose backend gave no token counts. Their tokens are not reported, so unknown rather than zero, and `local_tokens` leaves them out |
+| `groups[].active_seconds`, `points[].active_seconds`, `active_seconds` | Summed working time, in seconds, with idle time taken out. Omitted when zero |
 
 Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
 bucket that need more than 1000 points per line; `503` when the manager is not
@@ -236,6 +239,7 @@ tool, so there is **no per-tool-name breakdown**. Every payload says so in
 | `groups[].key` | The Automaton, project or model; spend with no owner lands under `unattributed`. A group with no sessions in the window is omitted, so an empty window gives `groups: []` |
 | `groups[].sessions`, `groups[].tool_calls` | The line's sessions and tool calls over the window |
 | `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls` |
+| `groups[].tool_calls_not_reported_sessions`, `total_tool_calls_not_reported_sessions` | Sessions whose backend gave no tool-call count: not reported, so unknown rather than zero. Omitted when zero |
 | `total_tool_calls`, `total_sessions` | The same totals across all groups |
 | `tool_names_note` | States that only counts are recorded, not tool names |
 | `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the activity that is unknown rather than zero |
@@ -268,17 +272,49 @@ it has no tag. An Automaton belongs to an Automation through its own
 project, Automation or Automaton under the chosen grouping land under
 `unattributed`.
 
+**How a category is set.** A category is derived when the attempt is recorded,
+from the end reason and the failure text (the summary and the verifier's
+issues). The first rule that matches wins:
+
+| Order | Attempt as recorded | Category |
+|---|---|---|
+| 1 | Already has a category (the verifier or executor named it, for example `content`, `scope`, `security`, `judging` or `invalid-response`) | Kept as it is |
+| 2 | No end reason, no summary and no verifier issue | Blank, read as `uncategorized` |
+| 3 | End reason `cancelled_by_operator` | `none` |
+| 4 | Summary or verifier text contains `merge refused` or `commit failed` | `policy` |
+| 5 | End reason `verifier_failed` | `code_or_test` |
+| 6 | End reason `stalled` | `hung` |
+| 7 | End reason `session_died`, `daemon_restart`, `launch_refused` or `adopted_then_failed` | `infra` |
+| 8 | End reason `executor_error` with text containing `timeout`, `timed out` or `no output` | `infra` |
+| 9 | Any other attempt with a summary or verifier issue | `code_or_test` |
+| 10 | Anything else (for example a completed attempt with no text) | `none` |
+
+Rule 4 is checked before the end reason, so a refused merge is `policy` even
+when the end reason is `verifier_failed`.
+
+Stored attempts with a blank category are filled in by one backfill pass at
+each daemon start, in the background, never blocking startup. It is idempotent:
+an attempt that already has a category is not touched, so a rerun changes
+nothing. An attempt that has no end reason, no summary and no verifier issue
+stays blank and reads as `uncategorized` — that is now all an `uncategorized`
+attempt means: there was nothing to derive a category from. The payload counts
+those as `uncategorized_attempts`, so for attempts recorded from now on that
+number should be 0 or near it; the daemon logs one line per pass,
+`attempt_category_backfill: report {...}`, with `attempts_examined`,
+`attempts_updated`, `left_uncategorized` and `automatons_saved`.
+
 | Field | Meaning |
 |-------|---------|
 | `weeks[]` | Every week start (UTC) in the window, in order |
 | `groups[].key`, `groups[].label` | The project name, Automation or Automaton id, and its readable title where one exists |
 | `groups[].attempts`, `groups[].tasks` | Attempts in the window and the distinct tasks they belong to |
-| `groups[].categories[]` | Attempts per failure category (`infra`, `content`, and `uncategorized` when an attempt recorded none), most frequent first |
+| `groups[].categories[]` | Attempts per failure category (the categories recorded on the attempts, for example `infra`, `code_or_test`, `policy`, `hung`, `none` or `content`, and `uncategorized` for an attempt with no end reason, no summary and no verifier issue), most frequent first |
 | `groups[].weeks[]` | One entry per week in `weeks[]`, zero-filled: `start`, `attempts`, and `categories` for that week |
 | `groups[].top_summaries[]` | Up to five most frequent failure summaries with their category and count; summaries are trimmed to one line and cut at 200 characters |
 | `groups[].retries` | The sum of each task's current automatic retry count, counted once per task. The count restarts when a task is reset, so it is a floor |
 | `categories[]`, `total_attempts`, `total_tasks`, `total_retries` | The same across all groups |
 | `undated_attempts`, `retry_note` | Attempts with no time, and what `retries` counts |
+| `uncategorized_attempts` | In-window attempts that have no end reason, no summary and no verifier issue and so stay blank, read as `uncategorized`; the same number as the `uncategorized` entry in `categories[]`. Attempts are categorized when recorded and the blank ones backfilled once at daemon start (idempotent, a rerun changes nothing), so this should be 0 or near it |
 
 Errors: `400` for a bad `group_by` or `window`; `503` when the Automaton
 manager is not available.
@@ -367,3 +403,11 @@ An `api_metered` or `free_local` profile — or no profile at all, read back as
 the assumed default — keeps the row's money figure as an ordinary estimate;
 no profile is shown with the "(assumed — no usage.billing entry)" label.
 
+## Report fields for local usage
+
+Each row of `GET /api/cost/report`, and its totals, also carries `tool_calls`,
+`local_tokens`, `tokens_not_reported_sessions` and `active_seconds`. Local
+tokens are never added to `tokens_in` or `tokens_out` and never produce a
+money figure. `tokens_not_reported_sessions` counts the row's local sessions
+whose backend gave no token counts (not reported, unknown rather than zero);
+`local_tokens` excludes them.

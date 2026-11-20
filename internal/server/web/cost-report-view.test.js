@@ -227,3 +227,23 @@ test('every locale has the new cost detail keys', () => {
     }
   }
 });
+
+test('local-model tokens column shows a not-reported marker, never a zero, and the new keys exist in every locale', () => {
+  const sb = loadApp();
+  const html = sb.costReportCardHtml({
+    rows: [
+      { key: 'a', sessions: 1, tokens_in: 1, tokens_out: 1, local_tokens: 0, tokens_not_reported_sessions: 2, active_seconds: 90, span_seconds: 100, cache_read: 0, cache_creation: 0, tool_calls: 0 },
+      { key: 'b', sessions: 1, tokens_in: 1, tokens_out: 1, local_tokens: 400, active_seconds: 5, span_seconds: 5, cache_read: 0, cache_creation: 0, tool_calls: 0 },
+    ],
+  });
+  assert.ok(html.includes('not reported (2)'));
+  assert.ok(html.includes('400'));
+  assert.ok(html.includes('1m 30s'), 'active time');
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of ['cost_report_not_reported', 'cost_charts_unit_local_tokens', 'cost_charts_tokens_not_reported',
+      'cost_charts_tool_calls_not_reported', 'cost_charts_active_time', 'cost_charts_col_local_tokens', 'cost_charts_col_active', 'cost_charts_not_reported_marker']) {
+      assert.ok(b[k] && b[k].length, lang + ' missing ' + k);
+    }
+  }
+});
