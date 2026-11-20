@@ -383,6 +383,13 @@ These points are decisions or checks the docs cannot settle for you:
 - **Existing scripts are not rewritten.** The rules read scripts as they stand
   in the project. A script already checked in that compares only against its
   own task's files will now be flagged on the next decompose; fix or exempt it.
+- **Allowlist rule fires on more existing scripts.** `verify_script_allowed_files`
+  now also fails when a spec names a path the literal allowlist rejects, and the
+  phrase checks accept reworded or inflected wording. A checked-in gate script
+  whose allowlist misses a spec-named path (or a sibling `_test.go` the plan
+  touches) will be flagged on the next decompose; add the path or a covering
+  glob. Also confirm the looser phrase matching does not let through a checked
+  phrase that the spec never really states.
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.
