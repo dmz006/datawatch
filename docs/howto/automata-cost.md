@@ -33,4 +33,20 @@ The per-provider billing label and point figures are in
   active day and the completion range.
 - Cost comes from the cost report; see [cost-report.md](cost-report.md).
 
+## Cost grouped by project
+
+When the cost chart is grouped by **Project**, each Automaton's spend is placed
+under its project: first its own project link, then its parent Automaton's
+project, then its project directory. An Automaton that resolves to no project
+has no owner project, so all of that spend is drawn on one line named
+**unassigned**, however many Automata it covers. The Unassigned page of the
+Projects sub-tab lists those Automata one by one; the cost line only adds up
+their spend.
+
+**Unattributed** is a different thing. It means spend with no owner at all, a
+session with no Automaton id. It has its own row under the Automaton, Automation
+and model groupings. Under the Project grouping it has no row of its own: that
+spend has no project either, so it is counted on the unassigned line. Nothing is
+back-filled. The details are in [cost-report.md](cost-report.md#grouping-by-project).
+
 The cards are read-only and need no settings.
