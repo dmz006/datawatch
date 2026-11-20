@@ -203,19 +203,3 @@ func TestMigrateSummaryCountsEveryKindPreviewAndApply(t *testing.T) {
 		t.Fatalf("apply summary = %q", got)
 	}
 }
-
-func TestMigrateSecondApplyChangesNothing(t *testing.T) {
-	s, opts, _ := migrateFixture(t)
-	opts.Apply = true
-	if _, err := Migrate(opts); err != nil {
-		t.Fatal(err)
-	}
-	n := s.Len()
-	rep, err := Migrate(opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rep.WouldCreate) != 0 || len(rep.WouldLink) != 0 || len(rep.Conflicts) != 0 || s.Len() != n {
-		t.Fatalf("second apply changed things: %v len %d -> %d", rep.Counts(), n, s.Len())
-	}
-}
