@@ -4431,6 +4431,19 @@ func (m *Manager) Archive(id, actor string) (*PRD, error) {
 	var pendingBranch string
 	m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
 	if pendingBranch != "" {
+		// The branch may have been merged since the record went pending: the
+		// read-only ancestor check flips the record to landed before the
+		// refusal, so an already-landed branch archives without the operator
+		// touching its landing record.
+		if m.CheckLandingAncestor(context.Background(), id) {
+			prd, ok = m.store.GetPRD(id)
+			if !ok {
+				return nil, fmt.Errorf("prd %q not found", id)
+			}
+		}
+		m.readLocked(func() { pendingBranch = landingPendingBranch(prd) })
+	}
+	if pendingBranch != "" {
 		return nil, fmt.Errorf("automaton %q cannot be archived: its branch %s has not landed on the default branch; merge it, or record keep or drop for its landing", id, pendingBranch)
 	}
 	now := time.Now()
