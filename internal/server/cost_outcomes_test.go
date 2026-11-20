@@ -422,3 +422,30 @@ func TestCostOutcomes_RoutesRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestCostFailures_UncategorizedAttemptsMatchesCategories(t *testing.T) {
+	fx := newFailureFixture(t)
+	rr, got := getCostFailures(t, fx.server, "")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// the fixture has exactly one attempt with no category
+	if got.UncategorizedAttempts != 1 {
+		t.Errorf("uncategorized_attempts = %d, want 1", got.UncategorizedAttempts)
+	}
+	n := 0
+	for _, c := range got.Categories {
+		if c.Category == costreport.UncategorizedFailure {
+			n = c.Attempts
+		}
+	}
+	if n != got.UncategorizedAttempts {
+		t.Errorf("categories entry %d != uncategorized_attempts %d", n, got.UncategorizedAttempts)
+	}
+	if got.UncategorizedAttempts >= got.TotalAttempts {
+		t.Errorf("categorised attempts counted: %d of %d", got.UncategorizedAttempts, got.TotalAttempts)
+	}
+	if !strings.Contains(rr.Body.String(), `"uncategorized_attempts":1`) {
+		t.Errorf("payload lacks uncategorized_attempts: %s", rr.Body.String())
+	}
+}

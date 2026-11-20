@@ -436,3 +436,36 @@ func TestFailuresGroupByValid(t *testing.T) {
 		t.Error("model and blank are not failure groupings")
 	}
 }
+
+func TestBuildFailures_UncategorizedAttemptsCounted(t *testing.T) {
+	recs := append(failRecords(),
+		FailureRecord{AutomatonID: "a4", Project: "alpha", TaskID: "t1", At: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC), Category: "   "},
+		FailureRecord{AutomatonID: "a4", Project: "alpha", TaskID: "t2", At: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC).AddDate(0, -3, 0)}, // outside window
+		FailureRecord{AutomatonID: "a4", Project: "alpha", TaskID: "t3"},                                                                      // undated
+	)
+	f, err := BuildFailures(FailuresRequest{Window: 4 * 7 * 24 * time.Hour}, recs, outcomesNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the blank record in failRecords plus the whitespace-only one
+	if f.UncategorizedAttempts != 2 {
+		t.Errorf("uncategorized = %d, want 2", f.UncategorizedAttempts)
+	}
+	if got := catCount(f.Categories, UncategorizedFailure); got != f.UncategorizedAttempts {
+		t.Errorf("categories entry %d != uncategorized_attempts %d", got, f.UncategorizedAttempts)
+	}
+	if f.UncategorizedAttempts >= f.TotalAttempts {
+		t.Errorf("categorised attempts must not be counted: %d of %d", f.UncategorizedAttempts, f.TotalAttempts)
+	}
+}
+
+func TestBuildFailures_UncategorizedAttemptsZeroWhenAllCategorised(t *testing.T) {
+	at := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	f, err := BuildFailures(FailuresRequest{}, []FailureRecord{{AutomatonID: "a", TaskID: "t", At: at, Category: "infra"}}, outcomesNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.UncategorizedAttempts != 0 || f.TotalAttempts != 1 {
+		t.Errorf("uncategorized=%d total=%d", f.UncategorizedAttempts, f.TotalAttempts)
+	}
+}
