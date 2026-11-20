@@ -452,7 +452,7 @@ this page.
 |---|---|---|
 | **Cost over time** | A line per group: tokens, or money | Money is one chart per billing unit. Each axis is labelled with its unit and billing mode, for example dollars on an API-metered backend and points on a bundled plan, so units are never drawn together or added. When no rate or monthly price is set, or USD estimates are off, tokens are drawn and the card says so |
 | **Tool usage** | A line per group: tool calls | Counts only, never tool names |
-| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
+| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group. An attempt with no recorded category is drawn as `uncategorized` | Retries count each task once and restart when a task is reset. Categories are recorded when an attempt is recorded and filled in for older attempts at each daemon start, so `uncategorized` should only be left for attempts with no reason, summary or verifier issue; see [Failure categories](failed-attempt-cost.md#failure-categories) |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
 Each chart draws at most six lines and sixty points per line, and each table

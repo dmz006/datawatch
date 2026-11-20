@@ -273,12 +273,13 @@ project, Automation or Automaton under the chosen grouping land under
 | `weeks[]` | Every week start (UTC) in the window, in order |
 | `groups[].key`, `groups[].label` | The project name, Automation or Automaton id, and its readable title where one exists |
 | `groups[].attempts`, `groups[].tasks` | Attempts in the window and the distinct tasks they belong to |
-| `groups[].categories[]` | Attempts per failure category (`infra`, `content`, and `uncategorized` when an attempt recorded none), most frequent first |
+| `groups[].categories[]` | Attempts per failure category (the categories recorded on the attempts, for example `infra`, `code_or_test`, `policy`, `none` or `content`, and `uncategorized` when an attempt recorded none), most frequent first |
 | `groups[].weeks[]` | One entry per week in `weeks[]`, zero-filled: `start`, `attempts`, and `categories` for that week |
 | `groups[].top_summaries[]` | Up to five most frequent failure summaries with their category and count; summaries are trimmed to one line and cut at 200 characters |
 | `groups[].retries` | The sum of each task's current automatic retry count, counted once per task. The count restarts when a task is reset, so it is a floor |
 | `categories[]`, `total_attempts`, `total_tasks`, `total_retries` | The same across all groups |
 | `undated_attempts`, `retry_note` | Attempts with no time, and what `retries` counts |
+| `uncategorized_attempts` | In-window attempts whose category was blank and so read as `uncategorized`; the same number as the `uncategorized` entry in `categories[]`. New attempts are categorized when recorded and older ones at daemon start, so this should be 0 or near it |
 
 Errors: `400` for a bad `group_by` or `window`; `503` when the Automaton
 manager is not available.
