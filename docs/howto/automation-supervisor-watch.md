@@ -103,6 +103,8 @@ still holds the repository checkout and was not emptied or partly removed), then
 repair or recreate the worktree and re-run the Automaton. If the Automaton was
 meant to work on a different repository, correct its project folder instead.
 
+**Operator review:** findings for a `worktree_no_gomod` raised before this change on an Automaton whose project folder is another repository were false. Review and dismiss any such open finding; no repair is needed.
+
 ## The record states
 
 Every surface words a finding's standing the same way:
