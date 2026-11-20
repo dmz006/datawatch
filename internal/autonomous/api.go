@@ -367,6 +367,9 @@ func (a *API) resumeRunningPRDs() {
 			// no age limit), or the PRD's/task's project directory no longer
 			// exists (removed temp workspace). Parked PRDs must NOT go through
 			// resetInProgressTasksForResume or a run.
+			if a.M.finishIfMerged(prd) {
+				continue
+			}
 			dec, now, parkedNow := a.gateBootResume(prd, PRDRunning)
 			if parkedNow {
 				parked++
