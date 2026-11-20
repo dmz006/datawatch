@@ -381,7 +381,7 @@ test('at wide width every tag chip stays and there is no +N chip', () => {
 });
 
 // ── (6) one-line toolbar ────────────────────────────────────────────────────
-test('the one-line toolbar holds server, search, Filters, fold-all and view mode in one row', () => {
+test('the one-line toolbar holds search, Filters, fold-all and view mode in one row, with no server select', () => {
   const sb = loadApp({ phone: true });
   seed(sb);
   vm.runInContext("state.sessionGroupBy = { axis: 'state' };", sb); // grouping active → the fold control is in the row
@@ -389,14 +389,15 @@ test('the one-line toolbar holds server, search, Filters, fold-all and view mode
   const start = html.indexOf('<div class="sessions-topbar">');
   assert.ok(start >= 0);
   const top = html.slice(start, html.indexOf('<div class="session-list">'));
-  const order = ['id="sessionsServerDropdown"', 'sessions-search-row', 'id="sessionFilterInput"',
+  const order = ['sessions-search-row', 'id="sessionFilterInput"',
     'class="sessions-filters-slot"', 'id="sessionsFiltersBtn"', 'sessions-fold-all', 'id="sessionsViewSelect"']
     .map(k => top.indexOf(k));
   assert.ok(order.every(i => i >= 0), 'all toolbar parts are inside the top row');
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  // The server control is the toolbar's own instance of the shared picker —
-  // same options body, same onchange → selectServer() mutation path.
-  assert.match(top, /onchange="onServerDropdownChange\(this\.value\)"/);
+  // The server picker is not repeated here: the header server button is the
+  // one entry point, so the toolbar carries no server select.
+  assert.doesNotMatch(top, /ServerDropdown|server-select|onServerDropdownChange/);
+  assert.doesNotMatch(html, /id="sessionsServerDropdown"/, 'no Sessions server select anywhere on the page');
   // The view control is one native select carrying the three modes.
   assert.match(top, /<select id="sessionsViewSelect"[\s\S]*onchange="_sessionsSetViewMode\(this\.value\)"[\s\S]*<\/select>/);
   for (const m of ['list', 'tiles', 'compact']) {
@@ -406,7 +407,7 @@ test('the one-line toolbar holds server, search, Filters, fold-all and view mode
   assert.match(top, /class="sessions-fold-all"[\s\S]*title="Fold every group"[\s\S]*aria-pressed/);
   assert.equal(countOf(top, /class="sessions-search-row"/g), 1);
   // The old server-chip slot is gone: server switching lives in the header
-  // dropdown (#serverDropdown) plus this toolbar's own instance.
+  // server button (#serverPickerBtn) and its picker modal.
   assert.ok(!top.includes('sessions-topbar-servers'), 'no server-chip slot in the topbar');
 });
 
@@ -432,6 +433,6 @@ test('the toolbar is laid out as a single non-wrapping row at every width', () =
   let m;
   while ((m = re.exec(CSS))) blocks.push(m[1]);
   const phone = blocks.join('\n');
-  assert.match(phone, /\.sessions-topbar \.sessions-server-select \{[^}]*max-width/);
+  assert.doesNotMatch(CSS, /sessions-server-select/, 'no rule for a Sessions server select remains');
   assert.match(phone, /\.sessions-filters-label \{ display: none; \}/);
 });

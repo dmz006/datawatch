@@ -3155,9 +3155,16 @@ function navigate(view, sessionId, fromPopstate) {
   if (headerIdentityBtn) {
     headerIdentityBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
   }
+  // The scope button shows only on the Automata view; the remembered scope
+  // stays while the button is hidden.
+  const headerScopeBtn = document.getElementById('headerScopeBtn');
+  if (headerScopeBtn) {
+    headerScopeBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
+  }
+  renderScopeButton();
 
   renderServerHeaderLine(); // shared shell: every page gets the stable server line
-  renderServerDropdown();   // …and the header server dropdown stays in sync with every page
+  renderServerDropdown();   // …and the header server button stays in sync with every page
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     if (state.activeSession !== sessionId) _clearImageAttachment();
@@ -3372,20 +3379,40 @@ function projectsToggleSection(id) {
   cards.forEach(c => _projectsSectionToggleState(c, collapsed));
 }
 
+// A #projects hash may end in ?plan=<automation_id>, the plan of the project
+// the hash names (the header scope). _projectsHashSplit separates that suffix
+// from the path so every older form (#projects, #projects/<name> and
+// #projects/<name>/<subtab>) keeps parsing exactly as before.
+function _projectsHashSplit(hash) {
+  const s = String(hash || '');
+  const q = s.indexOf('?');
+  return { path: q < 0 ? s : s.slice(0, q), query: q < 0 ? '' : s.slice(q + 1) };
+}
 function _projectsHashParse(hash) {
-  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(String(hash || ''));
+  const m = /^#projects(?:\/([^/]+))?(?:\/[^/]+)?$/.exec(_projectsHashSplit(hash).path);
   if (!m) return null;
   try { return m[1] ? decodeURIComponent(m[1]) : _PROJECTS_OVERVIEW; } catch (_) { return null; }
 }
 // _projectsHashSubtab returns the sub-tab named by #projects/<name>/<subtab>,
 // or '' when the hash names none or an unknown one.
 function _projectsHashSubtab(hash) {
-  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(String(hash || ''));
+  const m = /^#projects\/[^/]+\/([^/]+)$/.exec(_projectsHashSplit(hash).path);
   return m && _projectsSubtabValid(m[1]) ? _projectsSubtabCanon(m[1]) : '';
 }
-function _projectsHashBuild(name, subtab) {
+// _projectsHashPlan returns the plan (an automation id) a projects hash names
+// with ?plan=, or '' when it names none. A plan needs a project, so a hash
+// without one never carries a plan.
+function _projectsHashPlan(hash) {
+  const sp = _projectsHashSplit(hash);
+  if (!/^#projects\/[^/]+(?:\/[^/]+)?$/.test(sp.path)) return '';
+  const m = /(?:^|&)plan=([^&]*)/.exec(sp.query);
+  if (!m) return '';
+  try { return decodeURIComponent(m[1]); } catch (_) { return ''; }
+}
+function _projectsHashBuild(name, subtab, plan) {
   if (!name) return '#projects';
-  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '');
+  return '#projects/' + encodeURIComponent(name) + (subtab && subtab !== 'overview' ? '/' + subtab : '')
+    + (plan ? '?plan=' + encodeURIComponent(plan) : '');
 }
 function _projectsCurrentHash() {
   return typeof location !== 'undefined' ? location.hash : '';
@@ -3445,7 +3472,8 @@ function _projectsPaint() {
       ${_projectsManageHTML([])}</div>`;
     return;
   }
-  const sel = _projectsState.selected;
+  // The header scope is the one source of truth: a scoped project is the page.
+  const sel = _scopeActive() ? getScope().project : _projectsState.selected;
   const known = sel === _PROJECTS_OVERVIEW || (list && list.some(p => p.name === sel));
   const selected = known ? sel : _PROJECTS_OVERVIEW;
   if (selected === _PROJECTS_OVERVIEW) {
@@ -4082,6 +4110,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
   let overviewBody = '';
   let arcsBody = '';
   let unassignedBody = '';
+  const planScope = _scopePlanId();
   if (rollErr) {
     addEvent(`${t('projects_page_rollup_failed')} ${rollErr}`);
     overviewBody = _pcard('totals', 'error', '', rollErr) + _pcard('throughput', 'error', '', rollErr);
@@ -4093,20 +4122,23 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     arcsBody = _pcard('arcs', 'loading', '', '', wait);
     unassignedBody = _pcard('unassigned', 'loading', '', '', wait);
   } else {
-    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).slice().sort((x, y) => (x.priority || 0) - (y.priority || 0));
+    const arcs = (Array.isArray(roll.arcs) ? roll.arcs : []).filter(a => !planScope || (a && a.automation_id === planScope)).sort((x, y) => (x.priority || 0) - (y.priority || 0));
     overviewBody = _projectRollupHTML(roll, arcs, cardState);
     if (!arcs.length) {
       addEmptyEvent(t('projects_event_no_plans'));
       if (showEmpty) arcsBody = _pcard('arcs', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_plans'))}</div></div>`);
     } else arcsBody = `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_plans'))}</div>${arcs.map(arcHTML).join('')}</div>`;
-    const un = roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
+    const un = !planScope && roll.unassigned && Array.isArray(roll.unassigned.automata) ? roll.unassigned.automata : [];
     const unassignedListHTML = lst => `<div class="project-cards" style="margin-top:4px;">` +
       lst.map(a => `<div class="project-automaton" data-automaton="${escHtml(a && a.id || '')}">` +
         renderProjectCard(_projectUnassignedCard(a, 'unassigned'), _projectsCardMode()) + `</div>`).join('') + `</div>`;
     const hidden = _projectsUnassignedHiddenLoad();
     const shownUn = un.filter(a => a && a.id && hidden.indexOf(String(a.id)) < 0);
     const hiddenCount = un.length - shownUn.length;
-    if (un.length) {
+    if (planScope) {
+      // Unassigned Automata belong to no plan, so a plan scope has none to list.
+      unassignedBody = _scopeEmptyHTML('projects_scope_unassigned_not_in_plan', 'scope-empty-unassigned');
+    } else if (un.length) {
       const undo = hiddenCount
         ? `<div style="color:var(--text2);font-size:12px;margin:2px 0 6px;">${escHtml(t('projects_unassigned_hidden_note'))} <button type="button" class="btn-secondary" style="padding:1px 8px;font-size:11px;" onclick="projectsUnassignedUndo()">${escHtml(t('projects_unassigned_undo'))}</button></div>`
         : '';
@@ -4116,7 +4148,7 @@ function _projectPageHTML(p, roll, rollErr, hist) {
       addEmptyEvent(t('projects_event_no_unassigned'));
       if (showEmpty) unassignedBody = _pcard('unassigned', cardState, `<div style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_unassigned'))}</div><div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_event_no_unassigned'))}</div></div>`);
     }
-    const wp = roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
+    const wp = !planScope && roll.without_project && Array.isArray(roll.without_project.automata) ? roll.without_project.automata : [];
     if (wp.length) unassignedBody += _pcard('without_project', cardState, `<div class="project-without-project" style="margin-top:10px;"><div style="font-weight:600;font-size:13px;">${escHtml(t('projects_page_without_project'))}</div><div style="color:var(--text2);font-size:12px;margin:2px 0 4px;">${escHtml(t('projects_page_without_project_hint'))}</div>${unassignedListHTML(wp)}</div>`);
   }
 
@@ -4144,6 +4176,9 @@ function _projectPageHTML(p, roll, rollErr, hist) {
     history: _projectHistoryHTML(hist, true),
     events: evs + _projectEventStreamHTML(L.events, L.eventsError),
   };
+  // Every body of a scoped page starts with the banner that says what it is
+  // filtered to; the scope All draws none.
+  Object.keys(bodies).forEach(k => { bodies[k] = _scopeBody(bodies[k]); });
   const strip = _projectsSubtabStripHTML(active, hasEvents);
   // A stored or hashed sub-tab that no longer exists (the old Policy page)
   // falls back to Overview, the one body that is always renderable.
@@ -4196,7 +4231,7 @@ function selectProjectsSubtab(k) {
   _projectsRememberSubtab(k);
   try {
     if (_projectsState.selected) {
-      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k));
+      history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, k, _scopeHashPlan()));
     }
   } catch (_) { /* history blocked */ }
   _projectsPaint();
@@ -4252,9 +4287,10 @@ function _projectsLoadLinks() {
     if (current()) _projectsLinks.merge = obj(r);
   }).catch(err => { if (current()) _projectsLinks.mergeError = msg(err); });
   const evq = '?queue=' + encodeURIComponent(_PROJECTS_EVENTS_QUEUE) + '&project=' + enc + '&limit=' + _PROJECTS_EVENTS_LIMIT;
+  const tok = _scopeToken; // a late events reply for an older scope is dropped
   const evs = apiFetch('/api/autonomous/events' + evq).then(r => {
-    if (current()) _projectsLinks.events = obj(r);
-  }).catch(err => { if (current()) _projectsLinks.eventsError = msg(err); });
+    if (current() && tok === _scopeToken) _projectsLinks.events = obj(r);
+  }).catch(err => { if (current() && tok === _scopeToken) _projectsLinks.eventsError = msg(err); });
   return Promise.all([policy, merge, evs]);
 }
 
@@ -4373,8 +4409,12 @@ function _projectEventStreamHTML(ev, err) {
   } else if (!ev) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_links_loading'))}</div>`;
   } else {
-    const items = Array.isArray(ev.events) ? ev.events : [];
-    if (!items.length && !ev.dropped && !_projectsShowEmpty()) return '';
+    const raw = Array.isArray(ev.events) ? ev.events : [];
+    // A plan scope keeps the rows of the plan's Automation (the project is
+    // already the request's filter).
+    const planScope = _scopePlanId();
+    const items = planScope ? raw.filter(e => e && typeof e === 'object' && e.automation_id === planScope) : raw;
+    if (!raw.length && !ev.dropped && !_projectsShowEmpty()) return '';
     inner = (ev.dropped ? `<div style="font-size:12px;color:var(--warning,#a06b00);">${escHtml(t('projects_links_events_dropped'))}</div>` : '') +
       (items.length
         ? items.map(e => {
@@ -4453,8 +4493,9 @@ function _projectBarHTML(done, total, label) {
 // unassigned group.
 function _projectRollupHTML(roll, arcs, cardState) {
   cardState = cardState || 'ready';
-  const groups = arcs.concat([roll.unassigned || {}]);
-  let tot = roll.total && roll.total.tasks ? roll.total : null;
+  const planScope = _scopePlanId();
+  const groups = planScope ? arcs : arcs.concat([roll.unassigned || {}]);
+  let tot = !planScope && roll.total && roll.total.tasks ? roll.total : null;
   if (!tot) {
     tot = { tasks: { done: 0, total: 0 }, points: 0, throughput: { automata_finished: 0, tasks_finished: 0, automata_per_day: 0, tasks_per_day: 0 } };
     groups.forEach(g => {
@@ -4481,7 +4522,7 @@ function _projectRollupHTML(roll, arcs, cardState) {
     Number(th.tasks_finished) || 0, perDay(th.tasks_per_day),
   ]);
   const line = (label, val) => `<div style="margin:3px 0;font-size:13px;"><span style="color:var(--text2);">${escHtml(label)}:</span> ${escHtml(val)}</div>`;
-  const totalsCard = _pcard('totals', cardState, `${_projectBarHTML(tot.tasks.done, tot.tasks.total, t('projects_rollup_whole_project'))}
+  const totalsCard = _pcard('totals', cardState, `${_projectBarHTML(tot.tasks.done, tot.tasks.total, planScope ? _scopePlanLabel(_scopeEnsure().project, planScope) : t('projects_rollup_whole_project'))}
     ${line(t('projects_rollup_points_label'), pointsVal)}`);
   const throughputCard = _pcard('throughput', cardState, `${line(t('projects_rollup_throughput_label', [days]), throughputVal)}
     <div style="margin:2px 0;font-size:12px;color:var(--text2);">${escHtml(t('projects_rollup_throughput_help'))}</div>`);
@@ -4634,14 +4675,15 @@ function _projectHistoryRowHTML(e) {
 // next cursor. bare drops the card wrapper for a sub-tab that holds only this block.
 function _projectHistoryHTML(hist, bare) {
   let inner;
-  if (!hist) {
+  const items = hist ? hist.items.filter(_scopeHistoryItemMatches) : [];
+  if (!hist || (!items.length && _scopePlanLoading())) {
     inner = `<div style="color:var(--text2);font-size:13px;margin-top:4px;">${escHtml(t('projects_history_loading'))}</div>`;
   } else if (hist.error) {
     inner = `<div style="color:var(--error,#ef4444);font-size:13px;">${escHtml(t('projects_history_failed') + ' ' + hist.error)}</div>`;
-  } else if (!hist.items.length) {
+  } else if (!items.length) {
     inner = `<div style="color:var(--text2);font-size:13px;">${escHtml(t('projects_history_empty'))}</div>`;
   } else {
-    inner = hist.items.map(_projectHistoryRowHTML).join('');
+    inner = items.map(_projectHistoryRowHTML).join('');
   }
   if (hist && hist.next) {
     const busy = _projectsState.histBusy ? ' disabled' : '';
@@ -5171,13 +5213,33 @@ function _projectsGanttFetch(g, key, append) {
   if (slot.loading) return Promise.resolve();
   slot.loading = true;
   const cursor = append ? slot.next : '';
-  const live = () => _projectsState.gantt === g && _projectsState.selected === g.name;
-  return apiFetch(_projectsGanttUrl(g.name, key, row, cursor)).then(r => {
-    if (!live()) return;
+  // A plan scope narrows the arcs level to the plan's Automation. The timeline
+  // route has no plan filter, so the page is filtered here; while a page holds
+  // no row of the plan and a next cursor exists, the next page is read (capped).
+  // The rows below an arc are already the plan's own (parent=<automation id>).
+  // A reply for an older scope is dropped through the scope token.
+  const tok = _scopeToken;
+  const plan = !key ? _scopePlanId() : '';
+  const live = () => _projectsState.gantt === g && _projectsState.selected === g.name && tok === _scopeToken;
+  const readPage = (cur, hops, acc) => apiFetch(_projectsGanttUrl(g.name, key, row, cur)).then(r => {
+    if (!live()) return null;
     const b = _projectsGanttBody(r);
-    slot.rows = (append ? slot.rows : []).concat(b.rows);
-    slot.edges = (append ? (slot.edges || []) : []).concat(b.edges);
-    slot.next = b.next;
+    if (plan) {
+      b.rows = b.rows.filter(x => x.kind === 'arc' && x.id === plan);
+      b.edges = []; // one row has no edge to another
+    }
+    acc.rows = acc.rows.concat(b.rows);
+    acc.edges = acc.edges.concat(b.edges);
+    acc.next = b.next;
+    if (plan && acc.rows.length) acc.next = ''; // the plan is one row: nothing more to find
+    else if (plan && b.next && hops < _SCOPE_MAX_PAGES) return readPage(b.next, hops + 1, acc);
+    return acc;
+  });
+  return readPage(cursor, 0, { rows: append ? slot.rows : [], edges: append ? (slot.edges || []) : [], next: '' }).then(acc => {
+    if (!acc || !live()) return;
+    slot.rows = acc.rows;
+    slot.edges = acc.edges;
+    slot.next = acc.next;
     slot.loaded = true;
     if (!key) g.error = '';
   }).catch(err => {
@@ -5503,15 +5565,27 @@ function _projectsLoadHistory(append) {
   const prevItems = prev ? prev.items : [];
   const q = '?limit=' + _PROJECTS_HISTORY_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
   _projectsState.histBusy = true;
+  const tok = _scopeToken; // a late reply for an older scope is dropped
   return apiFetch('/api/projects/' + encodeURIComponent(name) + '/history' + q).then(r => {
-    if (_projectsState.selected !== name) return;
+    if (_projectsState.selected !== name || tok !== _scopeToken) return;
     const body = r && typeof r === 'object' && !Array.isArray(r) ? r : {};
     const items = Array.isArray(body.items) ? body.items : [];
     _projectsState.hist = { name, items: prevItems.concat(items), next: body.next_cursor || '', error: '' };
   }).catch(err => {
-    if (_projectsState.selected !== name) return;
+    if (_projectsState.selected !== name || tok !== _scopeToken) return;
     _projectsState.hist = { name, items: prevItems, next: cursor, error: (err && err.message) || String(err) };
-  }).then(() => { _projectsState.histBusy = false; });
+  }).then(() => {
+    _projectsState.histBusy = false;
+    // A plan scope filters the page client-side: keep reading the next page while
+    // the plan shows fewer than a page of rows and a next cursor exists (capped).
+    // It waits for the plan's member list, which the filter reads.
+    const h = _projectsState.hist;
+    if (tok !== _scopeToken || !_scopePlanId() || _scopePlanLoading() || !h || h.name !== name || h.error || !h.next || _projectsState.selected !== name) return;
+    if (h.items.filter(_scopeHistoryItemMatches).length >= _PROJECTS_HISTORY_PAGE) return;
+    if (!append) _projectsState.histHops = 0;
+    if ((_projectsState.histHops = (_projectsState.histHops || 0) + 1) > _SCOPE_MAX_PAGES) return;
+    return _projectsLoadHistory(true);
+  });
 }
 
 // projectsHistoryMore is the Load more button: it appends the next page and
@@ -5776,16 +5850,17 @@ function planRecordListHtml(v) {
   if (v.status === 'error') {
     return `<div class="plan-records-error" role="alert" style="color:var(--error);font-size:13px;margin-top:8px;overflow-wrap:anywhere;">${escHtml(t('plan_records_load_failed', [v.error]))}</div>`;
   }
-  const recs = Array.isArray(v.recs) ? v.recs : [];
+  const all = Array.isArray(v.recs) ? v.recs : [];
+  const recs = all.filter(_scopeRecordMatches);
   if (!recs.length) {
     const key = v.q ? 'plan_records_empty_search' : (kind === 'finding' ? 'plan_records_empty_findings' : 'plan_records_empty_registry');
     return `<div class="plan-records-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(key))}</div>`;
   }
   const countKey = kind === 'finding' ? 'plan_records_status_findings' : 'plan_records_status_registry_rows';
-  const more = recs.length < v.total
+  const more = all.length < v.total
     ? `<div style="margin-top:6px;"><button type="button" class="btn-secondary" style="font-size:12px;padding:3px 10px;" onclick="planRecordsMore()">${escHtml(t('plan_records_load_more'))}</button></div>`
     : '';
-  return `<div class="plan-records-count" style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t(countKey, [v.total, recs.length]))}</div>${recs.map(planRecordRowHtml).join('')}${more}`;
+  return `<div class="plan-records-count" style="font-size:12px;color:var(--text2);margin-top:8px;">${escHtml(t(countKey, [_scopePlanId() ? recs.length : v.total, recs.length]))}</div>${recs.map(planRecordRowHtml).join('')}${more}`;
 }
 
 function planRecordsBodyHtml(v) {
@@ -5898,6 +5973,12 @@ function _planRecordsLoad(more) {
     st.status = 'ready';
     st.error = '';
     _planRecordsPaint();
+    if (!more) st.scopeHops = 0;
+    // A plan scope filters the page client-side: keep loading while the shown
+    // rows are fewer than a page and the server has more, up to a cap.
+    if (_scopePlanId() && st.recs.length < st.total && st.recs.filter(_scopeRecordMatches).length < _PLAN_RECORDS_PAGE && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+      return _planRecordsLoad(true);
+    }
   }).catch(err => {
     if (_planRecords !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err)) { st.status = 'disabled'; st.recs = []; _planRecordsPaint(); return; }
@@ -6091,7 +6172,14 @@ function _projectOverviewSummaryHTML(p) {
   const S = _projectsSummary.name === p.name ? _projectsSummary : { data: null, error: '' };
   if (S.error) return `<div class="project-overview-error" style="color:var(--error,#ef4444);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_failed') + ' ' + S.error)}</div>`;
   if (!S.data) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
-  const d = S.data;
+  let d = S.data;
+  const planScope = !!_scopePlanId();
+  if (planScope) {
+    // A plan scope reads its numbers from the plan's roll-up group only.
+    const roll = _projectsState.rollupFor === p.name ? _projectsState.rollup : null;
+    if (!roll) return `<div class="project-overview-loading" style="color:var(--text2);font-size:13px;margin-top:10px;">${escHtml(t('projects_overview_loading'))}</div>`;
+    d = Object.assign({}, S.data, _scopeOverviewData(p, roll));
+  }
   const pr = d.progress || {};
   const au = pr.automata || {};
   const done = Number(au.done) || 0;
@@ -6220,6 +6308,16 @@ function _plansBrowserLoad(more) {
     st.backlogTotal = Number((((r || {}).backlog || {}).page || {}).total) || st.backlog.length;
     st.status = 'ready'; st.error = '';
     _plansBrowserPaint();
+    if (!more) st.scopeHops = 0;
+    if (_scopePlanId()) {
+      // The plan rows decide which records belong to the scoped plan.
+      _recordsTabPaint();
+      _planRecordsPaintBody();
+      // A scoped list keeps loading while its pages show no row of the plan.
+      if (st.plans.length < st.total && !st.plans.some(_scopePlanRowMatches) && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+        return _plansBrowserLoad('plans');
+      }
+    }
   }).catch(err => {
     if (_plansBrowser !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _plansBrowserPaint(); return; }
@@ -6439,7 +6537,7 @@ function _plansPlanHTML(st, plan, idx, list, canMove) {
 }
 
 function _plansGroupHTML(st, list, total, group, loadMoreFn) {
-  const shown = list.filter(p => _plansMatch(st, p));
+  const shown = list.filter(p => _plansMatch(st, p) && _scopePlanRowMatches(p));
   const filtering = !!(st.states.length || st.q.trim());
   const rows = shown.map((p, i) => _plansPlanHTML(st, p, i, shown, group === 'plans' && !filtering)).join('');
   const more = list.length < total
@@ -6459,9 +6557,9 @@ function plansBrowserListHTML(st) {
   if (!main.count && !(st.plans.length === 0 && st.total === 0 && !st.q.trim() && !st.states.length && st.backlog.length)) {
     html += `<div class="plans-browser-empty" style="color:var(--text2);font-size:13px;margin-top:8px;">${escHtml(t(st.q.trim() || st.states.length ? 'plans_browser_empty_search' : 'plans_browser_empty'))}</div>`;
   }
-  if (st.backlogTotal > 0 || back.count) {
+  if (_scopePlanId() ? back.count > 0 : (st.backlogTotal > 0 || back.count)) {
     html += `<div class="plans-browser-backlog" style="margin-top:12px;">
-      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${st.backlogTotal})</a>
+      <a href="#" class="plans-browser-backlog-toggle" aria-expanded="${backOpen}" onclick="${_plansCall('plansBrowserToggle', _PLANS_BACKLOG_ID)}" style="font-size:13px;font-weight:600;">${backOpen ? '▾' : '▸'} ${escHtml(t('plans_browser_backlog'))} (${_scopePlanId() ? back.count : st.backlogTotal})</a>
       ${backOpen ? `<div style="font-size:12px;color:var(--text2);margin:2px 0 4px;">${escHtml(t('plans_browser_backlog_hint'))}</div>${back.rows}${back.more}` : ''}</div>`;
   }
   return html;
@@ -7357,6 +7455,12 @@ function _recordsTabLoad(more) {
     st.total = Number(((r || {}).page || {}).total) || st.rows.length;
     st.status = 'ready'; st.error = '';
     _recordsTabPaint();
+    if (!more) st.scopeHops = 0;
+    // A plan scope filters the page client-side: keep loading while the shown
+    // rows are fewer than a page and the server has more, up to a cap.
+    if (_scopePlanId() && st.rows.length < st.total && st.rows.filter(_scopeRecordMatches).length < _RECORDS_TAB_PAGE && (st.scopeHops = (st.scopeHops || 0) + 1) <= _SCOPE_MAX_PAGES) {
+      return _recordsTabLoad(true);
+    }
   }).catch(err => {
     if (_recordsTab !== st || seq !== st.seq) return;
     if (_planRecordsHidden(err) || /not found/i.test(String((err && err.message) || ''))) { st.status = 'disabled'; _recordsTabPaint(); return; }
@@ -7388,10 +7492,12 @@ function recordsTabListHTML(st) {
   if (st.status === 'disabled') return `<div class="records-tab-off" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_off'))}</div>`;
   if (st.status === 'idle' || (st.status === 'loading' && !st.rows.length)) return `<div class="records-tab-loading" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_loading'))}</div>`;
   if (st.status === 'error') return `<div class="records-tab-error" role="alert" style="font-size:13px;color:var(--danger,#c0392b);">${escHtml(t('records_tab_failed', [st.error]))}</div>`;
-  if (!st.rows.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>`;
-  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [st.total, st.rows.length]))}</div>`;
+  const shown = st.rows.filter(_scopeRecordMatches);
+  const scoped = !!_scopePlanId();
   const more = st.rows.length < st.total ? `<button type="button" class="btn-secondary records-tab-more" onclick="recordsTabMore();return false;" style="margin-top:8px;">${escHtml(t('plans_browser_load_more'))}</button>` : '';
-  return status + st.rows.map(_recordsTabRowHTML).join('') + more;
+  if (!shown.length) return `<div class="records-tab-empty" style="font-size:13px;color:var(--text2);">${escHtml(t('records_tab_empty'))}</div>` + more;
+  const status = `<div class="records-tab-status" style="font-size:12px;color:var(--text2);margin-bottom:4px;">${escHtml(t('records_tab_status', [scoped ? shown.length : st.total, shown.length]))}</div>`;
+  return status + shown.map(_recordsTabRowHTML).join('') + more;
 }
 
 // recordsTabStateChipsHtml is the Records tab's state filter as a multi-select
@@ -7560,7 +7666,16 @@ function renderProjectsView() {
     // A projects address opens Overview unless it names a sub-tab; no address
     // at all keeps the remembered sub-tab.
     if (fromHash !== null) _projectsState.subtab = _projectsHashSubtab(_projectsCurrentHash()) || 'overview';
-    return fromHash !== null ? fromHash : _projectsRecallLast();
+    // The header scope is the one source of truth: a hash that names a project
+    // (and plan) sets it, the Overview hash means All, and no hash at all
+    // keeps the remembered scope (else the remembered project of old).
+    if (fromHash !== null) {
+      _scopeApplyFromHash(fromHash, _projectsHashPlan(_projectsCurrentHash()));
+      return fromHash;
+    }
+    const kept = _scopeActive() ? getScope().project : _projectsRecallLast();
+    if (kept !== getScope().project) setScope(kept, '', { silent: true, noHash: true });
+    return kept;
   })();
   if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
   // First paint from the cache; the fetches below refresh it in the background.
@@ -7577,12 +7692,13 @@ function renderProjectsView() {
 
 function _projectsLoad() {
   return apiFetch('/api/projects').then(list => {
-    if (!_projectsActive()) return;
+    if (!_projectsActive() && !_scopeListWanted) return;
     _projectsState.list = Array.isArray(list) ? list : [];
     _projectsState.error = '';
     if (Array.isArray(list)) _cfPut(_cfKey('projects'), '', list);
+    _scopeOnProjectList(); // the header scope is checked against every list that arrives
   }).catch(err => {
-    if (!_projectsActive()) return;
+    if (!_projectsActive() && !_scopeListWanted) return;
     _projectsState.list = _projectsState.list || [];
     _projectsState.error = (err && err.message) || String(err);
   });
@@ -7627,16 +7743,491 @@ function selectProjectsView(name) {
     _projectsState.rollup = null; _projectsState.rollupFor = ''; _projectsState.rollupError = '';
     _projectsState.rollupStatus = ''; _projectsState.cardHtml = {}; _projectsState.cardShape = '';
   }
-  _projectsState.selected = next;
+  // The scope is the one source of truth: setScope keeps _projectsState.selected,
+  // the remembered project and the hash in step; this handler only repaints.
+  setScope(next, '', { silent: true });
   _projectsSeedFromCache();
-  _projectsRememberLast(_projectsState.selected);
-  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
-  try {
-    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true)));
-  } catch (_) { /* the hash is a convenience; the choice still applies */ }
   _projectsPaint();
   return _projectsLoadSelected();
 }
+
+// ── Header scope ─────────────────────────────────────────────────────────────
+// The scope is what the Automata pages are filtered to: All, one project, or
+// one plan of that project. It is {project, plan} where '' means All, and a
+// plan implies its project. A plan is one entry of the project's arcs array,
+// keyed by its automation_id (the Automation whose member Automata make up the
+// plan). The choice is remembered per device under the single localStorage key
+// dw_scope (JSON); every storage access is wrapped in try/catch, so blocked
+// storage leaves the scope in memory for the page's lifetime. setScope() is the
+// one mutation path: the header scope modal, the in-page Projects picker, the
+// Clear button and a #projects/<name>?plan=<id> hash all go through it, and it
+// keeps _projectsState.selected, the remembered project and the hash in step.
+const SCOPE_STORE_KEY = 'dw_scope';
+const _SCOPE_MODAL_ID = 'scopeModal';
+let _scopeState = null;          // { project, plan } -- read lazily from storage
+let _scopeToken = 0;             // bumped on every scope change; a late reply for an older scope is dropped
+let _scopeListWanted = 0;        // >0 while the scope itself waits on _projectsLoad (any Automata sub-page)
+let _scopePlanCache = { key: '', ids: new Set(), status: 'idle' };
+let _scopeNames = null;          // automation id -> name, read once for plan labels
+let _scopeModalProject = '';     // project whose plans the open modal shows ('' = none yet)
+
+function _scopeStorage() {
+  try { return (typeof localStorage !== 'undefined' && localStorage) ? localStorage : null; } catch (_) { return null; }
+}
+// _scopeRead -> the saved scope, or null when nothing usable was saved.
+function _scopeRead() {
+  try {
+    const ls = _scopeStorage();
+    if (!ls) return null;
+    const raw = ls.getItem(SCOPE_STORE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    const project = typeof o.project === 'string' ? o.project : '';
+    const plan = project && typeof o.plan === 'string' ? o.plan : '';
+    return { project, plan };
+  } catch (_) { return null; }
+}
+function _scopeSave() {
+  try {
+    const ls = _scopeStorage();
+    if (ls) ls.setItem(SCOPE_STORE_KEY, JSON.stringify(_scopeState));
+  } catch (_) { /* storage blocked: the scope stays in memory */ }
+}
+function _scopeEnsure() {
+  if (!_scopeState) _scopeState = _scopeRead() || { project: '', plan: '' };
+  return _scopeState;
+}
+
+// getScope returns a copy of the scope: {project, plan}, '' meaning All.
+function getScope() {
+  const s = _scopeEnsure();
+  return { project: s.project, plan: s.plan };
+}
+function _scopeActive() { return !!_scopeEnsure().project; }
+
+// _scopePlanLabel resolves a plan's readable label: the Automation's name, else
+// the title of the plan record that lists it, else the automation id itself.
+function _scopePlanLabel(project, id) {
+  id = String(id || '');
+  if (!id) return '';
+  try {
+    if (_scopeNames && _scopeNames[id]) return _scopeNames[id];
+    const auto = (typeof _automationState !== 'undefined' && Array.isArray(_automationState.list))
+      ? _automationState.list.find(a => a && a.id === id) : null;
+    if (auto && auto.name) return String(auto.name);
+    const rows = [];
+    if (_projectsState.rollup && _projectsState.rollupFor === project && Array.isArray(_projectsState.rollup.plans)) rows.push(..._projectsState.rollup.plans);
+    if (typeof _plansBrowser !== 'undefined' && _plansBrowser && _plansBrowser.project === project && Array.isArray(_plansBrowser.plans)) rows.push(..._plansBrowser.plans);
+    const row = rows.find(r => r && Array.isArray(r.automation_ids) && r.automation_ids.indexOf(id) >= 0 && r.title);
+    if (row) return String(row.title);
+  } catch (_) { /* fall through to the id */ }
+  return id;
+}
+
+// _scopeLabel is the human text of the scope: 'All', 'projectName' or
+// 'projectName / planLabel'.
+function _scopeLabel() {
+  const s = _scopeEnsure();
+  if (!s.project) return t('header_scope_all') || 'All';
+  return s.plan ? s.project + ' / ' + _scopePlanLabel(s.project, s.plan) : s.project;
+}
+
+// The plan the hash should carry: only the plan of the project the Projects
+// page has selected.
+function _scopeHashPlan() {
+  const s = _scopeEnsure();
+  return s.project && s.project === _projectsState.selected ? s.plan : '';
+}
+function _scopeSyncHash() {
+  if (!_projectsActive()) return;
+  try {
+    history.replaceState(history.state, '', (location.pathname || '/') + (location.search || '') + _projectsHashBuild(_projectsState.selected, _projectsActiveSubtab(true), _scopeHashPlan()));
+  } catch (_) { /* the hash is a convenience; the scope still applies */ }
+}
+
+// _scopeRepaint redraws the current Automata sub-page through the existing
+// view renderer, without a page reload.
+function _scopeRepaint() {
+  if (state.activeView !== 'autonomous') return Promise.resolve();
+  if (_projectsActive()) {
+    _projectsPaint();
+    const tok = _scopeToken;
+    return _projectsLoadSelected().then(() => {
+      if (tok === _scopeToken && _projectsActive()) _projectsPaint();
+    });
+  }
+  renderAutonomousView();
+  return Promise.resolve();
+}
+
+// setScope(project, plan) sets the scope. Returns true when it changed. A plan
+// without a project is dropped. opts.silent skips the repaint (the caller paints);
+// opts.noHash skips the hash write.
+function setScope(project, plan, opts) {
+  opts = opts || {};
+  project = String(project || '');
+  plan = project ? String(plan || '') : '';
+  const cur = _scopeEnsure();
+  const changed = cur.project !== project || cur.plan !== plan;
+  _scopeState = { project, plan };
+  if (changed) {
+    _scopeToken++;
+    _scopePlanCache = { key: '', ids: new Set(), status: 'idle' };
+  }
+  _scopeSave();
+  _projectsState.selected = project || _PROJECTS_OVERVIEW;
+  _projectsRememberLast(project);
+  if (typeof _automationInboxRescope === 'function') _automationInboxRescope();
+  if (!opts.noHash) _scopeSyncHash();
+  renderScopeButton();
+  if (changed && !opts.silent) _scopeRepaint();
+  return changed;
+}
+function clearScope() { return setScope('', ''); }
+// A #projects hash names the scope: a project (and plan), or the Overview (All).
+function _scopeApplyFromHash(project, plan) {
+  return setScope(project || '', plan || '', { silent: true, noHash: true });
+}
+
+// _scopeValidate checks the scope against the project list once it has arrived:
+// a project that is gone, or a plan that is no longer one of the project's
+// arcs, falls back to All and the fallback is saved. A list that failed to
+// load proves nothing, so it never clears the scope.
+function _scopeValidate() {
+  if (!_scopeActive() || _projectsState.error || !Array.isArray(_projectsState.list)) return;
+  const s = _scopeEnsure();
+  const p = _projectsState.list.find(x => x && x.name === s.project);
+  if (!p) { setScope('', ''); return; }
+  if (s.plan) {
+    const arcs = Array.isArray(p.arcs) ? p.arcs : [];
+    if (!arcs.some(a => a && a.automation_id === s.plan)) setScope(s.project, '');
+  }
+}
+// _scopeOnProjectList runs when the project list arrives: validate the scope and
+// refresh the modal if it is open.
+function _scopeOnProjectList() {
+  _scopeValidate();
+  renderScopeButton();
+  if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+}
+// _scopeLoadList reads the project list from any Automata sub-page.
+function _scopeLoadList() {
+  _scopeListWanted++;
+  return Promise.resolve(_projectsLoad()).catch(() => {}).then(() => {
+    _scopeListWanted--;
+    if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+  });
+}
+// _scopeBootKick validates a remembered scope once the list arrives. Boot never
+// waits for it: the remembered scope is restored first and corrected later.
+function _scopeBootKick() {
+  try {
+    if (_scopeActive() && !Array.isArray(_projectsState.list)) _scopeLoadList();
+  } catch (_) { /* boot must never break */ }
+}
+
+// ── Filter helpers the page tasks call ───────────────────────────────────────
+
+// _scopeMatchesPrd(prd): true when the scope is All. A project scope matches on
+// the Automaton's project link (the project field of the /api/autonomous/prds
+// reply). A plan scope matches the Automata that are members of the plan's
+// Automation: the plan implies its project.
+function _scopeMatchesPrd(prd) {
+  const s = _scopeEnsure();
+  if (!s.project) return true;
+  if (!prd || typeof prd !== 'object') return false;
+  if (!s.plan) return String(prd.project || '') === s.project;
+  if (prd.automation_id && prd.automation_id === s.plan) return true;
+  return _scopePlanPrdIds().has(prd.id);
+}
+// _scopePlanPrdIds is the Set of Automaton ids of the active plan, read once per
+// plan from the Automation detail route and cached until the scope changes. It
+// is empty until the reply arrives; the page repaints then.
+function _scopePlanPrdIds() {
+  const s = _scopeEnsure();
+  if (!s.plan) return new Set();
+  const key = s.project + '\n' + s.plan;
+  if (_scopePlanCache.key === key) return _scopePlanCache.ids;
+  const entry = { key, ids: new Set(), status: 'loading' };
+  _scopePlanCache = entry;
+  const tok = _scopeToken;
+  let req;
+  try { req = automationRequest('GET', '/api/automations/' + encodeURIComponent(s.plan)); } catch (_) { req = Promise.reject(); }
+  Promise.resolve(req).then(data => {
+    if (tok !== _scopeToken || _scopePlanCache !== entry) return; // a later scope owns the cache
+    const members = data && Array.isArray(data.members) ? data.members : [];
+    members.forEach(m => { if (m && m.prd_id) entry.ids.add(m.prd_id); });
+    entry.status = 'ready';
+    _scopeRepaint();
+  }, () => {
+    if (tok !== _scopeToken || _scopePlanCache !== entry) return;
+    entry.status = 'error';
+  });
+  return entry.ids;
+}
+
+// ── Banner ───────────────────────────────────────────────────────────────────
+// _scopeBannerHTML is '' while the scope is All, else a status line saying what
+// the page is filtered to, with a Clear button.
+function _scopeBannerHTML() {
+  if (!_scopeActive()) return '';
+  const text = t('header_scope_banner', [_scopeLabel()]) || ('Filtered to ' + _scopeLabel());
+  return `<div class="scope-banner" role="status"><span class="scope-banner-text">${escHtml(text)}</span>` +
+    `<button type="button" class="btn-secondary scope-banner-clear" onclick="clearScope()">${escHtml(t('header_scope_clear') || 'Clear')}</button></div>`;
+}
+
+// ── Projects page filters ────────────────────────────────────────────────────
+// With a plan scope the project page narrows every sub-tab to that plan: the
+// plan is an Automation (an arc of the project), so a roll-up group matches on
+// its automation_id, a plan-record row matches through the plan record that
+// lists the Automation, and an Automaton matches through the plan's members.
+function _scopePlanId() { return _scopeEnsure().plan; }
+
+// _scopePlanRecordIds is the Set of plan-record ids that list the scoped
+// Automation, read from the rows the Plans browser and the roll-up hold.
+function _scopePlanRecordIds() {
+  const s = _scopeEnsure();
+  const ids = new Set();
+  if (!s.plan) return ids;
+  const rows = [];
+  try {
+    if (_projectsState.rollup && _projectsState.rollupFor === s.project && Array.isArray(_projectsState.rollup.plans)) rows.push(..._projectsState.rollup.plans);
+    if (typeof _plansBrowser !== 'undefined' && _plansBrowser && _plansBrowser.project === s.project) {
+      if (Array.isArray(_plansBrowser.plans)) rows.push(..._plansBrowser.plans);
+      if (Array.isArray(_plansBrowser.backlog)) rows.push(..._plansBrowser.backlog);
+    }
+  } catch (_) { /* no plan rows yet */ }
+  rows.forEach(r => { if (r && r.id && _scopePlanRowMatches(r)) ids.add(r.id); });
+  return ids;
+}
+// _scopePlanRowMatches: true without a plan scope, else when the plan row (a
+// plan record or roll-up plan) is the scoped plan or lists its Automation.
+function _scopePlanRowMatches(r) {
+  const plan = _scopeEnsure().plan;
+  if (!plan) return true;
+  return !!r && (r.id === plan || r.automation_id === plan || (Array.isArray(r.automation_ids) && r.automation_ids.indexOf(plan) >= 0));
+}
+// _SCOPE_MAX_PAGES caps how many extra pages a filtered list pulls while its
+// current page shows too little.
+const _SCOPE_MAX_PAGES = 10;
+
+// _scopeAutomatonIdMatches: true when no plan is scoped, else when the id is the
+// plan's Automation or one of its member Automata.
+function _scopeAutomatonIdMatches(id) {
+  const s = _scopeEnsure();
+  if (!s.plan) return true;
+  id = String(id || '');
+  return !!id && (id === s.plan || _scopePlanPrdIds().has(id));
+}
+
+// _scopeRecordMatches filters plan-record rows and findings: true without a
+// plan scope, else when the record sits under a plan that lists the scoped
+// Automation or is tied to the Automation or one of its Automata.
+function _scopeRecordMatches(r) {
+  const s = _scopeEnsure();
+  if (!s.plan) return true;
+  if (!r || typeof r !== 'object') return false;
+  if (r.plan_id && _scopePlanRecordIds().has(String(r.plan_id))) return true;
+  const ids = [].concat(Array.isArray(r.automaton_ids) ? r.automaton_ids : [], r.automation_id, r.shipped_by, r.raised_by);
+  return ids.some(id => id && _scopeAutomatonIdMatches(id));
+}
+
+// _scopeRollupGroup is the roll-up group of the scoped plan, or null.
+function _scopeRollupGroup(roll) {
+  const s = _scopeEnsure();
+  if (!s.plan || !roll || !Array.isArray(roll.arcs)) return null;
+  return roll.arcs.find(a => a && a.automation_id === s.plan) || null;
+}
+
+// _scopeOverviewData builds the overview summary of a plan scope from the plan's
+// own roll-up group (progress, points, state, Automata) and the plan's records;
+// nothing is read from the project-wide summary reply.
+const _SCOPE_FINISHED = ['done', 'completed', 'shipped', 'merged', 'finished'];
+function _scopeOverviewData(p, roll) {
+  const s = _scopeEnsure();
+  const g = _scopeRollupGroup(roll);
+  const tk = (g && g.tasks) || {};
+  const done = Number(tk.done) || 0;
+  const total = Number(tk.total) || 0;
+  const pct = total ? Math.round(done * 100 / total) : 0;
+  const autos = g && Array.isArray(g.automata) ? g.automata : [];
+  const finished = a => !a || _SCOPE_FINISHED.indexOf(String(a.status || '').toLowerCase()) >= 0;
+  const left = autos.find(a => !finished(a));
+  const label = _scopePlanLabel(s.project, s.plan);
+  const st = _recordsTab.project === p.name ? _recordsTab : null;
+  const recs = st ? st.rows.filter(_scopeRecordMatches) : [];
+  const findings = recs.filter(r => r.kind === 'finding').length;
+  return {
+    progress: { automata: { done: autos.filter(a => a && finished(a)).length, total: autos.length }, points: g ? g.points : 0 },
+    active_plans: g ? [{ id: s.plan, title: label, state: g.state, progress: { done, total, percent: pct } }] : [],
+    next: left ? { automaton_id: left.id, automaton_title: left.title, plan_id: s.plan, plan_title: label } : null,
+    counts: { plans: { total: g ? 1 : 0, backlog: 0 }, records: { total: recs.length }, rows: { total: recs.length - findings }, findings: { total: findings } },
+  };
+}
+
+// _scopePlanLoading is true while the scoped plan's member list is still being
+// read, so a page that filters on it shows its loading line, not a false empty.
+function _scopePlanLoading() {
+  if (!_scopePlanId()) return false;
+  _scopePlanPrdIds();
+  return _scopePlanCache.status === 'loading';
+}
+
+// _scopeHistoryItemMatches filters the project history: a finished Automaton
+// matches through the plan's members; a daily snapshot is project-wide and has
+// no plan, so a plan scope leaves it out.
+function _scopeHistoryItemMatches(e) {
+  if (!_scopePlanId()) return true;
+  return !!e && e.kind === 'automaton' && _scopeAutomatonIdMatches(e.id);
+}
+
+// _scopeEmptyHTML is the one-line empty state a scoped page shows.
+function _scopeEmptyHTML(key, cls) {
+  return `<div class="scope-empty${cls ? ' ' + cls : ''}" role="status">${escHtml(t(key))}</div>`;
+}
+
+// _scopeBody puts the banner on top of a page body. An empty body stays empty
+// so the page's own fall-back rules still see it.
+function _scopeBody(html) {
+  return html === '' ? '' : _scopeBannerHTML() + html;
+}
+
+// ── Header button ────────────────────────────────────────────────────────────
+// renderScopeButton syncs the label, title, badge and aria-expanded. The badge
+// shows only while a scope is active.
+function renderScopeButton() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const btn = document.getElementById('headerScopeBtn');
+  if (!btn) return;
+  const label = _scopeLabel();
+  const text = t('header_scope_button_label', [label]) || ('Scope: ' + label);
+  btn.setAttribute('aria-label', text);
+  btn.setAttribute('title', text);
+  btn.setAttribute('aria-expanded', _headerModalIsOpen(_SCOPE_MODAL_ID) ? 'true' : 'false');
+  const badge = document.getElementById('headerScopeBadge');
+  if (badge) {
+    if (_scopeActive()) {
+      badge.style.display = '';
+      badge.innerHTML = `<span class="header-scope-badge-text">${escHtml(t('header_scope_badge_label') || 'Filter active')}</span>`;
+    } else {
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+    }
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+function _scopeModalRow(cls, label, call, current, extra) {
+  return `<button type="button" class="scope-modal-row${cls ? ' ' + cls : ''}${current ? ' is-active' : ''}"${current ? ' aria-current="true"' : ''}${extra || ''} onclick="${escHtml(call)}"><span class="scope-modal-row-label">${escHtml(label)}</span></button>`;
+}
+
+function _scopeModalBodyHTML() {
+  const list = Array.isArray(_projectsState.list) ? _projectsState.list.filter(p => p && p.name) : null;
+  const err = _projectsState.error;
+  if (!list || (!list.length && _scopeListWanted > 0)) {
+    return loadingEyeBlock();
+  }
+  const s = _scopeEnsure();
+  let html = '';
+  if (err) html += `<div class="scope-modal-error" role="alert">${escHtml((t('projects_load_failed') || 'Could not load projects:') + ' ' + err)}</div>`;
+  html += `<div class="scope-modal-list" role="group" aria-labelledby="scopeModalTitle">`;
+  html += _scopeModalRow('is-all', t('header_scope_all') || 'All', 'clearScope();closeScopeModal();', !s.project, ' data-scope-all="1"');
+  if (list.length) {
+    html += `<div class="scope-modal-heading">${escHtml(t('header_scope_project_heading') || 'Project')}</div>`;
+    list.forEach(p => {
+      const open = _scopeModalProject === p.name;
+      const call = (Array.isArray(p.arcs) && p.arcs.length)
+        ? `_scopeModalPickProject(${JSON.stringify(p.name)})`
+        : `setScope(${JSON.stringify(p.name)},'');closeScopeModal();`;
+      html += _scopeModalRow('', p.name, call, s.project === p.name, ` data-scope-project="${escHtml(p.name)}"${open ? ' aria-expanded="true"' : ''}`);
+    });
+  }
+  const sel = list.find(p => p.name === _scopeModalProject);
+  if (sel) {
+    html += `<div class="scope-modal-heading">${escHtml(t('header_scope_plan_heading') || 'Plan')}</div>`;
+    const here = s.project === sel.name;
+    html += _scopeModalRow('', t('header_scope_all_plans') || 'All plans', `setScope(${JSON.stringify(sel.name)},'');closeScopeModal();`, here && !s.plan, ' data-scope-all-plans="1"');
+    (Array.isArray(sel.arcs) ? sel.arcs : []).forEach(a => {
+      if (!a || !a.automation_id) return;
+      html += _scopeModalRow('', _scopePlanLabel(sel.name, a.automation_id),
+        `setScope(${JSON.stringify(sel.name)},${JSON.stringify(a.automation_id)});closeScopeModal();`,
+        here && s.plan === a.automation_id, ` data-scope-plan="${escHtml(a.automation_id)}"`);
+    });
+  }
+  html += `</div>`;
+  html += `<div class="scope-modal-note">${escHtml(t('header_scope_templates_note') || 'Templates are shown for every project.')}</div>`;
+  return html;
+}
+
+// _scopeModalPaint redraws the open modal's body in place and keeps keyboard
+// focus on the row it was on.
+function _scopeModalPaint(focusProject) {
+  const el = document.getElementById('scopeModalBody');
+  if (!el) return;
+  el.innerHTML = _scopeModalBodyHTML();
+  if (focusProject) {
+    const btn = Array.from(el.querySelectorAll('[data-scope-project]')).find(b => b.getAttribute('data-scope-project') === focusProject);
+    if (btn && typeof btn.focus === 'function') { try { btn.focus(); } catch (_) { /* detached */ } return; }
+  }
+  _headerModalRefocus(_SCOPE_MODAL_ID);
+}
+// _scopeModalPickProject shows a project's plans under the Plan heading.
+function _scopeModalPickProject(name) {
+  _scopeModalProject = String(name || '');
+  _scopeModalPaint(_scopeModalProject);
+}
+window._scopeModalPickProject = _scopeModalPickProject;
+
+function _scopeHelpLink() {
+  const label = t('header_scope_help_label') || 'Help: scope';
+  return `<a class="header-modal-help" href="/diagrams.html#docs/howto/projects-tab.md" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}">?</a>`;
+}
+
+// _scopeLoadPlanNames reads the Automation names once, for readable plan labels.
+function _scopeLoadPlanNames() {
+  if (_scopeNames) return;
+  let req;
+  try { req = automationRequest('GET', '/api/automations'); } catch (_) { return; }
+  Promise.resolve(req).then(d => {
+    const rows = Array.isArray(d) ? d : (d && Array.isArray(d.automations) ? d.automations : (d && Array.isArray(d.list) ? d.list : []));
+    const names = {};
+    rows.forEach(a => { if (a && a.id && a.name) names[a.id] = String(a.name); });
+    _scopeNames = names;
+    renderScopeButton();
+    if (_headerModalIsOpen(_SCOPE_MODAL_ID)) _scopeModalPaint();
+  }, () => { /* labels fall back to the automation id */ });
+}
+
+function openScopeModal() {
+  const s = _scopeEnsure();
+  _scopeModalProject = s.plan ? s.project : '';
+  _headerModalShow({
+    id: _SCOPE_MODAL_ID,
+    titleId: 'scopeModalTitle',
+    titleText: t('header_scope_modal_title') || 'Scope',
+    titleExtraHtml: _scopeHelpLink(),
+    bodyHtml: `<div id="scopeModalBody">${_scopeModalBodyHTML()}</div>`,
+    closeOnclick: 'closeScopeModal()',
+    openerId: 'headerScopeBtn',
+    onClose: () => { _scopeModalProject = ''; renderScopeButton(); },
+  });
+  renderScopeButton();
+  if (!Array.isArray(_projectsState.list) || _projectsState.error) _scopeLoadList();
+  _scopeLoadPlanNames();
+}
+window.openScopeModal = openScopeModal;
+
+// The one close path: the Close button, a row choice, Escape and the backdrop
+// all end here, so focus returns to #headerScopeBtn.
+function closeScopeModal() {
+  _headerModalHide(_SCOPE_MODAL_ID);
+}
+window.closeScopeModal = closeScopeModal;
+window.getScope = getScope;
+window.setScope = setScope;
+window.clearScope = clearScope;
+window.renderScopeButton = renderScopeButton;
 
 // Handle Android/browser back button via popstate
 window.addEventListener('popstate', function(e) {
@@ -9109,21 +9700,18 @@ function renderSessionsSearchRow(filterVal) {
 }
 
 // The one-line toolbar directly under the page header, at every width:
-// [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode] —
-// one flex row that never wraps (flex-wrap: nowrap, the search row is the
-// only flexible member). The search-count line (role=status) stays its own
-// row below the toolbar and is painted fresh on every render, so the
-// sheet-kit's in-place re-paints while the Filters sheet is open never take
-// it away. The server <select> here is the toolbar's own instance
-// (#sessionsServerDropdown, a distinct id — the header's #serverDropdown is
-// never duplicated): same options body, same single onchange →
-// onServerDropdownChange() → selectServer() mutation path, and
-// renderServerDropdown() keeps both instances in lockstep.
+// [search box (flex:1)] [Filters] [fold-all] [view mode] — one flex row that
+// never wraps (flex-wrap: nowrap, the search row is the only flexible member).
+// The server picker is NOT repeated here: the header server button is the one
+// entry point on every page, so this page carries no server <select>. The
+// search-count line (role=status) stays its own row below the toolbar and is
+// painted fresh on every render, so the sheet-kit's in-place re-paints while
+// the Filters sheet is open never take it away.
 function renderSessionsToolbar(filterVal, filtersActive, pool, groupBy, viewMode, total) {
   const count = filtersActive
     ? `<div class="sessions-search-count" id="sessionsSearchCount" role="status">${escHtml(_sessionsSearchCountText(pool ? pool.length : 0, total))}</div>`
     : '';
-  return `<div class="sessions-topbar">${_sessionsServerSelectHTML()}${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
+  return `<div class="sessions-topbar">${renderSessionsSearchRow(filterVal)}${groupBy ? _sessionsFoldControlHTML(pool, groupBy) : ''}${_sessionsViewSelectHTML(viewMode)}</div>${count}`;
 }
 window.renderSessionsToolbar = renderSessionsToolbar;
 
@@ -18483,9 +19071,9 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // The server picker now lives in the app header (#serverDropdown), so
+  // The server picker now lives in the app header (#serverPickerBtn), so
   // Settings can show/edit a selected remote peer's own config instead of
-  // always being local-only -- the header dropdown is the single picker
+  // always being local-only -- the header server button is the single picker
   // on this page.
 
   // Version-skew audit — fill the general/plugins/comms/compute/automata
@@ -31228,7 +31816,7 @@ function selectServer(name) {
     // Re-render the view the operator is on so its picker bar re-injects
     // with the new active chip highlighted (it used to redraw only Sessions).
     _rerenderActiveViewForServerSwitch();
-    renderServerDropdown(); // keep the header dropdown's highlighted entry on the new server
+    renderServerDropdown(); // keep the header server button on the new server
   }
 }
 
@@ -31426,27 +32014,164 @@ function testServerEntry(name, btnEl) {
     .finally(() => { if (btnEl) { btnEl.disabled = false; btnEl.textContent = t('server_test_btn')||'Test'; } });
 }
 
-// ── BL312 S3 — Header server dropdown ─────────────────────────────────────────
-// One native <select> in the app header (#serverDropdown) replaces the old
-// per-panel chip row (.server-picker-bar) and the Sessions topbar slot
-// (.sessions-topbar-servers): it shows the current server plus "All" and
-// every enabled peer on every page — phone and wide screen alike (the
-// native control truncates long names instead of wrapping a row of chips) —
-// and a single generic onchange covers every choice, so choosing an entry
-// goes through selectServer() exactly as the chips did.
+// ── Header server button ──────────────────────────────────────────────────────
+// One compact button in the app header (#serverPickerBtn: icon + status dot
+// #serverPickerDot + short name #serverPickerName) is the entry point to the
+// server picker on every page — phone and wide screen alike. It replaces the
+// old wide native server <select> and the Sessions toolbar's own
+// second <select>: the button shows the current server at a glance and opens
+// the one server picker modal (openServerPickerModal), the same modal the
+// three-finger swipe-up gesture opens. Choosing a row goes through
+// selectServer(), the single mutation path every other control also uses
+// (Back to local chips, the Settings servers list, the federated error panel).
 //
-// The server name travels in the option's value attribute (escHtml-escaped,
-// read by the one shared handler via this.value), so a hostile peer name
-// (quotes, <, >, …) can never truncate or break an inline handler.
-// Reachability status is patched onto the matching option by matching the
-// option's own value / dataset values -- never by building a CSS selector
-// from the server name.
+// renderServerDropdown() is the one sync entry point: navigate(),
+// selectServer() and the hostname / reachability callbacks all call it, and it
+// updates the button's dot, short name, title, aria-label and aria-expanded.
 //
-// The swipe-gesture modal (openServerPickerModal) still works off the same
-// state/endpoint and calls the same selectServer() as the dropdown. The
-// "Back to local" controls, the Settings servers-list button and the
-// federated error-panel button are unchanged -- every entry point goes
-// through the single selectServer().
+// Server names reach the DOM only through escHtml'd attributes and text, and
+// reachability is patched onto rows by comparing each row's own data attribute
+// to the name -- never by building a CSS selector from a server name.
+
+// ── Shared header modal helpers ───────────────────────────────────────────────
+// Every modal opened from a header button (the server picker today, the scope
+// modal built on the same helpers later) goes through _headerModalShow /
+// _headerModalHide so they all behave the same: an overlay on the existing
+// .confirm-modal-overlay / .confirm-modal classes with role="dialog",
+// aria-modal="true" and aria-labelledby; keyboard focus moves into the dialog
+// (the active row, else the first button); Tab is trapped inside; Escape and a
+// click on the backdrop close it; the document keydown listener is removed on
+// close; and focus returns to the opener button, whose aria-expanded is reset.
+const _headerModalState = {};   // id -> { overlay, onKey, openerId, onClose, prevFocus, initialFocus }
+const _headerModalStack = [];   // open modal ids, topmost last (only the topmost reacts to keys)
+const _HEADER_MODAL_FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function _headerModalIsOpen(id) { return !!_headerModalState[id]; }
+
+function _headerModalFocusables(overlay) {
+  if (!overlay || typeof overlay.querySelectorAll !== 'function') return [];
+  return Array.from(overlay.querySelectorAll(_HEADER_MODAL_FOCUSABLE));
+}
+
+// Moves focus to the active row (aria-current), else the first button, else
+// the dialog itself; returns the element focused (or null).
+function _headerModalFocusInitial(id) {
+  const st = _headerModalState[id];
+  if (!st || !st.overlay) return null;
+  const ov = st.overlay;
+  let el = null;
+  if (typeof ov.querySelector === 'function') {
+    el = ov.querySelector('[aria-current="true"]') || ov.querySelector('button')
+      || ov.querySelector('[role="dialog"]');
+  }
+  if (el && typeof el.focus === 'function') { try { el.focus(); } catch (_) { /* detached */ } }
+  st.initialFocus = el;
+  return el;
+}
+
+// After an async body paint (the server list arriving late): move focus to the
+// active row again, but only while focus is still where _headerModalShow put it
+// or has fallen out of the dialog -- never steal it from an operator who has
+// already tabbed somewhere inside.
+function _headerModalRefocus(id) {
+  const st = _headerModalState[id];
+  if (!st || !st.overlay) return;
+  const cur = (typeof document !== 'undefined') ? document.activeElement : null;
+  const inside = !!(cur && typeof st.overlay.contains === 'function' && st.overlay.contains(cur));
+  if (!cur || cur === st.initialFocus || !inside) _headerModalFocusInitial(id);
+}
+
+function _headerModalOnKey(id, e) {
+  const st = _headerModalState[id];
+  if (!st || _headerModalStack[_headerModalStack.length - 1] !== id || !e) return;
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    _headerModalHide(id);
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const items = _headerModalFocusables(st.overlay);
+  if (!items.length) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const cur = document.activeElement;
+  const inside = items.indexOf(cur) !== -1;
+  if (e.shiftKey) {
+    if (!inside || cur === first) { if (typeof e.preventDefault === 'function') e.preventDefault(); last.focus(); }
+  } else if (!inside || cur === last) {
+    if (typeof e.preventDefault === 'function') e.preventDefault();
+    first.focus();
+  }
+}
+
+// _headerModalShow({id, titleId, titleText, bodyHtml, openerId, onClose, ...})
+//   id          overlay element id (one open modal per id; re-showing replaces it)
+//   titleId     id of the title element (aria-labelledby target; default id+'Title')
+//   titleText   plain text title (escaped here)
+//   bodyHtml    trusted, already-escaped HTML for the dialog body
+//   openerId    id of the header button that opened it (aria-expanded + focus return)
+//   onClose     optional callback run after the modal is hidden
+//   titleExtraHtml / footerHtml / closeOnclick / maxWidth   optional extras
+// Returns the overlay element.
+function _headerModalShow(opts) {
+  opts = opts || {};
+  const id = opts.id;
+  if (!id || typeof document === 'undefined' || !document.createElement) return null;
+  if (_headerModalState[id]) _headerModalHide(id, { restoreFocus: false });
+  const titleId = opts.titleId || (id + 'Title');
+  const closeCode = opts.closeOnclick || ('_headerModalHide(' + JSON.stringify(id) + ')');
+  const overlay = document.createElement('div');
+  overlay.id = id;
+  overlay.className = 'confirm-modal-overlay';
+  overlay.innerHTML = `<div class="confirm-modal header-modal" role="dialog" aria-modal="true" aria-labelledby="${escHtml(titleId)}" tabindex="-1" style="max-width:${escHtml(opts.maxWidth || '320px')};">
+    <div class="header-modal-title-row"><span id="${escHtml(titleId)}" class="header-modal-title">${escHtml(opts.titleText || '')}</span>${opts.titleExtraHtml || ''}</div>
+    ${opts.bodyHtml || ''}
+    <div class="header-modal-footer">${opts.footerHtml || '<span></span>'}<button type="button" class="btn-secondary header-modal-btn header-modal-close" onclick="${escHtml(closeCode)}">${escHtml(t('header_modal_close') || 'Close')}</button></div>
+  </div>`;
+  const st = {
+    overlay, openerId: opts.openerId || '', onClose: opts.onClose,
+    prevFocus: document.activeElement || null, onKey: null, initialFocus: null,
+  };
+  st.onKey = (e) => _headerModalOnKey(id, e);
+  overlay.addEventListener('click', e => { if (e.target === overlay) _headerModalHide(id); });
+  document.addEventListener('keydown', st.onKey);
+  document.body.appendChild(overlay);
+  _headerModalState[id] = st;
+  _headerModalStack.push(id);
+  const opener = st.openerId ? document.getElementById(st.openerId) : null;
+  if (opener && typeof opener.setAttribute === 'function') opener.setAttribute('aria-expanded', 'true');
+  _headerModalFocusInitial(id);
+  return overlay;
+}
+
+// _headerModalHide(id) — closes the modal; idempotent. Removes the overlay and
+// the document keydown listener, resets the opener's aria-expanded and returns
+// focus to it (opts.restoreFocus === false skips the focus move).
+function _headerModalHide(id, opts) {
+  if (typeof document === 'undefined') return;
+  const st = _headerModalState[id];
+  const overlay = st ? st.overlay : (document.getElementById ? document.getElementById(id) : null);
+  if (st) {
+    try { document.removeEventListener('keydown', st.onKey); } catch (_) { /* detached */ }
+    delete _headerModalState[id];
+    const i = _headerModalStack.lastIndexOf(id);
+    if (i >= 0) _headerModalStack.splice(i, 1);
+  }
+  if (overlay && typeof overlay.remove === 'function') overlay.remove();
+  if (!st) return;
+  const opener = st.openerId ? document.getElementById(st.openerId) : null;
+  if (opener && typeof opener.setAttribute === 'function') opener.setAttribute('aria-expanded', 'false');
+  if (!(opts && opts.restoreFocus === false)) {
+    const target = opener || st.prevFocus;
+    if (target && typeof target.focus === 'function') { try { target.focus(); } catch (_) { /* detached */ } }
+  }
+  if (typeof st.onClose === 'function') { try { st.onClose(); } catch (_) { /* a callback must never break closing */ } }
+}
+window._headerModalShow = _headerModalShow;
+window._headerModalHide = _headerModalHide;
 
 function _pickerServers() {
   const raw = (state.servers && Array.isArray(state.servers.servers))
@@ -31552,44 +32277,6 @@ function _serverChoiceSettleBoot() {
   });
 }
 
-// Returns the <select id="serverDropdown"> markup for the header dropdown.
-// opts.hideAll (Settings/Observer parity) omits the "All" option; with
-// hideAll and no configured peers there is nothing to show at all.
-// Unreachable peers stay listed (never removed -- a temporarily down host
-// must not look like it doesn't exist) and stay selectable: choosing one is
-// exactly how the authoritative error surfaces.
-// Returns ONLY the inner <option>…</option> body for the header dropdown.
-// Kept separate from _serverPickerBar so a surface that already has a
-// <select id="serverDropdown"> in the DOM (index.html) can fill just the
-// options without nesting a select inside a select.
-function _serverOptionsHtml(opts) {
-  const servers = _pickerServers();
-  const selVal = state.activeServer === 'all' ? 'all' : (state.activeServer || '');
-  // GH#194 — the "this server" option shows the real hostname (lazy-resolved
-  // from /api/health by _ensureLocalHostname below), never the word "Local".
-  const localLabel = _localHostname || t('server_local_label') || 'This server';
-  const unreachableSuffix = ' ' + (t('server_dropdown_unreachable') || '(unreachable)');
-  const options = [];
-  if (!(opts && opts.hideAll)) options.push({ value: 'all', label: t('server_dropdown_all') || 'All servers' });
-  options.push({ value: '', label: localLabel });
-  servers.forEach(s => options.push({ value: s.name, label: s.label || s.name }));
-  return options.map(o => {
-    const unreachable = !!(o.value && o.value !== 'all' && _serverReachability[o.value] === false);
-    return `<option value="${escHtml(o.value)}" data-base-label="${escHtml(o.label)}" data-reachability="${unreachable ? 'down' : 'unknown'}"${o.value === selVal ? ' selected aria-current="true"' : ''}>${escHtml(o.label)}${unreachable ? escHtml(unreachableSuffix) : ''}</option>`;
-  }).join('');
-}
-
-// Returns the full <select id="serverDropdown"> markup for the header
-// dropdown. opts.hideAll (Settings/Observer parity) omits the "All"
-// option; with hideAll and no configured peers there is nothing to show at
-// all. Unreachable peers stay listed (never removed -- a temporarily down
-// host must not look like it doesn't exist) and stay selectable: choosing
-// one is exactly how the authoritative error surfaces.
-function _serverPickerBar(opts) {
-  if ((opts && opts.hideAll) && !_pickerServers().length) return '';
-  return '<select id="serverDropdown" class="server-dropdown" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml(opts) + '</select>';
-}
-
 // _serverReachability[name] is undefined (unknown/checking), true, or
 // false -- persists for the page session so re-rendering the dropdown
 // (e.g. switching views) doesn't re-probe hosts already resolved.
@@ -31616,44 +32303,26 @@ function _probePickerReachability(servers) {
       });
   });
 }
-// The two live picker instances: the header #serverDropdown and, when the
-// Sessions toolbar is painted, its own #sessionsServerDropdown. A missing
-// id drops out (an unpainted shell); a test stub stays a no-op.
-function _pickerDropdownEls() {
-  if (typeof document === 'undefined' || !document.getElementById) return [];
-  return ['serverDropdown', 'sessionsServerDropdown']
-    .map(id => { try { return document.getElementById(id); } catch (_) { return null; } })
-    .filter(el => el && typeof el.querySelectorAll === 'function');
-}
-window._pickerDropdownEls = _pickerDropdownEls;
-
-// The Sessions toolbar's own instance of the same server picker — a
-// distinct id (#sessionsServerDropdown; the header's #serverDropdown is
-// never duplicated), the same options body and the same single onchange →
-// onServerDropdownChange() → selectServer() mutation path.
-function _sessionsServerSelectHTML() {
-  return '<select id="sessionsServerDropdown" class="server-dropdown sessions-server-select" aria-label="Server" onchange="onServerDropdownChange(this.value)">' + _serverOptionsHtml() + '</select>';
-}
-window._sessionsServerSelectHTML = _sessionsServerSelectHTML;
-
-// Patches ONLY the one option whose probe just resolved -- never a full
-// dropdown re-render, so an in-progress operator interaction is never
-// disturbed by a probe landing late. Matches on the option's own value /
-// dataset values -- never by building a CSS selector from the name.
+// Late reachability probe landed for `name`: refresh the header button (the
+// dot turns to the warning colour for an unreachable selected peer) and patch
+// ONLY the matching row of an open server picker modal -- never a re-render,
+// so a probe landing late never steals keyboard focus from the operator.
+// Rows are matched by comparing each row's own data-server-name attribute to
+// the name -- never by building a CSS selector from the name. Unreachable rows
+// get the "(unreachable)" suffix and data-reachability="down" and are NEVER
+// disabled: choosing one is exactly how the authoritative error surfaces.
 function _updatePickerOptionReachability(name) {
-  const sels = _pickerDropdownEls();
-  if (!sels.length) return;
+  renderServerDropdown();
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  const listEl = document.getElementById('serverPickerModalList');
+  if (!listEl || typeof listEl.querySelectorAll !== 'function') return;
   const unreachable = _serverReachability[name] === false;
   const suffix = unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '';
-  sels.forEach(sel => {
-    Array.from(sel.querySelectorAll('option'))
-      .filter(o => o && o.value === name)
-      .forEach(o => {
-        const base = (o.dataset && o.dataset.baseLabel)
-          || (typeof o.textContent === 'string' ? o.textContent.replace(/\s*\([^()]*\)\s*$/, '') : '');
-        o.textContent = base + suffix;
-        if (o.dataset && 'reachability' in o.dataset) o.dataset.reachability = unreachable ? 'down' : 'unknown';
-      });
+  Array.from(listEl.querySelectorAll('button')).forEach(row => {
+    if (!row || typeof row.getAttribute !== 'function' || row.getAttribute('data-server-name') !== name) return;
+    row.setAttribute('data-reachability', unreachable ? 'down' : 'unknown');
+    const suf = typeof row.querySelector === 'function' ? row.querySelector('[data-role="suffix"]') : null;
+    if (suf) suf.textContent = suffix;
   });
 }
 
@@ -31754,34 +32423,55 @@ function _onServerListReady(fn) {
   loadServerListEager();
 }
 
-// Renders (or re-renders) the header dropdown from current state and syncs
-// its value to state.activeServer ('all' / a peer name / '' = this server).
-// No-op when the select isn't in the DOM (e.g. an older cached shell or a
-// test harness without the header markup).
-function renderServerDropdown() {
-  if (typeof document === 'undefined' || !document.getElementById) return;
-  // Keep the two live picker instances (header #serverDropdown and the
-  // Sessions toolbar's #sessionsServerDropdown) in lockstep — every
-  // navigation, server-list refresh and reachability probe updates both.
-  _pickerDropdownEls().forEach(sel => {
-    try {
-      // Fill the existing <select> with its options only (never a nested
-      // <select> — one instance per slot, options rebuilt in place).
-      sel.innerHTML = _serverOptionsHtml();
-      if (sel.style) sel.style.display = '';
-      if ('value' in sel) sel.value = (state.activeServer === 'all' ? 'all' : (state.activeServer ? state.activeServer : ''));
-    } catch (_) { /* a partial shell must never break navigation */ }
-  });
+// Short label for the header button: about 14 characters with an ellipsis; the
+// full name always stays in the title and aria-label.
+const SERVER_BTN_NAME_MAX = 14;
+function _serverShortName(name) {
+  const s = String(name == null ? '' : name);
+  return s.length > SERVER_BTN_NAME_MAX ? s.slice(0, SERVER_BTN_NAME_MAX - 1) + '\u2026' : s;
 }
 
-// The single generic change handler: the selected name arrives in `value`
-// (never inline-built per server), so no hostile peer name can break it.
-// '' = this server (local), 'all' = federated aggregate, anything else =
-// that peer. Delegates to the one selectServer() every other entry point
-// uses.
-function onServerDropdownChange(value) {
-  selectServer(value === 'all' ? 'all' : (value || null));
+// The selected server as the header button describes it: kind ('all' | 'local'
+// | 'peer'), its full display name, and whether a selected peer is currently
+// unreachable (per _serverReachability).
+function _serverButtonInfo() {
+  const active = state.activeServer;
+  if (active === 'all') {
+    return { kind: 'all', name: t('server_dropdown_all') || 'All servers', short: t('server_all_label') || 'All', unreachable: false };
+  }
+  if (!active) {
+    const local = _localHostname || t('server_local_label') || 'This server';
+    return { kind: 'local', name: local, short: local, unreachable: false };
+  }
+  const peer = _pickerServers().find(s => s.name === active);
+  const label = (peer && (peer.label || peer.name)) || active;
+  return { kind: 'peer', name: label, short: label, unreachable: _serverReachability[active] === false };
 }
+
+// Syncs the header server button from current state (the one sync entry
+// point; idempotent). No-op when the button isn't in the DOM (an older cached
+// shell or a test harness without the header markup).
+function renderServerDropdown() {
+  if (typeof document === 'undefined' || !document.getElementById || typeof state === 'undefined') return;
+  try {
+    const btn = document.getElementById('serverPickerBtn');
+    if (!btn) return;
+    const info = _serverButtonInfo();
+    const full = info.name + (info.unreachable ? ' ' + (t('server_dropdown_unreachable') || '(unreachable)') : '');
+    const label = t('header_server_button_label', [full]) || ('Server: ' + full);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', full);
+    btn.setAttribute('aria-expanded', _headerModalIsOpen('serverPickerModal') ? 'true' : 'false');
+    const dot = document.getElementById('serverPickerDot');
+    if (dot) {
+      dot.className = 'header-server-dot is-' + (info.unreachable ? 'down' : (info.kind === 'peer' ? 'peer' : info.kind));
+      if (dot.dataset) dot.dataset.kind = info.kind;
+    }
+    const nm = document.getElementById('serverPickerName');
+    if (nm) nm.textContent = _serverShortName(info.short);
+  } catch (_) { /* a partial shell must never break navigation */ }
+}
+
 // ── Signal Device Linking ──────────────────────────────────────────────────────
 
 function loadLinkStatus() {
@@ -34128,6 +34818,15 @@ function _automataBaseList() {
   const st = _automataState;
   const isTemplates = st.tab === 'templates';
   let list = st.allPrds.filter(p => !!p.is_template === isTemplates);
+  // Header scope ("Filter active"): with a project or a plan scope the list
+  // shows only the Automata of that project or of that plan, so the tag and
+  // status facets, the select-all box and the batch actions all see the same
+  // visible cards. Templates are global — shown for every project and plan —
+  // so they are not filtered; that case is called out with the one-line
+  // header_scope_templates_note instead (_automataScopeNoteHtml).
+  if (!isTemplates && typeof _scopeActive === 'function' && _scopeActive() && typeof _scopeMatchesPrd === 'function') {
+    list = list.filter(p => _scopeMatchesPrd(p));
+  }
   // When a status badge filter is active the badge controls exactly what's visible,
   // so bypass the history gate — a clicked 'archived' badge should show archived
   // without needing to toggle the history button separately.
@@ -34898,12 +35597,36 @@ function _automataLoadMoreHtml() {
   return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="automataLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="automataLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
     (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
 }
+// _automataScopeNoteHtml is the status line above the Automata list while a
+// header scope is active. The Automata list gets the standard "Filtered to …"
+// banner (with a Clear button). The Templates sub-tab is not filtered —
+// templates are shown for every project and plan — and shows the one-line
+// header_scope_templates_note instead. Under the All scope it is '' so the
+// unscoped page is byte-for-byte unchanged.
+function _automataScopeNoteHtml() {
+  if (typeof _scopeActive !== 'function' || !_scopeActive()) return '';
+  if (_automataState.tab === 'templates') {
+    const text = t('header_scope_templates_note') || 'Templates are shown for every project and plan.';
+    return `<div class="scope-banner scope-banner-note" role="note"><span class="scope-banner-text">${escHtml(text)}</span></div>`;
+  }
+  return _scopeBannerHTML();
+}
+// _automataGlobalScopeNote is the one-line note shown above sub-tabs that are
+// inherently global (Resources, Housekeeping and slot cards without a project
+// link): the scope filters the lists that carry a project link, but this
+// section is shared across every project and plan, so it stays unchanged with
+// a note. All scope shows nothing.
+function _automataGlobalScopeNote() {
+  if (typeof _scopeActive !== 'function' || !_scopeActive()) return '';
+  const text = t('header_scope_global_note') || 'This section applies to every project and plan.';
+  return `<div class="scope-banner scope-banner-note" role="note"><span class="scope-banner-text">${escHtml(text)}</span></div>`;
+}
 // _automataCardsHtml draws the Automata body through the shared tag browser.
 function _automataCardsHtml() {
   const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
   const empty = `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
   const base = _automataBaseList();
-  return _decisionRecordSlotHtml() + _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
+  return _automataScopeNoteHtml() + _decisionRecordSlotHtml() + _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
 }
 function _automataAfterPaint(panel, openIds) {
   if (openIds && openIds.size) {
@@ -35574,7 +36297,54 @@ const _AUTOMATA_EVENTS_SEARCH_MS = 300;
 const _automataEventsState = {
   inFlight: null, expanded: new Set(), kinds: new Set(), project: '', q: '',
   nextCursor: '', events: [], projects: new Set(), gen: 0, searchTimer: null,
+  autoFill: 0,
 };
+
+// The Events sub-tab follows the header scope. A project scope is sent as the
+// project= query parameter; a plan scope additionally hides the rows that do
+// not belong to that plan, and while a filtered page comes back short the load
+// keeps pulling the next page (capped) so the plan's rows are not stranded on
+// a later page. A scope change is a filter change: reload drops late replies.
+// _eventsScopeProject is the scope's project, or '' when the scope is All.
+function _eventsScopeProject() {
+  try {
+    if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+      const s = getScope();
+      return (s && s.project) ? String(s.project) : '';
+    }
+  } catch (_) { /* no scope available: All */ }
+  return '';
+}
+// _eventsEffectiveProject is the project the events load uses: the scope's
+// project when set, else the operator's own dropdown choice.
+function _eventsEffectiveProject() {
+  return _eventsScopeProject() || _automataEventsState.project;
+}
+// _eventsPlanScopeActive is true only for a plan scope (project + plan).
+function _eventsPlanScopeActive() {
+  try {
+    if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+      const s = getScope();
+      return !!(s && s.plan);
+    }
+  } catch (_) { /* no scope */ }
+  return false;
+}
+// _eventsRowInScope keeps an event when it belongs to the active plan scope.
+// A project scope is enforced server-side by project=, so only a plan narrows
+// a row: it must name the plan's Automation or one of its Automata.
+function _eventsRowInScope(ev) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.project) return true;   // All
+    if (!s.plan) return true;            // project scope: project= already scoped
+    if (!ev || typeof ev !== 'object') return false;
+    if (ev.automation && _scopeAutomatonIdMatches(ev.automation)) return true;
+    if (ev.automaton && _scopeAutomatonIdMatches(ev.automaton)) return true;
+    return false;
+  } catch (_) { return true; }
+}
 
 // _automataEventsText returns the translation, or the English fallback when no
 // bundle defines the key (t() returns the key itself on a miss).
@@ -35682,7 +36452,8 @@ function automataEventsQuery(before) {
   const parts = ['limit=' + _AUTOMATA_EVENTS_LIMIT];
   const kinds = _AUTOMATA_EVENT_KINDS.filter(k => st.kinds.has(k));
   if (kinds.length) parts.push('kind=' + encodeURIComponent(kinds.join(',')));
-  if (st.project) parts.push('project=' + encodeURIComponent(st.project));
+  const proj = _eventsEffectiveProject();
+  if (proj) parts.push('project=' + encodeURIComponent(proj));
   if (st.q) parts.push('q=' + encodeURIComponent(st.q));
   if (before) parts.push('before=' + encodeURIComponent(before));
   return '/api/autonomous/event-log?' + parts.join('&');
@@ -35724,6 +36495,9 @@ function paintAutomataEvents(events, errorText) {
     list.innerHTML = `<div style="color:var(--error,#ef4444);font-size:12px;">${escHtml(errorText)}</div>`;
     return;
   }
+  // A plan scope hides the rows that do not belong to it before anything is
+  // drawn, so a full page is never shown with the plan's rows missing.
+  events = (events || []).filter(_eventsRowInScope);
   if (!events.length) {
     list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_empty', 'No events yet.'))}</div>`;
     return;
@@ -35756,6 +36530,7 @@ function renderAutomataEventsPanel() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
   panel.innerHTML = `<div id="automataEventsPanel" style="padding:24px 8px;">
+    ${_automataScopeNoteHtml()}
     <h3 style="margin:0 0 8px;font-size:15px;">${escHtml(_automataEventsText('automata_events_tab', 'Events'))}${automataEventsHelpLink('automata_events_help_tip')}</h3>
     ${automataEventsFilterHtml()}
     ${automataEventsStatusHtml()}
@@ -35879,11 +36654,12 @@ function automataEventsFilterHtml() {
 // the loaded events, plus the selected one, so the selection never vanishes.
 function automataEventsProjectOptions() {
   const st = _automataEventsState;
+  const sel = _eventsEffectiveProject();
   const names = new Set(st.projects);
-  if (st.project) names.add(st.project);
-  const opts = [`<option value=""${st.project ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
+  if (sel) names.add(sel);
+  const opts = [`<option value=""${sel ? '' : ' selected'}>${escHtml(_automataEventsText('automata_events_filter_all_projects', 'All projects'))}</option>`];
   Array.from(names).sort().forEach(p => {
-    opts.push(`<option value="${escHtml(p)}"${p === st.project ? ' selected' : ''}>${escHtml(p)}</option>`);
+    opts.push(`<option value="${escHtml(p)}"${p === sel ? ' selected' : ''}>${escHtml(p)}</option>`);
   });
   return opts.join('');
 }
@@ -35915,6 +36691,7 @@ function automataEventsReload() {
   st.events = [];
   st.nextCursor = '';
   st.lastEvents = [];
+  st.autoFill = 0;
   const list = document.getElementById('automataEventsList');
   if (list) list.innerHTML = `<div style="color:var(--text2);font-size:12px;">${escHtml(_automataEventsText('automata_events_loading', 'Loading events…'))}</div>`;
   const err = document.getElementById('automataEventsMoreError');
@@ -35939,6 +36716,15 @@ function automataEventsLoad(append) {
       st.events.forEach(ev => { if (ev && ev.project) st.projects.add(ev.project); });
       paintAutomataEvents(st.events);
       automataEventsSyncControls();
+      // A plan scope hides most of a full page, so while the visible rows are
+      // still short and a next cursor remains, pull the next page and merge it
+      // in, up to _SCOPE_MAX_PAGES extra pages. The guard is plan-scope only:
+      // with All or a project scope the server already paged the right rows.
+      if (!append && _eventsPlanScopeActive() && st.nextCursor && st.autoFill < _SCOPE_MAX_PAGES
+          && (st.lastEvents.filter(_eventsRowInScope).length < _AUTOMATA_EVENTS_LIMIT)) {
+        st.autoFill++;
+        automataEventsLoad(true);
+      }
     })
     .catch(err => {
       if (gen !== st.gen || !document.getElementById('automataEventsList')) return;
@@ -45923,7 +46709,7 @@ function renderAutonomousView() {
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;display:none;" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
         ${_automationActionButtonsHTML(isAutomation)}
       </div>
-      ${isAutomation ? _automationBodyHTML() : `${st.tab === 'templates' ? _templatesSubtabsBarHTML() : ''}<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+      ${isAutomation ? _automationBodyHTML() : `${st.tab === 'templates' ? _templatesSubtabsBarHTML() + _automataScopeNoteHtml() : ''}<div id="automataFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         ${_tagFilterBarHTML('automata',
           `<input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`,
           `<div class="automata-badge-group">${typeBadges}</div>`,
@@ -46599,7 +47385,9 @@ window.costChartsEventEntries = costChartsEventEntries;
 // search filter is set, because these entries carry none of them.
 function costChartsMergeEvents(events) {
   const st = _automataEventsState;
-  if (!_costCharts.events.length || st.kinds.size || st.project) return events;
+  if (!_costCharts.events.length || st.kinds.size) return events;
+  const proj = (typeof _eventsEffectiveProject === 'function') ? _eventsEffectiveProject() : st.project;
+  if (proj) return events;
   const q = String(st.q || '').toLowerCase();
   const mine = _costCharts.events.filter(e => !q || (e.summary + ' ' + e.reason).toLowerCase().indexOf(q) >= 0);
   return mine.concat(events);
@@ -46686,9 +47474,18 @@ const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'au
 const _AUTOMATION_INBOX_BADGE_EXCLUDED = ['automation_held_automata'];
 
 // _inboxScope is where the Inbox is read from: the cross-project Overview
-// (everything) or one selected project. A project scope applies only while
-// the Projects tab is shown and the selected name is a known project.
+// (everything) or one selected project. The header scope is authoritative
+// whichever sub-tab is shown; a project scope applies through the selected
+// name on the Projects tab.
 function _inboxScope() {
+  if (typeof _scopeActive === 'function' && _scopeActive() && typeof getScope === 'function') {
+    const s = getScope();
+    if (s && s.project) {
+      const list = (typeof _projectsState !== 'undefined' && Array.isArray(_projectsState.list)) ? _projectsState.list : [];
+      const project = list.find(p => p && p.name === s.project) || { name: s.project, dir: '' };
+      return { kind: 'project', project };
+    }
+  }
   const sel = (typeof _projectsState !== 'undefined' && _projectsState) ? _projectsState.selected : '';
   if (!sel || typeof _projectsActive !== 'function' || !_projectsActive()) return { kind: 'overview' };
   const list = Array.isArray(_projectsState.list) ? _projectsState.list : [];
@@ -46744,10 +47541,23 @@ function _inboxItemInProject(item, project) {
 // _inboxScopeData returns one Inbox source's data cut to the current scope,
 // in the same shape the source's renderer and counter read. The Overview
 // returns the data untouched, so count and list agree in both scopes.
+function _inboxItemInPlan(item) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.plan) return true;               // no plan: project scope only
+    if (!item || typeof item !== 'object') return false;
+    if (item.prd_id && _scopeAutomatonIdMatches(item.prd_id)) return true;
+    if (item.automation && _scopeAutomatonIdMatches(item.automation)) return true;
+    const prd = _inboxPrdFor(item);
+    if (prd && prd.id && _scopeAutomatonIdMatches(prd.id)) return true;
+    return false;
+  } catch (_) { return true; }
+}
 function _inboxScopeData(key, data) {
   const scope = _inboxScope();
   if (scope.kind !== 'project' || !data) return data;
-  const keep = x => _inboxItemInProject(x, scope.project);
+  const keep = x => _inboxItemInProject(x, scope.project) && _inboxItemInPlan(x);
   if (key === 'automation_triage') return (typeof data === 'object' && Array.isArray(data.records)) ? Object.assign({}, data, { records: data.records.filter(keep) }) : data;
   if (key === 'automation_security_failure') return Array.isArray(data) ? data.filter(keep) : data;
   if (key === 'automation_held_automata') {
@@ -46870,7 +47680,7 @@ const _AUTOMATION_SUBTABS = [
     id: 'inbox',
     labelKey: 'automation_subtab_inbox',
     badge: () => _automationInboxBadgeCount(),
-    bodyHTML: () => `
+    bodyHTML: () => `${_automataScopeNoteHtml()}
       <!-- Inbox order: the queue and hold cards first, then the triage card
            (the failed and blocked records), then the rest. -->
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
@@ -46921,7 +47731,7 @@ const _AUTOMATION_SUBTABS = [
     labelKey: 'automation_subtab_automations',
     bodyHTML: () => {
       const st = _automationState;
-      return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+      return `${_automataScopeNoteHtml()}<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
         ${_tagFilterBarHTML('automation',
           `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
       </div>
@@ -46942,7 +47752,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'resources',
     labelKey: 'automation_subtab_resources',
-    bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
@@ -46959,7 +47769,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'progress',
     labelKey: 'automation_subtab_progress',
-    bodyHTML: () => `<div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       ${_automationSlotsHTML('progress')}`,
     mount() {
       // The progress card renders into its slot on this sub-tab; it has no
@@ -46972,7 +47782,7 @@ const _AUTOMATION_SUBTABS = [
   {
     id: 'housekeeping',
     labelKey: 'automation_subtab_housekeeping',
-    bodyHTML: () => `<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+    bodyHTML: () => `${_automataGlobalScopeNote()}<div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPendingItemsCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       ${_automationSlotsHTML('housekeeping')}`,
@@ -49227,6 +50037,16 @@ window.automationBudgetSummary = automationBudgetSummary;
 // automationListVisible applies the status badges, the history toggle and the
 // search box to list, then orders it by status and name. It does not modify
 // the list it is given.
+function _automationInScope(a) {
+  try {
+    if (typeof _scopeActive !== 'function' || !_scopeActive()) return true;
+    const s = (typeof _scopeEnsure === 'function') ? _scopeEnsure() : null;
+    if (!s || !s.project) return true;              // All
+    if (s.plan) return !!a && String(a.id) === s.plan;
+    return !!a && String(a.project || '') === s.project;
+  } catch (_) { return true; }
+}
+window._automationInScope = _automationInScope;
 function automationListVisible(list, st) {
   const f = st && st.statusFilter;
   const inFilter = s => (f && typeof f.has === 'function' ? f.has(s) : Array.isArray(f) ? f.includes(s) : true);
@@ -49237,6 +50057,7 @@ function automationListVisible(list, st) {
   };
   return (Array.isArray(list) ? list : []).filter(a => {
     if (!a) return false;
+    if (!_automationInScope(a)) return false;
     // Shipped selection (Go's shipped.go read semantics): decided by the
     // record's shipped-state (its merged commit), never by its stored
     // status — so a cancelled Automation whose work landed is "shipped",
@@ -55354,27 +56175,39 @@ if (window.visualViewport) {
 // phone-specific shortcut to the same action set, now in a real overlay
 // instead of a scroll+pulse, and it no longer no-ops with zero
 // configured servers). Reuses the same selectServer()/state.servers
-// source _serverPickerBar() already uses -- no duplicate fetch, no
+// source the header server button uses -- no duplicate fetch, no
 // duplicate server-list logic.
 function openServerPickerModal() {
-  const existing = document.getElementById('serverPickerModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'serverPickerModal';
-  modal.className = 'confirm-modal-overlay';
-  modal.innerHTML = `<div class="confirm-modal" style="max-width:320px;">
-    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">${escHtml(t('server_picker_modal_title') || 'Servers')}</div>
-    <div id="serverPickerModalList" style="display:flex;flex-direction:column;gap:6px;">${loadingEyeBlock()}</div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px;">
-      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="_openAddServerFromPicker()">+ ${escHtml(t('server_picker_add') || 'Add server')}</button>
-      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;" onclick="document.getElementById('serverPickerModal').remove()">${escHtml(t('action_close') || 'Close')}</button>
-    </div>
-  </div>`;
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  document.body.appendChild(modal);
+  _headerModalShow({
+    id: 'serverPickerModal',
+    titleId: 'serverPickerModalTitle',
+    titleText: t('server_picker_modal_title') || 'Servers',
+    titleExtraHtml: _serverPickerHelpLink(),
+    bodyHtml: `<div id="serverPickerModalList" class="server-picker-list" role="group" aria-labelledby="serverPickerModalTitle">${loadingEyeBlock()}</div>`,
+    footerHtml: `<button type="button" class="btn-secondary header-modal-btn" onclick="_openAddServerFromPicker()">+ ${escHtml(t('server_picker_add') || 'Add server')}</button>`,
+    closeOnclick: 'closeServerPickerModal()',
+    openerId: 'serverPickerBtn',
+  });
   _loadServerPickerModalList();
 }
 window.openServerPickerModal = openServerPickerModal;
+
+// The one close path for the server picker modal: the Close button, a row
+// click, back-to-local, add-server, Escape and the backdrop all end here (the
+// last two via the shared helper), so focus always returns to the header
+// server button and aria-expanded is always reset.
+function closeServerPickerModal() {
+  _headerModalHide('serverPickerModal');
+}
+window.closeServerPickerModal = closeServerPickerModal;
+
+// The '?' help anchor in the modal title row. Follows the
+// automataEventsHelpLink pattern and opens the multi-servers how-to in the
+// in-app docs viewer; the label comes from the locale key.
+function _serverPickerHelpLink() {
+  const label = t('header_server_help_label') || 'Help';
+  return `<a class="header-modal-help" href="/diagrams.html#docs/howto/multi-servers.md" target="_blank" rel="noopener" title="${escHtml(label)}" aria-label="${escHtml(label)}">?</a>`;
+}
 
 function _loadServerPickerModalList() {
   const listEl = document.getElementById('serverPickerModalList');
@@ -55387,30 +56220,53 @@ function _loadServerPickerModalList() {
       : Array.isArray(state.servers) ? state.servers : []).filter(s => s.enabled !== false);
     const active = state.activeServer || null;
     // Always offers All + this server, even with zero remote servers
-    // configured -- the one thing the old scroll+highlight approach
-    // could never do. GH#194 -- never literally "Local"; real hostname
-    // once _ensureLocalHostname resolves (kicked off below).
+    // configured. GH#194 -- never literally "Local"; real hostname once
+    // _ensureLocalHostname resolves (kicked off below).
     const chips = [
       { name: 'all', label: t('server_all_label') || 'All' },
       { name: null, label: _localHostname || t('server_local_label') || 'This server' },
       ...servers.map(s => ({ name: s.name, label: s.label || s.name })),
     ];
+    const unreachableText = ' ' + (t('server_dropdown_unreachable') || '(unreachable)');
+    // Remember which row holds keyboard focus so a repaint (the hostname
+    // arriving late) puts it back instead of dropping it to <body>.
+    let focusKey = null;
+    try {
+      const ae = document.activeElement;
+      if (ae && typeof ae.getAttribute === 'function' && typeof el.contains === 'function' && el.contains(ae)) {
+        focusKey = ae.getAttribute('data-back-to-local') ? '\u0000back' : ae.getAttribute('data-server-name');
+      }
+    } catch (_) { focusKey = null; }
+    // Rows are real <button>s (keyboard reachable) with aria-current on the
+    // active one. An unreachable peer stays listed and selectable (never
+    // disabled): choosing it is how the authoritative error surfaces.
     el.innerHTML = chips.map(c => {
       const isActive = c.name === active;
-      return `<button data-server-name="${escHtml(c.name || '')}" onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
+      const down = !!(c.name && c.name !== 'all' && _serverReachability[c.name] === false);
+      const call = `selectServer(${c.name ? JSON.stringify(c.name) : 'null'});closeServerPickerModal();`;
+      return `<button type="button" class="server-picker-row${isActive ? ' is-active' : ''}" data-server-name="${escHtml(c.name || '')}" data-reachability="${down ? 'down' : 'unknown'}"${isActive ? ' aria-current="true"' : ''} onclick="${escHtml(call)}"><span class="server-picker-row-mark" aria-hidden="true">${isActive ? '\u25CF' : '\u25CB'}</span><span class="server-picker-row-label">${escHtml(c.label)}</span><span class="server-picker-row-suffix" data-role="suffix">${down ? escHtml(unreachableText) : ''}</span></button>`;
     }).join('') + ((active && active !== 'all')
-      ? `<button data-back-to-local="1" onclick="${escHtml(`selectServer(null);document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--text);cursor:pointer;">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
+      ? `<button type="button" class="server-picker-row is-back" data-back-to-local="1" onclick="${escHtml('selectServer(null);closeServerPickerModal();')}">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
       : '');
+    // Put keyboard focus back on the row it was on (or, on first paint, on
+    // the active row).
+    let restored = false;
+    if (focusKey !== null && typeof el.querySelectorAll === 'function') {
+      const rows = Array.from(el.querySelectorAll('button'));
+      const hit = rows.find(r => (focusKey === '\u0000back')
+        ? !!r.getAttribute('data-back-to-local')
+        : (!r.getAttribute('data-back-to-local') && r.getAttribute('data-server-name') === focusKey));
+      if (hit && typeof hit.focus === 'function') { hit.focus(); restored = true; }
+    }
+    if (!restored) _headerModalRefocus('serverPickerModal');
     // GH#194 -- re-render (not a text-patch) once the real hostname
-    // resolves, so the "● "/"○ " active-marker prefix this modal's
-    // markup carries is rebuilt correctly rather than clobbered by a
-    // blind textContent overwrite. Only registers a waiter while the
-    // hostname is still unknown -- once known, render() already used
-    // it above, so there's nothing to wait for.
+    // resolves, so the active-marker prefix this modal's markup carries is
+    // rebuilt correctly rather than clobbered by a blind textContent
+    // overwrite. Only registers a waiter while the hostname is still unknown.
     if (!_localHostname) _ensureLocalHostname(render);
   };
   if (state.servers === undefined) {
-    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-dim,#888);padding:8px 10px;">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;
+    listEl.innerHTML = `<div class="server-picker-loading">${escHtml(t('server_picker_loading') || 'Loading servers…')}</div>`;
     _onServerListReady(render);
     loadServerListEager();
   } else {
@@ -55424,8 +56280,7 @@ function _loadServerPickerModalList() {
 // that form's DOM only exists on the Settings page, so it can't be
 // reused in place from an arbitrary other view.
 function _openAddServerFromPicker() {
-  const modal = document.getElementById('serverPickerModal');
-  if (modal) modal.remove();
+  closeServerPickerModal();
   _settingsTab = 'comms';
   localStorage.setItem('cs_settings_tab', 'comms');
   navigate('settings');
@@ -55505,6 +56360,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // one falls back to All (and saves that). See _serverChoiceSettleBoot
     // for the full one-round rule.
     try { await _serverChoiceSettleBoot(); } catch (_) { /* storage unusable: boot defaults unchanged */ }
+    // A remembered scope is restored at once and checked against the project list when it arrives.
+    _scopeBootKick();
     // If no token is stored, probe health to see if auth is required before
     // spinning up the WS. When it is, replace the splash with a token-entry
     // prompt so visitors without credentials don't see an endless loading
