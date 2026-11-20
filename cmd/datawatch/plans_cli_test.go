@@ -18,7 +18,8 @@ func TestRenderPlansMigrate(t *testing.T) {
 	if err := renderPlansMigrate(&out, body); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Preview: would create 1, would link 0, already there 1, conflicts 1",
+	for _, want := range []string{"Preview: would create 1, would link 0, already present 1, history without an Automaton 0, needs review 0, conflicts 1",
+		"titles derived 0, from linked Automaton 0, fell back 0",
 		"would create: Plans tab (arc, datawatch, order 1) → automation aaaa1111",
 		"left alone: X", "conflict: Y", "--apply"} {
 		if !strings.Contains(out.String(), want) {
@@ -29,6 +30,62 @@ func TestRenderPlansMigrate(t *testing.T) {
 		t.Error("bad JSON must be an error")
 	}
 }
+
+func TestRenderPlansMigrateFullLists(t *testing.T) {
+	summary := "would create 1, would link 0, already present 1, history without an Automaton 2, needs review 2, conflicts 1"
+	body := []byte(`{"summary":` + quote(summary) + `,"note":"Preview only.","result":{"applied":false,
+"would_create":[{"source":"arc","title":"Plans tab","project":"datawatch","link_kind":"automation","link_id":"aaaa1111","order":1}],
+"would_link":[],"skipped_existing":[{"source":"registry-row","title":"X","reason":"already linked"}],
+"conflicts":[{"source":"arc","title":"Y","reason":"title taken"}],
+"history_without_automaton":[{"source":"row","title":"H one","source_ref":"row:3"},{"source":"row","title":"H two","source_ref":"row:7"}],
+"needs_review":[{"source":"row","title":"N one","source_ref":"row:9","reason":"no name could be derived"},{"source":"row","title":"N two","source_ref":"row:11"}]}}`)
+	var out bytes.Buffer
+	if err := renderPlansMigrate(&out, body); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	want := []string{
+		"Preview: " + summary,
+		"history without an Automaton 2, needs review 2, conflicts 1",
+		"History without an Automaton (2, not made into plans):",
+		"  H one (row:3)",
+		"  H two (row:7)",
+		"Needs review (2, not made into plans):",
+		"  N one (row:9) — no name could be derived",
+		"  N two (row:11)",
+		"conflict: Y",
+	}
+	for _, s := range want {
+		if !strings.Contains(got, s) {
+			t.Errorf("output missing %q:\n%s", s, got)
+		}
+	}
+}
+
+func TestRenderPlansMigrateSummaryFallback(t *testing.T) {
+	body := []byte(`{"note":"Preview only.","result":{"applied":false,
+"would_create":[{"source":"arc","title":"A"}],
+"would_link":[],"skipped_existing":[{"source":"row","title":"S"}],
+"conflicts":[],
+"history_without_automaton":[{"source":"row","title":"H1","source_ref":"r1"},{"source":"row","title":"H2","source_ref":"r2"}],
+"needs_review":[{"source":"row","title":"N1","source_ref":"n1"}]}}`)
+	var out bytes.Buffer
+	if err := renderPlansMigrate(&out, body); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, s := range []string{
+		"Preview: would create 1, would link 0, already present 1, history without an Automaton 2, needs review 1, conflicts 0",
+		"History without an Automaton (2, not made into plans):",
+		"Needs review (1, not made into plans):",
+	} {
+		if !strings.Contains(got, s) {
+			t.Errorf("output missing %q:\n%s", s, got)
+		}
+	}
+}
+
+func quote(s string) string { return `"` + s + `"` }
 
 func TestPlansMigrateCommandDefaultsToDryRun(t *testing.T) {
 	cmd := newPlansMigrateCmd()
