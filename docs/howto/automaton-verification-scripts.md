@@ -288,6 +288,23 @@ not a rule in the rule pack, so an operator rule cannot disable or re-grade it.
 The read-only dry run (`autonomous_decompose_lint_dry_run`) does **not** run
 the preflight; it only runs the rule pack.
 
+## 5b. Allowlist coverage and phrase wording
+
+If your final gate restricts changed files, derive its allowlist from every path
+the task specs and the investigation name, plus the existing tests those changes
+need and the generated changelog and parity draft files. Do not guess a
+directory list. The rule `verify_script_allowed_files` fails when a spec names a
+file the allowlist rejects; globs and generated-folder prefixes count as coverage.
+See [Final gate allowlist](../datawatch-definitions.md#final-gate-allowlist).
+
+Worked example: a spec names `docs/howto/x.md`; the gate allows only `internal/`.
+Add `docs/howto/x.md` (or `docs/howto/*`) to the allowlist.
+
+The phrase checks compare meaning, not exact wording: reordered, re-worded,
+plural or tense variants of the same key words count as stated in the spec. A
+script that checks "tests passed" is fine when the spec says "tests must pass".
+Details: [decompose lint](automaton-decompose-lint.md#3a-final-gate-allowlist-and-meaning-based-phrase-checks).
+
 ## 6. Set a task's script or reason with the edit tools
 
 On a task that is still editable (the Automaton is in `needs_review`,
