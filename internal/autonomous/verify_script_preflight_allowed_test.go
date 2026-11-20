@@ -22,7 +22,7 @@ func allowedStandardList() string {
 func TestVerifyScriptPreflightAllowed(t *testing.T) {
 	t.Run("OmittedPathYieldsOneFinding", func(t *testing.T) {
 		script := "#!/bin/bash\nALLOWED=\"internal/widget/widget.go internal/widget/widget_test.go scripts/verify-widget.sh " + allowedStandardList() + "\"\n"
-		f := preflightAllowedFilesFindings("scripts/verify-widget.sh", []byte(script), allowedTestStories())
+		f := preflightAllowedFilesFindings("", "scripts/verify-widget.sh", []byte(script), allowedTestStories())
 		if len(f) != 1 {
 			t.Fatalf("findings = %+v, want one", f)
 		}
@@ -35,19 +35,19 @@ func TestVerifyScriptPreflightAllowed(t *testing.T) {
 	})
 	t.Run("FullListYieldsNone", func(t *testing.T) {
 		script := "#!/bin/bash\nALLOWED=\"internal/widget/ docs/howto/widget.md scripts/verify-widget.sh " + allowedStandardList() + "\"\n"
-		if f := preflightAllowedFilesFindings("s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
+		if f := preflightAllowedFilesFindings("", "s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
 			t.Fatalf("findings = %+v, want none", f)
 		}
 	})
 	t.Run("GitDiffListYieldsNone", func(t *testing.T) {
 		script := "#!/bin/bash\nset -eu\nbase=$(git merge-base HEAD main)\nchanged=$(git diff --name-only \"$base\")\necho \"$changed\"\n"
-		if f := preflightAllowedFilesFindings("s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
+		if f := preflightAllowedFilesFindings("", "s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
 			t.Fatalf("findings = %+v, want none", f)
 		}
 	})
 	t.Run("CleanScriptYieldsNone", func(t *testing.T) {
 		script := "#!/bin/bash\nset -eu\necho ok\nexit 0\n"
-		if f := preflightAllowedFilesFindings("s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
+		if f := preflightAllowedFilesFindings("", "s.sh", []byte(script), allowedTestStories()); len(f) != 0 {
 			t.Fatalf("findings = %+v, want none", f)
 		}
 	})
