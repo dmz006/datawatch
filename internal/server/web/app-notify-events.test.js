@@ -291,7 +291,7 @@ test('settings modal: explicit list renders non-inherit with checked rows only',
   // Mount path: apiFetch(prd) → ensureLLMModelLists() → _prdMountModal →
   // body.appendChild; the submit listener is registered synchronously with
   // the append, so waiting for the modal is also waiting for the handler.
-  await until(() => !!s.modal(), 'PRD settings modal appended ("modal element should be appended")');
+  await until(() => !!s.modal() && s.modal().innerHTML.includes('prdSettingsNotifyInherit'), 'PRD settings modal appended ("modal element should be appended")');
   const html = s.modal().innerHTML;
   assert.match(html, /id="prdSettingsNotifyInherit"/, 'inherit checkbox present');
   assert.doesNotMatch(html, /id="prdSettingsNotifyInherit" checked/, 'inherit not selected for an explicit list');
