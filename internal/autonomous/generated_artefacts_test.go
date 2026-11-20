@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -259,5 +260,87 @@ func TestNoteTaskStart_KeepsFirstBaseAndIgnoresEmpty(t *testing.T) {
 	m.noteTaskCommand("t1", "", 0, "")
 	if len(m.genArt.cmds) != 0 {
 		t.Error("empty command or task id must be ignored")
+	}
+}
+
+func mbGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	c := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func mbWrite(t *testing.T, dir, rel string) {
+	t.Helper()
+	p := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("package x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mbCommit(t *testing.T, dir, rel string) {
+	mbWrite(t, dir, rel)
+	mbGit(t, dir, "add", "-A")
+	mbGit(t, dir, "commit", "-m", "add "+rel)
+}
+
+func mbRun(t *testing.T, refresh bool) *changerecord.ChangeRecord {
+	m, prd, task := genArtHarness(t, allOn(), fakeDiff{})
+	m.genArt.diffSource = nil
+	dir := prd.ProjectDir
+	mbGit(t, dir, "init", "-b", "main")
+	mbCommit(t, dir, "seed/seed.go")
+	mbGit(t, dir, "checkout", "-b", "work")
+	m.genArt.headRef = nil
+	m.noteTaskStart(context.Background(), prd, task)
+	mbCommit(t, dir, "internal/own/own.go")
+	mbCommit(t, dir, "internal/own/own_test.go")
+	if refresh {
+		mbGit(t, dir, "checkout", "main")
+		mbCommit(t, dir, "internal/fromone/a.go")
+		mbCommit(t, dir, "internal/fromtwo/b_test.go")
+		mbGit(t, dir, "checkout", "work")
+		mbGit(t, dir, "merge", "--no-edit", "main")
+	}
+	m.recordTaskChange(prd, task)
+	rec, err := changerecord.Load(m.dataDir, "t1")
+	if err != nil {
+		t.Fatalf("no record: %v", err)
+	}
+	return rec
+}
+
+func TestMergeBaseRefreshedBranchCountsOnlyOwnWork(t *testing.T) {
+	plain := mbRun(t, false)
+	rec := mbRun(t, true)
+	if len(rec.Files) != 2 || len(rec.Packages) != 1 || rec.Packages[0] != "internal/own" {
+		t.Errorf("refreshed branch counted main's files: %+v", rec)
+	}
+	if len(plain.Files) != len(rec.Files) || len(plain.Packages) != len(rec.Packages) || len(plain.TestsAdded) != len(rec.TestsAdded) {
+		t.Errorf("counts differ: plain %+v refreshed %+v", plain, rec)
+	}
+	if rec.BaseRef == "" || rec.BaseHow != "merge_base" {
+		t.Errorf("base not recorded: %q %q", rec.BaseRef, rec.BaseHow)
+	}
+}
+
+func TestMergeBaseNeverRefreshedMatchesTaskStart(t *testing.T) {
+	rec := mbRun(t, false)
+	if len(rec.Files) != 2 {
+		t.Fatalf("files: %+v", rec.Files)
+	}
+	// Unresolvable base falls back to the task-start ref.
+	m, prd, task := genArtHarness(t, allOn(), fakeDiff{})
+	m.noteTaskStart(context.Background(), prd, task)
+	m.recordTaskChange(prd, task)
+	got, err := changerecord.Load(m.dataDir, "t1")
+	if err != nil || len(got.Files) != 2 || got.BaseHow != "task_start" || got.BaseRef != "abc1234def" {
+		t.Errorf("fallback wrong: %+v %v", got, err)
 	}
 }

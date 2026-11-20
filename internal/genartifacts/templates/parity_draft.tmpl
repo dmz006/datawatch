@@ -5,7 +5,9 @@ Parent release: datawatch next release
 ## What changed
 
 {{.Summary}}
-
+{{if .BaseLine}}
+Base: merge base with main ({{.BaseLine}})
+{{end}}
 ## Settings to add to the mobile app
 {{if .Settings}}{{range .Settings}}
 - `{{.}}`{{end}}{{else}}

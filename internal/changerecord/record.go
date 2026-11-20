@@ -87,6 +87,10 @@ type ChangeRecord struct {
 	// Cost is the Automaton's spend read from the ledger; nil when no
 	// ledger reading was attached.
 	Cost *CostSummary `json:"cost,omitempty"`
+	// BaseRef is the commit the change was diffed against and BaseHow says
+	// how it was found ("merge_base" or "task_start").
+	BaseRef string `json:"base_ref,omitempty"`
+	BaseHow string `json:"base_how,omitempty"`
 }
 
 // CostSummary is the ledger view of one Automaton's spend. The dollar figure
@@ -317,6 +321,9 @@ func Merge(records ...*ChangeRecord) *ChangeRecord {
 		}
 		if out.AutomatonID == "" {
 			out.AutomatonID = r.AutomatonID
+		}
+		if out.BaseRef == "" && r.BaseRef != "" {
+			out.BaseRef, out.BaseHow = r.BaseRef, r.BaseHow
 		}
 		if r.Timestamp.After(out.Timestamp) {
 			out.Timestamp = r.Timestamp

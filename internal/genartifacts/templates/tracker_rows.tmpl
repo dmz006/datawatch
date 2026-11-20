@@ -1,2 +1,3 @@
-{{range .Surfaces}}| {{cell .Feature}} | {{if .Tests}}{{range $i, $t := .Tests}}{{if $i}}, {{end}}`{{$t}}`{{end}}{{else}}none{{end}} | {{cell .Conditions}} | {{cell .Description}} | {{.TestType}} | {{.Tested}} | Pending | **No** | Draft row from change record {{$.ID}}. |
+{{if .BaseLine}}Base: merge base with main ({{.BaseLine}})
+{{end}}{{range .Surfaces}}| {{cell .Feature}} | {{if .Tests}}{{range $i, $t := .Tests}}{{if $i}}, {{end}}`{{$t}}`{{end}}{{else}}none{{end}} | {{cell .Conditions}} | {{cell .Description}} | {{.TestType}} | {{.Tested}} | Pending | **No** | Draft row from change record {{$.ID}}. |
 {{end}}
