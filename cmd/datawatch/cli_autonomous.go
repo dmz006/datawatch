@@ -818,6 +818,7 @@ earlier behaviour):
   capacity_fallthrough            admit a task on another idle allowed pool when its own is full (default false)
   capacity_adopt_before_admit     after a restart, resumed workers are admitted before new work
   capacity_adoption_wait_seconds  longest wait for that adoption (default 30; negative values are rejected)
+  capacity_slot_reconcile_grace_seconds  how long a capacity slot may look unmatched to a live worker before it is reconciled away (default 60, minimum 10; 0 = default)
 
 Archive grace, by JSON key:
 

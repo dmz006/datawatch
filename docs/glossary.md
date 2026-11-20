@@ -54,8 +54,18 @@ through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-t
 A check on every capacity tick that frees a pi-prompt slot held by a judge or
 verifier with no live session and no node lease, or whose Automaton is finished.
 It only releases the slot; it never ends a session, and a holder with a live
-session is never freed. Each freed slot raises a `Capacity slot freed` alert.
-See [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+session is never freed. Each freed slot raises a `Capacity slot freed` alert. A lease younger than the slot reconcile grace
+counts as having a node lease, so a just-admitted holder is left alone. See
+[Slot reconcile grace](#slot-reconcile-grace) and
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+
+## Slot reconcile grace
+
+The setting `autonomous.capacity_slot_reconcile_grace_seconds` (default 60
+seconds, minimum 10, `0` reads the default). It is how long a freshly admitted
+capacity lease counts as having a node lease in the orphan slot reconcile. It
+was a fixed value before this setting existed. See
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
 
 ## Allowed fall-through target
 
@@ -116,6 +126,9 @@ decompose-lint pass (recorded even in mode `off`; drives the retry in
 
 ## Decompose output unparseable
 The planning failure recorded when a decompose reply is over 8 MiB, empty, or fails the parse or lint step (error text starts `decompose output unparseable: `, source `decompose-parse`, category `invalid-response`, not retryable). The Automaton rolls back to `draft` with the reason in `last_decompose_failure` and the raw output kept as `decompose-output.json.failed`; the daemon keeps running. Since the 2026-11-18 fix, bad output can no longer abort the daemon. See [howto/decompose-async.md](howto/decompose-async.md#when-the-decompose-output-cannot-be-parsed) and [operations.md](operations.md#decompose-output-and-daemon-aborts-sigabrt-core-dump).
+
+## Observer pull attempt (last attempt time)
+The record of one fetch the daemon made to a pulled observer peer (`GET {peer}/api/observer/stats?v=2`). Its start time is `last_attempt_at`, and it is published together with that attempt's outcome: `stale`, `stale_reason`, and `last_success_at`. A fetch still in flight shows nothing new, so the time and the outcome always describe the same attempt. See [howto/federated-observer.md](howto/federated-observer.md#pull-mode) and [operations.md](operations.md#observer-pull-reading-a-stale-peer).
 
 ## Staging scan (agent-base)
 The blocking Trivy scan the image refresh runs on the `refresh-YYYYMMDD` staging tag before promoting an image. Its exceptions come from `security/accepted-risks.yml` via the generated `.trivyignore`; a failure never replaces a published image. See [Container image refresh](howto/container-image-refresh.md#staging-scan-failures-on-agent-base).
