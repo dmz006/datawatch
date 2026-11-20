@@ -45,7 +45,14 @@ the review step reads them, and how to adopt the scheme in a new repository.
 
 When an Automaton task finishes, the daemon builds a change record from the
 task's diff and the commands the task ran, and keeps it. The records of all
-tasks of an Automaton merge into one. It holds:
+tasks of an Automaton merge into one.
+
+The counts come from the merge base with main, the same diff the merge would
+apply, so files that arrive through main merges are not counted. The changelog,
+parity and tracker drafts name that base with the line
+`Base: merge base with main (<short sha>)`.
+
+The record holds:
 
 | Field | Meaning |
 |---|---|
