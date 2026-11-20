@@ -12,6 +12,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 	"github.com/dmz006/datawatch/internal/spendledger"
 )
 
@@ -96,7 +97,8 @@ func TestCostReportUnattributedRowViaEngine(t *testing.T) {
 // shipped state (shipped.go: release + merged_at) of PRDs and Automations
 // and excludes unshipped work.
 func TestCostReportShippedUnitsFromManager(t *testing.T) {
-	am, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	dir := t.TempDir()
+	am, err := autonomous.NewManager(dir, autonomous.DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -114,6 +116,20 @@ func TestCostReportShippedUnitsFromManager(t *testing.T) {
 	}
 	if _, err := am.RecordAutomationShipped(auto.ID, "v2.0.0", now, "c2", autonomous.ShippedSourceMergeStep); err != nil {
 		t.Fatalf("RecordAutomationShipped: %v", err)
+	}
+	// Settle the merge shadow post-ship hook: it stores a comparison record
+	// in a background goroutine (the no-plan reason record here — there is
+	// no stored plan), and the test's tempdir cleanup must not race that
+	// write.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := mergeshadow.LoadComparison(dir, auto.ID); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("merge shadow post-ship hook stored no comparison record within 5s")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	// An unshipped PRD must not surface as a unit.
 	if _, err := am.CreatePRD("unshipped spec", t.TempDir(), "", "", ""); err != nil {

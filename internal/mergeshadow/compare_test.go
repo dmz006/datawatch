@@ -342,6 +342,52 @@ func TestComparisonJSONFieldNames(t *testing.T) {
 	}
 }
 
+// TestComparisonReasonOmittedWhenEmpty keeps a comparison that has a real
+// comparison JSON-identical to what it was before the reason field existed:
+// an empty reason is omitted from the JSON.
+func TestComparisonReasonOmittedWhenEmpty(t *testing.T) {
+	data, err := json.Marshal(sampleComparison(time.Now().UTC()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["reason"]; ok {
+		t.Error("empty reason must be omitted from the JSON")
+	}
+}
+
+// TestComparisonReasonRoundTrip covers the record saved when there is no
+// stored plan to compare from: the reason is written and reads back, with
+// zero counts and no differences.
+func TestComparisonReasonRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	in := &Comparison{
+		AutomatonID: "auto-x",
+		ReleaseSize: ReleaseSizeNone,
+		Reason:      ReasonNoPlanStored,
+		CreatedAt:   time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC),
+	}
+	if err := SaveComparison(dir, "auto-x", in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadComparison(dir, "auto-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reason != ReasonNoPlanStored {
+		t.Fatalf("Reason = %q, want %q", got.Reason, ReasonNoPlanStored)
+	}
+	if got.Matched != 0 || got.Different != 0 || got.NotCompared != 0 {
+		t.Fatalf("counts = matched %d different %d not-compared %d, want 0/0/0", got.Matched, got.Different, got.NotCompared)
+	}
+	if len(got.Differences) != 0 {
+		t.Fatalf("Differences = %v, want none", got.Differences)
+	}
+}
+
 func TestSaveComparisonNormalisesNilDifferences(t *testing.T) {
 	dir := t.TempDir()
 	c := sampleComparison(time.Now().UTC())
