@@ -1,0 +1,12 @@
+# Docs site build automation module. Chosen when the project holds a docs directory with a site config.
+stack: docs_site
+detect:
+  files: [mkdocs.yml, docs/config.toml, docs/_config.yml]
+build: make docs
+test: make docs-check
+lint: make docs-links
+verify_before_commit: [build, test, lint]
+rules:
+  - Build the site and check its links before calling a docs change done.
+  - Keep operator-facing pages free of tracker ids, version numbers, host names and home paths.
+  - Every new page is linked from its index.

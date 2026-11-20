@@ -4853,6 +4853,31 @@ autonomous:
     # this many minutes have passed since its last one. With the wake off the
     # scheduled check runs on every idle tick, as before. Read live.
     "supervisor_loop.wake.fallback_interval_minutes": 20
+  # ── Supervisor fresh sessions ──
+  # A supervisor session is replaced by a fresh one on a schedule, started from
+  # a handover (build context, rules, direction) plus the pinned state record.
+  # These settings are per project; a field left out keeps the default shown.
+  # Set up with `datawatch supervisor-setup run` (REST POST
+  # /api/supervisor-setup, MCP supervisor_setup, comm `autonomous
+  # supervisor-setup run`). The model must be named and must be a Sonnet or
+  # Haiku model; Opus and an empty model are refused. The default rules ship in
+  # packs/build-supervisor/. See docs/howto/supervisor-fresh-sessions.md.
+  supervisor_fresh_sessions:
+    # Minutes between ticks (1 to 1440).
+    tick_cadence_minutes: 20
+    # An explicit Sonnet or Haiku model name; there is no model default that
+    # is safe to leave empty, so set-up asks for it.
+    model: ""
+    # Replace the session when its context passes this many tokens (1000 to 1000000).
+    context_limit: 150000
+    # Replace the session when it is older than this many hours (about 1 minute to 168 hours).
+    context_age_limit_hours: 6
+    # Event kinds that wake a supervisor at once.
+    wake_findings:
+      - prd.blocked
+      - task.review_needed
+      - task.failed
+      - task.final_gate_failed
   # ── Automation requirements (requirements report + capability minimums ──
   # The requirements report answers "can this daemon run the automations it is
   # configured to run": the built-in capability minimums (capability → minimum
@@ -5284,7 +5309,7 @@ usage:
   #   Comm channel  `configure usage.burn_guard.<key>=<value>`
   #   MCP           burn_guard_config_set (or the generic config_set tool)
   #   CLI           `datawatch usage burn-guard config <key>=<value>`
-  #   Web UI        Settings > Usage burn guard, and the burn guard card
+  #   Web UI        Settings → General → Automata → Usage burn guard (the read-only burn guard card on the usage page links here)
   # An invalid value is a 400 and changes nothing.
   burn_guard:
     # Turn the guard on. Default true.

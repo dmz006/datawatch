@@ -617,11 +617,14 @@ smoke_forward_config_set
 splash_info
 start_session
 stop_all_sessions
+supervisor_correction
 supervisor_loop_eval
 supervisor_loop_jobs
 supervisor_loop_run_job
 supervisor_loop_runs
 supervisor_loop_stats
+supervisor_setup
+supervisor_state
 supervisor_watch_list
 supervisor_watch_stats
 tailscale_acl_generate
