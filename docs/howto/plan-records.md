@@ -619,7 +619,11 @@ remove the directory.
 
 ## Still for the operator to review
 
-Nothing here turns on by itself. These are yours to settle:
+Nothing here turns on by itself. These are yours to settle. The open items from
+the roll-up, rename and edit merge are also listed in
+[the merge review](../plans/plan-rollup-rename-merge-review.md#operator-must-review)
+(restoring the CHANGELOG entries, the migrate route's 405 body, the roll-up's
+write default, and mobile parity):
 
 - **Records marked `needs_review`.** After the first real import, look through
   the records an import flagged and settle each one (rename, merge or accept).
