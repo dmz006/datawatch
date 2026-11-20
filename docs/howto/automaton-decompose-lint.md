@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question]
+  topics: [autonomous, decompose, decompose lint, standard tasks, standard task, guidance, findings, planning failure, spec lint, release version, reword question, allowlist, phrase check]
 exec_params:
   - {name: mode, required: false, description: "Decompose-lint mode to set: off, shadow (default) or enforce"}
   - {name: max_retries, required: false, description: "Enforce retry budget: whole number 0–5 (default 2, 0 = never auto-retry)"}
@@ -264,6 +264,30 @@ allowed-file list). Its findings are `block`, sit beside the rule-pack
 findings, and are not rules you can override; they still run, and record, when
 the mode is `off`. The dry run does not include them. See
 [Preflight checks for planner-written scripts](automaton-verification-scripts.md#5a-preflight-checks-for-planner-written-scripts).
+
+## 3a. Final gate allowlist and meaning-based phrase checks
+
+Two script checks compare against what the task specs actually say.
+
+**Allowlist.** A final gate that restricts changed files must build its
+allowlist from every path the task specs and the investigation name, plus the
+existing tests those changes need and the generated changelog and parity draft
+files — never from a guessed directory list. The rule `verify_script_allowed_files`
+now also fails when a task spec names a file the gate's allowlist rejects.
+Glob entries (`docs/*`) and generated-folder prefixes are accepted as coverage.
+
+Worked example: a task spec says "edit `internal/foo/bar.go` and `docs/howto/x.md`".
+A gate whose allowlist lists only `internal/foo/bar.go` fails the rule, naming
+`docs/howto/x.md` and the task whose spec names it. Add that path (or a covering
+glob such as `docs/howto/*`), plus `internal/foo/bar_test.go` if it exists, and
+the finding clears.
+
+**Phrase checks.** `verify_script_text_not_in_spec` and the spec-anchor check
+compare the *meaning* of a checked phrase, not one literal wording. Filler words
+are dropped, and word order, re-wording and plural or tense variants do not
+matter: if every key word of the phrase appears in the spec, the spec states it.
+Example: a script checking "tests passed" is anchored by a spec that says
+"the test suite must pass".
 
 ## 4. Writing your own rules — a worked example
 
