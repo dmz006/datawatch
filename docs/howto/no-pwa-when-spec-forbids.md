@@ -88,10 +88,19 @@ The guard is read-only: it reads the spec, runs `git merge-base` and
   backstop is still carried by humans reading the diff. Operator decision
   needed: where (decompose lint, verifier, merge helper) it should run, and
   whether the `app.js`-only scope is the intended bar.
+- **The branch that triggered it still carries the violation.**
+  `automaton/e19b0001` still changes `internal/server/web/app.js` (the
+  `'priority_stall'` line in the Events lifecycle filter), although its own
+  spec says `no PWA change`. The PRD that added this guard did not remove
+  that line and does not merge that branch — keeping or removing it is the
+  operator's call at merge. Running the guard against that branch's spec
+  fails (exit 1) until the line is resolved; that is the guard working, not
+  a defect.
 
 ## See also
 
 - [operations.md](../operations.md#no-pwa-when-spec-forbids-guard) — the guard and where it runs, in the operations guide.
 - [datawatch-definitions.md](../datawatch-definitions.md) — the "no-PWA-when-spec-forbids guard" glossary entry.
+- [9c8f0001 final gate](../plans/reports/archive/2026-11/9c8f0001-final-gate.md) — the final-gate report for this guard and the priority-stalls smoke script, with the live gate evidence.
 - [local-environment leak check](local-env-leak-check.md) — a sibling repository guard with the same "script + gates, no daemon surface" shape.
 - [gofmt format check](gofmt-check.md) — the closest sibling: a `scripts/check-*.sh` guard with a self-test and a Makefile target.
