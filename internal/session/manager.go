@@ -35,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -2237,7 +2238,10 @@ type StartOptions struct {
 	// spend ledger entry.
 	AutomatonID string
 	SpendRole   string
-	StoryID     string
+	// SpendProject is the project the session belongs to; recorded for
+	// supervisor sessions so their ledger entries carry it.
+	SpendProject string
+	StoryID      string
 	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
 	TaskTitle string
 
@@ -2654,6 +2658,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			sess.AutomatonID = opt.PRDID
 		}
 		sess.SpendRole = opt.SpendRole
+		if opt.SpendRole == spendledger.RoleSupervisor {
+			sess.SpendProject = opt.SpendProject
+		}
 	}
 	if opt != nil && opt.TaskID != "" {
 		sess.TaskID = opt.TaskID

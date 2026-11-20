@@ -6051,5 +6051,6 @@
   "cost_charts_other": "その他",
   "cost_charts_topn_label": "シリーズ",
   "cost_charts_topn_all": "すべて",
-  "cost_charts_legend_toggle": "このシリーズを表示／非表示にする"
+  "cost_charts_legend_toggle": "このシリーズを表示／非表示にする",
+  "cost_charts_supervisor_and_other": "スーパーバイザーとその他"
 }

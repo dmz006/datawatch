@@ -287,13 +287,22 @@ An Automaton's row counts every session it launches, not just its worker session
 
 The same per-Automaton row (the whole ledger, not the window) appears as `cost` in `GET /api/autonomous/prds/{id}` (MCP `autonomous_prd_get`), so one Automaton's spend reads without running the report. An Automaton with no recorded spend gets a zero row; `cost` is absent only when no spend ledger is wired. The CLI and comm-channel cost report show the sessions, tool-call and time columns for Automaton rows, and the MCP `cost_report` tool returns them in every row.
 
+### Supervisor and other, and unattributed
+
+In the Automaton grouping, spend with no Automaton id is split by its role so that the owner of each unit of spend is clear:
+
+- **Supervisor and other** holds spend whose role is `supervisor` or another known non-Automaton role. It is work the operator or the supervisor ran outside any Automaton, and it is a real owner, not a gap. The chart legend gained this line name only; no other chart text changed.
+- **`unattributed`** holds spend whose owner is truly unknown: no Automaton id and no role (a blank role, or the role `other`). This is the only line that means a session cannot be traced to an owner.
+
+Automaton machinery roles (`worker`, `decompose`, `rules_review`, `verification`, `guardrail`) with no Automaton id are not moved to either line: they are counted by the attribution check below, because a launcher skipped the stamp.
+
 ### Checking for unattributed sessions
 
-The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `session_ids`, `ok` and a `note`. `ok` is true when none are missing. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
+The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `no_automaton_no_role` (sessions with no Automaton id, no task and no role, or the role `other`: the spend that lands under `unattributed`), `session_ids`, `ok` and a `note`. `ok` is true when none of the Automaton-launched sessions are missing an id; `no_automaton_no_role` is reported alongside it and does not change `ok`. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
 
 ### What is recorded per Automaton and role
 
-Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification` or `guardrail`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
+Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification`, `guardrail` or `supervisor`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
 
 ### Reading the window: a missing row, partial rows and unknown spend
 

@@ -6051,5 +6051,6 @@
   "cost_charts_other": "Other",
   "cost_charts_topn_label": "Series",
   "cost_charts_topn_all": "All",
-  "cost_charts_legend_toggle": "Show or hide this series"
+  "cost_charts_legend_toggle": "Show or hide this series",
+  "cost_charts_supervisor_and_other": "Supervisor and other"
 }

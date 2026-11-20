@@ -18,6 +18,9 @@ type AttributionCheck struct {
 	Unattributed int `json:"unattributed"`
 	// SessionIDs lists the unattributed sessions, in record order.
 	SessionIDs []string `json:"session_ids"`
+	// NoAutomatonNoRole counts ledger sessions with no automaton id, no
+	// task and no role (blank or "other"): spend whose owner is unknown.
+	NoAutomatonNoRole int `json:"no_automaton_no_role"`
 	// OK is true when Unattributed is zero.
 	OK   bool   `json:"ok"`
 	Note string `json:"note"`
@@ -48,6 +51,9 @@ func CheckAttribution(recs []Record, since, until time.Time, includePeer bool) A
 			continue
 		}
 		if !LaunchedByAutomaton(r) {
+			if r.LedgerAutomatonID == "" && (r.Role == "" || r.Role == "other") {
+				c.NoAutomatonNoRole++
+			}
 			continue
 		}
 		c.AutomatonLaunched++
@@ -62,5 +68,6 @@ func CheckAttribution(recs []Record, since, until time.Time, includePeer bool) A
 	} else {
 		c.Note = fmt.Sprintf("attribution: %d of %d Automaton-launched session(s) have no automaton id in the ledger and show as unattributed", c.Unattributed, c.AutomatonLaunched)
 	}
+	c.Note += fmt.Sprintf("; %d session(s) have no automaton and no role (owner unknown)", c.NoAutomatonNoRole)
 	return c
 }
