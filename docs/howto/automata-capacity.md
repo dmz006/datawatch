@@ -52,10 +52,13 @@ Automata share the hardware fairly.
 - **Your sessions come first.** `session.reserved_interactive` slots
   (default 1 when `max_sessions` is 3 or more) are never used by
   Automata, and sessions you start are never queued.
-- **The verifier does not add a second slot.** When a task moves from
-  worker to verification, it keeps the one slot it already holds (the
-  lease is re-keyed to the verifier); a second, separate lease is only
-  taken if the verifier runs on a different pool set.
+- **A verifying task holds no worker slot.** When the worker session ends and
+  the task moves to verification, its worker slot is released at once. The
+  verifier then waits for a slot of its own: on the node's verifier pool where
+  the node has one, otherwise on the pools its backend uses. While it waits,
+  the freed worker slot goes to the next waiting task, so a slow verification
+  no longer holds up the lane. See
+  [The worker slot at verification](#the-worker-slot-at-verification).
 - **Planning waits too.** A decompose run occupies the same `llm:` / `node:`
   pools a task would use (its planner lease excludes the `host` pool, since
   the planning session itself already counts against it); a saturated pool
@@ -299,24 +302,25 @@ responses carry the resulting effective limit plus its source (`explicit`
 caps count simultaneous autonomous inflight sessions per LLM; they are
 not a rate limit.
 
-## One slot from spawn through verification
+## The worker slot at verification
 
-A task holds exactly one capacity slot through its whole life: the
-worker's lease is handed to the verifier (holder `verify:<task>`) the
-moment verification starts, not released and re-acquired — there is no
-window in which a sibling task can steal the slot, and the task is never
-counted twice. If the verifier's backend/model resolves to a different
-pool set than the worker's, the hand-off is refused and the verifier is
-admitted separately with its own lease; a second slot is never stacked on
-top of the first.
+A task holds at most one capacity lease at a time. While its worker runs, that
+is the worker's lease. When the worker session ends and the task enters
+`verifying`, the worker's lease is released at once, so its slot is free for
+other work while the verification runs or waits. The verifier then takes its
+own lease, holder `verify:<task>`, on the pools it needs: the node's verifier
+pool where the node has one, otherwise the pools its backend and model map to.
+The verifier never stacks on a worker lease that is still held.
 
-The guardrail judge takes the same hand-off: when a task's judge starts it
-inherits the task's own worker lease (holder `judge:<task>`) instead of
-acquiring a fresh slot, so it can never queue behind the very lease it was
-about to inherit. On a node with a verifier pool the worker lease is simply
-released and the judge takes a `node-verify:<node>` slot; otherwise the
-lease is re-keyed to `judge:<task>` in place — no fresh slot, no window
-in which a sibling can take it, and the task is never counted twice.
+The worker's lease is not handed over to the verifier. A task in `verifying`
+holds no worker slot, so a verifier waiting for its slot does not keep a lane
+shut. The verifier still follows the worker's node when
+`autonomous.model_routing.verifier_follows_worker_node` applies, because the
+task keeps the node its worker ran on.
+
+The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
+lease still present when the judge starts is released, not handed over, and the
+judge then waits for its own slot like the verifier does.
 
 ## An idle verifier is the verifier's own incident
 
