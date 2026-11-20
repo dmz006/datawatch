@@ -22,6 +22,8 @@ type costRow struct {
 	ToolCalls            int      `json:"tool_calls"`
 	SpanSeconds          float64  `json:"span_seconds"`
 	ActiveSeconds        float64  `json:"active_seconds"`
+	LocalTokens          int      `json:"local_tokens"`
+	TokensNotReported    int      `json:"tokens_not_reported_sessions"`
 	WindowNote           string   `json:"window_note"`
 	USDEstimate          *float64 `json:"usd_estimate"`
 	APIEquivalentUSD     *float64 `json:"api_equivalent_usd"`
@@ -60,9 +62,17 @@ func costUSD(r costRow) string {
 
 // costRowLine renders one row compactly.
 func costRowLine(r costRow) string {
-	return fmt.Sprintf("%s: %d sessions, in/out/cache %d/%d/%d+%d, %d tools, span %s, active %s, %s",
+	line := fmt.Sprintf("%s: %d sessions, in/out/cache %d/%d/%d+%d, %d tools, span %s, active %s, %s",
 		r.Key, r.Sessions, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheCreation,
 		r.ToolCalls, costSeconds(r.SpanSeconds), costSeconds(r.ActiveSeconds), costUSD(r))
+	// Local tokens are their own unit, never summed with Claude tokens or priced.
+	if r.LocalTokens > 0 || r.TokensNotReported > 0 {
+		line += fmt.Sprintf(", local tokens %d", r.LocalTokens)
+		if r.TokensNotReported > 0 {
+			line += fmt.Sprintf(" (%d local sessions: tokens not reported)", r.TokensNotReported)
+		}
+	}
+	return line
 }
 
 // formatCostReportText renders a cost report JSON body as compact chat text:
@@ -119,6 +129,7 @@ func automatonCostStatusLines(prdJSON string) []string {
 		Key: "automaton", Sessions: c.Sessions, TokensIn: c.TokensIn, TokensOut: c.TokensOut,
 		CacheRead: c.CacheRead, CacheCreation: c.CacheCreation, ToolCalls: c.ToolCalls,
 		SpanSeconds: c.SpanSeconds, ActiveSeconds: c.ActiveSeconds,
+		LocalTokens: c.LocalTokens, TokensNotReported: c.TokensNotReported,
 		USDEstimate: c.USDEstimate, APIEquivalentUSD: c.APIEquivalentUSD,
 	}) + " (API-equivalent, not a bill)"}
 	if c.WindowNote != "" {

@@ -22,16 +22,21 @@ type ToolUsagePoint struct {
 	Start     time.Time `json:"start"`
 	Sessions  int       `json:"sessions"`
 	ToolCalls int       `json:"tool_calls"`
+	// ToolCallsNotReportedSessions counts local sessions whose tool calls
+	// were not reported; they add nothing to ToolCalls (unknown, not zero).
+	ToolCallsNotReportedSessions int `json:"tool_calls_not_reported_sessions,omitempty"`
 }
 
 // ToolUsageGroup is one line of the tool usage series: its key, its totals
 // over the window and one point per bucket (zero-filled so every line
 // shares the same x axis).
 type ToolUsageGroup struct {
-	Key       string           `json:"key"`
-	Sessions  int              `json:"sessions"`
-	ToolCalls int              `json:"tool_calls"`
-	Points    []ToolUsagePoint `json:"points"`
+	Key       string `json:"key"`
+	Sessions  int    `json:"sessions"`
+	ToolCalls int    `json:"tool_calls"`
+	// ToolCallsNotReportedSessions is flagged, never shown as zero calls.
+	ToolCallsNotReportedSessions int              `json:"tool_calls_not_reported_sessions,omitempty"`
+	Points                       []ToolUsagePoint `json:"points"`
 }
 
 // ToolUsage is the finished tool usage series.
@@ -51,6 +56,9 @@ type ToolUsage struct {
 	// TotalToolCalls and TotalSessions cover all groups.
 	TotalToolCalls int `json:"total_tool_calls"`
 	TotalSessions  int `json:"total_sessions"`
+	// TotalToolCallsNotReportedSessions counts local sessions whose tool
+	// calls were not reported.
+	TotalToolCallsNotReportedSessions int `json:"total_tool_calls_not_reported_sessions,omitempty"`
 	// ToolNamesNote says what the figures are and that no per-tool-name
 	// breakdown exists (see ToolNamesNote).
 	ToolNamesNote string `json:"tool_names_note"`
@@ -125,7 +133,7 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 	first := starts[0]
 
 	groups := map[string]*ToolUsageGroup{}
-	total, totalSessions := 0, 0
+	total, totalSessions, totalNR := 0, 0, 0
 	for _, e := range entries {
 		at := e.StartedAt
 		if at.IsZero() || at.Before(since) || at.After(until) {
@@ -145,6 +153,12 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 		if calls < 0 {
 			calls = 0
 		}
+		if e.Local && !e.TokensReported {
+			calls = 0
+			g.ToolCallsNotReportedSessions++
+			g.Points[idx].ToolCallsNotReportedSessions++
+			totalNR++
+		}
 		g.Sessions++
 		g.ToolCalls += calls
 		g.Points[idx].Sessions++
@@ -160,17 +174,18 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 
 	tu := &ToolUsage{
-		GroupBy:        req.GroupBy,
-		Bucket:         bucket,
-		Window:         window.String(),
-		Since:          since,
-		Until:          until,
-		Buckets:        starts,
-		Groups:         out,
-		TotalToolCalls: total,
-		TotalSessions:  totalSessions,
-		ToolNamesNote:  ToolNamesNote,
-		RetentionDays:  RetentionDays,
+		GroupBy:                           req.GroupBy,
+		Bucket:                            bucket,
+		Window:                            window.String(),
+		Since:                             since,
+		Until:                             until,
+		Buckets:                           starts,
+		Groups:                            out,
+		TotalToolCalls:                    total,
+		TotalSessions:                     totalSessions,
+		TotalToolCallsNotReportedSessions: totalNR,
+		ToolNamesNote:                     ToolNamesNote,
+		RetentionDays:                     RetentionDays,
 	}
 	if horizon := until.AddDate(0, 0, -RetentionDays); since.Before(horizon) {
 		tu.UnknownSpendNote = unknownSpendNote(horizon)
