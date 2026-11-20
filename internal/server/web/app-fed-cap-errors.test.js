@@ -18,6 +18,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, makeStubElement, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
+const { pickerRows } = require('./testutil_fake_dom');
 
 const APP_JS = path.join(__dirname, 'app.js');
 
@@ -240,22 +241,25 @@ test('_probePickerReachability: does not re-probe a server already resolved this
   assert.equal(callCount, 1, 'a second probe call for the same already-resolved host should be a no-op');
 });
 
-test('_serverPickerBar: an unreachable server is marked in its option text, but stays a plain selectable option (fully clickable)', () => {
+test('picker modal: an unreachable server is marked in its row, but stays a plain selectable button (fully clickable)', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`
     state.servers = { servers: [{ name: 'host-down', enabled: true }] };
     _serverReachability['host-down'] = false;
   `, sandbox);
-  const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.match(html, /data-reachability="down"/, 'unreachable option should be visibly marked');
-  assert.match(html, /server_dropdown_unreachable/, 'unreachable option should carry a marker in its text');
-  assert.match(html, /onchange="onServerDropdownChange\(this\.value\)"/, 'the select must keep its change handler -- the probe result can be stale, and choosing is how the real error surfaces');
+  const { html, rowFor } = pickerRows(sandbox);
+  assert.match(html, /data-reachability="down"/, 'unreachable row should be visibly marked');
+  assert.match(html, /server_dropdown_unreachable/, 'unreachable row should carry a marker in its text');
+  const row = rowFor('host-down');
+  assert.ok(row, 'the unreachable peer stays listed');
+  assert.ok(!row.hasAttribute('disabled'), 'the row must never be disabled -- the probe result can be stale, and choosing is how the real error surfaces');
+  assert.match(row.getAttribute('onclick'), /^selectServer\("host-down"\);closeServerPickerModal\(\);$/, 'the row keeps its selectServer handler');
 });
 
-test('_serverPickerBar: a server with no known reachability state (not yet probed) renders normally, unmarked', () => {
+test('picker modal: a server with no known reachability state (not yet probed) renders normally, unmarked', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`state.servers = { servers: [{ name: 'host-unknown', enabled: true }] };`, sandbox);
-  const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
+  const { html } = pickerRows(sandbox);
   assert.ok(!html.includes('server_dropdown_unreachable'), 'a never-probed server should not be marked unreachable by default');
   assert.ok(!html.includes('data-reachability="down"'), 'a never-probed server should not be flagged down');
 });

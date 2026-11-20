@@ -41,6 +41,7 @@ type cliPlansMigrate struct {
 		WouldLink        []cliPlansMigrateIt `json:"would_link"`
 		SkippedExisting  []cliPlansMigrateIt `json:"skipped_existing"`
 		Conflicts        []cliPlansMigrateIt `json:"conflicts"`
+		HistoryNoAuto    []cliPlansMigrateIt `json:"history_without_automaton"`
 		TitlesDerived    int                 `json:"titles_derived"`
 		TitlesFromLinked int                 `json:"titles_from_linked"`
 		TitlesFellBack   int                 `json:"titles_fell_back"`
@@ -48,13 +49,14 @@ type cliPlansMigrate struct {
 }
 
 type cliPlansMigrateIt struct {
-	Source   string `json:"source"`
-	Title    string `json:"title"`
-	Project  string `json:"project"`
-	LinkKind string `json:"link_kind"`
-	LinkID   string `json:"link_id"`
-	Order    int    `json:"order"`
-	Reason   string `json:"reason"`
+	Source    string `json:"source"`
+	SourceRef string `json:"source_ref"`
+	Title     string `json:"title"`
+	Project   string `json:"project"`
+	LinkKind  string `json:"link_kind"`
+	LinkID    string `json:"link_id"`
+	Order     int    `json:"order"`
+	Reason    string `json:"reason"`
 }
 
 func renderPlansMigrate(w io.Writer, body []byte) error {
@@ -98,6 +100,12 @@ func renderPlansMigrate(w io.Writer, body []byte) error {
 	}
 	for _, it := range r.Conflicts {
 		line("conflict", it)
+	}
+	if len(r.HistoryNoAuto) > 0 {
+		_, _ = fmt.Fprintf(w, "History without an Automaton (%d, not made into plans):\n", len(r.HistoryNoAuto))
+		for _, it := range r.HistoryNoAuto {
+			_, _ = fmt.Fprintf(w, "  %s (%s)\n", oneLineText(it.Title), it.SourceRef)
+		}
 	}
 	if res.Note != "" {
 		_, _ = fmt.Fprintln(w, res.Note)

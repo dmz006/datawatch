@@ -2187,8 +2187,9 @@ paths:
         federated peer. An apply is recorded in the audit log. A plan made from a row is
         titled from the row's own title text, without leading status words, on one line and
         at most 100 characters; a row with no real title takes the title of the Automaton or Automation it names, and
-        only a row with neither becomes "Plan: (untitled row N)". The counts include `titles_derived`,
-        `titles_from_linked` and `titles_fell_back` for the plans this run makes.
+        a description gives its first clause, and the status column is never used. A row with no name at all is listed
+        under `needs_review` (the label "needs review") and is not created on apply. The counts include `titles_derived`,
+        `titles_from_linked`, `titles_fell_back` and `needs_review`.
 
         `mode` `release` is a different migration: it files a project's Automata and
         Automations under two release plans, the current release and the next one
@@ -14285,7 +14286,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck]
+          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, main_checkout_automaton, ci_red, ci_stuck]
           description: What the finding is about, one of the stable finding kinds
         subject: {type: string, description: "The stable id the finding is about: an Automaton id, a node name, a lane name, a CI run id, or the main checkout's path"}
         text: {type: string, description: The operator-facing line for the finding; empty when not set}

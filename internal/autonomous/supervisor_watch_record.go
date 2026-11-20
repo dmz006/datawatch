@@ -68,6 +68,11 @@ const (
 	// SupervisorWatchMainCheckoutDirty — the main checkout carries
 	// uncommitted tracked files; a ship would abort.
 	SupervisorWatchMainCheckoutDirty SupervisorWatchKind = "main_checkout_dirty"
+
+	// An open Automaton's (any non-terminal status) project directory is
+	// the daemon's own main checkout: approve and run refuse there, so the
+	// Automaton cannot run until it is recreated without a project dir.
+	SupervisorWatchMainCheckoutAutomaton SupervisorWatchKind = "main_checkout_automaton"
 	// SupervisorWatchCIRed — a CI run is red.
 	SupervisorWatchCIRed SupervisorWatchKind = "ci_red"
 	// SupervisorWatchCISTuck — a CI run has been in progress abnormally
@@ -110,6 +115,7 @@ var SupervisorWatchKinds = []SupervisorWatchKind{
 	SupervisorWatchWorktreeSilent,
 	SupervisorWatchVerifyScriptNotExecutable,
 	SupervisorWatchMainCheckoutDirty,
+	SupervisorWatchMainCheckoutAutomaton,
 	SupervisorWatchCIRed,
 	SupervisorWatchCISTuck,
 	SupervisorWatchPriorityStall,
