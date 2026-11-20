@@ -171,5 +171,5 @@ func (s *Server) handlePlansMigrate(w http.ResponseWriter, r *http.Request) {
 	if body.Apply {
 		note = "Migration finished. Run it again any time; plans and links already there are left alone."
 	}
-	writeJSONOK(w, map[string]any{"note": note, "counts": rep.Counts(), "result": rep})
+	writeJSONOK(w, map[string]any{"note": note, "counts": rep.Counts(), "summary": rep.Summary(), "result": rep})
 }
