@@ -467,19 +467,24 @@ tab instead, so a missing chart is always explained.
 ### Failure categories on the failures card
 
 A category is derived when the attempt is recorded, from the end reason and
-the failure text. A category the verifier or the executor already named (for
-example `content`, `scope`, `security`, `judging` or `invalid-response`) is
-kept as it is; an operator cancel is `none`. The end reasons the operator sees
-most often map like this:
+the failure text (the summary and the verifier's issues). The first rule that
+matches wins:
 
-| What happened to the attempt | Category |
-|---|---|
-| The verifier failed it (`verifier_failed`) | `code_or_test` |
-| The merge was refused (`merge refused`) | `policy` |
-| The commit failed (`commit failed`) | `policy` |
-| The launch or placement was refused (`launch refused`) | `infra` |
-| The executor timed out (`timeout`, `timed out`) | `infra` |
-| The worker produced no output (`no output`) | `infra` |
+| Order | Attempt as recorded | Category |
+|---|---|---|
+| 1 | Already has a category (the verifier or executor named it, for example `content`, `scope`, `security`, `judging` or `invalid-response`) | Kept as it is |
+| 2 | No end reason, no summary and no verifier issue | Blank, drawn as `uncategorized` |
+| 3 | End reason `cancelled_by_operator` | `none` |
+| 4 | Summary or verifier text contains `merge refused` or `commit failed` | `policy` |
+| 5 | End reason `verifier_failed` | `code_or_test` |
+| 6 | End reason `stalled` | `hung` |
+| 7 | End reason `session_died`, `daemon_restart`, `launch_refused` or `adopted_then_failed` | `infra` |
+| 8 | End reason `executor_error` with text containing `timeout`, `timed out` or `no output` | `infra` |
+| 9 | Any other attempt with a summary or verifier issue | `code_or_test` |
+| 10 | Anything else (for example a completed attempt with no text) | `none` |
+
+Rule 4 is checked before the end reason, so a refused merge is `policy` even
+when the end reason is `verifier_failed`.
 
 Stored attempts with a blank category are filled in by one backfill pass at
 each daemon start, in the background, never blocking startup. It is
