@@ -267,9 +267,8 @@ panels aggregate under **All servers** (`/api/autonomous/prds/aggregated`,
 > implemented in this tree's `internal/server/web/app.js` — `selectServer`
 > re-renders the tab you're on, and the **Automata** re-render spans the
 > whole tab, **Automation** sub-tab included — with PWA tests for the
-> re-render. Confirm it live on a two-host setup; the full checklist is in
-> [operations.md](../operations.md), under "Still to review (operator)"
-> in the multi-server section.
+> re-render. Confirm it live on a two-host setup; the checklist is the
+> [Operator review](#operator-review) section below.
 
 ## Operator review
 
@@ -280,14 +279,11 @@ window (see [The header scope button](projects-tab.md#the-header-scope-button))
 the layout and the colours. Before treating the compact header as
 settled, check on the build in use:
 
-- **Merge conflict resolutions.** This branch carries the compact header
-together with the regression tests that fail if the header change is
-lost, merged with the rest of the work on this branch (the merge of
-`main`). Confirm the resolved result reads as one coherent story: the
-server icon button and the scope button are each documented once, this
-page and [projects-tab.md](projects-tab.md#the-header-scope-button)
-still cross-link, the regression tests still pass, and nothing either
-side of the merge documented was dropped from the resolved result.
+- **Documentation after a merge.** If the compact header came in through a
+merge, confirm the result documents the server icon button and the scope
+button once each, this page and
+[projects-tab.md](projects-tab.md#the-header-scope-button) still cross-link,
+and the header regression tests (`app-header-*.test.js`) still pass.
 - **Phone-width header.** On a phone the header no longer wraps: the
 server button shrinks to icon and status dot (its name label hides at
 600 px and below, while the row in the **Servers** window, the
