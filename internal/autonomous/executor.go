@@ -210,6 +210,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.refuseHeld(prd); err != nil {
 		return err
 	}
+	if err := m.refuseMainCheckout(prd); err != nil {
+		return err
+	}
 	if len(prd.Story) == 0 {
 		return fmt.Errorf("prd %q has no stories — call Decompose first", prdID)
 	}

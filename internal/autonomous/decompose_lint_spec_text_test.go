@@ -45,8 +45,8 @@ func TestCheckMatchesSpecText(t *testing.T) {
 			want:   0,
 		},
 		{
-			name:       "a heading the spec never names blocks",
-			spec:       "run the gate checks and write the report under .datawatch/reports/",
+			name:       "a heading whose word the spec never states blocks",
+			spec:       "run the release checks and write the report under .datawatch/reports/",
 			script:     "v/anchored.sh",
 			want:       1,
 			wantItem:   "## Gates",

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -195,10 +194,14 @@ func defectBatchTitle(meta defectBatchMeta) string {
 	return t
 }
 
+// defectProjectDir always returns the empty string. Defect-queue Automata
+// must never inherit the caller's working directory or the project path as
+// their project dir: an empty dir is the worktree-mode signal, so workers
+// run against a dedicated worktree of the repo instead of the repo's main
+// checkout (a project with an absolute path used to leak its main checkout
+// into every batch and tiny-fix Automaton). The project name still lives in
+// the batch meta (defectBatchMeta.Project) where it is used for grouping.
 func defectProjectDir(project string) string {
-	if filepath.IsAbs(project) {
-		return project
-	}
 	return ""
 }
 
