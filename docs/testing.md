@@ -235,6 +235,8 @@ DW_MAJOR=1 bash scripts/release-smoke.sh
 DW_MAJOR=1 SMOKE_ONLY=lean bash scripts/release-smoke.sh
 ```
 
+**Keeping the expected list in sync.** Those four tool names are hard-coded in three places: the assertions in `internal/llm/claudecode/lean_mcp_fake_server_test.go`, the `lean` section of `scripts/release-smoke.sh`, and this description. If the datawatch MCP tool surface changes, update all three together — a check failing while the server is healthy is usually this list being out of date, not a broken lean launch.
+
 What a passing lean session looks like, and what a fallback reason on the session record means, are in [Checking a lean session](howto/worker-session-profiles.md#checking-a-lean-session) and [What a fallback reason means](howto/worker-session-profiles.md#what-a-fallback-reason-means).
 
 ## Secret references in LLM API keys (call-time resolution)
