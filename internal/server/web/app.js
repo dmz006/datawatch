@@ -47108,7 +47108,7 @@ function _costChartsBarsSVG(spec) {
 
 function _ccLegend(keys) {
   return `<div class="cost-charts-legend" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--text2);margin-top:2px;">${keys.map((k, i) =>
-    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>${escHtml(String(k))}</span>`).join('')}</div>`;
+    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:${COST_CHARTS_COLOURS[i % COST_CHARTS_COLOURS.length]};"></span>${escHtml(String(k) === 'Supervisor and other' ? t('cost_charts_supervisor_and_other') : String(k))}</span>`).join('')}</div>`;
 }
 
 function _ccBoundedNote(shown, total) {

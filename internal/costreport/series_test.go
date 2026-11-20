@@ -394,3 +394,25 @@ func TestParseSeriesWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestSeriesSupervisorAndUnknownLines(t *testing.T) {
+	at := fixedDay(time.October, 7, 9)
+	sup := ledgerEntry("s1", "", "claude-code", at, 100, 0)
+	sup.Role = spendledger.RoleSupervisor
+	unk := ledgerEntry("s2", "", "claude-code", at, 200, 0)
+	unk.Role = spendledger.RoleOther
+	aut := ledgerEntry("s3", "a1", "claude-code", at, 400, 0)
+	s, err := BuildSeries(SeriesRequest{GroupBy: SeriesByAutomaton, Window: 7 * 24 * time.Hour}, []spendledger.Entry{sup, unk, aut}, seriesOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := groupByKey(t, s, SupervisorOtherKey).Tokens; got != 100 {
+		t.Fatalf("supervisor line = %d", got)
+	}
+	if got := groupByKey(t, s, UnattributedKey).Tokens; got != 200 {
+		t.Fatalf("unattributed line = %d", got)
+	}
+	if got := groupByKey(t, s, "a1").Tokens; got != 400 {
+		t.Fatalf("a1 line = %d", got)
+	}
+}
