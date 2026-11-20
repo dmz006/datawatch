@@ -2,6 +2,7 @@ package costreport
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -268,7 +269,7 @@ func TestBuildFailures_ByProjectCountsCategoriesAndWeeks(t *testing.T) {
 	if alpha.Retries != 3 {
 		t.Errorf("alpha retries = %d, want 3", alpha.Retries)
 	}
-	if g := failGroup(t, f, UnattributedKey); g.Attempts != 1 || g.Retries != 3 {
+	if g := failGroup(t, f, UnassignedKey); g.Attempts != 1 || g.Retries != 3 {
 		t.Errorf("unattributed = %+v", g)
 	}
 	if f.TotalAttempts != 5 || f.TotalTasks != 4 || f.TotalRetries != 6 {
@@ -434,5 +435,144 @@ func TestFailuresGroupByValid(t *testing.T) {
 	}
 	if FailuresGroupBy("model").Valid() || FailuresGroupBy("").Valid() {
 		t.Error("model and blank are not failure groupings")
+	}
+}
+
+func TestBuildToolUsage_ProjectUnlinkedAutomatonGoesToUnassigned(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{{SessionID: "s1", AutomatonID: "loose", Backend: "aider", StartedAt: now.Add(-time.Hour), ToolCalls: 6}}
+	tu, err := BuildToolUsage(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tu.Groups) != 1 || tu.Groups[0].Key != UnassignedKey || tu.Groups[0].ToolCalls != 6 {
+		t.Fatalf("want one unassigned line with 6 tool calls, got %+v", tu.Groups)
+	}
+}
+
+func TestBuildToolUsage_ProjectTwoUnlinkedAutomataShareOneLine(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{
+		{SessionID: "s1", AutomatonID: "loose-1", Backend: "aider", StartedAt: now.Add(-time.Hour), ToolCalls: 2},
+		{SessionID: "s2", AutomatonID: "loose-2", Backend: "aider", StartedAt: now.Add(-2 * time.Hour), ToolCalls: 5},
+	}
+	tu, err := BuildToolUsage(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tu.Groups) != 1 {
+		t.Fatalf("want one shared line, got %+v", tu.Groups)
+	}
+	if g := toolGroup(t, tu, UnassignedKey); g.ToolCalls != 7 || g.Sessions != 2 {
+		t.Fatalf("shared unassigned line = %+v", g)
+	}
+}
+
+func TestBuildToolUsage_ProjectLinkedAutomatonGoesToItsProject(t *testing.T) {
+	now := time.Now()
+	entries := []spendledger.Entry{{SessionID: "s1", AutomatonID: "linked", Backend: "aider", StartedAt: now.Add(-time.Hour), ToolCalls: 9}}
+	tu, err := BuildToolUsage(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tu.Groups) != 1 || tu.Groups[0].Key != "alpha" || tu.Groups[0].ToolCalls != 9 {
+		t.Fatalf("want one alpha line with 9 tool calls, got %+v", tu.Groups)
+	}
+}
+
+func TestBuildToolUsage_ProjectNeverKeysByAutomatonID(t *testing.T) {
+	now := time.Now()
+	ids := []string{"linked", "other", "loose-1", "loose-2"}
+	var entries []spendledger.Entry
+	for i, id := range ids {
+		entries = append(entries, spendledger.Entry{SessionID: "s" + strconv.Itoa(i), AutomatonID: id, Backend: "aider",
+			StartedAt: now.Add(-time.Duration(i+1) * time.Hour), ToolCalls: 1})
+	}
+	tu, err := BuildToolUsage(SeriesRequest{GroupBy: SeriesByProject, Window: 24 * time.Hour}, entries,
+		SeriesOptions{Now: now, ProjectOf: fakeProjectOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range tu.Groups {
+		for _, id := range ids {
+			if g.Key == id {
+				t.Fatalf("automaton id %q used as a project line key: %+v", id, tu.Groups)
+			}
+		}
+	}
+	if len(tu.Groups) != 3 {
+		t.Fatalf("want alpha, beta and unassigned lines, got %+v", tu.Groups)
+	}
+}
+
+// failureAt is a failed attempt dated an hour before now, in the given
+// project; the caller fills Project from its ProjectOf.
+func failureAt(automatonID, project string, now time.Time) FailureRecord {
+	return FailureRecord{AutomatonID: automatonID, AutomatonTitle: automatonID, Project: project,
+		TaskID: "t-" + automatonID, At: now.Add(-time.Hour), Outcome: "failed", Category: "infra", Summary: "boom"}
+}
+
+func TestBuildFailures_ProjectUnlinkedAutomatonGoesToUnassigned(t *testing.T) {
+	now := time.Now()
+	f, err := BuildFailures(FailuresRequest{GroupBy: FailuresByProject, Window: 24 * time.Hour},
+		[]FailureRecord{failureAt("loose", fakeProjectOf("loose"), now)}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Groups) != 1 || f.Groups[0].Key != UnassignedKey || f.Groups[0].Attempts != 1 {
+		t.Fatalf("want one unassigned line with 1 attempt, got %+v", f.Groups)
+	}
+}
+
+func TestBuildFailures_ProjectTwoUnlinkedAutomataShareOneLine(t *testing.T) {
+	now := time.Now()
+	f, err := BuildFailures(FailuresRequest{GroupBy: FailuresByProject, Window: 24 * time.Hour},
+		[]FailureRecord{failureAt("loose-1", fakeProjectOf("loose-1"), now), failureAt("loose-2", fakeProjectOf("loose-2"), now)}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Groups) != 1 {
+		t.Fatalf("want one shared line, got %+v", f.Groups)
+	}
+	if g := failGroup(t, f, UnassignedKey); g.Attempts != 2 || g.Tasks != 2 {
+		t.Fatalf("shared unassigned line = %+v", g)
+	}
+}
+
+func TestBuildFailures_ProjectLinkedAutomatonGoesToItsProject(t *testing.T) {
+	now := time.Now()
+	f, err := BuildFailures(FailuresRequest{GroupBy: FailuresByProject, Window: 24 * time.Hour},
+		[]FailureRecord{failureAt("linked", fakeProjectOf("linked"), now)}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Groups) != 1 || f.Groups[0].Key != "alpha" || f.Groups[0].Attempts != 1 {
+		t.Fatalf("want one alpha line with 1 attempt, got %+v", f.Groups)
+	}
+}
+
+func TestBuildFailures_ProjectNeverKeysByAutomatonID(t *testing.T) {
+	now := time.Now()
+	ids := []string{"linked", "other", "loose-1", "loose-2"}
+	var recs []FailureRecord
+	for _, id := range ids {
+		recs = append(recs, failureAt(id, fakeProjectOf(id), now))
+	}
+	f, err := BuildFailures(FailuresRequest{GroupBy: FailuresByProject, Window: 24 * time.Hour}, recs, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range f.Groups {
+		for _, id := range ids {
+			if g.Key == id {
+				t.Fatalf("automaton id %q used as a project line key: %+v", id, f.Groups)
+			}
+		}
+	}
+	if len(f.Groups) != 3 {
+		t.Fatalf("want alpha, beta and unassigned lines, got %+v", f.Groups)
 	}
 }
