@@ -50,6 +50,13 @@ The definition lives with the other Automaton terms in
 the reason (a `landed` record's reason is the fixed note "merged on the
 default branch").
 
+A `pending` landing is also treated as `landed` when the Automaton's branch
+tip is already an ancestor of the default branch (git's
+`merge-base --is-ancestor`). It does not matter how the merge happened: the
+pipeline, the shipped record call or a hand merge all count. The next archive
+check finds it, passes, and updates the record to `landed` with the merge
+commit.
+
 ## Reading the record
 
 The record rides on **every Automaton read**, so you never fetch it
@@ -141,6 +148,14 @@ of a finished record — is **refused while its landing is still `pending`**,
 with the branch named:
 
 > `automaton "ab12cd34" cannot be archived: its branch automaton/ab12cd34 has not landed on the default branch; merge it, or record keep or drop for its landing`
+
+Before it refuses, the check asks git whether the Automaton's branch tip is an
+ancestor of the default branch (`merge-base --is-ancestor`). If it is, the
+branch has landed — whether the merge came from the pipeline, the shipped
+record call or a hand merge — so the archive check passes and the record is
+updated to `landed`, naming the merge commit. A branch that still has commits
+that are not in the default branch stays not landed, and archive is still
+refused.
 
 Once the record is `landed`, `kept` or `dropped` the archive goes through as
 before. An Automaton with no landing record at all archives as it always
