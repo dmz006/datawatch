@@ -19,6 +19,13 @@ func (m *Manager) SetSpendLedger(l SpendLedger) {
 	m.ledgerMu.Unlock()
 }
 
+// SetLocalUsageReader overrides the local usage reader (tests inject fakes).
+func (m *Manager) SetLocalUsageReader(r LocalUsageReader) {
+	m.ledgerMu.Lock()
+	m.localUsage = r
+	m.ledgerMu.Unlock()
+}
+
 // upsertLedger writes the session's current attribution and usage to the
 // ledger. It is called at start, on usage updates and at end; cleanup and
 // delete paths never remove ledger entries.
@@ -48,6 +55,22 @@ func (m *Manager) upsertLedger(sess *Session) {
 		CacheRead:     int64(snap.CacheReadTokens),
 		CacheCreation: int64(snap.CacheCreationTokens),
 		ToolCalls:     int64(snap.ToolCalls),
+		ActiveSeconds: snap.ActiveSeconds(activeClock()),
+	}
+	if IsLocalBackend(snap.BackendFamily) {
+		var rd LocalUsageReader = LogUsageReader{}
+		m.ledgerMu.Lock()
+		if m.localUsage != nil {
+			rd = m.localUsage
+		}
+		m.ledgerMu.Unlock()
+		u := rd.ReadLocalUsage(snap.BackendFamily, snap.LogFile)
+		e.Local = true
+		e.TokensReported = u.Reported
+		e.LocalTokensIn, e.LocalTokensOut = u.TokensIn, u.TokensOut
+		e.ToolCalls = u.ToolCalls
+		// Claude token fields stay zero for local sessions.
+		e.TokensIn, e.TokensOut, e.CacheRead, e.CacheCreation = 0, 0, 0, 0
 	}
 	if snap.State.IsTerminal() {
 		e.EndedAt = snap.UpdatedAt

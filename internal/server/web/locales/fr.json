@@ -6055,5 +6055,13 @@
   "cost_charts_topn_label": "Séries",
   "cost_charts_topn_all": "Toutes",
   "cost_charts_legend_toggle": "Afficher ou masquer cette série",
-  "cost_charts_supervisor_and_other": "Superviseur et autres"
+  "cost_charts_supervisor_and_other": "Superviseur et autres",
+  "cost_charts_unit_local_tokens": "jetons de modèles locaux (axe propre, pas des jetons Claude, sans prix)",
+  "cost_charts_tokens_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué de jetons (inconnu, pas zéro).",
+  "cost_charts_tool_calls_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué d'appels d'outils (inconnu, pas zéro).",
+  "cost_charts_active_time": "Temps actif : %1$s",
+  "cost_charts_col_local_tokens": "Jetons de modèles locaux",
+  "cost_charts_col_active": "Temps actif",
+  "cost_charts_not_reported_marker": "non communiqué (%1$s)",
+  "cost_report_not_reported": "non communiqué (%1$s)"
 }

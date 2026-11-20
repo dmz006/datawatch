@@ -109,9 +109,34 @@ input:
 - **Cache read and created** — prompt-cache tokens. A cache read is priced at a
   tenth of the input rate and a cache creation at 1.25 times it, so they are shown
   on their own columns and are never folded into `tokens_in`.
-- **Local-model tokens** — the tokens of pi and ollama sessions. A pi session's
-  tokens come from its own session log. They appear in the totals and the
-  local column; they never produce a USD figure.
+- **Local-model tokens** — the tokens of pi and ollama sessions. They are read
+  from the session's own output log (the trailing part of it, where the
+  backend wrote its usage counts). They appear in the totals and the local
+  column; they never produce a USD figure.
+
+## Local tokens, tool calls and active seconds
+
+**Local tokens** are the tokens a local-model backend (pi, ollama) used. They
+are their own unit: never priced, never added to Claude tokens, and kept in
+their own `local_tokens` figure (the local tokens column) on every row, chart line and total. A local
+session adds nothing to a dollar or points figure and never blocks a group's
+rate.
+
+Some backends give no counts at all. A local session whose backend reports no
+token counts is **not reported**: its tokens are unknown, not zero. Local
+tokens leave it out, and `tokens_not_reported_sessions` counts how many such
+sessions the row or line holds, so a low figure can be told from a gap. A
+backend that reports no tool-call count is shown the same way, through
+`tool_calls_not_reported_sessions`, and the tool-usage chart says it is not
+reported rather than drawing zero.
+
+**Tool calls** are the number of tool invocations a session made, counted per
+session and never by tool name.
+
+**Active seconds** are the time an Automaton's sessions spent working: wall
+time with the time a session sat idle waiting for input taken out. They are
+summed per row, chart line and total as `active_seconds`, and are never a
+cost.
 
 ## Reconciliation against the usage readings
 
@@ -498,7 +523,7 @@ page.
 | Card | What it draws | Notes |
 |---|---|---|
 | **Cost over time** | A line per group: tokens, or money | Money is one chart per billing unit. Each axis is labelled with its unit and billing mode, for example dollars on an API-metered backend and points on a bundled plan, so units are never drawn together or added. When no rate or monthly price is set, or USD estimates are off, tokens are drawn and the card says so |
-| **Tool usage** | A line per group: tool calls | Counts only, never tool names |
+| **Tool usage** | A line per group: tool calls | Counts only, never tool names; sessions whose backend gave no count are reported as not reported |
 | **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group. An attempt with no recorded category is drawn as `uncategorized` | Retries count each task once and restart when a task is reset. Categories are recorded when an attempt is recorded and filled in for older attempts at each daemon start, so `uncategorized` should only be left for attempts with no reason, summary or verifier issue; see [Failure categories](failed-attempt-cost.md#failure-categories) |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
