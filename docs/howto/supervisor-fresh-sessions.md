@@ -56,6 +56,11 @@ The same request exists everywhere:
 | CLI | `datawatch supervisor-setup run` |
 | Chat | `autonomous supervisor-setup run project=P model=M schedules=watch,full` |
 
+The project must be registered under `projects:` in the config with its
+directory; an unknown name is refused. The project rules pack is read from
+`packs/build-supervisor/rules.md` inside that directory, and the project rules
+file is the file `autonomous.rules_file` names (`AGENT.md` when unset).
+
 What it does: launches with the supervisor role, resolves the project
 directory, checks the model, generates the handover and makes sure one
 recurring spawn schedule exists per name. The model must be named. Only a

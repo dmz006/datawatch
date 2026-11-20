@@ -4217,6 +4217,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Plan records (registry rows and findings): one JSON file per record
 		// under the data directory, sealed with the shared per-record file
 		// sealing under --secure. Each write emits an audit event.
+		var supervisorPlanRecords *planrecordspkg.Store
 		{
 			var planSealer planrecordspkg.Sealer
 			if encKey != nil {
@@ -4236,9 +4237,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fmt.Printf("[warn] plan records store: %v\n", prErr)
 				} else {
 					httpServer.SetPlanRecords(prStore)
+					supervisorPlanRecords = prStore
 				}
 			}
 		}
+		// Supervisor set-up, state and corrections routes: without their
+		// dependencies every one answers 503.
+		wireSupervisorSetup(httpServer, cfg, schedStore,
+			func() *planrecordspkg.Store { return supervisorPlanRecords },
+			func(id string) string {
+				if autonomousMgrRef == nil {
+					return ""
+				}
+				if prd, ok := autonomousMgrRef.Store().GetPRD(id); ok && prd != nil {
+					return prd.BlockedReason
+				}
+				return ""
+			})
 		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
 		// operator audit log (a nil log yields a no-op reporter) shared by
 		// both push engines. Each security-relevant scanned push — an
