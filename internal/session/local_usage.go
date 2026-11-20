@@ -83,7 +83,7 @@ func (LogUsageReader) ReadLocalUsage(family, logFile string) LocalUsage {
 	if err != nil {
 		return LocalUsage{}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// Bound the work per call: only the trailing maxLocalLogBytes are scanned.
 	if st, err := f.Stat(); err == nil && st.Size() > maxLocalLogBytes {
 		if _, err := f.Seek(st.Size()-maxLocalLogBytes, io.SeekStart); err != nil {
