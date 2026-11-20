@@ -1160,6 +1160,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// A judge that timed out on every backend holds the PRD in
 		// needs_review instead; other categories (infra) stay blocked.
 		status, reason := rulesReviewBlockStatus(prd)
+		if IsJudgeTimeoutHold(bv) {
+			// The judge never judged: replace any outcome left by an older real
+			// block so the review never reads "judge found a problem".
+			heldOutcome := newRulesReviewOutcome(bv, RulesReviewActionJudgeTimedOut, "", 0, 0, 0, m.reviewNow())
+			heldOutcome.JudgeOutcome = JudgeKindTimedOut
+			m.store.WithLock(func() { prd.RulesReviewOutcome = heldOutcome })
+			_ = m.savePRDOwn(prd)
+		}
 		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), status, reason, blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -47,6 +48,10 @@ type judgeAttempt struct {
 	Elapsed  time.Duration
 	TimedOut bool
 	NoSlot   bool
+	// SessionID and LastOutput name the judge session the attempt launched and
+	// the tail of its output, set when the attempt timed out.
+	SessionID  string
+	LastOutput string
 
 	Retarget   judgeRetargetFn
 	MoveTo     string
@@ -308,6 +313,7 @@ func judgeRestoredAttempts(tries judgeTryLog, limit time.Duration) ([]judgeAttem
 	for _, rec := range tries.Tried() {
 		attempts = append(attempts, judgeAttempt{
 			Backend: rec.Backend, Started: rec.Started, Limit: limit, Elapsed: rec.Duration, TimedOut: true,
+			SessionID: rec.SessionID, LastOutput: rec.LastOutput,
 		})
 		tried = append(tried, rec.Backend)
 	}
@@ -323,6 +329,7 @@ func judgeRecordTry(tries judgeTryLog, att judgeAttempt) {
 	}
 	rec := autonomouspkg.JudgeAttemptRecord{
 		Backend: att.Backend, Started: att.Started, Duration: att.Elapsed, Outcome: autonomouspkg.JudgeOutcomeTimedOut,
+		SessionID: att.SessionID, LastOutput: autonomouspkg.TailJudgeOutput(att.LastOutput),
 	}
 	if err := tries.Record(rec); err != nil {
 		log.Printf("judge: record timed-out attempt on backend %s: %v", att.Backend, err)
@@ -376,11 +383,21 @@ func judgeHoldBody(prdID string, attempts []judgeAttempt) string {
 // carries one line per attempt, so the review shows every backend that was
 // tried and the time spent on each.
 func judgeHoldVerdict(req autonomouspkg.GuardrailInvocation, attempts []judgeAttempt) autonomouspkg.GuardrailVerdict {
+	var sessionID, lastOutput string
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if !attempts[i].NoSlot && (attempts[i].SessionID != "" || attempts[i].LastOutput != "") {
+			sessionID = attempts[i].SessionID
+			lastOutput = autonomouspkg.TailJudgeOutput(attempts[i].LastOutput)
+			break
+		}
+	}
 	return autonomouspkg.GuardrailVerdict{
-		Guardrail: req.Guardrail,
-		Outcome:   "block",
-		Severity:  "high",
-		Category:  autonomouspkg.JudgeTimeoutCategory,
+		JudgeSessionID: sessionID,
+		RawJudge:       lastOutput,
+		Guardrail:      req.Guardrail,
+		Outcome:        "block",
+		Severity:       "high",
+		Category:       autonomouspkg.JudgeTimeoutCategory,
 		Summary: fmt.Sprintf("judge for Automaton %s %s (%s), %s in total; the Automaton needs review",
 			req.PRDID, judgeHoldReason(attempts), judgeBackendList(attempts), judgeTotalElapsed(attempts)),
 		Issues:        judgeAttemptLines(attempts),
@@ -399,6 +416,9 @@ func judgeAttemptRecords(attempts []judgeAttempt) []autonomouspkg.JudgeAttemptRe
 		}
 		if a.NoSlot {
 			rec.Outcome = autonomouspkg.JudgeOutcomeNoSlot
+		} else {
+			rec.SessionID = a.SessionID
+			rec.LastOutput = autonomouspkg.TailJudgeOutput(a.LastOutput)
 		}
 		out = append(out, rec)
 	}
@@ -446,4 +466,31 @@ func emitJudgeAlert(mgr *autonomouspkg.Manager, level, title, body string) {
 		}
 	}
 	fmt.Printf("[%s] %s: %s\n", level, title, body)
+}
+
+// sessionOutputTail returns the tail of a session's captured output, or "" when
+// there is no session or the output cannot be read.
+func sessionOutputTail(cfg *config.Config, id string) string {
+	if id == "" || cfg == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loopbackBaseURL(cfg)+"/api/output?n=50&id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return ""
+	}
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return string(b)
 }

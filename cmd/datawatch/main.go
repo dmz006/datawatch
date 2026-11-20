@@ -6966,6 +6966,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 								withSessionProfile(autonomousMgrRef, launchTagsForJudge(req.PRDID, req.Rejudge), "judge", judgePRD, judgeTask))
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
+								if att.TimedOut {
+									att.SessionID = judgeID
+									att.LastOutput = autonomouspkg.TailJudgeOutput(sessionOutputTail(cfg, judgeID))
+								}
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
 								// crash); no judgment ever ran. "infra", not a real
 								// content finding. See FailureReason's doc comment —

@@ -5,6 +5,7 @@ package router
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // reviewStateStatusLine renders the review_state of a PRD GET reply into the
@@ -20,6 +21,7 @@ func reviewStateStatusLine(body string) string {
 			Cause  string `json:"cause"`
 			Action string `json:"action"`
 			Text   string `json:"judge_outcome_text"`
+			Judged *bool  `json:"judged"`
 		} `json:"review_state"`
 	}
 	if err := json.Unmarshal([]byte(body), &v); err != nil {
@@ -32,7 +34,11 @@ func reviewStateStatusLine(body string) string {
 	}
 	switch r.State {
 	case "timed_out":
-		line := "review timed out: " + r.Cause
+		cause := r.Cause
+		if !strings.HasPrefix(cause, "not judged") {
+			cause = "not judged: " + cause
+		}
+		line := "review timed out, " + cause
 		if r.Action != "" {
 			line += " -> " + r.Action
 		}
