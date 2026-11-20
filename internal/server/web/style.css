@@ -7580,7 +7580,19 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 /* Usage page: a verdict sentence above small fixed-size cards. The cards never
    stretch on a wide screen: fixed width and height, with max-width on narrow ones. */
 .usage-verdict-sentence { font-size: 14px; font-weight: 600; line-height: 1.4; max-width: 720px; }
-.usage-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+.usage-cards .usage-card { width: 100%; }
+@media (max-width: 600px) {
+  .usage-cards { grid-template-columns: 1fr; }
+}
+.usage-calc-frame {
+  box-sizing: border-box;
+  background: var(--bg2, #1a1d27);
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius, 12px);
+  padding: 12px 14px;
+  overflow: hidden;
+}
 .usage-card { box-sizing: border-box; width: 220px; height: 190px; max-width: 100%; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
 .usage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .usage-card-title { font-weight: 600; font-size: 13px; }
@@ -8185,6 +8197,26 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .task-routing-table td::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text2); }
   .task-routing-select { width: 100%; margin-bottom: 2px; }
 }
+/* Cost report chart cards: legend series tiles (show/hide one series in this card). */
+.cost-charts-legend-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cost-charts-legend-tile:hover { border-color: var(--border); background: var(--bg2); }
+.cost-charts-legend-tile:focus-visible { outline: 2px solid var(--border); }
+.cost-charts-legend-tile-off { opacity: 0.5; }
+.cost-charts-legend-tile-off span:last-child { text-decoration: line-through; }
+
 @media (max-width: 520px) {
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
