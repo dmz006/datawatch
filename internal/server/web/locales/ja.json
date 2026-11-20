@@ -2265,6 +2265,7 @@
   "settings_capacity_adopt_before_admit": "After a restart, admit resumed workers before new work",
   "settings_capacity_fallthrough": "Pool fall-through (admit on another idle allowed pool when the requested one is full)",
   "settings_capacity_adoption_wait": "Restart adoption wait (sec, 0 = 30)",
+  "settings_capacity_slot_reconcile_grace": "スロット照合の猶予時間(秒、既定 60、最小 10、0 = 60)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "max_engines_per_node": "ノードあたりの最大エンジン数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks": "オートマトンあたりの最大同時タスク数（1 = 1 件ずつ）",

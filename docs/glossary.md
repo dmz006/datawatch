@@ -54,8 +54,18 @@ through. See [howto/automata-capacity.md](howto/automata-capacity.md#pool-fall-t
 A check on every capacity tick that frees a pi-prompt slot held by a judge or
 verifier with no live session and no node lease, or whose Automaton is finished.
 It only releases the slot; it never ends a session, and a holder with a live
-session is never freed. Each freed slot raises a `Capacity slot freed` alert.
-See [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+session is never freed. Each freed slot raises a `Capacity slot freed` alert. A lease younger than the slot reconcile grace
+counts as having a node lease, so a just-admitted holder is left alone. See
+[Slot reconcile grace](#slot-reconcile-grace) and
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
+
+## Slot reconcile grace
+
+The setting `autonomous.capacity_slot_reconcile_grace_seconds` (default 60
+seconds, minimum 10, `0` reads the default). It is how long a freshly admitted
+capacity lease counts as having a node lease in the orphan slot reconcile. It
+was a fixed value before this setting existed. See
+[howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
 
 ## Allowed fall-through target
 
