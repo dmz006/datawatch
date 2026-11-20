@@ -52,10 +52,13 @@ Automata share the hardware fairly.
 - **Your sessions come first.** `session.reserved_interactive` slots
   (default 1 when `max_sessions` is 3 or more) are never used by
   Automata, and sessions you start are never queued.
-- **The verifier does not add a second slot.** When a task moves from
-  worker to verification, it keeps the one slot it already holds (the
-  lease is re-keyed to the verifier); a second, separate lease is only
-  taken if the verifier runs on a different pool set.
+- **A verifying task holds no worker slot.** When the worker session ends and
+  the task moves to verification, its worker slot is released at once. The
+  verifier then waits for a slot of its own: on the node's verifier pool where
+  the node has one, otherwise on the pools its backend uses. While it waits,
+  the freed worker slot goes to the next waiting task, so a slow verification
+  no longer holds up the lane. See
+  [The worker slot at verification](#the-worker-slot-at-verification).
 - **Planning waits too.** A decompose run occupies the same `llm:` / `node:`
   pools a task would use (its planner lease excludes the `host` pool, since
   the planning session itself already counts against it); a saturated pool
@@ -299,24 +302,54 @@ responses carry the resulting effective limit plus its source (`explicit`
 caps count simultaneous autonomous inflight sessions per LLM; they are
 not a rate limit.
 
-## One slot from spawn through verification
+## The worker slot at verification
 
-A task holds exactly one capacity slot through its whole life: the
-worker's lease is handed to the verifier (holder `verify:<task>`) the
-moment verification starts, not released and re-acquired — there is no
-window in which a sibling task can steal the slot, and the task is never
-counted twice. If the verifier's backend/model resolves to a different
-pool set than the worker's, the hand-off is refused and the verifier is
-admitted separately with its own lease; a second slot is never stacked on
-top of the first.
+A task holds at most one capacity lease at a time. While its worker runs, that
+is the worker's lease. When the worker session ends and the task enters
+`verifying`, the worker's lease is released at once, so its slot is free for
+other work while the verification runs or waits. The verifier then takes its
+own lease, holder `verify:<task>`, on the pools it needs: the node's verifier
+pool where the node has one, otherwise the pools its backend and model map to.
+The verifier never stacks on a worker lease that is still held.
 
-The guardrail judge takes the same hand-off: when a task's judge starts it
-inherits the task's own worker lease (holder `judge:<task>`) instead of
-acquiring a fresh slot, so it can never queue behind the very lease it was
-about to inherit. On a node with a verifier pool the worker lease is simply
-released and the judge takes a `node-verify:<node>` slot; otherwise the
-lease is re-keyed to `judge:<task>` in place — no fresh slot, no window
-in which a sibling can take it, and the task is never counted twice.
+The worker's lease is not handed over to the verifier. A task in `verifying`
+holds no worker slot, so a verifier waiting for its slot does not keep a lane
+shut. The verifier still follows the worker's node when
+`autonomous.model_routing.verifier_follows_worker_node` applies, because the
+task keeps the node its worker ran on.
+
+The guardrail judge works the same way. Its lease is `judge:<task>`. A worker
+lease still present when the judge starts is released, not handed over, and the
+judge then waits for its own slot like the verifier does.
+
+## Verifying tasks in the capacity view
+
+A task whose worker session has ended and is verifying keeps its place in the
+Automaton but not its worker lane. Its verification takes a **verifier slot**
+(on the node's verifier slots, or from the verifier pool). If no verifier slot
+is free, the task waits for one without holding a worker slot, so the lane goes
+on to the next task.
+
+A retry after a failed verification is a new start: it goes back through
+admission like any other task and may wait in `waiting_capacity` until a worker
+slot is free.
+
+The capacity view lists every verifying task and says whether it is running its
+verifier or waiting for a slot:
+
+- REST: `tasks.verifying` in `GET /api/capacity`.
+- CLI: `datawatch capacity` (the `Verifying (n):` block).
+- MCP: the `capacity_status` output.
+- PWA: the capacity card under Settings.
+
+**Throughput and sizing.** A lane is now busy only for worker time, so the work
+a lane gets through is bounded by how long workers run, not by how long
+verification takes. Verification load moves to the verifier slots instead. Size
+a node's `verifier_slots` to the number of verifications you expect to overlap,
+roughly the node's worker lanes times the share of a task's time spent
+verifying, rounded up, and keep it within what the node's free memory can hold.
+If the capacity view often shows tasks waiting for a slot, raise it; if it
+never does, lower it. See [Verifier slots](#verifier-slots).
 
 ## An idle verifier is the verifier's own incident
 
@@ -1075,19 +1108,27 @@ The same text, from the same source, on every surface:
   with the pools, node and session it holds; `usage_backoff` and `budgets`
   carry the flags and the dollar windows.
 - **`GET /api/capacity`** (MCP `capacity_status`): the same task views under
-  `tasks.waiting` and `tasks.running`, next to `pools`, `leases`, `waiting`
-  (the raw ledger queue), `backoff` (each flag with `until`, `reason` and
-  `reset_known`) and `budgets`. Add `?prd_id=<id>` to scope it to one
-  Automaton.
+  `tasks.waiting` and `tasks.running`, and `tasks.verifying` for tasks in
+  verification, next to `pools`, `leases`, `waiting` (the raw ledger queue),
+  `backoff` (each flag with `until`, `reason` and `reset_known`) and
+  `budgets`. `tasks.verifying` is always an array. Each entry has `state`:
+  `verifying` when its verifier holds a slot, or `waiting_for_verifier` when
+  it is queued for one, and then `wait_reason` says why. Add `?prd_id=<id>`
+  to scope it to one Automaton.
 - **Automata task detail (PWA):** a waiting task shows the cause chip, the
   reason text and, when known, `(Resets at <time>)`; a running task shows a
   `Holds:` line with its pools and node.
 - **Status tab (PWA, session view):** the same wait row, labelled
   *Waiting on*, and the same `Holds:` line, for a session that belongs to an
   Automaton task.
+- **Capacity card (PWA):** a *Verifying* list under the queue, one row per
+  task in verification, marked `verifying` or `waiting for a verifier slot`.
+  The Automata waiting for a worker slot stay in the queue list.
 - **`datawatch capacity`** (add `--json` for the raw body): prints
   `Queued tasks (n):` with each reason and how long it has waited,
-  `Running tasks (n):` with what each holds, `Back-off:` and `Budgets:`.
+  `Running tasks (n):` with what each holds, `Verifying (n):` for tasks in
+  verification (each marked `verifying`, or with its verifier-slot wait
+  reason), `Back-off:` and `Budgets:`.
 - **`capacity`** (chat command): the same text as the CLI.
 
 A task parked on an external condition also appears under running tasks with

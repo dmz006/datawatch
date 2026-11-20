@@ -67,6 +67,10 @@ capacity lease counts as having a node lease in the orphan slot reconcile. It
 was a fixed value before this setting existed. See
 [howto/automata-capacity.md](howto/automata-capacity.md#orphan-judge-and-verifier-slots).
 
+## Verifying lease release
+
+When a task enters `verifying`, its worker's capacity slot is released at once and the verifier takes a slot of its own. A slow verification therefore does not keep a lane shut for other work. The slot is not handed over. See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).
+
 ## Allowed fall-through target
 
 An LLM entry setting (`fallthrough_target`, default off). With pool
