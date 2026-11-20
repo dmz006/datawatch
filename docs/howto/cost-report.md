@@ -464,6 +464,36 @@ A card whose data is empty, or whose view the daemon cannot supply, is not
 drawn. Its reason and next action appear as an entry at the top of the **Events**
 tab instead, so a missing chart is always explained.
 
+### Failure categories on the failures card
+
+A category is derived when the attempt is recorded, from the end reason and
+the failure text. A category the verifier or the executor already named (for
+example `content`, `scope`, `security`, `judging` or `invalid-response`) is
+kept as it is; an operator cancel is `none`. The end reasons the operator sees
+most often map like this:
+
+| What happened to the attempt | Category |
+|---|---|
+| The verifier failed it (`verifier_failed`) | `code_or_test` |
+| The merge was refused (`merge refused`) | `policy` |
+| The commit failed (`commit failed`) | `policy` |
+| The launch or placement was refused (`launch refused`) | `infra` |
+| The executor timed out (`timeout`, `timed out`) | `infra` |
+| The worker produced no output (`no output`) | `infra` |
+
+Stored attempts with a blank category are filled in by one backfill pass at
+each daemon start, in the background, never blocking startup. It is
+idempotent: an attempt that already has a category is not touched, so a rerun
+changes nothing. An attempt that has no end reason, no summary and no
+verifier issue stays blank and is drawn as `uncategorized` — that is now
+*all* that an `uncategorized` attempt means: there was no reason to derive a
+category from. `GET /api/cost/failures` counts those as
+`uncategorized_attempts`, so for attempts recorded from now on that number
+should be 0 or near it, and the backfill log line
+(`attempt_category_backfill: report {...}`) is the place to read what a
+daemon-start pass left behind. The full treatment, with how to read the
+attempt record, is in [Failure categories](failed-attempt-cost.md#failure-categories).
+
 ## All access methods
 
 | Method | How |

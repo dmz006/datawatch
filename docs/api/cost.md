@@ -268,18 +268,44 @@ it has no tag. An Automaton belongs to an Automation through its own
 project, Automation or Automaton under the chosen grouping land under
 `unattributed`.
 
+**How a category is set.** A category is derived when the attempt is recorded,
+from the end reason and the failure text. A category the verifier or the
+executor already named (for example `content`, `scope`, `security`, `judging`
+or `invalid-response`) is kept as it is, and an operator cancel is `none`. The
+end reasons the operator sees most often map like this:
+
+| What happened to the attempt | Category |
+|---|---|
+| The verifier failed it (`verifier_failed`) | `code_or_test` |
+| The merge was refused (`merge refused`) | `policy` |
+| The commit failed (`commit failed`) | `policy` |
+| The launch or placement was refused (`launch refused`) | `infra` |
+| The executor timed out (`timeout`, `timed out`) | `infra` |
+| The worker produced no output (`no output`) | `infra` |
+
+Stored attempts with a blank category are filled in by one backfill pass at
+each daemon start, in the background, never blocking startup. It is idempotent:
+an attempt that already has a category is not touched, so a rerun changes
+nothing. An attempt that has no end reason, no summary and no verifier issue
+stays blank and reads as `uncategorized` — that is now all an `uncategorized`
+attempt means: there was nothing to derive a category from. The payload counts
+those as `uncategorized_attempts`, so for attempts recorded from now on that
+number should be 0 or near it; the daemon logs one line per pass,
+`attempt_category_backfill: report {...}`, with `attempts_examined`,
+`attempts_updated`, `left_uncategorized` and `automatons_saved`.
+
 | Field | Meaning |
 |-------|---------|
 | `weeks[]` | Every week start (UTC) in the window, in order |
 | `groups[].key`, `groups[].label` | The project name, Automation or Automaton id, and its readable title where one exists |
 | `groups[].attempts`, `groups[].tasks` | Attempts in the window and the distinct tasks they belong to |
-| `groups[].categories[]` | Attempts per failure category (the categories recorded on the attempts, for example `infra`, `code_or_test`, `policy`, `none` or `content`, and `uncategorized` when an attempt recorded none), most frequent first |
+| `groups[].categories[]` | Attempts per failure category (the categories recorded on the attempts, for example `infra`, `code_or_test`, `policy`, `none` or `content`, and `uncategorized` for an attempt with no end reason, no summary and no verifier issue), most frequent first |
 | `groups[].weeks[]` | One entry per week in `weeks[]`, zero-filled: `start`, `attempts`, and `categories` for that week |
 | `groups[].top_summaries[]` | Up to five most frequent failure summaries with their category and count; summaries are trimmed to one line and cut at 200 characters |
 | `groups[].retries` | The sum of each task's current automatic retry count, counted once per task. The count restarts when a task is reset, so it is a floor |
 | `categories[]`, `total_attempts`, `total_tasks`, `total_retries` | The same across all groups |
 | `undated_attempts`, `retry_note` | Attempts with no time, and what `retries` counts |
-| `uncategorized_attempts` | In-window attempts whose category was blank and so read as `uncategorized`; the same number as the `uncategorized` entry in `categories[]`. New attempts are categorized when recorded and older ones at daemon start, so this should be 0 or near it |
+| `uncategorized_attempts` | In-window attempts that have no end reason, no summary and no verifier issue and so stay blank, read as `uncategorized`; the same number as the `uncategorized` entry in `categories[]`. Attempts are categorized when recorded and the blank ones backfilled once at daemon start (idempotent, a rerun changes nothing), so this should be 0 or near it |
 
 Errors: `400` for a bad `group_by` or `window`; `503` when the Automaton
 manager is not available.
