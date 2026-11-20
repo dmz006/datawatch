@@ -389,8 +389,9 @@ type Manager struct {
 	mcpRetryCounts map[string]int
 
 	// ledger receives spend attribution entries (nil = disabled).
-	ledgerMu sync.Mutex
-	ledger   SpendLedger
+	ledgerMu   sync.Mutex
+	ledger     SpendLedger
+	localUsage LocalUsageReader
 
 	// restartedAt records when each session was last restarted (in-memory only).
 	// Used to suppress DATAWATCH_COMPLETE: detection during the post-restart

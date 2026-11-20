@@ -6055,5 +6055,13 @@
   "cost_charts_topn_label": "Serien",
   "cost_charts_topn_all": "Alle",
   "cost_charts_legend_toggle": "Diese Serie ein- oder ausblenden",
-  "cost_charts_supervisor_and_other": "Supervisor und Sonstiges"
+  "cost_charts_supervisor_and_other": "Supervisor und Sonstiges",
+  "cost_charts_unit_local_tokens": "Tokens lokaler Modelle (eigene Achse, keine Claude-Tokens, ohne Preis)",
+  "cost_charts_tokens_not_reported": "%1$s lokale Sitzung(en) haben keine Tokens gemeldet (unbekannt, nicht null).",
+  "cost_charts_tool_calls_not_reported": "%1$s lokale Sitzung(en) haben keine Tool-Aufrufe gemeldet (unbekannt, nicht null).",
+  "cost_charts_active_time": "Aktive Zeit: %1$s",
+  "cost_charts_col_local_tokens": "Tokens lokaler Modelle",
+  "cost_charts_col_active": "Aktive Zeit",
+  "cost_charts_not_reported_marker": "nicht gemeldet (%1$s)",
+  "cost_report_not_reported": "nicht gemeldet (%1$s)"
 }

@@ -210,6 +210,9 @@ records no finer model name. Spend with no owner lands under `unattributed`.
 | `points[].units[]` | The bucket's money per billing unit, ordered `dollars`, `points`, `none`: `dollars` for metered API spend, `points` and `percent` for a bundled plan, tokens and time only for free local inference. A figure is omitted where no rate or `monthly_price` is set, and all of them where `cost_report.show_usd_estimates` is off |
 | `groups[].unit_totals[]` / `totals_by_unit[]` | The same per-unit totals for a line and for the whole series |
 | `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the spend that is unknown rather than zero |
+| `groups[].local_tokens`, `points[].local_tokens`, `local_tokens` | Local-model tokens for a line, a point and the whole series. Their own unit: never in `tokens`, never priced. Omitted when zero |
+| `tokens_not_reported_sessions` | On a line, a point and the series: local sessions whose backend gave no token counts. Their tokens are not reported, so unknown rather than zero, and `local_tokens` leaves them out |
+| `groups[].active_seconds`, `points[].active_seconds`, `active_seconds` | Summed working time, in seconds, with idle time taken out. Omitted when zero |
 
 Errors: `400` for a bad `group_by`, `window` or `bucket`, or a window and
 bucket that need more than 1000 points per line; `503` when the manager is not
@@ -236,6 +239,7 @@ tool, so there is **no per-tool-name breakdown**. Every payload says so in
 | `groups[].key` | The Automaton, project or model; spend with no owner lands under `unattributed`. A group with no sessions in the window is omitted, so an empty window gives `groups: []` |
 | `groups[].sessions`, `groups[].tool_calls` | The line's sessions and tool calls over the window |
 | `groups[].points[]` | One point per bucket, zero-filled: `start`, `sessions`, `tool_calls` |
+| `groups[].tool_calls_not_reported_sessions`, `total_tool_calls_not_reported_sessions` | Sessions whose backend gave no tool-call count: not reported, so unknown rather than zero. Omitted when zero |
 | `total_tool_calls`, `total_sessions` | The same totals across all groups |
 | `tool_names_note` | States that only counts are recorded, not tool names |
 | `retention_days`, `unknown_spend_note`, `unknown_before` | The 31-day ledger and, when the window reaches past it, the activity that is unknown rather than zero |
@@ -399,3 +403,11 @@ An `api_metered` or `free_local` profile — or no profile at all, read back as
 the assumed default — keeps the row's money figure as an ordinary estimate;
 no profile is shown with the "(assumed — no usage.billing entry)" label.
 
+## Report fields for local usage
+
+Each row of `GET /api/cost/report`, and its totals, also carries `tool_calls`,
+`local_tokens`, `tokens_not_reported_sessions` and `active_seconds`. Local
+tokens are never added to `tokens_in` or `tokens_out` and never produce a
+money figure. `tokens_not_reported_sessions` counts the row's local sessions
+whose backend gave no token counts (not reported, unknown rather than zero);
+`local_tokens` excludes them.

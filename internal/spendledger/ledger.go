@@ -41,6 +41,13 @@ type Entry struct {
 	CacheCreation int64     `json:"cache_creation"`
 	ToolCalls     int64     `json:"tool_calls"`
 	ActiveSeconds float64   `json:"active_seconds"`
+
+	// Local-model usage (pi, ollama). Kept apart from the Claude token
+	// fields above so local tokens are never mixed with or priced as Claude's.
+	Local          bool  `json:"local,omitempty"`
+	LocalTokensIn  int64 `json:"local_tokens_in,omitempty"`
+	LocalTokensOut int64 `json:"local_tokens_out,omitempty"`
+	TokensReported bool  `json:"tokens_reported,omitempty"`
 }
 
 type fileFormat struct {
