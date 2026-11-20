@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.63"
+var Version = "9.182.64"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4236,6 +4236,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fmt.Printf("[warn] plan records store: %v\n", prErr)
 				} else {
 					httpServer.SetPlanRecords(prStore)
+					// Daily plan-status reconcile: roll every plan up from its
+					// linked work; a status set by hand is kept.
+					go func() {
+						ticker := time.NewTicker(24 * time.Hour)
+						defer ticker.Stop()
+						for range ticker.C {
+							if ch, err := prStore.ReconcilePlans("", false); err != nil {
+								fmt.Printf("[warn] plan reconcile: %v\n", err)
+							} else if len(ch) > 0 {
+								fmt.Printf("[plans] daily reconcile changed %d plan status(es)\n", len(ch))
+							}
+						}
+					}()
 				}
 			}
 		}

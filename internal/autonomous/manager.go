@@ -2040,6 +2040,10 @@ type Manager struct {
 	// finder and carry-forward (archived_unmerged.go); nil uses git. Guarded by mu.
 	archivedUnmergedGit MergeGitRunner
 
+	// mergedFinishGit is the read-only git runner of the merged-branch finish
+	// check (merged_branch_finish.go); nil uses NewMergeGitRunner.
+	mergedFinishGit MergeGitRunner
+
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.

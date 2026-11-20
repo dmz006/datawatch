@@ -818,6 +818,8 @@ An Automaton or Automation can carry **shipped state**: the record of the work h
 
 A record with shipped state **displays as Completed** in views that report an effective status, and counts in the **completed** bucket of the status counts, together with the records whose stored status is completed; it keeps the stored status it has in the store. A shipped-but-cancelled PRD shows as Completed, never as cancelled and never as a separate "shipped" bucket; a cancelled PRD whose work never landed still shows as Cancelled. The [Completed migration](#completed-migration) is what changes the stored status.
 
+A shipped record is also what finishes its Automaton across a restart: an Automaton whose record carries a merge time (`merged_at`) and a merge commit (`merge_commit`) and whose branch is contained in main is finished as **Completed** on daemon restart and at run start — it is not re-run and its rules-review judge is not started again, so a deploy restart no longer repeats judging on an empty diff. An Automaton whose `merge_commit` is not in main still gets its judge. The completed record gets one `merged_branch_finish` decision-log line. See the note in [operations.md](operations.md#merged-work-stays-finished-across-a-daemon-restart).
+
 Recording the state names where it came from: the **merge step** (the work landed as part of the merge), or a **backfill** (a deliberately run pass over the base repository's main branch finds the `automaton/<id>` merge commits, works out the release each one landed in, and fills in the missing records — safe to re-run, it fills only what is missing and skips what is already there). Run it with `?dry_run` first to see what would be recorded without writing anything.
 
 The five settings under **Settings → Automate → Shipped** (config block `autonomous.shipped`) — the shipped-state master switch, the chip display, the default list view, the (now inert) separate-count switch, and the backfill-at-start switch — decide what the read surfaces report. Every read surface — the web lists and chip, the Shipped dashboard card payload (server-served), the REST API, the MCP tools, the CLI and the comm channel — reports the same state from the same stored fields, with shipped work shown as Completed. The companion apps still show the old Shipped label until they follow (the companion-app parity item).
@@ -1775,7 +1777,9 @@ Three Settings → About cards exist only in the mobile apps, with no server-sid
 
 ## Concepts & Glossary
 
-**Rate-limit reset out of reach** — the CodeQL alert gate's state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). It applies to both steps: `wait-analyses` and `open-alerts`. The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line (naming the reset epoch when one is known) and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis, and `open-alerts` never reports a zero-alert result from it. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
+### Rate-limit reset out of reach
+
+The CodeQL alert gate's state when GitHub's core rate limit resets later than the wait budget that is left (`WAIT_MAX_SECONDS` minus the time already waited). It applies to both steps: `wait-analyses` and `open-alerts`. The gate does not sleep toward a reset it cannot reach: it prints a `Rate limited` error line (naming the reset epoch when one is known) and exits 1 at once. A reset inside the budget is waited for and retried; a rate limit with no reset time is retried on the normal interval until the budget runs out. Either way the run is a rate limit, not a missing analysis, and `open-alerts` never reports a zero-alert result from it. See [`howto/codeql-local-scan.md`](howto/codeql-local-scan.md#red-check-from-a-rate-limit).
 
 
 Key terms used across the docs, API, and hook payloads.
@@ -3492,9 +3496,17 @@ The **Registry and findings** section, under the Records page sub-tab, filters i
 
 A **plan record** of kind `plan` is the registry record of what you are working on. It has a title, a goal, a state and an `order`, and it links down to Automations and Automata and holds the findings attached to it. A plan with no Automaton yet is in the *backlog*. See [howto/plan-records.md](howto/plan-records.md#plans-links-and-order).
 
+### Plan rename and goal edit
+
+A plan can be **renamed** and its **goal edited** with `PATCH /api/plans/{ref}` (MCP `plan_rename` and `plan_edit`, CLI `datawatch plans rename` and `edit --goal`, chat `autonomous plan rename` and `plan edit <plan> goal`, and **Rename** / **Edit goal** in the Plans browser). A title is one line of at most 100 characters and unique in the project (a clash is a 409 naming the other record); the old title stays as an alias and the plan's title is then kept as written, so a later plans migration does not overwrite it. A goal is at most 2000 characters and an empty goal clears it (not from chat). Neither changes the plan's status or `set_by_hand`. Each writes a `plan_renamed` or `plan_goal_edited` audit event. See [howto/plan-records.md](howto/plan-records.md#renaming-a-plan-and-editing-its-goal).
+
 ### Plan links
 
 **Plan links** are the ids a plan keeps in `automations`, `automata` and `findings`. A link is never overwritten: attaching an Automaton or Automation that another plan already holds, or a finding attached elsewhere, is refused and names the holder. Detach it first.
+
+### Set-by-hand plan
+
+A **set-by-hand** plan is a plan whose status someone wrote by hand. The plan record carries `set_by_hand: true`; the plan roll-up never changes its status and only reports it (`set_by_hand_kept`). A plan renamed by hand carries `title_set_by_hand`, so a later plans migration keeps its name. Both markers are set by the store, not by a separate setting. See [Rolling plan status up from the work](howto/plan-records.md#rolling-plan-status-up-from-the-work) and [Renaming a plan and editing its goal](howto/plan-records.md#renaming-a-plan-and-editing-its-goal).
 
 ### Release plan
 
@@ -3559,7 +3571,11 @@ The **plans migration** (`datawatch plans migrate [--apply]`, `POST /api/plans/m
 
 ### Plans write API
 
-The **plans write API** creates, orders and links plans: `POST /api/plans`, `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach`, with MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach`, CLI `datawatch plans`, and chat `autonomous plan`. A link held by another plan is refused with a 409 that names the holder. See [howto/plan-records.md](howto/plan-records.md#ordering-and-linking-plans).
+The **plans write API** creates, renames, orders and links plans: `POST /api/plans`, `PATCH /api/plans/{ref}` (rename a plan and/or edit its goal), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach`, with MCP `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and `plan_detach`, CLI `datawatch plans`, and chat `autonomous plan`. A link held by another plan is refused with a 409 that names the holder. See [howto/plan-records.md](howto/plan-records.md#ordering-and-linking-plans).
+
+The **plan roll-up** derives a plan's status from the Automata and Automations linked to it (any failed or blocked item makes it blocked, any running item keeps it open, all shipped makes it shipped, all finished makes it done) and never changes a status that was set by hand (`set_by_hand`). It previews with `GET /api/plans/rollup?project=&dry_run=true` and applies with `POST /api/plans/rollup`; MCP `plan_rollup` (`dry_run`), CLI `datawatch plans rollup [--project P] [--dry-run]`, and chat `autonomous plan rollup [dry-run]` do the same, and `plans list` marks a hand-set status `(by hand)`. See [howto/plan-records.md](howto/plan-records.md#rolling-plan-status-up-from-the-work).
+
+A plan's **status** is the `state` of its plan record: one of `open`, `planned`, `in_progress`, `blocked`, `shipped`, `done`, `deferred` or `cancelled`. The roll-up writes only `open`, `blocked`, `done` and `shipped`. It reads the **link state** kept on the plan for each linked Automaton or Automation (the state seen when it was attached, and `shipped` when the merge pipeline records it as shipped), not the live Automaton, so attaching an item to the same plan again refreshes it. **Set by hand** (`set_by_hand`) marks a plan whose status was written by hand: the roll-up keeps that status and lists the plan with `set_by_hand_kept` and the status it would have had. The roll-up runs when you ask for it, once a day from daemon start, and when an Automaton is recorded as shipped through write-through. A plan's title and goal can be edited; no surface edits its status or clears `set_by_hand` yet. See the open points in [howto/plan-records.md](howto/plan-records.md#still-for-the-operator-to-review) and [operations.md](operations.md#plan-records-store-and-import).
 
 ### Plans read API
 
