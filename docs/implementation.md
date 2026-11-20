@@ -3571,3 +3571,7 @@ requirements report" entries in `docs/operations.md`.
 ## Daemon-level project defaults (projects_defaults)
 
 The `projects_defaults` block (`internal/config/projects_defaults.go`) holds three daemon-wide defaults a project inherits when it sets none of its own: `branch_retention_days` (0 = unset), `weekly_share_percent` (0 = unset, otherwise 1 to 100) and `major_trigger` (`manual`, `milestone` or `never`; default `manual`). It sits beside the `projects` map, not inside it, so a project named `defaults` cannot collide. It is validated on config load and on every `PUT /api/config` write, and it is exposed through GET/PUT `/api/config`, the comm `configure` verb, MCP `config_set`/`get_config` and `datawatch config set`. The operator-facing description is in [howto/project-automation-policy.md](howto/project-automation-policy.md#daemon-level-project-defaults).
+
+## Remote branch reap settings (autonomous.remote_reap_enabled, autonomous.remote_reap_retention_days)
+
+`autonomous.remote_reap_enabled` (bool, default `false`) turns the remote branch reap on; while it is off the pass only reports, and it never runs on a timer. `autonomous.remote_reap_retention_days` (whole days) is how old the tip of a fully merged remote branch must be before it may be reaped; unset or a non-positive value reads the default of 30, and a negative value is rejected on config load. Code: `internal/config/config.go`.
