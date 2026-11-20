@@ -137,12 +137,18 @@ var forbiddenPatterns = []forbiddenPattern{
 }
 
 // ForbiddenPatternGuidance renders the forbidden-pattern list, one line
-// per rule with one short correct alternative.
+// per rule with one short correct alternative, plus the gate-allowlist
+// sentence: a final gate's allowed-file list must come from what the
+// plan actually names, not from a guess.
 func ForbiddenPatternGuidance() string {
 	var b strings.Builder
 	b.WriteString("Never put these in a story or task title, description or spec:")
 	for _, f := range forbiddenPatterns {
 		b.WriteString("\n- " + f.Pattern + " (" + f.Rule + "): instead " + f.Alternative)
 	}
+	b.WriteString("\nWhen a final gate restricts the files a plan may touch, derive its " +
+		"allowed-file list from every path the task specs name, the existing " +
+		"tests those changes need, and the generated changelog and draft files — " +
+		"never from a guessed directory list.")
 	return b.String()
 }

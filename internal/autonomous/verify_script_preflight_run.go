@@ -34,7 +34,7 @@ func RunVerifyScriptPreflight(dir string, stories []Story) []LintFinding {
 		fs = append(fs, preflightSyntaxFindings(script, text)...)
 		fs = append(fs, preflightShellMismatchFindings(script, text, readCalled)...)
 		fs = append(fs, preflightPipefailGrepFindings(script, text)...)
-		fs = append(fs, preflightAllowedFilesFindings(script, text, stories)...)
+		fs = append(fs, preflightAllowedFilesFindings(dir, script, text, stories)...)
 		for _, f := range fs {
 			out = append(out, LintFinding{
 				RuleID:   f.RuleID,

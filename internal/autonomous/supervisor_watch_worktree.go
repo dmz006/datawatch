@@ -4,8 +4,10 @@
 //
 //   - the worktree has no go.mod (worktree_no_gomod), applied only
 //     when the Automaton's project is a Go project — detected by the
-//     repository's own go.mod at the registered base — so non-Go
-//     projects never raise it;
+//     repository's own go.mod at the registered base — and only to a
+//     datawatch worktree: a directory in the registered worktree list
+//     of the base repository, other than the base itself. An
+//     Automaton working in another repository never raises it;
 //
 //   - the worktree directory is not in the registered worktree list
 //     of its repository (worktree_not_registered);
@@ -226,13 +228,16 @@ func supervisorWatchWorktreeFinding(kind SupervisorWatchKind, subject string) Su
 }
 
 // CheckNoGomod returns one worktree_no_gomod finding per running
-// Automaton whose registered worktree holds no go.mod, applied only
-// when the Automaton's project is a Go project: the repository's own
-// go.mod must be present at the registered base (BaseRepo), so a
-// non-Go project never raises this finding. An unset base, an
-// unreadable base, or an unreadable worktree raises nothing:
-// unknown, no finding. The finding's subject is the Automaton id,
-// the same subject the finding text inlines.
+// Automaton whose project directory is a datawatch worktree holding no
+// go.mod. A datawatch worktree is a directory in the registered
+// worktree list of the base repository (RegisteredWorktrees(BaseRepo),
+// compared by the same normalisation CheckNotRegistered uses) that is
+// not the base repository itself. The check applies only when the
+// base is a Go project: its own go.mod must be present at BaseRepo. An
+// Automaton whose project is another repository (not in the list), an
+// unset base, an unreadable list, an unreadable base or an unreadable
+// worktree raises nothing: unknown, no finding. The finding's subject
+// is the Automaton id, the same subject the finding text inlines.
 func (w *SupervisorWatchWorktree) CheckNoGomod(prds []*PRD) []SupervisorWatchFinding {
 	if w.FS == nil {
 		return nil
@@ -244,8 +249,23 @@ func (w *SupervisorWatchWorktree) CheckNoGomod(prds []*PRD) []SupervisorWatchFin
 	if err != nil || !baseIsGo {
 		return nil // non-Go project (or unknown): never raise
 	}
+	list, err := w.FS.RegisteredWorktrees(w.BaseRepo)
+	if err != nil {
+		return nil // unreadable list: unknown, no finding
+	}
+	registered := map[string]bool{}
+	for _, d := range list {
+		if strings.TrimSpace(d) != "" {
+			registered[evalOrClean(d)] = true
+		}
+	}
+	base := evalOrClean(w.BaseRepo)
 	var out []SupervisorWatchFinding
 	for _, p := range supervisorWatchWorktreePRDs(prds) {
+		dir := evalOrClean(p.ProjectDir)
+		if dir == base || !registered[dir] {
+			continue // the base itself, or another repository: not a datawatch worktree
+		}
 		has, err := w.FS.GoModAt(p.ProjectDir)
 		if err != nil || has {
 			continue
