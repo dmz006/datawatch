@@ -33,7 +33,7 @@ datawatch plans migrate --apply    # write
 
 If the Automaton a closed row names is not yet on a release plan item, the
 row is skipped with the reason `history: the Automaton is not on a release plan
-item yet`; no plan is made for it. Run the release migration first, then the
+item yet; no plan was made for the closed row`; no plan is made for it. Run the release migration first, then the
 plans migration again, to link it.
 
 ## Review before you apply
