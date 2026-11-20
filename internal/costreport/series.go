@@ -244,12 +244,16 @@ func (b SeriesBucket) floor(t time.Time) time.Time {
 func seriesKey(g SeriesGroupBy, e spendledger.Entry, projectOf func(string) string) string {
 	var k string
 	switch g {
-	case SeriesByAutomaton:
-		k = e.AutomatonID
 	case SeriesByProject:
-		if projectOf != nil && e.AutomatonID != "" {
+		if projectOf != nil && strings.TrimSpace(e.AutomatonID) != "" {
 			k = projectOf(e.AutomatonID)
 		}
+		if k == "" {
+			return UnassignedKey
+		}
+		return k
+	case SeriesByAutomaton:
+		k = e.AutomatonID
 	case SeriesByModel:
 		k = e.Backend
 	}

@@ -268,7 +268,7 @@ func TestBuildFailures_ByProjectCountsCategoriesAndWeeks(t *testing.T) {
 	if alpha.Retries != 3 {
 		t.Errorf("alpha retries = %d, want 3", alpha.Retries)
 	}
-	if g := failGroup(t, f, UnattributedKey); g.Attempts != 1 || g.Retries != 3 {
+	if g := failGroup(t, f, UnassignedKey); g.Attempts != 1 || g.Retries != 3 {
 		t.Errorf("unattributed = %+v", g)
 	}
 	if f.TotalAttempts != 5 || f.TotalTasks != 4 || f.TotalRetries != 6 {

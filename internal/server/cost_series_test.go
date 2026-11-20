@@ -110,7 +110,7 @@ func TestCostSeries_GroupByProjectWithoutManagerIsUnattributed(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(got.Groups) != 1 || got.Groups[0].Key != costreport.UnattributedKey {
+	if len(got.Groups) != 1 || got.Groups[0].Key != costreport.UnassignedKey {
 		t.Fatalf("want one unattributed group, got %+v", got.Groups)
 	}
 }
@@ -205,9 +205,27 @@ func TestAutomatonProject(t *testing.T) {
 		{"nothing", &autonomous.PRD{SystemTags: []string{"automation:x"}}, ""},
 	}
 	for _, c := range cases {
-		if got := automatonProject(c.prd); got != c.want {
+		if got := automatonProject(c.prd, nil); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestAutomatonProjectParentAndGuards(t *testing.T) {
+	parent := &autonomous.PRD{ID: "p", SystemTags: []string{"project:alpha"}}
+	child := &autonomous.PRD{ID: "c", ParentPRDID: "p", ProjectDir: "/work/beta"}
+	loopA := &autonomous.PRD{ID: "la", ParentPRDID: "lb"}
+	loopB := &autonomous.PRD{ID: "lb", ParentPRDID: "la", ProjectDir: "/w/dirb"}
+	selfTag := &autonomous.PRD{ID: "x1", SystemTags: []string{"project:x1"}}
+	by := prdIndex([]*autonomous.PRD{parent, child, loopA, loopB, selfTag})
+	if got := automatonProject(child, by); got != "alpha" {
+		t.Errorf("parent project: %q", got)
+	}
+	if got := automatonProject(loopA, by); got != "dirb" {
+		t.Errorf("cycle: %q", got)
+	}
+	if got := automatonProject(selfTag, by); got != "" {
+		t.Errorf("tag equal to id must be no link: %q", got)
 	}
 }
 

@@ -161,7 +161,7 @@ func TestSeriesGroupByAutomatonProjectModel(t *testing.T) {
 		t.Fatalf("beta = %d", got)
 	}
 	// no automaton, and an automaton with no known project, both unattributed
-	if got := groupByKey(t, byProject, UnattributedKey).Tokens; got != 800+1600 {
+	if got := groupByKey(t, byProject, UnassignedKey).Tokens; got != 800+1600 {
 		t.Fatalf("unattributed project = %d", got)
 	}
 
@@ -191,7 +191,7 @@ func TestSeriesProjectWithoutResolver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Groups) != 1 || s.Groups[0].Key != UnattributedKey {
+	if len(s.Groups) != 1 || s.Groups[0].Key != UnassignedKey {
 		t.Fatalf("want one unattributed group, got %+v", s.Groups)
 	}
 }
