@@ -1,6 +1,7 @@
 package session
 
 import (
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -28,12 +29,15 @@ func IsLocalBackend(family string) bool {
 	return f == "ollama" || f == "pi" || strings.HasPrefix(f, "pi-") || strings.HasPrefix(f, "ollama-")
 }
 
+const maxLocalLogBytes = 4 << 20
+
 // LogUsageReader is the default reader: it scans the session output log.
 type LogUsageReader struct{}
 
 var (
 	reOllamaPrompt = regexp.MustCompile(`"prompt_eval_count"\s*:\s*(\d+)`)
 	reOllamaEval   = regexp.MustCompile(`"eval_count"\s*:\s*(\d+)`)
+	rePiUsage      = regexp.MustCompile(`"usage"\s*:\s*\{[^{}]*\}`)
 	rePiInput      = regexp.MustCompile(`"(?:input|prompt_tokens|inputTokens)"\s*:\s*(\d+)`)
 	rePiOutput     = regexp.MustCompile(`"(?:output|completion_tokens|outputTokens)"\s*:\s*(\d+)`)
 	reToolCall     = regexp.MustCompile(`"type"\s*:\s*"(?:toolCall|tool_call|tool_use|tool_execution_start)"`)
@@ -59,8 +63,11 @@ func ParseLocalUsage(family, text string) LocalUsage {
 		u.TokensIn, inOK = sumMatches(reOllamaPrompt, text)
 		u.TokensOut, outOK = sumMatches(reOllamaEval, text)
 	} else {
-		u.TokensIn, inOK = sumMatches(rePiInput, text)
-		u.TokensOut, outOK = sumMatches(rePiOutput, text)
+		// Only count keys inside a "usage" object so unrelated JSON with
+		// bare input/output keys is never summed.
+		blocks := strings.Join(rePiUsage.FindAllString(text, -1), "\n")
+		u.TokensIn, inOK = sumMatches(rePiInput, blocks)
+		u.TokensOut, outOK = sumMatches(rePiOutput, blocks)
 	}
 	u.Reported = inOK || outOK
 	u.ToolCalls = int64(len(reToolCall.FindAllString(text, -1)))
@@ -72,7 +79,18 @@ func (LogUsageReader) ReadLocalUsage(family, logFile string) LocalUsage {
 	if logFile == "" {
 		return LocalUsage{}
 	}
-	b, err := os.ReadFile(logFile)
+	f, err := os.Open(logFile)
+	if err != nil {
+		return LocalUsage{}
+	}
+	defer f.Close()
+	// Bound the work per call: only the trailing maxLocalLogBytes are scanned.
+	if st, err := f.Stat(); err == nil && st.Size() > maxLocalLogBytes {
+		if _, err := f.Seek(st.Size()-maxLocalLogBytes, io.SeekStart); err != nil {
+			return LocalUsage{}
+		}
+	}
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return LocalUsage{}
 	}
