@@ -891,7 +891,7 @@ works too — it performs the same reset and hard reload.)
 
 ## Operator review
 
-After this change lands, check these three things on the build in use:
+After this change lands, check these four things on the build in use:
 
 1. **Filters button toggles the panel.** One click on **Filters** opens the
    panel and a second click closes it. **Escape** and a click outside the
@@ -902,14 +902,17 @@ After this change lands, check these three things on the build in use:
    name as a hint and does not change the mode; a tap switches the mode and it
    is remembered on this device.
 3. **Phone layout of the one-line toolbar.** At 360 px wide the whole toolbar
-   (server select, search, Filters, Fold all and the three view buttons) stays
-   on one line with no wrapping and no horizontal page scroll.
-4. **Toolbar server select stays in step with the header.** Picking a host in
-   the Sessions server select re-renders the page against that host, and the
-   header dropdown then shows the same choice (and the reverse). Confirm this on
-   a two-host setup, and that a remembered choice is restored after a reload.
-   The mobile apps do not have a toolbar server select yet; parity is tracked in
-   datawatch-app.
+   (search, Filters, Fold all and the three view buttons) stays on one line
+   with no wrapping and no horizontal page scroll — and the page carries no
+   server select of its own: the header server button is the one server picker
+   on every page.
+4. **Server switching from the Sessions page.** Picking a host in the header
+   server button re-renders the Sessions page against that host, and while a
+   federated host is active the line below the toolbar (hidden by default;
+   turn on the header 🔍 search-&-filters toggle to show it) carries the
+   clickable 🌐 <name> indicator next to **Tree** and **History** — clicking
+   it returns to this server. Confirm on a two-host setup, and that a
+   remembered choice is restored after a reload.
 
 ## Related guides
 
