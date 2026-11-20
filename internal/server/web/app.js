@@ -38312,6 +38312,27 @@ function capacityWaitingHtml(waiting, now) {
   });
   return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` + rows.join('');
 }
+// capacityVerifyingHtml renders the Verifying list from tasks.verifying of
+// the /api/capacity body: one row per task with its readable name, the node
+// and a state chip (verifying, or waiting for a verifier slot plus the reason).
+function capacityVerifyingHtml(cap) {
+  const list = cap && cap.tasks && cap.tasks.verifying;
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const rows = list.map(v => {
+    const nameText = v.readable || [v.prd_title, v.task_title].filter(Boolean).join(' / ') || v.task_title || '';
+    const name = window.capacityNameHtml(nameText, v.short_id || v.task_id || '');
+    const waiting = v.state === 'waiting_for_verifier';
+    const label = waiting
+      ? (t('capacity_verifying_state_waiting') || 'waiting for a verifier slot')
+      : (t('capacity_verifying_state_running') || 'verifying');
+    const color = waiting ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+    const chip = `<span class="cap-verifying-chip" data-state="${escHtml(v.state || '')}" style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;margin-right:4px;border-radius:8px;border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
+    const node = v.node ? ` · <code>${escHtml(v.node)}</code>` : '';
+    const reason = waiting && v.wait_reason ? ` — ${escHtml(v.wait_reason)}` : '';
+    return `<div class="cap-verifying-row" style="min-width:0;overflow-wrap:anywhere;">${chip}${name}${node}${reason}</div>`;
+  });
+  return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_verifying_title')||'Verifying')} (${list.length})</div>` + rows.join('');
+}
 // capacityCardHtml(cap, opts): cap is the decoded /api/capacity response.
 // opts.now (ms) pins the clock for wait times; opts.showEmpty renders a
 // placeholder instead of an empty string when there is nothing to show.
@@ -38320,7 +38341,7 @@ window.capacityCardHtml = function(cap, opts) {
   const pools = capacityPoolsHtml(cap, opts.now);
   const backoff = capacityBackoffHtml(cap && cap.backoff);
   const budgetLines = budgetCapacityLines(cap && cap.budgets);
-  const queue = capacityWaitingHtml(cap && cap.waiting, opts.now);
+  const queue = capacityWaitingHtml(cap && cap.waiting, opts.now) + capacityVerifyingHtml(cap);
   if (!pools && !backoff && !budgetLines && !queue) {
     return opts.showEmpty ? `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div><div style="color:var(--text2);">${escHtml(t('capacity_card_empty')||'No capacity limits, back-offs or budgets to show')}</div></div>` : '';
   }
