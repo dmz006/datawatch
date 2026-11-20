@@ -79,6 +79,11 @@ type ChangeRecord struct {
 	LocaleKeysAdded []LocaleKey  `json:"locale_keys_added"`
 	TestsAdded      []string     `json:"tests_added"`
 	Commands        []CommandRun `json:"commands"`
+	// Title, Summary and Highlights are optional author-supplied text for the
+	// generated changelog draft; when unset the draft derives them.
+	Title      string   `json:"title,omitempty"`
+	Summary    string   `json:"summary,omitempty"`
+	Highlights []string `json:"highlights,omitempty"`
 	// Cost is the Automaton's spend read from the ledger; nil when no
 	// ledger reading was attached.
 	Cost *CostSummary `json:"cost,omitempty"`
