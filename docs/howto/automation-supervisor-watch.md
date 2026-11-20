@@ -71,7 +71,7 @@ the same subject is one record that is refreshed, not a new one every poll.
 | `automaton_not_merged` | An Automaton finished all of its work, every task completed, and is waiting to be merged. | The Automaton id |
 | `archived_unmerged` | An archived Automaton's branch still holds commits that are not on the base branch — its work never landed after the record was archived. One finding per such archived record; the line names the title, the id, the branch and how many commits are ahead, and says to carry the work forward into a new draft on that branch. The check is bounded and read-only: at most eight branch checks per pass and each result is cached for a couple of minutes, so a large archive does not turn every pass into git work. A branch the check cannot verify does not open a finding on its own, but it does not clear an open one either — the finding stays until the branch is merged, is deleted, or the check can tell. | The Automaton id |
 | `idle_lane_eligible_work` | A lane is idle while Automata work that is eligible to run on it is waiting. This reads the lane fill's own status; the watch applies no eligibility rules of its own. | The lane name |
-| `worktree_no_gomod` | A running Automaton's worktree has no `go.mod`, so its project directory is broken. Only raised for a project that is a Go project. | The Automaton id |
+| `worktree_no_gomod` | A running Automaton's worktree has no `go.mod`, so its project directory is broken. Only raised when the Automaton's project folder is a datawatch worktree (see [Worktree check scope](#worktree-check-scope)). | The Automaton id |
 | `worktree_not_registered` | A running Automaton's project directory is not one of the registered worktrees of its repository. | The Automaton id |
 | `worktree_silent` | A running Automaton has a task in progress or being verified, but nothing in its worktree and no worker transcript has changed for longer than the silence window (`silent_minutes`, default 60). | The Automaton id |
 | `verify_script_not_executable` | A running Automaton's verify script exists inside its worktree but has no execute permission, so its check cannot run by itself. Run the check manually. | The Automaton id |
@@ -89,6 +89,23 @@ the problem, not that it failed to look.
 **A finding closes by itself.** On every poll, a finding whose check no longer
 reports it is marked resolved. If the same problem comes back, the same record
 is re-opened in place and keeps its first-seen time.
+
+## Worktree check scope
+
+The finding `worktree_no_gomod` ("has no go.mod") applies only when an
+Automaton's project folder is a datawatch worktree. An Automaton whose project
+folder is another repository, for example a non-Go project, never raises it,
+because that repository is not expected to carry a `go.mod`. The supervisor
+watch script and the daemon-side watch follow the same rule, so they agree on
+which Automata are checked.
+
+If the finding does appear, the Automaton's project folder really is a datawatch
+worktree that lost its `go.mod`. Check that the worktree is intact (the folder
+still holds the repository checkout and was not emptied or partly removed), then
+repair or recreate the worktree and re-run the Automaton. If the Automaton was
+meant to work on a different repository, correct its project folder instead.
+
+**Operator review:** findings for a `worktree_no_gomod` raised before this change on an Automaton whose project folder is another repository were false. Review and dismiss any such open finding; no repair is needed.
 
 ## The record states
 
