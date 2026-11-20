@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.58"
+var Version = "9.182.61"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -1231,6 +1231,12 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 	// for the server's process lifetime, same as the server itself.
 	s.nonces.startSweeper(nonceTTL, make(chan struct{}))
 	s.wireHubSessionStream() // BL432 / GH#242 — live ws_session_list_default + summary length
+	if manager != nil {
+		// Resumes (start-with-resume-id and restart) must re-apply the
+		// session's stored worker profile; non-profile sessions get a nil
+		// hook and keep the previous profile-less resume path.
+		manager.SetProfileResumeFn(s.profileResumeFnForSession)
+	}
 	return s
 }
 

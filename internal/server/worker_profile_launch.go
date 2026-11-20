@@ -22,21 +22,10 @@ import (
 // profile (see claudecode.LaunchWithProfileFallback) and the reason is written
 // to fallbackReason, which the caller owns; it may be nil.
 func (s *Server) workerProfileLaunchFn(p *workerprofile.WorkerProfile, backendName string, fallbackReason *string) session.LaunchFunc {
-	if p == nil || p.Name == "" {
-		return nil
-	}
-	if backendName == "" && s.cfg != nil {
-		backendName = s.cfg.Session.LLMBackend
-	}
-	b, err := llm.Get(backendName)
-	if err != nil {
-		return nil
-	}
-	cc, ok := b.(*claudecode.Backend)
+	cc, profile, ok := s.profileLaunchBackend(p, backendName)
 	if !ok {
 		return nil
 	}
-	profile := *p
 	return func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 		w := claudecode.WorkerProfileLaunch{
 			Profile:    profile,
@@ -49,6 +38,70 @@ func (s *Server) workerProfileLaunchFn(p *workerprofile.WorkerProfile, backendNa
 		}
 		return err
 	}
+}
+
+// workerProfileResumeLaunchFn is the resume counterpart of
+// workerProfileLaunchFn: a per-session resume launch function that applies
+// the worker profile to this one claude-code resume (a start with a resume
+// id, or a restart), or nil when no profile applies or the effective
+// backend is not claude-code. Same session-mutates-shared-state guarantee as
+// workerProfileLaunchFn: the shared backend is never mutated. When the
+// profile cannot be applied the resume starts with no profile (see
+// claudecode.LaunchResumeWithProfileFallback) and the reason is written to
+// fallbackReason, which the caller owns; it may be nil.
+func (s *Server) workerProfileResumeLaunchFn(p *workerprofile.WorkerProfile, backendName string, fallbackReason *string) session.ResumeLaunchFunc {
+	cc, profile, ok := s.profileLaunchBackend(p, backendName)
+	if !ok {
+		return nil
+	}
+	return func(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
+		w := claudecode.WorkerProfileLaunch{
+			Profile:    profile,
+			MCPServers: sessionMCPServers(projectDir),
+			Starting:   autonomous.StartingContextInput{Role: "worker", TaskSpec: task},
+		}
+		reason, err := cc.LaunchResumeWithProfileFallback(ctx, w, task, tmuxSession, projectDir, logFile, resumeID)
+		if reason != "" && fallbackReason != nil {
+			*fallbackReason = reason
+		}
+		return err
+	}
+}
+
+// profileResumeFnForSession implements the manager's profile-resume hook
+// (session.Manager.SetProfileResumeFn): it returns the resume launch
+// function that re-applies the session's stored worker profile on resume,
+// or nil when the session has no stored profile (or its profile already
+// fell back at first launch, so whatever is actually running is
+// profile-less and the resume must keep it that way). Nil preserves the
+// manager's previous profile-less resume behaviour, so non-profile sessions
+// are byte-for-byte unchanged.
+func (s *Server) profileResumeFnForSession(sess *session.Session) session.ResumeLaunchFunc {
+	if sess == nil || sess.WorkerProfile == nil || sess.ProfileFallbackReason != "" {
+		return nil
+	}
+	return s.workerProfileResumeLaunchFn(sess.WorkerProfile, sess.BackendFamily, &sess.ProfileFallbackReason)
+}
+
+// profileLaunchBackend resolves the claude-code backend for a profiled
+// launch plus the captured profile, or !ok when the profile does not apply
+// (no profile, missing backend, or a backend that is not claude-code).
+func (s *Server) profileLaunchBackend(p *workerprofile.WorkerProfile, backendName string) (*claudecode.Backend, workerprofile.WorkerProfile, bool) {
+	if p == nil || p.Name == "" {
+		return nil, workerprofile.WorkerProfile{}, false
+	}
+	if backendName == "" && s.cfg != nil {
+		backendName = s.cfg.Session.LLMBackend
+	}
+	b, err := llm.Get(backendName)
+	if err != nil {
+		return nil, workerprofile.WorkerProfile{}, false
+	}
+	cc, ok := b.(*claudecode.Backend)
+	if !ok {
+		return nil, workerprofile.WorkerProfile{}, false
+	}
+	return cc, *p, true
 }
 
 // sessionMCPServers reads the MCP servers the session already has in its

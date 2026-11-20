@@ -337,6 +337,9 @@ func failureWeekStart(t time.Time) time.Time {
 func failureKey(g FailuresGroupBy, r FailureRecord) (key, label string) {
 	switch g {
 	case FailuresByProject:
+		if strings.TrimSpace(r.Project) == "" {
+			return UnassignedKey, ""
+		}
 		key = r.Project
 	case FailuresByAutomation:
 		key, label = r.AutomationID, r.AutomationName

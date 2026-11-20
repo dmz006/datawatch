@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.58"
+var Version = "9.182.61"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1724,6 +1724,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				} else {
 					debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
 				}
+			} else if profileSaysDatawatch := sess.WorkerProfile != nil &&
+				sess.ProfileFallbackReason == "" &&
+				sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName); profileSaysDatawatch {
+				// A profiled claude-code launch (e.g. a lean one selecting the
+				// datawatch MCP server) starts with --strict-mcp-config pinned
+				// to the profile's MCP selection, read from this project's
+				// .mcp.json — so this session's per-session bridge must be
+				// available there. A session whose profile already fell back
+				// (ProfileFallbackReason set) launches profile-less; it must
+				// not carry the entry, since without --strict-mcp-config that
+				// entry would be loaded. Write the datawatch entry with THIS
+				// session's scoped token env plus any profile-selected extras;
+				// the profile launch flags themselves are applied in the
+				// backend's own launch path.
+				dwEnv := make(map[string]string, len(sessionChannelEnv)+2)
+				for k, v := range sessionChannelEnv {
+					dwEnv[k] = v
+				}
+				dwEnv["CLAUDE_SESSION_ID"] = sess.FullID
+				dwEnv["DATAWATCH_CHANNEL_PORT"] = "0"
+				if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, dwEnv, extraMCPSpecs); err != nil {
+					debugf("profile .mcp.json datawatch entry: %v", err)
+				} else {
+					fmt.Printf("[channel] session %s: profile MCP=%q — wrote %s entry to %s/.mcp.json\n",
+						sess.FullID, sess.WorkerProfile.MCP.Mode, channel.ProjectMCPEntryName, sess.ProjectDir)
+				}
 			} else {
 				// Remove any legacy "datawatch" global entry left by older daemon
 				// versions — it would otherwise spawn a second bridge on port 7433.
@@ -1913,6 +1939,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}()
 			}
 			if sess.BackendFamily == "claude-code" {
+				// A profile owned this session's .mcp.json datawatch entry
+				// (written by the pre-launch hook above) — remove it so a
+				// later profile-less session that starts in this project dir
+				// does not inherit a dead session's bridge config. Best
+				// effort; the running bridge process is unaffected.
+				if sess.WorkerProfile != nil && sess.WorkerProfile.MCP.Includes(channel.ProjectMCPEntryName) && sess.ProjectDir != "" {
+					if err := channel.RemoveProjectMCPEntry(sess.ProjectDir, channel.ProjectMCPEntryName); err != nil {
+						debugf("profile .mcp.json datawatch cleanup: %v", err)
+					}
+				}
 				go func() {
 					defer func() {
 						if p := recover(); p != nil {

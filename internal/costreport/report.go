@@ -49,6 +49,10 @@ const (
 // "unattributed" read as a name, not a missing one.
 const UnattributedKey = "unattributed"
 
+// UnassignedKey is the project row key for an Automaton that resolves to no
+// project; it is never an Automaton id.
+const UnassignedKey = "unassigned"
+
 // UnreleasedKey is the release-grouping key for work that has not shipped
 // yet.
 const UnreleasedKey = "unreleased"

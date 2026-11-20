@@ -125,7 +125,7 @@ func TestCostToolUsage_GroupByProjectUsesAutomatonProject(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if len(got.Groups) != 2 || got.Groups[0].Key != "alpha" || got.Groups[0].ToolCalls != 9 ||
-		got.Groups[1].Key != costreport.UnattributedKey || got.Groups[1].ToolCalls != 4 {
+		got.Groups[1].Key != costreport.UnassignedKey || got.Groups[1].ToolCalls != 4 {
 		t.Fatalf("project groups wrong: %+v", got.Groups)
 	}
 }
@@ -292,7 +292,7 @@ func TestCostFailures_ByProject(t *testing.T) {
 		t.Errorf("top summaries = %+v", alpha.TopSummaries)
 	}
 	// the standalone Automaton's project is its own directory's name
-	if g := failureGroupOf(t, got, automatonProject(fx.loose)); g.Attempts != 1 || g.Key == "alpha" {
+	if g := failureGroupOf(t, got, automatonProject(fx.loose, nil)); g.Attempts != 1 || g.Key == "alpha" {
 		t.Errorf("standalone Automaton's project line = %+v", g)
 	}
 	if got.UndatedAttempts != 1 {
