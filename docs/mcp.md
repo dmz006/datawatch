@@ -2015,6 +2015,19 @@ stored on the record under `follow_up` with a `status` of `done`,
 
 ---
 
+### `archived_unmerged_list` / `archived_unmerged_carry_forward`
+
+Find archived Automata whose work branch still holds commits that never reached the base branch, and carry that work forward as a new draft. Both proxy the archived-unmerged REST routes; the how-to is [howto/automata-archive.md](howto/automata-archive.md#finding-archived-automata-that-hold-unmerged-work).
+
+- `archived_unmerged_list` — read-only, no parameters. `GET /api/autonomous/archived-unmerged`. Reply: `archived_unmerged` (newest archive first; each entry has `id`, `title`, `former_status`, `branch`, `base_branch`, `ahead`, `archived_at`, `state`, `detail` when the comparison failed, and `carried_to` when a draft was already carried from it) and `total`. A branch that could not be compared is listed with its reason, not dropped.
+- `archived_unmerged_carry_forward` — `POST /api/autonomous/archived-unmerged/{id}/carry-forward`. Parameters: `id` (required, from `archived_unmerged_list`), `force` (boolean, default false; carry again when a draft was already carried), `actor` (recorded on the new draft, default `operator`). It creates a new draft with the same title, spec and branch, linked back by `carried_from_id`. The draft is not approved and has run nothing. The archived record and its branch are not changed, and nothing is merged or deleted. Refused when the record is not archived, has no branch, the branch is gone or has nothing ahead, the comparison failed, or it was already carried and `force` is not set.
+
+**Example:**
+```
+archived_unmerged_list()
+archived_unmerged_carry_forward(id="done-1", actor="operator")
+```
+
 ### `autonomous_overlap_search`
 
 Search before create: find the Automata, registry rows and unmerged branches that already cover a plan's title and spec, best match first, before you create the plan. It is read-only and works in every search-before-create mode. It proxies `GET /api/autonomous/overlap`. A failed search returns an error, never an empty list.
