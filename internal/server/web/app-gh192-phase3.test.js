@@ -66,13 +66,14 @@ test('_loadServerPickerModalList does not throw if the modal was closed before t
   await new Promise(r => setImmediate(r));
 });
 
-test('a chip\'s onclick removes the modal after switching servers (no leftover overlay)', () => {
+test('a row\'s onclick closes the modal after switching servers (no leftover overlay)', () => {
   const listEl = makeStubElement();
   const sandbox = loadAppJS({ serverPickerModalList: listEl });
   setState(sandbox, { servers: { servers: [{ name: 'pi-node', enabled: true }] } });
   call(sandbox, '_loadServerPickerModalList');
-  assert.ok(listEl.innerHTML.includes('document.getElementById(&#39;serverPickerModal&#39;).remove()'),
-    'every chip must close the modal on click, not just switch servers');
+  assert.ok(listEl.innerHTML.includes(';closeServerPickerModal();'),
+    'every row must close the modal (through the one close function) on click, not just switch servers');
+  assert.ok(!listEl.innerHTML.includes('.remove()'), 'no row removes the overlay directly');
 });
 
 test('_openAddServerFromPicker routes to Settings -> Comms (where the reused add-server form lives) instead of rebuilding the form', () => {

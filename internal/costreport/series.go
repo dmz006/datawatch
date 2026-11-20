@@ -80,7 +80,7 @@ type SeriesRequest struct {
 }
 
 // SeriesOptions are the series builder's collaborators. Every field is
-// optional: without ProjectOf every project falls under UnattributedKey,
+// optional: without ProjectOf every project falls under UnassignedKey,
 // without RateFor no money value is priced, and without Billing the points
 // carry tokens only.
 type SeriesOptions struct {
@@ -239,17 +239,22 @@ func (b SeriesBucket) floor(t time.Time) time.Time {
 	return t.UTC().Truncate(b.width())
 }
 
-// seriesKey picks the line a ledger entry belongs to; a blank owner falls
-// under UnattributedKey, like the report's groupings.
+// seriesKey picks the line a ledger entry belongs to; a project line with no
+// resolvable project falls under UnassignedKey, any other blank key under
+// UnattributedKey, like the report's groupings.
 func seriesKey(g SeriesGroupBy, e spendledger.Entry, projectOf func(string) string) string {
 	var k string
 	switch g {
-	case SeriesByAutomaton:
-		k = e.AutomatonID
 	case SeriesByProject:
-		if projectOf != nil && e.AutomatonID != "" {
+		if projectOf != nil && strings.TrimSpace(e.AutomatonID) != "" {
 			k = projectOf(e.AutomatonID)
 		}
+		if k == "" {
+			return UnassignedKey
+		}
+		return k
+	case SeriesByAutomaton:
+		k = e.AutomatonID
 	case SeriesByModel:
 		k = e.Backend
 	}
