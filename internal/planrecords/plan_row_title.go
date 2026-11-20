@@ -87,15 +87,10 @@ func realRowTitle(cell string) string {
 	return strings.Join(strings.Fields(title), " ")
 }
 
-// rowTitleCandidates lists the cells of a row that may hold its title: the
-// stored title first, then the title-like columns kept in the body.
-func rowTitleCandidates(r Record) []string {
-	out, _ := rowTitleCells(r)
-	return out
-}
-
-// rowTitleCells is rowTitleCandidates plus, for each cell, whether it is a
-// description-like column that gives only its first clause.
+// rowTitleCells lists the cells of a row that may hold its title: the stored
+// title first, then the title-like columns kept in the body. For each cell it
+// also says whether it is a description-like column that gives only its first
+// clause.
 func rowTitleCells(r Record) ([]string, []bool) {
 	out := []string{r.Title}
 	clause := []bool{false}
