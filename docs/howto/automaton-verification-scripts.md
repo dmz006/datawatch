@@ -90,8 +90,9 @@ fix.
    that does not resolve or answer a bounded help probe are out of scope.
 9. **Anchor every heading and output-format assertion in the task spec.** A
    script that greps a markdown heading, or the gate phrases "Final answer"
-   / "Verification summary", needs the task spec to name that heading or
-   phrase verbatim — a "Gates section" in the spec anchors a grep of
+   / "Verification summary", needs the task spec to state that heading or
+   phrase — verbatim or in equivalent wording, the same words in any order: a
+   "gates section" in the spec anchors a grep of
    `## Gates`, and a spec naming `## Gates` anchors a grep of `Gates`.
 
 ## 2. The cumulative allowed-file helper
@@ -169,16 +170,16 @@ skipped by the rules below that read a script; the warn rule
 | `artefact_files_allowed` | block | Runs a changed-file-set check that does not exempt the generated artefacts the daemon writes per Automaton (the changelog draft, the parity issue draft and its hash file, the gate report) — the final gate re-runs the script against the cumulative tree, where exactly those files exist. | Exempt `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` from the unexpected-file computation — in the check itself or in the sourced helper. |
 | `final_gate_artefact_allowed` | block | Asserts the whole changed-file set against a finite list with no guard for the final gate re-running it; the gate runs after every standard task has landed, so a finite whole-set claim can only fail. | Assert only the files this task adds, or guard the claim so it skips when the final gate re-runs the script. |
 | `script_invokes_known_flag` | block | Invokes a command with a long flag (`--flag`) the command's own help does not list as a whole option — a flag invented from memory. | Check each command and flag against the real binary's help (`command --help`) before accepting the script; short flags and a command that does not resolve or answer a bounded help probe are out of scope. |
-| `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not name — the check is anchored to an assumption about output shape, not to the spec. | Name the exact heading or phrase in the spec the script checks (a "Gates section" in the spec anchors a grep of `## Gates`). |
+| `check_matches_spec_text` | block | Asserts a markdown heading, or the exact gate phrases "Final answer" / "Verification summary", that the task's own spec does not state, verbatim or in equivalent wording — the check is anchored to an assumption about output shape, not to the spec. | State the heading or phrase the script checks in the spec — the same words are enough, in any phrasing (a "gates section" in the spec anchors a grep of `## Gates`). |
 | `verify_script_artefact_files` | block | The script flags changed files the task did not plan, without exempting `docs/plans/drafts/`, `docs/plans/parity-issues/`, `docs/plans/reports/` and `CHANGELOG.md` (stricter shape check than `artefact_files_allowed`). | Exempt those paths from the "unexpected files" check, or check only the files the task adds. |
 | `verify_script_final_gate_rerun` | block | A script asserts the changed-file set against a finite allow-list with no guard the lint recognizes for the final gate rerunning it on the cumulative tree. | Guard it with an env var (`DATAWATCH_*`, `SKIP_*`, `FINAL*`), a `--final` argument, or a check limited to files the task adds. |
 | `verify_script_unknown_flag` | block | The script passes a long flag to a command (or one of its subcommands) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted. | Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked. |
-| `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec. | State the exact heading or the exact format being checked, word for word, in the task spec. |
+| `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase the task spec does not state, verbatim or in equivalent wording. | State the heading or the format being checked in the task spec — the same words are enough, in any order. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 | `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
 | `verify_script_pipefail_grep_q` | block | With `pipefail` on, a pipeline ends in a quiet grep and can read as a false no-match. | Write the output to a file, then run `grep -q` on the file. |
-| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path another story or task in the plan changes. | Make the allowed list cumulative over the whole plan. |
+| `verify_script_allowed_files` | block | The literal allowed-file list leaves out a path the plan names (a story or task title, spec, file list or verification script). | Make the allowed list cumulative over the whole plan. |
 | `fixed_calendar_date_in_test` | warn | The task asks for a test that uses a fixed calendar date, which passes now and fails later. | Take times from the current time with an offset, or an injected clock. |
 
 **Operator note.** The rows fall in three groups:
@@ -263,7 +264,7 @@ by running the script. Each finding names the script (repo-relative), the line
 | `verify_script_syntax` | `<shell> -n` reports a syntax error in a script whose shebang names `bash`, `sh`, `dash`, `ksh` or `zsh`. At most one finding per script. A script whose interpreter is not installed is not flagged. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | The script calls a helper with one shell (for example `sh helper.sh`) while the helper's shebang names another (`#!/usr/bin/env bash`). Helpers that cannot be read, or have no shell shebang, are skipped. | Call the helper with the shell its shebang names, or run it directly. |
 | `verify_script_pipefail_grep_q` | The script enables `pipefail` (`set -o pipefail`, `set -euo pipefail`) and pipes into a quiet grep (`-q`, `-qE`, `-Eq`, `--quiet`, also after `\|&`). grep exits at the first match, the upstream command gets a broken pipe, and the check reads as a false no-match. | Write the pipeline's output to a file, then test the file with `grep -q`. |
-| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path that some story or task in the **whole plan** changes. Files named by the built-in standard tasks count as covered (a templated path is cut to its static folder). A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
+| `verify_script_allowed_files` | The script's literal allowed-file list leaves out a path the **whole plan** names: a story or task title, a spec, a planned or generated file list, or a verification script. A Go file the plan names that already has a `_test.go` sibling in the tree drags that test file in with it. Files named by the built-in standard tasks count as covered (a templated path is cut to its static folder), and a folder exemption covers everything under it; glob entries (`*`) are allowed in the list. A script that names no literal path builds its list at run time and is not checked. | Make the list cumulative over the whole plan (see [section 2](#2-the-cumulative-allowed-file-helper)). |
 
 **Where they run.** The preflight runs in two places, and every finding it
 raises has severity `block`:
@@ -286,6 +287,23 @@ findings list). The preflight has no configuration setting of its own and is
 not a rule in the rule pack, so an operator rule cannot disable or re-grade it.
 The read-only dry run (`autonomous_decompose_lint_dry_run`) does **not** run
 the preflight; it only runs the rule pack.
+
+## 5b. Allowlist coverage and phrase wording
+
+If your final gate restricts changed files, derive its allowlist from every path
+the task specs and the investigation name, plus the existing tests those changes
+need and the generated changelog and parity draft files. Do not guess a
+directory list. The rule `verify_script_allowed_files` fails when a spec names a
+file the allowlist rejects; globs and generated-folder prefixes count as coverage.
+See [Final gate allowlist](../datawatch-definitions.md#final-gate-allowlist).
+
+Worked example: a spec names `docs/howto/x.md`; the gate allows only `internal/`.
+Add `docs/howto/x.md` (or `docs/howto/*`) to the allowlist.
+
+The phrase checks compare meaning, not exact wording: reordered, re-worded,
+plural or tense variants of the same key words count as stated in the spec. A
+script that checks "tests passed" is fine when the spec says "tests must pass".
+Details: [decompose lint](automaton-decompose-lint.md#3a-final-gate-allowlist-and-meaning-based-phrase-checks).
 
 ## 6. Set a task's script or reason with the edit tools
 
@@ -365,6 +383,13 @@ These points are decisions or checks the docs cannot settle for you:
 - **Existing scripts are not rewritten.** The rules read scripts as they stand
   in the project. A script already checked in that compares only against its
   own task's files will now be flagged on the next decompose; fix or exempt it.
+- **Allowlist rule fires on more existing scripts.** `verify_script_allowed_files`
+  now also fails when a spec names a path the literal allowlist rejects, and the
+  phrase checks accept reworded or inflected wording. A checked-in gate script
+  whose allowlist misses a spec-named path (or a sibling `_test.go` the plan
+  touches) will be flagged on the next decompose; add the path or a covering
+  glob. Also confirm the looser phrase matching does not let through a checked
+  phrase that the spec never really states.
 - **Live planner output is not re-measured here.** These pages describe the
   prompt text and rules in the tree; whether a real planner now writes stable
   scripts on first try has not been confirmed against a running daemon.

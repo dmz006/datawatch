@@ -20,7 +20,7 @@ func testSupervisorWatchFinding(kind SupervisorWatchKind, subject, text string, 
 }
 
 // TestSupervisorWatchRecordKinds pins the stable finding vocabulary:
-// exactly the sixteen kinds, each with its stable string name.
+// exactly the eighteen kinds, each with its stable string name.
 func TestSupervisorWatchRecordKinds(t *testing.T) {
 	want := map[SupervisorWatchKind]string{
 		SupervisorWatchTmuxRestart:               "tmux_restart",
@@ -36,6 +36,7 @@ func TestSupervisorWatchRecordKinds(t *testing.T) {
 		SupervisorWatchWorktreeSilent:            "worktree_silent",
 		SupervisorWatchVerifyScriptNotExecutable: "verify_script_not_executable",
 		SupervisorWatchMainCheckoutDirty:         "main_checkout_dirty",
+		SupervisorWatchMainCheckoutAutomaton:     "main_checkout_automaton",
 		SupervisorWatchCIRed:                     "ci_red",
 		SupervisorWatchCISTuck:                   "ci_stuck",
 		SupervisorWatchPriorityStall:             "priority_stall",

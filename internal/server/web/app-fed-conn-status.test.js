@@ -39,12 +39,13 @@ test('state.servers defaults to undefined, not [] -- the actual root cause of th
 });
 
 test('_initServerDropdown kicks off loadServerListEager (not nothing) while state.servers is undefined', () => {
-  // The header dropdown lives in index.html (#serverDropdown) and is
-  // rendered by _initServerDropdown -- no per-panel DOM injection anymore.
+  // The header server button lives in index.html (#serverPickerBtn) and is
+  // synced by _initServerDropdown/renderServerDropdown -- no per-panel DOM
+  // injection anymore.
   // The stub DOM's innerHTML setter doesn't parse into real child nodes
   // (no real layout engine), so the render path isn't directly observable
   // here -- a harness limitation shared with the pre-existing
-  // _serverPickerBar() code, not something new.
+  // header picker code, not something new.
   // What IS observable and is the actual regression this pins: the loader
   // actually starts (state._serversLoading flips true) instead of the old
   // behavior of silently doing nothing because the undefined-check never
