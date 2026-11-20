@@ -198,14 +198,23 @@ func TestUncommittedCommitFailureUnstagesAndCarriesGitOutput(t *testing.T) {
 
 	// No usable identity anywhere: `git add` needs none, so the staging of
 	// the non-ignored path succeeds; `git commit` is what fails.
+	t.Setenv("GIT_AUTHOR_NAME", "") // registers restore at cleanup
 	os.Unsetenv("GIT_AUTHOR_NAME")
+	t.Setenv("GIT_AUTHOR_EMAIL", "") // registers restore at cleanup
 	os.Unsetenv("GIT_AUTHOR_EMAIL")
+	t.Setenv("GIT_COMMITTER_NAME", "") // registers restore at cleanup
 	os.Unsetenv("GIT_COMMITTER_NAME")
+	t.Setenv("GIT_COMMITTER_EMAIL", "") // registers restore at cleanup
 	os.Unsetenv("GIT_COMMITTER_EMAIL")
+	t.Setenv("GIT_CONFIG", "") // registers restore at cleanup
 	os.Unsetenv("GIT_CONFIG")
+	t.Setenv("GIT_CONFIG_GLOBAL", "") // registers restore at cleanup
 	os.Unsetenv("GIT_CONFIG_GLOBAL")
+	t.Setenv("GIT_CONFIG_SYSTEM", "") // registers restore at cleanup
 	os.Unsetenv("GIT_CONFIG_SYSTEM")
+	t.Setenv("HOME", "") // registers restore at cleanup
 	os.Unsetenv("HOME")
+	t.Setenv("XDG_CONFIG_HOME", "") // registers restore at cleanup
 	os.Unsetenv("XDG_CONFIG_HOME")
 	t.Setenv("GIT_CONFIG_GLOBAL", "/nonexistent")
 	t.Setenv("GIT_CONFIG_SYSTEM", "/nonexistent")
