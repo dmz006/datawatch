@@ -301,6 +301,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
 		mcpsdk.WithBoolean("capacity_adopt_before_admit", mcpsdk.Description("After a restart, admit resumed workers before any new work (default true)")),
 		mcpsdk.WithNumber("capacity_adoption_wait_seconds", mcpsdk.Description("Longest wait, in seconds, for resumed workers to be adopted after a restart (default 30; negative values are rejected)")),
+		mcpsdk.WithNumber("capacity_slot_reconcile_grace_seconds", mcpsdk.Description("How long, in seconds, a capacity slot may look unmatched to a live worker before it is reconciled away (default 60, minimum 10; 0 = default; values 1-9 and negative values are rejected)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_tokens", mcpsdk.Description("Rate ceiling on each LLM: most tokens it may use per rolling window; 0 = no tokens ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_window_seconds", mcpsdk.Description("Rolling window length in seconds for the two rate ceilings (0 = default 3600)")),
@@ -870,6 +871,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["capacity_adoption_wait_seconds"]; ok {
 			body["capacity_adoption_wait_seconds"] = int(req.GetFloat("capacity_adoption_wait_seconds", 0))
+		}
+		if _, ok := args["capacity_slot_reconcile_grace_seconds"]; ok {
+			body["capacity_slot_reconcile_grace_seconds"] = int(req.GetFloat("capacity_slot_reconcile_grace_seconds", 0))
 		}
 	}
 	// Presence-aware and forwarded as given (negatives included) so the REST
