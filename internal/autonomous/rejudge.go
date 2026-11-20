@@ -172,12 +172,17 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 	origStatus := prd.Status
 	heldReview := false
+	timeoutHold := false
 	switch {
 	case prd.Status == PRDBlocked:
+	case prd.Status == PRDNeedsReview && judgeTimeoutHoldIsLast(prd):
+		// A judge timeout hold is replayed on the same head: the work may
+		// already be fixed and merged, so no new commits are required.
+		timeoutHold = true
 	case prd.Status == PRDNeedsReview && rulesReviewHoldIsLast(prd):
 		heldReview = true
 	default:
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD or a PRDNeedsReview PRD held by a rules-review retries-spent or auto-fix-disabled decision", prd.ID, prd.Status)
+		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD or a PRDNeedsReview PRD held by a rules-review retries-spent or auto-fix-disabled decision or by a judge timeout hold", prd.ID, prd.Status)
 	}
 	if storyID, taskID, status := firstBlockingTask(prd); taskID != "" {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s task %s (story %s) is %s, not completed; every task must be completed or cancelled, with at least one completed, before the completion guardrail can be re-run", prd.ID, taskID, storyID, status)
@@ -222,6 +227,11 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			return fmt.Errorf("rejudge completion guardrail: prd %s: record no-verdict decision: %w", prd.ID, serr)
 		}
 		return fmt.Errorf("rejudge completion guardrail: prd %s: %s", prd.ID, detail)
+	}
+
+	if timeoutHold {
+		// A timed out judge is never cached, so look nothing up.
+		ctx = withJudgeVerdictCacheLookupBypassed(ctx)
 	}
 
 	// A rules-review hold is re-judged only on new commits: the held
@@ -401,8 +411,11 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			prd.Verdicts = append(prd.Verdicts, v)
 		}
 		prd.Decisions = append(prd.Decisions, rej)
-		prd.Status = PRDBlocked
-		prd.BlockedReason = blockedReasonFor(v)
+		// Another judge timeout keeps the Automaton held in needs_review.
+		prd.Status = judgeHoldOrBlocked(&v)
+		if prd.Status == PRDBlocked {
+			prd.BlockedReason = blockedReasonFor(v)
+		}
 	})
 	if serr := m.store.SavePRD(prd); serr != nil {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s: record block outcome: %w", prd.ID, serr)
@@ -426,4 +439,23 @@ func rulesReviewHoldIsLast(prd *PRD) bool {
 		}
 	}
 	return false
+}
+
+// judgeTimeoutHoldIsLast reports whether the newest block verdict on prd is
+// a judge timeout hold. Unlike a retries-spent hold, such a hold is replayed
+// on the same head with no new commits needed.
+func judgeTimeoutHoldIsLast(prd *PRD) bool {
+	v := lastBlockVerdict(prd.Verdicts)
+	return v != nil && IsJudgeTimeoutHold(*v)
+}
+
+// judgeTimeoutHoldReplayable reports whether prd is an Automaton in
+// needs_review whose tasks are all completed or cancelled and whose newest
+// block verdict is a judge timeout hold: Run re-runs its completion review.
+func judgeTimeoutHoldReplayable(prd *PRD) bool {
+	if prd.Status != PRDNeedsReview || !judgeTimeoutHoldIsLast(prd) {
+		return false
+	}
+	_, taskID, _ := firstBlockingTask(prd)
+	return taskID == ""
 }

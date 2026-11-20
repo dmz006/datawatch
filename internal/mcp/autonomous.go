@@ -1877,7 +1877,7 @@ func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDRejudge() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_rejudge",
-		mcpsdk.WithDescription("Re-judge the completion guardrail of a blocked automaton (PRD) whose tasks are all completed, without resetting any task. Use it when the guardrail verdict that blocked the PRD deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused otherwise: on PRDs that are not blocked, or on blocked PRDs that still have incomplete tasks — use autonomous_prd_reset_task instead."),
+		mcpsdk.WithDescription("Re-judge the completion guardrail of a blocked automaton (PRD) whose tasks are all completed, without resetting any task. It also replays a judge timeout hold: an Automaton in needs_review because its judge timed out is judged again on the same head, with no new commits needed. Use it when the guardrail verdict that blocked the PRD deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused otherwise: on PRDs that are not blocked, or on blocked PRDs that still have incomplete tasks — use autonomous_prd_reset_task instead."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

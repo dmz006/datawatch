@@ -92,3 +92,10 @@ func TestAutonomousPRDRejudgeToolDefinition(t *testing.T) {
 		}
 	}
 }
+
+func TestRejudgeTimeoutHoldMCP(t *testing.T) {
+	s := &Server{}
+	if d := s.toolAutonomousPRDRejudge().Description; !strings.Contains(d, "judge timeout hold") {
+		t.Fatalf("description lacks timeout hold: %q", d)
+	}
+}
