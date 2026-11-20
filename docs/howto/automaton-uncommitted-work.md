@@ -77,9 +77,10 @@ at the worktree with `git status`:
    hook is a failed commit.
    Each declared path is first checked with `git check-ignore`. A declared file
    that git ignores and that is not tracked (for example a file under
-   `.datawatch/`) is skipped, not staged, and does not fail the commit; the
-   task records `skipped because it is git-ignored: <list>` as information
-   only. Nothing is force-staged. If every declared path is ignored, no commit
+   `.datawatch/`) is skipped, not staged, and does not fail the commit. The
+   skipped paths are named in `skipped because it is git-ignored: <list>`, an
+   information-only note that is carried in the task's hold reason (and its
+   audit record) only when the task is held or warned. Nothing is force-staged. If every declared path is ignored, no commit
    is made and nothing is left staged. A tracked file is always staged
    normally. If git cannot say which paths it ignores, the real git error is
    reported.
@@ -142,10 +143,14 @@ instead of failing the commit: it is not staged, and it does not hold the
 task. The remaining listed paths are staged by name and committed with the
 task. Nothing is staged with force; no `git add -f` is run for any path.
 
-The skipped paths are recorded on the task as a note,
-`skipped because it is git-ignored: <list>`. The note is information only: it
-does not hold the task and does not raise a question. When every listed path
-is git-ignored, no commit is made, and nothing is left staged.
+The skipped paths are named in a note, `skipped because it is git-ignored:
+<list>`. The note is information only: it never holds a task and never raises
+a question by itself. It is carried in the hold reason and the audit record
+only when the task is held or warned for another reason, such as a file it
+still has to commit. A task whose other listed paths commit cleanly completes
+without storing the note. When every listed path is git-ignored, no commit is
+made and nothing is left staged; the task then completes unless other work is
+uncommitted, and the note is stored only if it is held or warned.
 
 A generated script that is meant to travel with the work must therefore be
 listed outside the git-ignored `.datawatch` folder, at a path the repository
