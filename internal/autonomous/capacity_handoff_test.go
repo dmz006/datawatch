@@ -30,18 +30,14 @@ func (h *handoffState) handoffCount() int {
 	return h.handoffs
 }
 
-// mimicVerifyWiring mirrors cmd/datawatch's verifier admission wiring for a
-// given backend: hand the task's worker lease to "verify:<taskID>"; on
-// refusal (no worker lease, different/zero pools), release the worker lease
-// first and admit the verifier separately. Never blocks.
+// mimicVerifyWiring mirrors the current verifier admission wiring for a given
+// backend: entering verifying releases the worker lease (holder = taskID), and
+// the verifier then admits under its own "verify:<taskID>" lease. There is no
+// hand-over: the worker's slot is freed before the verifier waits for its own.
+// Never blocks.
 func mimicVerifyWiring(t *testing.T, m *Manager, led *capacity.Ledger, prdID, taskID, backend string, h *handoffState) (func(), int, bool) {
 	t.Helper()
-	handed := false
-	if m.HandoffVerifyLease(taskID, backend, "") {
-		handed = true
-	} else {
-		led.Release(taskID) // fallback: release the worker lease first — no stacking, no self-deadlock
-	}
+	m.releaseWorkerLeaseForVerify(&Task{ID: taskID})
 	if !led.Held(VerifyHolder(taskID)) {
 		keys := m.CapacityKeys()
 		pools, node := keys(backend, "")
@@ -55,16 +51,15 @@ func mimicVerifyWiring(t *testing.T, m *Manager, led *capacity.Ledger, prdID, ta
 	if h != nil {
 		h.mu.Lock()
 		h.verifyN++
-		if handed {
-			h.handoffs++
-		}
 		h.mu.Unlock()
 	}
 	st := led.Snapshot()
 	if !led.Held(VerifyHolder(taskID)) {
 		t.Fatalf("test wiring: verify lease not held (state=%+v)", st)
 	}
-	return func() { led.Release(VerifyHolder(taskID)) }, len(st.Leases), handed
+	// Always false: the worker lease is released on entering verifying, never
+	// handed over, so the verifier is never a hand-off.
+	return func() { led.Release(VerifyHolder(taskID)) }, len(st.Leases), false
 }
 
 // createHandoffPRD creates a real-directory PRD (B165: a fake project dir
@@ -103,11 +98,11 @@ func handoffTwoPoolFixture(t *testing.T) (*Manager, *API, *capacity.Ledger) {
 	return m, api, led
 }
 
-// TestManager_HandoffVerifyLease_RekeysWorkerLease is the unit-level check:
-// the worker lease becomes the verifier lease, the worker name is freed, the
-// task holds exactly one lease for the same pool, and a double hand-off is
-// refused without disturbing the verifier lease.
-func TestManager_HandoffVerifyLease_RekeysWorkerLease(t *testing.T) {
+// TestManager_VerifyEntryReplacesHandoff: entering verifying releases the
+// worker lease rather than re-keying it. The verifier then admits on its own
+// "verify:<task>" lease, the task holds exactly one lease, and a hand-off after
+// the release finds no worker lease and is refused.
+func TestManager_VerifyEntryReplacesHandoff(t *testing.T) {
 	m, _, led := capFixture(t, 1)
 	prd := newPRDOnBackend(t, m, "opencode", "")
 	got, _ := m.Store().GetPRD(prd.ID)
@@ -118,23 +113,24 @@ func TestManager_HandoffVerifyLease_RekeysWorkerLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !m.HandoffVerifyLease(tk.ID, "opencode", "") {
-		t.Fatal("same-pool verify lease must be handed off")
-	}
+	m.releaseWorkerLeaseForVerify(&tk)
 	if led.Held(tk.ID) {
-		t.Fatal("worker lease still held after hand-off")
+		t.Fatal("worker lease still held after entering verifying")
+	}
+	if err := led.Acquire(context.Background(), capacity.Request{Holder: VerifyHolder(tk.ID), PRDID: prd.ID, Pools: []string{"node:n1"}, Node: "n1", Role: capacity.RoleVerifier}, 0, nil, nil); err != nil {
+		t.Fatal(err)
 	}
 	if !led.Held(VerifyHolder(tk.ID)) {
-		t.Fatal("verifier lease not held after hand-off")
+		t.Fatal("verifier lease not held after admission")
 	}
 	if st := led.Snapshot(); len(st.Leases) != 1 {
-		t.Fatalf("task must hold exactly one lease after hand-off, got %d: %+v", len(st.Leases), st.Leases)
+		t.Fatalf("task must hold exactly one lease while verifying, got %d: %+v", len(st.Leases), st.Leases)
 	}
 	if m.HandoffVerifyLease(tk.ID, "opencode", "") {
-		t.Fatal("double hand-off must be refused")
+		t.Fatal("hand-off must be refused once the worker lease was released")
 	}
 	if !led.Held(VerifyHolder(tk.ID)) {
-		t.Fatal("refused double hand-off must not disturb the verifier lease")
+		t.Fatal("refused hand-off must not disturb the verifier lease")
 	}
 }
 
