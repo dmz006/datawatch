@@ -630,8 +630,13 @@ Nothing here turns on by itself. These are yours to settle:
 - **Migration conflicts.** A title already taken by a record the migration did
   not make is left alone and listed as a conflict; rename one side by hand and
   run the migration again.
-- **Backlog order.** Open rows with no Automaton become backlog plans ordered by
-  their old row number. Check that this is the order you want.
+- **Migration needs-review rows.** Open rows with no derivable name are listed
+  under *needs review* and are never created — not even on apply — and they are
+  listed again on every run until they get a name. Give such a row a title (or
+  a resolvable Automaton/Automation link) and run the migration again.
+- **Backlog order.** Open rows with no Automaton and a derivable name become
+  backlog plans ordered by their old row number. Check that this is the order
+  you want.
 - **The state chip sets.** The Plans browser, the Records sub-tab and the
   Registry and findings card now filter state with multi-select chip sets, and
   each remembers its picks in the browser that made them. Check that the chip
@@ -720,11 +725,14 @@ migration builds plans from what you already have:
   (planned, active, done) becomes the plan state, and the plan links to that
   Automation.
 - Every registry row whose text or links name an Automaton or Automation id
-  becomes a plan linked to it. The plan is titled `Plan: <row title>`, because a
-  title is unique inside a project and the row keeps its own. See *How a plan
-  gets its title* below.
-- Every open row that names none becomes a backlog plan, ordered by its old row
-  number. A closed row that names none is left out.
+  becomes a plan linked to it, so long as a name can be derived (from the row,
+  or from the named item); a row that names one but gives no name at all is
+  listed under *needs review* instead. The plan is titled `Plan: <row title>`,
+  because a title is unique inside a project and the row keeps its own. See
+  *How a plan gets its title* below.
+- Every open row that names none and has a derivable name becomes a backlog
+  plan, ordered by its old row number. A closed row that names none is left
+  out of the plans and listed under *history without an Automaton*.
 
 It previews by default. Read the lists (would create, would link, left alone,
 conflicts) and the two sections for the rows that never become plans (history
@@ -759,18 +767,22 @@ the first one that reads like a name:
   a title. If nothing in the row is a title but the row names an Automaton (or
   an Automation), the plan takes that one's own title, on one line, at most 100
   characters with `Plan: ` included. A description gives only its first clause, and the status column is never
-  used. A row with neither a name nor a linked Automaton is listed under
-  `needs review` in the preview (`needs_review` in the result) and is not
-  created on apply; give the row a title and run the migration again.
+  used. A row with neither a name nor a linked Automaton (or Automation) to
+  take a name from is listed under `needs review` in the preview
+  (`needs_review` in the result) and is not created on apply; give the row a
+  title and run the migration again.
 - The row's status is kept as the plan's status; a done row becomes a finished
   plan.
 
-The preview line ends with three counts, `titles derived N, from linked
-Automaton K, fell back M`: how many of the plans this run makes got a title from
-their row, how many took the title of the Automaton or Automation the row
-names, and how many were named `(untitled row N)`. A plan that already exists
-is never renamed, and it is counted in none of them, so after an apply all
-three read 0.
+The command then prints a titles line, `titles derived N, from linked
+Automaton K, fell back M`: how many of the plans this run makes got a title
+from their row, how many took the title of the Automaton or Automation the row
+names, and how many rows gave no name at all (the rows listed under
+`needs review`, which are never created). A plan that already exists is never
+renamed, and it is counted in none of them, so on a second run the first two
+counts read 0. The fell-back count is the exception: because those rows were
+never created, the next run lists them under `needs review` again and counts
+them again, until a row gets a name.
 
 ## Reading plans
 

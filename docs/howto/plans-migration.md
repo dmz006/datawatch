@@ -29,7 +29,7 @@ datawatch plans migrate --apply    # write
 | Shipped, done or closed, names none | Never a plan. It is listed under *history without an Automaton*, with its title, in a preview and after an apply alike. |
 | Open, names an Automaton or Automation | One plan linked to it. |
 | Open, names none | One backlog plan, ordered by the old row number. |
-| Open, no name can be derived | Listed under *needs review*; no plan is created. |
+| Open, and no name can be derived from the row or the item it names | Listed under *needs review*; no plan is created. |
 
 If the Automaton a closed row names is not yet on a release plan item, the
 row is skipped with the reason `history: the Automaton is not on a release plan
