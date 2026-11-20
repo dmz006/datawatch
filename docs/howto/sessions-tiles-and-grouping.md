@@ -883,32 +883,21 @@ works too — it performs the same reset and hard reload.)
   it groups the **Model on** fact on the web page and is not an API/CLI value.
 - **Project groups show a folder path instead of a project name.** The session has no `project:` placement tag and no owning Automaton project, so it falls back to its working folder. Tag the session with a `project:` tag to group it by project.
 
-## Still to review
+## Operator review
 
-- **The view mode buttons (this fix).** The toolbar's view control is the
-  three icon buttons shown above — a `role=group` of three `sessions-view-btn`
-  buttons labelled **List** / **Tiles** / **Compact** (`_sessionsViewSelectHTML`
-  in `internal/server/web/app.js`), client-side PWA behaviour, confirmed by
-  code and pinned by
-  `app-sessions-one-line-toolbar.test.js`, `app-sessions-view-modes.test.js`
-  and `app-sessions-filters-sheet-layout.test.js`. Confirm on the build in
-  use: the toolbar line ends in three compact icon buttons (not a dropdown),
-  the mode in use is marked on the active one, tapping the other button
-  switches the list immediately and sticks on that device, the line still
-  fits at 360 px without wrapping, and on a touch screen a held button shows
-  its name as a hint without changing the mode. The stored
-  `cs_sessions_view_mode` value and its meaning are unchanged.
-- **The Filters button's close paths (this fix).** Client-side PWA
-  behaviour (`sessionsFiltersToggle` / `sessionsFiltersClose` in
-  `internal/server/web/app.js`), confirmed by code and pinned by the PWA
-  tests `app-sessions-filters-toggle.test.js` and
-  `app-sessions-filters-sheet.test.js`. Confirm on the build in use: one
-  click on the **Filters** button opens the sheet, a second click on the
-  same button closes it again, and it reopens on the next click; the
-  sheet also closes on the ✕ close button in its header, a tap on the
-  backdrop or anywhere outside the sheet, or **Escape** — none of these
-  touches the picks you made or the badge count, and a refresh with the
-  sheet open keeps it open.
+After this change lands, check these three things on the build in use:
+
+1. **Filters button toggles the panel.** One click on **Filters** opens the
+   panel and a second click closes it. **Escape** and a click outside the
+   panel also close it. Closing does not change your picks or the badge count.
+2. **View mode is three icon buttons.** The view-mode select is gone. The
+   toolbar line shows **List ☰**, **Tiles ⊞** and **Compact ▤** side by side,
+   with the mode in use marked. On a touch screen, holding a button shows its
+   name as a hint and does not change the mode; a tap switches the mode and it
+   is remembered on this device.
+3. **Phone layout of the one-line toolbar.** At 360 px wide the whole toolbar
+   (server select, search, Filters, Fold all and the three view buttons) stays
+   on one line with no wrapping and no horizontal page scroll.
 
 ## Related guides
 
