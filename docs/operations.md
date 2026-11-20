@@ -8985,3 +8985,18 @@ Review this before relying on the web app on a phone. The change is layout only:
 - **Conflicts resolved in the merge.** Six files conflicted and were resolved by keeping both sides: `CHANGELOG.md`, `docs/datawatch-definitions.md`, `docs/howto/README.md`, `docs/operations.md`, `internal/server/web/app.js` and `internal/server/web/style.css`. Read these once more: the shared `phone-page` class is still on every page root in `app.js`, the phone rules in `style.css` are present once and not doubled, and the other sides' entries in the four text files are all still there.
 - **Page checks on a phone.** Hard refresh first so the browser loads the current `style.css` and `app.js`. At 360, 390 and 412 px check each page: Sessions, each Automata sub-tab (Projects, Automation, Automata, Events, Templates), Alerts, Observer, Dashboard and Settings. On each, confirm the same side margins as Sessions, full-width cards, no sideways page scroll, and a tab strip that scrolls on its own line. On the Dashboard confirm the counters wrap with each value whole, the burn-rate line sits on its own line and the cards fill one column. Then compare against desktop width and confirm it looks as before.
 - **Docs re-read after the merge.** The navigation, dashboard, Sessions tiles and grouping, how-to index and definitions pages read correctly; the Dashboard phone section was brought in line with the shared layout.
+
+### Supervisor fresh sessions
+
+A supervisor session is replaced by a fresh one when its context size or age
+passes the per-project limit (`supervisor_fresh_sessions` in the config
+reference). The order is fixed: start the new session with the handover,
+confirm it answers, end the old one. The restart is recorded step by step, so
+a daemon stop mid-restart resumes from the recorded step and never starts a
+second session; a new session that never answers fails the restart, leaves the
+old session running and raises an alert. A failed spawn schedule alerts you and
+starts a supervisor. `supervisor-setup run` is idempotent and repairs a missing
+schedule. Review after changes: the named model (Sonnet or Haiku only), promoted
+`standing_rule` commits, filed `product_defect` Automata, and any
+`correction.repeated` finding. See
+[howto/supervisor-fresh-sessions](howto/supervisor-fresh-sessions.md).

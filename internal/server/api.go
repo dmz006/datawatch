@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.62"
+var Version = "9.182.63"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -646,6 +646,8 @@ type Server struct {
 	autonomousEvents PendingEventsAPI
 	// supervisorLoop serves the supervisor-loop run history and manual runs.
 	supervisorLoop SupervisorLoopControl
+	// supervisorSetup serves the supervisor set-up, state-record and correction routes.
+	supervisorSetup *SupervisorSetupDeps
 	// peerEvents backs /api/autonomous/peer-events (nil: 503).
 	peerEvents PeerEventControl
 	// supervisorWake is the record behind GET /api/supervisor-loop/wake.

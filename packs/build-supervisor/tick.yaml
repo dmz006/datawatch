@@ -1,0 +1,10 @@
+# Full tick: steps plus model jobs, run as the daemon sees fit.
+name: full
+kind: full
+purpose: A complete pass over every Automaton, the plan and the housekeeping.
+steps:
+  - run the watch tick
+  - run the window guard tick
+  - compare each plan's order against what is running and name the next piece of work
+  - review corrections, so expire state corrections whose situation is done, promote standing rules, file product defects
+  - record a short summary in the state record

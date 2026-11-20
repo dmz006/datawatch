@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.62"
+var Version = "9.182.63"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -395,6 +395,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newPlanRecordCmd(), // plan records: registry rows and findings
 		newPlansCmd(),      // plans: migrate arcs and registry rows into plan records
 		newSupervisorLoopCmd(),
+		newSupervisorSetupCmd(),
 		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
@@ -15146,6 +15147,12 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 							fmt.Sprintf("Schedule %s could not start its session (%d in a row): %v — %s.", sc.ID, n, err, next))
 					}
 				} else {
+					// Stamp the requested launch role (e.g. the lean
+					// supervisor profile) on the spawned session, server-side.
+					if ds.LaunchRole != "" && sess.LaunchRole == "" {
+						sess.LaunchRole = ds.LaunchRole
+						_ = mgr.SaveSession(sess) //nolint:errcheck // best-effort metadata
+					}
 					_ = store.MarkDone(sc.ID, false)
 					_ = store.RecordFire(sc.ID, sess.FullID, "spawned")
 					fmt.Printf("[scheduler] spawned session (type=%s sched=%s sess=%s task=%q)\n", sc.Type, sc.ID, sess.FullID, ds.Task)

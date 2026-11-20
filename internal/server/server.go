@@ -651,6 +651,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                           // supervisor loop run records, newest first
 	apiMux.HandleFunc("/api/supervisor-loop/wake", api.handleSupervisorLoopWake)                           // supervisor wake: settings in effect, last event, last scheduled check
 	apiMux.HandleFunc("/api/supervisor-loop/stats", api.handleSupervisorLoopStats)                         // supervisor loop numbers: jobs, run counts by outcome, retries, last run age
+	apiMux.HandleFunc("/api/supervisor-setup", api.handleSupervisorSetup)                                  // idempotent supervisor set-up for a named project
+	apiMux.HandleFunc("/api/supervisor-setup/state", api.handleSupervisorSetupState)                       // supervisor state record: read, set, change, remove an entry
+	apiMux.HandleFunc("/api/supervisor-setup/corrections", api.handleSupervisorSetupCorrections)           // corrections: list, record
+	apiMux.HandleFunc("/api/supervisor-setup/corrections/promote", api.handleSupervisorSetupPromote)       // promote a standing-rule correction
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                  // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step

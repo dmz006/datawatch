@@ -1,0 +1,13 @@
+# Window guard tick: the projection pass.
+name: window_guard
+kind: window_guard
+purpose: Re-estimate burn against the usage window and act before the pace line is crossed.
+steps:
+  - read the current usage reading and the window's remaining time
+  - project the burn to the window's end at the current lane count
+  - when the projection is over the guard line, hold new starts and tell the operator
+  - when the projection is well under, say so and allow the next start
+  - write a "checked" entry with the reading and the decision
+never:
+  - switch a model or backend
+  - end a running session

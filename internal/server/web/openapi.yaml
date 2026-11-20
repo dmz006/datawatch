@@ -4370,6 +4370,233 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
 
+  /api/supervisor-setup:
+    post:
+      summary: Set up a project's supervisor
+      description: |
+        Idempotent set-up of a named project's supervisor: launch role
+        `supervisor`, the project directory, an explicit Sonnet or Haiku model
+        (Opus or no model is refused), a generated handover and one recurring
+        spawn schedule per schedule name (default one `watch` schedule every
+        twenty minutes). A second call adds nothing: schedules that already
+        exist come back with `created` false. Needs the autonomous write
+        capability when called by a federated peer.
+      operationId: supervisorSetup
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, model]
+              properties:
+                project: {type: string}
+                model: {type: string, description: Explicit Sonnet or Haiku model name}
+                schedules:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: {type: string}
+                      cron: {type: string, description: Five-field cron; default every twenty minutes}
+      responses:
+        "200":
+          description: Set-up result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  launch_role: {type: string}
+                  project_dir: {type: string}
+                  model: {type: string}
+                  handover_assembled_at: {type: string}
+                  already_set_up: {type: boolean}
+                  schedules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        id: {type: string}
+                        cron: {type: string}
+                        created: {type: boolean}
+        "400": {description: Bad project, model, schedule name or cron}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "503": {description: Supervisor set-up is not wired}
+
+  /api/supervisor-setup/state:
+    get:
+      summary: Read a supervisor state record
+      description: The pinned state record for `project` and `role` (default `supervisor`). Autonomous read capability for a federated peer.
+      operationId: supervisorStateGet
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: true, schema: {type: string}}
+        - {name: role, in: query, schema: {type: string}}
+      responses:
+        "200": {description: The record with its entries and their edit history}
+        "400": {description: Missing project}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+    post:
+      summary: Set a state record entry
+      description: Create the entry or replace it. Writing identical content records no edit. `who` and `why` are required. Autonomous write capability for a federated peer.
+      operationId: supervisorStateSet
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, id, section, who, why]
+              properties:
+                project: {type: string}
+                role: {type: string}
+                id: {type: string}
+                section: {type: string, enum: [decision, work, checked, correction]}
+                text: {type: string}
+                owner: {type: string}
+                next_step: {type: string}
+                who: {type: string}
+                why: {type: string}
+      responses:
+        "200": {description: Entry set}
+        "400": {description: Invalid entry}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+    patch:
+      summary: Change fields of a state record entry
+      description: Alters only the fields sent; a change that alters nothing records no edit. `who` and `why` are required.
+      operationId: supervisorStateChange
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, id, who, why]
+              properties:
+                project: {type: string}
+                role: {type: string}
+                id: {type: string}
+                text: {type: string}
+                owner: {type: string}
+                next_step: {type: string}
+                who: {type: string}
+                why: {type: string}
+      responses:
+        "200": {description: Entry changed}
+        "400": {description: Invalid request}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No entry with that id}
+    delete:
+      summary: Remove a state record entry
+      description: Removing an absent entry is a no-op. `who` and `why` are required.
+      operationId: supervisorStateRemove
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, id, who, why]
+              properties:
+                project: {type: string}
+                role: {type: string}
+                id: {type: string}
+                who: {type: string}
+                why: {type: string}
+      responses:
+        "200": {description: Entry removed}
+        "400": {description: Invalid request}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+
+  /api/supervisor-setup/corrections:
+    get:
+      summary: List supervisor corrections
+      description: The corrections held in the state record for `project` and `role`. Autonomous read capability for a federated peer.
+      operationId: supervisorCorrectionList
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: true, schema: {type: string}}
+        - {name: role, in: query, schema: {type: string}}
+      responses:
+        "200": {description: "Object with a `corrections` array"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+    post:
+      summary: Record a supervisor correction
+      description: Records a correction as active. `class` is `state`, `standing_rule` or `product_defect`. Autonomous write capability for a federated peer.
+      operationId: supervisorCorrectionRecord
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, id, text, class, who, why]
+              properties:
+                project: {type: string}
+                role: {type: string}
+                id: {type: string}
+                text: {type: string}
+                class: {type: string, enum: [state, standing_rule, product_defect]}
+                evidence: {type: string}
+                workaround: {type: string}
+                who: {type: string}
+                why: {type: string}
+      responses:
+        "200": {description: The recorded correction}
+        "400": {description: Invalid correction}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+
+  /api/supervisor-setup/corrections/promote:
+    post:
+      summary: Promote a standing-rule correction
+      description: Commits a `standing_rule` correction to the project rules pack and removes it from the state record. Other classes answer 409. Autonomous write capability for a federated peer.
+      operationId: supervisorCorrectionPromote
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project, id, who, why]
+              properties:
+                project: {type: string}
+                role: {type: string}
+                id: {type: string}
+                who: {type: string}
+                why: {type: string}
+      responses:
+        "200": {description: The promoted correction with its commit link}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: No such correction}
+        "409": {description: The correction is not an active standing rule}
+
   /api/supervisor-loop/wake:
     get:
       summary: Supervisor wake status
