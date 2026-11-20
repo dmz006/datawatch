@@ -13,6 +13,7 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'ja'];
 const KEYS = [
   'autonomous.judge_prompt_file_threshold_lines',
   'autonomous.judge_delivery_wait_per_thousand_lines_seconds',
+  'autonomous.judge_timeout_per_thousand_lines_seconds',
 ];
 
 function load() {
@@ -79,7 +80,7 @@ test('label, help, error and link-label keys exist in all five locales', () => {
 test('labels carry no tracker identifiers or PRD wording', () => {
   for (const l of LOCALES) {
     const b = bundle(l);
-    for (const k of Object.keys(b).filter(x => /^settings_judge_(prompt_file|delivery_wait|help_link)/.test(x))) {
+    for (const k of Object.keys(b).filter(x => /^settings_judge_(prompt_file|delivery_wait|timeout_per_thousand|help_link)/.test(x))) {
       assert.ok(!/\b(BL|PRD)\s?-?\d*\b/.test(b[k]), k + ' in ' + l + ' has tracker/PRD wording');
     }
   }
