@@ -1163,8 +1163,9 @@ session.
 ### Confirming a freed slot
 
 A judge or verifier can keep holding a pool slot after its session ended or
-its Automaton merged. Every ten seconds the daemon frees a pool slot that has
-no live session and no node lease, or whose Automaton is finished. Each freed
+its Automaton merged. Every ten seconds the daemon checks the pi-prompt pool
+and frees a `judge:` or `verify:` slot that is past the slot reconcile grace
+and has no live session and no node lease, or whose Automaton is finished. Each freed
 slot raises an alert that says which slot was freed and why. A slot whose
 session is still running is never freed, and the reconcile never ends a
 session.

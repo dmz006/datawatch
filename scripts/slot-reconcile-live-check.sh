@@ -58,10 +58,11 @@ CFG="$S/config.yaml"; LOG="$S/daemon.log"
 UNIT="livecheck-sr"; HOLDER="judge:$UNIT"
 GRACE=15   # autonomous.capacity_slot_reconcile_grace_seconds (min accepted: 10)
 
-# Same substitutions the daemon test uses; the only feature addition is the
-# short slot-reconcile grace so the live check stays fast. The key is
-# inserted inside the existing autonomous: block (the YAML parser rejects a
-# second autonomous: key).
+# Same substitutions the daemon test uses; the two feature keys are the
+# short slot-reconcile grace so the live check stays fast, and
+# capacity_adopt_before_admit off for the sandbox. They are inserted inside
+# the existing autonomous: block (the YAML parser rejects a second
+# autonomous: key).
 sed \
   -e "s|data_dir: /data|data_dir: $S/data|g" \
   -e "s|default_project_dir: /data/projects|default_project_dir: $S/projects|g" \
