@@ -2,7 +2,7 @@
 // the connected server "local" to the operator -- everywhere it used to
 // say the literal word "Local" now shows the server's real hostname
 // (from /api/health's own hostname field) instead: the header server
-// dropdown, the swipe-gesture modal's picker, the "Back to %1$s" button, the
+// button, the server picker modal, the "Back to %1$s" button, the
 // connection toast, the Settings server list entry, and Observer's
 // per-system stats grid (which also had a real duplicate-card bug: the
 // local /api/stats card and the server's own synthesized "self" peer
@@ -16,6 +16,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { vm, makeStubElement, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
+const { pickerRows } = require('./testutil_fake_dom');
 
 const APP_JS = path.join(__dirname, 'app.js');
 
@@ -24,7 +25,7 @@ function loadAppJS() {
   vm.createContext(sandbox);
   loadScript(APP_JS, sandbox);
   assert.equal(typeof sandbox._ensureLocalHostname, 'function', '_ensureLocalHostname is not defined -- did it get renamed?');
-  assert.equal(typeof sandbox._serverPickerBar, 'function', '_serverPickerBar is not defined -- did it get renamed?');
+  assert.equal(typeof sandbox.openServerPickerModal, 'function', 'openServerPickerModal is not defined -- did it get renamed?');
   assert.equal(typeof sandbox.loadSystemStatsGrid, 'function', 'loadSystemStatsGrid is not defined -- did it get renamed?');
   return sandbox;
 }
@@ -56,24 +57,34 @@ test('_ensureLocalHostname: does not re-fetch once already resolved', async () =
   assert.equal(calls, 1, 'a second call after the hostname is already known should be a no-op');
 });
 
-// ── _serverPickerBar: local option never says "Local" ─────────────────
+// ── Picker modal + header button: local never says "Local" ───────────
 
-test('_serverPickerBar: shows the real hostname for the local option once known', () => {
+test('picker modal: shows the real hostname for the local row once known', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`
     state.servers = { servers: [{ name: 'host-a', enabled: true }] };
     _localHostname = 'local-node';
   `, sandbox);
-  const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
-  assert.match(html, /local-node/, `expected the real hostname in the local option; got: ${html}`);
-  assert.doesNotMatch(html, />Local</, 'the literal word "Local" must never appear as an option label');
+  const { html, rowFor } = pickerRows(sandbox);
+  assert.match(html, /local-node/, `expected the real hostname in the local row; got: ${html}`);
+  assert.match(rowFor('').textContent, /local-node/);
+  assert.doesNotMatch(html, />Local</, 'the literal word "Local" must never appear as a row label');
 });
 
-test('_serverPickerBar: falls back to a generic (never "Local") placeholder before the hostname is known', () => {
+test('header button: shows the real hostname for this server once known', () => {
+  const sandbox = loadAppJS();
+  const { dom } = pickerRows(sandbox); // installs the fake DOM with the header button elements
+  vm.runInContext(`state.activeServer = null; _localHostname = 'local-node'; renderServerDropdown();`, sandbox);
+  assert.equal(dom.el('serverPickerName').textContent, 'local-node');
+  assert.equal(dom.el('serverPickerBtn').getAttribute('title'), 'local-node');
+  assert.doesNotMatch(dom.el('serverPickerBtn').getAttribute('aria-label'), /\bLocal\b/);
+});
+
+test('picker modal: falls back to a generic (never "Local") placeholder before the hostname is known', () => {
   const sandbox = loadAppJS();
   vm.runInContext(`state.servers = { servers: [{ name: 'host-a', enabled: true }] };`, sandbox);
   // _localHostname deliberately left null/unresolved.
-  const html = vm.runInContext(`_serverPickerBar({})`, sandbox);
+  const { html } = pickerRows(sandbox);
   assert.doesNotMatch(html, />Local</, `the literal word "Local" must never appear, even before the real hostname resolves; got: ${html}`);
 });
 
