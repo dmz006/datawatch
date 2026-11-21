@@ -281,16 +281,40 @@ func EffectiveTaskTemplates(cfg *config.Config) []config.TaskTemplateDef {
 //
 // The input stories are not mutated: the returned slice is a copy
 // with the new tasks appended.
+//
+// It is the spec-less form of ApplyTaskTemplatesForSpec: an empty spec
+// can never be merge-only, so the docs set template is included as
+// usual.
 func ApplyTaskTemplates(stories []Story, feature, projectDir string, cfg *config.Config) ([]Story, []string) {
+	return ApplyTaskTemplatesForSpec(stories, feature, projectDir, "", cfg)
+}
+
+// ApplyTaskTemplatesForSpec is the spec-aware form of
+// ApplyTaskTemplates: when the Automaton's spec is merge-only
+// (IsMergeOnlySpec — merging, rebasing or landing an existing finished
+// branch, with no new work), the docs set template (TemplateDocsSet) is
+// not applied to any story, because a spec that only lands finished
+// work changes none of the behavior the operator-facing docs describe.
+// Every other template, including the final gate, is applied exactly as
+// ApplyTaskTemplates does. When spec is empty or not merge-only the
+// behavior is identical to ApplyTaskTemplates (same signature, same
+// returns, same idempotence).
+func ApplyTaskTemplatesForSpec(stories []Story, feature, projectDir, spec string, cfg *config.Config) ([]Story, []string) {
 	if !taskTemplatesEnabledForProject(cfg, projectDir) {
 		return append([]Story(nil), stories...), nil
 	}
+	mergeOnly := IsMergeOnlySpec(spec)
 	templates := EffectiveTaskTemplates(cfg)
 	perStory := make([]config.TaskTemplateDef, 0, len(templates))
 	var finalGate []config.TaskTemplateDef
 	for _, def := range templates {
-		if strings.TrimSpace(def.ID) == TemplateFinalGate {
+		id := strings.TrimSpace(def.ID)
+		if id == TemplateFinalGate {
 			finalGate = append(finalGate, def)
+			continue
+		}
+		// A merge-only Automaton does not earn a docs set task.
+		if mergeOnly && id == TemplateDocsSet {
 			continue
 		}
 		perStory = append(perStory, def)
