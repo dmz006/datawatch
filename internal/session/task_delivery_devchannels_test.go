@@ -32,7 +32,7 @@ func (s *swallowFirstEnterTmux) SendKeys(session, keys string) error {
 		s.enters++
 		n := s.enters
 		s.mu.Unlock()
-		_ = s.FakeTmux.record("send-keys", session, keys, "Enter")
+		_ = s.record("send-keys", session, keys, "Enter")
 		if n >= 2 {
 			tdrSetPane(s.FakeTmux, session, tdIdlePane)
 		}
