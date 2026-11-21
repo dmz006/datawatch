@@ -3,6 +3,7 @@ package supervisorloop
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +34,12 @@ type RulesSource interface {
 	ProjectRulesFile(project string) (text string, ok bool, err error)
 }
 
+// RulesFilePather is an optional extra of a RulesSource: the path of the
+// project rules file, so the handover can point at it.
+type RulesFilePather interface {
+	ProjectRulesFilePath(project string) string
+}
+
 // PlanSource supplies layer three from the project's own plans.
 type PlanSource interface {
 	// ProjectPlans returns the project's plans in priority order, with the
@@ -54,7 +61,12 @@ type BuildContext struct {
 type RulesLayer struct {
 	DefaultPack string
 	ProjectPack string
-	RulesFile   string
+	// RulesFile is the project rules file text. It is not rendered: the
+	// handover carries RulesFilePath and RulesHeadings instead.
+	RulesFile     string
+	RulesFilePath string
+	// RulesHeadings are the rules file's section headings, in order.
+	RulesHeadings []string
 }
 
 // WorkItem is one Automaton of a plan.
@@ -129,8 +141,16 @@ func (a *HandoverAssembler) AssembleHandover(project string) (Handover, error) {
 	if h.Rules.ProjectPack, _, err = a.Rules.ProjectPack(project); err != nil {
 		return Handover{}, fmt.Errorf("handover: project pack: %w", err)
 	}
-	if h.Rules.RulesFile, _, err = a.Rules.ProjectRulesFile(project); err != nil {
+	var haveRules bool
+	if h.Rules.RulesFile, haveRules, err = a.Rules.ProjectRulesFile(project); err != nil {
 		return Handover{}, fmt.Errorf("handover: project rules file: %w", err)
+	}
+	if haveRules {
+		h.Rules.RulesFilePath = filepath.Join(dir, "AGENT.md")
+		if rp, ok := a.Rules.(RulesFilePather); ok {
+			h.Rules.RulesFilePath = rp.ProjectRulesFilePath(project)
+		}
+		h.Rules.RulesHeadings = MarkdownHeadings(h.Rules.RulesFile)
 	}
 	digests, err := a.Plans.ProjectPlans(project)
 	if err != nil {
@@ -155,36 +175,97 @@ func (a *HandoverAssembler) AssembleHandover(project string) (Handover, error) {
 	return h, nil
 }
 
+// MaxHandoverChars is the bound on a rendered handover for any project.
+const MaxHandoverChars = 24000
+
+// Caps on the two layers whose size the project controls; with the build
+// context and the shipped pack they keep Render under MaxHandoverChars.
+const (
+	maxProjectPackChars = 7000
+	maxDirectionChars   = 7000
+	maxRulesHeadings    = 80
+)
+
+// MarkdownHeadings lists the heading lines of a markdown text, in order,
+// ignoring fenced code blocks.
+func MarkdownHeadings(text string) []string {
+	var out []string
+	fenced := false
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced && strings.HasPrefix(t, "#") && strings.HasPrefix(strings.TrimLeft(t, "#"), " ") {
+			if len(t) > 120 {
+				t = t[:120]
+			}
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// capText cuts text to at most n bytes at a line boundary and says so.
+func capText(text string, n int, note string) string {
+	if len(text) <= n {
+		return text
+	}
+	cut := text[:n]
+	if i := strings.LastIndex(cut, "\n"); i > 0 {
+		cut = cut[:i]
+	}
+	return cut + "\n[truncated: " + note + "]"
+}
+
 // Render writes the handover as the text a supervisor session starts from.
+// It never exceeds MaxHandoverChars: the project rules file is carried by
+// path and heading list, not in full.
 func (h Handover) Render() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Supervisor handover: %s\nAssembled: %s\n\n", h.Project, h.AssembledAt.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "## Build context\n- Profile: %s\n- Tool servers: %s\n- Project directory: %s\n- Model: %s\n\n",
 		h.Build.Profile, strings.Join(h.Build.ToolServers, ", "), h.Build.ProjectDir, h.Build.Model)
 	b.WriteString("## Rules\n")
-	for _, s := range []struct{ name, text string }{
-		{"Default build supervisor pack", h.Rules.DefaultPack},
-		{"Project rules pack", h.Rules.ProjectPack},
-		{"Project rules file", h.Rules.RulesFile},
+	for _, s := range []struct {
+		name, text string
+		max        int
+	}{
+		{"Default build supervisor pack", h.Rules.DefaultPack, 8000},
+		{"Project rules pack", h.Rules.ProjectPack, maxProjectPackChars},
 	} {
 		if strings.TrimSpace(s.text) != "" {
-			fmt.Fprintf(&b, "### %s\n%s\n\n", s.name, strings.TrimSpace(s.text))
+			fmt.Fprintf(&b, "### %s\n%s\n\n", s.name, capText(strings.TrimSpace(s.text), s.max, "read packs/build-supervisor/rules.md in the project for the rest"))
 		}
 	}
-	b.WriteString("## Direction\n")
-	for _, p := range h.Direction.Plans {
-		fmt.Fprintf(&b, "### %d. %s [%s]\nGoal: %s\n", p.Order, p.Title, p.State, p.Goal)
-		if p.NextWork != "" {
-			fmt.Fprintf(&b, "Next: %s\n", p.NextWork)
-		}
-		for _, w := range p.Work {
-			fmt.Fprintf(&b, "- %s (%s)", w.Title, w.State)
-			if w.Blocked {
-				fmt.Fprintf(&b, " BLOCKED: %s", w.BlockedReason)
+	if h.Rules.RulesFilePath != "" {
+		fmt.Fprintf(&b, "### Project rules file\nNot embedded. Read %s by path when you need a rule. Sections:\n", h.Rules.RulesFilePath)
+		for i, hd := range h.Rules.RulesHeadings {
+			if i == maxRulesHeadings {
+				fmt.Fprintf(&b, "- ... %d more headings\n", len(h.Rules.RulesHeadings)-i)
+				break
 			}
-			b.WriteString("\n")
+			fmt.Fprintf(&b, "- %s\n", hd)
 		}
 		b.WriteString("\n")
 	}
-	return b.String()
+	var d strings.Builder
+	for _, p := range h.Direction.Plans {
+		fmt.Fprintf(&d, "### %d. %s [%s]\nGoal: %s\n", p.Order, p.Title, p.State, p.Goal)
+		if p.NextWork != "" {
+			fmt.Fprintf(&d, "Next: %s\n", p.NextWork)
+		}
+		for _, w := range p.Work {
+			fmt.Fprintf(&d, "- %s (%s)", w.Title, w.State)
+			if w.Blocked {
+				fmt.Fprintf(&d, " BLOCKED: %s", w.BlockedReason)
+			}
+			d.WriteString("\n")
+		}
+		d.WriteString("\n")
+	}
+	b.WriteString("## Direction\n")
+	b.WriteString(capText(d.String(), maxDirectionChars, "list the project's plans for the rest"))
+	return capText(b.String(), MaxHandoverChars, "handover bound")
 }
