@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,15 +35,61 @@ const oneShotReapInterval = 60 * time.Second
 // count: there the marker sits after "echo '", so the line does not start
 // with it. PRD-owned sessions are never reaped here; their executor owns them.
 func (m *Manager) oneShotFinished(sess *Session) bool {
+	return m.oneShotFinishReason(sess) != ""
+}
+
+// launchRoleSupervisor is the launch role every lean supervisor spawn carries
+// (supervisorloop.LaunchRoleSupervisor; this package cannot import it).
+const launchRoleSupervisor = "supervisor"
+
+const (
+	// endOnStopGrace is how long after the Stop hook a supervisor pass must stay
+	// quiet before it is ended, so input that arrives right after a stop (a wake
+	// event, a nudge) is not cut off.
+	endOnStopGrace = 20 * time.Second
+	// supervisorPassMaxAge is the backstop: a supervisor pass is short by design,
+	// so one still alive after this long is ended whether or not its hook fired.
+	supervisorPassMaxAge = 30 * time.Minute
+)
+
+// supervisorPassFinishReason says why a scheduled supervisor pass should end now,
+// or "" if it should not. A pass is a single turn: once Claude Code's Stop hook
+// has fired after the task was delivered and nothing has happened for the grace
+// period, it is done, whatever the model printed. Interactive (not one-shot)
+// supervisor sessions are never ended here.
+func (m *Manager) supervisorPassFinishReason(sess *Session) string {
+	if !sess.OneShot || sess.LaunchRole != launchRoleSupervisor {
+		return ""
+	}
+	now := m.now()
+	m.mu.Lock()
+	stopAt, stopped := m.hookStopAt[sess.FullID]
+	m.mu.Unlock()
+	if stopped && now.Sub(stopAt) >= endOnStopGrace {
+		if deliveredAt, ok := m.taskDeliveredTime(sess); ok && stopAt.After(deliveredAt) {
+			return "supervisor pass finished: the Stop hook fired and no new input followed"
+		}
+	}
+	if !sess.CreatedAt.IsZero() && now.Sub(sess.CreatedAt) >= supervisorPassMaxAge {
+		return fmt.Sprintf("supervisor pass ran past %s without ending", supervisorPassMaxAge)
+	}
+	return ""
+}
+
+// oneShotFinishReason says why a one-shot is finished, or "" if it is not.
+func (m *Manager) oneShotFinishReason(sess *Session) string {
 	if !sess.OneShot || sess.TmuxSession == "" || sess.PRDID != "" {
-		return false
+		return ""
 	}
 	if sess.State != StateRunning && sess.State != StateWaitingInput {
-		return false
+		return ""
+	}
+	if reason := m.supervisorPassFinishReason(sess); reason != "" {
+		return reason
 	}
 	out, err := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500)
 	if err != nil {
-		return false
+		return ""
 	}
 	// BL468 — note the state guard above already leaves sessions in a
 	// terminal state (complete/failed/killed) alone, so a StateFailed
@@ -58,10 +105,10 @@ func (m *Manager) oneShotFinished(sess *Session) bool {
 			continue
 		}
 		if strings.HasPrefix(l, oneShotCompletionMarker) && isRealCompletionLine(l, oneShotCompletionMarker) {
-			return true
+			return "one-shot completion marker found in the pane"
 		}
 	}
-	return false
+	return ""
 }
 
 // FinishedOneShots lists ad-hoc one-shot sessions whose command has finished
@@ -100,7 +147,10 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		sess.UpdatedAt = time.Now()
 		_ = m.store.Save(sess)
 		m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
-		reason := "one-shot completion marker found in the pane"
+		reason := m.oneShotFinishReason(sess)
+		if reason == "" {
+			reason = "one-shot completion marker found in the pane"
+		}
 		m.recordEnd(sess, m.getTracker(sess.FullID), oldState, StateComplete, EndReason{Caller: callerAt(0), Reason: reason})
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)

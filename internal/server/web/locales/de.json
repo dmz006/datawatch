@@ -2217,6 +2217,9 @@
   "settings_detection_rate_limit_builtin_hint": "No list is set, so the built-in per-backend table applies: each backend is matched only on its own throttle line, at the start of the line. Adding a pattern here replaces the table with a plain substring list for all backends.",
   "capacity_card_title": "Capacity",
   "capacity_waiting": "Waiting",
+  "capacity_verifying_title": "Wird verifiziert",
+  "capacity_verifying_state_running": "wird verifiziert",
+  "capacity_verifying_state_waiting": "wartet auf einen Verifizierer-Platz",
   "capacity_no_limit": "no limit",
   "capacity_no_cap_configured": "no cap configured",
   "capacity_waiting_for_node": "wartet auf Node",
@@ -6053,5 +6056,14 @@
   "cost_charts_other": "Anderes",
   "cost_charts_topn_label": "Serien",
   "cost_charts_topn_all": "Alle",
-  "cost_charts_legend_toggle": "Diese Serie ein- oder ausblenden"
+  "cost_charts_legend_toggle": "Diese Serie ein- oder ausblenden",
+  "cost_charts_supervisor_and_other": "Supervisor und Sonstiges",
+  "cost_charts_unit_local_tokens": "Tokens lokaler Modelle (eigene Achse, keine Claude-Tokens, ohne Preis)",
+  "cost_charts_tokens_not_reported": "%1$s lokale Sitzung(en) haben keine Tokens gemeldet (unbekannt, nicht null).",
+  "cost_charts_tool_calls_not_reported": "%1$s lokale Sitzung(en) haben keine Tool-Aufrufe gemeldet (unbekannt, nicht null).",
+  "cost_charts_active_time": "Aktive Zeit: %1$s",
+  "cost_charts_col_local_tokens": "Tokens lokaler Modelle",
+  "cost_charts_col_active": "Aktive Zeit",
+  "cost_charts_not_reported_marker": "nicht gemeldet (%1$s)",
+  "cost_report_not_reported": "nicht gemeldet (%1$s)"
 }

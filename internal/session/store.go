@@ -292,6 +292,11 @@ type Session struct {
 	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 	ToolCalls           int `json:"tool_calls,omitempty"`
 
+	// IdleSeconds is the closed waiting_input time; IdleSince is set while
+	// the session is waiting for input (see active_time.go).
+	IdleSeconds float64    `json:"idle_seconds,omitempty"`
+	IdleSince   *time.Time `json:"idle_since,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). It is metadata only: no backend
@@ -382,8 +387,10 @@ type Session struct {
 	// ledger. TaskID (above) is the owning task.
 	AutomatonID string `json:"automaton_id,omitempty"`
 	SpendRole   string `json:"spend_role,omitempty"`
-	TaskID      string `json:"task_id,omitempty"`
-	StoryID     string `json:"story_id,omitempty"`
+	// SpendProject is the project a supervisor session belongs to.
+	SpendProject string `json:"spend_project,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	StoryID      string `json:"story_id,omitempty"`
 	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
 	// so the completion commit can use it without parsing Name.
 	TaskTitle string `json:"task_title,omitempty"`
@@ -843,6 +850,7 @@ func (s *Store) Save(sess *Session) error {
 		s.tagSigs[sess.FullID] = tagSig{prdID: sess.PRDID, tags: append([]string(nil), sess.SystemTags...)}
 		s.tagGen.Add(1)
 	}
+	sess.trackIdle(activeClock())
 	s.sessions[sess.FullID] = sess
 	s.markRecordDirtyLocked(sess.FullID)
 	inline := s.markDirtyLocked()

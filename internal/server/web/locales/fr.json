@@ -2217,6 +2217,9 @@
   "settings_detection_rate_limit_builtin_hint": "No list is set, so the built-in per-backend table applies: each backend is matched only on its own throttle line, at the start of the line. Adding a pattern here replaces the table with a plain substring list for all backends.",
   "capacity_card_title": "Capacity",
   "capacity_waiting": "Waiting",
+  "capacity_verifying_title": "Vérification en cours",
+  "capacity_verifying_state_running": "en cours de vérification",
+  "capacity_verifying_state_waiting": "en attente d'un emplacement de vérificateur",
   "capacity_no_limit": "no limit",
   "capacity_no_cap_configured": "no cap configured",
   "capacity_waiting_for_node": "en attente du nœud",
@@ -6053,5 +6056,14 @@
   "cost_charts_other": "Autre",
   "cost_charts_topn_label": "Séries",
   "cost_charts_topn_all": "Toutes",
-  "cost_charts_legend_toggle": "Afficher ou masquer cette série"
+  "cost_charts_legend_toggle": "Afficher ou masquer cette série",
+  "cost_charts_supervisor_and_other": "Superviseur et autres",
+  "cost_charts_unit_local_tokens": "jetons de modèles locaux (axe propre, pas des jetons Claude, sans prix)",
+  "cost_charts_tokens_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué de jetons (inconnu, pas zéro).",
+  "cost_charts_tool_calls_not_reported": "%1$s session(s) locale(s) n'ont pas communiqué d'appels d'outils (inconnu, pas zéro).",
+  "cost_charts_active_time": "Temps actif : %1$s",
+  "cost_charts_col_local_tokens": "Jetons de modèles locaux",
+  "cost_charts_col_active": "Temps actif",
+  "cost_charts_not_reported_marker": "non communiqué (%1$s)",
+  "cost_report_not_reported": "non communiqué (%1$s)"
 }

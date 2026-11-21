@@ -468,3 +468,50 @@ test('translations differ from English where the language is not English (no cop
     assert.notEqual(BUNDLES[l].cost_charts_reason_empty_cost, BUNDLES.en.cost_charts_reason_empty_cost, l + ' reason');
   }
 });
+
+// ── local-model tokens, not-reported marker, active time ────────────────────
+function localData() {
+  const b = days(7);
+  const pts = b.map((s, i) => ({ start: s, sessions: 1, tokens_in: 10, tokens_out: 0, tokens: 10, local_tokens: 500 + i, active_seconds: 60 }));
+  const grp = { key: 'alpha', sessions: 7, tokens_in: 70, tokens_out: 0, tokens: 70, local_tokens: 3500, tokens_not_reported_sessions: 2, active_seconds: 3725, points: pts };
+  const tg = toolGroup('alpha', b, () => 0);
+  tg.tool_calls_not_reported_sessions = 3;
+  const tools = toolUsage([tg], b);
+  tools.total_tool_calls_not_reported_sessions = 3;
+  return { cost: { body: series([grp], b, [], { tokens_not_reported_sessions: 2 }) }, tools: { body: tools },
+    failures: { body: failures([failureGroup('alpha', WEEKS)], WEEKS) } };
+}
+
+test('local tokens get their own chart and axis, never stacked with Claude tokens, and carry no currency', () => {
+  const { sb } = load();
+  const c = cardHtml(render(sb, localData()), 'costChartsCostCard');
+  assert.equal(count(c, /<svg /g), 2, 'one chart for Claude tokens, one for local tokens');
+  assert.ok(c.includes('local-model tokens (own axis'), 'local axis label');
+  assert.ok(!/\$|dollars|points ·/.test(c.slice(c.indexOf('local-model tokens'))), 'no currency on the local axis');
+});
+
+test('a not-reported marker is drawn instead of a zero, for tokens and for tool calls', () => {
+  const { sb } = load();
+  const html = render(sb, localData());
+  assert.ok(cardHtml(html, 'costChartsCostCard').includes('2 local session(s) did not report tokens (unknown, not zero).'));
+  const tools = cardHtml(html, 'costChartsToolsCard');
+  assert.ok(tools.includes('3 local session(s) did not report tool calls'), 'tool-calls marker');
+  assert.ok(tools.includes('<svg'), 'tool-calls chart shows although only local sessions are present');
+  assert.ok(cardHtml(html, 'costChartsReportCard').includes('not reported (2)'));
+});
+
+test('active time is shown on the cost card and in the report', () => {
+  const { sb } = load();
+  const html = render(sb, localData());
+  assert.ok(cardHtml(html, 'costChartsCostCard').includes('Active time: 1h 2m'));
+  const rep = cardHtml(html, 'costChartsReportCard');
+  assert.ok(rep.includes('Active time') && rep.includes('1h 2m') && rep.includes('Local-model tokens'));
+});
+
+test('a window with only local sessions still draws the cost card', () => {
+  const { sb } = load();
+  const d = localData();
+  d.cost.body.groups[0].tokens = 0;
+  d.cost.body.groups[0].points.forEach(p => { p.tokens = 0; });
+  assert.ok(has(render(sb, d), 'costChartsCostCard'));
+});

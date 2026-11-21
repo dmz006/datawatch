@@ -5297,6 +5297,22 @@ paths:
                             session_id: {type: string}
                             since: {type: string, format: date-time}
                             note: {type: string, description: Sentence for a task parked while holding resources}
+                      verifying:
+                        type: array
+                        description: Tasks in verification. Always an array. A task whose verifier is running reads `verifying`; one queued for a verifier slot reads `waiting_for_verifier` with the wait reason.
+                        items:
+                          type: object
+                          properties:
+                            task_id: {type: string}
+                            prd_id: {type: string}
+                            prd_title: {type: string}
+                            task_title: {type: string}
+                            readable: {type: string}
+                            short_id: {type: string}
+                            node: {type: string}
+                            since: {type: string, format: date-time}
+                            state: {type: string, enum: [verifying, waiting_for_verifier]}
+                            wait_reason: {type: string, description: Present when state is waiting_for_verifier}
 
   /api/capacity/admission:
     get:
