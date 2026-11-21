@@ -397,7 +397,13 @@ fix the cause, then pick the route that matches the hold.
      - MCP: `autonomous_prd_plan_review`
      - CLI: `datawatch autonomous prd-plan-review <id>`
      - Comm channel: `autonomous plan-review <id>`
-   - **Guardrail hold on an Automaton or on one of its tasks or stories:** the
+   - **Judge timeout hold (`judge_timeout_hold`) with every task completed or
+     cancelled:** re-judge it. `autonomous_prd_rejudge` and `prd-run` both
+     accept it and replay the completion review on the same branch head — no
+     new commit is needed, and nothing is approved. Another timeout keeps the
+     Automaton held in `needs_review`; a pass or warn completes it. See
+     [The review state](#the-review-state).
+   - **Any other guardrail hold on an Automaton or on one of its tasks or stories:** the
      Automaton is in `needs_review`, and the rejudge action does not apply to
      it, because rejudge only runs on a blocked Automaton. The reset action
      `reset_task` does not accept a `needs_review` Automaton either, so cancel
@@ -422,7 +428,13 @@ failed to be found) and an `action`: the next step it suggests.
   `action` is **`fix`** — address the finding, then re-judge, or accept the
   block.
 - **`timed_out`** — no completed verdict exists: every judge attempt hit its
-  time limit. This is the hold described in
+  time limit. The work was **not judged**: the `judged` field is `false` and
+  the `cause` starts "not judged:". The `backends` list gives each backend
+  tried and how its attempt ended (`timed_out`, `no_slot` or
+  `could_not_start`). A timed-out attempt also records its judge session id
+  and the last 4 KB of that session's output (`session_id`, `last_output` on
+  the attempt; `judge_session_id` and `raw_judge` on the held verdict), so you
+  can see what the judge was doing when it ran out of time. This is the hold described in
   [The needs-review hold](#the-needs-review-hold): the Automaton is in
   `needs_review` (reason `judge_timeout_hold`), nothing has been approved or
   passed, and only your decision moves it on. The `cause` names the backends
@@ -440,7 +452,7 @@ failed to be found) and an `action`: the next step it suggests.
 
 Where you see it:
 
-- **PRD JSON** — `review_state` (`state`, `cause`, `action`, `attempts`) on
+- **PRD JSON** — `review_state` (`state`, `cause`, `action`, `attempts`, `judged`, `backends`) on
   the Automaton's list and detail views (`GET /api/autonomous/prds`,
   `GET /api/autonomous/prds/{id}`, `datawatch autonomous prd-get <id>`).
 - **PWA** — an amber **Review timed out** badge beside the status badge (a
@@ -448,7 +460,7 @@ Where you see it:
   shown as a **Retry** button and, when the action is `reroute`, a **Reroute**
   button.
 - **CLI / comm review line** — one line on the Automaton:
-  `review timed out: <cause> -> <action>`, or `review blocked: <cause> ->
+  `review timed out, not judged: <cause> -> <action>`, or `review blocked: <cause> ->
   fix`.
 
 How you act on it:
@@ -478,13 +490,21 @@ How you act on it:
   replays the stored verdict). With the head unchanged the rejudge is refused
   before any judge runs, with the error that new commits are needed; commit
   the fix on the Automaton's branch and try again.
-- **Any other held review (`timed_out`, or `needs_review` for another
+- **A judge timeout hold is a re-judge target on the same head.** An
+  Automaton in `needs_review` whose newest block is a `judge_timeout_hold`,
+  with every task completed or cancelled, accepts a rejudge (and `prd-run` /
+  `POST /api/autonomous/prds/{id}/run`) without new commits: a timed-out judge
+  is never cached, so the review always runs fresh. The Retry and Reroute
+  buttons therefore work on it. If the judge times out again the Automaton
+  stays held.
+- **Any other held review (`needs_review` for another
   reason) is not a re-judge target** — the re-judge endpoint refuses it,
   naming the status. Resolve it through
   [How to resolve a hold](#how-to-resolve-a-hold): fix the capacity or the
   settings, cancel, reset the held task, and run the Automaton again. The
   PWA badge's Retry / Reroute buttons submit to the re-judge endpoint, so on
-  such a hold they are refused; the cancel → reset → run path is what works.
+  such a hold they are refused; the cancel → reset → run path is what works. (A judge timeout hold is the
+  exception, above.)
 
 ## The per-commit verdict cache
 

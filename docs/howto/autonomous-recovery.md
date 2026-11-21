@@ -223,7 +223,10 @@ lost or in doubt. The **rejudge** action asks for that same completion
 guardrail to run again — as a fresh judgment — without resetting or retrying
 any task:
 
-- The Automaton must be `blocked`; re-judging one that isn't is refused.
+- The Automaton must be `blocked`, or `needs_review` held by a judge
+  timeout (`judge_timeout_hold`) — that one replays on the same head with no
+  new commit, and `prd-run` does the same. A rules-review hold needs new
+  commits first. Any other status is refused.
 - **Every task in every story must be `completed` or `cancelled`, with at
   least one `completed`.** A cancelled task is skipped, not a blocker. If any
   task is pending, running or failed, or if every task is cancelled, the call
