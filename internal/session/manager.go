@@ -488,6 +488,8 @@ type Manager struct {
 	// scheduledSpawnTask, when set, rebuilds the task of a launch-role spawn
 	// schedule each time it fires (guarded by mu).
 	scheduledSpawnTask func(ds DeferredSession) string
+	// scheduledSpawnProfile resolves the worker profile for a scheduled spawn.
+	scheduledSpawnProfile func(ds DeferredSession, opts *StartOptions) *string
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -1193,6 +1195,16 @@ func (m *Manager) SetScheduledSpawnTaskHook(fn func(ds DeferredSession) string) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.scheduledSpawnTask = fn
+}
+
+// SetScheduledSpawnProfileFn sets the hook that resolves the worker profile
+// for a scheduled spawn at the moment it fires. It fills opts.LaunchFn and
+// opts.WorkerProfile and returns a pointer to the fallback reason the launch
+// writes (may be nil); the manager records it on the session.
+func (m *Manager) SetScheduledSpawnProfileFn(fn func(ds DeferredSession, opts *StartOptions) *string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scheduledSpawnProfile = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
@@ -7224,7 +7236,22 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 				}
 			}
 		}
+		var profileFallback *string
+		if ds.LaunchRole != "" {
+			m.mu.Lock()
+			pfn := m.scheduledSpawnProfile
+			m.mu.Unlock()
+			if pfn != nil {
+				profileFallback = pfn(*ds, opts)
+			}
+		}
 		newSess, err := m.Start(ctx, task, "", ds.ProjectDir, opts)
+		if err == nil && profileFallback != nil && *profileFallback != "" {
+			newSess.ProfileFallbackReason = *profileFallback
+			if serr := m.store.Save(newSess); serr != nil {
+				fmt.Printf("[schedule] persist profile fallback on %s: %v\n", newSess.FullID, serr)
+			}
+		}
 		if err != nil {
 			_ = m.schedStore.MarkDone(sc.ID, true)
 			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)

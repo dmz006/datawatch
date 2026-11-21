@@ -1238,6 +1238,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		// session's stored worker profile; non-profile sessions get a nil
 		// hook and keep the previous profile-less resume path.
 		manager.SetProfileResumeFn(s.profileResumeFnForSession)
+		manager.SetScheduledSpawnProfileFn(s.scheduledSpawnProfile)
 	}
 	return s
 }
