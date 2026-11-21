@@ -171,24 +171,20 @@ All five surfaces proxy one daemon endpoint and read — none of them writes:
 | **Comm channel** | `autonomous merge-shadow` — one summary line: `Merge shadow: patch 4 matched, 1 different; minor …; major …; none …`; `No merge comparisons yet` while nothing is stored. It takes no arguments. |
 | **PWA** | The **Merge shadow** card on the **Events** tab (the Setup and policy sub-tab was removed): matched and different per release size, summed over all projects (plain figures — the card carries no links of its own). Rendered only when the shadow is enabled **and** at least one comparison has been stored — otherwise the card is absent from the page, which is the expected state, not a failure. |
 
-**Why the comparison reads can come back empty.** There are two independent
-reasons, and the reason matters:
+**What an Automaton with no stored plan shows.** The post-ship hook has no plan to
+compare for it: no git reads, no comparison record, no defect candidates. That
+happens when the shadow was off when the Automaton finished, the plan step never
+produced a stored plan, or the plan was pruned by the project's `plan_keep`
+retention after the merge landed. The reason is recorded and every read shows it
+for that Automaton instead of nothing, so an absent comparison is explained, not
+silent.
 
-- **No stored plan for the Automaton.** The post-ship hook does nothing when
-  there is no stored plan to compare — no git reads, no comparison record, no
-  defect candidates, nothing to read at all. That is what happens when the
-  shadow was off when the Automaton finished, the plan step never produced a
-  stored plan, or the plan was pruned by the project's `plan_keep` retention
-  after the merge landed. The Automaton has no shadow state, and every read for
-  it is empty for that reason — not because the store is broken.
-- **A stored plan, but no stored comparison.** The post-ship flow does not
-  persist a comparison record yet: the hook persists the **defect candidates**, and
-  the comparisons store (`merge-comparisons/`) exists in the code with nothing in the production
-  flow writing to it (see "What is still yours to do" in
-  [merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do)). Until that
-  wiring lands, every comparison read above returns nothing: the `comparisons`
-  lists and `counts` stay empty, the CLI answers "no comparison … exists", the
-  comm channel answers `No merge comparisons yet`, and the PWA card stays hidden.
+**What a shipped Automaton with a plan shows.** After the ship the daemon stores
+the comparison itself under the comparisons store (`merge-comparisons/<automaton
+id>.json` in the data directory, a temporary file renamed into place), beside the
+defect candidates. That stored comparison is what every read above returns: the
+`comparisons` lists and `counts`, the CLI `status` and `compare` output, the comm
+line and the PWA card. Nothing is computed in memory only.
 
 The stored **plans** are already listed per project on every surface. The defect
 **candidates** have no operator-facing read at all yet — they are the JSON file
@@ -240,9 +236,10 @@ number of comparisons, not the number of fields.
 - **PWA card** — the same per-size figures, summed over every project, shown only
   when the shadow is enabled and at least one comparison is stored.
 
-Read the empty states as facts, not faults. `projects: []`, `no merge shadow
-comparison exists yet`, `No merge comparisons yet`, and a missing card all mean
-the same thing today: no comparison is stored.
+Read an empty state as a fact: `projects: []`, `no merge shadow comparison exists
+yet`, `No merge comparisons yet` and a missing card mean nothing has shipped with a
+stored plan yet. An Automaton with no stored plan shows its recorded reason, and
+one that shipped with a plan has its stored comparison.
 
 ## From a difference to a defect candidate
 
@@ -295,10 +292,9 @@ the same way every time:
   validator, a red release CI within its window, or a merge that needed a manual
   fix. The daemon raises an alert and files a defect.
 
-Before you use that bar, know its limit: the comparison records are not stored
-yet, so the evidence has to come from the stored plans and the defect candidates
-in the data directory. Check the plan against the manual merge by hand until the
-comparison reads show data.
+The evidence comes from the stored comparisons, read on every surface above, and
+from the defect candidates in the data directory. Still check the plan against the
+manual merge by hand: the parity-issue and gate lines below cannot yet differ.
 
 ## Do not confuse
 
@@ -334,9 +330,7 @@ comm channel; the PWA card shows the comparison, not the plan), then review:
   [The plan's checks and gates](#the-plans-checks-and-gates)).
 - The parity-issue and gate lines in the plan, per
   [merge-pipeline.md](merge-pipeline.md#what-is-still-yours-to-do).
-- The fact that comparison records are not persisted yet — the comparison
-  surfaces above stay empty until that lands; the plan is the one read that
-  already works.
+- The recorded reason on any Automaton with no stored plan: it has no comparison to review, and the reason says why.
 - Whether the Phase 4 evidence bar is met before you step out of the loop entirely —
   the shadow is how you collect that evidence
   ([2026-11-03-autonomy-handover-plan.md](../plans/2026-11-03-autonomy-handover-plan.md),
