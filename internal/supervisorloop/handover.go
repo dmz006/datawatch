@@ -267,5 +267,15 @@ func (h Handover) Render() string {
 	}
 	b.WriteString("## Direction\n")
 	b.WriteString(capText(d.String(), maxDirectionChars, "list the project's plans for the rest"))
-	return capText(b.String(), MaxHandoverChars, "handover bound")
+	// The ending instruction is added after the bound is applied, so a long
+	// handover never loses it: a session that is not told the marker does not end.
+	return capText(b.String(), MaxHandoverChars-len(endingSection), "handover bound") + endingSection
 }
+
+// EndingInstruction tells a supervisor pass how to finish. The daemon ends a
+// one-shot session when it sees a DATAWATCH_COMPLETE line, the same way it ends
+// a worker session; without the marker a finished pass sits idle at its prompt.
+const EndingInstruction = "When the pass is done, print DATAWATCH_COMPLETE: followed by a one-line summary as your very last line. " +
+	"The daemon ends the session when it sees that line, so do not wait for anything after it."
+
+const endingSection = "\n\n## Ending the pass\n" + EndingInstruction + "\n"
