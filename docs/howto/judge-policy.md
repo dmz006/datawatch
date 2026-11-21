@@ -465,7 +465,7 @@ Where you see it:
 
 How you act on it:
 
-- **A blocked Automaton whose tasks are all completed** accepts re-judgment:
+- **A blocked Automaton whose tasks are all completed or cancelled (with at least one completed)** accepts re-judgment:
   the completion guardrail runs again as a fresh judgment, without resetting
   any task (see the re-judge action in [Recover a stuck, failed, or
   incorrectly-terminal Automaton](autonomous-recovery.md)). MCP
