@@ -200,8 +200,9 @@ to its defaults are indistinguishable.
 - A comparison **breaks the streak** only when it holds at least one **major**
   difference (wrong or missing version, a planned heading, README line, registry
   row or parity issue that did not land, a planned gate missing from or different
-  in the manual gate record). A comparison that differs only in **minor** detail
-  does not break it.
+  in the manual gate record — a planned `load_sensitive` against a landed `pass`
+  (or the reverse) is not a difference, since both count as passing). A comparison
+  that differs only in **minor** detail does not break it.
 - `length` counts the most recent consecutive zero-major-difference comparisons
   of a project, newest first; `total` is the number of stored comparisons
   counted. `met` is `length >= threshold`, with `threshold` the configured value
