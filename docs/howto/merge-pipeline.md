@@ -853,8 +853,8 @@ One shadow merge plan per Automaton, describing what its merge would do:
 |---|---|
 | Release size | `patch`, `minor`, `major` or `none`. |
 | Planned version | The version the bump step would set. Empty when there is none. |
-| Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, or empty when it has none — nothing is invented. |
-| Changelog source | The task the entry came from, or `missing` when no task carries a well-formed one. |
+| Changelog heading and body | The entry drawn from the Automaton's own changelog entry task, else from the branch — its generated changelog draft, or the new top entry its `CHANGELOG.md` gains — else empty; nothing is invented. |
+| Changelog source | The entry task id when the entry came from a task, `draft` (the branch's generated changelog draft), `branch` (the new top entry its `CHANGELOG.md` gains), or `missing` when none carries a well-formed one. |
 | README line, registry row, parity issue | The mechanical release edits the merge would make. Empty when there are none. |
 | Conflicts | Each conflicting path with its file class, the resolution and who made it. |
 | Gates | Each gate (build, lint, test) with its status — `pass`, `fail`, `timeout`, `skipped`, or `load_sensitive` (a test gate that failed first and passed when rerun alone) — how long it took and its detail. |
