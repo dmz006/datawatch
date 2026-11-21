@@ -132,6 +132,18 @@ func TestMergeShadowCompareNoStoredPlan(t *testing.T) {
 	if len(cmp.Differences) != 0 {
 		t.Errorf("comparison differences = %v, want none", cmp.Differences)
 	}
+	// The enumerating surface (ListComparisons, what the read surfaces walk)
+	// must see the reason record in place of nothing.
+	all, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("stored comparisons = %d, want 1 reason record", len(all))
+	}
+	if all[0].AutomatonID != auto.ID || all[0].Reason != mergeshadow.ReasonNoPlanStored {
+		t.Errorf("listed comparison = %+v, want reason record for %s", all[0], auto.ID)
+	}
 }
 
 // TestMergeShadowCompareStoresComparison checks that a successful comparison
