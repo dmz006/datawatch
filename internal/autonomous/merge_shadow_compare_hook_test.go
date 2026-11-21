@@ -95,7 +95,9 @@ func TestMergeShadowCompareStoredPlan(t *testing.T) {
 }
 
 // TestMergeShadowCompareNoStoredPlan checks that an Automaton without a
-// stored plan does no landed read and writes no candidates.
+// stored plan does no landed read, writes no candidates, and still leaves a
+// comparison record in the comparisons store carrying the recorded reason
+// and zero counts, in place of nothing.
 func TestMergeShadowCompareNoStoredPlan(t *testing.T) {
 	dir, m, _, auto := newShippedFixture(t)
 	calls := shadowFakeReader(t, shadowLanded("1.2.2"))
@@ -116,6 +118,59 @@ func TestMergeShadowCompareNoStoredPlan(t *testing.T) {
 	}
 	if len(stored) != 0 {
 		t.Errorf("stored candidates = %d, want 0", len(stored))
+	}
+	cmp, err := mergeshadow.LoadComparison(dir, auto.ID)
+	if err != nil {
+		t.Fatalf("LoadComparison: %v", err)
+	}
+	if cmp.Reason != mergeshadow.ReasonNoPlanStored {
+		t.Errorf("comparison reason = %q, want %q", cmp.Reason, mergeshadow.ReasonNoPlanStored)
+	}
+	if cmp.Matched != 0 || cmp.Different != 0 || cmp.NotCompared != 0 {
+		t.Errorf("comparison counts = matched %d different %d not-compared %d, want 0/0/0", cmp.Matched, cmp.Different, cmp.NotCompared)
+	}
+	if len(cmp.Differences) != 0 {
+		t.Errorf("comparison differences = %v, want none", cmp.Differences)
+	}
+}
+
+// TestMergeShadowCompareStoresComparison checks that a successful comparison
+// saves the comparison into the comparisons store in addition to the
+// candidates, and that a repeated run replaces the record rather than adding
+// a second one.
+func TestMergeShadowCompareStoresComparison(t *testing.T) {
+	dir, m, _, auto := newShippedFixture(t)
+	if err := mergeshadow.Save(dir, auto.ID, shadowPlan(auto.ID)); err != nil {
+		t.Fatalf("Save plan: %v", err)
+	}
+	shadowFakeReader(t, shadowLanded("1.2.2"))
+
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+
+	all, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("stored comparisons = %d, want 1 after repeat", len(all))
+	}
+	got, err := mergeshadow.LoadComparison(dir, auto.ID)
+	if err != nil {
+		t.Fatalf("LoadComparison: %v", err)
+	}
+	if got.AutomatonID != auto.ID {
+		t.Errorf("automaton_id = %q, want %q", got.AutomatonID, auto.ID)
+	}
+	if got.Different != 1 || len(got.Differences) != 1 {
+		t.Errorf("stored comparison = different %d, differences %d, want 1/1", got.Different, len(got.Differences))
+	}
+	if got.Reason != "" {
+		t.Errorf("stored comparison reason = %q, want empty for a real comparison", got.Reason)
 	}
 }
 
@@ -203,5 +258,100 @@ func TestMergeShadowCompareRunsAfterShippedRecord(t *testing.T) {
 			t.Fatalf("background compare stored %d candidates, want 1", len(stored))
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestMergeShadowCompareStoredPlanLeavesComparisonRecord runs the hook with a
+// stored plan and the real comparison function, and expects the comparisons
+// store's own loader to read back the Automaton id, release size, counts and
+// differences, and the plan/comparison join the status grouping uses to put
+// the record under the plan's project.
+func TestMergeShadowCompareStoredPlanLeavesComparisonRecord(t *testing.T) {
+	dir, m, _, auto := newShippedFixture(t)
+	plan := shadowPlan(auto.ID)
+	if err := mergeshadow.Save(dir, auto.ID, plan); err != nil {
+		t.Fatalf("Save plan: %v", err)
+	}
+	shadowFakeReader(t, shadowLanded("1.2.2"))
+
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("runMergeShadowCompare: %v", err)
+	}
+	got, err := mergeshadow.LoadComparison(dir, auto.ID)
+	if err != nil {
+		t.Fatalf("LoadComparison: %v", err)
+	}
+	if got.AutomatonID != auto.ID {
+		t.Errorf("automaton_id = %q, want %q", got.AutomatonID, auto.ID)
+	}
+	if got.ReleaseSize != plan.ReleaseSize {
+		t.Errorf("release_size = %q, want %q", got.ReleaseSize, plan.ReleaseSize)
+	}
+	if got.Different != 1 || got.Matched < 1 {
+		t.Errorf("counts = matched %d different %d, want different 1 and some matched", got.Matched, got.Different)
+	}
+	if len(got.Differences) != 1 || got.Differences[0].Field != "version" {
+		t.Fatalf("differences = %+v, want one version difference", got.Differences)
+	}
+	if got.Reason != "" {
+		t.Errorf("reason = %q, want empty", got.Reason)
+	}
+
+	// The status grouping joins a comparison to its plan by Automaton id to
+	// find the project.
+	plans, err := mergeshadow.List(dir)
+	if err != nil {
+		t.Fatalf("List plans: %v", err)
+	}
+	comps, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	owner := map[string]string{}
+	for _, p := range plans {
+		owner[p.AutomatonID] = p.Project
+	}
+	var found bool
+	for _, c := range comps {
+		if c.AutomatonID == auto.ID {
+			found = true
+			if owner[c.AutomatonID] != "proj" {
+				t.Errorf("project for comparison = %q, want proj", owner[c.AutomatonID])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("comparison missing from the store listing")
+	}
+}
+
+// TestMergeShadowCompareNoPlanRecordAnswersStatus runs the hook with no stored
+// plan and expects a record for the Automaton carrying the no-plan reason and
+// zero counts, found by the store listing a status read goes through.
+func TestMergeShadowCompareNoPlanRecordAnswersStatus(t *testing.T) {
+	dir, m, _, auto := newShippedFixture(t)
+	shadowFakeReader(t, shadowLanded("1.2.2"))
+
+	if _, err := m.runMergeShadowCompare(context.Background(), auto.ID); err != nil {
+		t.Fatalf("runMergeShadowCompare: %v", err)
+	}
+	comps, err := mergeshadow.ListComparisons(dir)
+	if err != nil {
+		t.Fatalf("ListComparisons: %v", err)
+	}
+	var rec *mergeshadow.Comparison
+	for _, c := range comps {
+		if c.AutomatonID == auto.ID {
+			rec = c
+		}
+	}
+	if rec == nil {
+		t.Fatal("status read for the Automaton found no record, want one with a reason")
+	}
+	if rec.Reason != "no merge shadow plan stored" {
+		t.Errorf("reason = %q, want %q", rec.Reason, "no merge shadow plan stored")
+	}
+	if rec.Matched != 0 || rec.Different != 0 || rec.NotCompared != 0 || len(rec.Differences) != 0 {
+		t.Errorf("record = %+v, want zero counts and no differences", rec)
 	}
 }

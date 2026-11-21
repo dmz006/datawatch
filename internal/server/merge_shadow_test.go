@@ -112,3 +112,13 @@ func TestMergeShadow_PerSizeCounts(t *testing.T) {
 		t.Errorf("other none = %+v", got)
 	}
 }
+
+// TestBuildMergeShadowViewCarriesNoPlanReason checks that a comparison saved
+// with the no-plan reason reaches the status view with the reason intact.
+func TestBuildMergeShadowViewCarriesNoPlanReason(t *testing.T) {
+	c := &mergeshadow.Comparison{AutomatonID: "a1", ReleaseSize: mergeshadow.ReleaseSizeNone, Reason: mergeshadow.ReasonNoPlanStored}
+	view := buildMergeShadowView(nil, []*mergeshadow.Comparison{c})
+	if len(view) != 1 || len(view[0].Comparisons) != 1 || view[0].Comparisons[0].Reason != mergeshadow.ReasonNoPlanStored {
+		t.Fatalf("view = %+v, want the comparison with its reason", view)
+	}
+}

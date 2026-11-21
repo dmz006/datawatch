@@ -50,6 +50,12 @@ type GateOutcome struct {
 // record was supplied (the gate field is the only one that can happen).
 // Differences is never nil; an all-matched comparison holds an empty
 // one.
+// ReasonNoPlanStored is the reason a comparison carries when the hook ran
+// but the Automaton has no stored merge plan to compare from. The record is
+// saved in place of nothing, so every surface that reads comparisons sees
+// the reason instead of an absence.
+const ReasonNoPlanStored = "no merge shadow plan stored"
+
 type Comparison struct {
 	AutomatonID string       `json:"automaton_id"`
 	ReleaseSize ReleaseSize  `json:"release_size"`
@@ -58,6 +64,11 @@ type Comparison struct {
 	NotCompared int          `json:"not_compared"`
 	Differences []Difference `json:"differences"`
 	CreatedAt   time.Time    `json:"created_at"`
+	// Reason explains a comparison that has no counts: it is set when there
+	// was no stored plan to compare from. Records with a real comparison
+	// carry an empty reason, which is omitted from the JSON, so existing
+	// stored records read back identically.
+	Reason string `json:"reason,omitempty"`
 }
 
 // missingMarker is what a Difference shows as the landed value when the

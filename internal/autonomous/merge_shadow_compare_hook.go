@@ -5,12 +5,16 @@
 // Automaton in a goroutine, so the ship path never waits on git:
 //
 //   - it loads the Automaton's stored merge plan (mergeshadow.Load under the
-//     manager's data directory). No stored plan means no work at all: no git
-//     read, no comparison, no file written.
+//     manager's data directory). No stored plan means no comparison: the hook
+//     stores a comparison record for the Automaton carrying the recorded
+//     reason (mergeshadow.ReasonNoPlanStored) and zero counts, so every
+//     surface that reads comparisons sees the reason in place of nothing.
 //   - it reads what landed on the plan's base ref through the landed reader
 //     (mergeshadow.ReadLanded), compares it with the plan (mergeshadow.Compare)
 //     and stores the differences as defect candidates
-//     (mergeshadow.RecordComparisonCandidates).
+//     (mergeshadow.RecordComparisonCandidates) and the comparison itself into
+//     the comparisons store (mergeshadow.SaveComparison), replacing any
+//     older comparison for the same Automaton.
 //
 // Candidate storage is idempotent by content, so a repeated run over
 // unchanged data adds no duplicate candidates. The hook never fails the
@@ -87,7 +91,18 @@ func (m *Manager) runMergeShadowCompare(ctx context.Context, automatonID string)
 	}
 	plan, err := mergeshadow.Load(m.dataDir, automatonID)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil // no stored plan: nothing to compare
+		// No stored plan: nothing to compare, but the comparisons store still
+		// gets a record for the Automaton saying so, in place of nothing.
+		cmp := mergeshadow.Comparison{
+			AutomatonID: automatonID,
+			ReleaseSize: mergeshadow.ReleaseSizeNone,
+			Reason:      mergeshadow.ReasonNoPlanStored,
+			CreatedAt:   time.Now().UTC(),
+		}
+		if err := mergeshadow.SaveComparison(m.dataDir, automatonID, &cmp); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -121,5 +136,14 @@ func (m *Manager) runMergeShadowCompare(ctx context.Context, automatonID string)
 	if err != nil {
 		return nil, err
 	}
-	return mergeshadow.RecordComparisonCandidates(m.dataDir, &cmp)
+	created, err := mergeshadow.RecordComparisonCandidates(m.dataDir, &cmp)
+	if err != nil {
+		return nil, err
+	}
+	// The comparison itself goes into the comparisons store too: the save is
+	// atomic and replaces any older comparison for the same Automaton.
+	if err := mergeshadow.SaveComparison(m.dataDir, automatonID, &cmp); err != nil {
+		return created, err
+	}
+	return created, nil
 }
