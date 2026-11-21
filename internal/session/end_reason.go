@@ -241,7 +241,11 @@ func (m *Manager) SetJournal(w io.Writer) { m.journal = w }
 // session state at the time, and action=none. It is written only in verbose
 // mode and does nothing for any other event.
 func (m *Manager) NoteHookBoardEvent(fullID, event string) {
-	if m == nil || !m.verbose || (event != "Stop" && event != "SubagentStop") {
+	if m == nil {
+		return
+	}
+	m.recordHookTurnEvent(fullID, event)
+	if !m.verbose || (event != "Stop" && event != "SubagentStop") {
 		return
 	}
 	id, state := fullID, "unknown"
@@ -265,4 +269,29 @@ func (m *Manager) journalf(format string, args ...any) {
 		out = m.journal
 	}
 	_, _ = fmt.Fprintf(out, format, args...)
+}
+
+// recordHookTurnEvent remembers when a session's main turn ended (the Stop hook)
+// and forgets it as soon as the session does anything again. A sub-agent stop is
+// not the end of the session's turn and is ignored.
+func (m *Manager) recordHookTurnEvent(fullID, event string) {
+	switch event {
+	case "Stop", "UserPromptSubmit", "PreToolUse", "PostToolUse":
+	default:
+		return
+	}
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+	}
+	if !ok {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if event == "Stop" {
+		m.hookStopAt[sess.FullID] = m.now()
+		return
+	}
+	delete(m.hookStopAt, sess.FullID)
 }
