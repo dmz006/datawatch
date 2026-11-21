@@ -31,5 +31,5 @@
 // netprobe loader degrades to a noop and host.ebpf.message says so.
 package ebpf
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -I./vmlinux_amd64" -target amd64 netprobe netprobe.bpf.c
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -I./vmlinux_arm64" -target arm64 netprobe netprobe.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang-18 -strip llvm-strip-18 -cflags "-O2 -g -Wall -I./vmlinux_amd64" -target amd64 netprobe netprobe.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang-18 -strip llvm-strip-18 -cflags "-O2 -g -Wall -I./vmlinux_arm64" -target arm64 netprobe netprobe.bpf.c

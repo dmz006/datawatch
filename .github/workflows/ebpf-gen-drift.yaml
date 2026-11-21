@@ -26,12 +26,12 @@ permissions:
 
 jobs:
   drift:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # v5.26.38 — SHA-pinned (see containers.yaml header for bump procedure).
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: Install clang + bpftool + libbpf-dev
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm linux-headers-$(uname -r) libbpf-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-18 llvm-18 linux-headers-$(uname -r) libbpf-dev
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: go.mod
@@ -43,8 +43,11 @@ jobs:
         # passed even though the committed artifacts were stale. Now a
         # generator failure fails the job loudly.
         run: |
-          cd internal/observer/ebpf
-          go generate ./...
+          # Same command as local `make ebpf-gen`: bpf2go v0.22.0 (go.mod),
+          # clang-18 + llvm-strip-18 (named in the //go:generate lines).
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
+          clang-18 --version | head -1
+          make ebpf-gen
       - name: Fail when committed artifacts would have changed
         run: |
           if ! git diff --quiet internal/observer/ebpf/; then
