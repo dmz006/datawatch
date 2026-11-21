@@ -6063,5 +6063,7 @@
   "cost_charts_col_local_tokens": "Jetons de modèles locaux",
   "cost_charts_col_active": "Temps actif",
   "cost_charts_not_reported_marker": "non communiqué (%1$s)",
-  "cost_report_not_reported": "non communiqué (%1$s)"
+  "cost_report_not_reported": "non communiqué (%1$s)",
+  "settings_rtk_write_rules_files": "Écrire les instructions de session dans AGENT.md et CLAUDE.md",
+  "settings_rtk_write_rules_files_help": "Lorsque l'option est désactivée (valeur par défaut), le daemon n'écrit jamais dans AGENT.md ni CLAUDE.md : il ne les crée pas, ne met pas à jour leur en-tête de session et n'ajoute pas les instructions RTK, mémoire ou communication inter-sessions. Elles vont dans un fichier par session non suivi par git. Les fichiers de règles ne sont écrits que par des personnes."
 }

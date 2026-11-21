@@ -34,13 +34,15 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_AppendedWhenEnabled(t *testin
 	dataDir := t.TempDir()
 	projectDir := t.TempDir()
 
-	// A CLAUDE.md must already exist for the merge path to run (merge
-	// only happens when the target file is already present).
+	// Legacy path (rtk.write_rules_files on): a CLAUDE.md must already exist
+	// for the merge to run (merge only happens when the target file is
+	// already present). By default the tracker writes none of this into the
+	// rules file; see tracker_rules_files_gate_test.go.
 	tr0, sess0, err := newGuardrailsTestSession(dataDir, projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{}); err != nil {
+	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{WriteRulesFiles: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,7 +50,7 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_AppendedWhenEnabled(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{CrossSessionEnabled: true}); err != nil {
+	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{WriteRulesFiles: true, CrossSessionEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +78,7 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_NotDuplicatedOnSecondWrite(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{CrossSessionEnabled: true}); err != nil {
+	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{WriteRulesFiles: true, CrossSessionEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +88,7 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_NotDuplicatedOnSecondWrite(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{CrossSessionEnabled: true}); err != nil {
+	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{WriteRulesFiles: true, CrossSessionEnabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,7 +110,7 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_NotAddedWhenDisabled(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{}); err != nil {
+	if err := tr0.WriteSessionGuardrails("", sess0, GuardrailsOptions{WriteRulesFiles: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +118,7 @@ func TestWriteSessionGuardrails_CrossSessionPolicy_NotAddedWhenDisabled(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{CrossSessionEnabled: false}); err != nil {
+	if err := tr1.WriteSessionGuardrails("", sess1, GuardrailsOptions{WriteRulesFiles: true, CrossSessionEnabled: false}); err != nil {
 		t.Fatal(err)
 	}
 

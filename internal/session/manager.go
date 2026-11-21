@@ -2743,6 +2743,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		// no effect. Respect both.
 		guardrailOpts.MemoryEnabled = m.cfg.Memory.Enabled && m.cfg.Memory.IsSessionAwareness()
 		guardrailOpts.RTKEnabled = m.cfg.RTK.Enabled
+		guardrailOpts.WriteRulesFiles = m.cfg.RTK.WriteRulesFiles
 		guardrailOpts.CrossSessionEnabled = m.cfg.CrossSession.IsEnabled()
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
