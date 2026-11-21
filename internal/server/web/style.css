@@ -5858,6 +5858,28 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .session-info-bar .meta .btn-label { display: none; }
 }
 
+/* The session header's meta row must keep one height whatever the state says.
+   On a phone the state badge text changes length (WAITING_INPUT is longer than
+   RUNNING), and in a wrapping row that pushed the right-hand icon group onto a
+   second line: the header grew by a line, the terminal below lost two rows, the
+   web terminal refitted and told tmux a new size, and the session jumped. On
+   narrow screens the row never wraps; the backend badge shrinks with an
+   ellipsis instead, and the state badge, action buttons and icon group keep
+   their size. */
+@media (max-width: 600px) {
+  .session-info-bar .meta { flex-wrap: nowrap; overflow: hidden; }
+  .session-info-bar .meta > .backend-badge {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-info-bar .meta > .state,
+  .session-info-bar .meta > #actionBtns,
+  .session-info-bar .meta > span:last-child { flex-shrink: 0; }
+}
+
 /* Saved commands quick-send panel */
 .saved-cmds-quick {
   display: flex;
