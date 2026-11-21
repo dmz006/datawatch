@@ -183,8 +183,8 @@ func judgeSessionTimeout(gcfg autonomouspkg.Config) time.Duration {
 	return time.Duration(config.NormalizeJudgeTimeoutSeconds(gcfg.JudgeTimeoutSeconds)) * time.Second
 }
 
-// judgeAttemptLimit is the time limit for one judge run on a change of lines
-// changed lines. It is the base limit (judgeSessionTimeout) grown by
+// judgeAttemptLimit is the time limit for one judge run on a change of a
+// given number of changed lines. It is the base limit (judgeSessionTimeout) grown by
 // autonomous.judge_timeout_per_thousand_lines_seconds per thousand lines when
 // the change is above autonomous.judge_size_threshold_lines, capped at four
 // times the base limit and never below it. At or below the threshold, with the
