@@ -32,5 +32,5 @@ func DeliverablePrompt(projectDir, scheduleName, handover string) (string, error
 		return "", fmt.Errorf("handover file: %w", err)
 	}
 	return fmt.Sprintf("You are a datawatch supervisor on a recurring pass. Your handover (build context, rules, direction and this pass) is in %s. "+
-		"Read that file in full first, then follow it. Keep the pass short and end the session when it is done.", path), nil
+		"Read that file in full first, then follow it. Keep the pass short. "+EndingInstruction, path), nil
 }
