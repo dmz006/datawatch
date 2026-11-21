@@ -35,6 +35,7 @@ import (
 	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/resources"
 	"github.com/dmz006/datawatch/internal/secfile"
+	"github.com/dmz006/datawatch/internal/spendledger"
 	"github.com/dmz006/datawatch/internal/workerprofile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -388,8 +389,9 @@ type Manager struct {
 	mcpRetryCounts map[string]int
 
 	// ledger receives spend attribution entries (nil = disabled).
-	ledgerMu sync.Mutex
-	ledger   SpendLedger
+	ledgerMu   sync.Mutex
+	ledger     SpendLedger
+	localUsage LocalUsageReader
 
 	// restartedAt records when each session was last restarted (in-memory only).
 	// Used to suppress DATAWATCH_COMPLETE: detection during the post-restart
@@ -432,6 +434,12 @@ type Manager struct {
 	// contain the pattern verbatim as instruction) does not trigger a false
 	// positive before the LLM has had time to process and respond.
 	taskDeliveredAt map[string]time.Time
+
+	// hookStopAt records when the Claude Code Stop hook last fired for a session
+	// and no later turn activity (a prompt or a tool call) has been seen. It lets
+	// the one-shot reaper end a supervisor pass that has finished its turn, without
+	// relying on the model printing a completion marker. Guarded by mu.
+	hookStopAt map[string]time.Time
 
 	// selfUpdateNotedAt debounces handling of Claude Code's passive
 	// "Update installed · /restart to apply" footer per session (see
@@ -477,6 +485,9 @@ type Manager struct {
 	// onTaskDeliveryFailed is called once DeliverOneShotTask gives up on a
 	// task: the worker session has already been ended by then.
 	onTaskDeliveryFailed func(fullID string, reason string)
+	// scheduledSpawnTask, when set, rebuilds the task of a launch-role spawn
+	// schedule each time it fires (guarded by mu).
+	scheduledSpawnTask func(ds DeferredSession) string
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -776,6 +787,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:    make(map[string]int),
 		restartedAt:       make(map[string]time.Time),
 		taskDeliveredAt:   make(map[string]time.Time),
+		hookStopAt:        make(map[string]time.Time),
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
@@ -1172,6 +1184,15 @@ func (m *Manager) SetOnTaskDeliveryFailed(fn func(fullID string, reason string))
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onTaskDeliveryFailed = fn
+}
+
+// SetScheduledSpawnTaskHook sets the hook that supplies the task of a
+// scheduled spawn that carries a launch role, at the moment it fires. An
+// empty result keeps the task stored on the schedule.
+func (m *Manager) SetScheduledSpawnTaskHook(fn func(ds DeferredSession) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scheduledSpawnTask = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
@@ -2237,7 +2258,10 @@ type StartOptions struct {
 	// spend ledger entry.
 	AutomatonID string
 	SpendRole   string
-	StoryID     string
+	// SpendProject is the project the session belongs to; recorded for
+	// supervisor sessions so their ledger entries carry it.
+	SpendProject string
+	StoryID      string
 	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
 	TaskTitle string
 
@@ -2654,6 +2678,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			sess.AutomatonID = opt.PRDID
 		}
 		sess.SpendRole = opt.SpendRole
+		if opt.SpendRole == spendledger.RoleSupervisor {
+			sess.SpendProject = opt.SpendProject
+		}
 	}
 	if opt != nil && opt.TaskID != "" {
 		sess.TaskID = opt.TaskID
@@ -3208,6 +3235,19 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				if m.scanInterstitialTick(current, stateCapture, m.now()) {
 					continue
 				}
+				// One-shot claude-code startup dialogs (workspace trust /
+				// dev-channels consent) must be accepted: there is no human
+				// at the terminal, and the log-line match in
+				// processOutputLine can miss the TUI rendering. The capture
+				// loop is the only component started unconditionally for
+				// one-shot sessions, so it forms the reliable floor. Runs on
+				// every tick, outside the content-change gate: a dialog whose
+				// first Enter was swallowed (sent while the TUI was still
+				// rendering) leaves a static pane, and only a per-tick
+				// evaluation can re-send it. Gated on one-shot claude-code
+				// inside the helper — a no-op for interactive sessions and
+				// other backends.
+				m.dismissClaudeStartupDialog(current, capture)
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture //nolint:staticcheck
@@ -3216,18 +3256,6 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						lines := strings.Split(capture, "\n")
 						m.onScreenCapture(sess, lines)
 					}
-
-					// One-shot claude-code startup dialogs (workspace trust /
-					// dev-channels consent) must be accepted: there is no human
-					// at the terminal, and the log-line match in
-					// processOutputLine can miss the TUI rendering. The capture
-					// loop is the only component started unconditionally for
-					// one-shot sessions, so it forms the reliable floor. Runs
-					// before the firstTick skip so a dialog already on screen
-					// at attach time is handled, not only later redraw. Gated
-					// on one-shot claude-code inside the helper — a no-op for
-					// interactive sessions and other backends.
-					m.dismissClaudeStartupDialog(current, capture)
 
 					// Skip state detection on the first tick for interactive
 					// sessions — this is the initial baseline capture when a
@@ -5749,6 +5777,45 @@ func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) oneSho
 	}
 }
 
+// taskEchoWindow is how long DeliverOneShotTask waits, after typing the task,
+// for the text to show up in the pane before counting the attempt as lost.
+const taskEchoWindow = 10 * time.Second
+
+// awaitTaskEcho polls the pane (virtual-time friendly) until the typed task is
+// visible — its first line, or claude's collapsed "[Pasted text" chip for a
+// long paste — or the session has ended. It reports false when taskEchoWindow
+// elapses first. The session state is deliberately not consulted: typing the
+// task flips it to running even when the keystrokes were swallowed.
+func (m *Manager) awaitTaskEcho(fullID, input string) bool {
+	snippet := ""
+	for _, l := range strings.Split(input, "\n") {
+		if t := strings.Join(strings.Fields(l), " "); t != "" {
+			snippet = strings.ToLower(t)
+			break
+		}
+	}
+	if r := []rune(snippet); len(r) > 30 {
+		snippet = string(r[:30])
+	}
+	deadline := m.now().Add(taskEchoWindow)
+	for {
+		sess, ok := m.store.Get(fullID)
+		if !ok || sess.State.IsTerminal() {
+			return true // exit is handled by the caller's next wait
+		}
+		if content, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil {
+			pane := strings.ToLower(strings.Join(strings.Fields(StripANSI(content)), " "))
+			if snippet == "" || strings.Contains(pane, snippet) || strings.Contains(pane, "[pasted text") {
+				return true
+			}
+		}
+		if !m.now().Before(deadline) {
+			return false
+		}
+		m.sleep(500 * time.Millisecond)
+	}
+}
+
 // DeliverOneShotTask types input into a OneShot session once its main prompt
 // is ready, then marks the task delivered. Each attempt waits up to window
 // for the prompt (defaultTaskDeliveryWindow when window <= 0); a timed-out
@@ -5775,6 +5842,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	}
 
 	exited := false
+	notEchoed := false
 	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptsMade = attempt
@@ -5785,13 +5853,18 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 		case oneShotReady:
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
-				m.MarkTaskDelivered(fullID)
-				// The worker may already be inside a silent tool call; keep it
-				// Running rather than letting the gap watcher flip it back.
-				m.applyBusyProbe(fullID, time.Time{})
-				return nil
+				if m.awaitTaskEcho(fullID, input) {
+					m.MarkTaskDelivered(fullID)
+					// The worker may already be inside a silent tool call; keep it
+					// Running rather than letting the gap watcher flip it back.
+					m.applyBusyProbe(fullID, time.Time{})
+					return nil
+				}
+				notEchoed = true
+				m.debugf("DeliverOneShotTask: task text for %s never appeared in the pane within %s of typing (attempt %d/%d)", fullID, taskEchoWindow, attempt, maxAttempts)
+			} else {
+				m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
 			}
-			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
 		case oneShotSessionExited:
 			m.debugf("DeliverOneShotTask: session for %s ended before attempt %d/%d could wait for its main prompt", fullID, attempt, maxAttempts)
 			exited = true
@@ -5811,6 +5884,8 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	var reason string
 	if exited {
 		reason = "task delivery failed: session ended before the task was delivered"
+	} else if notEchoed {
+		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {
 		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade))
 	}
@@ -7138,7 +7213,18 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			EphemeralWorkspace: ds.Ephemeral,
 			Subprocess:         ds.Subprocess,
 		}
-		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
+		task := ds.Task
+		if ds.LaunchRole != "" {
+			m.mu.Lock()
+			hook := m.scheduledSpawnTask
+			m.mu.Unlock()
+			if hook != nil {
+				if t := hook(*ds); t != "" {
+					task = t
+				}
+			}
+		}
+		newSess, err := m.Start(ctx, task, "", ds.ProjectDir, opts)
 		if err != nil {
 			_ = m.schedStore.MarkDone(sc.ID, true)
 			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)

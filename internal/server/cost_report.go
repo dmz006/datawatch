@@ -113,6 +113,10 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 			FirstActivity:     e.StartedAt,
 			LastActivity:      e.EndedAt,
 			ActiveSeconds:     e.ActiveSeconds,
+			Local:             e.Local,
+			LocalTokensIn:     int(e.LocalTokensIn),
+			LocalTokensOut:    int(e.LocalTokensOut),
+			TokensReported:    e.TokensReported,
 		}
 		o, ok := costOwner{}, false
 		if e.AutomatonID != "" {

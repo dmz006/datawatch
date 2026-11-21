@@ -477,7 +477,7 @@ func SupervisorTickPrompt(tick TickKind) string {
 	case TickFull:
 		base += "Full pass: run the mechanical steps you can verify from the record, then the model jobs, and record what each did."
 	}
-	base += " Keep the pass short and end the session when it is done."
+	base += " Keep the pass short. " + EndingInstruction
 	return base
 }
 
@@ -493,7 +493,7 @@ func SupervisorTriggerPrompt(trig TriggerKind) string {
 	case TriggerFailedSchedule:
 		base += "A supervisor spawn schedule went to the failed state: find why it failed, repair or re-ensure it, and record the repair."
 	}
-	base += " Keep the pass short and end the session when it is done."
+	base += " Keep the pass short. " + EndingInstruction
 	return base
 }
 

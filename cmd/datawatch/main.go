@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.65"
+var Version = "9.182.73"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4217,6 +4217,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Plan records (registry rows and findings): one JSON file per record
 		// under the data directory, sealed with the shared per-record file
 		// sealing under --secure. Each write emits an audit event.
+		var supervisorPlanRecords *planrecordspkg.Store
 		{
 			var planSealer planrecordspkg.Sealer
 			if encKey != nil {
@@ -4236,8 +4237,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fmt.Printf("[warn] plan records store: %v\n", prErr)
 				} else {
 					httpServer.SetPlanRecords(prStore)
+					supervisorPlanRecords = prStore
 				}
 			}
+		}
+		// Supervisor set-up, state and corrections routes: without their
+		// dependencies every one answers 503.
+		if supDeps := wireSupervisorSetup(httpServer, cfg, schedStore,
+			func() *planrecordspkg.Store { return supervisorPlanRecords },
+			func(id string) string {
+				if autonomousMgrRef == nil {
+					return ""
+				}
+				if prd, ok := autonomousMgrRef.Store().GetPRD(id); ok && prd != nil {
+					return prd.BlockedReason
+				}
+				return ""
+			}); supDeps != nil {
+			mgr.SetScheduledSpawnTaskHook(supervisorSpawnTaskHook(cfg, supDeps))
 		}
 		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
 		// operator audit log (a nil log yields a no-op reporter) shared by
@@ -7055,6 +7072,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// stores have loaded, run the shipped-state backfill pass in a
 			// goroutine: it is logged and never blocks or fails startup.
 			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
+			amgr.StartAttemptCategoryBackfill()
 			// autonomous.archive — the finished-Automaton archive reads its
 			// switch and retention at every use; the background pass only reads
 			// and rewrites Automaton record files and never touches a session.

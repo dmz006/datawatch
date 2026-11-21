@@ -1072,3 +1072,26 @@ func TestCostReportUnknownOnlyForRowsBeforeHorizon(t *testing.T) {
 		}
 	}
 }
+
+func TestCostReportSupervisorAndUnknownGrouping(t *testing.T) {
+	at := fixedDay(time.October, 6, 10)
+	sup := makeRecord("s1", "", "", "claude-code", at, 10, 0, false)
+	sup.Role = "supervisor"
+	unk := makeRecord("s2", "", "", "claude-code", at, 20, 0, false)
+	unk.Role = "other"
+	blank := makeRecord("s3", "", "", "claude-code", at, 40, 0, false)
+	aut := makeRecord("s4", "", "auto1", "claude-code", at, 80, 0, false)
+	aut.Role = "worker"
+	src := &fakeSource{result: &SourceResult{Records: []Record{sup, unk, blank, aut}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, r := range rep.Rows {
+		got[r.Key] = r.TokensIn
+	}
+	if got[SupervisorOtherKey] != 10 || got[UnattributedKey] != 60 || got["auto1"] != 80 || len(got) != 3 {
+		t.Fatalf("rows = %v", got)
+	}
+}

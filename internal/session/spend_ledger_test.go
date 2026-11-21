@@ -100,3 +100,37 @@ func TestSpendLedger_DeleteLeavesEntries(t *testing.T) {
 		t.Errorf("delete touched ledger")
 	}
 }
+
+func TestSpendLedger_SupervisorRoleAndProject(t *testing.T) {
+	mgr, fl := newLedgerManager(t)
+	sess, err := mgr.Start(context.Background(), "task", "", t.TempDir(), &StartOptions{
+		SpendRole: spendledger.RoleSupervisor, SpendProject: "proj1",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	e := fl.last(t)
+	if e.SessionID != sess.FullID || e.Role != spendledger.RoleSupervisor || e.Project != "proj1" {
+		t.Errorf("supervisor entry wrong: %+v", e)
+	}
+	// A real ledger accepts it; an unknown role is still rejected.
+	l, err := spendledger.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Upsert(e); err != nil {
+		t.Errorf("ledger rejected supervisor entry: %v", err)
+	}
+	if err := l.Upsert(spendledger.Entry{SessionID: "x", Role: "bogus"}); err == nil {
+		t.Error("unknown role accepted")
+	}
+	// Non-supervisor sessions do not record a project.
+	if _, err := mgr.Start(context.Background(), "task", "", t.TempDir(), &StartOptions{
+		SpendRole: spendledger.RoleWorker, SpendProject: "proj1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if e := fl.last(t); e.Role != spendledger.RoleWorker || e.Project != "" {
+		t.Errorf("worker entry wrong: %+v", e)
+	}
+}

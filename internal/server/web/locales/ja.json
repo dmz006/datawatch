@@ -6054,5 +6054,14 @@
   "cost_charts_other": "その他",
   "cost_charts_topn_label": "シリーズ",
   "cost_charts_topn_all": "すべて",
-  "cost_charts_legend_toggle": "このシリーズを表示／非表示にする"
+  "cost_charts_legend_toggle": "このシリーズを表示／非表示にする",
+  "cost_charts_supervisor_and_other": "スーパーバイザーとその他",
+  "cost_charts_unit_local_tokens": "ローカルモデルのトークン(独自の軸、Claudeトークンとは別、価格なし)",
+  "cost_charts_tokens_not_reported": "ローカルセッション %1$s 件がトークンを報告していません(不明であり、ゼロではありません)。",
+  "cost_charts_tool_calls_not_reported": "ローカルセッション %1$s 件がツール呼び出しを報告していません(不明であり、ゼロではありません)。",
+  "cost_charts_active_time": "稼働時間: %1$s",
+  "cost_charts_col_local_tokens": "ローカルモデルのトークン",
+  "cost_charts_col_active": "稼働時間",
+  "cost_charts_not_reported_marker": "未報告(%1$s)",
+  "cost_report_not_reported": "未報告(%1$s)"
 }

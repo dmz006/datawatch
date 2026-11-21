@@ -48,3 +48,14 @@ func TestAttributionCheckWindowAndPeer(t *testing.T) {
 		t.Fatalf("got %+v", c)
 	}
 }
+
+func TestAttributionCheckCountsNoAutomatonNoRole(t *testing.T) {
+	at := time.Now()
+	recs := append(fakeLedger(at), Record{SessionID: "sup", FromLedger: true, Role: "supervisor", At: at})
+	c := CheckAttribution(recs, time.Time{}, time.Time{}, false)
+	// "human" (other) and "blank" have no Automaton and no role; the
+	// supervisor session has a role and is not counted.
+	if c.NoAutomatonNoRole != 2 {
+		t.Fatalf("got %+v", c)
+	}
+}

@@ -188,7 +188,7 @@ that matter for cost and for the next decision are:
 | `backend_reason` | Why that worker: `first attempt for <kind> tasks`, `escalated after <n> failures`, `escalation ladder step`, `operator pinned` or `default choice` |
 | `escalated` | `true` when the attempt ran on a ladder step rather than the normal worker |
 | `outcome` | `failed`, `stalled` or `cancelled` |
-| `failure_category`, `failure_summary` | The failure class and the one-line summary the next attempt is given |
+| `failure_category`, `failure_summary` | The failure class and the one-line summary the next attempt is given. Every new failed, stalled or cancelled attempt gets a category when it is recorded; see [Failure categories](#failure-categories) |
 | `verifier_summary`, `verifier_issues`, `changed_files` | What the verifier said and which files the attempt changed |
 | `resumed` | `true` when the attempt continued the previous session with the failure summary |
 | `resume_reason` | The retry decision: `resumed previous session`, or the refusal, such as `session ended; starting a fresh attempt`, `backend cannot resume; starting a fresh attempt`, `resume disabled by setting; starting a fresh attempt`, `context above the limit; starting a fresh attempt`, `no send-input hook; starting a fresh attempt` or `send into session failed; starting a fresh attempt` |
@@ -197,6 +197,37 @@ that matter for cost and for the next decision are:
 The first attempt makes no retry decision, so `resumed` and `resume_reason` are
 empty on it. A task held for review shows the same reasons for its last attempt in
 its review entry, as `last_resumed`, `last_resume_reason` and `no_retry_reason`.
+
+## Failure categories
+
+The `failure_category` on each attempt is what the **Retries and failure
+categories** chart counts. It is set in two ways:
+
+- **When the attempt is recorded.** A new failed, stalled or cancelled attempt
+  gets its category at once. A category the verifier or the executor already
+  named is kept as it is. Otherwise the daemon derives one from how the attempt
+  ended (`verifier_failed` gives `code_or_test`, `stalled` gives `hung`,
+  `session_died`, `launch_refused`, `adopted_then_failed`, `daemon_restart`
+  and timeout-like executor errors give `infra`, and a refused merge or failed
+  commit gives `policy`). An operator cancel gives `none`. The derivation
+  produces `none`, `infra`, `policy`, `code_or_test` and `hung`; a category the
+  verifier or executor names itself (for example `content`, `scope`,
+  `security`, `judging` or `invalid-response`) is kept as it is.
+- **At daemon start, for older attempts.** The daemon runs one backfill pass in
+  the background once the stores have loaded. It gives the same derived
+  category to every stored failed, stalled or cancelled attempt whose category
+  is blank. It runs on every start, does not depend on a setting, never blocks
+  startup, and is idempotent: an attempt that already has a category is not
+  touched, so a second run changes nothing. It logs one line,
+  `attempt_category_backfill: report {...}`, with `attempts_examined`,
+  `attempts_updated`, `left_uncategorized` and `automatons_saved`.
+
+An attempt stays **uncategorized** only when it has no end reason, no summary
+and no verifier issue, so there is nothing to derive a category from. The chart
+draws those under `uncategorized`, and `GET /api/cost/failures` reports them as
+`uncategorized_attempts`. For attempts recorded from now on this should not
+happen. Any count left after the backfill is the legacy records that had no
+usable text, and the backfill log line is the place to read that count.
 
 To read the record:
 
