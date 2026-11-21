@@ -21,10 +21,18 @@ const (
 // JudgeAttemptRecord is one judge attempt on one backend: the backend, when
 // the attempt started, how long it took and how it ended.
 type JudgeAttemptRecord struct {
-	Backend  string        `json:"backend"`
-	Started  time.Time     `json:"started"`
+	Backend string `json:"backend"`
+	// Started is when the attempt began (before the wait for a slot).
+	Started time.Time `json:"started"`
+	// Duration is how long the attempt ran on its backend, from when the
+	// run started (the slot was granted) until it ended. The wait for the
+	// slot is not in it; see Waiting.
 	Duration time.Duration `json:"duration"`
-	Outcome  string        `json:"outcome"`
+	// Waiting is how long the attempt waited for its capacity slot, recorded
+	// separately from Duration: the wait is never counted against the
+	// judge's time limit, which starts when the run starts.
+	Waiting time.Duration `json:"waiting"`
+	Outcome string        `json:"outcome"`
 	// SessionID is the judge session of the attempt, and LastOutput the tail
 	// of what it had printed when the attempt timed out. Both are empty for a
 	// backend that never got a slot or never started a session.
