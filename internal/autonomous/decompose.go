@@ -23,6 +23,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -133,6 +134,12 @@ Rules:
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
   were already unformatted would fail the task.
+  Exclude the daemon-generated artefact folders docs/plans/drafts/,
+  docs/plans/parity-issues/ and docs/plans/reports/ and the file
+  CHANGELOG.md from any changed-file check. Write each per-task script to
+  check only what that task added, and keep it safe to rerun on the
+  cumulative tree (the final gate reruns it with every earlier task's
+  files present): never hold the whole changed set to a fixed allow-list.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at
@@ -226,6 +233,12 @@ Rules:
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
   were already unformatted would fail the task.
+  Exclude the daemon-generated artefact folders docs/plans/drafts/,
+  docs/plans/parity-issues/ and docs/plans/reports/ and the file
+  CHANGELOG.md from any changed-file check. Write each per-task script to
+  check only what that task added, and keep it safe to rerun on the
+  cumulative tree (the final gate reruns it with every earlier task's
+  files present): never hold the whole changed set to a fixed allow-list.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at
@@ -344,6 +357,74 @@ func normalizeRulesApplied(in []string) []string {
 	return out
 }
 
+// MaxDecomposeOutputBytes bounds the decompose output ParsePlanning will
+// read. A plan is a few KiB of JSON; anything past this bound is not a plan
+// and is refused before it is cleaned or parsed.
+const MaxDecomposeOutputBytes = 8 << 20
+
+// decomposeOutputUnparseablePrefix starts the text of every
+// DecomposeOutputError, exactly.
+const decomposeOutputUnparseablePrefix = "decompose output unparseable: "
+
+// decomposeOutputHeadBytes is how much of the raw output a
+// DecomposeOutputError keeps for the operator.
+const decomposeOutputHeadBytes = 200
+
+// ErrDecomposeOutputUnparseable is the sentinel every DecomposeOutputError
+// matches with errors.Is: the decompose output could not be parsed, was empty
+// after cleaning, was over MaxDecomposeOutputBytes, or made the parse or the
+// lint pass panic.
+var ErrDecomposeOutputUnparseable = errors.New("decompose output unparseable")
+
+// DecomposeOutputError is the typed failure for a decompose output that
+// cannot become a plan. Its text starts with "decompose output unparseable: "
+// followed by the reason. It matches ErrDecomposeOutputUnparseable with
+// errors.Is and can be read with errors.As.
+type DecomposeOutputError struct {
+	// Reason says why the output could not be used.
+	Reason string
+	// Length is the byte length of the raw output.
+	Length int
+	// Head is the first bytes of the raw output, truncated.
+	Head string
+}
+
+// Error returns "decompose output unparseable: <reason>".
+func (e *DecomposeOutputError) Error() string {
+	return decomposeOutputUnparseablePrefix + e.Reason
+}
+
+// Is makes errors.Is(err, ErrDecomposeOutputUnparseable) true.
+func (e *DecomposeOutputError) Is(target error) bool {
+	return target == ErrDecomposeOutputUnparseable
+}
+
+// newDecomposeOutputError builds the named error for raw. The reason carries
+// the raw length and a truncated head, never the whole output.
+func newDecomposeOutputError(reason, raw string) *DecomposeOutputError {
+	head := raw
+	if len(head) > decomposeOutputHeadBytes {
+		head = strings.ToValidUTF8(head[:decomposeOutputHeadBytes], "") + "…"
+	}
+	return &DecomposeOutputError{
+		Reason: fmt.Sprintf("%s (length=%d, head=%q)", reason, len(raw), head),
+		Length: len(raw),
+		Head:   head,
+	}
+}
+
+// guardDecomposeOutput runs fn, the parse-plus-lint step of a decompose
+// path, and converts a Go panic into the named DecomposeOutputError, so a bad
+// plan fails the one Automaton instead of aborting the daemon.
+func guardDecomposeOutput(raw string, fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = newDecomposeOutputError(fmt.Sprintf("panic while parsing or linting: %v", r), raw)
+		}
+	}()
+	return fn()
+}
+
 // ParsePlanning cleans common LLM JSON pathologies (fences,
 // smart quotes, // comments) and unmarshals into a Story slice. Task
 // objects may optionally carry a "kind" string ("smoke" / "final_gate" /
@@ -351,13 +432,29 @@ func normalizeRulesApplied(in []string) []string {
 // is simply the empty/unknown string — never a parse error, so the
 // parser stays tolerant of plans that omit the field.
 func ParsePlanning(raw string) (title string, stories []Story, err error) {
+	// A written plan is a verdict: whatever is wrong with it, the parser
+	// fails that one Automaton with the named error and never takes the
+	// daemon down.
+	defer func() {
+		if r := recover(); r != nil {
+			title, stories = "", nil
+			err = newDecomposeOutputError(fmt.Sprintf("parser panic: %v", r), raw)
+		}
+	}()
+	if len(raw) > MaxDecomposeOutputBytes {
+		return "", nil, newDecomposeOutputError(
+			fmt.Sprintf("output is %d bytes, over the %d byte limit", len(raw), MaxDecomposeOutputBytes), raw)
+	}
 	cleaned := cleanLLMJSON(raw)
+	if cleaned == "" {
+		return "", nil, newDecomposeOutputError("output is empty after cleaning", raw)
+	}
 	var doc struct {
 		Title   string  `json:"title"`
 		Stories []Story `json:"stories"`
 	}
 	if err := json.Unmarshal([]byte(cleaned), &doc); err != nil {
-		return "", nil, fmt.Errorf("parse: %w (cleaned=%q)", err, truncate(cleaned, 200))
+		return "", nil, newDecomposeOutputError(fmt.Sprintf("parse: %v", err), cleaned)
 	}
 	// Tolerate models that emit task keys "name"/"description" instead of
 	// "title"/"spec": backfill empty Title/Spec from the same cleaned input,

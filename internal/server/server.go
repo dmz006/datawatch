@@ -554,6 +554,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Automata event log read: merged watch, retry, check, maintenance and error
 	// events, newest first, with kind/project/q filters and cursor paging.
 	apiMux.HandleFunc("/api/autonomous/event-log", api.handleAutomataEventLog)
+	// Archived Automata whose branch still holds unmerged commits, and the
+	// carry-forward that starts a new draft on that branch.
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged", api.handleArchivedUnmerged)
+	apiMux.HandleFunc("/api/autonomous/archived-unmerged/", api.handleArchivedUnmerged)
 	// Branch refresh numbers: setting, results by Automaton, stopped count.
 	apiMux.HandleFunc("/api/autonomous/branch-refresh/stats", api.handleBranchRefreshStats)
 	apiMux.HandleFunc("/api/autonomous/event-kinds", api.handleAutonomousEventKinds)
@@ -647,6 +651,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                           // supervisor loop run records, newest first
 	apiMux.HandleFunc("/api/supervisor-loop/wake", api.handleSupervisorLoopWake)                           // supervisor wake: settings in effect, last event, last scheduled check
 	apiMux.HandleFunc("/api/supervisor-loop/stats", api.handleSupervisorLoopStats)                         // supervisor loop numbers: jobs, run counts by outcome, retries, last run age
+	apiMux.HandleFunc("/api/supervisor-setup", api.handleSupervisorSetup)                                  // idempotent supervisor set-up for a named project
+	apiMux.HandleFunc("/api/supervisor-setup/state", api.handleSupervisorSetupState)                       // supervisor state record: read, set, change, remove an entry
+	apiMux.HandleFunc("/api/supervisor-setup/corrections", api.handleSupervisorSetupCorrections)           // corrections: list, record
+	apiMux.HandleFunc("/api/supervisor-setup/corrections/promote", api.handleSupervisorSetupPromote)       // promote a standing-rule correction
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                                  // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/shadow", api.handleAutonomousMergeShadow)                     // shadow merge plans, comparisons and matched/different counts per release size
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                           // run a merge through the resolved pipeline, recording each step
@@ -654,6 +662,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/branch-reap", api.handleAutonomousBranchReap)                       // branch reaper: would-reap / would-hold preview plus backup refs (GET, read-only)
 	apiMux.HandleFunc("/api/autonomous/branch-reap/run", api.handleAutonomousBranchReapRun)                // branch reaper: perform one pass (backup first, then delete) — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/branch-reap/restore", api.handleAutonomousBranchReapRestore)        // branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap", api.handleAutonomousRemoteReap)                       // remote branch reaper: would-reap / would-hold preview on origin plus backup refs (GET, read-only)
+	apiMux.HandleFunc("/api/autonomous/remote-reap/run", api.handleAutonomousRemoteReapRun)                // remote branch reaper: perform one pass (backup first, verify, then delete on origin; report-only while remote_reap_enabled is unset) — POST, autonomous write cap
+	apiMux.HandleFunc("/api/autonomous/remote-reap/restore", api.handleAutonomousRemoteReapRestore)        // remote branch reaper: recreate one reaped branch from its newest backup ref — POST, autonomous write cap
 	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                                  // cleanup status: both passes, disk readings, rate-limited disk-alert flag
 	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)                       // uncommitted-work holds: policy, scope, held tasks and Automata
 	apiMux.HandleFunc("/api/autonomous/unlanded-work", api.handleUnlandedWork)                             // Housekeeping: unlanded branch list

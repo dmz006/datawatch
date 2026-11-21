@@ -94,13 +94,14 @@ func laneFillSlotKey(d LaneFillDecision) string {
 // reason is in the key, so a lane whose occupant goes from working to waiting
 // starts a new record instead of folding the wait in over the old decision.
 // The refusal code is in the key too: the same refusal folds into one record
-// with a repeat count across polls, and a different code starts a new one.
-// The stale text carries an age that grows every hour, so for that code the
-// text stays out of the key; otherwise the same stale Automaton would get a
-// new record each hour.
+// with a repeat count across polls, and a different code starts a new one. An
+// eligibility refusal is identified by its code, not its wording, so for any
+// such code the text stays out of the key; the text can change while the code
+// stays (the stale age grows every hour), and the record keeps the latest
+// wording with a growing repeat count instead of a new one each poll.
 func laneFillDecisionKey(d LaneFillDecision) string {
 	blocker := d.Blocker
-	if d.EligibilityReason == LaneFillReasonStale {
+	if d.EligibilityReason != "" {
 		blocker = ""
 	}
 	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", d.LaneID, d.Action, d.PRDID, blocker, d.WaitReason, d.Mode, d.EligibilityReason)

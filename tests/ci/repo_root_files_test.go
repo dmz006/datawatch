@@ -27,7 +27,7 @@ var allowedRootDirs = map[string]bool{
 	".github": true, ".oss-scanner": true, ".rtk": true, ".zap": true,
 	"channel": true, "charts": true, "cmd": true, "deploy": true, "docker": true,
 	"docs": true, "examples": true, "hooks": true, "install": true,
-	"internal": true, "packaging": true, "scripts": true, "security": true,
+	"internal": true, "packaging": true, "packs": true, "scripts": true, "security": true,
 	"templates": true, "testdata": true, "tests": true,
 }
 

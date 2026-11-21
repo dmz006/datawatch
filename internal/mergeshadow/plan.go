@@ -88,4 +88,8 @@ type MergePlan struct {
 	Findings          []Finding  `json:"findings"`
 	CreatedAt         time.Time  `json:"created_at"`
 	Applied           bool       `json:"applied"`
+	// IntermittentDefects are the defect records this run created for
+	// intermittent gates. They are stored in their own store, not in the plan
+	// file, so the plan JSON is unchanged.
+	IntermittentDefects []IntermittentDefect `json:"-"`
 }

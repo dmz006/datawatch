@@ -75,12 +75,15 @@ at the worktree with `git status`:
    `task(<short id>): <task title>`. Nothing is staged with `git add -A` or
    `git add .`, and the commit runs the repository's own commit hooks: a failing
    hook is a failed commit.
-   A declared file that git ignores and that is not tracked (for example a file
-   under `.datawatch/`) is skipped rather than staged, because `git add` would
-   refuse it and fail the whole commit; the other declared files are still
-   committed. A tracked file is always staged, even if it matches an ignore
-   rule. If git cannot say which paths it ignores, nothing is skipped and the
-   real git error is reported.
+   Each declared path is first checked with `git check-ignore`. A declared file
+   that git ignores and that is not tracked (for example a file under
+   `.datawatch/`) is skipped, not staged, and does not fail the commit. The
+   skipped paths are named in `skipped because it is git-ignored: <list>`, an
+   information-only note that is carried in the task's hold reason (and its
+   audit record) only when the task is held or warned. Nothing is force-staged. If every declared path is ignored, no commit
+   is made and nothing is left staged. A tracked file is always staged
+   normally. If git cannot say which paths it ignores, the real git error is
+   reported.
 2. **Look again.** If the worktree is now clean for the task, it is marked
    complete as usual, and the commit is the one its post-verify revision is
    pinned to.
@@ -110,7 +113,9 @@ refuses to commit. Three more kinds of file never enter the list:
 - **Ignored, untracked files.** A file the repository's own ignore rules
   ignore and that the repository does not track is dropped by the check
   itself, whatever `git status` reports, so it is never the reason for a hold
-  and never appears in the question. A tracked file is still counted even when
+  and never appears in the question. A path the task listed is handled by the
+  commit instead, as described under "Git-ignored files the task itself
+  listed" below. A tracked file is still counted even when
   it matches an ignore rule, and if git cannot answer the ignore question the
   file is counted anyway — the error goes the way of holding you, not of
   letting the task go.
@@ -125,15 +130,36 @@ refuses to commit. Three more kinds of file never enter the list:
 
 The last two rules mean the check does not see a rules file whose content is
 only the daemon's injected sections, on the per-task list and on the
-before-finished list alike. And if you keep notes or evidence under a
-git-ignored path such as `.datawatch/` and wanted the check to hold a task
-that touched them, note that git-ignored, untracked files are outside the
-check's view: they would need to be tracked to be held on.
-
-Do not confuse this list with the generated artefacts —
+before-finished list alike. Do not confuse this list with the generated artefacts —
 the small documents the daemon renders for your work when the Automaton
 finishes: at the finished check they count unless the daemon is the only one
 who wrote them (below).
+
+**Git-ignored files the task itself listed.** The per-task commit checks every
+path the task listed with `git check-ignore`. A listed path that the
+repository's ignore rules ignore and that is not tracked (for example a file a
+worker created under a git-ignored folder such as `.datawatch/`) is skipped
+instead of failing the commit: it is not staged, and it does not hold the
+task. The remaining listed paths are staged by name and committed with the
+task. Nothing is staged with force; no `git add -f` is run for any path.
+
+The skipped paths are named in a note, `skipped because it is git-ignored:
+<list>`. The note is information only: it never holds a task and never raises
+a question by itself. It is carried in the hold reason and the audit record
+only when the task is held or warned for another reason, such as a file it
+still has to commit. A task whose other listed paths commit cleanly completes
+without storing the note. When every listed path is git-ignored, no commit is
+made and nothing is left staged; the task then completes unless other work is
+uncommitted, and the note is stored only if it is held or warned.
+
+A generated script that is meant to travel with the work must therefore be
+listed outside the git-ignored `.datawatch` folder, at a path the repository
+does not ignore. A file listed under `.datawatch/` is skipped and is not
+committed.
+
+Detection of other git-ignored, untracked files is unchanged: a git-ignored
+file the task did not list still stays outside both the commit and the hold
+listing.
 
 ### The completion marker file
 
@@ -277,7 +303,11 @@ work, and committing it would put it on the branch without anyone looking.
 
 A hold raises one question per hold, labelled `uncommitted_work`. It names the
 Automaton, the task, the cause and the files (at most the first 20, with a
-count of the rest), and marks the ones outside the declared files. Its options:
+count of the rest), and marks the ones outside the declared files. If the
+hold's cause is that staging or committing failed, the cause — and therefore
+the question text that carries it — also carries the failed git command's
+output and exit status, so you can see which git command failed and why. Its
+options:
 
 | Option | Meaning |
 |---|---|
@@ -366,7 +396,7 @@ nothing is held), one entry per held task or Automaton:
 | `kind` | `task` or `worktree` |
 | `files` | The uncommitted files |
 | `outside_scope` | The subset outside the task's declared files |
-| `reason` | Why it is held: the commit failed, or files were still uncommitted |
+| `reason` | Why it is held: the commit failed — with the failed git command's output and exit status — or files were still uncommitted |
 | `question_id` | The question waiting for your answer |
 | `held_at` | When the hold was placed |
 

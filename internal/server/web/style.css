@@ -179,35 +179,193 @@ body {
   padding-top: env(safe-area-inset-top, 0);
 }
 
-/* BL312 S3 (2026-11-12) — header server dropdown (successor to the per-panel
-   .server-picker-bar chip row + the Sessions topbar slot). Fits the fixed
-   flex header on every width: compact, truncates long peer names instead of
-   wrapping, and hands keyboard/selection to the native control. */
-.server-dropdown {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 40%;
-  width: auto;
-  height: calc(var(--header-h) - 14px);
-  max-height: 34px;
-  padding: 0 26px 0 10px;
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
+/* Header server button: icon + status dot + short name, opens the server
+   picker modal. The header stays on one non-wrapping line at every width:
+   the button is a fixed-content flex item (never grows, never shrinks below
+   its icon+dot), and #headerTitle takes all spare space. Below the phone
+   breakpoint only the icon and the dot show; the short name (capped at about
+   14 characters, ellipsis) shows on wider screens. Hit target matches the
+   other header controls (44px). */
+.header > .header-server-btn {
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 4px;
+  margin: 0;
+  background: transparent;
+  border: none;
   border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
+}
+.header-server-btn:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.header-server-btn[aria-expanded="true"] { background: var(--bg3, var(--bg)); }
+.header-server-icon { display: block; flex: none; }
+.header-server-name {
+  display: inline-block;
+  max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
-  appearance: auto;
+  white-space: nowrap;
 }
-.server-dropdown:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+/* Status dot — colour from theme tokens only. */
+.header-server-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.header-server-dot.is-local { background: var(--success); }
+.header-server-dot.is-peer { background: var(--accent); }
+.header-server-dot.is-all { background: var(--accent2); }
+.header-server-dot.is-down { background: var(--warning); }
+@media (max-width: 600px) {
+  .header-server-name { display: none; }
+}
+
+/* Header scope button: icon only, the same 44px hit area and no-wrap rules as
+   the server button, so every header control still fits at 320px. The badge is
+   a small dot shown only while a scope is active; its text is visually hidden. */
+.header > .header-scope-btn {
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-scope-btn:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.header-scope-btn[aria-expanded="true"] { background: var(--bg3, var(--bg)); }
+.header-scope-icon { display: block; flex: none; }
+.header-scope-badge {
+  position: absolute;
+  top: 9px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent2);
+  border: 1px solid var(--bg);
+}
+.header-scope-badge-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* Banner a scoped page shows under the header: what it is filtered to + Clear. */
+.scope-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent2);
+  border-radius: 6px;
+  background: var(--bg3, var(--bg));
+  color: var(--text);
+  font-size: 12px;
+}
+.scope-banner-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scope-banner-clear { flex: none; font-size: 12px; padding: 2px 10px; }
+.scope-empty { color: var(--text2); font-size: 13px; line-height: 1.5; margin-top: 10px; }
+/* Scope modal body (rows are real buttons, the active one carries aria-current). */
+.scope-modal-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.scope-modal-heading { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; margin-top: 6px; }
+.scope-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3, var(--bg));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.scope-modal-row:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.scope-modal-row.is-active { background: var(--accent2); color: #fff; font-weight: 600; }
+.scope-modal-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scope-modal-error { font-size: 12px; color: var(--error); margin-bottom: 8px; }
+.scope-modal-note { font-size: 11px; color: var(--text2); margin-top: 8px; }
+
+/* Shared header modal (server picker today; the scope modal reuses it): the
+   dialog sits on the existing .confirm-modal-overlay / .confirm-modal. */
+.header-modal:focus { outline: none; }
+.header-modal-title-row { display: flex; align-items: center; gap: 4px; margin-bottom: 10px; }
+.header-modal-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.header-modal-help {
+  color: var(--text2);
+  text-decoration: none;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin-left: 4px;
+}
+.header-modal-help:focus-visible,
+.header-modal-btn:focus-visible,
+.server-picker-row:focus-visible { outline: 2px solid var(--accent2, #60a5fa); outline-offset: 1px; }
+.header-modal-footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.header-modal-btn { font-size: 12px; padding: 4px 12px; }
+.server-picker-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.server-picker-loading { font-size: 12px; color: var(--text2); padding: 8px 10px; }
+.server-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3, var(--bg));
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.server-picker-row.is-active { background: var(--accent2); color: #fff; font-weight: 600; }
+.server-picker-row.is-back { border-style: dashed; background: transparent; }
+.server-picker-row-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.server-picker-row-suffix { flex: none; font-size: 11px; color: var(--warning); white-space: nowrap; }
+.server-picker-row.is-active .server-picker-row-suffix { color: inherit; }
 
 .header-title {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   font-size: 16px;
   font-weight: 700;
@@ -5700,6 +5858,28 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .session-info-bar .meta .btn-label { display: none; }
 }
 
+/* The session header's meta row must keep one height whatever the state says.
+   On a phone the state badge text changes length (WAITING_INPUT is longer than
+   RUNNING), and in a wrapping row that pushed the right-hand icon group onto a
+   second line: the header grew by a line, the terminal below lost two rows, the
+   web terminal refitted and told tmux a new size, and the session jumped. On
+   narrow screens the row never wraps; the backend badge shrinks with an
+   ellipsis instead, and the state badge, action buttons and icon group keep
+   their size. */
+@media (max-width: 600px) {
+  .session-info-bar .meta { flex-wrap: nowrap; overflow: hidden; }
+  .session-info-bar .meta > .backend-badge {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-info-bar .meta > .state,
+  .session-info-bar .meta > #actionBtns,
+  .session-info-bar .meta > span:last-child { flex-shrink: 0; }
+}
+
 /* Saved commands quick-send panel */
 .saved-cmds-quick {
   display: flex;
@@ -7580,7 +7760,19 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 /* Usage page: a verdict sentence above small fixed-size cards. The cards never
    stretch on a wide screen: fixed width and height, with max-width on narrow ones. */
 .usage-verdict-sentence { font-size: 14px; font-weight: 600; line-height: 1.4; max-width: 720px; }
-.usage-cards { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+.usage-cards .usage-card { width: 100%; }
+@media (max-width: 600px) {
+  .usage-cards { grid-template-columns: 1fr; }
+}
+.usage-calc-frame {
+  box-sizing: border-box;
+  background: var(--bg2, #1a1d27);
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius, 12px);
+  padding: 12px 14px;
+  overflow: hidden;
+}
 .usage-card { box-sizing: border-box; width: 220px; height: 190px; max-width: 100%; padding: 8px 10px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; font-size: 12px; background: var(--bg2, #1e1e1e); border: 1px solid var(--border, #333); border-radius: 8px; }
 .usage-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .usage-card-title { font-weight: 600; font-size: 13px; }
@@ -8135,14 +8327,13 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 @media (prefers-reduced-motion: reduce) { .sessions-sheet { animation: none !important; } }
 
 /* ── Sessions one-line toolbar: one row, never wraps at any width ──────
-   [server dropdown] [search box (flex:1)] [Filters] [fold-all] [view mode]
+   [search box (flex:1)] [Filters] [fold-all] [view mode]
    — display:flex without flex-wrap at every width; the search row is the
    only flexible member (flex:1, min-width:0) so it absorbs the slack while
-   the four fixed controls keep a usable size (bounded max-widths +
+   the fixed controls keep a usable size (bounded max-widths +
    shrinking select text). The search + active-filter count stay on their
    own row below the toolbar. */
 .sessions-topbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
-.sessions-topbar .sessions-server-select { flex: 0 0 auto; min-width: 84px; max-width: 40%; font-size: 12px; }
 .sessions-topbar .sessions-search-row { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; }
 .sessions-search-row .session-filter-wrap { flex: 1; min-width: 0; }
 .sessions-topbar .sessions-search-row .session-filter-input { padding: 5px 26px 5px 8px; font-size: 12px; }
@@ -8156,7 +8347,6 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
 
 @media (max-width: 640px) {
   .sessions-topbar { gap: 4px; padding: 4px 8px; }
-  .sessions-topbar .sessions-server-select { min-width: 64px; max-width: 34%; }
   .sessions-topbar .sessions-view-select { max-width: 30%; }
 }
 
@@ -8185,6 +8375,26 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .task-routing-table td::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text2); }
   .task-routing-select { width: 100%; margin-bottom: 2px; }
 }
+/* Cost report chart cards: legend series tiles (show/hide one series in this card). */
+.cost-charts-legend-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cost-charts-legend-tile:hover { border-color: var(--border); background: var(--bg2); }
+.cost-charts-legend-tile:focus-visible { outline: 2px solid var(--border); }
+.cost-charts-legend-tile-off { opacity: 0.5; }
+.cost-charts-legend-tile-off span:last-child { text-decoration: line-through; }
+
 @media (max-width: 520px) {
   .prd-task-routing-col { display: none; }
   .prd-task-routing-line { display: block; }
@@ -8227,18 +8437,233 @@ body:has(.tag-filter-sheet.is-open) .new-session-fab { display: none; }
   .pc-skeleton-bar { animation: none; }
 }
 
-/* Phone-width rollup summaries on the session detail page. */
-.session-detail-tags-rollup,
-.session-detail-scheduled-rollup {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font-size: 11px;
-  padding: 6px 10px;
-  min-height: 32px;
+/* Phone-width header icons (Tags, Scheduled) on the session detail page. */
+.session-detail-header-icons { display: inline-flex; gap: 6px; align-items: center; }
+.session-detail-icon-btn {
+  position: relative;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 16px;
   color: var(--text2);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
+}
+.session-detail-icon-btn.is-active { color: var(--text); background: var(--bg2); }
+.session-detail-icon-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--bg);
+  background: var(--accent);
+  border-radius: 8px;
+}
+.session-detail-popover {
+  margin: 4px 10px;
+  padding: 6px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* ── Shared phone page container ──
+   Every top-level page (Sessions, Automata and its sub-tabs, Projects,
+   Alerts, Observer, Dashboard, Settings) carries the .phone-page class on its
+   root wrapper. On a phone the container gives all of them the Sessions list
+   geometry: a 12px side gutter, cards 100% wide inside it with 12px 14px
+   padding, and an 8px vertical gap between cards. The values are custom
+   properties so one edit moves every page. Nothing outside the phone media
+   query changes the desktop layout; the -inset classes only carry the padding
+   that used to be written inline on these wrappers. */
+.phone-page-inset { padding: 12px 16px; }
+.phone-page-inset-lg { padding: 16px; }
+.phone-page-alerts { padding: 12px; }
+
+@media (max-width: 600px), (pointer: coarse) {
+  :root {
+    --phone-gutter: 12px;
+    --phone-card-padding: 12px 14px;
+    --phone-gap: 8px;
+  }
+  .phone-page {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-left: var(--phone-gutter);
+    padding-right: var(--phone-gutter);
+  }
+  /* A page nested inside another page does not add a second gutter. */
+  .phone-page .phone-page {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .phone-page-alerts { padding: 0; }
+  .phone-page .settings-view {
+    padding: 12px 0;
+    gap: var(--phone-gap);
+  }
+  /* Shared card: same width, padding and spacing as a Sessions card. */
+  .phone-card,
+  .phone-page .prd-card,
+  .phone-page .alert-card,
+  .phone-page .settings-section,
+  .phone-page .dboard-card {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .phone-card,
+  .phone-page .prd-card,
+  .phone-page .alert-card {
+    padding: var(--phone-card-padding);
+  }
+  .phone-page .prd-card { margin: var(--phone-gap) 0; }
+  .phone-page .alert-card { margin: 0 0 var(--phone-gap); }
+  /* Dashboard: stat bar, tag filter and card grid share the gutter, and the
+     cards fill the full row instead of sitting in a narrower inset grid. */
+  .phone-page .dboard-stat-bar,
+  .phone-page .dboard-tag-filter {
+    box-sizing: border-box;
+    padding-left: var(--phone-gutter);
+    padding-right: var(--phone-gutter);
+  }
+  .dboard-cards.phone-page {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .phone-page .dboard-card-grid {
+    grid-template-columns: 1fr;
+    gap: var(--phone-gap);
+    padding: var(--phone-gap) var(--phone-gutter);
+  }
+  .phone-page .dboard-card[data-cs] { grid-column: span 1 !important; }
+}
+
+/* ── Phone: Dashboard header counters and filter rows ──
+   On a phone the Dashboard stat bar is a wrapping flex row: the title, the
+   counters and the buttons flow onto a second line instead of squeezing each
+   counter into a narrow column. Each counter is one unbreakable unit
+   (white-space: nowrap), so "51 sess", "3 active" and "$521.32 today" never
+   split mid-value; the long burn-rate summary takes its own full line and wraps
+   only between its parts. Every filter row wraps, with children that shrink
+   (min-width: 0, max-width: 100%) instead of running off the right edge.
+   The only overflow guard is on the page container itself. Desktop layout is
+   outside this query and unchanged. */
+@media (max-width: 600px), (pointer: coarse) {
+  .phone-page {
+    overflow-x: hidden;
+  }
+  .dboard-stat-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    column-gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .dboard-stat-bar > * {
+    min-width: 0;
+  }
+  #dashStatSessions,
+  #dashStatTasks,
+  #dashStatGuardrails {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  #dashStatBurnRate {
+    flex: 1 1 100%;
+    white-space: normal;
+    border-left: none !important;
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+  }
+  #dashStatBurnRate > span {
+    white-space: nowrap;
+  }
+  #dashPlacementFilter {
+    max-width: 100%;
+    margin-left: 0 !important;
+    box-sizing: border-box;
+  }
+  #dashPlacementSelect {
+    min-width: 0;
+    max-width: 100% !important;
+  }
+  .dboard-stat-bar > a,
+  .dboard-stat-bar > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Filter rows: wrap, gap, shrinkable children. */
+  .timeline-card-filters,
+  .automata-filter-bar,
+  .plan-records-controls,
+  .plans-browser-controls,
+  .records-tab-controls,
+  .cost-charts-controls,
+  .list-controls,
+  .trace-filters,
+  .page-controls,
+  .obs-filter-row,
+  .automation-controls,
+  .project-gantt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .timeline-card-filters > *,
+  .automata-filter-bar > *,
+  .plan-records-controls > *,
+  .plans-browser-controls > *,
+  .records-tab-controls > *,
+  .cost-charts-controls > *,
+  .list-controls > *,
+  .trace-filters > *,
+  .page-controls > *,
+  .obs-filter-row > *,
+  .automation-controls > *,
+  .project-gantt-toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .timeline-card-filters > select,
+  .plan-records-controls > select,
+  .plans-browser-controls > select,
+  .records-tab-controls > select,
+  .cost-charts-controls > select,
+  .list-controls > select,
+  .trace-filters > select,
+  .automata-filter-bar > select {
+    flex: 1 1 140px;
+    width: auto;
+    text-overflow: ellipsis;
+  }
+  .plan-records-controls > input,
+  .plans-browser-controls > input,
+  .records-tab-controls > input,
+  .automata-filter-bar > input {
+    flex: 1 1 140px;
+    width: auto;
+  }
+
+  /* Wide fixed-width content scrolls inside its own wrapper instead of
+     widening the page. */
+  .project-gantt-scroll {
+    max-width: 100%;
+  }
 }

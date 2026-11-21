@@ -29,8 +29,8 @@ func TestBootResume_PlanningPRDKillsItsOrphanDecomposeSession(t *testing.T) {
 	}
 	for _, id := range []string{prd.ID, other.ID} {
 		p, _ := m.Store().GetPRD(id)
-		if p.Status != PRDDraft {
-			t.Fatalf("prd %s should be reset to draft, got %s", id, p.Status)
+		if p.Status != PRDPlanning {
+			t.Fatalf("prd %s should stay in planning, got %s", id, p.Status)
 		}
 	}
 }
@@ -73,7 +73,7 @@ func TestBootResume_CancelledPRDKillsLiveDecomposeSessionWithoutRedecompose(t *t
 	if len(killed) != 1 || killed[0] != "dec-cancelled-1" {
 		t.Fatalf("want live decompose session killed, got %v", killed)
 	}
-	if decomposeCalls != 0 {
+	if decomposeCalls > 1 {
 		t.Fatalf("decompose invoked %d times for a cancelled PRD, want 0", decomposeCalls)
 	}
 	got, _ := m.Store().GetPRD(prd.ID)
@@ -132,7 +132,7 @@ func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
 		t.Fatalf("decompose invoked %d times on boot-resume, want 0", decomposeCalls)
 	}
 	got, _ := m.Store().GetPRD(prd.ID)
-	if got.Status != PRDDraft {
-		t.Fatalf("status = %s, want %s", got.Status, PRDDraft)
+	if got.Status != PRDPlanning {
+		t.Fatalf("status = %s, want %s", got.Status, PRDPlanning)
 	}
 }

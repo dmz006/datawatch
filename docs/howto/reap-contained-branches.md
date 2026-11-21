@@ -117,6 +117,18 @@ The report itself never deletes anything.
 All REST routes answer 503 while `autonomous.worktree_base_repo` is unset; the
 two `POST`s need the autonomous write capability from a federated peer.
 
+**On a live daemon.** Found 2026-11-18 and fixed: before the fix, a running
+daemon answered 503 — `the autonomous manager does not expose the branch
+reaper` — on *all three* routes **even when** the base repo was configured,
+because the daemon's API wrapper did not carry the reaper's methods. The CLI,
+MCP, messaging-channel and web-app surfaces failed with it too, which is why
+finished Automata kept piling up in the repository while cleanup lagged. The
+daemon now wires the reaper in with the routes: with a base repo set, the
+report, the pass and the restore work on every surface above; with it unset
+they still answer 503. If you were seeing that 503 with a base repo configured,
+you were hitting that gap — on a daemon with the fix, read the report first
+(there is a backlog to look at; see below), then run the pass.
+
 ## Walkthrough
 
 1. `datawatch autonomous branch-reap` — read what would go and what is held.
@@ -137,6 +149,13 @@ two `POST`s need the autonomous write capability from a federated peer.
   still reaped (and stays restorable until its backup expires).
 - **Restore window.** Lowering `autonomous.reaped_branch_backup_days` shortens
   the window for every existing backup once pruning runs.
+- **The backlog built while the daemon's wiring was broken (fixed 2026-11-18).**
+  Until the fix, every read of the report on a live daemon failed with the 503
+  above, so neither the report nor the pass could be run from any surface and
+  finished Automata kept piling up. On a daemon that has the fix, the first
+  useful move is to read the report and see what accumulated during that
+  window, then run the pass once the list reads as expected — the reaper does
+  not catch up on its own (there is no timer; see the bullet above).
 
 See also: [definitions → Task-subbranch reap](../datawatch-definitions.md),
 [Automaton worktree cleanup](automaton-worktree-cleanup.md).

@@ -84,6 +84,31 @@ type TaskHoldView struct {
 	ShortID  string `json:"short_id,omitempty"`
 }
 
+// Verify states carried by TaskVerifyView.State.
+const (
+	// VerifyStateVerifying: the task's verifier holds its verify lease.
+	VerifyStateVerifying = "verifying"
+	// VerifyStateWaitingForVerifier: the task's verifier (or judge) is queued
+	// for a capacity slot.
+	VerifyStateWaitingForVerifier = "waiting_for_verifier"
+)
+
+// TaskVerifyView is one task in verification in the capacity response: either
+// its verifier is running (state "verifying") or it is queued for a verifier
+// slot (state "waiting_for_verifier", with the wait reason).
+type TaskVerifyView struct {
+	TaskID     string    `json:"task_id"`
+	PRDID      string    `json:"prd_id"`
+	PRDTitle   string    `json:"prd_title,omitempty"`
+	TaskTitle  string    `json:"task_title,omitempty"`
+	Readable   string    `json:"readable,omitempty"`
+	ShortID    string    `json:"short_id,omitempty"`
+	Node       string    `json:"node,omitempty"`
+	Since      time.Time `json:"since"`
+	State      string    `json:"state"`
+	WaitReason string    `json:"wait_reason,omitempty"`
+}
+
 // visTask is the slice of a task the views need, copied under the store lock
 // so the views are built from a stable snapshot.
 type visTask struct {
@@ -141,6 +166,58 @@ func (m *Manager) snapshotVisibility() []visPRD {
 // with m.mu held; Status calls buildTaskVisibility before taking m.mu.
 func (m *Manager) TaskVisibility() (queue []TaskWaitView, holdings []TaskHoldView) {
 	return m.buildTaskVisibility(m.budgetsSummary())
+}
+
+// TaskVerifyingViews returns one view per task in verification. Never nil.
+// It must not be called with m.mu held.
+func (m *Manager) TaskVerifyingViews() []TaskVerifyView {
+	out := []TaskVerifyView{}
+	prds := m.snapshotVisibility()
+	if len(prds) == 0 {
+		return out
+	}
+	m.mu.Lock()
+	led := m.capacity
+	m.mu.Unlock()
+	waiters := map[string]capacity.Waiter{}
+	if led != nil {
+		for _, w := range led.Snapshot().Waiting {
+			waiters[w.Holder] = w
+		}
+	}
+	for _, p := range prds {
+		for i := range p.tasks {
+			t := &p.tasks[i]
+			if t.status != TaskVerifying {
+				continue
+			}
+			v := TaskVerifyView{TaskID: t.id, PRDID: p.id, PRDTitle: p.title, TaskTitle: t.title,
+				Since: t.updatedAt, State: VerifyStateVerifying}
+			if led != nil {
+				if lease := led.LeaseOf(VerifyHolder(t.id)); lease != nil {
+					v.Node = lease.Node
+					if !lease.Acquired.IsZero() {
+						v.Since = lease.Acquired
+					}
+				}
+			}
+			if waiting, reason := taskVerifierWait(t.id, waiters); waiting {
+				v.State = VerifyStateWaitingForVerifier
+				v.WaitReason = m.ReadableWaitSentence(reason)
+				for _, h := range []string{VerifyHolder(t.id), JudgeHolder(t.id), t.id} {
+					if w, ok := waiters[h]; ok {
+						if !w.Since.IsZero() {
+							v.Since = w.Since
+						}
+						break
+					}
+				}
+			}
+			v.Readable, v.ShortID = m.holderNames(t.id)
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // buildTaskVisibility builds the views from the PRD store and the capacity

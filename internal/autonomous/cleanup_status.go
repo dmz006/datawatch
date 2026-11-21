@@ -195,6 +195,12 @@ type CleanupStatus struct {
 	// threshold. Nil until that happens, or when the temp folder cannot
 	// be listed.
 	BiggestTempFolders []TempFolderInfo `json:"biggest_temp_folders,omitempty"`
+	// LastWorktreeSkips is the entries the last recorded worktree pass
+	// left in place, as the pass reported them: the reason each one was
+	// left, and for a hold on uncommitted work the exact file list plus
+	// the one action that releases the hold. Cleared on the next
+	// pass (nil when that pass left nothing in place).
+	LastWorktreeSkips []WorktreeCleanupSkipped `json:"last_worktree_skips,omitempty"`
 	// DiskAlert is true while either reading is at or above the
 	// threshold.
 	DiskAlert bool `json:"disk_alert"`
@@ -272,6 +278,16 @@ func (r *cleanupStatusRecorder) Snapshot() CleanupStatus {
 	}
 	if len(st.BiggestTempFolders) > 0 {
 		st.BiggestTempFolders = append([]TempFolderInfo(nil), st.BiggestTempFolders...)
+	}
+	if len(st.LastWorktreeSkips) > 0 {
+		cp := make([]WorktreeCleanupSkipped, len(st.LastWorktreeSkips))
+		for i, sk := range st.LastWorktreeSkips {
+			cp[i] = sk
+			if sk.Files != nil {
+				cp[i].Files = append([]string(nil), sk.Files...)
+			}
+		}
+		st.LastWorktreeSkips = cp
 	}
 	return st
 }
@@ -368,6 +384,7 @@ func (r *cleanupStatusRecorder) RecordWorktree(res WorktreeCleanupResult, source
 	ps.Skipped = len(res.Skipped)
 	ps.Failed = len(res.Failed)
 	ps.SkippedByReason = skippedByReason(res)
+	r.st.LastWorktreeSkips = copyWorktreeSkips(res.Skipped)
 	ps.PermissionIssue = ClassifyCleanupPermissionErrors(res.Failed)
 	var bytes int64
 	for _, rm := range res.Removed {
@@ -392,6 +409,23 @@ func (r *cleanupStatusRecorder) RecordWorktree(res WorktreeCleanupResult, source
 // cleanupSkipPermissionDenied counts a removal the file system refused for
 // permission; such an entry is left in place like a skipped one.
 const cleanupSkipPermissionDenied = "permission_denied"
+
+// copyWorktreeSkips deep-copies the pass's skipped entries (with their
+// file lists), returning nil for an empty list, so the in-memory status
+// and the persisted JSON each own their copy.
+func copyWorktreeSkips(skips []WorktreeCleanupSkipped) []WorktreeCleanupSkipped {
+	if len(skips) == 0 {
+		return nil
+	}
+	cp := make([]WorktreeCleanupSkipped, len(skips))
+	copy(cp, skips)
+	for i := range cp {
+		if cp[i].Files != nil {
+			cp[i].Files = append([]string(nil), cp[i].Files...)
+		}
+	}
+	return cp
+}
 
 // skippedByReason groups one pass's skipped entries by reason, adding the
 // failed removals that were refused for permission. It returns nil when

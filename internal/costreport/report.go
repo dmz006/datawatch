@@ -49,6 +49,24 @@ const (
 // "unattributed" read as a name, not a missing one.
 const UnattributedKey = "unattributed"
 
+// UnassignedKey is the project row key for an Automaton that resolves to no
+// project; it is never an Automaton id.
+const UnassignedKey = "unassigned"
+
+// SupervisorOtherKey is the automaton-grouping row key (and series line)
+// for spend with no Automaton id whose role is supervisor or another known
+// non-Automaton role; UnattributedKey is kept for spend whose owner is
+// truly unknown (no Automaton id and no role).
+const SupervisorOtherKey = "Supervisor and other"
+
+// noAutomatonKey picks the key for spend with a blank Automaton id.
+func noAutomatonKey(role string) string {
+	if role == "" || role == "other" || machineryRoles[role] {
+		return UnattributedKey
+	}
+	return SupervisorOtherKey
+}
+
 // UnreleasedKey is the release-grouping key for work that has not shipped
 // yet.
 const UnreleasedKey = "unreleased"
@@ -125,6 +143,14 @@ type Record struct {
 	LastActivity  time.Time
 	// ActiveSeconds is the time the session was actually working.
 	ActiveSeconds float64
+	// Local marks a local-model session (pi, ollama). Its tokens are in
+	// LocalTokensIn/Out, never in TokensIn/Out, and are never priced.
+	Local          bool
+	LocalTokensIn  int
+	LocalTokensOut int
+	// TokensReported is false for a local session whose backend did not
+	// report token counts; its tokens are unknown, not zero.
+	TokensReported bool
 }
 
 // SourceOptions is the query the report hands to a Source after normalizing
@@ -370,6 +396,9 @@ type Totals struct {
 	// LocalTokens is the in and out tokens of local-model sessions (pi,
 	// ollama); they are part of TokensIn / TokensOut, never priced.
 	LocalTokens int `json:"local_tokens"`
+	// TokensNotReportedSessions counts local sessions whose tokens were not
+	// reported (unknown, not zero).
+	TokensNotReportedSessions int `json:"tokens_not_reported_sessions"`
 }
 
 // Row is one grouped line of the report.
@@ -391,6 +420,9 @@ type Row struct {
 	// LocalTokens is the in and out tokens of the group's local-model
 	// sessions (a subset of TokensIn + TokensOut).
 	LocalTokens int `json:"local_tokens"`
+	// TokensNotReportedSessions counts the group's local sessions whose
+	// tokens were not reported; LocalTokens excludes them.
+	TokensNotReportedSessions int `json:"tokens_not_reported_sessions"`
 	// FirstActivity / LastActivity are the earliest and latest activity
 	// stamps in the group; SpanSeconds is the wall-clock span between
 	// them and ActiveSeconds the summed working time.
@@ -581,7 +613,7 @@ func groupKey(g GroupBy, r Record, since time.Time, weekStart time.Weekday) stri
 	switch g {
 	case GroupByAutomaton:
 		if r.AutomatonID == "" {
-			return UnattributedKey
+			return noAutomatonKey(r.Role)
 		}
 		return r.AutomatonID
 	case GroupByAutomation:
@@ -809,6 +841,7 @@ func Build(
 		tin, tout             int
 		cread, ccreate, tools int
 		local                 int
+		notReported           int
 		first, last           time.Time
 		active                float64
 		usd                   float64
@@ -836,12 +869,18 @@ func Build(
 		}
 		a := add(groupKey(req.GroupBy, r, since, weekStart))
 		a.sessions++
+		if r.Local {
+			a.local += r.LocalTokensIn + r.LocalTokensOut
+			if !r.TokensReported {
+				a.notReported++
+			}
+		}
 		a.tin += r.TokensIn
 		a.tout += r.TokensOut
 		a.cread += r.CacheRead
 		a.ccreate += r.CacheCreation
 		a.tools += r.ToolCalls
-		if isLocalBackend(r.Backend) {
+		if !r.Local && isLocalBackend(r.Backend) {
 			a.local += r.TokensIn + r.TokensOut
 		}
 		a.active += r.ActiveSeconds
@@ -860,7 +899,7 @@ func Build(
 		}
 		a.backends = append(a.backends, r.Backend)
 		var usdRec *float64
-		if rateFor != nil {
+		if rateFor != nil && !r.Local {
 			if rate, ok := rateFor(r.Backend); ok && showUSD {
 				v := recordUSD(rate, r)
 				usdRec = &v
@@ -874,6 +913,9 @@ func Build(
 			for _, m := range []map[string]*UnitTotal{a.units, total} {
 				foldUnit(m, p, r.TokensIn, r.TokensOut, r.ActiveSeconds, usdRec)
 			}
+		}
+		if r.Local {
+			continue // local tokens are never priced and never block the group's rate
 		}
 		if rateFor == nil {
 			a.allRate = false
@@ -890,7 +932,7 @@ func Build(
 	out := make([]Row, 0, len(buckets))
 	for key, a := range buckets {
 		row := Row{Key: key, Sessions: a.sessions, TokensIn: a.tin, TokensOut: a.tout,
-			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, LocalTokens: a.local, ActiveSeconds: a.active}
+			CacheRead: a.cread, CacheCreation: a.ccreate, ToolCalls: a.tools, LocalTokens: a.local, TokensNotReportedSessions: a.notReported, ActiveSeconds: a.active}
 		if !a.first.IsZero() {
 			f, l := a.first, a.last
 			row.FirstActivity, row.LastActivity = &f, &l
@@ -938,6 +980,7 @@ func Build(
 		totals.CacheRead += r.CacheRead
 		totals.CacheCreation += r.CacheCreation
 		totals.LocalTokens += r.LocalTokens
+		totals.TokensNotReportedSessions += r.TokensNotReportedSessions
 	}
 
 	rep := &Report{

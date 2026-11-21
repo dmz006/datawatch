@@ -29,8 +29,9 @@ planner, and what that session left behind:
   plan is ingested at boot and the Automaton moves on without a new planner
   run;
 - nothing usable survives → planning is restarted once, with a decision
-  recording it; a further restart with nothing usable left sends the Automaton
-  back to draft.
+  recording it. The Automaton stays in `planning`: a restart never counts a
+  failure, records a failure or returns it to draft, so a second restart with
+  nothing usable left starts the decompose again the same way.
 
 That is the `reattach` (default) value. `restart` skips straight to the one
 automatic planning restart at boot, and `draft` resets the Automaton to draft,

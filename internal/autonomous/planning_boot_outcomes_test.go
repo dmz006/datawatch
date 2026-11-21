@@ -141,18 +141,18 @@ func TestBootResume_PlanningIngestRealPathStoresPlanAsDecompose(t *testing.T) {
 	}
 }
 
-func TestBootResume_PlanningIngestFailureFallsBackToDraft(t *testing.T) {
+func TestBootResume_PlanningIngestFailureStaysInPlanning(t *testing.T) {
 	f := newBootOutcomeFake(t, "dec-done", "/w/proj/.decompose-output-b.json", nil, false)
 	f.output = []byte(validPlanJSON)
 	f.ingestErr = errTestIngest
 
 	got := f.run(t)
 
-	if got.Status != PRDDraft {
-		t.Fatalf("status = %s, want %s when ingest fails", got.Status, PRDDraft)
+	if got.Status != PRDPlanning {
+		t.Fatalf("status = %s, want %s when ingest fails", got.Status, PRDPlanning)
 	}
-	if d := f.onlyDecision(t); d.Outcome != "planning_reset_to_draft" {
-		t.Fatalf("outcome = %s, want planning_reset_to_draft", d.Outcome)
+	if d := f.onlyDecision(t); d.Outcome != "planning_restarted" {
+		t.Fatalf("outcome = %s, want planning_restarted", d.Outcome)
 	}
 }
 
@@ -201,7 +201,7 @@ func TestBootResume_PlanningRestartOnceNoSessionNoOutputRestarts(t *testing.T) {
 	if len(f.starts) != 1 {
 		t.Fatalf("starts = %v, want one restart when the session is gone with no output", f.starts)
 	}
-	if d := f.onlyDecision(t); d.Outcome != "planning_restarted" || !strings.Contains(d.Reason, "no usable output") {
+	if d := f.onlyDecision(t); d.Outcome != "planning_restarted" || !strings.Contains(d.Reason, "planner session is gone") {
 		t.Fatalf("decision = %+v", d)
 	}
 }
@@ -233,13 +233,13 @@ func TestBootResume_PlanningRestartOnceSecondRestartFallsBackToDraft(t *testing.
 
 	got := f.run(t)
 
-	if len(f.starts) != 0 {
-		t.Fatalf("a second restart must not start planning, got %v", f.starts)
+	if len(f.starts) != 1 {
+		t.Fatalf("restart must start planning again, got %v", f.starts)
 	}
-	if got.Status != PRDDraft {
-		t.Fatalf("status = %s, want %s when the restart was already used", got.Status, PRDDraft)
+	if got.Status != PRDPlanning {
+		t.Fatalf("status = %s, want %s", got.Status, PRDPlanning)
 	}
-	if d := f.onlyDecision(t); d.Outcome != "planning_reset_to_draft" || !strings.Contains(d.Reason, "already restarted once") {
+	if d := f.onlyDecision(t); d.Outcome != "planning_restarted" {
 		t.Fatalf("decision = %+v", d)
 	}
 }
@@ -265,10 +265,10 @@ func TestBootResume_PlanningRestartOnceCannotLoopAcrossBoots(t *testing.T) {
 	})
 	got := f.run(t)
 
-	if len(f.starts) != 1 {
-		t.Fatalf("second boot restarted planning again: starts = %v", f.starts)
+	if len(f.starts) != 2 {
+		t.Fatalf("second boot must start the decompose again: starts = %v", f.starts)
 	}
-	if got.Status != PRDDraft {
-		t.Fatalf("second boot status = %s, want %s", got.Status, PRDDraft)
+	if got.Status != PRDPlanning {
+		t.Fatalf("second boot status = %s, want %s", got.Status, PRDPlanning)
 	}
 }

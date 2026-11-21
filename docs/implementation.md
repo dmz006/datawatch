@@ -239,12 +239,13 @@ path) and `autonomous.backoff_max_wait_minutes`
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md` and `docs/howto/usage-backoff.md`.
 
-A related admission fix, in the same area: a task's guardrail judge no longer queues
-behind the task's own worker lease. When a judge starts it inherits that lease (holder
-`judge:<unit>`, `internal/autonomous/judge_capacity.go` `JudgeAdmit.WorkerHolder`): on
-a node with a verifier pool the worker lease is released and the judge takes a
-`node-verify:<node>` slot; otherwise the lease is re-keyed to the judge's holder in
-place. No fresh slot is taken and the task is never counted twice.
+A related admission rule, in the same area: a task's guardrail judge never queues
+behind the task's own worker lease, and the lease is never handed over to it. The task
+releases its worker lease when it enters `verifying` (`releaseWorkerLeaseForVerify`,
+`internal/autonomous/capacity.go`); a `JudgeAdmit.WorkerHolder` lease still present when
+the judge starts is released in `AdmitJudge` (`internal/autonomous/judge_capacity.go`),
+and the judge then acquires its own `judge:<unit>` lease (on `node-verify:<node>` where
+the node has a verifier pool). See [howto/automata-capacity.md](howto/automata-capacity.md#the-worker-slot-at-verification).
 
 Usage calculator settings (`internal/config/usage_calculator.go`): the `usage.calculator`
 block holds `variant` (`pace-gauge` | `lane-planner` | `burn-ledger` | `all`, default `all`),
@@ -2547,7 +2548,8 @@ steps (no model call) and three model jobs, each run recorded. See
   the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
   `validator_retries` (default 2), `escalate_after_failures` (default 2),
   `run_retention` (default 500), `archive_cancelled_after_minutes`
-  (default 60), `lane_count.min` / `lane_count.max` (default
+  (default 60; still accepted but no longer drives the close step — it reads
+  `autonomous.archive_grace_minutes` now), `lane_count.min` / `lane_count.max` (default
   0; max 0 means no bounds, so the lane count step moves nothing; max must be at
   least min), and the event wake block `wake.enabled` (default false),
   `wake.kinds` (a list of lifecycle event kinds, default the eleven kinds in
@@ -2582,17 +2584,24 @@ steps (no model call) and three model jobs, each run recorded. See
   (`internal/autonomous/supervisor_loop_steps.go`) runs first every pass and
   walks terminal-state PRDs. `completed` and `rejected` are archived on the
   same pass. `cancelled` are held while `now - lastCancel` is below
-  `archive_cancelled_after_minutes` (default 60; 0 archives at once), where
+  `autonomous.archive_grace_minutes` (default 60; 0 archives at once; the
+  older `archive_cancelled_after_minutes` key is still accepted but no longer
+  drives the step), where
   `lastCancel` is the timestamp of the record's latest `cancel` decision
-  (falling back to `UpdatedAt`), so a re-cancel restarts the grace. A held
-  cancelled PRD additionally fails `archiveKeepsBranch` (`internal/autonomous/supervisor_loop_archive_branch.go`) while its branch is present and holds commits ahead of its base branch (`Git.BaseBranch`, default `main`); the guard is read-only (`for-each-ref` plus
+  (falling back to `UpdatedAt`), so a re-cancel restarts the grace. Any of
+  the three terminal states additionally fails `archiveKeepsBranch`
+  (`internal/autonomous/supervisor_loop_archive_branch.go`) while its branch
+  is present and holds commits ahead of its base branch (`Git.BaseBranch`,
+  default `main`); the guard is read-only (`for-each-ref` plus
   `CompareBranchToMain`) and conservative — no base repository, a git error,
   or an unknown comparison keeps the record — only a missing branch, no
-  recorded branch, or zero commits ahead lets it go. The loop archives
+  recorded branch, or zero commits ahead lets it go. `autonomous.archive_keep_unmerged`
+  (unset reads `true`) turns the guard off for `completed` and `rejected` only;
+  a `cancelled` record keeps its guard whatever it says. The loop archives
   through `Manager.Archive` under the actor `supervisor-loop` (the
   `supervisorLoopActor` constant); the operator Archive path is unchanged and
   records under the actor `operator`. The step's run detail reports closed /
-  held-in-grace / kept-for-branch counts.
+  held-in-grace / kept-for-branch counts, by status.
 - **Surfaces:** REST `GET /api/supervisor-loop/jobs|runs|stats`,
   `POST /api/supervisor-loop/jobs/{name}/run` and `POST /api/supervisor-loop/eval`
   (`internal/server/supervisor_loop.go`, federation capability

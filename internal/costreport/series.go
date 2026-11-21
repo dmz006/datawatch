@@ -80,7 +80,7 @@ type SeriesRequest struct {
 }
 
 // SeriesOptions are the series builder's collaborators. Every field is
-// optional: without ProjectOf every project falls under UnattributedKey,
+// optional: without ProjectOf every project falls under UnassignedKey,
 // without RateFor no money value is priced, and without Billing the points
 // carry tokens only.
 type SeriesOptions struct {
@@ -111,6 +111,12 @@ type SeriesPoint struct {
 	// Tokens is TokensIn plus TokensOut, the line's value.
 	Tokens int         `json:"tokens"`
 	Units  []UnitTotal `json:"units,omitempty"`
+	// LocalTokens is local-model tokens, its own unit: never in Tokens and
+	// never priced. TokensNotReportedSessions counts local sessions whose
+	// tokens are unknown. ActiveSeconds is the summed working time.
+	LocalTokens               int     `json:"local_tokens,omitempty"`
+	TokensNotReportedSessions int     `json:"tokens_not_reported_sessions,omitempty"`
+	ActiveSeconds             float64 `json:"active_seconds,omitempty"`
 }
 
 // SeriesGroup is one line of the series: its key, its totals over the
@@ -125,6 +131,10 @@ type SeriesGroup struct {
 	// UnitTotals is the line's money per billing unit over the window.
 	UnitTotals []UnitTotal   `json:"unit_totals,omitempty"`
 	Points     []SeriesPoint `json:"points"`
+	// Local-model units, apart from Tokens (see SeriesPoint).
+	LocalTokens               int     `json:"local_tokens,omitempty"`
+	TokensNotReportedSessions int     `json:"tokens_not_reported_sessions,omitempty"`
+	ActiveSeconds             float64 `json:"active_seconds,omitempty"`
 }
 
 // Series is the finished time series.
@@ -143,6 +153,10 @@ type Series struct {
 	Groups []SeriesGroup `json:"groups"`
 	// TotalsByUnit is the money per billing unit across all groups.
 	TotalsByUnit []UnitTotal `json:"totals_by_unit,omitempty"`
+	// LocalTokens and TokensNotReportedSessions cover all groups; local
+	// tokens are never added to Claude tokens or priced.
+	LocalTokens               int `json:"local_tokens,omitempty"`
+	TokensNotReportedSessions int `json:"tokens_not_reported_sessions,omitempty"`
 	// RetentionDays is the spend ledger's retention horizon.
 	RetentionDays int `json:"retention_days"`
 	// UnknownSpendNote is present when the window reaches before the
@@ -239,21 +253,29 @@ func (b SeriesBucket) floor(t time.Time) time.Time {
 	return t.UTC().Truncate(b.width())
 }
 
-// seriesKey picks the line a ledger entry belongs to; a blank owner falls
-// under UnattributedKey, like the report's groupings.
+// seriesKey picks the line a ledger entry belongs to; a project line with no
+// resolvable project falls under UnassignedKey, any other blank key under
+// UnattributedKey, like the report's groupings.
 func seriesKey(g SeriesGroupBy, e spendledger.Entry, projectOf func(string) string) string {
 	var k string
 	switch g {
-	case SeriesByAutomaton:
-		k = e.AutomatonID
 	case SeriesByProject:
-		if projectOf != nil && e.AutomatonID != "" {
+		if projectOf != nil && strings.TrimSpace(e.AutomatonID) != "" {
 			k = projectOf(e.AutomatonID)
 		}
+		if k == "" {
+			return UnassignedKey
+		}
+		return k
+	case SeriesByAutomaton:
+		k = e.AutomatonID
 	case SeriesByModel:
 		k = e.Backend
 	}
 	if k == "" {
+		if g == SeriesByAutomaton || g == SeriesByProject {
+			return noAutomatonKey(e.Role)
+		}
 		return UnattributedKey
 	}
 	return k
@@ -267,6 +289,12 @@ type seriesAcc struct {
 	sess   int
 	tin    int
 	tout   int
+	local  int
+	nrep   int
+	active float64
+	pLocal map[int]int
+	pNrep  map[int]int
+	pAct   map[int]float64
 }
 
 // BuildSeries buckets the ledger entries into time series. Each entry
@@ -327,7 +355,8 @@ func BuildSeries(req SeriesRequest, entries []spendledger.Entry, opts SeriesOpti
 		key := seriesKey(req.GroupBy, e, opts.ProjectOf)
 		a := accs[key]
 		if a == nil {
-			a = &seriesAcc{points: map[int]*SeriesPoint{}, pUnits: map[int]map[string]*UnitTotal{}, units: map[string]*UnitTotal{}}
+			a = &seriesAcc{points: map[int]*SeriesPoint{}, pUnits: map[int]map[string]*UnitTotal{}, units: map[string]*UnitTotal{},
+				pLocal: map[int]int{}, pNrep: map[int]int{}, pAct: map[int]float64{}}
 			accs[key] = a
 		}
 		p := a.points[idx]
@@ -336,6 +365,18 @@ func BuildSeries(req SeriesRequest, entries []spendledger.Entry, opts SeriesOpti
 			a.points[idx] = p
 		}
 		tin, tout := int(e.TokensIn), int(e.TokensOut)
+		if e.Local {
+			// Claude fields stay as recorded; local tokens are their own unit.
+			lt := int(e.LocalTokensIn + e.LocalTokensOut)
+			a.local += lt
+			a.pLocal[idx] += lt
+			if !e.TokensReported {
+				a.nrep++
+				a.pNrep[idx]++
+			}
+		}
+		a.active += e.ActiveSeconds
+		a.pAct[idx] += e.ActiveSeconds
 		p.Sessions++
 		p.TokensIn += tin
 		p.TokensOut += tout
@@ -348,7 +389,7 @@ func BuildSeries(req SeriesRequest, entries []spendledger.Entry, opts SeriesOpti
 		}
 		var usd *float64
 		if opts.RateFor != nil && showUSD {
-			if rate, ok := opts.RateFor(e.Backend); ok {
+			if rate, ok := opts.RateFor(e.Backend); ok && !e.Local {
 				v := session.EstimateCost(rate, tin, tout)
 				usd = &v
 			}
@@ -363,14 +404,19 @@ func BuildSeries(req SeriesRequest, entries []spendledger.Entry, opts SeriesOpti
 	}
 
 	groups := make([]SeriesGroup, 0, len(accs))
+	totLocal, totNrep := 0, 0
 	for key, a := range accs {
 		g := SeriesGroup{Key: key, Sessions: a.sess, TokensIn: a.tin, TokensOut: a.tout,
-			Tokens: a.tin + a.tout, UnitTotals: sortedUnits(a.units), Points: make([]SeriesPoint, n)}
+			Tokens: a.tin + a.tout, UnitTotals: sortedUnits(a.units), Points: make([]SeriesPoint, n),
+			LocalTokens: a.local, TokensNotReportedSessions: a.nrep, ActiveSeconds: a.active}
+		totLocal += a.local
+		totNrep += a.nrep
 		for i := 0; i < n; i++ {
 			if p := a.points[i]; p != nil {
 				pt := *p
 				pt.Tokens = pt.TokensIn + pt.TokensOut
 				pt.Units = sortedUnits(a.pUnits[i])
+				pt.LocalTokens, pt.TokensNotReportedSessions, pt.ActiveSeconds = a.pLocal[i], a.pNrep[i], a.pAct[i]
 				g.Points[i] = pt
 			} else {
 				g.Points[i] = SeriesPoint{Start: starts[i]}
@@ -390,6 +436,7 @@ func BuildSeries(req SeriesRequest, entries []spendledger.Entry, opts SeriesOpti
 		Groups:        groups,
 		TotalsByUnit:  sortedUnits(total),
 		RetentionDays: RetentionDays,
+		LocalTokens:   totLocal, TokensNotReportedSessions: totNrep,
 	}
 	if horizon := until.AddDate(0, 0, -RetentionDays); since.Before(horizon) {
 		s.UnknownSpendNote = unknownSpendNote(horizon)

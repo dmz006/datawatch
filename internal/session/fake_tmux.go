@@ -60,6 +60,23 @@ type FakeTmux struct {
 	// can assert the exact send-keys / Enter sequence. Off by default so
 	// tests that only count sends keep their single recorded call.
 	SubmitFlow bool
+
+	// NoEcho stops typed text from being appended to a seeded pane. By
+	// default a send-keys of text to a session with pane content shows up
+	// in that pane, as it does in the claude input box, so task-arrival
+	// verification can see it; a test sets NoEcho to model input that is
+	// swallowed.
+	NoEcho bool
+}
+
+// echo appends typed text to the seeded pane unless NoEcho is set.
+func (f *FakeTmux) echo(session, keys string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.NoEcho || keys == "Enter" || f.Pane[session] == "" {
+		return
+	}
+	f.Pane[session] += "\n> " + keys
 }
 
 // FakeTmuxCall records one method invocation.
@@ -148,13 +165,18 @@ func (f *FakeTmux) SessionExists(name string) bool {
 }
 
 func (f *FakeTmux) SendKeys(session, keys string) error {
-	return f.record("send-keys", session, keys, "Enter")
+	if err := f.record("send-keys", session, keys, "Enter"); err != nil {
+		return err
+	}
+	f.echo(session, keys)
+	return nil
 }
 
 func (f *FakeTmux) SendKeysWithSettle(session, keys string, settle time.Duration) error {
 	if err := f.record("send-keys-settle", session, keys, settle.String()); err != nil {
 		return err
 	}
+	f.echo(session, keys)
 	f.mu.Lock()
 	flow := f.SubmitFlow
 	f.mu.Unlock()

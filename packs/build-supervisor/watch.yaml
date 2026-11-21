@@ -1,0 +1,12 @@
+# Watch tick: the light cadence pass. Default every twenty minutes.
+name: watch
+kind: watch
+purpose: Check pinned state, triage what changed, record what was done.
+steps:
+  - read the pinned state record
+  - list the project's Automata and note any that changed state since the last "checked" entry
+  - for each failed or blocked Automaton, read the reason and triage it (retry, corrective task, hold or ask)
+  - when lanes are idle and a planned Automaton is ready, approve and run it
+  - write a "checked" entry with the time and what was seen
+quiet_when: nothing changed since the last checked entry
+wake_on: [prd.blocked, task.review_needed, task.failed, task.final_gate_failed]

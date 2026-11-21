@@ -185,10 +185,10 @@ type DecomposeLintMatch struct {
 	// script (and followed helpers) checks a markdown heading (a quoted
 	// string of one to six # followed by a space, or the same heading with
 	// the # stripped) or the exact gate output format "Final answer" /
-	// "Verification summary" that the task's own spec does not name
-	// verbatim — anchoring the assertion to what the task's own spec
-	// actually asks for. A script that does not exist yet is skipped.
-	// Absent (false) = do not check.
+	// "Verification summary" that the task's own spec does not name —
+	// verbatim or in equivalent wording — anchoring the assertion to
+	// what the task's own spec actually asks for. A script that does
+	// not exist yet is skipped. Absent (false) = do not check.
 	VerificationScriptSpecUnanchored bool `yaml:"verification_script_spec_unanchored,omitempty" json:"verification_script_spec_unanchored,omitempty"`
 	// VerificationScriptFinalGateArtefactAllowed asserts the task's
 	// verification script (and followed helpers) enforces the whole
@@ -210,6 +210,41 @@ type DecomposeLintMatch struct {
 	// probe that fails or prints nothing are skipped (never
 	// guess). Absent (false) = do not check.
 	VerificationScriptInvokesUnknownFlag bool `yaml:"verification_script_invokes_unknown_flag,omitempty" json:"verification_script_invokes_unknown_flag,omitempty"`
+
+	// FixedCalendarDateInTest asserts the task writes a test (a test file
+	// in its files list, or an Add/Write title mentioning test) and its
+	// spec contains a fixed ISO calendar date (YYYY-MM-DD). Absent
+	// (false) = do not check.
+	FixedCalendarDateInTest bool `yaml:"fixed_calendar_date_in_test,omitempty" json:"fixed_calendar_date_in_test,omitempty"`
+	// VerificationScriptArtefactFiles asserts the task's verification
+	// script computes a changed-file set and flags unexpected files
+	// without exempting the daemon-generated artefact folders and the
+	// changelog. Absent (false) = do not check.
+	VerificationScriptArtefactFiles bool `yaml:"verification_script_artefact_files,omitempty" json:"verification_script_artefact_files,omitempty"`
+	// VerificationScriptFinalGateRerun asserts the task's verification
+	// script holds the whole changed-file set to a finite allow-list with
+	// no guard for the final gate rerunning it on the cumulative tree.
+	// Absent (false) = do not check.
+	VerificationScriptFinalGateRerun bool `yaml:"verification_script_final_gate_rerun,omitempty" json:"verification_script_final_gate_rerun,omitempty"`
+	// VerificationScriptUnknownFlag asserts the task's verification
+	// script (read from the project directory, plus any repo-relative
+	// helper it sources, one level deep) passes a long flag to an
+	// installed command — or to one of its subcommands — whose own
+	// `--help` output does not list that flag. A command that is not
+	// installed, or whose help output cannot be read, is skipped
+	// silently; help probes are bounded by a few-second timeout. A
+	// script that does not exist yet is skipped. Absent (false) = do
+	// not check.
+	VerificationScriptUnknownFlag bool `yaml:"verification_script_unknown_flag,omitempty" json:"verification_script_unknown_flag,omitempty"`
+	// VerificationScriptTextNotInSpec asserts the task's verification
+	// script (and followed helpers) checks a markdown heading (a
+	// `# …` line, grepped or compared) or a multi-word output phrase
+	// that does not appear in the task spec — verbatim or in equivalent
+	// wording — which the spec is the contract for; text the script
+	// generates itself (echoed or written before it is checked) is not
+	// an assertion and is not flagged. A script that does not exist yet
+	// is skipped. Absent (false) = do not check.
+	VerificationScriptTextNotInSpec bool `yaml:"verification_script_text_not_in_spec,omitempty" json:"verification_script_text_not_in_spec,omitempty"`
 	// Kind asserts the task's kind (for example "final_gate" or
 	// "smoke"), compared case-insensitively. Empty = do not check.
 	Kind       string `yaml:"kind,omitempty" json:"kind,omitempty"`

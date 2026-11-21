@@ -230,13 +230,24 @@ var severityOrder = map[Severity]int{
 }
 
 func hasFailingFindings(fs []Finding, threshold Severity) bool {
+	return len(FailingFindings(fs, threshold)) > 0
+}
+
+// FailingFindings returns the subset of findings at or above the given
+// threshold — the same rule the pass/fail verdict applies in Run. An
+// empty or unrecognized threshold defaults to error.
+func FailingFindings(findings []Finding, threshold Severity) []Finding {
+	if threshold == "" {
+		threshold = SeverityError
+	}
 	thresh := severityOrder[threshold]
-	for _, f := range fs {
+	var out []Finding
+	for _, f := range findings {
 		if severityOrder[f.Severity] >= thresh {
-			return true
+			out = append(out, f)
 		}
 	}
-	return false
+	return out
 }
 
 // BuildFixSpec constructs a Claude Code task spec from scan findings

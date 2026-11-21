@@ -22,16 +22,21 @@ type ToolUsagePoint struct {
 	Start     time.Time `json:"start"`
 	Sessions  int       `json:"sessions"`
 	ToolCalls int       `json:"tool_calls"`
+	// ToolCallsNotReportedSessions counts local sessions whose tool calls
+	// were not reported; they add nothing to ToolCalls (unknown, not zero).
+	ToolCallsNotReportedSessions int `json:"tool_calls_not_reported_sessions,omitempty"`
 }
 
 // ToolUsageGroup is one line of the tool usage series: its key, its totals
 // over the window and one point per bucket (zero-filled so every line
 // shares the same x axis).
 type ToolUsageGroup struct {
-	Key       string           `json:"key"`
-	Sessions  int              `json:"sessions"`
-	ToolCalls int              `json:"tool_calls"`
-	Points    []ToolUsagePoint `json:"points"`
+	Key       string `json:"key"`
+	Sessions  int    `json:"sessions"`
+	ToolCalls int    `json:"tool_calls"`
+	// ToolCallsNotReportedSessions is flagged, never shown as zero calls.
+	ToolCallsNotReportedSessions int              `json:"tool_calls_not_reported_sessions,omitempty"`
+	Points                       []ToolUsagePoint `json:"points"`
 }
 
 // ToolUsage is the finished tool usage series.
@@ -51,6 +56,9 @@ type ToolUsage struct {
 	// TotalToolCalls and TotalSessions cover all groups.
 	TotalToolCalls int `json:"total_tool_calls"`
 	TotalSessions  int `json:"total_sessions"`
+	// TotalToolCallsNotReportedSessions counts local sessions whose tool
+	// calls were not reported.
+	TotalToolCallsNotReportedSessions int `json:"total_tool_calls_not_reported_sessions,omitempty"`
 	// ToolNamesNote says what the figures are and that no per-tool-name
 	// breakdown exists (see ToolNamesNote).
 	ToolNamesNote string `json:"tool_names_note"`
@@ -125,7 +133,7 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 	first := starts[0]
 
 	groups := map[string]*ToolUsageGroup{}
-	total, totalSessions := 0, 0
+	total, totalSessions, totalNR := 0, 0, 0
 	for _, e := range entries {
 		at := e.StartedAt
 		if at.IsZero() || at.Before(since) || at.After(until) {
@@ -145,6 +153,12 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 		if calls < 0 {
 			calls = 0
 		}
+		if e.Local && !e.TokensReported {
+			calls = 0
+			g.ToolCallsNotReportedSessions++
+			g.Points[idx].ToolCallsNotReportedSessions++
+			totalNR++
+		}
 		g.Sessions++
 		g.ToolCalls += calls
 		g.Points[idx].Sessions++
@@ -160,17 +174,18 @@ func BuildToolUsage(req SeriesRequest, entries []spendledger.Entry, opts SeriesO
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 
 	tu := &ToolUsage{
-		GroupBy:        req.GroupBy,
-		Bucket:         bucket,
-		Window:         window.String(),
-		Since:          since,
-		Until:          until,
-		Buckets:        starts,
-		Groups:         out,
-		TotalToolCalls: total,
-		TotalSessions:  totalSessions,
-		ToolNamesNote:  ToolNamesNote,
-		RetentionDays:  RetentionDays,
+		GroupBy:                           req.GroupBy,
+		Bucket:                            bucket,
+		Window:                            window.String(),
+		Since:                             since,
+		Until:                             until,
+		Buckets:                           starts,
+		Groups:                            out,
+		TotalToolCalls:                    total,
+		TotalSessions:                     totalSessions,
+		TotalToolCallsNotReportedSessions: totalNR,
+		ToolNamesNote:                     ToolNamesNote,
+		RetentionDays:                     RetentionDays,
 	}
 	if horizon := until.AddDate(0, 0, -RetentionDays); since.Before(horizon) {
 		tu.UnknownSpendNote = unknownSpendNote(horizon)
@@ -319,6 +334,9 @@ type Failures struct {
 	TotalAttempts int `json:"total_attempts"`
 	TotalTasks    int `json:"total_tasks"`
 	TotalRetries  int `json:"total_retries"`
+	// UncategorizedAttempts counts in-window attempts whose category was blank
+	// (read as UncategorizedFailure), so the gap shows beside TotalAttempts.
+	UncategorizedAttempts int `json:"uncategorized_attempts"`
 	// UndatedAttempts counts attempts that recorded no time, so they are in
 	// no week and in no total.
 	UndatedAttempts int `json:"undated_attempts"`
@@ -337,6 +355,9 @@ func failureWeekStart(t time.Time) time.Time {
 func failureKey(g FailuresGroupBy, r FailureRecord) (key, label string) {
 	switch g {
 	case FailuresByProject:
+		if strings.TrimSpace(r.Project) == "" {
+			return UnassignedKey, ""
+		}
 		key = r.Project
 	case FailuresByAutomation:
 		key, label = r.AutomationID, r.AutomationName
@@ -422,6 +443,7 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 	allCats := map[string]int{}
 	allTasks := map[string]int{}
 	undated := 0
+	uncategorized := 0
 	for _, r := range records {
 		if r.At.IsZero() {
 			undated++
@@ -434,6 +456,7 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 		cat := strings.TrimSpace(r.Category)
 		if cat == "" {
 			cat = UncategorizedFailure
+			uncategorized++
 		}
 		key, label := failureKey(req.GroupBy, r)
 		a := accs[key]
@@ -511,17 +534,18 @@ func BuildFailures(req FailuresRequest, records []FailureRecord, now time.Time) 
 		totalRetries += rt
 	}
 	return &Failures{
-		GroupBy:         req.GroupBy,
-		Window:          req.Window.String(),
-		Since:           since,
-		Until:           until,
-		Weeks:           weeks,
-		Groups:          groups,
-		Categories:      sortCategoryCounts(allCats),
-		TotalAttempts:   total,
-		TotalTasks:      len(allTasks),
-		TotalRetries:    totalRetries,
-		UndatedAttempts: undated,
-		RetryNote:       RetryNote,
+		GroupBy:               req.GroupBy,
+		Window:                req.Window.String(),
+		Since:                 since,
+		Until:                 until,
+		Weeks:                 weeks,
+		Groups:                groups,
+		Categories:            sortCategoryCounts(allCats),
+		TotalAttempts:         total,
+		TotalTasks:            len(allTasks),
+		TotalRetries:          totalRetries,
+		UncategorizedAttempts: uncategorized,
+		UndatedAttempts:       undated,
+		RetryNote:             RetryNote,
 	}, nil
 }

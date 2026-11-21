@@ -19,7 +19,10 @@ import (
 )
 
 // uncommittedCauseMaxRunes caps the commit error carried in a hold reason.
-const uncommittedCauseMaxRunes = 300
+// The error text ends with the command output and carries the exit status
+// before it, so the cap is large enough that both survive for a realistic
+// git failure message; the cap only guards a pathological output size.
+const uncommittedCauseMaxRunes = 1000
 
 // SetTaskCommit replaces the function the executor uses to commit a task's
 // leftover files. Nil restores DefaultTaskCommit. Tests inject a fake.
@@ -65,6 +68,25 @@ func skippedMissingPathsNote(skipped []string) string {
 		return ""
 	}
 	return "skipped because it no longer exists: " + boundedFileList(skipped, uncommittedQuestionFiles)
+}
+
+// skippedIgnoredPathsNote names the in-scope paths the commit skipped because
+// the repository's own ignore rules ignore them and they are not in the
+// index: the commit neither added them, nor force-added them, nor committed
+// them. Empty when none were skipped that way. When every listed path was
+// skipped the commit had nothing to stage and made no commit at all, and the
+// note then also says so, and that a generated script meant to travel with
+// the work must be listed outside the ignored folder.
+func skippedIgnoredPathsNote(skipped []string, allSkipped bool) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	note := "skipped because it is git-ignored: " + boundedFileList(skipped, uncommittedQuestionFiles)
+	if allSkipped {
+		note += "; nothing was committed. A generated script meant to travel " +
+			"with the work must be listed outside the ignored folder."
+	}
+	return note
 }
 
 // checkUncommittedWork refuses to let a task complete while its work is
@@ -118,6 +140,10 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 
 	var cause string
 	var skippedNote string
+	// Informational companion to skippedNote: the paths the commit skipped
+	// because the repository ignores them (never an error — the commit
+	// succeeds, it simply did not carry those paths).
+	var skippedIgnoredNote string
 	// The commit's pathspec: in-scope leftovers minus the files whose only
 	// change is the daemon's own rules-file sections, which nobody in this
 	// task wrote and which must not go into the task's commit. An empty
@@ -127,7 +153,27 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 		// Classified before the commit so a deletion the commit itself
 		// records is not mistaken for a path that was already gone.
 		_, _, skipped := classifyTaskCommitPaths(ctx, dir, paths)
-		skippedNote = skippedMissingPathsNote(skipped)
+		// The skip comes in two kinds. Everything a plain git add would take
+		// away was already listed by the worktree; of the rest, the ones git
+		// ignores (and that are not in the index) are the skipped-ignored
+		// paths — DefaultTaskCommit neither added them nor force-added them
+		// — and the rest are simply gone. The TaskCommitFn signature returns
+		// only HEAD and an error, so the split is computed here on the
+		// side.
+		skippedIgnored := skippedIgnoredPaths(ctx, dir, skipped)
+		ignoredSet := make(map[string]bool, len(skippedIgnored))
+		for _, p := range skippedIgnored {
+			ignoredSet[p] = true
+		}
+		skippedMissing := make([]string, 0, len(skipped))
+		for _, p := range skipped {
+			if !ignoredSet[p] {
+				skippedMissing = append(skippedMissing, p)
+			}
+		}
+		skippedAll := len(skipped) == len(paths) && len(paths) > 0
+		skippedNote = skippedMissingPathsNote(skippedMissing)
+		skippedIgnoredNote = skippedIgnoredPathsNote(skippedIgnored, skippedAll)
 		sha, cerr := m.taskCommitFn()(ctx, dir, paths, uncommittedTaskCommitMessage(prd, t))
 		if cerr != nil {
 			cause = uncommittedCommitCause(cerr)
@@ -156,6 +202,12 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	}
 	if skippedNote != "" {
 		cause += "; " + skippedNote
+	}
+	// The ignored-paths note is informational: the task commit did not fail
+	// because of it, it only says which listed paths were skipped and that
+	// nothing was committed when all were.
+	if skippedIgnoredNote != "" {
+		cause += "; " + skippedIgnoredNote
 	}
 	if note := skippedMarkerFilesNote(skippedMarkers); note != "" {
 		cause += "; " + note

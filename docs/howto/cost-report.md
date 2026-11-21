@@ -109,9 +109,34 @@ input:
 - **Cache read and created** — prompt-cache tokens. A cache read is priced at a
   tenth of the input rate and a cache creation at 1.25 times it, so they are shown
   on their own columns and are never folded into `tokens_in`.
-- **Local-model tokens** — the tokens of pi and ollama sessions. A pi session's
-  tokens come from its own session log. They appear in the totals and the
-  local column; they never produce a USD figure.
+- **Local-model tokens** — the tokens of pi and ollama sessions. They are read
+  from the session's own output log (the trailing part of it, where the
+  backend wrote its usage counts). They appear in the totals and the local
+  column; they never produce a USD figure.
+
+## Local tokens, tool calls and active seconds
+
+**Local tokens** are the tokens a local-model backend (pi, ollama) used. They
+are their own unit: never priced, never added to Claude tokens, and kept in
+their own `local_tokens` figure (the local tokens column) on every row, chart line and total. A local
+session adds nothing to a dollar or points figure and never blocks a group's
+rate.
+
+Some backends give no counts at all. A local session whose backend reports no
+token counts is **not reported**: its tokens are unknown, not zero. Local
+tokens leave it out, and `tokens_not_reported_sessions` counts how many such
+sessions the row or line holds, so a low figure can be told from a gap. A
+backend that reports no tool-call count is shown the same way, through
+`tool_calls_not_reported_sessions`, and the tool-usage chart says it is not
+reported rather than drawing zero.
+
+**Tool calls** are the number of tool invocations a session made, counted per
+session and never by tool name.
+
+**Active seconds** are the time an Automaton's sessions spent working: wall
+time with the time a session sat idle waiting for input taken out. They are
+summed per row, chart line and total as `active_seconds`, and are never a
+cost.
 
 ## Reconciliation against the usage readings
 
@@ -287,13 +312,22 @@ An Automaton's row counts every session it launches, not just its worker session
 
 The same per-Automaton row (the whole ledger, not the window) appears as `cost` in `GET /api/autonomous/prds/{id}` (MCP `autonomous_prd_get`), so one Automaton's spend reads without running the report. An Automaton with no recorded spend gets a zero row; `cost` is absent only when no spend ledger is wired. The CLI and comm-channel cost report show the sessions, tool-call and time columns for Automaton rows, and the MCP `cost_report` tool returns them in every row.
 
+### Supervisor and other, and unattributed
+
+In the Automaton grouping, spend with no Automaton id is split by its role so that the owner of each unit of spend is clear:
+
+- **Supervisor and other** holds spend whose role is `supervisor` or another known non-Automaton role. It is work the operator or the supervisor ran outside any Automaton, and it is a real owner, not a gap. The chart legend gained this line name only; no other chart text changed.
+- **`unattributed`** holds spend whose owner is truly unknown: no Automaton id and no role (a blank role, or the role `other`). This is the only line that means a session cannot be traced to an owner.
+
+Automaton machinery roles (`worker`, `decompose`, `rules_review`, `verification`, `guardrail`) with no Automaton id are not moved to either line: they are counted by the attribution check below, because a launcher skipped the stamp.
+
 ### Checking for unattributed sessions
 
-The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `session_ids`, `ok` and a `note`. `ok` is true when none are missing. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
+The checks status (`GET /api/autonomous/checks`, MCP `checks_status`) carries an `attribution` object: `automaton_launched` (ledger sessions started by Automaton machinery, meaning a task id or a worker, decompose, rules-review, verification or guardrail role), `unattributed` (those with no Automaton id), `no_automaton_no_role` (sessions with no Automaton id, no task and no role, or the role `other`: the spend that lands under `unattributed`), `session_ids`, `ok` and a `note`. `ok` is true when none of the Automaton-launched sessions are missing an id; `no_automaton_no_role` is reported alongside it and does not change `ok`. A non-zero `unattributed` means a launcher skipped the stamp and that spend shows under `unattributed` in the Automaton grouping. The check reads the whole ledger and is absent when no ledger is wired.
 
 ### What is recorded per Automaton and role
 
-Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification` or `guardrail`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
+Each ledger entry records, for one session: the Automaton and task it belongs to, its **role** (`worker`, `decompose`, `rules_review`, `verification`, `guardrail` or `supervisor`; a session launched with no role is recorded as `other`), the backend, tokens in and out, cache tokens, tool calls, and the start, end and active time. The Automaton's row adds these up, so decompose, verification, rules-review and retry sessions are part of its cost and not hidden under the worker.
 
 ### Reading the window: a missing row, partial rows and unknown spend
 
@@ -319,6 +353,39 @@ On a bundled plan the dollar figure is `api_equivalent_usd`, labeled **“bundle
 | `release` | Release (with `units` — the shipped units — per row; work not yet shipped lands under `unreleased`) |
 | `week` | Week, using `cost_report.week_start` (Monday by default, or Sunday) |
 
+### Grouping by project
+
+The Project grouping (`group_by=project` on the cost series, the **Project**
+choice in the chart cards) draws one line per project. Each session's spend is
+placed under the project its Automaton resolves to, in this order:
+
+1. **The Automaton's project link**, the project name set on the Automaton.
+2. **Its parent Automaton's project**, followed up the parent chain. A spawned
+   child counts toward its parent's project; the walk is capped and cannot loop.
+3. **Its project directory**: the last part of the directory path names the
+   project.
+
+**A project name is never an Automaton id.** The Automaton's own id is skipped
+at every step: a project link or directory name equal to that id is ignored and
+the walk moves on to the next step, so the Project grouping never shows an
+Automaton id as a project name. A project name that equals a *different*
+Automaton's id is not filtered out by this rule; see the operator-review note
+in [automata-cost.md](automata-cost.md#cost-grouped-by-project).
+
+An Automaton that resolves to none of these, or a session with no Automaton at
+all, has no project, so its spend lands on one line named **unassigned**. There
+is only one such line, however many Automata lack a project. The Projects
+sub-tab's Unassigned page lists those Automata one by one (see
+[projects-tab.md](projects-tab.md#the-page-sub-tabs)); the cost line only sums
+their spend. The glossary entry is **Unassigned (project line)** in
+[datawatch-definitions.md](../datawatch-definitions.md).
+
+**Unattributed still means spend with no owner.** It is the row for spend whose
+owner field is blank under the Automaton, Automation and model groupings. The
+Project grouping has no separate unattributed line: spend with no Automaton
+owner has no project either, so it is counted on the **unassigned** line. Either
+way the spend is not dropped and is not backfilled.
+
 ### The per-release roll-up
 
 `group_by release` is the roll-up for “what did each release cost”. The
@@ -330,7 +397,7 @@ tokens. Work whose owner has *not shipped yet* lands under the **`unreleased`**
   row instead of being dropped, and a group that spans different releases
 carries the `mixed` key with `units` blank.
 - **`units` is on the row.** Each `release` row carries `units`, the count of
-  shipped units (PRDs / Automations) that release contains, from the daemon's
+  shipped units (Automata / Automations) that release contains, from the daemon's
   shipped-unit state — that is the roll-up: sessions and tokens *per released
   unit* are yours to divide out, and the `unreleased` row tells you how far
   behind the ships the work is.
@@ -441,28 +508,77 @@ default.
 
 ## The chart cards on the Automata page
 
-The Automata page shows the combined usage report as four cards, in the cost
-report area of its **Progress and cost** tab. A row of controls above them
-sets the grouping (Project, Automation or Automaton), the window (7 days to 8
-weeks) and whether the first chart shows tokens or money. Every card has a
-one-line purpose, a state, a reason and a next action, and a **?** that opens
-this page.
+The Automata page shows the combined usage report as four titled cards, in
+the cost report area of its **Progress and cost** tab. A row of controls
+above them sets the grouping (Project, Automation or Automaton), the window
+(7 days to 8 weeks) and **Show** — tokens or money for the cost-over-time chart, and offers
+a **Refresh**. Each card repeats the same three controls in its own row, and
+adds a **Series** choice: the top **5**, **10** or **20** groups, or
+**All** (10 by default). The choices are one shared state written by every
+card's row, so the cards never disagree, and every choice repaints the
+loaded data without a new request. Every card has a title, a one-line
+purpose, a state, a reason and a next action, and a **?** that opens this
+page.
 
 | Card | What it draws | Notes |
 |---|---|---|
 | **Cost over time** | A line per group: tokens, or money | Money is one chart per billing unit. Each axis is labelled with its unit and billing mode, for example dollars on an API-metered backend and points on a bundled plan, so units are never drawn together or added. When no rate or monthly price is set, or USD estimates are off, tokens are drawn and the card says so |
-| **Tool usage** | A line per group: tool calls | Counts only, never tool names |
-| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group | Retries count each task once and restart when a task is reset |
+| **Tool usage** | A line per group: tool calls | Counts only, never tool names; sessions whose backend gave no count are reported as not reported |
+| **Retries and failure categories** | Failed attempts per week, stacked by category, and a table of attempts, tasks and retries per group. An attempt with no recorded category is drawn as `uncategorized` | Retries count each task once and restart when a task is reset. Categories are recorded when an attempt is recorded and filled in for older attempts at each daemon start, so `uncategorized` should only be left for attempts with no reason, summary or verifier issue; see [Failure categories](failed-attempt-cost.md#failure-categories) |
 | **Combined usage report** | One table joining tokens, money, tool calls, failed attempts and retries per group | Money is listed per unit on its own line |
 
-Each chart draws at most six lines and sixty points per line, and each table
-at most eight rows; the card says when more groups exist. Cost over time and
-tool usage are not recorded per Automation, so under that grouping only the
-failures chart and the combined table are drawn.
+Each chart draws the chosen number of series — the groups with the largest
+totals first — and folds the rest into one **Other** line, so nothing is
+dropped and the card says how many of the groups it is showing; with
+**All** every group is a line. Each series carries at most sixty points. The
+cost and tool-usage legends name every series as a tile you click to show or
+hide it in that card's drawing only; a hidden series keeps its name in the
+legend, struck through, and the **Other** line is a plain entry, not a tile.
+Each table shows the same number of groups and folds the rest into one
+**Other** row, saying how many of its rows it is showing. Every series is
+named by its label — an Automaton's title, never its id, the id only where
+no title is known. Cost over time and tool usage are not recorded per
+Automation, so under that grouping only the failures chart and the combined
+table are drawn.
 
 A card whose data is empty, or whose view the daemon cannot supply, is not
 drawn. Its reason and next action appear as an entry at the top of the **Events**
 tab instead, so a missing chart is always explained.
+
+### Failure categories on the failures card
+
+A category is derived when the attempt is recorded, from the end reason and
+the failure text (the summary and the verifier's issues). The first rule that
+matches wins:
+
+| Order | Attempt as recorded | Category |
+|---|---|---|
+| 1 | Already has a category (the verifier or executor named it, for example `content`, `scope`, `security`, `judging` or `invalid-response`) | Kept as it is |
+| 2 | No end reason, no summary and no verifier issue | Blank, drawn as `uncategorized` |
+| 3 | End reason `cancelled_by_operator` | `none` |
+| 4 | Summary or verifier text contains `merge refused` or `commit failed` | `policy` |
+| 5 | End reason `verifier_failed` | `code_or_test` |
+| 6 | End reason `stalled` | `hung` |
+| 7 | End reason `session_died`, `daemon_restart`, `launch_refused` or `adopted_then_failed` | `infra` |
+| 8 | End reason `executor_error` with text containing `timeout`, `timed out` or `no output` | `infra` |
+| 9 | Any other attempt with a summary or verifier issue | `code_or_test` |
+| 10 | Anything else (for example a completed attempt with no text) | `none` |
+
+Rule 4 is checked before the end reason, so a refused merge is `policy` even
+when the end reason is `verifier_failed`.
+
+Stored attempts with a blank category are filled in by one backfill pass at
+each daemon start, in the background, never blocking startup. It is
+idempotent: an attempt that already has a category is not touched, so a rerun
+changes nothing. An attempt that has no end reason, no summary and no
+verifier issue stays blank and is drawn as `uncategorized` — that is now
+*all* that an `uncategorized` attempt means: there was no reason to derive a
+category from. `GET /api/cost/failures` counts those as
+`uncategorized_attempts`, so for attempts recorded from now on that number
+should be 0 or near it, and the backfill log line
+(`attempt_category_backfill: report {...}`) is the place to read what a
+daemon-start pass left behind. The full treatment, with how to read the
+attempt record, is in [Failure categories](failed-attempt-cost.md#failure-categories).
 
 ## All access methods
 

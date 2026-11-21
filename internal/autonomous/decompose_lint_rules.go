@@ -34,11 +34,23 @@ const trackerIDPattern = "(?i)\\b(BL|GH|DW|PRD|ISSUE|TICKET|BUG)[#-]?\\d{2,}\\b|
 // DefaultDecomposeLintRules returns the built-in default pack fresh
 // (a new slice each call, so no caller can mutate the pack).
 //
-// Seventeen rules, in the order findings should surface them: the
-// thirteen block-severity rules (tasks that cross a hard boundary, plus
-// the seven verification-script stability rules that follow
-// read_only_unverifiable)
-// first, then the four warn-severity hygiene rules.
+// Twenty-two rules: seventeen block-severity rules (tasks that cross a hard
+// boundary, plus the verification-script stability rules that follow
+// read_only_unverifiable) and five warn-severity hygiene rules
+// (fixed_calendar_date_in_test sits among the stability rules; the
+// other four close the pack).
+//
+// The two newest stability rules read the script against ground truth
+// at lint time: verify_script_unknown_flag checks each invoked
+// command's own `--help` for the long flags the script passes, and
+// verify_script_text_not_in_spec requires every checked markdown
+// heading or output phrase to appear verbatim in the task spec or in
+// equivalent wording (every content word present after stopword
+// removal and simple inflection folding). Both
+// stay out of the way by design — commands the environment cannot
+// find, and help output that cannot be read, are skipped silently —
+// and, like every rule here, an operator keeps them off by listing
+// their ids in autonomous.decompose_lint.disabled_rules.
 func DefaultDecomposeLintRules() []Rule {
 	return []Rule{
 		{
@@ -149,6 +161,14 @@ func DefaultDecomposeLintRules() []Rule {
 			},
 		},
 		{
+			ID:       "fixed_calendar_date_in_test",
+			Severity: config.DecomposeLintSeverityWarning,
+			Message:  "fixed_calendar_date_in_test: the task asks the worker to write a test with a fixed calendar date; that date passes and the gate fails later; take times from the current time instead, for example time.Now with a fixed offset, or an injected clock.",
+			Match: config.DecomposeLintMatch{
+				FixedCalendarDateInTest: true,
+			},
+		},
+		{
 			ID:       "final_gate_without_script",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "final_gate_without_script: a final_gate task declares no verification script, no verification_script_reason and no usable report path; the end-to-end gate must be verifiable, so give it a script, a report path under .datawatch/reports/, or state why it has none.",
@@ -160,6 +180,38 @@ func DefaultDecomposeLintRules() []Rule {
 				// built-in final-gate template relies on it), as in
 				// read_only_unverifiable.
 				ReportPathEmpty: true,
+			},
+		},
+		{
+			ID:       "verify_script_artefact_files",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_artefact_files: the task's verification script flags unexpected changed files but does not exempt the daemon-generated artefact folders docs/plans/drafts/, docs/plans/parity-issues/, docs/plans/reports/ and the file CHANGELOG.md, so it fails when the daemon writes them; exclude those paths from the changed-file set (or check only the files the task adds).",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptArtefactFiles: true,
+			},
+		},
+		{
+			ID:       "verify_script_final_gate_rerun",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_final_gate_rerun: the task's verification script asserts the whole changed-file set against a finite allow-list with no guard for the final gate rerunning it on the cumulative tree, where every earlier task's files appear; guard the set check (skip it on an env-var or argument the final gate sets) or check only the files this task adds.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptFinalGateRerun: true,
+			},
+		},
+		{
+			ID:       "verify_script_unknown_flag",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_unknown_flag: the task's verification script passes a long flag to a command the script invokes (or to one of its subcommands) that the command's own `--help` output does not list; a flag the installed binary does not have cannot be asserted. Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptUnknownFlag: true,
+			},
+		},
+		{
+			ID:       "verify_script_text_not_in_spec",
+			Severity: config.DecomposeLintSeverityBlock,
+			Message:  "verify_script_text_not_in_spec: the task's verification script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase that does not appear verbatim in the task spec; the spec is the contract, so an expectation stated nowhere is unverifiable. State the exact heading or the exact format being checked, word for word, in the task spec.",
+			Match: config.DecomposeLintMatch{
+				VerificationScriptTextNotInSpec: true,
 			},
 		},
 		{

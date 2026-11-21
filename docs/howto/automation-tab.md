@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automation, automata, pipeline, pwa]
+  topics: [automation, automata, pipeline, pwa, header scope, scope, filter active, inbox]
 ---
 # How-to: the Automation view
 
@@ -34,8 +34,8 @@ to its tab without changing the other tabs.
 |---|---|
 | **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions and the security failure report. The supervisor watch now lives in the Events tab. A count badge on the tab totals what is waiting; see [What the Inbox counts](#what-the-inbox-counts). |
 | **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release plan and its stages appear here when they ship. A **Focus** button in the header of an Automation's page opens its timeline (see [projects-tab.md](projects-tab.md#focus-on-one-automation)). |
-| **Resources** | A row of three usage cards (weekly allowance, pace line, burn per day), then capacity, lane fill with each lane's node, and the Automata ship status card; see [automata-resources.md](automata-resources.md). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
-| **Progress and cost** | Three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the Progress card. The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
+| **Resources** | The **Usage calculator** card at the top — one card: a verdict sentence and three fixed-size graphs (weekly allowance, pace line, burn per day) — then the capacity and queue card, the lane fill rows with their node, and the Automata ship status card; see [automata-resources.md](automata-resources.md) and [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs). Infrastructure retries and the Automata checks card now live in the Events tab. Lane utilization and verifier health are cards on the Dashboard (Edit → Add Card), not on this tab; see [dashboard.md](dashboard.md#lane-utilization-card). |
+| **Progress and cost** | The Progress card (the kind table, work left and completion range; see [automata-progress.md](automata-progress.md)), the three metric cards (Progress, Cost, Forecast; see [automata-cost.md](automata-cost.md)) and the four titled cost chart cards (cost over time, tool usage, retries and failure categories, combined report; see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)). The all-projects Gantt and the cost and billing report appear here when they ship. The throughput and completion forecast is a Dashboard card (see [dashboard.md](dashboard.md#throughput-forecast-card)). |
 | *(Setup and policy, removed)* | The sub-tab no longer exists. The onboarding and requirements report, the supervisor loop runs and counts, the release readiness bar, the model request watch and the merge shadow now show on the Events tab, and only while they have something to show. The merge pipeline, decision records folder, usage reading and extra credit settings are in **Settings → General → Automata**. The placement axes and the tag sweep are under **Settings → General → Automata → Placement tags**; see [automata-tags](automata-tags.md). |
 | **Housekeeping** | An action list: the **Unlanded work** card (archived Automaton branches whose work is not on the default branch, each with a recommendation and Keep, Archive branch and Delete worktree buttons; Delete worktree writes a backup bundle first), the uncommitted work card with a **Commit** button that shows the diff and takes a message. The safe-to-delete report, the cleanup history, the skipped-by-reason counts and the **Fix permissions** button (for removals the file system refused) moved to the Cleanup card on the Events tab. |
 
@@ -100,19 +100,53 @@ with its short name so the title fits one line. See
 On the Automations sub-tab, one card per Automation, ordered by status (active,
 blocked, paused, draft, completed, cancelled) and then by name.
 
+### The header scope on the Automation sub-tabs
+
+The funnel **scope button** in the app header (see
+[The header scope button](projects-tab.md#the-header-scope-button)) is shown on
+every sub-tab of the Automata view, the Automation sub-tab included. Its choice
+is **All**, one project, or one plan of a project, and it is remembered in this
+browser. While a project or plan is chosen the icon carries a dot and the filtered
+pages show a **Filtered to \<scope\>** banner with a **Clear** button. Under
+**All** nothing changes.
+
+Some of the five Automation sub-tabs are cut by the scope and some are global:
+
+| Sub-tab | With a scope active |
+|---|---|
+| **Inbox** | Filtered. The badge and every card count only the scoped project's (or plan's) items; see [What the Inbox counts](#what-the-inbox-counts) |
+| **Automations** | Filtered. A project scope lists the Automations of that project; a plan scope lists only that plan's Automation. The status badges, history toggle and search work on what remains |
+| **Resources** | **Global.** Capacity, lane fill, usage and ship status are shared across every project, so the sub-tab is not filtered and shows the note **This section applies to every project and plan.** |
+| **Progress and cost** | **Global.** The same note; the figures cover every project and plan |
+| **Housekeeping** | **Global.** Uncommitted work, protected paths and pending items are shown for every project and plan, with the same note |
+
+The first row of sub-tabs is cut the same way: the **Automata** list is
+filtered (a project scope keeps the Automata linked to that project; a plan scope
+keeps the Automata that are members of the plan's Automation), the **Events**
+sub-tab follows the scope (see [Automata events](automata-events.md#the-header-scope-and-the-events-stream)),
+and **Templates** is global and shows **Templates are shown for every project and
+plan.** The notes appear only while a scope is active; under **All** these pages
+are exactly as before. The scope is a display rule of the web app only: REST, MCP,
+the CLI and the comm channel return everything.
+
 ### What the Inbox counts
 
 The badge on the Inbox tab and the lists under it always agree, because both are cut
-by the same scope. The scope follows the **Project** picker on the Projects sub-tab:
+by the same scope. The scope is the header scope; on the Projects sub-tab it is the
+same thing as the **Project** picker, so choosing a project in either place gives
+the same Inbox:
 
-- **Overview, or any other sub-tab.** Nothing is cut. The badge counts everything
+- **All (the Overview).** Nothing is cut. The badge counts everything
   waiting on you in every project, and its tooltip and screen-reader label read
   *N waiting on you across all projects*.
-- **One project selected on the Projects sub-tab.** The badge and each card (open
+- **One project in scope.** The badge and each card (open
   questions, held questions, Triage, security failure report and the supervisor
   watch findings) keep only the items that belong to that project, and the label
-  reads *N waiting on you*. Changing the picker, or the `#projects` address,
-  recounts from the data already loaded; nothing is fetched again.
+  reads *N waiting on you*. This holds on every sub-tab, not just the Projects
+  sub-tab. Changing the scope, or the `#projects` address, recounts from the data
+  already loaded; nothing is fetched again.
+- **One plan in scope.** The same, narrowed to the items that name the plan's
+  Automation or one of its Automata.
 
 An item belongs to a project by its link first: a `project:<name>` system tag on the
 item, or on the Automaton the item names. Only when no such tag exists is the
@@ -192,14 +226,25 @@ never blanks the cards.
   [Questions](#questions-rest-only-for-now)), the held-question card and the
   security failure card. The supervisor watch card is in the Events tab. The badge on the tab
   counts what is waiting on you.
-- **Resources:** the three usage cards in a row (weekly allowance, pace line,
-  burn per day), the capacity and queue card (the pools and their usage, any
-  usage back-off, budgets, and the Automata waiting for capacity), the lane fill
-  card (one row per lane, with its node) and the Automata ship status
-  card (the push, tag and release steps). The infrastructure retries and the
-  Automata checks cards (the four report-only checks) are in the Events tab.
-- **Progress and cost:** the Progress card, with the kind table, work left and
-  completion range.
+- **Resources:** the **Usage calculator** card at the top — one card: a
+  verdict sentence and three fixed-size graphs (weekly allowance, pace line,
+  burn per day; see
+  [usage-calculator.md](usage-calculator.md#the-usage-page-one-card-with-a-verdict-and-three-graphs)) —
+  the capacity and queue card (the pools and their usage, any usage back-off,
+  budgets, the Automata waiting for capacity, and the tasks in verification
+  with their verifier-slot wait), the lane fill card (one row
+  per lane, with its node) and the Automata ship status card (a line saying
+  what shipping is, tiles for the push, tag and CI watch steps with their mode
+  words, the tag format, remote and CI workflow names, and the outcomes;
+  see [automata-checks-and-ship.md](automata-checks-and-ship.md#see-the-findings)). The infrastructure retries and the Automata checks cards
+  (the four report-only checks) are in the Events tab.
+- **Progress and cost:** the Progress card (with the kind table, work left and
+  completion range; see [automata-progress.md](automata-progress.md)), the
+  three metric cards (Progress, Cost, Forecast; see
+  [automata-cost.md](automata-cost.md)) and the four titled cost chart cards —
+  cost over time, tool usage, retries and failure categories, combined report;
+  a card with no data is not drawn and its reason is at the top of the Events
+  tab (see [cost-report.md](cost-report.md#the-chart-cards-on-the-automata-page)).
 - **Setup and policy (removed):** its cards are on the Events tab (see
   [automata-events.md](automata-events.md#status-cards-on-the-events-tab)) and
   its configuration is in Settings under Automata.
@@ -629,7 +674,7 @@ there too.
 - [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
   the Automata view (left of Automation), which groups an Automation under its project as a plan, with the project's
   Automata, sessions, progress, history and policy on one page
-- [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked
+- [Triage records](../api/autonomous.md#triage-records-get-apiautonomoustriage): the record of every failed or blocked
   Automaton in your Automations — how the pass fills, refreshes and clears
   it, the single alert it can raise, and where to read it (REST, MCP, CLI,
   comm, this detail view); the operator reference is the *Triage records*

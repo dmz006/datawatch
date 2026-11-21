@@ -284,17 +284,64 @@ func buildData(kind Kind, rec *changerecord.ChangeRecord, o Options) view {
 	v.Routes = rec.RoutesAdded
 	v.LocaleKeys = rec.LocaleKeysAdded
 
-	v.Title = "Automaton " + id
-	v.Summary = fmt.Sprintf("Change from Automaton %s: %d files in %d packages.", id, v.FilesChanged, v.PackagesTouched)
-	v.Screens = screensOf(rec)
-	v.Bullets = bulletsOf(rec)
 	v.Surfaces = surfacesOf(rec)
+	names := surfaceNames(v.Surfaces)
+	v.Title = strings.TrimSpace(rec.Title)
+	if v.Title == "" {
+		v.Title = "Automaton " + id
+		if kind == ChangelogDraft {
+			v.Title = derivedTitle(id, names)
+		}
+	}
+	v.Summary = strings.TrimSpace(rec.Summary)
+	if v.Summary == "" {
+		v.Summary = derivedSummary(id, nil, v.FilesChanged, v.PackagesTouched)
+		if kind == ChangelogDraft {
+			v.Summary = derivedSummary(id, names, v.FilesChanged, v.PackagesTouched)
+		}
+	}
+	v.Screens = screensOf(rec)
+	for _, h := range rec.Highlights {
+		if h = strings.TrimSpace(h); h != "" {
+			v.Bullets = append(v.Bullets, h)
+		}
+	}
+	v.Bullets = append(v.Bullets, bulletsOf(rec, v.Surfaces, v.CommandsRun, v.CommandsPassed)...)
 	v.Cost = costOf(rec.Cost)
 	return v
 }
 
-func bulletsOf(rec *changerecord.ChangeRecord) []string {
+func surfaceNames(ss []surface) []string {
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		n, _, _ := strings.Cut(s.Feature, ":")
+		out = append(out, n)
+	}
+	return out
+}
+
+func derivedTitle(id string, names []string) string {
+	if len(names) == 0 {
+		return "Automaton " + id
+	}
+	if len(names) > 3 {
+		names = names[:3]
+	}
+	return "Changes to " + strings.Join(names, ", ")
+}
+
+func derivedSummary(id string, names []string, files, pkgs int) string {
+	if len(names) == 0 {
+		return fmt.Sprintf("Change from Automaton %s: %d files in %d packages.", id, files, pkgs)
+	}
+	return fmt.Sprintf("Changes %s across %d files in %d packages.", strings.Join(names, ", "), files, pkgs)
+}
+
+func bulletsOf(rec *changerecord.ChangeRecord, surfaces []surface, run, passed int) []string {
 	var b []string
+	for _, s := range surfaces {
+		b = append(b, fmt.Sprintf("%s: %s", s.Feature, s.Description))
+	}
 	if n := len(rec.SettingsAdded); n > 0 {
 		b = append(b, fmt.Sprintf("%d new settings: %s.", n, codeList(rec.SettingsAdded)))
 	}
@@ -309,6 +356,9 @@ func bulletsOf(rec *changerecord.ChangeRecord) []string {
 	}
 	if n := len(rec.TestsAdded); n > 0 {
 		b = append(b, fmt.Sprintf("%d tests added.", n))
+	}
+	if run > 0 {
+		b = append(b, fmt.Sprintf("%d commands run, %d passed.", run, passed))
 	}
 	return b
 }
