@@ -4243,7 +4243,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		// Supervisor set-up, state and corrections routes: without their
 		// dependencies every one answers 503.
-		wireSupervisorSetup(httpServer, cfg, schedStore,
+		if supDeps := wireSupervisorSetup(httpServer, cfg, schedStore,
 			func() *planrecordspkg.Store { return supervisorPlanRecords },
 			func(id string) string {
 				if autonomousMgrRef == nil {
@@ -4253,7 +4253,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return prd.BlockedReason
 				}
 				return ""
-			})
+			}); supDeps != nil {
+			mgr.SetScheduledSpawnTaskHook(supervisorSpawnTaskHook(cfg, supDeps))
+		}
 		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
 		// operator audit log (a nil log yields a no-op reporter) shared by
 		// both push engines. Each security-relevant scanned push — an

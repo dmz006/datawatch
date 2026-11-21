@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
@@ -229,25 +230,23 @@ func (d *SupervisorSetupDeps) setUp(req SupervisorSetupRequest) (*SupervisorSetu
 	if err != nil {
 		return nil, badSetupInput("project %q: %v", project, err)
 	}
-	// The handover carries the explicit model: override the stored settings.
-	asm := &supervisorloop.HandoverAssembler{
-		Session: d.Session, Rules: d.Rules, Plans: d.Plans, Clock: d.Clock,
-		Overrides: modelOverride{base: d.Overrides, model: req.Model},
-	}
-	ho, err := asm.AssembleHandover(project)
+	_, assembledAt, err := d.SpawnTask(project, req.Model, "", "")
 	if err != nil {
 		return nil, err
 	}
-	text := ho.Render()
 	out := &SupervisorSetupResult{
 		Project: project, LaunchRole: supervisorloop.LaunchRoleSupervisor, ProjectDir: dir,
-		Model: req.Model, HandoverAt: ho.AssembledAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		Model: req.Model, HandoverAt: assembledAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		Schedules: []SupervisorSetupScheduleResult{}, AllExisting: true,
 	}
 	for _, sc := range scheds {
 		full := "supervisor-" + project + "-" + sc.Name
+		task, _, err := d.SpawnTask(project, req.Model, sc.Name, full)
+		if err != nil {
+			return nil, err
+		}
 		e, created, err := d.Schedules.EnsureNamedSpawn(session.AddSpawnOptions{
-			Task:         text + "\nPass: " + sc.Name + "\n",
+			Task:         task,
 			ProjectDir:   dir,
 			Model:        req.Model,
 			SessionName:  full,
@@ -266,6 +265,31 @@ func (d *SupervisorSetupDeps) setUp(req SupervisorSetupRequest) (*SupervisorSetu
 		out.Schedules = append(out.Schedules, SupervisorSetupScheduleResult{Name: full, ID: e.ID, Cron: e.CronExpr, Created: created})
 	}
 	return out, nil
+}
+
+// SpawnTask assembles the project's handover and returns the task a
+// supervisor spawn starts with: the handover itself when it is small, else a
+// short bootstrap that names the handover file, which is rewritten here. An
+// empty scheduleName only assembles (no file is written, the task is the
+// bare handover). The schedule fire path calls it again at each spawn so a
+// fresh session reads current state.
+func (d *SupervisorSetupDeps) SpawnTask(project, model, pass, scheduleName string) (string, time.Time, error) {
+	// The handover carries the explicit model: override the stored settings.
+	asm := &supervisorloop.HandoverAssembler{
+		Session: d.Session, Rules: d.Rules, Plans: d.Plans, Clock: d.Clock,
+		Overrides: modelOverride{base: d.Overrides, model: model},
+	}
+	ho, err := asm.AssembleHandover(project)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	text := ho.Render()
+	if scheduleName == "" {
+		return text, ho.AssembledAt, nil
+	}
+	text += "\nPass: " + pass + "\n"
+	task, err := supervisorloop.DeliverablePrompt(ho.Build.ProjectDir, scheduleName, text)
+	return task, ho.AssembledAt, err
 }
 
 // modelOverride makes the handover show the model set-up was asked for.

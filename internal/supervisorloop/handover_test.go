@@ -2,6 +2,7 @@ package supervisorloop
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -138,5 +139,65 @@ func TestAssembleHandoverErrors(t *testing.T) {
 	}
 	if _, err := (&HandoverAssembler{}).AssembleHandover("alpha"); err == nil {
 		t.Fatal("want missing sources error")
+	}
+}
+
+func TestHandoverBoundedWithHugeRulesFile(t *testing.T) {
+	var big strings.Builder
+	for i := 0; big.Len() < 150000; i++ {
+		big.WriteString("## Section number " + strings.Repeat("x", i%7) + "\n")
+		big.WriteString(strings.Repeat("rule text line\n", 40))
+	}
+	a := newAssembler()
+	a.Rules = hoRules{def: "DEFAULT PACK", pack: map[string]string{}, file: map[string]string{"alpha": big.String()}}
+	h, err := a.AssembleHandover("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := h.Render()
+	if len(out) > MaxHandoverChars {
+		t.Fatalf("handover is %d chars, bound %d", len(out), MaxHandoverChars)
+	}
+	for _, want := range []string{"/work/alpha/AGENT.md", "- ## Section number", "Read /work/alpha/AGENT.md by path"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "rule text line") {
+		t.Fatal("rules file body was embedded")
+	}
+}
+
+func TestDeliverablePromptInlineWhenSmall(t *testing.T) {
+	dir := t.TempDir()
+	got, err := DeliverablePrompt(dir, "sched", "small handover")
+	if err != nil || got != "small handover" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := os.Stat(HandoverFilePath(dir, "sched")); err == nil {
+		t.Fatal("small handover wrote a file")
+	}
+}
+
+func TestDeliverablePromptFileWhenLarge(t *testing.T) {
+	dir := t.TempDir()
+	big := strings.Repeat("handover line\n", 1000)
+	got, err := DeliverablePrompt(dir, "sched", big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := HandoverFilePath(dir, "sched")
+	if len(got) > MaxDeliveredPromptChars || !strings.Contains(got, path) {
+		t.Fatalf("prompt %d chars, want short and naming %s: %q", len(got), path, got)
+	}
+	if b, _ := os.ReadFile(path); string(b) != big {
+		t.Fatal("file does not hold the handover")
+	}
+	// Rewritten at the next spawn.
+	if _, err := DeliverablePrompt(dir, "sched", big+"fresh\n"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.HasSuffix(string(b), "fresh\n") {
+		t.Fatal("file not rewritten")
 	}
 }

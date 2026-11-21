@@ -85,6 +85,22 @@ Corrections and the pinned state record ride along with the handover (see the
 next two sections). The handover is assembled at the moment the session starts,
 using the daemon's clock, so a fresh session never reads a stale one.
 
+### How big the handover can be
+
+The handover stays under **24,000 characters** for any project. The default
+pack is carried whole; a long project rules pack and a long direction layer are
+cut with a note saying where to read the rest. The project **rules file** is
+not embedded: the handover carries its path and the list of its section
+headings, and the session reads the file by path when it needs a rule.
+
+What is typed into the session is shorter still, at most **8,000 characters**.
+A handover that fits is delivered as it is. A larger one is written to
+`<project>/.datawatch/supervisor/<schedule name>-handover.md` and the session
+is given a short prompt that names that file and says to read it first and then
+follow it. The file is rewritten each time the schedule fires, so a fresh
+session reads current state; a schedule created earlier with a large stored
+task is healed the same way at its next fire.
+
 ## The pinned state record
 
 The record is the supervisor's memory between sessions. It is pinned, so it is

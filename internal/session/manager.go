@@ -479,6 +479,9 @@ type Manager struct {
 	// onTaskDeliveryFailed is called once DeliverOneShotTask gives up on a
 	// task: the worker session has already been ended by then.
 	onTaskDeliveryFailed func(fullID string, reason string)
+	// scheduledSpawnTask, when set, rebuilds the task of a launch-role spawn
+	// schedule each time it fires (guarded by mu).
+	scheduledSpawnTask func(ds DeferredSession) string
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -1174,6 +1177,15 @@ func (m *Manager) SetOnTaskDeliveryFailed(fn func(fullID string, reason string))
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onTaskDeliveryFailed = fn
+}
+
+// SetScheduledSpawnTaskHook sets the hook that supplies the task of a
+// scheduled spawn that carries a launch role, at the moment it fires. An
+// empty result keeps the task stored on the schedule.
+func (m *Manager) SetScheduledSpawnTaskHook(fn func(ds DeferredSession) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.scheduledSpawnTask = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
@@ -7194,7 +7206,18 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			EphemeralWorkspace: ds.Ephemeral,
 			Subprocess:         ds.Subprocess,
 		}
-		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
+		task := ds.Task
+		if ds.LaunchRole != "" {
+			m.mu.Lock()
+			hook := m.scheduledSpawnTask
+			m.mu.Unlock()
+			if hook != nil {
+				if t := hook(*ds); t != "" {
+					task = t
+				}
+			}
+		}
+		newSess, err := m.Start(ctx, task, "", ds.ProjectDir, opts)
 		if err != nil {
 			_ = m.schedStore.MarkDone(sc.ID, true)
 			fmt.Printf("[schedule] failed to start session %q (type=%s): %v\n", ds.Name, sc.Type, err)

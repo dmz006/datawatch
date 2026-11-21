@@ -26,13 +26,13 @@ const supervisorProjectPackFile = "packs/build-supervisor/rules.md"
 // because the plan records and the autonomous manager start after the HTTP
 // server. Without this the routes answer 503.
 func wireSupervisorSetup(hs *server.HTTPServer, cfg *config.Config, sched *session.ScheduleStore,
-	plans func() *planrecords.Store, blockedReason func(automatonID string) string) {
+	plans func() *planrecords.Store, blockedReason func(automatonID string) string) *server.SupervisorSetupDeps {
 	if hs == nil || cfg == nil || sched == nil {
-		return
+		return nil
 	}
 	clock := supervisorLoopClock{}
 	records := supervisorloop.NewStateRecords(&supervisorPinnedFile{path: filepath.Join(expandHome(cfg.DataDir), "supervisor_state.json")}, clock)
-	hs.SetSupervisorSetup(&server.SupervisorSetupDeps{
+	deps := &server.SupervisorSetupDeps{
 		Session:     supervisorSessionLayer{cfg: cfg},
 		Rules:       supervisorRulesSource{cfg: cfg},
 		Plans:       supervisorPlanSource{plans: plans, blockedReason: blockedReason},
@@ -41,7 +41,48 @@ func wireSupervisorSetup(hs *server.HTTPServer, cfg *config.Config, sched *sessi
 		Records:     records,
 		Corrections: supervisorloop.NewCorrections(records, nil, nil, clock),
 		Clock:       clock,
-	})
+	}
+	hs.SetSupervisorSetup(deps)
+	return deps
+}
+
+// supervisorSpawnTaskHook rebuilds a supervisor schedule's task at each fire:
+// it rewrites the handover file from current state and returns the short
+// bootstrap prompt. The project and pass come from the schedule name
+// ("supervisor-<project>-<pass>"), so schedules stored with an old oversized
+// task body are healed too. A name that matches no project returns "".
+func supervisorSpawnTaskHook(cfg *config.Config, d *server.SupervisorSetupDeps) func(session.DeferredSession) string {
+	return func(ds session.DeferredSession) string {
+		project := ""
+		for p := range cfg.Projects {
+			if strings.HasPrefix(ds.ScheduleName, "supervisor-"+p+"-") && len(p) > len(project) {
+				project = p
+			}
+		}
+		if project == "" {
+			return ""
+		}
+		pass := strings.TrimPrefix(ds.ScheduleName, "supervisor-"+project+"-")
+		task, _, err := d.SpawnTask(project, ds.Model, pass, ds.ScheduleName)
+		if err != nil {
+			fmt.Printf("[supervisor] handover for %s not rebuilt, using the stored task: %v\n", ds.ScheduleName, err)
+			return ""
+		}
+		return task
+	}
+}
+
+// ProjectRulesFilePath is the path of the project rules file.
+func (r supervisorRulesSource) ProjectRulesFilePath(project string) string {
+	name := strings.TrimSpace(r.cfg.Autonomous.RulesContext.RulesFile)
+	if name == "" {
+		name = "AGENT.md"
+	}
+	dir, err := supervisorSessionLayer(r).ProjectDir(project)
+	if err != nil {
+		return name
+	}
+	return filepath.Join(dir, name)
 }
 
 // supervisorSessionLayer resolves a project name to its registered directory.
