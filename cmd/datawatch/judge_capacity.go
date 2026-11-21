@@ -105,25 +105,33 @@ type judgeLeaseAdmit func(ctx context.Context, backend, model, unitID, prdID str
 
 // runJudgeLeased runs one judge body under the judge's capacity lease. The
 // lease is taken before body runs, so the wait for a slot happens before the
-// judge's time limit starts (the session or ask call applies that limit once it
-// starts). The release is deferred, so the lease is released on every exit
-// path: success, error, cancellation and panic. A lease whose wait expired is an
-// infra verdict, body never runs, and att.NoSlot is set so the judge moves on to
-// the next backend. A judge cancelled while it waited is not a slot shortage: it
-// returns the context error with no NoSlot, so no further backend is tried and
-// no hold is raised. The Claude session window counts the pick only once its
-// lease is granted. A nil admit (no ledger, e.g. in tests) runs body with no
-// lease and no node.
+// judge's time limit starts (the session or ask call applies that limit once
+// it starts). The attempt's time is recorded separately (JudgeRunTimer): the
+// wait goes on att.Waiting, the run on att.Elapsed, and the limit bounds the
+// run only — never the wait. The release is deferred, so the lease is released
+// on every exit path: success, error, cancellation and panic. A lease whose
+// wait expired is an infra verdict, body never runs, and att.NoSlot is set so
+// the judge moves on to the next backend. A judge cancelled while it waited is
+// not a slot shortage: it returns the context error with no NoSlot, so no
+// further backend is tried and no hold is raised. The Claude session window
+// counts the pick only once its lease is granted. A nil admit (no ledger, e.g.
+// in tests) runs body with no lease and no node.
 //
 // A judge whose attempt carries a Retarget does not block on one backend: the
 // wait re-evaluates the routing policy and may leave for a backend with room
 // (see judgeAwaitLease). It then returns an infra verdict with att.MoveTo set,
 // holding no lease and setting no NoSlot, so it is not a slot shortage.
 func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttempt, model, unitID, prdID string, body func(node string) (autonomouspkg.GuardrailVerdict, error)) (autonomouspkg.GuardrailVerdict, error) {
+	// The run timer measures the attempt against its slot: the wait for the
+	// slot becomes att.Waiting, the run att.Elapsed. The limit bounds the run,
+	// which starts when the slot is granted — never the wait.
+	timer := &autonomouspkg.JudgeRunTimer{Clock: time.Now, Limit: att.Limit}
 	node := ""
 	if admit != nil {
+		timer.BeginWait()
 		release, n, err := judgeAwaitLease(ctx, admit, att, model, unitID, prdID)
 		if err != nil {
+			att.Waiting = timer.Waiting()
 			if ctx.Err() != nil {
 				return judgeAdmitFailureVerdict(err), ctx.Err()
 			}
@@ -133,13 +141,26 @@ func runJudgeLeased(ctx context.Context, admit judgeLeaseAdmit, att *judgeAttemp
 		if att.MoveTo != "" {
 			// The wait left this backend for att.MoveTo. No lease is held and the
 			// judge did not run; runJudgeAttempts runs it on the target.
+			att.Waiting = timer.Waiting()
 			return judgeMovedVerdict(att), nil
 		}
+		timer.Grant() // the slot is granted: the run — and the limit — start here
+		att.Waiting = timer.Waiting()
 		defer release()
 		node = n
+	} else {
+		// No admission (no ledger, e.g. in tests): no slot to wait for, so the
+		// run starts when the body starts.
+		timer.Grant()
 	}
 	judgeRecordClaudeSession(att.Backend)
-	return body(node)
+	verdict, err := body(node)
+	// The body (or runJudgeTimed around it, on the timeout path) may already
+	// have recorded the run's time; otherwise record the measured one.
+	if att.Elapsed == 0 {
+		att.Elapsed = timer.Elapsed()
+	}
+	return verdict, err
 }
 
 // judgeAwaitLease waits for the judge's lease on att.Backend. With att.Retarget

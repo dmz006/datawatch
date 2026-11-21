@@ -62,6 +62,15 @@ func TestJudgeTimerDoesNotCountTheWaitForACapacitySlot(t *testing.T) {
 	if err != nil || to != nil || v.Outcome != "pass" || att.TimedOut {
 		t.Fatalf("v=%+v timeout=%+v err=%v timedOut=%v, want a pass with no timeout", v, to, err, att.TimedOut)
 	}
+	// The wait for the slot and the run are recorded separately: the 300ms
+	// wait is on att.Waiting, the run on att.Elapsed — and the wait never
+	// counts against the limit.
+	if att.Waiting < limit {
+		t.Errorf("waiting = %s, want at least the %s spent waiting for the slot", att.Waiting, limit)
+	}
+	if att.Elapsed > limit {
+		t.Errorf("elapsed = %s, want only the run time, well inside the %s limit", att.Elapsed, limit)
+	}
 	if n := releases.Load(); n != 1 {
 		t.Fatalf("lease released %d times, want 1", n)
 	}
