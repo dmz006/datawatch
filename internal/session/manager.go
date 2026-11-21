@@ -435,6 +435,12 @@ type Manager struct {
 	// positive before the LLM has had time to process and respond.
 	taskDeliveredAt map[string]time.Time
 
+	// hookStopAt records when the Claude Code Stop hook last fired for a session
+	// and no later turn activity (a prompt or a tool call) has been seen. It lets
+	// the one-shot reaper end a supervisor pass that has finished its turn, without
+	// relying on the model printing a completion marker. Guarded by mu.
+	hookStopAt map[string]time.Time
+
 	// selfUpdateNotedAt debounces handling of Claude Code's passive
 	// "Update installed · /restart to apply" footer per session (see
 	// noteSelfUpdateDialog). Guarded by mu.
@@ -781,6 +787,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:    make(map[string]int),
 		restartedAt:       make(map[string]time.Time),
 		taskDeliveredAt:   make(map[string]time.Time),
+		hookStopAt:        make(map[string]time.Time),
 		uiPromptState:     make(map[string]*uiPromptRecord),
 		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:       make(map[string]time.Time),
