@@ -78,6 +78,14 @@ jobs:
       - name: go toolchain pin floor check
         run: bash scripts/check-go-toolchain-pins.sh && bash scripts/check-go-toolchain-pins.sh --self-test
 
+      # 2026-10-18 — release gate: unsafe tmux call audit (fail-closed;
+      # server-wide kills without a dedicated socket, kill-session -a,
+      # pkill/killall of the tmux server). Static scan, no daemon required,
+      # so it runs in Stage 1 alongside the other static release gates, well
+      # before any binary is built or pushed against this tag.
+      - name: unsafe tmux call check
+        run: bash scripts/check-unsafe-tmux-calls.sh
+
 # ── Stage 2: security (parallel, both must pass) ─────────────────────────────
 
   govulncheck:
