@@ -1,6 +1,6 @@
 // REST operations on the failure escalation policy of one Automaton:
 // set_failure_escalation (Automaton or task override, set or clear) and
-// resolve_task_review (retry or cancel a task held for review). These run
+// resolve_task_review (retry, cancel or accept a task held for review). These run
 // against the real Automaton manager, seeded from a store on disk, so the
 // status codes, the audit entries and the stored state are all checked.
 
@@ -437,5 +437,43 @@ func TestFailureEscalationRESTMethodGuard(t *testing.T) {
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("GET %s: want 405, got %d", action, rr.Code)
 		}
+	}
+}
+
+// acceptRESTPRD is heldRESTPRD whose held task's last attempt ran in session
+// "sess-1".
+func acceptRESTPRD(id string) *autonomous.PRD {
+	p := heldRESTPRD(id)
+	p.Story[0].Tasks[0].Attempts[0].SessionID = "sess-1"
+	return p
+}
+
+func TestFailureEscalationRESTResolveAccept(t *testing.T) {
+	s, mgr, auditPath := newFailureEscalationRESTServer(t, acceptRESTPRD("a1"))
+	mgr.SetSessionOutputFn(func(string) (string, bool) { return "done\nDATAWATCH_COMPLETE: all good\n", true })
+	rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"t-held","action":"accept","actor":"alice"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("accept: want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if task := autoTask(t, s, "a1", "t-held"); task.Status != autonomous.TaskCompleted {
+		t.Fatalf("status after accept = %q, want completed", task.Status)
+	}
+	if got := auditActions(t, auditPath); !hasAuditAction(got, "resolve_task_review") {
+		t.Fatalf("no resolve_task_review audit entry; actions = %v", got)
+	}
+}
+
+func TestFailureEscalationRESTResolveAcceptWithoutMarkerRefused(t *testing.T) {
+	s, mgr, _ := newFailureEscalationRESTServer(t, acceptRESTPRD("a1"))
+	mgr.SetSessionOutputFn(func(string) (string, bool) { return "still going\n", true })
+	rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"t-held","action":"accept"}`)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "completion marker") {
+		t.Fatalf("want 400 naming the marker, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if task := autoTask(t, s, "a1", "t-held"); task.Status != autonomous.TaskReviewNeeded {
+		t.Fatalf("refused accept changed the task to %q", task.Status)
+	}
+	if rr := postAutomaton(t, s, "a1", "resolve_task_review", `{"task_id":"t-pending","action":"accept"}`); rr.Code != http.StatusConflict {
+		t.Fatalf("accept on a task not held: want 409, got %d", rr.Code)
 	}
 }

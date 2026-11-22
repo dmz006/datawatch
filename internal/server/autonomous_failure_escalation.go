@@ -31,8 +31,9 @@ type setFailureEscalationReq struct {
 	Actor  string          `json:"actor"`
 }
 
-// resolveTaskReviewReq is the body of resolve_task_review. Action is "retry" or
-// "cancel"; the other fields apply to a retry only.
+// resolveTaskReviewReq is the body of resolve_task_review. Action is "retry", "cancel" or
+// "accept" (complete a task whose last worker session has a completion
+// marker); the other fields apply to a retry only.
 type resolveTaskReviewReq struct {
 	TaskID  string   `json:"task_id"`
 	Action  string   `json:"action"`
