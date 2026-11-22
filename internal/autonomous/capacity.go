@@ -892,6 +892,12 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if len(pools) == 0 {
 		return
 	}
+	if ls := led.LeaseOf(t.ID); mismatch && ls != nil && !samePools(nonNodePoolList(ls.Pools), poolsWithoutNodes(pools)) {
+		// The lease stays in force while the running backend's pool and node
+		// are asked for; it is swapped only once that grant is made.
+		m.moveAdoptedLease(led, prd, t, backend, model)
+		return
+	}
 	choices := nodeChoicesFor(choicesFn, backend, model)
 	if node == "" && len(choices) == 0 && !localEngineBackends[backend] && (entryNodes == nil || entryNodes(backend, model) == 0) {
 		// The backend takes no local compute node (claude-code, say; never a
@@ -931,13 +937,11 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 }
 
 // noteAdoptMismatch handles a resumed session that runs a different backend
-// than the one its task was configured for: it frees a stale lease whose pools
-// no longer match, logs one line, and raises one operator alert per task and
-// session pair.
+// than the one its task was configured for: it logs one line and raises one
+// operator alert per task and session pair. The held lease is not released
+// here; adoptCapacity moves it onto the running backend's pools once those
+// have room.
 func (m *Manager) noteAdoptMismatch(led *capacity.Ledger, prd *PRD, t *Task, configured, actual string, pools []string) {
-	if ls := led.LeaseOf(t.ID); ls != nil && !samePools(nonNodePoolList(ls.Pools), poolsWithoutNodes(pools)) {
-		led.Release(t.ID)
-	}
 	key := t.ID + "|" + t.SessionID
 	m.mu.Lock()
 	if m.adoptMismatchAlerted == nil {
@@ -954,6 +958,31 @@ func (m *Manager) noteAdoptMismatch(led *capacity.Ledger, prd *PRD, t *Task, con
 		fn("warn", "Resumed session leased from a different backend",
 			fmt.Sprintf("Automaton task %s: session %s was leased on backend %s but runs backend %s. The lease now follows the backend the session runs.", t.ID, t.SessionID, configured, actual))
 	}
+}
+
+// moveAdoptedLease queues a lease on the pools of the backend a resumed session
+// runs and swaps it for the held one when granted. A move with room is made
+// at once; one that must wait runs in the background so adoption of other
+// tasks is not held up by a full pool.
+func (m *Manager) moveAdoptedLease(led *capacity.Ledger, prd *PRD, t *Task, backend, model string) {
+	m.mu.Lock()
+	keysFn, choicesFn := m.capacityKeys, m.capacityChoices
+	m.mu.Unlock()
+	pools, node := keysFn(backend, model)
+	req := capacity.Request{
+		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node,
+		NodeChoices: nodeChoicesFor(choicesFn, backend, model), Model: model, Consumer: consumerSessionSpawn,
+	}
+	move := func() {
+		if err := led.Move(context.Background(), req, 0, nil, nil); err != nil {
+			log.Printf("[autonomous] adopt: task=%s lease move to backend=%s failed: %v", t.ID, backend, err)
+		}
+	}
+	if led.WouldGrant(req) {
+		move()
+		return
+	}
+	go move()
 }
 
 func nonNodePoolList(pools []string) []string { return poolsWithoutNodes(pools) }
