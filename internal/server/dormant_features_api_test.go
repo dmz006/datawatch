@@ -34,6 +34,9 @@ func (d *dormantFeaturesSpy) SetConfig(any) error {
 func dormantReadsFixture() *config.Config {
 	cfg := &config.Config{}
 	cfg.Autonomous.Automation.MergePendingMode = config.MergePendingModeOn
+	cfg.Autonomous.SupervisorLoop = config.SupervisorLoopConfig{
+		"supervisor_loop.run_merge_until_conflict.enabled": false,
+	}
 	return cfg
 }
 
@@ -158,7 +161,7 @@ func (h *housekeepingLedgerSpy) FinishedWorkSweep() *autonomous.FinishedWorkSwee
 
 func TestDormantReadsHousekeepingCarriesRefusalsAndFinishedWork(t *testing.T) {
 	spy := &housekeepingLedgerSpy{}
-	spy.ledger.Record("alpha", "verify", "tests failing", time{})
+	spy.ledger.Record("alpha", "verify", "tests failing", time.Time{})
 	spy.sweep.Record(autonomous.FinishedWorkFinding{
 		Automaton: "beta", Title: "add the rest", Status: "completed",
 		Cause: "work left unlanded", Action: "review",
