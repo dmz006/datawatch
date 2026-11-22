@@ -522,6 +522,9 @@ type PRD struct {
 	// Kind classifies the work as "feature", "bug" or "other"; empty means
 	// derive at read time (old records keep working). See EffectiveKind.
 	Kind string `json:"kind,omitempty"`
+	// CoverageExemptionReason is a written reason that exempts the whole
+	// plan from a plan-level coverage check (decompose_lint_coverage.go).
+	CoverageExemptionReason string `json:"coverage_exemption_reason,omitempty"`
 
 	// ReleaseSize is the explicit release size of this Automaton: patch,
 	// minor, major or none. Empty means unset, and the size is then
@@ -1666,6 +1669,10 @@ type Task struct {
 	// VerificationScript behavior — it is purely metadata consumed by the
 	// structural check and surfaced in reports.
 	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+	// CoverageExemptionReason is a written reason that exempts this task
+	// from a plan-level coverage check (see decompose_lint_coverage.go).
+	// The exemption is recorded as a warn finding.
+	CoverageExemptionReason string `json:"coverage_exemption_reason,omitempty"`
 
 	// Progress — a live snapshot of the worker session's own log (read via
 	// internal/pilog) for THIS attempt: how many assistant turns it has taken,
