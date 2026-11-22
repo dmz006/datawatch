@@ -1099,6 +1099,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMarketplaceCatalog(), tracked(s.handleMarketplaceCatalogMCP))
 	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
 	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomMeasure(), tracked(s.handleComputeNodeHeadroomMeasureMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomGet(), tracked(s.handleComputeNodeHeadroomGetMCP))
 	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
 	// Missing-model placement asks (policy "ask"): list pending + approve/deny.
 	mcpSrv.AddTool(s.toolComputePlacementList(), tracked(s.handleComputePlacementListMCP))
