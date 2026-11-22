@@ -6723,6 +6723,10 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	return updated, nil
 }
 
+// ErrPlanInProgress is returned when a PRD-level mutation is refused
+// because a planning run is in flight for the PRD.
+var ErrPlanInProgress = errors.New("plan in progress")
+
 // prdLLMOverrideAllowed reports whether the worker backend and model of an
 // Automaton in the given status may still be moved by *lane fill*: the lane
 // retargets an already-admitted run, so a running or completed Automaton is
@@ -6751,6 +6755,12 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	// override_queued_tasks disabled (explicit false) a running Automaton has
 	// no queued task the change could reach and is refused. Same rule as the
 	// story/task setters (SetStoryLLM / SetTaskLLM).
+	// Planning-only changes (decomposition_profile / decomposition_model) are
+	// the planning-requeue path and stay allowed mid-plan; any other LLM field
+	// is refused while a plan is running.
+	if prd.Status == PRDPlanning && (backend != nil || effort != nil || model != nil) {
+		return nil, nil, fmt.Errorf("%w: prd %q is planning (a plan is running); wait for it to finish, then change the LLM settings", ErrPlanInProgress, prdID)
+	}
 	if prd.Status == PRDCompleted {
 		return nil, nil, fmt.Errorf("prd %q is completed; worker LLM/effort overrides only apply while the Automaton can still run tasks", prdID)
 	}
@@ -6840,6 +6850,9 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDPlanning {
+		return nil, fmt.Errorf("%w: prd %q is planning (a plan is running); wait for it to finish, then change the LLM settings", ErrPlanInProgress, prdID)
 	}
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)

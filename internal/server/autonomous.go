@@ -2222,6 +2222,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if anyLegacy {
 			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
 			if err != nil {
+				// A refusal because a plan is in flight is a transient state,
+				// not a bad request — 409 so a client can retry after the
+				// planner finishes.
+				if errors.Is(err, autonomous.ErrPlanInProgress) {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
@@ -2236,6 +2243,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if hasGuardrail {
 			updated, err = s.autonomousMgr.SetPRDGuardrailLLM(id, req.GuardrailBackend, req.GuardrailModel, req.Actor)
 			if err != nil {
+				// Same 409 contract as the legacy setter above.
+				if errors.Is(err, autonomous.ErrPlanInProgress) {
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
