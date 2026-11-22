@@ -139,3 +139,27 @@ func TestLaunchFailureRetry_BoundedAndFailsInfra_NeverBlocked(t *testing.T) {
 		})
 	}
 }
+
+func TestJudgeCompletedByOutput(t *testing.T) {
+	cases := []struct {
+		name     string
+		complete bool
+		marker   bool
+		sha      string
+		stored   bool
+		want     bool
+	}{
+		{"marker plus commit", true, true, "abc123", false, true},
+		{"marker plus stored result", true, true, "", true, true},
+		{"marker only", true, true, "", false, false},
+		{"no marker with commit", true, false, "abc123", true, false},
+		{"non-complete end state", false, true, "abc123", true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := JudgeCompletedByOutput(c.complete, c.marker, c.sha, c.stored); got != c.want {
+				t.Fatalf("got %v want %v", got, c.want)
+			}
+		})
+	}
+}
