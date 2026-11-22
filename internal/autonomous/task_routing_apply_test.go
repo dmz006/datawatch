@@ -14,6 +14,17 @@ func routingFixture(t *testing.T) (*Manager, *PRD, *Story) {
 	cfg := DefaultConfig()
 	cfg.TaskRouting = config.DefaultTaskRouting()
 	cfg.TaskRouting.Enabled = true
+	// The router writes the row's effort and never a worker backend, so the
+	// rows carry an effort that tells a routed task from an unrouted one.
+	for typ, row := range cfg.TaskRouting.Profiles["default"] {
+		switch row.WorkerBackend {
+		case "pi-prompt":
+			row.Effort = "low"
+		case "claude-code":
+			row.Effort = "medium"
+		}
+		cfg.TaskRouting.Profiles["default"][typ] = row
+	}
 	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -59,8 +70,8 @@ func setProfileRow(m *Manager, profile string, taskType string, row config.TaskR
 func TestTaskRoutingAddTaskAppliesActiveProfile(t *testing.T) {
 	m, prd, st := routingFixture(t)
 	task := addRoutedTask(t, m, prd.ID, st.ID, "Write unit tests for the router", "cover it")
-	if task.Backend != "pi-prompt" || task.Model != "ollama/qwen3.8:27b" {
-		t.Fatalf("tests row not applied: %q/%q", task.Backend, task.Model)
+	if task.Backend != "" || task.Model != "" || task.Effort != "low" {
+		t.Fatalf("tests row: backend and model must stay empty, effort low: %q/%q/%q", task.Backend, task.Model, task.Effort)
 	}
 	r := task.TaskRouting
 	if r == nil || !r.Applied || r.TaskType != config.TaskTypeTests || r.Row != config.TaskTypeTests ||
@@ -68,9 +79,9 @@ func TestTaskRoutingAddTaskAppliesActiveProfile(t *testing.T) {
 		t.Fatalf("bad record: %+v", r)
 	}
 	code := addRoutedTask(t, m, prd.ID, st.ID, "Implement the engine", "do the work")
-	if code.Backend != "claude-code" || code.TaskRouting.TaskType != config.TaskTypeDaemonBackendCode ||
+	if code.Backend != "" || code.Model != "" || code.Effort != "medium" || code.TaskRouting.TaskType != config.TaskTypeDaemonBackendCode ||
 		code.TaskRouting.ClassifiedBy != TaskClassifiedByDefault {
-		t.Fatalf("code task misrouted: %+v %q", code.TaskRouting, code.Backend)
+		t.Fatalf("code task misrouted: %+v %q/%q", code.TaskRouting, code.Backend, code.Effort)
 	}
 }
 
@@ -87,13 +98,16 @@ func TestTaskRoutingDecisionLogNamesTypeProfileRowResult(t *testing.T) {
 	if found == nil {
 		t.Fatal("no task_routing decision")
 	}
-	for _, want := range []string{"task=" + task.ID, "type=docs_set", "profile=default", "row=docs_set", "pi-prompt/ollama/qwen3.8:27b"} {
+	for _, want := range []string{"task=" + task.ID, "type=docs_set", "profile=default", "row=docs_set", "effort=low"} {
 		if !strings.Contains(found.Note, want) {
 			t.Errorf("note %q lacks %q", found.Note, want)
 		}
 	}
 	if found.Actor != taskRoutingActor {
 		t.Errorf("actor = %q", found.Actor)
+	}
+	if found.Backend != "" || found.Model != "" || strings.Contains(found.Note, "worker=") {
+		t.Errorf("the log entry names a worker LLM: %q %q %q", found.Backend, found.Model, found.Note)
 	}
 }
 
@@ -163,24 +177,24 @@ func TestTaskRoutingPlannerRerunKeepsHandEdits(t *testing.T) {
 	m, prd, st := routingFixture(t)
 	edited := addRoutedTask(t, m, prd.ID, st.ID, "Update the docs", "first spec")
 	plain := addRoutedTask(t, m, prd.ID, st.ID, "Write regression tests", "")
-	if edited.Model != "ollama/qwen3.8:27b" {
-		t.Fatalf("not routed: %q", edited.Model)
+	if edited.Effort != "low" {
+		t.Fatalf("not routed: %q", edited.Effort)
 	}
 	if _, err := m.EditTask(prd.ID, edited.ID, "second spec", nil, "", "", "", "op"); err != nil {
 		t.Fatal(err)
 	}
 	// The operator later changes the table; the planner runs again.
-	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
-	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
 	p, _ := m.Store().GetPRD(prd.ID)
 	m.ApplyTaskRoutingToPRD(p)
 	e, _ := findTaskInPRD(p, edited.ID)
-	if e.Model != "ollama/qwen3.8:27b" || !e.TaskRouting.Applied {
-		t.Errorf("hand-edited task overwritten: %q %+v", e.Model, e.TaskRouting)
+	if e.Effort != "low" || !e.TaskRouting.Applied {
+		t.Errorf("hand-edited task overwritten: %q %+v", e.Effort, e.TaskRouting)
 	}
 	r, _ := findTaskInPRD(p, plain.ID)
-	if r.Backend != "claude-code" || r.Model != "sonnet" {
-		t.Errorf("router-owned task not re-applied: %q/%q", r.Backend, r.Model)
+	if r.Backend != "" || r.Model != "" || r.Effort != "high" {
+		t.Errorf("router-owned task not re-applied: %q/%q/%q", r.Backend, r.Model, r.Effort)
 	}
 	// The planner's own earlier result is not mistaken for a hand set LLM,
 	// and a second pass is a no-op with no extra log entry.
@@ -204,15 +218,15 @@ func TestTaskRoutingProfileSwitchOnlyAffectsNewTasks(t *testing.T) {
 	})
 	cfg := m.Config()
 	cfg.TaskRouting, _ = SaveProfile(cfg.TaskRouting, "alt", nil)
-	cfg.TaskRouting.Profiles["alt"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
-	cfg.TaskRouting.Profiles["alt"][config.TaskTypeFormattingCleanup] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
+	cfg.TaskRouting.Profiles["alt"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"}
+	cfg.TaskRouting.Profiles["alt"][config.TaskTypeFormattingCleanup] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"}
 	cfg.TaskRouting, _ = SetActiveProfile(cfg.TaskRouting, "alt")
 	m.SetConfig(cfg)
 
 	p, _ := m.Store().GetPRD(prd.ID)
 	o, _ := findTaskInPRD(p, old.ID)
-	if o.Backend != "pi-prompt" {
-		t.Errorf("existing task re-routed by the switch: %q", o.Backend)
+	if o.Effort != "low" {
+		t.Errorf("existing task re-routed by the switch: %q", o.Effort)
 	}
 	// A running task is never touched, even when the table is applied to it.
 	rt, _ := findTaskInPRD(p, running.ID)
@@ -223,8 +237,8 @@ func TestTaskRoutingProfileSwitchOnlyAffectsNewTasks(t *testing.T) {
 		t.Errorf("running task changed: %q %q", rt.Backend, rt.SessionID)
 	}
 	nt := addRoutedTask(t, m, prd.ID, st.ID, "Add more tests", "")
-	if nt.Backend != "claude-code" || nt.TaskRouting.Profile != "alt" {
-		t.Errorf("new task not routed by the new profile: %q %+v", nt.Backend, nt.TaskRouting)
+	if nt.Backend != "" || nt.Effort != "high" || nt.TaskRouting.Profile != "alt" {
+		t.Errorf("new task not routed by the new profile: %q/%q %+v", nt.Backend, nt.Effort, nt.TaskRouting)
 	}
 }
 
@@ -242,11 +256,11 @@ func TestTaskRoutingUnknownLLMRefusedAndRecorded(t *testing.T) {
 	// A usable second choice is applied instead and marked.
 	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{
 		WorkerBackend: "ghost-llm", WorkerModel: "m",
-		SecondChoice: &config.TaskRoutingChoice{Backend: "pi-prompt", Model: "ollama/qwen3.8:27b"},
+		SecondChoice: &config.TaskRoutingChoice{Backend: "pi-prompt", Model: "ollama/qwen3.8:27b", Effort: "high"},
 	})
 	t2 := addRoutedTask(t, m, prd.ID, st.ID, "Write the docs again", "")
-	if t2.Backend != "pi-prompt" || !t2.TaskRouting.SecondChoiceUsed || !t2.TaskRouting.Applied {
-		t.Fatalf("second choice: %q %+v", t2.Backend, t2.TaskRouting)
+	if t2.Backend != "" || t2.Model != "" || t2.Effort != "high" || !t2.TaskRouting.SecondChoiceUsed || !t2.TaskRouting.Applied {
+		t.Fatalf("second choice: %q/%q %+v", t2.Backend, t2.Effort, t2.TaskRouting)
 	}
 }
 
@@ -262,10 +276,10 @@ func TestRoutingDryRunWritesNothing(t *testing.T) {
 	if err != nil || len(out) != 2 {
 		t.Fatalf("dry run: %v %v", err, out)
 	}
-	if !out[0].WouldApply || out[0].TaskType != config.TaskTypeTests || out[0].Result.WorkerBackend != "pi-prompt" {
+	if !out[0].WouldApply || out[0].TaskType != config.TaskTypeTests || out[0].Result.Effort != "low" || out[0].Result.WorkerBackend != "" {
 		t.Errorf("entry 0: %+v", out[0])
 	}
-	if !out[1].WouldApply || out[1].Result.WorkerBackend != "claude-code" {
+	if !out[1].WouldApply || out[1].Result.Effort != "medium" || out[1].Result.WorkerBackend != "" {
 		t.Errorf("entry 1: %+v", out[1])
 	}
 	after, _ := m.Store().SnapshotPRD(prd.ID)
@@ -283,10 +297,10 @@ func TestRoutingDryRunWritesNothing(t *testing.T) {
 	// A named profile.
 	cfg = m.Config()
 	cfg.TaskRouting, _ = SaveProfile(cfg.TaskRouting, "alt", nil)
-	cfg.TaskRouting.Profiles["alt"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
+	cfg.TaskRouting.Profiles["alt"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"}
 	m.SetConfig(cfg)
 	out, _ = m.TaskRoutingDryRun(prd.ID, "alt")
-	if out[0].Profile != "alt" || out[0].Result.WorkerBackend != "claude-code" {
+	if out[0].Profile != "alt" || out[0].Result.Effort != "high" || out[0].Result.WorkerBackend != "" {
 		t.Errorf("named profile: %+v", out[0])
 	}
 	if _, err := m.TaskRoutingDryRun(prd.ID, "nope"); err == nil {
@@ -309,7 +323,7 @@ func TestTaskRoutingForAutomatonReportsRowAndEffective(t *testing.T) {
 	for _, v := range views {
 		byID[v.TaskID] = v
 	}
-	if v := byID[routed.ID]; v.Row != config.TaskTypeTests || v.Effective.Backend != "pi-prompt" || v.Reason != "" {
+	if v := byID[routed.ID]; v.Row != config.TaskTypeTests || v.Effective.Source != ExecutorSourceGlobal || v.Effective.Effort != "low" || v.Reason != "" {
 		t.Errorf("routed view: %+v", v)
 	}
 	if v := byID[hand.ID]; v.Row != "" || v.Reason != "task LLM set by operator" || v.Effective.Model != "haiku" {
@@ -328,8 +342,8 @@ func TestTaskRoutingDecomposeTailAppliesToAllTasks(t *testing.T) {
 	if n := m.ApplyTaskRoutingToPRD(prd); n != 2 {
 		t.Fatalf("applied to %d tasks", n)
 	}
-	if st.Tasks[0].Backend != "pi-prompt" || st.Tasks[1].Backend != "claude-code" {
-		t.Errorf("routing: %q %q", st.Tasks[0].Backend, st.Tasks[1].Backend)
+	if st.Tasks[0].Backend != "" || st.Tasks[1].Backend != "" || st.Tasks[0].Effort != "low" || st.Tasks[1].Effort != "medium" {
+		t.Errorf("routing: %q/%q %q/%q", st.Tasks[0].Backend, st.Tasks[0].Effort, st.Tasks[1].Backend, st.Tasks[1].Effort)
 	}
 }
 
@@ -453,16 +467,16 @@ func TestTaskRoutingHandSetRedecomposeKeepsSurvivingTaskLLM(t *testing.T) {
 	tasks := materializeTasks(m, prd, st, "Write unit tests", "Update the docs")
 	handTask, routedTask := tasks[0], tasks[1]
 	m.ApplyTaskRoutingToPRD(prd)
-	if routedTask.Backend != "pi-prompt" || !routedTask.TaskRouting.Applied {
-		t.Fatalf("first decompose did not route: %q %+v", routedTask.Backend, routedTask.TaskRouting)
+	if routedTask.Effort != "low" || !routedTask.TaskRouting.Applied {
+		t.Fatalf("first decompose did not route: %q %+v", routedTask.Effort, routedTask.TaskRouting)
 	}
 	if _, _, err := m.SetTaskLLM(prd.ID, handTask.ID, "claude-code", "", "hand-opus", "op"); err != nil {
 		t.Fatal(err)
 	}
 	// The table changes, then the planner re-runs: surviving tasks stay, a
 	// new task is materialized, and the decompose tail applies routing again.
-	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
-	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
+	setProfileRow(m, "default", config.TaskTypeDocsSet, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
 	materializeTasks(m, prd, st, "Write more unit tests")
 	m.ApplyTaskRoutingToPRD(prd)
 
@@ -474,8 +488,8 @@ func TestTaskRoutingHandSetRedecomposeKeepsSurvivingTaskLLM(t *testing.T) {
 		t.Errorf("hand-set task now carries a routed record: %+v", h.TaskRouting)
 	}
 	r, _ := findTaskInPRD(prd, routedTask.ID)
-	if r.Backend != "claude-code" || r.Model != "sonnet" || !r.TaskRouting.Applied {
-		t.Errorf("router-owned task not re-routed on re-decompose: %q/%q %+v", r.Backend, r.Model, r.TaskRouting)
+	if r.Backend != "" || r.Model != "" || r.Effort != "high" || !r.TaskRouting.Applied {
+		t.Errorf("router-owned task not re-routed on re-decompose: %q/%q/%q %+v", r.Backend, r.Model, r.Effort, r.TaskRouting)
 	}
 	// A further pass changes nothing and logs nothing.
 	n := len(prd.Decisions)
@@ -490,8 +504,8 @@ func TestTaskRoutingHandSetRedecomposeKeepsStoryAndAutomatonLLM(t *testing.T) {
 	tasks := materializeTasks(m, prd, st, "Write unit tests")
 	m.ApplyTaskRoutingToPRD(prd)
 	routed := tasks[0]
-	if routed.Backend != "pi-prompt" {
-		t.Fatalf("not routed first: %q", routed.Backend)
+	if routed.Effort != "low" {
+		t.Fatalf("not routed first: %q", routed.Effort)
 	}
 	// The operator sets the story and Automaton LLM after the first routing.
 	m.Store().WithLock(func() {
@@ -499,7 +513,7 @@ func TestTaskRoutingHandSetRedecomposeKeepsStoryAndAutomatonLLM(t *testing.T) {
 		prd.Backend, prd.Model = "claude-code", "auto-hand"
 	})
 	fresh := materializeTasks(m, prd, st, "Write regression tests")
-	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
 	m.ApplyTaskRoutingToPRD(prd)
 	if fresh[0].Backend != "" || fresh[0].Model != "" {
 		t.Errorf("new task routed over hand-set story/Automaton LLM: %q/%q", fresh[0].Backend, fresh[0].Model)
@@ -508,8 +522,8 @@ func TestTaskRoutingHandSetRedecomposeKeepsStoryAndAutomatonLLM(t *testing.T) {
 		t.Errorf("story/Automaton LLM changed: %q/%q %q/%q", st.Backend, st.Model, prd.Backend, prd.Model)
 	}
 	// The earlier routed task is not rewritten by a table that no longer may decide.
-	if routed.Backend != "pi-prompt" || routed.Model != "ollama/qwen3.8:27b" {
-		t.Errorf("routed task rewritten once blocked: %q/%q", routed.Backend, routed.Model)
+	if routed.Effort != "low" {
+		t.Errorf("routed task rewritten once blocked: %q", routed.Effort)
 	}
 }
 
@@ -523,13 +537,13 @@ func TestTaskRoutingHandSetEditedRoutedTaskNotRerouted(t *testing.T) {
 	if _, _, err := m.SetTaskLLM(prd.ID, edited.ID, edited.Backend, string(edited.Effort), edited.Model, "op"); err != nil {
 		t.Fatal(err)
 	}
-	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"})
+	setProfileRow(m, "default", config.TaskTypeTests, config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"})
 	m.ApplyTaskRoutingToPRD(prd)
-	if edited.Backend != "pi-prompt" || edited.Model != "ollama/qwen3.8:27b" {
-		t.Errorf("hand-set (same values) task re-routed: %q/%q", edited.Backend, edited.Model)
+	if edited.Effort != "low" {
+		t.Errorf("hand-set (same values) task re-routed: %q", edited.Effort)
 	}
-	if plain.Backend != "claude-code" || plain.Model != "sonnet" {
-		t.Errorf("router-owned task not re-routed: %q/%q", plain.Backend, plain.Model)
+	if plain.Backend != "" || plain.Effort != "high" {
+		t.Errorf("router-owned task not re-routed: %q/%q", plain.Backend, plain.Effort)
 	}
 }
 
@@ -543,8 +557,8 @@ func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
 	m, prd, st := routingFixture(t)
 	running := addRoutedTask(t, m, prd.ID, st.ID, "Write unit tests", "")
 	routed := addRoutedTask(t, m, prd.ID, st.ID, "Add more tests", "")
-	if running.Backend != "pi-prompt" || routed.Backend != "pi-prompt" {
-		t.Fatalf("profile A routing: %q %q", running.Backend, routed.Backend)
+	if running.Effort != "low" || routed.Effort != "low" || running.Backend != "" || routed.Backend != "" {
+		t.Fatalf("profile A routing: %q/%q %q/%q", running.Backend, running.Effort, routed.Backend, routed.Effort)
 	}
 	m.Store().WithLock(func() {
 		r, _ := findTaskInPRD(prd, running.ID)
@@ -573,7 +587,7 @@ func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
 	// Switch to profile B, which routes the tests row elsewhere.
 	cfg := m.Config()
 	cfg.TaskRouting, _ = SaveProfile(cfg.TaskRouting, "B", nil)
-	cfg.TaskRouting.Profiles["B"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet"}
+	cfg.TaskRouting.Profiles["B"][config.TaskTypeTests] = config.TaskRoutingRow{WorkerBackend: "claude-code", WorkerModel: "sonnet", Effort: "high"}
 	cfg.TaskRouting, _ = SetActiveProfile(cfg.TaskRouting, "B")
 	m.SetConfig(cfg)
 
@@ -598,7 +612,7 @@ func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
 		}
 	}
 	for _, e := range out {
-		if e.TaskID == routed.ID && (!e.WouldApply || e.Result == nil || e.Result.WorkerBackend != "claude-code") {
+		if e.TaskID == routed.ID && (!e.WouldApply || e.Result == nil || e.Result.Effort != "high") {
 			t.Errorf("dry run for the routed task does not show profile B's row: %+v", e)
 		}
 		if e.TaskID == running.ID && e.WouldApply {
@@ -620,8 +634,8 @@ func TestTaskRoutingProfileSwitchKeepsRunningAndRoutedLLMs(t *testing.T) {
 
 	// A task created after the switch takes profile B's row.
 	nt := addRoutedTask(t, m, prd.ID, st.ID, "Write integration tests", "")
-	if nt.Backend != "claude-code" || nt.Model != "sonnet" || nt.TaskRouting == nil || nt.TaskRouting.Profile != "B" {
-		t.Errorf("new task not routed by profile B: %q %q %+v", nt.Backend, nt.Model, nt.TaskRouting)
+	if nt.Backend != "" || nt.Model != "" || nt.Effort != "high" || nt.TaskRouting == nil || nt.TaskRouting.Profile != "B" {
+		t.Errorf("new task not routed by profile B: %q %q %q %+v", nt.Backend, nt.Model, nt.Effort, nt.TaskRouting)
 	}
 	if final := snap(); final[running.ID] != before[running.ID] || final[routed.ID] != before[routed.ID] {
 		t.Error("adding a task after the switch changed an earlier task")
