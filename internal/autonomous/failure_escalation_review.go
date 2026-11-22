@@ -13,6 +13,7 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -21,6 +22,7 @@ import (
 const (
 	reviewActionRetry  = "retry"
 	reviewActionCancel = "cancel"
+	reviewActionAccept = "accept"
 )
 
 // Decision kinds and the actor name the operator's review decisions carry.
@@ -167,16 +169,18 @@ func (r *reviewRequeue) decisionNote(taskID, actor string) string {
 // (checked with validateReportPath, and only for a task that is read-only after
 // the change, which must also end with no planned files). Every change is checked before
 // anything is written, so a refused change leaves the task held. Action
-// "cancel" cancels the task through CancelTask. Either action reopens a blocked
+// "cancel" cancels the task through CancelTask. Action "accept" completes a
+// task whose last worker session has a completion marker (see acceptHeldTask).
+// Every action reopens a blocked
 // Automaton so the next Run rolls it up.
 //
 // It returns ErrTaskNotInReview, wrapped, unless the task is held in
 // TaskReviewNeeded.
 func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, actor string) (*PRD, error) {
 	switch req.Action {
-	case reviewActionRetry, reviewActionCancel:
+	case reviewActionRetry, reviewActionCancel, reviewActionAccept:
 	default:
-		return nil, fmt.Errorf("review action %q is not valid; use %q or %q", req.Action, reviewActionRetry, reviewActionCancel)
+		return nil, fmt.Errorf("review action %q is not valid; use %q, %q or %q", req.Action, reviewActionRetry, reviewActionCancel, reviewActionAccept)
 	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -197,6 +201,9 @@ func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, 
 	})
 	if status != TaskReviewNeeded {
 		return nil, fmt.Errorf("task %q is %q: %w", taskID, normTaskStatus(status), ErrTaskNotInReview)
+	}
+	if req.Action == reviewActionAccept {
+		return m.acceptHeldTask(prdID, taskID, actor, req.Note)
 	}
 	if req.Action == reviewActionCancel {
 		return m.cancelHeldTask(prdID, taskID, actor, req.Note)
@@ -286,6 +293,101 @@ func (m *Manager) cancelHeldTask(prdID, taskID, actor, note string) (*PRD, error
 		return nil, err
 	}
 	m.reopenBlockedPRD(prdID, taskID, actor)
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// heldTaskHasCompletionMarker reports whether the last worker session of a held
+// task finished with a completion marker in its recorded output.
+func (m *Manager) heldTaskHasCompletionMarker(t *Task) bool {
+	var sid string
+	m.store.WithLock(func() {
+		if a := lastTaskAttempt(t); a != nil {
+			sid = a.SessionID
+		}
+		if sid == "" {
+			sid = t.SessionID
+		}
+	})
+	if sid == "" {
+		return false
+	}
+	m.mu.Lock()
+	fn := m.sessionOutputFn
+	m.mu.Unlock()
+	if fn == nil {
+		return false
+	}
+	out, ok := fn(sid)
+	return ok && outputHasCompletionMarker(out)
+}
+
+// acceptHeldTask completes a held task with its stored result or commit. It
+// refuses a task whose last worker session has no completion marker. It reuses
+// the verified-completion path (completeVerifyingTaskFromVerdict), withdraws
+// the held question as retry does, records a decision and an audit record
+// naming the actor, and reopens a blocked Automaton as cancel does.
+func (m *Manager) acceptHeldTask(prdID, taskID, actor, note string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	t, _ := findTaskInPRD(prd, taskID)
+	if t == nil {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	if !m.heldTaskHasCompletionMarker(t) {
+		return nil, fmt.Errorf("task %q cannot be accepted: its last worker session has no completion marker; retry or cancel it instead", taskID)
+	}
+	var prev TaskStatus
+	var sha string
+	m.store.WithLock(func() {
+		prev = t.Status
+		if n := len(t.AttemptCommitSHAs); n > 0 {
+			sha = t.AttemptCommitSHAs[n-1]
+		}
+	})
+	ev := m.completeVerifyingTaskFromVerdict(nil, "accepted by "+actor, prev, t, nil)
+	m.store.WithLock(func() {
+		t.ReviewSummary = nil
+		if t.FailureReason != nil && (t.FailureReason.Source == failureEscalationHoldSource ||
+			t.FailureReason.Source == infraRetryHoldSource) {
+			t.FailureReason = nil
+		}
+		if t.PostVerifySHA == "" {
+			t.PostVerifySHA = sha
+		}
+		clearInfraRetryCount(t)
+	})
+	if err := m.store.SaveTask(t); err != nil {
+		return nil, err
+	}
+	dnote := fmt.Sprintf("task=%s result accepted by %s after operator review", taskID, actor)
+	if note != "" {
+		dnote += ": " + note
+	}
+	now := time.Now()
+	if cur, ok := m.store.GetPRD(prdID); ok {
+		m.store.WithLock(func() {
+			cur.Decisions = append(cur.Decisions, Decision{At: now, Kind: reviewDecisionKind, Actor: reviewDecisionActor, Note: dnote})
+			cur.UpdatedAt = now
+		})
+		if err := m.store.SavePRD(cur); err != nil {
+			log.Printf("[autonomous] prd=%s record accept decision: %v", prdID, err)
+		}
+		dec := lastDecision(cur, reviewDecisionKind)
+		m.emitPendingTaskEvents(cur, []pendingTaskEvent{ev}, dec)
+	}
+	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task accepted by "+actor+" without answering the question")
+	m.mu.Lock()
+	auditFn := m.auditFn
+	m.mu.Unlock()
+	if auditFn != nil {
+		auditFn("autonomous_review_accept", map[string]any{
+			"prd_id": prdID, "task_id": taskID, "actor": actor, "commit": sha, "note": note,
+		})
+	}
+	m.reopenBlockedPRDWithNote(prdID, dnote)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
