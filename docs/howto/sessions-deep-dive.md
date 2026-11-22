@@ -38,7 +38,7 @@ A directory under `~/.datawatch/sessions/<full_id>/` containing:
 
 ```
 output.log     ← full append-only tmux output (ANSI preserved)
-state.json     ← session metadata (state, last-channel-event, ...)
+session.json   ← session metadata (state, last-channel-event, ...)
 tracking/      ← per-input record kept by the Tracker
 wakeup.log     ← what was injected into L0/L1 layers at start
 response.md    ← (optional) last LLM response captured for /copy + alerts
@@ -61,7 +61,167 @@ pipe-pane`. The LLM runs inside that tmux session.
 States: `Running` (LLM processing), `WaitingInput` (paused, awaiting
 your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
 `Killed` (terminal — sticky). See `channel-state-engine.md` for the
-state-decision logic.
+state-decision logic. A record whose process has vanished without ever
+reaching a terminal state is a *gone* record; see
+[Gone session records](#gone-session-records).
+
+## Sessions that are really running
+
+**Why a list could be wrong.** A session record is a saved file, and it only
+changes when something updates it. If the process behind a session ended
+without telling datawatch (the terminal was closed, the machine lost power, a
+tool killed the process, or the daemon was down at the time), the record kept
+saying `running`. The session list then showed sessions as running that had
+nothing running behind them.
+
+**What a live session is.** A session is live when something still drives it:
+a terminal session or process exists for it, or the daemon holds a runner for
+it. A session in `running`, `waiting_input`, `stalled` or `rate_limited` with
+none of those is not really running. Sessions recorded by another host are not
+judged here; that host's daemon owns them.
+
+**What the finaliser does.** The finaliser looks at every record that is not in
+a final state. If its terminal session and process are gone, the record is
+set to `killed`, or to `complete` when its output ends with the completion
+marker. It gets an end time (`ended_at`) and the note `process gone,
+finalised` (`end_note`). The record and its output are kept, so you can read
+what happened. Records that are live, belong to another host or are already in
+a final state are left alone.
+
+**When it runs.** Once when the daemon starts, then every
+`session.finalise_interval_minutes` minutes (default 10). Setting it to `0`
+turns the scheduled runs off; the start-up run still happens. A change applies
+without a restart.
+
+**Worked example.** A laptop sleeps mid-session and the terminal is closed.
+Next morning the session list still says `running`. Within ten minutes of the
+daemon's next run, or at once on start-up, the record changes:
+
+```bash
+datawatch sessions get a3f2 | jq '.state, .ended_at, .end_note'
+# "killed"
+# "2026-11-12T07:41:09Z"
+# "process gone, finalised"
+```
+
+Read the session's output before you restart it. To run the check more often,
+every 2 minutes:
+
+```bash
+datawatch config set session.finalise_interval_minutes 2
+```
+
+The details of how a record is judged and what each run covers follow below.
+
+## Gone session records
+
+A session record can be left in `running` (or another non-final state)
+after whatever drove it has vanished. datawatch judges that with one shared
+rule instead of one signal per caller. A record is:
+
+- **ended** — already `complete`, `failed` or `killed`; nothing more happens.
+- **foreign** — recorded by another host; this daemon never finalises or
+  re-labels it.
+- **live** — something still drives it: its terminal pane exists, its backend
+  launch is still running, the daemon holds a runner for it (subprocess
+  sessions are registered when they start and when they are re-attached after
+  a restart), its recorded subprocess still runs the task, or the daemon's own
+  report path ends it (a virtual backend, or a session bound to an agent).
+- **gone** — not final, and none of those signs is present.
+
+A **gone** record is finalised from the end of its `output.log`. If the last
+non-empty line (colour codes stripped) begins with `DATAWATCH_COMPLETE:`, the
+record becomes `complete`. Otherwise it becomes `killed`: no marker, a marker
+followed by more output, or an empty or missing log all read as the process
+vanishing before it finished. The record also gets two fields in
+`session.json` and the session JSON:
+
+| Field | Value |
+|---|---|
+| `ended_at` | When the record was finalised. |
+| `end_note` | `process gone, finalised` |
+
+Both fields are absent on every session that was not finalised this way. To
+see how any other session ended, read the daemon journal and the session's
+`timeline.md`, as before.
+
+### The finaliser
+
+The finaliser is the pass that applies this rule. One run has two parts, in
+this order:
+
+1. **Records the daemon holds.** Every record still in `running`,
+   `waiting_input`, `stalled` or `rate_limited` is judged. A `gone` record is
+   finalised; a `live`, `foreign` or already final one is left as it is. The
+   terminal pane is checked once more just before the write, so a pane that
+   appeared in the meantime saves the record. The record, its `output.log` and
+   its project folder are kept; only the state, `ended_at` and `end_note`
+   change, and the daemon's own state-change handling runs as for any other
+   change of state.
+2. **Saved session folders.** Each `~/.datawatch/sessions/<id>/session.json`
+   that still says one of those four states is finalised too, so a folder
+   does not keep saying `running` after the process is gone.
+   - If the daemon holds a record for that id, the record decides. A live,
+     foreign or still-gone record leaves the folder alone, and a final record
+     has its state, `ended_at` and `end_note` copied into the folder.
+   - If the daemon holds no record (never stored, or archived), the folder
+     is judged by what it saved: it is left alone while its terminal pane
+     exists or its recorded subprocess still runs the task, and a folder from
+     another host is never judged. Otherwise it is finalised from the end of
+     its own `output.log` by the same rule as above.
+   - Only `session.json` is rewritten (to a temporary file, then renamed over
+     the old one). Every other file in the folder is left as it was, and a
+     `session.json` that cannot be read is skipped and counted, never fatal.
+
+A run does nothing when the terminal pane listing fails for any reason other
+than "no server running": a broken listing is never read as every pane being
+gone. The run keeps one summary in memory, replaced by the next run: when it
+ran, how many records and folders it finalised, how many it left as they were,
+and whether the pane listing worked for both parts. A run that finalises
+something writes one line to the daemon journal with the counts and nothing
+else.
+
+Runs are scheduled by the finaliser loop. The daemon starts it right after it
+resumes its sessions. It runs once as soon as it starts (the start-up run), then
+again after each interval. The interval is the setting
+`session.finalise_interval_minutes` (whole minutes, default 10). It is read again
+on every cycle, so a change applies without a restart; zero switches scheduled
+runs off, and the loop then only re-reads the interval once a minute. The
+start-up run still happens at zero. A negative value in `config.yaml` falls back
+to 10, and a negative value sent to the config API is ignored. The loop stops
+when the daemon shuts down.
+
+To change the interval, use any of these:
+
+- **Settings page:** General, **Sessions**, *Session finalise interval (min)*.
+- **CLI:** `datawatch config set session.finalise_interval_minutes 5`
+- **Chat:** `configure session.finalise_interval_minutes=5`
+- **MCP:** the `config_set` tool with `key` `session.finalise_interval_minutes`
+  (it needs `mcp.allow_self_config`, which is on by default).
+- **REST:** `PUT /api/config` with `{"session.finalise_interval_minutes": 5}`;
+  `GET /api/config` shows the current value.
+- **Config file:** `finalise_interval_minutes` under `session:`.
+
+**What to check.** `datawatch sessions get <id> | jq '.state, .ended_at, .end_note'`
+shows whether a record was finalised this way. A `killed` record with the end
+note means the output did not end with a completion line; read
+`output.log` before restarting it (`restart:<id>` spawns a fresh session seeded
+from the prior one). For a folder, `jq '.state, .ended_at, .end_note'
+~/.datawatch/sessions/<id>/session.json` shows the same three fields.
+
+**Status today.** The daemon runs the finaliser: it starts at boot, runs on
+the interval above, and finalises gone records and folders, so a finalised
+record or folder carries `ended_at` and `end_note`. The restart check in
+[operations — Restart safety](../operations.md#restart-safety) still runs first
+and still marks a missing terminal pane `failed`; the finaliser never changes a
+record that is already in a final state, so it covers the records that check
+does not reach. Two things are not there yet. Nothing shows the last run's
+summary (no REST, CLI, MCP or chat command and no part of the PWA), and the PWA
+does not yet show `end_note` on a session, so the only trace of a run is the
+`[finalise]` line in the daemon journal. And chat-mode and other non-pane
+sessions are not registered as runners yet, so only subprocess sessions count
+as held by a runner. Watch the journal after the first scheduled run on a busy
+daemon to confirm that a session you are still using is not finalised.
 
 ## How a worker pane is capped
 
