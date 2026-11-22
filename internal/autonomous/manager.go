@@ -5332,6 +5332,12 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 // caller (API layer) or the reconcile loop does that. The all-terminal
 // precondition the operator CancelTask path applies is checked by the caller.
 func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
+	m.reopenBlockedPRDWithNote(prdID, fmt.Sprintf("task=%s cancelled by %s", taskID, actor))
+}
+
+// reopenBlockedPRDWithNote is reopenBlockedPRD with the decision note given by
+// the caller, so accept records its own wording.
+func (m *Manager) reopenBlockedPRDWithNote(prdID, decisionNote string) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return
@@ -5349,7 +5355,7 @@ func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
 		prd.UpdatedAt = now
 		prd.Decisions = append(prd.Decisions, Decision{
 			At: now, Kind: reviewDecisionKind, Actor: reviewDecisionActor,
-			Note: fmt.Sprintf("task=%s cancelled by %s", taskID, actor),
+			Note: decisionNote,
 		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
