@@ -17306,6 +17306,28 @@ function _newSessionTagsMount() {
   });
 }
 
+function _newSessionStartBtn() {
+  const m = document.getElementById('newSessionModal');
+  return (m && m.querySelector('.btn-primary')) || document.querySelector('.btn-primary');
+}
+
+// Show (or clear, with '') the failure text inside the New Session dialog.
+function _newSessionShowError(text) {
+  const btn = _newSessionStartBtn();
+  const row = btn && btn.parentElement;
+  if (!row || !row.parentNode) return;
+  let el = document.getElementById('newSessionError');
+  if (!text) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'newSessionError';
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'color:var(--error,#e5484d);font-size:13px;margin:0 0 8px;white-space:pre-wrap;word-break:break-word;';
+    row.parentNode.insertBefore(el, row);
+  }
+  el.textContent = text;
+}
+
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
   const nameInput = document.getElementById('sessionNameInput');
@@ -17325,7 +17347,9 @@ function submitNewSession() {
     }
   }
 
-  const btn = document.querySelector('.btn-primary');
+  // The dialog's own Start button, not the first .btn-primary on the page.
+  const btn = _newSessionStartBtn();
+  _newSessionShowError('');
   if (btn) {
     btn.disabled = true;
     btn.textContent = t('btn_starting') || 'Starting…';
@@ -17432,7 +17456,11 @@ function submitNewSession() {
       navigate('session-detail', sess.full_id);
     })
     .catch(err => {
-      showToast('Failed to start session: ' + err.message, 'error', 4000);
+      // Toasts land in the alert dock (a header pill), so the server's text is
+      // also shown inline in the open dialog, unchanged.
+      const text = (err && err.message) ? err.message : String(err);
+      showToast('Failed to start session: ' + text, 'error', 4000);
+      _newSessionShowError(text);
     })
     .finally(() => {
       if (btn) { btn.disabled = false; btn.textContent = t('btn_start_session') || 'Start Session'; }
