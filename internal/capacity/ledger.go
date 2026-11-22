@@ -1880,3 +1880,62 @@ func FormatText(st Status) string {
 	}
 	return b.String()
 }
+
+// moveSuffix marks the temporary holder key a Move queues under while the
+// holder's current lease stays in force.
+const moveSuffix = "\x00move"
+
+// Move re-places a holder's lease onto the placement req names. The new
+// placement is requested under a temporary key and queues like any other
+// request, so a full pool or node makes Move wait; the old lease keeps
+// counting against its own pools the whole time and is released only in the
+// same lock hold that installs the new one. The session binding moves with the
+// lease. A holder with no lease simply acquires req; a lease that already has
+// the requested pool set is left alone and Move returns nil.
+func (l *Ledger) Move(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string)) error {
+	l.mu.Lock()
+	old, held := l.leases[req.Holder]
+	if !held {
+		l.mu.Unlock()
+		return l.Acquire(ctx, req, timeout, cancelled, onWait)
+	}
+	if samePoolSet(old.Pools, req.Pools) {
+		l.mu.Unlock()
+		return nil
+	}
+	acquired := old.Acquired
+	l.mu.Unlock()
+
+	tmp := req
+	tmp.Holder = req.Holder + moveSuffix
+	if err := l.Acquire(ctx, tmp, timeout, cancelled, onWait); err != nil {
+		return err
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	granted := l.leases[tmp.Holder]
+	delete(l.leases, tmp.Holder)
+	cur, ok := l.leases[req.Holder]
+	if granted == nil {
+		return nil
+	}
+	if !ok || !cur.Acquired.Equal(acquired) {
+		// The old lease was released or replaced while the move waited: the
+		// granted lease is the holder's lease now.
+		if ok {
+			l.recordLeaseEndLocked(granted, l.opt.Clock.Now())
+			l.signalChangedLocked()
+			l.dispatchLocked()
+			return nil
+		}
+	} else {
+		granted.SessionID = cur.SessionID
+		l.recordLeaseEndLocked(cur, l.opt.Clock.Now())
+	}
+	granted.Holder = req.Holder
+	l.leases[req.Holder] = granted
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	return nil
+}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 )
@@ -116,7 +117,8 @@ func TestStaleLeaseRestart_PiSessionReleasesClaudeLease(t *testing.T) {
 
 func TestStaleLeaseRestart_ThreePiWorkersStayWithinLimit(t *testing.T) {
 	r := newStaleLeaseRig(t, 3, map[string]bool{"sess-a": true, "sess-b": true, "sess-c": true})
-	// Two tasks already lease from pi-prompt; the third carries a stale claude lease.
+	// Two tasks already lease from pi-prompt (its limit); the third carries a
+	// claude lease and must wait for a pi slot, keeping the claude lease meanwhile.
 	r.tasks[0].Backend, r.tasks[1].Backend = "pi-prompt", "pi-prompt"
 	r.seedClaudeLease(r.tasks[2])
 
@@ -129,17 +131,21 @@ func TestStaleLeaseRestart_ThreePiWorkersStayWithinLimit(t *testing.T) {
 	if !ok {
 		t.Fatal("pool llm:pi-prompt missing")
 	}
-	if pi.Held+pi.Overflow != 3 {
-		t.Errorf("pi-prompt reads held=%d overflow=%d, want its true occupancy of 3", pi.Held, pi.Overflow)
+	if pi.Held+pi.Overflow != 2 {
+		t.Errorf("pi-prompt reads held=%d overflow=%d, want its limit of 2", pi.Held, pi.Overflow)
 	}
-	cl, ok := poolOf(st, "llm:claude-code")
-	if !ok {
-		t.Fatal("pool llm:claude-code missing")
+	if h := holdersOf(t, st, "llm:claude-code"); len(h) != 1 || h[0] != r.tasks[2].ID {
+		t.Errorf("claude-code holders = %v, want the old lease kept while pi is full", h)
 	}
-	if cl.Held != 0 || cl.Overflow != 0 || len(cl.Holders) != 0 {
-		t.Errorf("claude-code lane reads held=%d overflow=%d holders=%v, want free", cl.Held, cl.Overflow, cl.Holders)
+	r.led.Release(r.tasks[0].ID)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && len(holdersOf(t, r.led.Snapshot(), "llm:claude-code")) != 0 {
+		time.Sleep(20 * time.Millisecond)
 	}
-	for _, task := range r.tasks {
+	if h := holdersOf(t, r.led.Snapshot(), "llm:claude-code"); len(h) != 0 {
+		t.Errorf("claude-code holders = %v, want none once pi has room", h)
+	}
+	for _, task := range r.tasks[1:] {
 		if n := r.leaseCountFor(task.ID); n != 1 {
 			t.Errorf("task %s holds %d leases, want 1", task.ID, n)
 		}
