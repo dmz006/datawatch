@@ -266,6 +266,45 @@ spec — the daemon picks up the changes on next run.
 
 ---
 
+## An Automaton held because the judge timed out
+
+An Automaton can sit in `needs_review` with the hold reason `judge_timeout_hold`
+when the completion judge timed out on every backend in the judge policy. No
+verdict was made, so nothing about the work is judged good or bad.
+
+- **The review state reads `timed_out`.** It uses "not judged" wording: the
+  Automaton was not judged, and the review state lists each backend tried, its
+  outcome (`timed_out`, `no_slot` or `could_not_start`), the session id and the
+  last output of each judge that timed out. Read the last output first: it shows
+  how far the judge got.
+- **Run the review again. The same branch head is judged again.** No new commit
+  is needed, and a stored verdict is never reused because a timed-out judge stores
+  none. Every task must be `completed` (or `cancelled`, with at least one
+  `completed`).
+
+| Method | Where | How |
+|---|---|---|
+| REST | `POST /api/autonomous/prds/{id}/rejudge` | Send `{"backend": "<name>"}` to pin one judge backend, or an empty body for the configured judge backends |
+| MCP | `autonomous_prd_rejudge` | `autonomous_prd_rejudge(id="a1b2c3d4")` |
+| CLI | `datawatch autonomous prd-approve <id>`, then `datawatch autonomous prd-run <id>` | Approve the held Automaton, then run it; the judge runs again on the same head |
+| Comm channel | `autonomous approve <id>`, then `autonomous run <id>` | Same two steps as the CLI |
+| Run | `autonomous_prd_run`, `POST /api/autonomous/prds/{id}/run` | Run the held Automaton to start the judge again |
+
+The rejudge has no CLI command or comm verb of its own, so the CLI and comm rows
+use approve and then run, which judge the same head again.
+
+What happens next:
+
+- **Judge passes:** the Automaton completes.
+- **Judge blocks:** the Automaton becomes `blocked` with the reason from the
+  verdict; fix it as described in [autonomous-recovery](autonomous-recovery.md).
+- **Judge times out again:** the Automaton stays in `needs_review`, `timed_out`.
+  Raise `autonomous.judge_timeout_seconds` or reroute to a stronger backend, see
+  [judge-policy](judge-policy.md#the-time-limit).
+
+A rules-review hold (retries spent, or auto-fix turned off) is different: it
+needs new commits on the branch before a rejudge is accepted.
+
 ## Story approval in the Status tab
 
 Each story in the Automata detail view shows a "→ Session" link and a
@@ -323,6 +362,8 @@ into a doc-only PRD).
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)
+- [howto/judge-policy](judge-policy.md)
+- [howto/autonomous-recovery](autonomous-recovery.md)
 - [howto/autonomous-planning](autonomous-planning.md)
 - [howto/automata-orchestrator](automata-orchestrator.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)

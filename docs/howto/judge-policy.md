@@ -4,7 +4,7 @@ docs:
   topics: [judge, judges, size, threshold, changed lines, strong backend, guardrail, plan review, verifier, routing, routing policy, time limit, timeout, needs review, hold, review state, timed out, retry, reroute, verdict cache, rejudge, alerts, capacity, lease, automaton, autonomous]
 exec_steps:
   - tool: autonomous_config_get
-    description: Read the judge settings (judge_policy, judge_timeout_seconds, judge_size_threshold_lines, judge_strong_backend, judge_verdict_cache_enabled) and the verifier routing policy the judges follow when judge_policy is empty
+    description: Read the judge settings (judge_policy, judge_timeout_seconds, judge_timeout_per_thousand_lines_seconds, judge_size_threshold_lines, judge_strong_backend, judge_verdict_cache_enabled) and the verifier routing policy the judges follow when judge_policy is empty
     args: {}
     read_only: true
 ---
@@ -307,6 +307,58 @@ Set it with any of the five methods:
 A change made through the CLI, REST API, comm channel or Web UI applies to the
 next judge call, with no restart. A YAML edit takes effect on restart.
 
+## Large diffs: file groups and a longer time limit
+
+A large change gets two extra measures so one judge run is not asked to read all
+of it inside one limit. Both apply to the completion "rules-review" guardrail
+and use the changed-line count described in [Size-aware routing](#size-aware-routing).
+
+**Split by file group.** When the changed lines are above
+`autonomous.judge_size_threshold_lines`, the diff is split into file groups and
+each group is judged on its own:
+
+- Files are grouped by directory. Small directories are packed together, a big
+  directory is split file by file, and one very large file is a group of its
+  own. Lock files are left out. Each group holds about the threshold's worth of
+  changed lines or fewer, and the grouping is the same every time for the same
+  diff.
+- Every group is judged, even when an earlier group failed or timed out.
+- The group verdicts are merged into one: a content block wins, and its issues
+  name the group they came from; otherwise a timeout names the groups that timed
+  out and holds the Automaton as described in
+  [The needs-review hold](#the-needs-review-hold); otherwise an infrastructure
+  failure goes to the usual infra retry; otherwise a warning, then a pass.
+- A change with one group, or at or below the threshold, is judged in one run.
+  `0` turns the size rule, and so the split, off.
+
+**A time limit that grows with the changed lines.** Above the threshold, each
+judge run gets more time than the base `autonomous.judge_timeout_seconds`:
+
+`limit = judge_timeout_seconds + judge_timeout_per_thousand_lines_seconds x lines / 1000`
+
+- `autonomous.judge_timeout_per_thousand_lines_seconds` is the extra seconds for
+  every 1000 changed lines. **Default 600.** `0` adds nothing, so the limit stays
+  the base limit. Whole number, 0 or more; a negative value is refused.
+- The limit never goes below `judge_timeout_seconds` and never above four times
+  it. At or below `judge_size_threshold_lines`, the limit is the base limit.
+- In a split, each group gets the limit for its own changed lines, not for the
+  whole diff.
+- It applies to each attempt, like the base limit (see
+  [One attempt per backend](#one-attempt-per-backend)).
+
+Example: with the defaults (`judge_timeout_seconds` 1800, 600 per 1000 lines),
+a 2,000-line change split in two groups of 1,000 lines gives each group
+1800 + 600 = 2400 seconds.
+
+If the judge still times out on every backend, the Automaton is held and the
+review state reads `timed_out`. Run the review again as described in
+[autonomous-review-approve](autonomous-review-approve.md#an-automaton-held-because-the-judge-timed-out).
+
+Set the extra time with `datawatch config set autonomous.judge_timeout_per_thousand_lines_seconds 600`,
+`autonomous judge-policy-set judge_timeout_per_thousand_lines_seconds=600` in a
+comm channel, `PUT /api/autonomous/config` or `autonomous_config_set` with
+`judge_timeout_per_thousand_lines_seconds`, or the Settings autonomous card.
+
 ## Alerts
 
 Judge alerts go to the daemon's existing alert channels, the same ones other
@@ -544,7 +596,7 @@ daemon takes a change from the next judgment, like the other judge settings.
 
 | Surface | Read | Write |
 |---|---|---|
-| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_size_threshold_lines`, `autonomous.judge_strong_backend`, `autonomous.judge_verdict_cache_enabled` | Edit the keys and restart the daemon |
+| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_timeout_per_thousand_lines_seconds`, `autonomous.judge_size_threshold_lines`, `autonomous.judge_strong_backend`, `autonomous.judge_verdict_cache_enabled` | Edit the keys and restart the daemon |
 | REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400, "judge_strong_backend": "claude-code", "judge_verdict_cache_enabled": false}`; or `PUT /api/config` with the dotted keys |
 | MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number), `judge_size_threshold_lines` (number), `judge_strong_backend` (string) and `judge_verdict_cache_enabled` (boolean) |
 | CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400 --judge-strong-backend claude-code --judge-verdict-cache=false` |
