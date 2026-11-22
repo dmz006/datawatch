@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 ### Fixed
 
 - **The daemon's stderr stays in the service journal, and the crash log keeps its job.** The daemon no longer redirects its stderr (fd 2) into `<data>/daemon-crash.log` at start — before this fix the journal received nothing from the daemon after boot and its ordinary log lines landed in the crash log. Stderr is left untouched, so the journal (and any other stderr consumer) keeps receiving everything as before; the runtime's fatal crash output is additionally written to the crash log with Go 1.23+ `debug.SetCrashOutput` (`GOTRACEBACK=crash` unchanged, all-goroutine dump on a fatal). `<data>/daemon-crash.log` therefore now holds the per-start header and the crash dumps only, not the daemon's ordinary log lines; a SIGABRT core image is still recovered with `coredumpctl`. Docs: the decompose-async how-to, the decompose-abort operations section and the definitions glossary entry.
@@ -1247,6 +1248,15 @@ The Projects page now decides which project an Automaton belongs to by an explic
 - **An arc view on the dashboard.** One arc (an Automation) is shown as its stages in the order they run: bugs, then features, then the final stage, each with how many pieces of work it holds, how many are done, running and blocked, and a percent done. A stage with blocked or failed work is named with a plain-language reason. Maintenance work is shown beside the arc as counts only and never counts as a stage. The view also shows how busy the shared Claude and pi lanes are, with queued work counted by priority, and how much of the plan is used in points and tokens. It shows no billed dollar figure, because the plan is flat. The view only reads: it never starts, pauses, unblocks or reorders anything.
 - **The arc summary on every surface.** REST `GET /api/dashboard/arc` (optional `arc` query, default is the first arc with staged work), the MCP tool `dashboard_arc_get`, the CLI `datawatch dashboard arc` (`--arc`, `--json`) and the chat verb `dashboard arc`. A part the daemon cannot read reports itself unavailable with a reason and the rest of the summary still renders. The web page renders the view as a dashboard card, with strings in all five languages.
 - Docs: a new how-to, `dashboard-arc-view.md`, with the dashboard how-tos, the definitions, the API and MCP mapping, the OpenAPI spec and the parity status updated to match.
+=======
+### Added
+
+- **A stalled pi worker now says why it stalled.** When the tmux pane is gone, the attempt record takes its evidence from the session output log: the last forty lines with terminal control sequences removed, the exit status from the pi failure line, the compute node and the model. The failure summary on the Automaton page, REST, MCP, the CLI and the comm channel names them.
+- **A pi failure line in the output log fails the attempt at once.** The attempt no longer waits out the silence limit once the log already holds the failure.
+- **A pi request timeout is a model-unresponsive infrastructure failure.** It is counted per compute node, requeues the task without consuming an attempt, and raises an alert naming the node and model when the same node repeats it.
+- **A pi launch on a pooled compute node is preflighted.** A one-token request with a twenty-second limit runs first. A node that fails is marked unhealthy for placement and the launch is deferred without consuming an attempt; a later successful preflight clears the mark. A single-node entry makes no node call at launch.
+- Docs: the pi failure reasons, the preflight (pooled entries only) and the unhealthy-node mark are explained in the operator how-to, the definitions and the how-to index. Operator review: the node mark and the per-node count are in memory and no control clears the mark by hand; confirm a daemon restart is acceptable for that.
+>>>>>>> automaton/72d10109
 
 ## v9.147.2 — Lane fill tolerates an unreachable compute node that holds nothing
 
