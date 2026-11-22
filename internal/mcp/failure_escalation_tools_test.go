@@ -135,7 +135,8 @@ func TestFailureEscalationToolsResolveAcceptProxiesAction(t *testing.T) {
 	if d := s.toolAutonomousPRDResolveTaskReview().Description; !strings.Contains(d, "action=accept") || !strings.Contains(d, "completion marker") {
 		t.Errorf("tool description does not name accept and its condition: %s", d)
 	}
-	actionDesc, _ := s.toolAutonomousPRDResolveTaskReview().InputSchema.Properties["action"].(string)
+	actionProp, _ := s.toolAutonomousPRDResolveTaskReview().InputSchema.Properties["action"].(map[string]any)
+	actionDesc, _ := actionProp["description"].(string)
 	if !strings.Contains(actionDesc, "accept") {
 		t.Errorf("action parameter description does not name accept: %q", actionDesc)
 	}
