@@ -62,6 +62,16 @@ PEERCFG
     peer_pid="${TD_LAST_PID:-}"
     td_set_api "$peer_pid" "https://127.0.0.1:$peer_tls" "$peer_token"
 
+    # Shared sandbox teardown (scripts/lib/sandbox.sh, sourced by lib.sh):
+    # if this story shell dies mid-probe (failure path, SIGINT/SIGTERM,
+    # `exit`), the peer is still stopped by RECORDED PID and its temp dir
+    # removed — never by name/pattern. Chain onto the runner's cleanup.
+    if declare -F sandbox_install_exit_trap >/dev/null 2>&1; then
+      sandbox_add_pid "$peer_pid"
+      sandbox_add_dir "$peer_data"
+      sandbox_install_exit_trap
+    fi
+
     # Wait up to 15s for the peer to become healthy
     local deadline=$(( $(date +%s) + 15 ))
     local healthy=0

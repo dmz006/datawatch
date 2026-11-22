@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/tooling"
 )
 
 // fastTreeLockPolling sets the lock wait poll interval low for tests and
@@ -89,8 +90,12 @@ func okSpawn(_ context.Context, req SpawnRequest) (SpawnResult, error) {
 func gitRepoWithDWSeed(t *testing.T) string {
 	t.Helper()
 	repo := newTestRepo(t)
-	src := ".datawatch/\n.decompose-output-*.json\nCHECKPOINT.md\n"
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(src), 0o644); err != nil {
+	var sb strings.Builder
+	sb.WriteString(".datawatch/\n.decompose-output-*.json\nCHECKPOINT.md\n")
+	for _, p := range tooling.DefaultPythonArtifactPatterns {
+		sb.WriteString(p + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(sb.String()), 0o644); err != nil {
 		t.Fatalf("seed .gitignore: %v", err)
 	}
 	gitRun(t, repo, "add", ".gitignore")

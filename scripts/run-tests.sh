@@ -358,6 +358,7 @@ start_ntfy_server() {
     --base-url "http://127.0.0.1:${TEST_NTFY_PORT}" \
     > "$TEST_DIR/ntfy.log" 2>&1 &
   NTFY_PID=$!
+  declare -F sandbox_add_pid >/dev/null 2>&1 && sandbox_add_pid "$NTFY_PID"
   # Wait up to 5s for ntfy to be ready
   local tries=0
   while [[ $tries -lt 10 ]]; do
@@ -549,6 +550,14 @@ cleanup() {
 # this script's original exit status, keep set -e deaths countable as failure
 # (ERR trap) and then run cleanup() -- working dir, ntfy, docker-sim, worker
 # pool -- via TD_EXTRA_CLEANUP.
+
+# Shared sandbox teardown (scripts/lib/sandbox.sh) — last-resort backstop:
+# every daemon this run started is re-stopped by RECORDED PID (never by
+# name), then the runner's own cleanup above runs as before (kills of
+# already-dead PIDs are no-ops). Sourcing must happen AFTER the runner's
+# own EXIT trap so it chains on top of it.
+source "$SCRIPT_DIR/lib/sandbox.sh"
+sandbox_install_exit_trap
 
 # flush_story_cleanup — delete resources registered via add_cleanup() after
 # each serial story runs, so sessions don't accumulate and hit max_sessions.

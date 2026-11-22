@@ -120,6 +120,14 @@ trap 'exit 143' TERM
 # trap, which would leave the daemon, the container, and both data dirs alive.
 trap 'exit 129' HUP
 
+# Shared sandbox teardown (lib/sandbox.sh) — last-resort backstop: the smoke
+# daemon (and its restart on the same ports) is re-stopped by RECORDED PID,
+# then cleanup above runs as before. Deliberately does NOT register
+# $TMPDIR_DW: its removal is gated by --no-cleanup inside cleanup.
+SMOKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SMOKE_LIB_DIR/lib/sandbox.sh"
+sandbox_install_exit_trap
+
 SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
 BOT_PASS="$(openssl rand -hex 16)"

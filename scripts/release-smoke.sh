@@ -408,6 +408,13 @@ cleanup_all() {
 # a daemon, and no session is killed by name: only the exact id recorded
 # at creation is ever sent to the API.
 
+# Shared sandbox teardown (lib/sandbox.sh) — last-resort backstop: the test
+# daemon is re-stopped by RECORDED PID if the cleanup above missed it, then
+# cleanup_all (chained below) runs as before. Deliberately does NOT register
+# $TEST_WORK_DIR here: its removal is gated by KEEP_TEST_DIR inside cleanup_all.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/sandbox.sh"
+sandbox_install_exit_trap
+
 PASS=0
 FAIL=0
 SKIP=0
