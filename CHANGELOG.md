@@ -2703,6 +2703,7 @@ A smoke or live check can no longer copy the operator's configuration or data in
 - `scripts/check-no-config-copies.sh` fails when a changed file looks like a copy of operator configuration or credentials (backup files, `.env` files, configuration copies, key and token files). It runs in `make lint` against the remote main.
 - A smoke-check task template steers such tasks to in-process tests, temporary directories and a scratch data folder outside the repository.
 - Operator documentation describes the rule and the template.
+- **The daemon can now build, install, restart and health check itself after a ship.** Set any of `autonomous.deploy.build_command`, `install_command`, `binary_path`, `restart_command`, `health_check`, `drain_timeout` and `health_timeout`; an empty setting means that step does nothing, so nothing changes until you opt in. The sequence snapshots the installed binary, builds, waits for running final-gate tasks (deferring if they outlast the drain timeout), installs and restarts. If the restarted daemon fails its health check or a session or capacity lease did not come back, it restores the snapshot, restarts again and raises a question; if that rollback fails it stops and asks (`rollback_failed`). Read the state and run a deploy now from the Settings > Automation > Deploy card, `datawatch autonomous deploy show|run`, the `autonomous_deploy_get` and `autonomous_deploy_run` MCP tools, `GET`/`POST /api/autonomous/deploy[/run]` and the chat verb `autonomous deploy`. See `docs/howto/deploy-after-ship.md`.
 
 ## v9.67.0 — Cost report
 

@@ -3905,6 +3905,9 @@ type AutonomousConfig struct {
 	// branch; pull_request opens a pull request instead and waits for it to
 	// merge.
 	ReleasePath string `yaml:"release_path" json:"release_path"`
+	// Deploy — how a shipped build becomes a running daemon: build, install,
+	// restart, health check. The zero value does nothing. See DeployConfig.
+	Deploy DeployConfig `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a
@@ -9102,6 +9105,9 @@ func validateLoaded(cfg *Config) error {
 	// refused the same way a bad PUT /api/config value is. Its messages
 	// already name the full autonomous.merge_pipeline.* key.
 	if err := cfg.Autonomous.MergePipeline.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Deploy.Validate(); err != nil {
 		return err
 	}
 	if err := cfg.ProjectsDefaults.Validate(); err != nil {

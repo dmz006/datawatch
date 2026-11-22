@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/deploy"
 )
 
 // Defaults for the Runner's project layout. They match the layout the merge
@@ -40,8 +42,9 @@ type ShipRunner interface {
 	Tag(ctx context.Context, dir, tag, message string) error
 	// Push pushes branch and tag to the project's remote.
 	Push(ctx context.Context, dir, branch, tag string) error
-	// Deploy restarts the local service on the new build.
-	Deploy(ctx context.Context, dir string) error
+	// Deploy runs the deploy sequence for the new build. The result says
+	// whether it was done, skipped, deferred or failed.
+	Deploy(ctx context.Context, dir string) (ShipResult, error)
 	// Hook runs a post-ship (or other leaving-the-machine) command step.
 	Hook(ctx context.Context, dir string, step Step) (string, error)
 	// FileIssue files an issue in repo with title and body, through gh
@@ -58,6 +61,24 @@ type MergeLocker interface {
 	Acquire(repo string, h autonomous.MergeLockHolder) (autonomous.MergeLockStatus, error)
 	// Release frees repo when runID holds it.
 	Release(repo, runID string) error
+}
+
+// ShipStatus is how a ship action ended.
+type ShipStatus string
+
+// The ship statuses.
+const (
+	ShipDone     ShipStatus = "done"
+	ShipSkipped  ShipStatus = "skipped"
+	ShipDeferred ShipStatus = "deferred"
+	ShipFailed   ShipStatus = "failed"
+)
+
+// ShipResult is what a ship action that can be skipped or deferred returns.
+// Note is the plain-language account recorded on the step.
+type ShipResult struct {
+	Status ShipStatus
+	Note   string
 }
 
 // RunRequest is one merge to run.
@@ -219,6 +240,8 @@ type runState struct {
 	// main. The release steps after it are then skipped: nothing new is
 	// released.
 	nothingNew bool
+	// skipped is set by a step that ended as skipped or deferred.
+	skipped bool
 }
 
 // releaseSteps are the actions a run with nothing new to merge skips. They
@@ -558,6 +581,7 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	}
 	var detail string
 	var err error
+	s.skipped = false
 	switch {
 	case step.Action != "":
 		detail, err = s.action(ctx, step)
@@ -574,6 +598,9 @@ func (s *runState) execute(ctx context.Context, step Step) (string, string, erro
 	}
 	if applies && gate.approvedNote != "" {
 		detail = gate.approvedNote + "; " + detail
+	}
+	if s.skipped {
+		return autonomous.MergeStepSkipped, detail, nil
 	}
 	return autonomous.MergeStepOK, detail, nil
 }
@@ -936,7 +963,7 @@ func (s *runState) ship(ctx context.Context, action string) (string, error) {
 		return "", errors.New("no ship runner is wired, so the step was not run")
 	}
 	if action == ActionDeployLatest {
-		return doneOr("deployed the new build", s.r.Ship.Deploy(ctx, s.r.Dir))
+		return s.deploy(ctx)
 	}
 	v, err := s.releaseVersionOf()
 	if err != nil {
@@ -981,6 +1008,29 @@ func (s *runState) tagRelease(ctx context.Context, tag string) (string, error) {
 	}
 	s.tagMade = tag
 	return note, nil
+}
+
+// deploy runs the deploy step. Skipped and deferred are not failures: they
+// are recorded as skipped steps with their note, and the run goes on.
+func (s *runState) deploy(ctx context.Context) (string, error) {
+	res, err := s.r.Ship.Deploy(ctx, s.r.Dir)
+	if err != nil {
+		return res.Note, err
+	}
+	switch res.Status {
+	case ShipSkipped:
+		s.skipped = true
+		return res.Note, nil
+	case ShipDeferred:
+		s.skipped = true
+		return res.Note, nil
+	case ShipFailed:
+		return res.Note, errors.New(firstLine(res.Note))
+	}
+	if res.Note == "" {
+		return "deployed the new build", nil
+	}
+	return res.Note, nil
 }
 
 // doneOr returns the success note, or no note with the error.
@@ -1373,13 +1423,17 @@ func redact(s string) string {
 
 // ExecShipRunner is the production ShipRunner: it runs git and shell
 // commands in the project with the operator's tmux variables removed. Deploy
-// runs DeployCommand, which the operator sets; there is no built-in one.
+// runs the autonomous.deploy sequence, which the operator sets; there is no built-in one.
 type ExecShipRunner struct {
 	// Remote is the remote to push to; empty means origin.
 	Remote string
-	// DeployCommand is the shell command that restarts the service; empty
-	// makes Deploy fail rather than guess.
-	DeployCommand string
+	// DeployConfig is the autonomous.deploy block. When it is the zero value
+	// Deploy reports a skipped step.
+	DeployConfig config.DeployConfig
+	// NewDeploy builds the deploy Runner for dir from DeployConfig; the
+	// server supplies the drain, restart and state sources. Nil makes a
+	// configured deploy fail rather than guess.
+	NewDeploy func(dir string, cfg config.DeployConfig) *deploy.Runner
 }
 
 func (e ExecShipRunner) run(ctx context.Context, dir, name string, args ...string) (string, error) {
@@ -1475,16 +1529,34 @@ func (e ExecShipRunner) checkFastForward(ctx context.Context, m *Merger, dir, re
 	}
 }
 
-// Deploy implements ShipRunner.
-func (e ExecShipRunner) Deploy(ctx context.Context, dir string) error {
-	if strings.TrimSpace(e.DeployCommand) == "" {
-		return errors.New("no deploy command is configured")
+// Deploy implements ShipRunner. With no deploy setting it is skipped; else
+// it runs the deploy sequence.
+func (e ExecShipRunner) Deploy(ctx context.Context, dir string) (ShipResult, error) {
+	c := e.DeployConfig
+	if c.IsZero() {
+		return ShipResult{Status: ShipSkipped, Note: "deploy is not configured, so nothing was deployed"}, nil
 	}
-	if CallsUnscopedTmuxKill(e.DeployCommand) {
-		return errors.New("the deploy command calls an unscoped tmux kill")
+	for _, line := range []string{c.BuildCommand, c.InstallCommand, c.RestartCommand, c.HealthCheck} {
+		if CallsUnscopedTmuxKill(line) {
+			return ShipResult{Status: ShipFailed, Note: "a deploy command calls an unscoped tmux kill and was not run"}, nil
+		}
 	}
-	_, err := e.run(ctx, dir, "sh", "-c", e.DeployCommand)
-	return err
+	if e.NewDeploy == nil {
+		return ShipResult{Status: ShipFailed, Note: "deploy is configured but no deploy runner is wired"}, nil
+	}
+	res, err := e.NewDeploy(dir, c).Run(ctx)
+	if err != nil {
+		return ShipResult{Status: ShipFailed, Note: "deploy did not finish: " + redact(err.Error())}, nil
+	}
+	switch res.Status {
+	case deploy.StatusDeferred:
+		return ShipResult{Status: ShipDeferred, Note: "deploy deferred: " + res.Reason}, nil
+	case deploy.StatusFailed:
+		return ShipResult{Status: ShipFailed, Note: "deploy failed: " + res.Reason}, nil
+	case deploy.StatusSkipped:
+		return ShipResult{Status: ShipSkipped, Note: res.Reason}, nil
+	}
+	return ShipResult{Status: ShipDone, Note: "deploy started: the daemon is restarting on the new build"}, nil
 }
 
 // Hook implements ShipRunner.

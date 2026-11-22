@@ -636,6 +636,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/release-tags", api.handleAutonomousReleaseTags)                     // GET release tags (vX.Y.Z) of the base repository, oldest first; read-only
 	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                                    // resolved ship policy + recorded push/tag/CI-watch outcomes
 	apiMux.HandleFunc("/api/autonomous/rules-context", api.handleAutonomousRulesContext)                   // GET config + resolved policy + planning record; PUT replaces the config
+	apiMux.HandleFunc("/api/autonomous/deploy", api.handleAutonomousDeploy)                                // GET effective deploy settings, last deploy phase and outcome, deferral, snapshot time and SHA-256
+	apiMux.HandleFunc("/api/autonomous/deploy/run", api.handleAutonomousDeployRun)                         // POST starts the deploy sequence for the current build now; 409 while a merge or deploy runs
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                                // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                          // decisions: operator questions with their tasks and answers, newest first
 	apiMux.HandleFunc("/api/autonomous/decision-records", api.handleDecisionRecords)                       // decision records: create and list (exact path wins over the subtree)
@@ -1705,6 +1707,9 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	// The observer pull collector starts with the daemon and stops with ctx.
 	s.api.StartObserverPull(ctx)
+	// Finish a deploy the restart interrupted (health check, rollback) and
+	// retry a deferred one, in the background.
+	s.StartDeployResume(ctx)
 
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).
