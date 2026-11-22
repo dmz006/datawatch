@@ -5739,19 +5739,80 @@ func (m *Manager) MainPromptReady(fullID string) bool {
 	if err != nil || content == "" {
 		return false
 	}
-	lower := strings.ToLower(StripANSI(content))
+	return mainPromptVisible(content)
+}
+
+// boxBorderChars are the frame glyphs Claude Code draws around its input box.
+const boxBorderChars = "│┃|╭╮╰╯ \t\u00a0"
+
+// mainPromptVisible is the pure pane-text check behind MainPromptReady.
+// The prompt is a line starting with "❯" (or ">" when drawn inside the
+// input box frame), optionally preceded by the box's vertical border, that
+// is not a numbered choice row; no active choice dialog may be on screen.
+func mainPromptVisible(content string) bool {
+	clean := StripANSI(content)
+	lower := strings.ToLower(clean)
 	for _, phrase := range activeChoiceDialogPhrases {
 		if strings.Contains(lower, phrase) {
 			return false
 		}
 	}
-	for _, line := range strings.Split(StripANSI(content), "\n") {
+	for _, line := range strings.Split(clean, "\n") {
 		t := strings.TrimSpace(line)
+		framed := false
+		if u := strings.TrimLeft(t, boxBorderChars); u != t {
+			framed = strings.ContainsAny(t[:len(t)-len(u)], "│┃|")
+			t = u
+		}
 		if strings.HasPrefix(t, "❯") && !mainPromptLine.MatchString(t) {
+			return true
+		}
+		if framed && (t == ">" || strings.HasPrefix(t, "> ")) {
 			return true
 		}
 	}
 	return false
+}
+
+// paneWaitSummary describes what the pane showed when a prompt wait ended:
+// the dialog class when a choice dialog is on screen, otherwise the first
+// non-empty visible lines.
+func (m *Manager) paneWaitSummary(fullID string) string {
+	sess, ok := m.store.Get(fullID)
+	if !ok || sess.TmuxSession == "" {
+		return "pane unavailable"
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil {
+		return "pane capture failed: " + err.Error()
+	}
+	return summarizePane(content)
+}
+
+func summarizePane(content string) string {
+	clean := StripANSI(content)
+	lower := strings.ToLower(clean)
+	for _, phrase := range activeChoiceDialogPhrases {
+		if strings.Contains(lower, phrase) {
+			return fmt.Sprintf("choice dialog %q", phrase)
+		}
+	}
+	var lines []string
+	for _, l := range strings.Split(clean, "\n") {
+		if t := strings.Join(strings.Fields(l), " "); t != "" {
+			if r := []rune(t); len(r) > 80 {
+				t = string(r[:80])
+			}
+			lines = append(lines, t)
+			if len(lines) == 3 {
+				break
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return "empty pane"
+	}
+	return "first visible lines: " + strings.Join(lines, " | ")
 }
 
 // awaitOneShotPrompt polls on ~1 s ticks (m.now()/m.sleep so a test can
@@ -5843,6 +5904,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 
 	exited := false
 	notEchoed := false
+	lastScreen := ""
 	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptsMade = attempt
@@ -5869,7 +5931,8 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 			m.debugf("DeliverOneShotTask: session for %s ended before attempt %d/%d could wait for its main prompt", fullID, attempt, maxAttempts)
 			exited = true
 		case oneShotTimedOut:
-			m.debugf("DeliverOneShotTask: no main prompt within %s for %s attempt %d/%d", window, fullID, attempt, maxAttempts)
+			lastScreen = m.paneWaitSummary(fullID)
+			m.debugf("DeliverOneShotTask: no main prompt within %s for %s attempt %d/%d (waited for main prompt; screen: %s)", window, fullID, attempt, maxAttempts, lastScreen)
 		}
 		if exited {
 			break
@@ -5887,7 +5950,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	} else if notEchoed {
 		reason = fmt.Sprintf("task delivery failed: the task text never appeared in the session input within %s of typing it, across %d attempts — worker was never given its task (prompt %d lines)", taskEchoWindow, attemptsMade, promptLines)
 	} else {
-		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade))
+		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s; last screen: %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade), lastScreen)
 	}
 	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
 
