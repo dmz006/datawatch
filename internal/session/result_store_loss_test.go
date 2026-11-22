@@ -1,7 +1,9 @@
 package session
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -42,5 +44,52 @@ func TestResultStoreTwoInstancesKeepBothEntries(t *testing.T) {
 	}
 	if _, ok := fresh.Get("b"); !ok {
 		t.Errorf("entry b missing from fresh load")
+	}
+}
+
+func TestResultStoreTwoInstancesDeleteDoesNotResurrect(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.json")
+	first, _ := NewResultStore(path)
+	second, _ := NewResultStore(path)
+	if _, err := first.Put("a", map[string]any{"x": 1}, 0); err != nil {
+		t.Fatal(err)
+	}
+	// second never saw "a" in memory; delete must still find it on disk.
+	if err := second.Delete("a"); err != nil {
+		t.Fatalf("delete a via second: %v", err)
+	}
+	if _, err := second.Put("b", map[string]any{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := NewResultStore(path)
+	if _, ok := fresh.Get("a"); ok {
+		t.Errorf("a should be deleted")
+	}
+	if _, ok := fresh.Get("b"); !ok {
+		t.Errorf("b missing")
+	}
+}
+
+func TestResultStoreConcurrentInstances(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.json")
+	const n = 8
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		s, err := NewResultStore(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wg.Add(1)
+		go func(i int, s *ResultStore) {
+			defer wg.Done()
+			if _, err := s.Put(fmt.Sprintf("k%d", i), map[string]any{"i": i}, 0); err != nil {
+				t.Errorf("put: %v", err)
+			}
+		}(i, s)
+	}
+	wg.Wait()
+	fresh, _ := NewResultStore(path)
+	if got := len(fresh.List("")); got != n {
+		t.Errorf("want %d entries, got %d", n, got)
 	}
 }

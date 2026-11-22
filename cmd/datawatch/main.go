@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20320,30 +20321,30 @@ func newResultCmd() *cobra.Command {
 		Short: "Manage the structured agent result store (BL360)",
 	}
 
-	// put
+	// Every subcommand goes through the daemon API so the daemon stays the
+	// single writer of the result store file.
 	putCmd := &cobra.Command{
 		Use:   "put <name> <json-payload>",
 		Short: "Store a named result payload (upsert)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			name := args[0]
-			payloadStr := args[1]
 			ttl, _ := c.Flags().GetInt("ttl")
 			var payload map[string]any
-			if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+			if err := json.Unmarshal([]byte(args[1]), &payload); err != nil {
 				return fmt.Errorf("invalid JSON payload: %w", err)
 			}
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
+			if payload == nil {
+				return fmt.Errorf("invalid JSON payload: must be an object")
 			}
-			entry, err := rs.Put(name, payload, ttl)
+			body, err := daemonJSONBody(http.MethodPost, "/api/result-store", map[string]any{
+				"name": args[0], "payload": payload, "ttl_seconds": ttl,
+			})
 			if err != nil {
 				return err
+			}
+			var entry session.ResultEntry
+			if err := json.Unmarshal(body, &entry); err != nil {
+				return fmt.Errorf("parse daemon response: %w", err)
 			}
 			fmt.Printf("stored result %q (created=%s)\n", entry.Name, entry.CreatedAt.Format("15:04:05"))
 			return nil
@@ -20351,24 +20352,22 @@ func newResultCmd() *cobra.Command {
 	}
 	putCmd.Flags().Int("ttl", 0, "Time-to-live in seconds (0 = no expiry)")
 
-	// get
 	getCmd := &cobra.Command{
 		Use:   "get <name>",
 		Short: "Retrieve a named result",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			body, err := daemonGetBody("/api/result-store/" + url.PathEscape(args[0]))
 			if err != nil {
+				if strings.HasPrefix(err.Error(), "HTTP 404") {
+					fmt.Printf("not found: %s\n", args[0])
+					return nil
+				}
 				return err
 			}
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
-			}
-			entry, ok := rs.Get(args[0])
-			if !ok {
-				fmt.Printf("not found: %s\n", args[0])
-				return nil
+			var entry session.ResultEntry
+			if err := json.Unmarshal(body, &entry); err != nil {
+				return fmt.Errorf("parse daemon response: %w", err)
 			}
 			b, _ := json.MarshalIndent(entry, "", "  ")
 			fmt.Println(string(b))
@@ -20376,21 +20375,23 @@ func newResultCmd() *cobra.Command {
 		},
 	}
 
-	// list
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List stored results",
 		RunE: func(c *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
+			prefix, _ := c.Flags().GetString("prefix")
+			path := "/api/result-store"
+			if prefix != "" {
+				path += "?prefix=" + url.QueryEscape(prefix)
+			}
+			body, err := daemonGetBody(path)
 			if err != nil {
 				return err
 			}
-			prefix, _ := c.Flags().GetString("prefix")
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
+			var entries []*session.ResultEntry
+			if err := json.Unmarshal(body, &entries); err != nil {
+				return fmt.Errorf("parse daemon response: %w", err)
 			}
-			entries := rs.List(prefix)
 			if len(entries) == 0 {
 				fmt.Println("No result entries found.")
 				return nil
@@ -20409,21 +20410,12 @@ func newResultCmd() *cobra.Command {
 	}
 	listCmd.Flags().String("prefix", "", "Filter by name prefix")
 
-	// delete
 	deleteCmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a named result",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			rs, err := session.NewResultStore(resultStorePath(cfg))
-			if err != nil {
-				return fmt.Errorf("open result store: %w", err)
-			}
-			if err := rs.Delete(args[0]); err != nil {
+			if _, err := daemonJSONBody(http.MethodDelete, "/api/result-store/"+url.PathEscape(args[0]), nil); err != nil {
 				return err
 			}
 			fmt.Printf("deleted result %q\n", args[0])

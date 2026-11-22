@@ -76,7 +76,30 @@ func (s *ResultStore) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0600)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+// lockAndRefresh takes the cross-process file lock (sidecar <path>.lock) and
+// re-reads the file so the in-memory copy includes writes made by any other
+// opener. Callers must hold s.mu and call the returned release when the
+// mutation has been saved.
+func (s *ResultStore) lockAndRefresh() (func(), error) {
+	f, err := flockAcquire(s.path + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	release := func() { flockRelease(f) }
+	fresh := &ResultStore{path: s.path, entries: make(map[string]*ResultEntry)}
+	if err := fresh.load(); err != nil {
+		release()
+		return nil, err
+	}
+	s.entries = fresh.entries
+	return release, nil
 }
 
 // Put upserts a named result entry. If ttlSeconds > 0, an ExpiresAt is set.
@@ -84,6 +107,12 @@ func (s *ResultStore) save() error {
 func (s *ResultStore) Put(name string, payload map[string]any, ttlSeconds int) (*ResultEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	release, err := s.lockAndRefresh()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	now := time.Now()
 	if payload == nil {
@@ -162,6 +191,12 @@ func (s *ResultStore) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	release, err := s.lockAndRefresh()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	if _, ok := s.entries[name]; !ok {
 		return fmt.Errorf("result entry %q not found", name)
 	}
@@ -174,6 +209,12 @@ func (s *ResultStore) Delete(name string) error {
 func (s *ResultStore) ExpireEntries() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	release, err := s.lockAndRefresh()
+	if err != nil {
+		return 0
+	}
+	defer release()
 
 	now := time.Now()
 	n := 0
