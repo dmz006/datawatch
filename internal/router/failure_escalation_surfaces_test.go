@@ -191,7 +191,7 @@ func TestFailureEscalationCommConfigureKeysReachTheConfigPath(t *testing.T) {
 func TestFailureEscalationCommHelpNamesVerbs(t *testing.T) {
 	r, _ := newEscalationStoreRouter(t)
 	help := strings.Join(r.HandleTestMessage("autonomous"), "\n")
-	for _, want := range []string{"set-task-llm", "set-failure-escalation <automaton> [task]", "review-task <automaton> <task> retry|cancel"} {
+	for _, want := range []string{"set-task-llm", "set-failure-escalation <automaton> [task]", "review-task <automaton> <task> retry|cancel|accept"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("autonomous help lacks %q", want)
 		}

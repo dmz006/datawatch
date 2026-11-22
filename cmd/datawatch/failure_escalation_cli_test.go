@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -74,11 +75,21 @@ func TestFailureEscalationCLISetNeedsSomethingToSet(t *testing.T) {
 
 func TestFailureEscalationCLIResolveReviewValidatesAction(t *testing.T) {
 	cmd := newAutonomousResolveReviewCmd()
+	if !strings.Contains(cmd.Use, "retry|cancel|accept") {
+		t.Errorf("resolve-review Use does not name all three actions: %s", cmd.Use)
+	}
+	if !strings.Contains(cmd.Long, "accept") {
+		t.Errorf("resolve-review help does not name accept: %s", cmd.Long)
+	}
 	cmd.SetArgs([]string{"p1", "--task", "t1", "--action", "explode"})
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
-	if err := cmd.Execute(); err == nil {
-		t.Fatal("an action other than retry or cancel must be refused before calling the daemon")
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("an action other than retry, cancel or accept must be refused before calling the daemon")
+	}
+	if !strings.Contains(err.Error(), "must be retry, cancel or accept") {
+		t.Errorf("error = %q, want the three accepted actions named", err)
 	}
 }
 
