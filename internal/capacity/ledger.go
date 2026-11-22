@@ -233,6 +233,22 @@ type Lease struct {
 	// usedLocked), so new work sees the node as full. It clears, and the lease
 	// joins the node pool, once the pool has room.
 	NodeOverflow bool `json:"node_overflow,omitempty"`
+	// Adopted marks a lease recorded by Adopt (work that survived a restart).
+	Adopted bool `json:"adopted,omitempty"`
+	// OverLimit flags an adopted lease that sits in a pool or node holding more
+	// than its limit; OverLimitReason says which and by how much. The session is
+	// real and stays recorded. Both clear when the holding is back under the cap.
+	OverLimit       bool   `json:"over_limit,omitempty"`
+	OverLimitReason string `json:"over_limit_reason,omitempty"`
+}
+
+// OverLimit is one pool or node holding more than its limit.
+type OverLimit struct {
+	Pool  string `json:"pool"`
+	Kind  string `json:"kind"` // "pool" or "node"
+	Name  string `json:"name"`
+	Held  int    `json:"held"`
+	Limit int    `json:"limit"`
 }
 
 // Waiter is a queued request as reported by Snapshot.
@@ -696,6 +712,7 @@ func (l *Ledger) MarkAdoptionComplete() {
 		return
 	}
 	l.adopting = false
+	l.flagOverLimitLocked()
 	l.signalChangedLocked()
 	l.dispatchLocked()
 }
@@ -1435,7 +1452,7 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 		Holder: req.Holder, PRDID: req.PRDID, Role: req.Role,
 		Pools: append([]string(nil), req.Pools...),
 		Model: req.Model, Acquired: now, SessionID: sessionID,
-		NodeUnknown: req.NodeUnknown && req.Node == "",
+		NodeUnknown: req.NodeUnknown && req.Node == "", Adopted: true,
 	}
 	if req.Node != "" {
 		// The session occupies this node whether or not it is still among the
@@ -1448,6 +1465,63 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	if req.Node != "" && req.Model != "" {
 		l.lastModel[req.Node] = req.Model
 	}
+	l.flagOverLimitLocked()
+}
+
+// overLimitLocked lists every limited pool whose held count exceeds its limit.
+func (l *Ledger) overLimitLocked() []OverLimit {
+	var out []OverLimit
+	for p, lim := range l.limits {
+		if lim <= 0 {
+			continue
+		}
+		if used := l.usedLocked(p); used > lim {
+			o := OverLimit{Pool: p, Kind: "pool", Name: p, Held: used, Limit: lim}
+			if n, ok := strings.CutPrefix(p, "node:"); ok {
+				o.Kind, o.Name = "node", n
+			}
+			out = append(out, o)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Pool < out[j].Pool })
+	return out
+}
+
+// flagOverLimitLocked sets or clears OverLimit on adopted leases. New
+// admissions to an over-limit pool already wait, since blockReasonLocked
+// refuses any pool whose held count has reached its limit.
+func (l *Ledger) flagOverLimitLocked() {
+	over := map[string]OverLimit{}
+	for _, o := range l.overLimitLocked() {
+		over[o.Pool] = o
+	}
+	for _, ls := range l.leases {
+		if !ls.Adopted {
+			continue
+		}
+		ls.OverLimit, ls.OverLimitReason = false, ""
+		pools := ls.Pools
+		if ls.NodeOverflow && ls.Node != "" {
+			pools = append(append([]string(nil), pools...), "node:"+ls.Node)
+		}
+		for _, p := range pools {
+			if o, ok := over[p]; ok {
+				ls.OverLimit = true
+				ls.OverLimitReason = fmt.Sprintf("adopted at boot over the limit: %s %s holds %d, limit %d; new admissions wait until it is back under the cap", o.Kind, o.Name, o.Held, o.Limit)
+				break
+			}
+		}
+	}
+}
+
+// OverLimitPools reports the pools and nodes currently holding more than their
+// limit (adopted sessions are the only way a pool gets there) and refreshes the
+// over-limit flags on adopted leases.
+func (l *Ledger) OverLimitPools() []OverLimit {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.flagOverLimitLocked()
+	return l.overLimitLocked()
 }
 
 // refreshAdoptedLocked applies a repeated Adopt to the lease already recorded:
@@ -1569,6 +1643,7 @@ func (l *Ledger) Release(holder string) {
 	if ls, ok := l.leases[holder]; ok {
 		l.recordLeaseEndLocked(ls, l.opt.Clock.Now())
 		delete(l.leases, holder)
+		l.flagOverLimitLocked()
 		l.signalChangedLocked()
 		l.dispatchLocked()
 	}

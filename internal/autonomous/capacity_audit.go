@@ -6,10 +6,13 @@
 package autonomous
 
 import (
+	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -35,6 +38,9 @@ type CapacityAudit struct {
 	// nil leaves those details as their "(untitled <short id>)" or empty
 	// fallbacks.
 	Names AdmissionNamesFn
+
+	overMu   sync.Mutex
+	overSeen map[string]capacity.OverLimit
 }
 
 // AdmissionNames is the readable naming for one admission entry: the waiting
@@ -181,6 +187,42 @@ func (r *CapacityAudit) BudgetRollover(llm string, previousSpendUSD, ceilingUSD 
 		"ceiling_usd":        ceilingUSD,
 		"new_window_start":   newWindowStart.UTC().Format(time.RFC3339),
 	})
+}
+
+// AuditActionCapacityOverLimit is the finding raised once when sessions
+// adopted at boot leave a pool or node holding more than its limit.
+const AuditActionCapacityOverLimit = "autonomous_capacity_over_limit"
+
+// OverLimitFinding raises one finding per over-limit pool or node, naming it,
+// the held count and the limit. A repeated adoption pass with the same figures
+// raises nothing; the pool is forgotten once it is back under the cap, so a
+// later breach is reported again.
+func (r *CapacityAudit) OverLimitFinding(over []capacity.OverLimit) {
+	if r == nil {
+		return
+	}
+	r.overMu.Lock()
+	defer r.overMu.Unlock()
+	if r.overSeen == nil {
+		r.overSeen = map[string]capacity.OverLimit{}
+	}
+	now := map[string]bool{}
+	for _, o := range over {
+		now[o.Pool] = true
+		if prev, ok := r.overSeen[o.Pool]; ok && prev == o {
+			continue
+		}
+		r.overSeen[o.Pool] = o
+		r.Record(AuditActorAutonomous, AuditActionCapacityOverLimit, o.Pool, map[string]any{
+			"kind": o.Kind, "name": o.Name, "pool": o.Pool, "held": o.Held, "limit": o.Limit,
+			"reason": fmt.Sprintf("%s %s holds %d sessions adopted at boot, limit %d; new admissions blocked until back under the cap", o.Kind, o.Name, o.Held, o.Limit),
+		})
+	}
+	for p := range r.overSeen {
+		if !now[p] {
+			delete(r.overSeen, p)
+		}
+	}
 }
 
 // sortedPools returns pools sorted, without touching the caller's slice, so
