@@ -94,15 +94,42 @@ The script iterates `datawatch-{parent-full, agent-base, agent-claude,
 agent-opencode, agent-aider, agent-gemini, agent-goose, stats-cluster}`.
 Skip-with-reason output explains each retained image.
 
-## Vulnerability scanning (deferred — operator decision needed)
+## Vulnerability scanning (automated — accepted exceptions need review)
 
 The Dockerfiles inherit from `debian:bookworm-slim` (parent / agent-base)
-and `gcr.io/distroless/static` (stats-cluster). Routine scans:
+and `gcr.io/distroless/static` (stats-cluster). The scan is automated at
+two points, both at severity HIGH and CRITICAL and both failing on any
+finding not in `.trivyignore`:
+
+- **CI**: the Release workflow (every `v*` tag) and the manual
+  `containers.yaml` dispatch scan every published image after the build,
+  using the single pinned version in `scripts/trivy-version.txt` (installed
+  via `scripts/ci-install-trivy.sh`; see
+  [`operations.md`](operations.md#trivy-install-in-the-ci-workflows)).
+- **Local pre-tag gate**: the `docker-agent-base` step of
+  [`scripts/pre-tag.sh`](../scripts/pre-tag.sh) builds
+  `Dockerfile.agent-base` and scans it with
+  [`scripts/trivy-scan-image.sh`](../scripts/trivy-scan-image.sh), which
+  saves the image to a tar archive and scans that archive, because under
+  docker 29.1.x `trivy image` cannot read image layers from the daemon
+  ("failed to analyze layer") and daemon-based scans fail:
+
+  ```bash
+  PRE_TAG_ONLY=docker-agent-base bash scripts/pre-tag.sh
+  # or directly, after building the image:
+  bash scripts/trivy-scan-image.sh datawatch-agent-base:pre-tag
+  # — equivalently: docker save -o image.tar <image> &&
+  #   trivy image --input image.tar --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1
+  ```
+
+  The step skips itself (non-failing `SKIP [docker-agent-base]` line) when
+  no `Dockerfile*`, containers workflow or `security/accepted-risks.yml`
+  changed since the last tag, and skips the scan (non-failing) if `trivy`
+  is not installed.
+
+Optional extra scanners for the published images (not part of the gate):
 
 ```bash
-# Trivy
-trivy image --severity HIGH,CRITICAL ghcr.io/dmz006/datawatch-parent-full:latest
-
 # grype (Anchore)
 grype ghcr.io/dmz006/datawatch-parent-full:latest
 
@@ -110,9 +137,15 @@ grype ghcr.io/dmz006/datawatch-parent-full:latest
 docker scout cves ghcr.io/dmz006/datawatch-parent-full:latest
 ```
 
-Per AGENT.md release-discipline rule, this should run pre-release.
-Currently it's manual — automation lands in v6.0 alongside the
-`parent-full` CI add-on.
+**Operator review still needed:** the accepted exceptions behind
+`.trivyignore` — each carries an `expires` date and is enforced by
+`scripts/check_accepted_risks.py` (see
+["Accepted exceptions"](security-review.md#accepted-exceptions-securityaccepted-risksyml--trivyignore)
+in [`security-review.md`](security-review.md)). A SARIF upload failure in
+the Release workflow does not block the release; read the scan step's
+result, not the absence of an alert (see
+["Code scanning upload in the Release workflow"](operations.md#code-scanning-upload-in-the-release-workflow) in
+`operations.md`).
 
 ## Related documents
 

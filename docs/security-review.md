@@ -100,6 +100,13 @@ Tool: `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-cod
 Scan date: 2026-05-19 against `local/datawatch:dev` (same base as v8.0.0)
 Result: 23 findings — 4 fixed by `apt-get upgrade` in Dockerfile, 19 accepted below.
 
+Locally built images are scanned by archive: under docker 29.1.x `trivy image`
+cannot read image layers from the daemon ("failed to analyze layer"), so
+the `docker-agent-base` step of the local pre-tag gate runs
+`scripts/trivy-scan-image.sh`, which exports the image with `docker save`
+and scans the tar with `trivy image --input <tar>`. Severity, ignore file
+and exit code are exactly the tool line above — only the input changes.
+
 ### Fixable CVEs resolved in Dockerfile.agent-base
 
 Added `apt-get upgrade` layer (Layer 2b) to pull current bookworm security patches:
@@ -342,7 +349,7 @@ Whether to dismiss or keep any code scanning alert for these sites is the operat
 ## Procedural changes
 
 - Run `gosec -severity high -confidence medium ./...` and `govulncheck ./...` before every patch. The audit doc is updated only when triage changes (new findings or new mitigations).
-- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically.
+- Run `trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1` on the agent-base image before every release. CI enforces this automatically. The local pre-tag gate's `docker-agent-base` step does the same: it builds the image and scans it through `scripts/trivy-scan-image.sh`, which exports it with `docker save` and runs the identical `trivy image --input <tar> --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1`. The archive form exists because under docker 29.1.x trivy cannot read image layers from the daemon ("failed to analyze layer").
 - New `//#nosec` annotations must include the rule ID *and* a one-line reason. PRs adding bare `//#nosec` get rejected by review.
 - New `InsecureSkipVerify=true` sites must be paired with pinning (`VerifyPeerCertificate` + a fingerprint check) or get an entry in the G402 table above with an "accept (documented)" verdict and a config gate.
 - New `.trivyignore` entries require a one-line rationale in this document. PRs adding bare CVE IDs without rationale get rejected.
