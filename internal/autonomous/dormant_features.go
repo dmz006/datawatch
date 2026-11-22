@@ -9,6 +9,7 @@ package autonomous
 
 import (
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/mergeshadow"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -59,10 +60,36 @@ type DormantRecords interface {
 	MergeShadowComparisons() int
 }
 
+// MergeShadowRecords reads the stored merge shadow comparisons from the data
+// directory, the same store autonomous_merge_shadow_status reads through
+// GET /api/autonomous/merge/shadow.
+//
+// Exercised reports no record: the decision log, audit, loop run and reap
+// stores are not yet wired into this adapter, so an EverExercised of false
+// here means "not wired", not "never exercised".
+type MergeShadowRecords struct {
+	DataDir string
+}
+
+// Exercised always reports no record; see the type comment.
+func (MergeShadowRecords) Exercised(string) (bool, string, string) {
+	return false, "", noRecordFound
+}
+
+// MergeShadowComparisons counts the stored merge shadow comparisons; a read
+// error counts as none.
+func (m MergeShadowRecords) MergeShadowComparisons() int {
+	comps, err := mergeshadow.ListComparisons(m.DataDir)
+	if err != nil {
+		return 0
+	}
+	return len(comps)
+}
+
 type dormantSpec struct {
 	key, name, purpose string
-	// value returns the default and current value as words and whether the
-	// current value is dormant, plus its state.
+	// read returns the default and current value as words, the state, and
+	// whether the current value is dormant.
 	read func(cfg *config.Config) (def, cur, state string, dormant bool)
 }
 
@@ -73,11 +100,13 @@ func onOff(b bool) string {
 	return "off"
 }
 
-func boolSpec(key, name, purpose string, def bool, get func(*config.Config) bool) dormantSpec {
+// boolSpec reads a boolean setting. Its default is the value the accessor
+// returns for an empty config, so the default cannot drift from the accessor.
+func boolSpec(key, name, purpose string, get func(*config.Config) bool) dormantSpec {
 	return dormantSpec{key: key, name: name, purpose: purpose,
 		read: func(cfg *config.Config) (string, string, string, bool) {
 			v := get(cfg)
-			return onOff(def), onOff(v), DormantStateOff, !v
+			return onOff(get(&config.Config{})), onOff(v), DormantStateOff, !v
 		}}
 }
 
@@ -85,22 +114,22 @@ func dormantSpecs() []dormantSpec {
 	return []dormantSpec{
 		boolSpec(DormantKeyScanFixLoop, "Scan fix loop",
 			"When on, the scan fix loop opens a fix task for an Automaton whose scan fails and holds it if the fix does not clear the findings.",
-			false, func(c *config.Config) bool { return c.Autonomous.Scan.FixLoopEnabled }),
+			func(c *config.Config) bool { return c.Autonomous.Scan.FixLoopEnabled }),
 		boolSpec(DormantKeyScanRulesGrader, "Scan rules grader",
 			"When on, the scan rules grader reviews a scan against the project rules and adds its findings to the Automaton scan result.",
-			false, func(c *config.Config) bool { return c.Autonomous.Scan.RulesGraderEnabled }),
+			func(c *config.Config) bool { return c.Autonomous.Scan.RulesGraderEnabled }),
 		boolSpec(DormantKeyScopeBreadth, "Scope breadth check",
 			"When on, a failed content verification asks whether the task bundles several separable units and marks it too broad for the Automaton.",
-			false, func(c *config.Config) bool { return c.Autonomous.ScopeBreadthEnabled }),
+			func(c *config.Config) bool { return c.Autonomous.ScopeBreadthEnabled }),
 		boolSpec(DormantKeyQualityGates, "Default quality gates",
 			"When on, every Automaton without its own quality gates runs the test baseline before a task and can block on a regression.",
-			false, func(c *config.Config) bool { return c.Autonomous.DefaultQualityGates.Enabled }),
+			func(c *config.Config) bool { return c.Autonomous.DefaultQualityGates.Enabled }),
 		boolSpec(DormantKeyRemoteReap, "Remote branch reap",
 			"When on, the remote branch reap deletes fully merged Automaton work branches from origin after a verified backup; when off it only reports what it would delete.",
-			false, func(c *config.Config) bool { return c.Autonomous.RemoteReapEnabled }),
+			func(c *config.Config) bool { return c.Autonomous.RemoteReapEnabled }),
 		boolSpec(DormantKeyNotifyForward, "Notification forwarding",
 			"When on, Automata lifecycle events are forwarded to and received from registered federation peers.",
-			false, func(c *config.Config) bool { return c.Autonomous.Notify.Forwarding.Enabled }),
+			func(c *config.Config) bool { return c.Autonomous.Notify.Forwarding.Enabled }),
 		{key: DormantKeyMergeUntil, name: "Supervisor loop merge step (run_merge_until_conflict)",
 			purpose: "When on, the supervisor loop runs the merge pipeline for finished Automata until one conflicts and keeps the newest conflict for the operator to see.",
 			read: func(cfg *config.Config) (string, string, string, bool) {
@@ -113,20 +142,28 @@ func dormantSpecs() []dormantSpec {
 		{key: DormantKeyMergePending, name: "Merge pending check",
 			purpose: "In shadow mode the merge-pending check only records what it would have done for each finished Automaton branch; off skips it and on raises the alert.",
 			read: func(cfg *config.Config) (string, string, string, bool) {
+				def := (config.AutonomousAutomationConfig{}).EffectiveMergePendingMode()
 				mode := cfg.Autonomous.Automation.EffectiveMergePendingMode()
 				switch mode {
 				case config.MergePendingModeOff:
-					return config.MergePendingModeOff, mode, DormantStateOff, true
+					return def, mode, DormantStateOff, true
 				case config.MergePendingModeShadow:
-					return config.MergePendingModeOff, mode, DormantStateShadow, true
+					return def, mode, DormantStateShadow, true
 				}
-				return config.MergePendingModeOff, mode, "", false
+				return def, mode, "", false
 			}},
 	}
 }
 
-// ListDormantFeatures returns every registered setting whose current value is
-// off or in shadow mode. It reads cfg and rec only and changes neither.
+// List returns every registered setting whose current value is off or in
+// shadow mode. It reads cfg and changes nothing. Records are not consulted,
+// so EverExercised is false; use ListDormantFeatures to supply records.
+func List(cfg *config.Config) []DormantFeature {
+	return ListDormantFeatures(cfg, nil)
+}
+
+// ListDormantFeatures is List with an explicit record source. It reads cfg and
+// rec only and changes neither.
 func ListDormantFeatures(cfg *config.Config, rec DormantRecords) []DormantFeature {
 	out := []DormantFeature{}
 	if cfg == nil {
@@ -145,7 +182,7 @@ func ListDormantFeatures(cfg *config.Config, rec DormantRecords) []DormantFeatur
 				f.Evidence = ev
 			}
 		}
-		if sp.key == DormantKeyMergeUntil || sp.key == DormantKeyMergePending {
+		if sp.key == DormantKeyMergeUntil {
 			if rec == nil || rec.MergeShadowComparisons() == 0 {
 				f.Evidence += "; no merge shadow comparison exists"
 			}
@@ -153,9 +190,4 @@ func ListDormantFeatures(cfg *config.Config, rec DormantRecords) []DormantFeatur
 		out = append(out, f)
 	}
 	return out
-}
-
-// DormantFeatureList is the List(cfg) entry point of the registry.
-func DormantFeatureList(cfg *config.Config, rec DormantRecords) []DormantFeature {
-	return ListDormantFeatures(cfg, rec)
 }

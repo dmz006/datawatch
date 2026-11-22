@@ -105,3 +105,32 @@ func TestDormantRecordFlipsEverExercised(t *testing.T) {
 		t.Fatal("unrelated feature flipped")
 	}
 }
+
+func TestDormantListEntryPointAndDefaults(t *testing.T) {
+	m := byKey(List(dormantFixture()))
+	for _, k := range dormantSeven {
+		want := "off"
+		if k == DormantKeyMergeUntil {
+			// Supervisor steps default on (docs/datawatch-definitions.md); the
+			// default is read from supervisorloop.DefaultSettings, not assumed.
+			want = "on"
+		}
+		if m[k].Default != want {
+			t.Errorf("%s default %q, want %s", k, m[k].Default, want)
+		}
+	}
+	if len(List(nil)) != 0 {
+		t.Error("nil config should list nothing")
+	}
+}
+
+func TestDormantMergeShadowRecordsCountsStore(t *testing.T) {
+	rec := MergeShadowRecords{DataDir: t.TempDir()}
+	if n := rec.MergeShadowComparisons(); n != 0 {
+		t.Fatalf("empty store counted %d", n)
+	}
+	f := byKey(ListDormantFeatures(dormantFixture(), rec))[DormantKeyMergeUntil]
+	if f.Evidence != "no record found; no merge shadow comparison exists" {
+		t.Fatalf("evidence %q", f.Evidence)
+	}
+}
