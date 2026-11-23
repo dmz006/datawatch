@@ -7,18 +7,112 @@ import (
 	"time"
 )
 
-// Rung names. They match the values the usage.burn_guard.ladder setting accepts.
+// Rung names. They are the values the usage.burn_guard.ladder setting accepts. The
+// names are entry-generic: a rung acts on the ladder's entry (EntryTarget), not on any
+// fixed backend. route_entry routes the entry's new work to the entry's route target,
+// and hold_entry holds new work on the entry (or on its held models). The first version
+// of the guard named the same two rungs route_pi_prompt and hold_claude; both legacy
+// names are still accepted in saved configs and saved state and normalize to the
+// entry-generic names (NormalizeRung).
 const (
-	RungLowerInflight = "lower_inflight"
+	RungLowerInflight     = "lower_inflight"
+	RungRouteEntry        = "route_entry"
+	RungRouteCheaperModel = "route_cheaper_model"
+	RungHoldEntry         = "hold_entry"
+
+	// Legacy first-version rung names. They normalize to the entry-generic names above
+	// (NormalizeRung) and are kept for saved configs and saved state.
 	RungRoutePiPrompt = "route_pi_prompt"
 	RungHoldClaude    = "hold_claude"
 )
 
-// ClaudeBackend and PiBackend are the backends the default rungs act on.
-const (
-	ClaudeBackend = "claude-code"
-	PiBackend     = "pi-prompt"
-)
+// legacyRungNames maps a legacy rung name to its entry-generic name.
+var legacyRungNames = map[string]string{
+	RungRoutePiPrompt: RungRouteEntry,
+	RungHoldClaude:    RungHoldEntry,
+}
+
+// KnownRungs lists the entry-generic rung names.
+func KnownRungs() []string {
+	return []string{RungLowerInflight, RungRouteEntry, RungRouteCheaperModel, RungHoldEntry, RungRoutePiPrompt, RungHoldClaude}
+}
+
+// NormalizeRung resolves one rung name: an entry-generic name passes through, a legacy
+// first-version name maps to its entry-generic one, and an unknown name is returned as
+// given with ok false.
+func NormalizeRung(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if n, ok := legacyRungNames[name]; ok {
+		return n, true
+	}
+	for _, k := range KnownRungs() {
+		if name == k {
+			return name, true
+		}
+	}
+	return name, false
+}
+
+// IsHoldRung reports whether rung is the hold rung in either naming: the entry-generic
+// name or the legacy first-version name. Callers that branch on "is this the hold rung?"
+// should use this so a saved state written under the legacy name is recognised too.
+func IsHoldRung(rung string) bool {
+	n, ok := NormalizeRung(rung)
+	return ok && n == RungHoldEntry
+}
+
+// IsRouteRung reports whether rung is the route rung in either naming: the entry-generic
+// name or the legacy first-version name.
+func IsRouteRung(rung string) bool {
+	n, ok := NormalizeRung(rung)
+	return ok && n == RungRouteEntry
+}
+
+// IsRouteCheaperModelRung reports whether rung names the route_cheaper_model rung, which
+// sends the entry's new work to its own cheaper model (the same backend, a different
+// model). It has no legacy first-version name.
+func IsRouteCheaperModelRung(rung string) bool {
+	n, ok := NormalizeRung(rung)
+	return ok && n == RungRouteCheaperModel
+}
+
+// IsLowerInflightRung reports whether rung is the lower-inflight rung.
+func IsLowerInflightRung(rung string) bool {
+	n, ok := NormalizeRung(rung)
+	return ok && n == RungLowerInflight
+}
+
+// NormalizeRungs maps a ladder (or an applied list) to entry-generic names, keeping
+// first-occurrence order and dropping unknown rungs.
+func NormalizeRungs(rungs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range rungs {
+		n, ok := NormalizeRung(r)
+		if !ok || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// EntryTarget is the paid LLM entry a ladder acts on. Every backend name an action
+// carries comes from here; the ladder has no backend name of its own.
+type EntryTarget struct {
+	// Backend is the entry (backend) whose admission the rungs change.
+	Backend string `json:"backend"`
+	// RouteTo is where the route rung sends new work; empty makes the route rung a
+	// rung that changes nothing.
+	RouteTo string `json:"route_to,omitempty"`
+	// CheaperModel is the model the route_cheaper_model rung sends the entry's new work
+	// to (the same backend's cheaper model, e.g. Haiku for a Claude entry); empty makes
+	// the rung one that changes nothing.
+	CheaperModel string `json:"cheaper_model,omitempty"`
+	// HeldModels limits the hold rung to these models; empty holds the whole entry.
+	HeldModels []string `json:"held_models,omitempty"`
+}
 
 // ActionKind is what the daemon is asked to change. Every kind acts on admission only (how
 // many sessions may start, where new work goes, whether new work waits). There is no kind
@@ -29,27 +123,37 @@ type ActionKind string
 const (
 	ActionSetInflight  ActionKind = "set_inflight"
 	ActionRouteBackend ActionKind = "route_backend"
+	ActionRouteModel   ActionKind = "route_model"
 	ActionHoldNewWork  ActionKind = "hold_new_work"
 )
 
 // ActionKinds lists every kind a Decision may carry. A release is the same kind with
 // Release set.
 func ActionKinds() []ActionKind {
-	return []ActionKind{ActionSetInflight, ActionRouteBackend, ActionHoldNewWork}
+	return []ActionKind{ActionSetInflight, ActionRouteBackend, ActionRouteModel, ActionHoldNewWork}
 }
 
 // Action is one admission-side change.
 type Action struct {
 	Kind ActionKind `json:"kind"`
+	// Rung is the rung whose name the action carries: the entry-generic rung name the
+	// ladder recorded it under. It is how a rung that is in force reaches the admission
+	// seam (the back-off flag of a hold) with its own name, not an assumed one.
+	Rung string `json:"rung,omitempty"`
 	// Release is true when the action undoes an earlier one: the inflight cap goes back to
 	// Value, the route or the hold is lifted.
 	Release bool `json:"release,omitempty"`
 	// Backend is the backend whose admission changes; To is the backend new work is routed
-	// to (route_backend only).
+	// to (route_backend only); Model is the model new work runs on (route_model only,
+	// the same backend).
 	Backend string `json:"backend,omitempty"`
 	To      string `json:"to,omitempty"`
+	Model   string `json:"model,omitempty"`
 	// Value is the inflight cap to set (set_inflight only).
 	Value int `json:"value,omitempty"`
+	// Models limits a hold to these models of the backend (hold_new_work only); empty
+	// holds the whole backend.
+	Models []string `json:"models,omitempty"`
 }
 
 // Direction is what the tick did to the ladder.
@@ -85,9 +189,11 @@ type LadderSettings struct {
 // setting whose value would raise a question per change.
 const askOnOffHint = "Set usage.burn_guard.ask_on_change to true to get a question per change."
 
-// DefaultLadder is the ladder used when none is configured.
+// DefaultLadder is the ladder used when none is configured. route_cheaper_model is not
+// in the default: it is a no-op until an entry resolves a cheaper model, so it is
+// opted in by the ladder setting where it sits before hold_entry.
 func DefaultLadder() []string {
-	return []string{RungLowerInflight, RungRoutePiPrompt, RungHoldClaude}
+	return []string{RungLowerInflight, RungRouteEntry, RungHoldEntry}
 }
 
 // LadderState is what survives a restart.
@@ -96,7 +202,7 @@ type LadderState struct {
 	Applied []string `json:"applied,omitempty"`
 	// LastChange is when a rung was last applied or released.
 	LastChange time.Time `json:"last_change,omitempty"`
-	// OriginalInflight is the claude-code inflight cap before lower_inflight was applied;
+	// OriginalInflight is the entry's inflight cap before lower_inflight was applied;
 	// it is what releasing the rung restores. Zero when that rung is not in force.
 	OriginalInflight int `json:"original_inflight,omitempty"`
 }
@@ -113,7 +219,7 @@ type TickInput struct {
 	Projection Projection
 	Settings   LadderSettings
 	Now        time.Time
-	// InflightCap is the claude-code inflight cap now in force. It is read only when
+	// InflightCap is the entry's inflight cap now in force. It is read only when
 	// lower_inflight is applied, to record the original.
 	InflightCap int
 }
@@ -178,11 +284,31 @@ func changesSetting(acts []Action, applyCap int) bool {
 // Ladder is the state machine. It is not safe for concurrent use; the daemon calls Tick from
 // one goroutine.
 type Ladder struct {
-	store StateStore
-	state LadderState
+	store  StateStore
+	state  LadderState
+	target EntryTarget
 }
 
-// NewLadder loads the saved state from store (which may be nil for no persistence).
+// NewEntryLadder is NewLadder for a ladder that acts on target.
+func NewEntryLadder(store StateStore, target EntryTarget) (*Ladder, error) {
+	l, err := NewLadder(store)
+	if err != nil {
+		return nil, err
+	}
+	l.target = target
+	return l, nil
+}
+
+// Target is the entry the ladder acts on.
+func (l *Ladder) Target() EntryTarget { return l.target }
+
+// SetTarget changes the entry the ladder acts on (a config change). Rungs already in
+// force keep their state; their release acts on the new target.
+func (l *Ladder) SetTarget(t EntryTarget) { l.target = t }
+
+// NewLadder loads the saved state from store (which may be nil for no persistence)
+// and normalizes any legacy first-version rung names in it to their entry-generic
+// names, so saved state from before the rename behaves identically.
 func NewLadder(store StateStore) (*Ladder, error) {
 	l := &Ladder{store: store}
 	if store != nil {
@@ -190,6 +316,7 @@ func NewLadder(store StateStore) (*Ladder, error) {
 		if err != nil {
 			return nil, fmt.Errorf("burnguard: load ladder state: %w", err)
 		}
+		s.Applied = NormalizeRungs(s.Applied)
 		l.state = s
 	}
 	return l, nil
@@ -263,7 +390,7 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		return finish()
 	}
 
-	ladder := in.Settings.Ladder
+	ladder := NormalizeRungs(in.Settings.Ladder)
 	if len(ladder) == 0 {
 		ladder = DefaultLadder()
 	}
@@ -343,17 +470,27 @@ func nextRung(ladder, applied []string) (string, bool) {
 	return "", false
 }
 
-// apply puts a rung in force and returns its admission actions.
+// apply puts a rung in force and returns its admission actions, all on the ladder's
+// entry. A route rung with no route target changes nothing.
 func (l *Ladder) apply(rung string, inflight int) []Action {
 	l.state.Applied = append(l.state.Applied, rung)
+	t := l.target
 	switch rung {
 	case RungLowerInflight:
 		l.state.OriginalInflight = inflight
-		return []Action{{Kind: ActionSetInflight, Backend: ClaudeBackend, Value: lowered(inflight)}}
-	case RungRoutePiPrompt:
-		return []Action{{Kind: ActionRouteBackend, Backend: ClaudeBackend, To: PiBackend}}
-	case RungHoldClaude:
-		return []Action{{Kind: ActionHoldNewWork, Backend: ClaudeBackend}}
+		return []Action{{Kind: ActionSetInflight, Rung: rung, Backend: t.Backend, Value: lowered(inflight)}}
+	case RungRouteEntry, RungRoutePiPrompt: // the legacy name: the same route rung
+		if t.RouteTo == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteBackend, Rung: rung, Backend: t.Backend, To: t.RouteTo}}
+	case RungRouteCheaperModel: // no legacy name; routes to the entry's own cheaper model
+		if t.CheaperModel == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteModel, Rung: rung, Backend: t.Backend, Model: t.CheaperModel}}
+	case RungHoldEntry, RungHoldClaude: // the legacy name: the same hold rung
+		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
 	return nil
 }
@@ -363,15 +500,24 @@ func (l *Ladder) release() []Action {
 	n := len(l.state.Applied)
 	rung := l.state.Applied[n-1]
 	l.state.Applied = l.state.Applied[:n-1]
+	t := l.target
 	switch rung {
 	case RungLowerInflight:
 		orig := l.state.OriginalInflight
 		l.state.OriginalInflight = 0
-		return []Action{{Kind: ActionSetInflight, Release: true, Backend: ClaudeBackend, Value: orig}}
-	case RungRoutePiPrompt:
-		return []Action{{Kind: ActionRouteBackend, Release: true, Backend: ClaudeBackend, To: PiBackend}}
-	case RungHoldClaude:
-		return []Action{{Kind: ActionHoldNewWork, Release: true, Backend: ClaudeBackend}}
+		return []Action{{Kind: ActionSetInflight, Rung: rung, Release: true, Backend: t.Backend, Value: orig}}
+	case RungRouteEntry, RungRoutePiPrompt: // the legacy name: the same route rung
+		if t.RouteTo == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteBackend, Rung: rung, Release: true, Backend: t.Backend, To: t.RouteTo}}
+	case RungRouteCheaperModel: // no legacy name; releases the cheaper-model route
+		if t.CheaperModel == "" {
+			return nil
+		}
+		return []Action{{Kind: ActionRouteModel, Rung: rung, Release: true, Backend: t.Backend, Model: t.CheaperModel}}
+	case RungHoldEntry, RungHoldClaude: // the legacy name: the same hold rung
+		return []Action{{Kind: ActionHoldNewWork, Rung: rung, Release: true, Backend: t.Backend, Models: append([]string(nil), t.HeldModels...)}}
 	}
 	return nil
 }
@@ -396,6 +542,12 @@ func describe(acts []Action, original int) string {
 			parts = append(parts, fmt.Sprintf("routed new %s work to %s.", a.Backend, a.To))
 		case a.Kind == ActionRouteBackend:
 			parts = append(parts, fmt.Sprintf("stopped routing new %s work to %s.", a.Backend, a.To))
+		case a.Kind == ActionRouteModel && !a.Release:
+			parts = append(parts, fmt.Sprintf("routing new %s work to the cheaper model %s; running sessions continue.", a.Backend, a.Model))
+		case a.Kind == ActionRouteModel:
+			parts = append(parts, fmt.Sprintf("stopped routing new %s work to the cheaper model %s; the original model routing is restored.", a.Backend, a.Model))
+		case a.Kind == ActionHoldNewWork && !a.Release && len(a.Models) > 0:
+			parts = append(parts, fmt.Sprintf("holding new %s work on models %s; running sessions continue.", a.Backend, strings.Join(a.Models, ", ")))
 		case a.Kind == ActionHoldNewWork && !a.Release:
 			parts = append(parts, fmt.Sprintf("holding new %s work; running sessions continue.", a.Backend))
 		case a.Kind == ActionHoldNewWork:

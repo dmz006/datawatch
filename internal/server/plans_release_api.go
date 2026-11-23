@@ -241,12 +241,15 @@ func planBlock(sm planrecords.Summary) map[string]any {
 	if sm.Archived {
 		b["archived"] = true
 	}
+	if sm.SetByHand {
+		b["set_by_hand"] = true
+	}
 	return b
 }
 
 func planBlockOf(r planrecords.Record) map[string]any {
 	return planBlock(planrecords.Summary{
-		Title: r.Title, ID: r.ID, State: r.State, PlanKind: r.PlanKind, Release: r.Release, Archived: r.Archived,
+		Title: r.Title, ID: r.ID, State: r.State, SetByHand: r.SetByHand, PlanKind: r.PlanKind, Release: r.Release, Archived: r.Archived,
 	})
 }
 

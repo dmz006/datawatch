@@ -42,7 +42,11 @@ func newCostReportCmd() *cobra.Command {
 			"plan bills the subscription, not this usage), with the usage points it\n" +
 			"represents and its share of the monthly price; unset providers are\n" +
 			"shown as assumed. group_by release adds shipped-unit counts per\n" +
-			"release; work whose owner has not shipped lands under 'unreleased'.",
+			"release; work whose owner has not shipped lands under 'unreleased'.\n\n" +
+			"A by-model section always prints: one row per model name with its\n" +
+			"tokens and its API-equivalent dollars, priced at the model's own\n" +
+			"rate (the per-model cost entry when one is configured, else the\n" +
+			"backend's rate) — an equivalence, not a bill.",
 		RunE: func(*cobra.Command, []string) error {
 			q := url.Values{}
 			if groupBy != "" {
@@ -82,12 +86,64 @@ func newCostReportCmd() *cobra.Command {
 type costReportWire struct {
 	GroupBy          string          `json:"group_by"`
 	Rows             []costReportRow `json:"rows"`
+	ModelRows        []costModelRow  `json:"model_rows"`
 	TotalsByUnit     []costUnitTotal `json:"totals_by_unit"`
 	RetentionDays    int             `json:"retention_days"`
 	LifetimeFallback bool            `json:"lifetime_fallback"`
 	RetentionNote    string          `json:"retention_note"`
 	WindowNote       string          `json:"window_note"`
 	Attribution      *costAttribWire `json:"attribution"`
+}
+
+// costModelRow mirrors costreport.ModelRow — one row of the by-model
+// breakdown (see Report.ModelRows).
+type costModelRow struct {
+	Model            string   `json:"model"`
+	Sessions         int      `json:"sessions"`
+	TokensIn         int      `json:"tokens_in"`
+	TokensOut        int      `json:"tokens_out"`
+	CacheRead        int      `json:"cache_read"`
+	CacheCreation    int      `json:"cache_creation"`
+	ToolCalls        int      `json:"tool_calls"`
+	APIEquivalentUSD *float64 `json:"api_equivalent_usd"`
+	USDLabel         string   `json:"usd_label"`
+}
+
+// printModelRows renders the by-model section: one row per model name
+// with its in / out / cached tokens and its API-equivalent dollars
+// (priced at the model's own rate). It prints nothing when the report
+// carries no model rows.
+func printModelRows(rows []costModelRow) {
+	if len(rows) == 0 {
+		return
+	}
+	anyUSD := false
+	for _, r := range rows {
+		if r.APIEquivalentUSD != nil {
+			anyUSD = true
+			break
+		}
+	}
+	header := "model\tsessions\ttokens_in\ttokens_out\tcache_read\tcache_creation\ttool_calls"
+	if anyUSD {
+		header += "\tapi_equiv_usd"
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, header)
+	for _, r := range rows {
+		line := r.Model + "\t" + strconv.Itoa(r.Sessions) + "\t" + strconv.Itoa(r.TokensIn) + "\t" +
+			strconv.Itoa(r.TokensOut) + "\t" + strconv.Itoa(r.CacheRead) + "\t" +
+			strconv.Itoa(r.CacheCreation) + "\t" + strconv.Itoa(r.ToolCalls)
+		if anyUSD {
+			line += "\t" + moneyOrDash(r.APIEquivalentUSD)
+		}
+		_, _ = fmt.Fprintln(w, line)
+	}
+	//nolint:errcheck
+	w.Flush()
+	if anyUSD {
+		fmt.Println("model api_equiv_usd is an API-equivalent estimate at each model's own rate, not a bill")
+	}
 }
 
 // costAttribWire mirrors costreport.AttributionCheck.
@@ -256,6 +312,7 @@ func printCostReport(body []byte) error {
 	//nolint:errcheck
 	w.Flush()
 
+	printModelRows(rep.ModelRows)
 	printUnitTotals(rep.TotalsByUnit)
 	if anyAPI {
 		fmt.Println("api_equiv_usd is an API-equivalent estimate, not a bill")

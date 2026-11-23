@@ -15,10 +15,41 @@ package server
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/autonomous"
 )
+
+// questionNotifyGate is a sync.WaitGroup whose Add is serialized with
+// Wait. A bare WaitGroup panics with "sync: WaitGroup misuse: Add called
+// concurrently with Wait" when Add(d>0) runs while the counter is zero
+// and another goroutine is inside Wait. That was reachable on the
+// daemon-exit path: a still-arriving raise calls Add(1) through
+// notifyQuestionRaised in the same instant the shutdown flush is blocked
+// in WaitQuestionNotifies (counter zero). Holding one mutex across the
+// whole Wait blocks a racing Add until the counter drains, so the Add
+// can never interleave with an in-flight Wait.
+type questionNotifyGate struct {
+	mu sync.Mutex
+	wg sync.WaitGroup
+}
+
+func (g *questionNotifyGate) add() {
+	g.mu.Lock()
+	g.wg.Add(1)
+	g.mu.Unlock()
+}
+
+func (g *questionNotifyGate) done() {
+	g.wg.Done()
+}
+
+func (g *questionNotifyGate) wait() {
+	g.mu.Lock()
+	g.wg.Wait()
+	g.mu.Unlock()
+}
 
 // QuestionRaiseNotifier is the seam the raise flow uses to hand a
 // freshly raised question to the messaging group. main.go implements it
@@ -74,10 +105,10 @@ func (s *Server) notifyQuestionRaised(q autonomous.Question) {
 	if s.cfg != nil && !s.cfg.Autonomous.Questions.Enabled {
 		return // switch off: none of this work fires
 	}
-	s.questionNotifies.Add(1)
+	s.questionNotifies.add()
 	go func() {
 		defer func() { _ = recover() }()
-		defer s.questionNotifies.Done()
+		defer s.questionNotifies.done()
 
 		// (1) WebSocket — the return-path event, always part of the
 		// switch (event plus polled GET is the default return path).
@@ -144,7 +175,7 @@ func (s *Server) WaitQuestionNotifies() {
 	if s == nil {
 		return
 	}
-	s.questionNotifies.Wait()
+	s.questionNotifies.wait()
 }
 
 // HTTPServer delegate for WaitQuestionNotifies, so main.go and the

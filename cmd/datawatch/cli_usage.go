@@ -5,7 +5,7 @@
 // the CLI never recomputes or rewords anything.
 //
 //	 usage advice [--variant V] [--policy P] [--lanes N] [--json]
-//	 usage reading add --percent N | --spend-usd N [--at RFC3339] [--session-percent N] [--lanes N (deprecated, ignored)]
+//	 usage reading add --percent N | --spend-usd N [--llm NAME] [--at RFC3339] [--session-percent N] [--lanes N (deprecated, ignored)]
 //	 usage reading list
 //	 usage reading delete <id>
 //	 usage extra-credit <points>
@@ -147,7 +147,7 @@ func newUsageReadingCmd() *cobra.Command {
 
 func newUsageReadingAddCmd() *cobra.Command {
 	var percent, spendUSD, sessionPercent float64
-	var at string
+	var at, llm string
 	var lanes int // deprecated and ignored: the daemon stamps the lanes
 	c := &cobra.Command{
 		Use:   "add --percent N | --spend-usd N",
@@ -192,6 +192,7 @@ func newUsageReadingAddCmd() *cobra.Command {
 				t = v.UTC()
 			}
 			r.At = t
+			r.LLM = strings.TrimSpace(llm)
 			body, err := daemonJSONBody(http.MethodPost, "/api/usage/readings", r)
 			if err != nil {
 				return err
@@ -204,6 +205,7 @@ func newUsageReadingAddCmd() *cobra.Command {
 	f.Float64Var(&percent, "percent", 0, "the weekly percentage used, 0 or more (up to "+strconv.FormatFloat(usagecalc.MaxPercentReading, 'f', -1, 64)+")")
 	f.Float64Var(&spendUSD, "spend-usd", 0, "the spend figure in dollars, 0 or more (exactly one of --percent / --spend-usd)")
 	f.StringVar(&at, "at", "", "when the reading was taken, RFC3339 (default: now)")
+	f.StringVar(&llm, "llm", "", "the paid LLM entry the reading measures (default: the first entry)")
 	f.Float64Var(&sessionPercent, "session-percent", 0, "the in-session percentage, secondary (0 or more)")
 	f.IntVar(&lanes, "lanes", 0, "ignored: the daemon stamps each reading with the Claude lanes running in the ledger")
 	_ = f.MarkDeprecated("lanes", "the daemon stamps each reading with the Claude lanes running; the value is ignored and not sent")
