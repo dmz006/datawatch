@@ -26843,6 +26843,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'resource_limits.memory_floor_mb', label: '', labelKey: 'settings_resource_limits_memory_floor_mb', helpKey: 'settings_resource_limits_memory_floor_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '2048', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_floor_mb', this)" },
     { key: 'resource_limits.memory_cap_mb', label: '', labelKey: 'settings_resource_limits_memory_cap_mb', helpKey: 'settings_resource_limits_memory_cap_mb_help', helpDocs: 'operations.md#memory-ceiling', type: 'number', placeholder: '16384', min: 1, step: 1, onchange: "saveResourceLimitField('resource_limits.memory_cap_mb', this)" },
   ]},
+  // Standard task packs: the enabled switch, the active order list and the
+  // pack inputs. The fields live in app-packs-settings-fields.js, loaded first.
+  { id: 'packs', sectionKey: 'settings_packs', section: 'Standard task packs', docs: 'howto/automata-standard-tasks.md', fields: (typeof PACKS_SETTINGS_FIELDS !== 'undefined' ? PACKS_SETTINGS_FIELDS : []) },
   { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
     { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
     { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
@@ -26877,6 +26880,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
     { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
+    { key: 'session.finalise_interval_minutes', label: 'Session finalise interval (min)', labelKey: 'settings_finalise_interval', helpKey: 'settings_finalise_interval_help', type: 'number', placeholder: '10' },
     { key: 'session.store_flush_interval', label: 'Session store write delay (ms; 0 = write through)', labelKey: 'settings_session_store_flush_interval', helpKey: 'settings_session_store_flush_interval_help', type: 'number', placeholder: '1000' },
     { key: 'session.store_archive_after_days', label: 'Archive finished sessions after (days; 0 = never)', labelKey: 'settings_session_store_archive_after_days', helpKey: 'settings_session_store_archive_after_days_help', type: 'number', placeholder: '14' },
     { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
@@ -27064,6 +27068,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.planning_routing.enabled', label: 'Route Automata planning by rules', labelKey: 'planning_routing_field_enabled', type: 'toggle' },
     { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
+    { key: 'autonomous.tmux_kill_guard', label: 'Worker tmux kill guard', labelKey: 'settings_tmux_kill_guard', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     // Verifier headroom gates: a verifier cap above 1 and a verifier_slots write above 1
@@ -28605,10 +28610,11 @@ function loadGeneralConfig() {
           } else if (f.type === 'toggle') {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
+            const _togOnchange = f.onchange || `saveGeneralField('${f.key}', this.checked)`;
             html += `<div class="settings-row" style="justify-content:space-between;${(_togHint || f.helpDocs) ? 'flex-wrap:wrap;gap:6px;' : ''}">
               <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}${f.helpDocs ? settingsHelpLink(f) : ''}</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="${_togOnchange}" />
                 <span class="toggle-slider"></span>
               </label>
               ${f.helpDocs ? _settingsHelpTextHTML(f) : ''}${_togHint}
@@ -36015,6 +36021,13 @@ const _AUTOMATA_TEMPLATE_SUBTABS = [
     // every story, loaded from the REST read (never the config directly).
     load: () => _automataStandardTasksLoad(),
     render: () => _automataStandardTasksRender(),
+  },
+  {
+    key: 'packs',
+    titleKey: 'packs_subtab_title',
+    // Packs: a shell from app-packs-subtab.js; it keeps no pack list.
+    load: () => packsSubtabLoad(),
+    render: () => packsSubtabRender(),
   },
 ];
 

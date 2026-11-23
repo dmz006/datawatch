@@ -200,8 +200,7 @@ s_docker_agent_base() {
     trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; write_record' EXIT
     trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; exit 130' INT
     trap 'rm -rf "$TRIVY_CACHE_DIR" 2>/dev/null; kill_slow; exit 143' TERM
-    trivy image --severity HIGH,CRITICAL --ignorefile .trivyignore --exit-code 1 \
-      --format table datawatch-agent-base:pre-tag
+    bash scripts/trivy-scan-image.sh datawatch-agent-base:pre-tag
   else
     echo "SKIP [docker-agent-base] trivy scan: trivy not found"
   fi

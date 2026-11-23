@@ -374,7 +374,7 @@ var auditCommKeys = audit.QueryParamNames
 func AuditCommKeys() []string { return slices.Clone(auditCommKeys) }
 
 func (r *Router) handleAudit(cmd Command) {
-	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> since=<t> until=<t> limit=<n>"
+	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> pack_name=<p> since=<t> until=<t> limit=<n>"
 	// "audit self-config [limit=<n>]" — BL412 self-config audit view
 	words := strings.Fields(strings.TrimSpace(cmd.Text))
 	if len(words) > 0 && words[0] == "self-config" {

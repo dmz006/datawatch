@@ -1,9 +1,12 @@
 // task_templates_defaults.go — the built-in task-template pack.
 //
-// The pack is data: a slice of config.TaskTemplateDef values, defined
-// with the same types an operator writes in autonomous.task_templates
-// .templates (same id, title, spec, files, kind, read_only, depends_on
-// , applies_when). EffectiveTaskTemplates
+// The pack is data, not Go literals: the standard-tasks pack folder
+// (internal/packs/builtinpacks/builtin) holds each template's id, title,
+// kind, files, applies_when and report path in pack.yaml, and its spec
+// text in the task's prompt file. BuiltInTaskTemplates resolves that pack
+// with packs.ResolveTaskList over the built-in pack alone, and maps each
+// resolved task to a config.TaskTemplateDef — the same type an operator
+// writes in autonomous.task_templates.templates. EffectiveTaskTemplates
 // (internal/autonomous/task_templates.go) merges this pack with the
 // operator's templates — an operator template with the same id
 // replaces the built-in at its original position, a new id is appended
@@ -27,7 +30,14 @@
 package autonomous
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/packs"
 )
 
 // Built-in task-template ids (operators reference templates by id).
@@ -49,76 +59,92 @@ const (
 	TemplateBoundedLoadStep = "bounded_load_step"
 )
 
-// noteTemplateExemptionReason is the B124 exemption carried by every
-// built-in note template: a note task changes no files, so no script
-// has anything to verify.
-const noteTemplateExemptionReason = "note task: changes no files by design, so there is nothing for a script to verify"
+// builtInTaskTemplateKind is the Automaton kind the built-in pack is
+// resolved for. The pack lists every Automaton kind, so any kind yields
+// the same list; the feature kind is the one a story is planned under.
+const builtInTaskTemplateKind = PRDKindFeature
+
+// builtInTaskTemplatesOnce guards the one-time resolution of the pack.
+// The resolved defs are cached: the prompt files are read once, so a
+// later removal of the extracted pack folder cannot break a planning run.
+var (
+	builtInTaskTemplatesOnce  sync.Once
+	builtInTaskTemplatesCache []config.TaskTemplateDef
+	builtInTaskTemplatesErr   error
+)
 
 // BuiltInTaskTemplates returns the built-in task-template pack fresh
 // (a new slice and fresh defs each call, so no caller can mutate the
-// pack). Slots ({{feature}}, {{files}}, {{files_list}}) are left in
-// the text; RenderTaskTemplateDef fills them at apply time.
+// pack). The defs are resolved by packs.ResolveTaskList over the
+// built-in pack alone. Slots ({{feature}}, {{files}}, {{files_list}})
+// are left in the text; RenderTaskTemplateDef fills them at apply time.
+//
+// The built-in pack is embedded in the binary, so a failure to load it
+// is a build defect and panics rather than returning a partial pack.
 func BuiltInTaskTemplates() []config.TaskTemplateDef {
-	return []config.TaskTemplateDef{
-		{
-			ID:    TemplateChangelogEntry,
-			Title: "Changelog entry for {{feature}}",
-			Spec:  "Write a concise changelog entry that describes '{{feature}}' in terms of the result the operator sees: what changed, how it shows up, and any migration step. Keep the entry factual and short; do not create or rename files outside the changelog. Story files involved: {{files_list}}.",
-			Files: "CHANGELOG.md",
-			Kind:  "docs",
-			AppliesWhen: "Always offered: every feature slice that lands needs a " +
-				"changelog entry so the changelog and the work stay in step.",
-		},
-		{
-			ID:    TemplateParityIssueDraft,
-			Title: "Parity issue draft for {{feature}}",
-			Spec:  "Write an issue-draft file under docs/plans/parity-issues/ that captures the parity gaps this work leaves or closes for '{{feature}}': the affected area, the current behavior, the expected behavior, and the suggested next step as plain prose. This is a file write only. It never runs any hosting CLI (no gh, no issue creation on a tracker) and creates nothing on any host. Story files involved: {{files_list}}.",
-			Files: "docs/plans/parity-issues/{{feature}}-parity-draft.md",
-			Kind:  "docs",
-			AppliesWhen: "Offered when the slice touches behavior whose gaps are " +
-				"worth tracking as an issue draft without touching a tracker.",
-		},
-		{
-			ID:    TemplateDocsSet,
-			Title: "Docs set for {{feature}}",
-			Spec:  "Bring the docs of '{{feature}}' into shape with the change: update the affected howto, operations and glossary entries so they describe the post-change behavior, keep existing links reachable, and flag anything the operator must still review. Work only on the story's docs: {{files_list}}.",
-			Files: "{{files}}",
-			Kind:  "docs",
-			AppliesWhen: "Offered whenever the slice changes operator-visible " +
-				"behavior that the docs already describe.",
-		},
-		{
-			ID:    TemplateBoundedLoadStep,
-			Title: "Bounded load-step rule for {{feature}}",
-			Spec: "Record the bounded-load-step posture for '{{feature}}': " + boundedLoadStepRule +
-				" This is a note, not a change: it writes no files and touches nothing else (no files).",
-			Kind:                     "note",
-			VerificationScriptReason: noteTemplateExemptionReason,
-			AppliesWhen: "Always offered as a posture note: any story that could " +
-				"carry a CPU-load or stress step must say its bounds up front (nice, a quarter of the cores, a hard timeout, a trap-cleanup, and never outlive the owning task).",
-		},
-		{
-			ID:         TemplateFinalGate,
-			Title:      "Final gate for {{feature}}",
-			Spec:       "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
-			Kind:       "final_gate",
-			ReadOnly:   true,
-			ReportPath: ".datawatch/reports/{{feature}}-final-gate.txt",
-			// No VerificationScript: the gate's own check is its report
-			// file. A read-only task with a usable report path is verified
-			// by the read-only report check, and the command text the gate
-			// used to carry is not a file, so the verifier prestart rejects it.
-			AppliesWhen: "Always offered as the closing task: a cheap, read-only " +
-				"verdict before the story is considered done.",
-		},
-		{
-			ID:                       TemplateVersionBumpLeftToMerge,
-			Title:                    "Release version note for {{feature}}",
-			Spec:                     "Record a plain note, for the operator's records only: the release version of '{{feature}}' is the next patch above main, resolved at merge time. It is never a fixed number written into the tree. This is a note, not an edit: it never writes a file and leaves version fields exactly as they are.",
-			Kind:                     "note",
-			VerificationScriptReason: noteTemplateExemptionReason,
-			AppliesWhen: "Offered to make the versioning posture explicit in the " +
-				"story without any task touching versioning itself.",
-		},
+	builtInTaskTemplatesOnce.Do(func() {
+		builtInTaskTemplatesCache, builtInTaskTemplatesErr = resolveBuiltInTaskTemplates()
+	})
+	if builtInTaskTemplatesErr != nil {
+		panic(fmt.Sprintf("autonomous: built-in task templates: %v", builtInTaskTemplatesErr))
 	}
+	out := make([]config.TaskTemplateDef, len(builtInTaskTemplatesCache))
+	copy(out, builtInTaskTemplatesCache)
+	return out
+}
+
+// resolveBuiltInTaskTemplates loads the built-in pack, resolves its task
+// list for builtInTaskTemplateKind, and maps each resolved task to a
+// template definition.
+func resolveBuiltInTaskTemplates() ([]config.TaskTemplateDef, error) {
+	pack, err := packs.LoadBuiltin()
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := packs.ResolveTaskList(builtInTaskTemplateKind, []*packs.Pack{pack})
+	if err != nil {
+		return nil, err
+	}
+	defs := make([]config.TaskTemplateDef, 0, len(resolved))
+	for _, rt := range resolved {
+		spec, err := packPromptSpec(pack.Dir, rt.Prompt)
+		if err != nil {
+			return nil, fmt.Errorf("task %q: %w", rt.Title, err)
+		}
+		defs = append(defs, config.TaskTemplateDef{
+			ID:                       rt.ID,
+			Title:                    rt.Title,
+			Spec:                     spec,
+			Files:                    rt.Files,
+			Kind:                     rt.Kind,
+			ReadOnly:                 rt.ReadOnly,
+			ReportPath:               rt.ReportPath,
+			VerificationScriptReason: rt.VerificationScriptReason,
+			AppliesWhen:              rt.AppliesWhen,
+		})
+	}
+	return defs, nil
+}
+
+// packPromptSpec reads a task's prompt file from the pack folder dir and
+// returns its spec text.
+func packPromptSpec(dir, prompt string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(prompt)))
+	if err != nil {
+		return "", fmt.Errorf("prompt %q: %w", prompt, err)
+	}
+	return promptSpecText(string(b)), nil
+}
+
+// promptSpecText returns the spec carried by a prompt file: the body
+// after the leading "# " heading lines and blank lines, with surrounding
+// whitespace trimmed. The heading is the template's human label and is
+// not part of the spec.
+func promptSpecText(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	i := 0
+	for i < len(lines) && (strings.TrimSpace(lines[i]) == "" || strings.HasPrefix(lines[i], "# ")) {
+		i++
+	}
+	return strings.TrimSpace(strings.Join(lines[i:], "\n"))
 }

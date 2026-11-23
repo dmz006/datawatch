@@ -207,7 +207,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.182.86"
+var Version = "9.182.90"
 
 // broadcastSessionsAsync pushes the session-list change to every client
 // without blocking the caller. The default-view sessions are selected with
@@ -6431,6 +6431,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
 				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"finalise_interval_minutes":       s.cfg.Session.FinaliseIntervalMinutes,
 				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
 				"tail_lines":                      s.cfg.Session.TailLines,
 				"alert_context_lines":             s.cfg.Session.AlertContextLines,
@@ -6944,6 +6945,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
 			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
+			// autonomous.tmux_kill_guard — effective bool; default ON when unset.
+			"tmux_kill_guard": s.cfg.Autonomous.TmuxKillGuardEnabled(),
 			// BL406 — project-rules enforcement config. "scan" is
 			// read-only here (richer write path is the dedicated
 			// GET/PUT /api/autonomous/scan/config, same split as
@@ -9089,6 +9092,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.liveness_window_seconds":
 			if n, ok := wholeNumber(v); ok {
 				cfg.Session.LivenessWindowSeconds = n
+			}
+		case "session.finalise_interval_minutes":
+			// Read live by the finaliser each cycle; a negative value is
+			// ignored and zero switches scheduled runs off.
+			if n, ok := wholeNumber(v); ok && n >= 0 {
+				cfg.Session.FinaliseIntervalMinutes = n
 			}
 		case "session.liveness_idle_timeout_overrides":
 			if m, ok := livenessOverridesFromValue(v); ok {
@@ -11303,6 +11312,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.InjectionGuard = toBool(v)
 		case "autonomous.block_on_injection":
 			cfg.Autonomous.BlockOnInjection = toBool(v)
+		// autonomous.tmux_kill_guard — pointer bool; unset means ON.
+		case "autonomous.tmux_kill_guard":
+			b := toBool(v)
+			cfg.Autonomous.TmuxKillGuard = &b
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":
