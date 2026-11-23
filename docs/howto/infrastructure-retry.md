@@ -110,6 +110,19 @@ with no reason on it. Now:
   that passes on that node resets the count. The count is held in memory and
   starts again after a daemon restart.
 
+A session that ended in the complete state, printed the completion marker and
+left output (a commit or a stored result) is **not** retried as a launch failure,
+even when the task text was never confirmed as delivered. The Automaton judges
+it by its output, the same as any finished attempt. A session with no marker, no
+output, or any other end state keeps the launch-failure path. If a task like
+this is still held, **accept** it from review when its marker is present (see
+[failure-escalation.md](failure-escalation.md#the-operator-actions)).
+
+The delivery check records which screen it waited for: when the wait for the
+worker's input box ends, a launch failure says what was on screen (a startup
+dialog still waiting for an answer, the agent working, text already in the box,
+or no input box), so you can see what the worker was looking at.
+
 ## What happens
 
 When an attempt ends with one of the four classes, and infrastructure retry is

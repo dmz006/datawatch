@@ -412,9 +412,9 @@ Every other failure keeps the ladder, the counts and the hold exactly as
 described above: the no-retry check runs on each verifier rejection, and only
 fires on those three conditions.
 
-## The five operator actions
+## The operator actions
 
-Every action is available on every surface. The table gives the way in on each.
+The five ways to change a held task, plus **Accept** for a task whose work is already done. Every action is available on every surface. The table gives the way in on each.
 
 | Action | What it does | Web UI | CLI | REST (`resolve_task_review`) | MCP (`autonomous_prd_resolve_task_review`) | Comm channel |
 |---|---|---|---|---|---|---|
@@ -423,6 +423,7 @@ Every action is available on every surface. The table gives the way in on each.
 | **Change worker** | Retries with a different backend, model and effort for this task. | **Change worker** (opens a form) | add `--backend`, `--model`, `--effort` | add `"backend"`, `"model"`, `"effort"` | `backend`, `model`, `effort` | add `backend=… model=… effort=…` |
 | **Narrow scope** | Retries with the list of files the task may change cut down. | **Narrow scope** (opens a form) | add `--files a.go,b.go` | add `"files":["a.go","b.go"]` | `files` | add `files=a.go,b.go` |
 | **Cancel** | Cancels the task. The Automaton can roll up without it. | **Cancel task** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel` | `{"task_id":"…","action":"cancel"}` | `action=cancel` | `autonomous review-task <automaton> <task> cancel` |
+| **Accept** | Completes a held task with the result or commit its worker already produced, without running it again. Allowed only when the task's last worker session printed a completion marker; otherwise it is refused and the task stays held, so retry or cancel it instead. | **Accept** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
 
 Notes on the actions:
 
@@ -436,6 +437,15 @@ Notes on the actions:
   already running are not interrupted. If the
   Automaton has no executor running at the moment, the decision starts one, as
   before.
+- **Accept** is for a held task whose worker finished but could not be
+  confirmed, for example a session that ended complete with a completion marker
+  and a commit while the delivery check was still waiting. The Automaton takes
+  the stored result or last commit as the task's result, clears the hold,
+  withdraws the held question, records who accepted it on the decision log and
+  in the audit log, and reopens an Automaton that was blocked on it. A note
+  (`--note`, `note`, `note=…`) is recorded with the decision. Accepting a task
+  with no completion marker answers an error on every surface and changes
+  nothing.
 - A retry can carry a spec, a worker and a file list in one go. Each change is
   checked before anything is written, so a refused change leaves the task held.
 - A `--note` (REST and MCP `note`, comm `note=…`) is recorded on the decision log
@@ -453,12 +463,29 @@ datawatch autonomous resolve-review <automaton-id> --task <task-id> --action ret
 
 # Cancel
 datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel
+
+# Accept the finished work of a held task
+datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept --note "reviewed the commit"
 ```
 
 ```
 You: autonomous review-task <automaton-id> <task-id> retry backend=claude-code model=claude-opus-5-5 note=narrowed to the parser
 Bot: {"id":"<automaton-id>", ...}
 ```
+
+```
+You: autonomous review-task <automaton-id> <task-id> accept note=reviewed the commit
+Bot: {"id":"<automaton-id>", ...}
+```
+
+```sh
+# REST: accept
+curl -sk -X POST -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","action":"accept","note":"reviewed the commit"}' \
+  https://localhost:8443/api/autonomous/prds/<automaton-id>/resolve_task_review
+```
+
+MCP: call `autonomous_prd_resolve_task_review` with `id`, `task_id` and `action=accept`.
 
 ```sh
 # REST
