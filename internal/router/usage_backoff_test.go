@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,17 @@ func TestParse_UsageBackoff_Set(t *testing.T) {
 		t.Errorf("until form = %+v", u)
 	}
 
+	// models= is an optional parameter: it narrows the flag to the named
+	// models and does not leak into the free-text reason.
+	m := Parse("usage_backoff set claude-code 45 weekly cap models=opus,sonnet")
+	if m.UsageBackoffReason != "weekly cap" || !reflect.DeepEqual(m.UsageBackoffModels, []string{"opus", "sonnet"}) {
+		t.Errorf("models form = %+v", m)
+	}
+	// A models= parameter with no usable names is an operator error.
+	if c := Parse("usage_backoff set claude-code 45 models="); c.UsageBackoffVerb != "invalid" || len(c.UsageBackoffModels) != 0 {
+		t.Errorf("empty models param = %+v", c)
+	}
+
 	// Missing/unusable deadline leaves the deadline zero so the handler
 	// answers with usage instead of guessing.
 	for _, in := range []string{"usage_backoff set", "usage_backoff set pi", "usage_backoff set pi soon"} {
@@ -60,6 +72,14 @@ func TestParse_UsageBackoff_Clear(t *testing.T) {
 		if c.Type != CmdUsageBackoff || c.UsageBackoffVerb != "clear" || c.UsageBackoffBackend != want {
 			t.Errorf("Parse(%q) = %+v, want backend %q", in, c, want)
 		}
+	}
+	// models= narrows a clear to the named models of the backend.
+	c := Parse("usage_backoff clear claude-code models=opus")
+	if c.UsageBackoffBackend != "claude-code" || !reflect.DeepEqual(c.UsageBackoffModels, []string{"opus"}) {
+		t.Errorf("clear models = %+v", c)
+	}
+	if c := Parse("usage_backoff clear claude-code models="); c.UsageBackoffVerb != "invalid" {
+		t.Errorf("empty models param = %+v", c)
 	}
 }
 
@@ -161,6 +181,54 @@ func TestUsageBackoffComm_RoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(out, "usage_backoff clear") || len(fake.active) != 0 {
 		t.Errorf("clear all reply=%q active=%v", out, fake.active)
+	}
+}
+
+func TestUsageBackoffComm_ModelsRoundTrip(t *testing.T) {
+	fake := &fakeUsageBackoffREST{active: map[string]map[string]any{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/usage-backoff", fake.handler)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+	send := func(msg string) string { return strings.Join(r.HandleTestMessage(msg), "\n") }
+
+	// A set with models= passes the model list through to REST.
+	out := send("usage_backoff set claude-code 45 weekly cap models=opus,sonnet")
+	if !strings.Contains(out, "usage_backoff set") {
+		t.Errorf("set reply = %q", out)
+	}
+	if len(fake.bodies) != 1 {
+		t.Fatalf("set requests = %v", fake.bodies)
+	}
+	got := fake.bodies[0]
+	if got["backend"] != "claude-code" || got["minutes"] != float64(45) || got["reason"] != "weekly cap" {
+		t.Errorf("set body = %v", got)
+	}
+	models, _ := got["models"].([]any)
+	if len(models) != 2 || models[0] != "opus" || models[1] != "sonnet" {
+		t.Errorf("set body models = %v", got["models"])
+	}
+
+	// A clear with models= names the backend and the model list.
+	_ = send("usage_backoff clear claude-code models=opus")
+	m, b := fake.methods[len(fake.methods)-1], fake.bodies[len(fake.methods)-1]
+	if m != http.MethodDelete || b["backend"] != "claude-code" {
+		t.Errorf("clear one = %s %v", m, b)
+	}
+	models, _ = b["models"].([]any)
+	if len(models) != 1 || models[0] != "opus" {
+		t.Errorf("clear body models = %v", b["models"])
+	}
+
+	// A model-scoped clear-all is refused before it reaches REST.
+	before := len(fake.methods)
+	out = send("usage_backoff clear all models=opus")
+	if !strings.Contains(out, "usage_backoff clear failed") || !strings.Contains(out, "name a backend") {
+		t.Errorf("clear-all with models reply = %q", out)
+	}
+	if len(fake.methods) != before {
+		t.Errorf("clear-all with models reached REST: %v", fake.methods[before:])
 	}
 }
 

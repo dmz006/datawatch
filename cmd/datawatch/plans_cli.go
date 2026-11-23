@@ -11,6 +11,8 @@
 //	plans migrate [--apply]                     POST /api/plans/migrate
 //	plans migrate --release --project P         POST /api/plans/migrate (mode release)
 //
+//	plans rollup [--project P] [--dry-run]      GET (dry run) or POST /api/plans/rollup
+//
 // `datawatch plan` is the same command as `datawatch plans`. The release plan
 // commands (themes, archive, restore, unattributed, attach with several ids,
 // row-plans) are in plans_cli_release.go.
@@ -125,6 +127,8 @@ func newPlansCmd() *cobra.Command {
 
   datawatch plans list <project> [--limit N] [--json]
   datawatch plans create <project> <title> [--goal TEXT]
+  datawatch plans rename <plan> <new title>
+  datawatch plans edit <plan> --goal TEXT
   datawatch plans reorder <plan> [<plan>...]
   datawatch plans reorder-automata <plan> <automaton> [<automaton>...]
   datawatch plans attach <plan> (--automaton ID | --automation ID | --finding REF)
@@ -136,8 +140,12 @@ func newPlansCmd() *cobra.Command {
   datawatch plan restore <plan>
   datawatch plan unattributed [--project P]
   datawatch plan row-plans list|convert
+  datawatch plans rollup [--project P] [--dry-run] [--json]
 
-(plan and plans are the same command.) A plan is named by its id or its title. Reorder lists the plans first, in the
+(plan and plans are the same command.) A plan is named by its id or its title. rename gives a plan a new title: one
+line, at most 100 characters, not used by another record in the project (the
+reply names the plan that holds it). The old title keeps working as an alias.
+edit --goal sets the plan's goal; --goal "" clears it. Reorder lists the plans first, in the
 order they should have; the rest keep their order after them. reorder-automata
 must list every Automaton of the plan once. The reply shows what runs next:
 blocked and held Automata are skipped. An Automaton, Automation or finding that
@@ -155,11 +163,18 @@ themes; it previews, prints a preview id, and writes only when run again with
 --apply and that --preview-id. See docs/howto/plan-records.md (Release plans and
 themes).
 
+rollup derives each plan's status from the Automata and Automations linked to
+it: any failed or blocked item makes it blocked, any running item keeps it open,
+all shipped makes it shipped, all finished makes it done. A plan whose status was
+set by hand (marked "(by hand)" in plans list) is never changed; rollup lists it
+with the status it would have had. --dry-run shows what would change and writes
+nothing. Without --project every project is rolled up.
+
 When the daemon reports 404, plan records are turned off: set
 autonomous.plan_records.enabled to true in the daemon config.`,
 	}
-	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansReorderCmd(),
-		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd())
+	cmd.AddCommand(newPlansListCmd(), newPlansCreateCmd(), newPlansRenameCmd(), newPlansEditCmd(), newPlansReorderCmd(),
+		newPlansReorderAutomataCmd(), newPlansAttachCmd(), newPlansDetachCmd(), newPlansMigrateCmd(), newPlansRollupCmd())
 	cmd.AddCommand(newPlansReleaseCmds()...)
 	return cmd
 }
@@ -216,14 +231,105 @@ Automaton id to {"release","theme"}. ` + plansReleaseDocs,
 	return cmd
 }
 
+// ----- rollup --------------------------------------------------------------
+
+type cliPlansRollup struct {
+	Project string `json:"project"`
+	DryRun  bool   `json:"dry_run"`
+	Applied bool   `json:"applied"`
+	Changes []struct {
+		Title         string `json:"title"`
+		Plan          string `json:"plan"`
+		From          string `json:"from"`
+		To            string `json:"to"`
+		Reason        string `json:"reason"`
+		SetByHandKept bool   `json:"set_by_hand_kept"`
+	} `json:"changes"`
+	Changed int `json:"changed"`
+	Kept    int `json:"kept"`
+}
+
+func renderPlansRollup(w io.Writer, body []byte) error {
+	var res cliPlansRollup
+	if err := json.Unmarshal(body, &res); err != nil {
+		return fmt.Errorf("the daemon sent a roll-up result I cannot read: %w", err)
+	}
+	head, verb := "Roll-up", "changed"
+	if res.DryRun {
+		head, verb = "Roll-up preview", "would change"
+	}
+	scope := "all projects"
+	if res.Project != "" {
+		scope = "project " + res.Project
+	}
+	_, _ = fmt.Fprintf(w, "%s (%s): %s %d, kept as set by hand %d\n", head, scope, verb, res.Changed, res.Kept)
+	for _, c := range res.Changes {
+		s := fmt.Sprintf("  %s  [%s]: %s -> %s", oneLineText(c.Title), c.Plan, c.From, c.To)
+		if c.SetByHandKept {
+			s += " (kept: status set by hand)"
+		}
+		if c.Reason != "" {
+			s += " - " + c.Reason
+		}
+		_, _ = fmt.Fprintln(w, s)
+	}
+	if len(res.Changes) == 0 {
+		_, _ = fmt.Fprintln(w, "Every plan already has the status its linked work gives it.")
+	}
+	if res.DryRun && res.Changed > 0 {
+		_, _ = fmt.Fprintln(w, "To write these changes run the same command without --dry-run.")
+	}
+	return nil
+}
+
+func newPlansRollupCmd() *cobra.Command {
+	var project string
+	var dryRun, jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "rollup",
+		Short: "Roll plan statuses up from their linked work (--dry-run previews)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var out []byte
+			var err error
+			if dryRun {
+				q := url.Values{"dry_run": {"true"}}
+				if project != "" {
+					q.Set("project", project)
+				}
+				out, err = daemonJSONBody(http.MethodGet, "/api/plans/rollup?"+q.Encode(), nil)
+			} else {
+				body := map[string]any{"dry_run": false}
+				if project != "" {
+					body["project"] = project
+				}
+				out, err = daemonJSONBody(http.MethodPost, "/api/plans/rollup", body)
+			}
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			return renderPlansRollup(cmd.OutOrStdout(), out)
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "Only this registered project (default every project)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would change and write nothing")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print the raw JSON")
+	return cmd
+}
+
 // ----- list ----------------------------------------------------------------
 
 type cliPlanRow struct {
-	Title    string `json:"title"`
-	ID       string `json:"id"`
-	State    string `json:"state"`
-	Order    int    `json:"order"`
-	Progress struct {
+	Title     string `json:"title"`
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	SetByHand bool   `json:"set_by_hand"`
+	Order     int    `json:"order"`
+	Progress  struct {
 		Done  int `json:"done"`
 		Total int `json:"total"`
 	} `json:"progress"`
@@ -248,7 +354,11 @@ func renderPlansList(w io.Writer, body []byte) error {
 		return fmt.Errorf("the daemon sent a plans list I cannot read: %w", err)
 	}
 	line := func(i int, p cliPlanRow) {
-		s := fmt.Sprintf("%d. %s  [%s]  %s  %d/%d done", i, oneLineText(p.Title), p.ID, p.State, p.Progress.Done, p.Progress.Total)
+		status := p.State
+		if p.SetByHand {
+			status += " (by hand)"
+		}
+		s := fmt.Sprintf("%d. %s  [%s]  %s  %d/%d done", i, oneLineText(p.Title), p.ID, status, p.Progress.Done, p.Progress.Total)
 		if p.FindingCount > 0 {
 			s += fmt.Sprintf("  %d findings", p.FindingCount)
 		}
@@ -337,6 +447,70 @@ func newPlansCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&goal, "goal", "", "What the plan is for")
+	return cmd
+}
+
+// ----- rename and edit -----------------------------------------------------
+
+// planEditReply is the answer of PATCH /api/plans/{ref}.
+type planEditReply struct {
+	Plan struct {
+		Title string `json:"title"`
+		ID    string `json:"id"`
+	} `json:"plan"`
+	Goal string `json:"goal"`
+}
+
+func newPlansRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <plan> <new title>",
+		Short: "Rename a plan (one line, at most 100 characters, unique in the project)",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			title := strings.TrimSpace(strings.Join(args[1:], " "))
+			out, err := daemonJSONBody(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), map[string]any{"title": title})
+			if err != nil {
+				return err
+			}
+			var res planEditReply
+			if json.Unmarshal(out, &res) != nil || res.Plan.ID == "" {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Renamed plan %s to %s\n", res.Plan.ID, oneLineText(res.Plan.Title))
+			return nil
+		},
+	}
+}
+
+func newPlansEditCmd() *cobra.Command {
+	var goal string
+	cmd := &cobra.Command{
+		Use:   "edit <plan> --goal TEXT",
+		Short: "Edit a plan's goal (an empty --goal clears it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("goal") {
+				return fmt.Errorf("--goal is required: the plan's new goal, or \"\" to clear it")
+			}
+			out, err := daemonJSONBody(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), map[string]any{"goal": goal})
+			if err != nil {
+				return err
+			}
+			var res planEditReply
+			if json.Unmarshal(out, &res) != nil || res.Plan.ID == "" {
+				planRecordPrintJSON(cmd.OutOrStdout(), out)
+				return nil
+			}
+			if strings.TrimSpace(res.Goal) == "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Cleared the goal of plan %s  [%s]\n", oneLineText(res.Plan.Title), res.Plan.ID)
+				return nil
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Set the goal of plan %s  [%s]: %s\n", oneLineText(res.Plan.Title), res.Plan.ID, oneLineText(res.Goal))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&goal, "goal", "", "The plan's new goal; an empty value clears it")
 	return cmd
 }
 

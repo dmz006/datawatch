@@ -2,8 +2,8 @@
 // the REST, MCP and comm-channel surfaces:
 //
 //	datawatch usage-backoff status
-//	datawatch usage-backoff set <backend> <minutes|until> [--reason text]
-//	datawatch usage-backoff clear [backend|all]
+//	datawatch usage-backoff set <backend> <minutes|until> [--reason text] [--models a,b]
+//	datawatch usage-backoff clear [backend|all] [--models a,b]
 //	datawatch usage-backoff recheck
 
 package main
@@ -40,6 +40,20 @@ at least one flag is live, status adds a "reserve" array with one
 {backend, tokens_used} entry per backed-off backend: how much of that
 per-hour reserve budget was already spent in the current window.`,
 	}
+	clearCmd := &cobra.Command{
+		Use:   "clear [backend|all]",
+		Short: "Clear one backend's back-off, or every flag (default)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flag, _ := cmd.Flags().GetString("models")
+			body, err := usageBackoffClearBody(args, flag)
+			if err != nil {
+				return err
+			}
+			return daemonJSON(http.MethodDelete, "/api/usage-backoff", body)
+		},
+	}
+	clearCmd.Flags().String("models", "", "Narrow the clear to these models of the backend, comma-separated (requires a named backend)")
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
@@ -62,14 +76,7 @@ backend. It also reports the pattern-drift guard
 				return daemonJSON(http.MethodPost, "/api/usage-backoff/recheck", map[string]any{})
 			},
 		},
-		&cobra.Command{
-			Use:   "clear [backend|all]",
-			Short: "Clear one backend's back-off, or every flag (default)",
-			Args:  cobra.MaximumNArgs(1),
-			RunE: func(_ *cobra.Command, args []string) error {
-				return daemonJSON(http.MethodDelete, "/api/usage-backoff", usageBackoffClearBody(args))
-			},
-		},
+		clearCmd,
 	)
 	return cmd
 }
@@ -80,10 +87,12 @@ func newUsageBackoffSetCmd() *cobra.Command {
 		Use:   "set <backend> <minutes|until>",
 		Short: "Back off a backend for N minutes, or until an RFC3339 time",
 		Example: `  datawatch usage-backoff set claude-code 45
-  datawatch usage-backoff set claude-code 2026-10-23T06:00:00Z --reason "weekly cap"`,
+  datawatch usage-backoff set claude-code 2026-10-23T06:00:00Z --reason "weekly cap"
+  datawatch usage-backoff set claude-code 45 --models opus,sonnet --reason "weekly cap"`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, err := usageBackoffSetBody(args[0], args[1], reason, time.Now())
+		RunE: func(cmd *cobra.Command, args []string) error {
+			modelsFlag, _ := cmd.Flags().GetString("models")
+			body, err := usageBackoffSetBody(args[0], args[1], reason, modelsFlag, time.Now())
 			if err != nil {
 				return err
 			}
@@ -91,15 +100,40 @@ func newUsageBackoffSetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "Operator-readable reason shown in the wait reason")
+	cmd.Flags().String("models", "", "Hold only these models of the backend, comma-separated (omit to hold the whole backend)")
 	return cmd
 }
 
+// usageBackoffModels parses the comma-separated --models flag: blank pieces
+// are dropped, and a flag given but left with no names is an error.
+func usageBackoffModels(flag string) ([]string, error) {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return nil, nil
+	}
+	var out []string
+	for _, p := range strings.Split(flag, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("models: at least one model name is required")
+	}
+	return out, nil
+}
+
 // usageBackoffSetBody builds the POST body for `set`: a whole number of
-// minutes (>= 1) or an RFC3339 deadline in the future.
-func usageBackoffSetBody(backend, spec, reason string, now time.Time) (map[string]any, error) {
+// minutes (>= 1) or an RFC3339 deadline in the future, plus the optional
+// models list (empty = whole backend).
+func usageBackoffSetBody(backend, spec, reason, modelsFlag string, now time.Time) (map[string]any, error) {
 	backend = strings.TrimSpace(backend)
 	if backend == "" {
 		return nil, fmt.Errorf("backend is required")
+	}
+	models, err := usageBackoffModels(modelsFlag)
+	if err != nil {
+		return nil, err
 	}
 	body := map[string]any{"backend": backend}
 	if n, err := strconv.Atoi(spec); err == nil {
@@ -120,17 +154,34 @@ func usageBackoffSetBody(backend, spec, reason string, now time.Time) (map[strin
 	if r := strings.TrimSpace(reason); r != "" {
 		body["reason"] = r
 	}
+	if len(models) > 0 {
+		body["models"] = models
+	}
 	return body, nil
 }
 
 // usageBackoffClearBody builds the DELETE body: no argument or "all" clears
-// every flag (an empty body), otherwise just the named backend.
-func usageBackoffClearBody(args []string) map[string]any {
+// every flag (an empty body), otherwise just the named backend; with a
+// models list the clear is narrowed to those models and a named backend is
+// required.
+func usageBackoffClearBody(args []string, modelsFlag string) (map[string]any, error) {
+	models, err := usageBackoffModels(modelsFlag)
+	if err != nil {
+		return nil, err
+	}
 	body := map[string]any{}
+	backend := ""
 	if len(args) == 1 {
 		if b := strings.TrimSpace(args[0]); b != "" && !strings.EqualFold(b, "all") {
+			backend = b
 			body["backend"] = b
 		}
 	}
-	return body
+	if len(models) > 0 {
+		if backend == "" {
+			return nil, fmt.Errorf("models: name a backend to narrow the clear; a clear-all is not model-scoped")
+		}
+		body["models"] = models
+	}
+	return body, nil
 }

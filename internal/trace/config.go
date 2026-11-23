@@ -15,9 +15,12 @@ const (
 
 // Defaults applied when a setting is unset (zero).
 const (
-	DefaultMode          = ModeSummary
-	DefaultArgCapBytes   = 512
-	DefaultRetentionDays = 14
+	DefaultMode        = ModeSummary
+	DefaultArgCapBytes = 512
+	// DefaultRetentionDays is the default for tracing.retention_days; 0
+	// means events are kept forever (no age-based pruning). An operator can
+	// still set a positive value to keep the old drop-old-events behaviour.
+	DefaultRetentionDays = 0
 	// MaxArgCapBytes bounds tracing.arg_cap_bytes.
 	MaxArgCapBytes = 1 << 20
 	// MaxRetentionDays bounds tracing.retention_days.
@@ -31,13 +34,15 @@ type Settings struct {
 	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// ArgCapBytes caps the stored argument summary; 0 reads the default.
 	ArgCapBytes int `yaml:"arg_cap_bytes,omitempty" json:"arg_cap_bytes,omitempty"`
-	// RetentionDays is how long events are kept; 0 reads the default.
+	// RetentionDays is how long events are kept, in days; 0 (the default)
+	// keeps them forever — no age-based pruning.
 	RetentionDays int `yaml:"retention_days,omitempty" json:"retention_days,omitempty"`
 	// Backends enables tracing per backend; a backend not listed is on.
 	Backends map[string]bool `yaml:"backends,omitempty" json:"backends,omitempty"`
 }
 
-// Defaults returns the default settings: summary mode, all backends on.
+// Defaults returns the default settings: summary mode, a 512-byte argument
+// cap, no age-based pruning (retention 0 = keep forever), all backends on.
 func Defaults() Settings {
 	return Settings{
 		Mode:          DefaultMode,
@@ -47,8 +52,10 @@ func Defaults() Settings {
 	}
 }
 
-// WithDefaults returns a copy with unset fields filled in. The Backends
-// map is copied, never shared.
+// WithDefaults returns a copy with unset fields filled in. RetentionDays
+// is deliberately not rewritten: 0 is now a real value (no age-based
+// pruning), not an "unset" marker, so an operator-set value stays exactly
+// as set. The Backends map is copied, never shared.
 func (s Settings) WithDefaults() Settings {
 	out := s
 	if out.Mode == "" {
@@ -56,9 +63,6 @@ func (s Settings) WithDefaults() Settings {
 	}
 	if out.ArgCapBytes == 0 {
 		out.ArgCapBytes = DefaultArgCapBytes
-	}
-	if out.RetentionDays == 0 {
-		out.RetentionDays = DefaultRetentionDays
 	}
 	out.Backends = make(map[string]bool, len(s.Backends))
 	for k, v := range s.Backends {
@@ -89,6 +93,8 @@ func (s Settings) Validate() error {
 		return fmt.Errorf("tracing.arg_cap_bytes must be between 0 and %d, got %d", MaxArgCapBytes, s.ArgCapBytes)
 	}
 	if s.RetentionDays < 0 || s.RetentionDays > MaxRetentionDays {
+		// 0 is valid (keep forever); only negative or > MaxRetentionDays is
+		// refused.
 		return fmt.Errorf("tracing.retention_days must be between 0 and %d, got %d", MaxRetentionDays, s.RetentionDays)
 	}
 	names := make([]string, 0, len(s.Backends))

@@ -1345,6 +1345,11 @@ type Task struct {
 	// GateRestartRetryUsed is true once the Automaton has retried this final
 	// gate after a daemon restart killed it; a second kill is not retried.
 	GateRestartRetryUsed bool `json:"gate_restart_retry_used,omitempty"`
+	// ModelUnresponsiveRetries is the consecutive requeues of this task after
+	// a model-unresponsive failure. It has its own bounded backoff and never
+	// touches InfraRetryCount; it is reset with it when the task gets a fair
+	// attempt.
+	ModelUnresponsiveRetries int `json:"model_unresponsive_retries,omitempty"`
 	// SystemTags is the placement-derived tag set this task carries (its
 	// Automaton's project, Automation and Automaton, plus the stage the
 	// Automaton's member slot carries): derived by ObjectTagsForTask under
@@ -2118,6 +2123,34 @@ type AutomationStatusSummary struct {
 	// the Automation waits on a join.
 	ActiveCursors []ActiveCursorSummary `json:"active_cursors"`
 	JoinWait      *JoinWaitSummary      `json:"join_wait,omitempty"`
+	// BranchChains lists every fork branch chain: head, members in order, tail
+	// and the chain's outcome, so a client can draw each branch as a chain.
+	// Omitted when the Automation has no fork.
+	BranchChains []BranchChain `json:"branch_chains,omitempty"`
+
+	// MaxParallel is the Automation's own max_parallel limit, omitted when
+	// unset. RunningMembers counts the members running now and is reported only
+	// while a limit (the Automation's or a fork's) is set. WaitingForSlot lists,
+	// in member order, the members that hold their cursor and wait for a free
+	// slot: they are not blocked, and the Automation is not either. Omitted
+	// when none waits.
+	MaxParallel    int      `json:"max_parallel,omitempty"`
+	RunningMembers int      `json:"running_members,omitempty"`
+	WaitingForSlot []string `json:"waiting_for_slot,omitempty"`
+
+	// StageGate reports that the Automation holds a staged member back while an
+	// earlier stage has unfinished members; omitted when the gate is off.
+	// WaitingForStage lists, in member order, the members that hold their cursor
+	// for an earlier stage: they are not blocked, and the Automation is not
+	// either. Each one's cursor names the stage. Omitted when none waits.
+	StageGate       bool     `json:"stage_gate,omitempty"`
+	WaitingForStage []string `json:"waiting_for_stage,omitempty"`
+
+	// WaitingForOperator lists, in member order, the decision_wait members that
+	// hold their cursor for an operator answer. They are not blocked, and the
+	// Automation is not either: only their own branch waits. Omitted when none
+	// waits.
+	WaitingForOperator []string `json:"waiting_for_operator,omitempty"`
 
 	// ReviewNeededCount and ReviewNeededTaskIDs report the tasks of the current
 	// member Automaton held for operator review. Both are omitted when none is
@@ -2139,10 +2172,38 @@ type ActiveCursorSummary struct {
 	PendingItemTitle string `json:"pending_item_title,omitempty"`
 	Waiting          bool   `json:"waiting,omitempty"`
 	Status           string `json:"status"`
+	// WaitReason is set while the member holds its cursor without running
+	// because a max_parallel limit is reached; Status is then
+	// CursorStatusWaitingForSlot and WaitReason reads "waiting for a free slot".
+	// It is never a blocked state.
+	WaitReason string `json:"wait_reason,omitempty"`
+	// WaitStage names the earlier stage a member waits for while Status is
+	// CursorStatusWaitingForStage; WaitReason then reads "waiting for stage
+	// <name>". It is never a blocked state.
+	WaitStage string `json:"wait_stage,omitempty"`
+	// QuestionID names the open operator question a decision_wait member waits
+	// on; Status is then CursorStatusWaitingForOperator and WaitReason reads
+	// "waiting for you".
+	QuestionID string `json:"question_id,omitempty"`
 }
 
+// CursorStatusWaitingForOperator is the ActiveCursorSummary status of a
+// decision_wait member that waits for an operator answer. It is never a blocked
+// state.
+const CursorStatusWaitingForOperator = "waiting_for_operator"
+
+// CursorStatusWaitingForSlot is the ActiveCursorSummary status of a member that
+// waits for a free slot under a max_parallel limit.
+const CursorStatusWaitingForSlot = "waiting_for_slot"
+
+// CursorStatusWaitingForStage is the ActiveCursorSummary status of a member the
+// stage gate holds back until an earlier stage finishes.
+const CursorStatusWaitingForStage = "waiting_for_stage"
+
 // JoinWaitSummary describes the join an Automation waits on: the rule it applies,
-// the branches still live, and the branches that ended without success.
+// the branches still live, and the branches that ended without success. Each
+// branch is named by its chain tail, the member the join collects; the chain
+// behind a tail is in AutomationStatusSummary.BranchChains.
 type JoinWaitSummary struct {
 	JoinMemberID    string   `json:"join_member_id"`
 	Rule            string   `json:"rule"`

@@ -148,6 +148,8 @@ the same Inbox:
 - **One plan in scope.** The same, narrowed to the items that name the plan's
   Automation or one of its Automata.
 
+A decision wait (a member of an Automation asking you a question) shows in the open questions with a waiting-for-you badge, and the "Automation waiting for you" alert links to it.
+
 An item belongs to a project by its link first: a `project:<name>` system tag on the
 item, or on the Automaton the item names. Only when no such tag exists is the
 directory used: the item's own project directory, the Automaton's, or, for a
@@ -339,6 +341,15 @@ connectors, starting at the entry member and following each member's
   finishes, all its connectors look the same.
 - **Fork lanes.** A **fork** starts several members at once. Its branches are
   drawn side by side as lanes under the fork, between the fork and its join.
+  A branch of several steps is drawn as its chain of members in order, ending
+  at the join (a *branch chain*).
+- **Waits.** A member waiting for your answer (a decision wait) reads **Waiting
+  for you**, not Blocked, with an **Answer the question** link that opens the
+  question; a member held by the limit reads **Waiting for a free slot**, and one
+  held by the stage gate reads **Waiting for stage** and the stage's name. None
+  of these is a block, and the Automation stays active. The line above the strip
+  counts each kind of wait and shows the Automation's max parallel and stage gate
+  when set.
 - **Joins and the join rule.** A **join** waits for the branches of its fork.
   Its **join rule** decides what a failed branch means:
   - *All branches must succeed*: one failed branch stops the join from
@@ -397,7 +408,13 @@ form edits an existing Automation.
    **Share of allocation** is marked **estimated** in the form and on the
    card, because a share of a plan allocation is an estimate rather than an
    exact figure.
-9. **Save.**
+9. **Run shape.** The **Run shape** section sets **max parallel** (the most
+   members running at once; empty or 0 is no limit) and the **stage gate** (a
+   later stage waits for the earlier one). A fork row has its own max parallel,
+   **Add a decision wait** adds a member with the question it asks you, and each
+   branch member has a button that adds the picked Automaton to that branch. See
+   [automation-chains.md](automation-chains.md) for what each setting does.
+10. **Save.**
 
 Only a **draft** lets you change its members in the form. Once an Automation has
 started, the form shows the members as they are and asks for a **reason** for
@@ -671,6 +688,8 @@ there too.
 
 ## Related
 
+- [automation-chains.md](automation-chains.md): chains, max parallel, decision
+  waits and stage gating, with the REST, MCP, CLI and chat calls for each
 - [projects-tab.md](projects-tab.md): the Projects sub-tab, the first sub-tab of
   the Automata view (left of Automation), which groups an Automation under its project as a plan, with the project's
   Automata, sessions, progress, history and policy on one page
