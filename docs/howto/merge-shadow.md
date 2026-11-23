@@ -37,9 +37,9 @@ a PWA card; see "Where the shadow state is read" below.
 - Write one shadow merge plan per finished Automaton at the supervisor's release:
   the release size resolved from the Automaton's release-size config — an explicit
   size on the Automaton, then its automation, then the merge pipeline's per-kind
-  setting, then the built-in default (`patch`, `minor`, `major` or `none`) — the
-  version the bump step would set (the default branch's version bumped by that
-  size; `none` plans no version), the changelog heading and body drawn from the
+  setting, then the built-in default (a bug is a `patch`, a feature a `minor`; the
+  size is `patch`, `minor`, `major` or `none`) — the version the bump step would
+  set (the next version above the base ref's version for that size; `none` plans no version), the changelog heading and body drawn from the
   Automaton's changelog draft file when that file holds a well-formed entry, else
   from the Automaton's own changelog entry task (strict format for both, empty
   when neither carries one —
