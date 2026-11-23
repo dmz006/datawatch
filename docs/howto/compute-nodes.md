@@ -921,7 +921,7 @@ Before a worker is launched on a node, the daemon sends the node a one-token cha
 
 - **It fails:** a transport error, a non-2xx status or a timeout. The worker is not launched, the node gets an unhealthy mark whose reason is the probe error (it names the node URL and model), and the task is deferred. A deferral uses no attempt: it goes through the model-unresponsive requeue described in [Infrastructure retry](infrastructure-retry.md#a-stalled-pi-worker-and-an-unresponsive-model).
 - **It passes:** the node's unhealthy mark, if any, is cleared.
-- **It is skipped** when the launch has no node address or no model.
+- **It is skipped** when the launch has no node address or no model, or when the node belongs to a single-node LLM entry (only pooled entries are probed).
 - **Where you see the mark:** `GET /api/capacity` shows `unhealthy` and `unhealthy_reason` on the node's pool, and waiting workers show the reason (below).
 - **The mark is held in memory.** A daemon restart clears it.
 - The probe and the mark are not settings; there is nothing to configure.
