@@ -464,9 +464,11 @@ Where you see it:
   real block keeps its block badge), with the cause and the hold's actions
   shown as a **Retry** button and, when the action is `reroute`, a **Reroute**
   button.
-- **CLI / comm review line** — one line on the Automaton:
-  `review timed out, not judged: <cause> -> <action>`, or `review blocked: <cause> ->
-  fix`.
+- **CLI / comm review line** — one line on the Automaton. The CLI
+  (`prd-get`) prints `review timed out: <cause> -> <action>`; the comm
+  channel prints `review timed out, not judged: <cause> -> <action>`. In both
+  the cause begins `not judged:`, and a blocked review reads
+  `review blocked: <cause> -> fix`.
 
 How you act on it:
 
