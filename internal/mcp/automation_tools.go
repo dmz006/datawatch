@@ -12,6 +12,7 @@
 //   automation_return_to_draft — return a blocked Automation to draft
 //   automation_set_llm / automation_set_verification_llm — Automation LLM defaults
 //   automation_set_decision_assistant — optional local-model decision assistant
+//   automation_set_max_parallel / automation_set_stage_gate — run-shape limits
 
 package mcp
 
@@ -54,7 +55,7 @@ func (s *Server) handleAutomationList(_ context.Context, req mcpsdk.CallToolRequ
 // automationMembersJSONDesc documents the members_json argument of
 // automation_create and automation_update: the linear member set plus the
 // Phase 3a kinds (fork, join, nested automation) and their own fields.
-const automationMembersJSONDesc = `JSON array of members. Each member has: id, prd_id, on_complete, on_blocked, on_failed (member IDs or "" = stop), added_reason. Optional kind picks the member shape: "" or "prd" (default) = a member Automaton named by prd_id; "automation" = a nested Automation named by automation_id; "fork" = starts the branch members listed in fork_members together (at least 2 member IDs); "join" = waits for the branch members listed in join_members, which must equal the paired fork's fork_members, then applies on_branch_failure: "all_must_succeed" (default), "any_one_is_enough" or "continue_anyway". Set only the fields that belong to a member's kind; fork_members and join_members are arrays of member IDs.`
+const automationMembersJSONDesc = `JSON array of members. Each member has: id, prd_id, on_complete, on_blocked, on_failed (member IDs or "" = stop), added_reason. Optional kind picks the member shape: "" or "prd" (default) = a member Automaton named by prd_id; "automation" = a nested Automation named by automation_id; "fork" = starts the branch members listed in fork_members together (at least 2 member IDs); "join" = waits for the branch members listed in join_members, which must equal the paired fork's fork_members, then applies on_branch_failure: "all_must_succeed" (default), "any_one_is_enough" or "continue_anyway". "decision_wait" = asks the operator the text in question (required, at most 4096 bytes) and holds only its own branch until it is answered; it carries question and on_complete only and may sit on a fork branch chain. A fork may also carry max_parallel, the most of its branch members that run at once (0 or omitted = no fork limit; never wider than the Automation's max_parallel). An optional stage label groups members and only gates when the Automation's stage_gate is true. Set only the fields that belong to a member's kind; fork_members and join_members are arrays of member IDs.`
 
 func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_create",
@@ -72,6 +73,8 @@ func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_model", mcpsdk.Description("Optional verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("Optional verification effort default.")),
 		mcpsdk.WithBoolean("milestone", mcpsdk.Description("Optional. true marks this Automation as a milestone plan: when it completes, its release step is raised to major under the project's major_trigger setting. Omitted means false.")),
+		mcpsdk.WithBoolean("stage_gate", mcpsdk.Description("Optional. true makes member stages a gate: a staged member is not started while an earlier stage (ordered by first appearance in the member list) still has unfinished members, and starts when that stage finishes. Unstaged members are never held. Omitted or false means a stage is only a label.")),
+		mcpsdk.WithNumber("max_parallel", mcpsdk.Description("Optional. Most members of this Automation that run at once; 0 or omitted means no limit. A member that would start past the limit waits for a free slot and starts, in member order, when a running member finishes. A fork's own max_parallel narrows it for that fork's branches; the smaller limit wins.")),
 	)
 }
 
@@ -167,6 +170,8 @@ func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("verification_model", mcpsdk.Description("New verification model default.")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("New verification effort default.")),
 		mcpsdk.WithBoolean("milestone", mcpsdk.Description("New milestone flag: true marks this Automation as a milestone plan, false clears it. Omitted keeps the stored value.")),
+		mcpsdk.WithBoolean("stage_gate", mcpsdk.Description("New stage gate flag: true holds a staged member until every earlier stage has finished, false makes a stage only a label again. Omitted keeps the stored value. To flip only this on a running Automation use automation_set_stage_gate, which leaves every other field alone.")),
+		mcpsdk.WithNumber("max_parallel", mcpsdk.Description("New max_parallel limit: the most members that run at once; 0 clears the limit. Omitted keeps the stored value. To change only this on a running Automation use automation_set_max_parallel, which leaves every other field alone.")),
 	)
 }
 
@@ -420,9 +425,10 @@ func (s *Server) handleAutomationRenameStage(_ context.Context, req mcpsdk.CallT
 }
 
 func (s *Server) toolAutomationInsertMember() mcpsdk.Tool {
-	opts := append(automationControlBase("Insert a new member into an Automation: an Automaton (prd_id) or a pending item (pending_item_id), exactly one of the two. On a draft it lands in the graph at once; on a running Automation it is held until the operator approves it (automation_approve_insert). A pending item member waits at the cursor until an Automaton is attached (autonomous_pending_item_attach). reason is required."),
-		mcpsdk.WithString("prd_id", mcpsdk.Description("The Automaton to insert. Give this or pending_item_id, not both.")),
-		mcpsdk.WithString("pending_item_id", mcpsdk.Description("The pending item to insert (an ID from autonomous_pending_items or autonomous_pending_item_add). Give this or prd_id, not both.")),
+	opts := append(automationControlBase("Insert a new member into an Automation: an Automaton (prd_id), a pending item (pending_item_id) or a decision wait (question), exactly one of the three. On a draft it lands in the graph at once; on a running Automation it is held until the operator approves it (automation_approve_insert). A pending item member waits at the cursor until an Automaton is attached (autonomous_pending_item_attach). A decision wait member asks the operator the question when the chain reaches it and holds only its own branch until it is answered. reason is required."),
+		mcpsdk.WithString("prd_id", mcpsdk.Description("The Automaton to insert. Give exactly one of prd_id, pending_item_id and question.")),
+		mcpsdk.WithString("pending_item_id", mcpsdk.Description("The pending item to insert (an ID from autonomous_pending_items or autonomous_pending_item_add). Give exactly one of prd_id, pending_item_id and question.")),
+		mcpsdk.WithString("question", mcpsdk.Description("Insert a decision_wait member that asks the operator this question (at most 4096 bytes) and waits for the answer. Give exactly one of prd_id, pending_item_id and question.")),
 		mcpsdk.WithString("name", mcpsdk.Description("Optional display name for the inserted member.")),
 		mcpsdk.WithBoolean("urgent", mcpsdk.Description("Take the next slot instead of the end of the chain. Only one urgent insert may be pending at a time.")),
 		mcpsdk.WithString("stage", mcpsdk.Description("Optional stage label to record on the inserted member.")),
@@ -437,16 +443,27 @@ func (s *Server) handleAutomationInsertMember(_ context.Context, req mcpsdk.Call
 	}
 	prdID := strings.TrimSpace(req.GetString("prd_id", ""))
 	itemID := strings.TrimSpace(req.GetString("pending_item_id", ""))
+	question := strings.TrimSpace(req.GetString("question", ""))
+	named := 0
+	for _, v := range []string{prdID, itemID, question} {
+		if v != "" {
+			named++
+		}
+	}
 	switch {
-	case prdID != "" && itemID != "":
-		return mcpsdk.NewToolResultText("error: give either prd_id or pending_item_id, not both"), nil
-	case prdID == "" && itemID == "":
-		return mcpsdk.NewToolResultText("error: prd_id or pending_item_id is required to insert a member"), nil
+	case named > 1:
+		return mcpsdk.NewToolResultText("error: give exactly one of prd_id, pending_item_id and question, not several"), nil
+	case named == 0:
+		return mcpsdk.NewToolResultText("error: prd_id, pending_item_id or question is required to insert a member"), nil
 	}
 	member := map[string]any{}
-	if itemID != "" {
+	switch {
+	case itemID != "":
 		member["pending_item_id"] = itemID
-	} else {
+	case question != "":
+		member["kind"] = "decision_wait"
+		member["question"] = question
+	default:
 		member["prd_id"] = prdID
 	}
 	if v := req.GetString("name", ""); v != "" {
@@ -812,6 +829,49 @@ func controlNumber(v any) (float64, bool) {
 	return 0, false
 }
 
+// ── automation_set_max_parallel / automation_set_stage_gate ─────────────
+
+func (s *Server) toolAutomationSetMaxParallel() mcpsdk.Tool {
+	opts := append(automationControlBase("Set the most members of an Automation that run at once. 0 clears the limit (the default: no limit). A member that would start past the limit is not started and not blocked: it waits for a free slot and starts, in member order, when a running member finishes. member_id names a fork to limit that fork's branch members instead of the whole Automation; the smaller of the two limits applies. Changes only this field, so it is safe on a running Automation: on an active one it takes effect at once (raising or clearing the limit starts waiting members; lowering it never stops a running member). Allowed while the Automation is draft, active, paused or blocked. automation_get and the status rows return max_parallel, running_members and waiting_for_slot. See docs/howto/automation-chains.md (Limit how many run at once)."),
+		mcpsdk.WithNumber("max_parallel", mcpsdk.Required(), mcpsdk.Description("The most members that run at once; 0 clears the limit. Never negative.")),
+		mcpsdk.WithString("member_id", mcpsdk.Description("The ID of a fork member: set that fork's own limit instead of the Automation's. A member that is not a fork is refused.")),
+	)
+	return mcpsdk.NewTool("automation_set_max_parallel", opts...)
+}
+
+func (s *Server) handleAutomationSetMaxParallel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	raw, present := req.GetArguments()["max_parallel"]
+	if !present || raw == nil {
+		return mcpsdk.NewToolResultText("error: max_parallel is required: the most members that run at once, 0 for no limit"), nil
+	}
+	n, ok := controlNumber(raw)
+	if !ok || n != float64(int(n)) {
+		return mcpsdk.NewToolResultText("error: max_parallel must be a whole number"), nil
+	}
+	if n < 0 {
+		return mcpsdk.NewToolResultText("error: max_parallel must not be negative (0 means no limit)"), nil
+	}
+	extra := map[string]any{"max_parallel": int(n)}
+	optionalString(req, extra, "member_id")
+	return s.automationControlCall(req, "set_max_parallel", extra)
+}
+
+func (s *Server) toolAutomationSetStageGate() mcpsdk.Tool {
+	opts := append(automationControlBase("Turn an Automation's stage gate on or off. On, a staged member is not started while an earlier stage (ordered by first appearance in the member list) still has unfinished members, and starts when that stage finishes; an unstaged member is never held. Off (the default), a stage is only a label. Changes only this field, so it is safe on a running Automation: on an active one it takes effect at once (turning the gate off starts held members; turning it on holds members that have not started). Allowed while the Automation is draft, active, paused or blocked. automation_get and the status rows return stage_gate and waiting_for_stage. See docs/howto/automation-chains.md (Hold a later stage until an earlier one finishes)."),
+		mcpsdk.WithBoolean("stage_gate", mcpsdk.Required(), mcpsdk.Description("true holds a staged member until every earlier stage has finished; false makes a stage only a label again.")),
+	)
+	return mcpsdk.NewTool("automation_set_stage_gate", opts...)
+}
+
+func (s *Server) handleAutomationSetStageGate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	raw, present := req.GetArguments()["stage_gate"]
+	on, isBool := raw.(bool)
+	if !present || raw == nil || !isBool {
+		return mcpsdk.NewToolResultText("error: stage_gate is required and must be true or false"), nil
+	}
+	return s.automationControlCall(req, "set_stage_gate", map[string]any{"stage_gate": on})
+}
+
 // AutomationToolNames returns the name of every Automation MCP tool, plus
 // autonomous_status, which carries the automations[] array. It reads
 // the names from the tool definitions, so it lists what is registered.
@@ -823,7 +883,7 @@ func AutomationToolNames() []string {
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationRenameStage(), s.toolAutomationSetLLM(),
-		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetEffortCeiling(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
+		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetEffortCeiling(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationSetMaxParallel(), s.toolAutomationSetStageGate(), s.toolAutomationImportGraph(),
 		// autonomous_shipped_record records the shipped state of a PRD (or an Automation).
 		s.toolAutonomousShippedRecord(),
 		// The automations[] array on the status response.

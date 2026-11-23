@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [automation, chain, fork, join, nesting, budget, control, import-graph]
+  topics: [automation, chain, fork, join, nesting, budget, control, import-graph, max-parallel, stage-gate, decision-wait, run-shape]
 exec_params:
   - {name: automation_id, required: true, description: "Automation ID to read"}
   - {name: graph_id, required: true, description: "Orchestrator graph ID to preview as an Automation"}
@@ -88,16 +88,19 @@ parallel between `start` and `finish`:
 datawatch automation create --name diamond --entry-member start --members '[
   {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
   {"id":"split","kind":"fork","fork_members":["left","right"]},
-  {"id":"left","prd_id":"<automaton-2>","on_complete":"merge"},
-  {"id":"right","prd_id":"<automaton-3>","on_complete":"merge"},
+  {"id":"left","prd_id":"<automaton-2>"},
+  {"id":"right","prd_id":"<automaton-3>"},
   {"id":"merge","kind":"join","join_members":["left","right"],
    "on_branch_failure":"all_must_succeed","on_complete":"finish"},
   {"id":"finish","prd_id":"<automaton-4>"}
 ]'
 ```
 
-A fork needs at least two branches, and the join's `join_members` must equal
-the paired fork's `fork_members`. Set only the fields that belong to a
+A fork needs at least two branches. A branch is a chain of members: the member
+the fork lists in `fork_members` is the chain head, its `on_complete` edges lead
+down the chain, and the last member (empty `on_complete`) is the branch tail.
+The join's `join_members` names the tails. A branch of one member is the plain
+case above, where the head is also the tail. Set only the fields that belong to a
 member's kind. `on_branch_failure` on the join decides what a failed branch
 means:
 
@@ -107,9 +110,197 @@ means:
 | `any_one_is_enough` | The join passes as soon as one branch completes |
 | `continue_anyway` | The join passes once all branches have finished, whatever their outcome |
 
+### Branches as chains
+
+To run several steps down one branch, link them with `on_complete` and list
+the head in the fork and the tail in the join:
+
+```json
+{"id":"split","kind":"fork","fork_members":["build-a","build-b"]},
+{"id":"build-a","prd_id":"<automaton-2>","on_complete":"test-a"},
+{"id":"test-a","prd_id":"<automaton-3>"},
+{"id":"build-b","prd_id":"<automaton-4>"},
+{"id":"merge","kind":"join","join_members":["test-a","build-b"]}
+```
+
+A chain member that finishes moves only its own branch to the next member; the
+other branches are untouched. Chain members carry `on_complete` only. If a chain
+member blocks, fails or is cancelled, or cannot start, its branch ends as failed,
+the members behind it are skipped, and the join's `on_branch_failure` rule
+decides what that means. A member belongs to one chain, a chain stays between its
+fork and join, and chain members must be Automaton, nested Automation or decision wait members.
+Status shows each chain under `branch_chains`.
+
+### Limit how many run at once
+
+A fork over many branches starts them all by default. To cap that, set
+`max_parallel` on the Automation (the most members running at once across the
+whole Automation) or on the fork (the most of that fork's branch members running
+at once). Zero or unset means no limit. When both are set, the smaller one wins
+for that fork's branches.
+
+Set the Automation limit with `max_parallel` in the body of `POST
+/api/automations` (an update that omits it keeps the stored value, and `0`
+clears it), with `--max-parallel` on `datawatch automation create` and
+`update`, or with the `max_parallel` argument of `automation_create` and
+`automation_update` over MCP. Set a fork's limit inside its member JSON, which
+works the same from the CLI `--members` array and the MCP `members_json`
+argument:
+
+```json
+{"id":"split","kind":"fork","fork_members":["a","b","c","d","e"],"max_parallel":2}
+```
+
+With a limit of 2 over five branches, the first two in member order start, and
+the other three wait. A waiting member shows `waiting_for_slot` in status; it is
+not blocked, and the Automation stays active. When a running member finishes,
+completed, failed or cancelled, the next waiting member starts, again in member
+order. A daemon restart keeps the waiting members waiting and starts them as
+slots free. No member kind other than a fork takes the field.
+
+To change the limit on an Automation that is already running, without
+resending the whole record (an update replaces the description, budget and
+defaults it is not given), use the dedicated call. It changes only the limit,
+and on an active Automation it takes effect at once: raising or clearing the
+limit starts the waiting members, and lowering it never stops a running member.
+Add `member` (CLI), `member_id` (REST, MCP) or `member=` (chat) naming a fork to
+change that fork's limit instead.
+
+| Surface | Set the limit to 3 |
+|---|---|
+| REST | `POST /api/automations/{id}/set_max_parallel` with `{"max_parallel":3}` |
+| MCP | `automation_set_max_parallel` with `max_parallel` 3 |
+| CLI | `datawatch automation set-max-parallel <id> --max-parallel 3` |
+| Chat | `automation set-max-parallel <id> 3` |
+
+### Hold a later stage until an earlier one finishes
+
+A member's `stage` is a label by default (for example `build` or `review`). Set
+`stage_gate` to `true` on the Automation and the label becomes an order: a staged
+member does not start while an earlier stage still has unfinished members, and it
+starts when that stage finishes. Stages are ordered by first appearance in the
+`members` array, not alphabetically, and a member with no stage is never held and
+never holds anything.
+
+```json
+{"name":"ship","stage_gate":true,"entry_member_id":"start","members":[
+  {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
+  {"id":"split","kind":"fork","fork_members":["b1","b2","r1"]},
+  {"id":"b1","prd_id":"<automaton-2>","stage":"build"},
+  {"id":"b2","prd_id":"<automaton-3>","stage":"build"},
+  {"id":"r1","prd_id":"<automaton-4>","stage":"review"},
+  {"id":"merge","kind":"join","join_members":["b1","b2","r1"]}
+]}
+```
+
+Here `b1` and `b2` start at once, and `r1` waits until both have finished. A held
+member shows `waiting_for_stage` in status with the reason `waiting for stage
+build`; it is not blocked, and the Automation stays active. Finished means
+completed, failed or skipped, so skipping a build member that is stuck releases
+the review stage, while a blocked build member keeps holding it until you deal
+with it. A restart keeps held members held and releases them once the earlier
+stage is finished.
+
+The gate composes with the limit above: a released member that finds every slot
+full waits for a slot instead of starting past `max_parallel`. It is off by
+default, and an update that omits `stage_gate` keeps the stored value. Set it
+with `stage_gate` in the body of `POST /api/automations`, or the `stage_gate`
+argument of `automation_create` and `automation_update` over MCP, or
+`--stage-gate` on `datawatch automation create` and `update`.
+
+To flip the gate on a running Automation without resending the whole record,
+use the dedicated call. Turning the gate off starts the held members at once;
+turning it on holds members that have not started.
+
+| Surface | Turn the gate on |
+|---|---|
+| REST | `POST /api/automations/{id}/set_stage_gate` with `{"stage_gate":true}` |
+| MCP | `automation_set_stage_gate` with `stage_gate` true |
+| CLI | `datawatch automation set-stage-gate <id> --stage-gate=true` |
+| Chat | `automation set-stage-gate <id> on` |
+
+### Wait for an operator answer on a branch
+
+A member with `kind` `decision_wait` asks you a question and holds only its own
+branch until you answer. Give it a `question` and, as on any chain member, an
+`on_complete` edge:
+
+```json
+{"id":"approve","kind":"decision_wait","question":"Ship the migration now?","on_complete":"deploy"}
+```
+
+Put it at the head, in the middle or at the tail of a branch chain. When the
+branch reaches it, the daemon raises an operator question (asker `decision-wait`)
+that you answer in the Inbox or with `datawatch question answer`, and one alert,
+"Automation waiting for you", names it. The other branches keep running, the
+Automation is not blocked, and under `all_must_succeed` the join waits. In
+status the member shows `waiting_for_operator` with the reason `waiting for you`.
+Any answer completes the member and the chain moves on along `on_complete`. If
+you withdraw the question instead, that branch fails with the reason on the
+decision log and the join rule decides the rest. The question needs
+`autonomous.questions.enabled`. A restart keeps the one open question linked to
+its member.
+
+Besides writing the member into the `members` array, you can add a decision wait
+to an Automation with the insert call (on a draft it lands at once; on a started
+Automation it is held until you approve it, like any insert):
+
+| Surface | Add a decision wait |
+|---|---|
+| REST | `POST /api/automations/{id}/insert_member` with `{"member":{"kind":"decision_wait","question":"Ship it?"},"reason":"sign-off"}` |
+| MCP | `automation_insert_member` with `question` and `reason` |
+| CLI | `datawatch automation insert <id> --kind decision-wait --question "Ship it?" --reason "sign-off"` |
+| Chat | `automation insert <id> decision-wait Ship it? \| sign-off` (question, then `\|`, then the reason) |
+
 While branches run, the Automation has several active cursors. Pause, resume
 and cancel act on the whole Automation; skip and edge edits name one member.
-Same call over MCP: `automation_create` with the same `members` array.
+Same call over MCP: `automation_create` with the same members in `members_json`.
+
+### Which wait is this?
+
+When a member shows a wait, the status names the cause. Use this table to tell them apart and to see what moves it on:
+
+| Status | Cause | What moves it on |
+|---|---|---|
+| `waiting_for_slot` | The max parallel limit is full | A running member finishes, or you raise the limit |
+| `waiting_for_stage` | An earlier stage has unfinished members (stage gate on) | Finish or skip those members, or turn the gate off |
+| `waiting_for_operator` | A decision wait is asking you a question | Answer the question in the Inbox |
+
+None of the three is a failure: the Automation is not blocked and nothing needs a retry. A member that is `blocked` is different, and it keeps holding the later stage until you resume or skip it.
+
+### A plan with three chains
+
+One plan that uses all three run-shape controls together: two check chains and a sign-off chain under a single fork, a two-member limit, and a `check` before `ship` stage gate:
+
+```bash
+datawatch automation create --name ship-check --stage-gate=true --max-parallel 2 --members '[
+  {"id":"start","prd_id":"<automaton-1>","on_complete":"split"},
+  {"id":"split","kind":"fork","fork_members":["check-a","test-suite","sign-off"],
+   "max_parallel":2},
+  {"id":"check-a","prd_id":"<automaton-2>","stage":"check","on_complete":"package"},
+  {"id":"package","prd_id":"<automaton-5>","stage":"ship"},
+  {"id":"test-suite","prd_id":"<automaton-3>","stage":"check"},
+  {"id":"sign-off","kind":"decision_wait","question":"Ship this build?","stage":"check","on_complete":"tag"},
+  {"id":"tag","prd_id":"<automaton-4>","stage":"ship"},
+  {"id":"merge","kind":"join","join_members":["package","test-suite","tag"],
+   "on_branch_failure":"all_must_succeed","on_complete":"finish"},
+  {"id":"finish","prd_id":"<automaton-6>"}
+]'
+```
+
+The same shape is created with `automation_create` over MCP: the same members in `members_json`, with `max_parallel` set to `2` and `stage_gate` to `true`.
+
+What happens next, in order:
+
+1. `start` finishes and the fork releases its three branch heads in member order. With the limit at 2, `check-a` and `test-suite` start and `sign-off` waits with `waiting_for_slot`. The gate holds nothing yet: all three are in `check`, the first stage, and `start` has no stage, so it was never held and holds nothing.
+2. `check-a` finishes. Chain A moves to `package`, but the `check` stage is still not finished — `test-suite` is still running and `sign-off` has not completed — so `package` waits with `waiting_for_stage`, reason `waiting for stage check`. `sign-off` takes the free slot, raises the question "Ship this build?" and holds only its own branch with `waiting_for_operator`.
+3. You answer the question in the Inbox (or with `datawatch question answer`). The answer completes `sign-off` and chain C moves to `tag`, which the gate still holds because `test-suite` is still in `check`.
+4. `test-suite` finishes. The `check` stage is now finished — members completed, failed or skipped count — so `package` and `tag` are released and start together. That is exactly the two Automation-wide slots; nothing can start a third.
+5. `package` and `tag` both finish. All three tails the join waits on (`package`, `test-suite`, `tag`) have finished, the join passes under `all_must_succeed`, and `finish` runs.
+
+If you withdraw that question in step 3 instead of answering it, that branch fails with the reason on the decision log; the gate keeps holding `package`, and under `all_must_succeed` the failed branch fails the join, whose `on_failed` edge decides what runs next.
+
+In the web UI you can watch each step: `sign-off` reads **Waiting for the operator**, `package` reads **Waiting for the stage** and names the stage it waits on, and the line above the strip counts each kind of wait and shows the max parallel of 2 and the stage gate.
 
 ## 4. Nest an Automation inside another
 
@@ -213,6 +404,21 @@ each member card carries Skip, Insert, Remove, Edit edges and Approve insert.
 Anything changed by someone else while you look is flagged before you save.
 See [automation-tab.md](automation-tab.md) for the full tour.
 
+The Inbox cards carry their own **?** help entries: the needs-attention card and the held-questions card each have a **?** help entry that opens its section in the tab guide — ([the needs-attention card](automation-tab.md#the-needs-attention-card), [the held-questions card](automation-tab.md#the-held-questions-card)) — and the behaviour behind the waits those cards list is section 3 here.
+
+The strip shows what the run shape does. A fork branch is drawn as its chain of
+members in order, joined at the end by the join. A member waiting for your answer
+(a decision wait) reads **Waiting for you**, not Blocked, and has an **Answer the
+question** link that opens the question; the same question is in the Inbox with a
+waiting-for-you badge, and the "Automation waiting for you" alert links to it. A
+member held by the limit reads **Waiting for a free slot**, and one held by the
+stage gate reads **Waiting for stage** and the stage's name. The line above the
+strip counts each kind of wait and shows the Automation's max parallel and stage
+gate when they are set. In the create and edit form, the **Run shape** section sets
+max parallel and the stage gate, a fork row has its own max parallel, **Add a
+decision wait** adds a member with its question, and each branch member has a
+button that adds the picked Automaton to that branch.
+
 ## 8. Move from an old orchestrator graph
 
 An orchestrator graph can be turned into a draft Automation. Always preview
@@ -312,8 +518,21 @@ The call writes an audit entry under `automation_return_to_draft` naming the
 actor (and the reason, when you give one), so the trip blocked → draft →
 active again is visible in the history.
 
+## For operator review
+
+Two things in this set of docs are not settled by the code and are left for you:
+
+- **Mobile parity.** The Android and iPhone apps do not yet show the waiting
+  states (waiting for you, for a slot, for a stage) or the Run shape form
+  section. Parity is tracked in the datawatch-app repository, not here.
+- **Decision waits need questions on.** A `decision_wait` member cannot raise its
+  question while `autonomous.questions.enabled` is off. Check the setting before
+  you build a plan that depends on one.
+
 ## Related
 
 - [automation-queue-advance.md](automation-queue-advance.md): how the hand-off, idle alert and restart recovery work
 - [automation-tab.md](automation-tab.md): the web UI in detail
 - [automata-orchestrator.md](automata-orchestrator.md): the older graph orchestrator
+- [datawatch-definitions.md](../datawatch-definitions.md): the entries for branch chain, max parallel, decision wait and stage gate
+- [operations.md](../operations.md#automation-parallelism-decision-waits-and-stage-gating): the four run-shape features side by side

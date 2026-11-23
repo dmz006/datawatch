@@ -4336,3 +4336,54 @@ entries:
     expires: "2026-12-18"
     validated_by: "claude-session"
     reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2025-6020 (HIGH) on pam 1.5.2-6+deb12u2 with no fixed version in bookworm; the Debian security tracker lists it vulnerable in bookworm; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew or move the base image."
+
+  - id: cve/CVE-2026-105802
+    kind: container
+    package: "git-lfs"
+    version: "3.3.0-1+deb12u2"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-105802 is a Git LFS flaw (affected 3.3.0 in bookworm, fixed upstream in 3.8.1): Git LFS reads Git configuration options defined for a submodule without checking for embedded line-ending control characters, so a malicious repository can mimic options that make Git LFS execute an attacker-controlled command or binary. In every case it needs git-lfs to run against a repository or remote the attacker controls. NOT traced inside a built image (no container run was done). From reading the source: docker/dockerfiles/Dockerfile.agent-base installs git-lfs from apt together with git as part of the agent tooling. Not ruled out: an agent session running inside agent-base works in a repository the operator chose to clone; if that repository were malicious, git-lfs could run the attacker's command inside the container, which is why reachable is unknown rather than no. The Debian security tracker (read 2026-11-22) lists bookworm and bookworm-security 3.3.0-1+deb12u2 and trixie 3.6.1-1+deb13u1 as vulnerable with no fixed version; it is fixed only in forky and sid 3.8.1-2."
+    first_added: "2026-11-22"
+    added: "2026-11-22"
+    expires: "2026-12-22"
+    validated_by: "claude-session"
+    reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2026-105802 (HIGH) on git-lfs 3.3.0-1+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-22) lists it vulnerable in bookworm and trixie, fixed only in forky and sid; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew, or drop git-lfs from the image if the agent tooling does not need it."
+
+  - id: cve/CVE-2026-105803
+    kind: container
+    package: "git-lfs"
+    version: "3.3.0-1+deb12u2"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-105803 is a Git LFS flaw (affected 3.3.0 in bookworm, fixed upstream in 3.8.1): Git LFS does not correctly filter the options permitted in a repository's .lfsconfig file when option keys carry extra components, so crafted keys can mimic a custom transfer command and make Git LFS execute an attacker-selected command or binary. In every case it needs git-lfs to run against a repository or remote the attacker controls. NOT traced inside a built image (no container run was done). From reading the source: docker/dockerfiles/Dockerfile.agent-base installs git-lfs from apt together with git as part of the agent tooling. Not ruled out: an agent session running inside agent-base works in a repository the operator chose to clone; if that repository were malicious, git-lfs could run the attacker's command inside the container, which is why reachable is unknown rather than no. The Debian security tracker (read 2026-11-22) lists bookworm and bookworm-security 3.3.0-1+deb12u2 and trixie 3.6.1-1+deb13u1 as vulnerable with no fixed version; it is fixed only in forky and sid 3.8.1-2."
+    first_added: "2026-11-22"
+    added: "2026-11-22"
+    expires: "2026-12-22"
+    validated_by: "claude-session"
+    reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2026-105803 (HIGH) on git-lfs 3.3.0-1+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-22) lists it vulnerable in bookworm and trixie, fixed only in forky and sid; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew, or drop git-lfs from the image if the agent tooling does not need it."
+
+  - id: cve/CVE-2026-69260
+    kind: container
+    package: "git-lfs"
+    version: "3.3.0-1+deb12u2"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CVE-2026-69260 is a Git LFS flaw (affected 3.3.0 in bookworm, fixed upstream in 3.8.1): Git LFS does not format the SSH URL path as a single argument when building remote object-transfer or authentication commands, so shell metacharacters in the SSH URL can escape the path and run arbitrary commands when the remote service passes them to a shell. In every case it needs git-lfs to run against a repository or remote the attacker controls. NOT traced inside a built image (no container run was done). From reading the source: docker/dockerfiles/Dockerfile.agent-base installs git-lfs from apt together with git as part of the agent tooling. Not ruled out: an agent session running inside agent-base works in a repository the operator chose to clone; if that repository were malicious, git-lfs could run the attacker's command inside the container, which is why reachable is unknown rather than no. The Debian security tracker (read 2026-11-22) lists bookworm and bookworm-security 3.3.0-1+deb12u2 and trixie 3.6.1-1+deb13u1 as vulnerable with no fixed version; it is fixed only in forky and sid 3.8.1-2."
+    first_added: "2026-11-22"
+    added: "2026-11-22"
+    expires: "2026-12-22"
+    validated_by: "claude-session"
+    reason: "The blocking Trivy scan of the agent-base staging image in the image-refresh workflow lists CVE-2026-69260 (HIGH) on git-lfs 3.3.0-1+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-22) lists it vulnerable in bookworm and trixie, fixed only in forky and sid; untraced so the 30-day cap applies; the image's apt-get upgrade picks up a Debian fix when it ships, so remove this entry then; near expiry, renew, or drop git-lfs from the image if the agent tooling does not need it."

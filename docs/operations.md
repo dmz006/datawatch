@@ -4349,7 +4349,11 @@ is still accepted, but it applies **only to tasks that have not started**
 (`pending`, `queued`, `waiting_capacity`, `waiting_decision`,
 `awaiting_approval`, or never scheduled). A task that is `waiting_capacity`
 gets its queued capacity request re-targeted to the pool the new backend and
-model resolve to, and is reported with `capacity_moved: true`. Started tasks
+model resolve to, and is reported with `capacity_moved: true`. This holds even
+when the task's stored backend already matches the new one (it may be queued on
+another pool through inheritance or an earlier fall-through), and a
+fall-through note recorded for the old request is cleared when the request
+moves. Started tasks
 (running, running tests, verifying), finished tasks (completed, failed,
 cancelled) and parked ones (blocked, waiting for review) are never modified
 — they are reported as left alone with the reason, and the override will take
@@ -7539,6 +7543,29 @@ A real migration run is refused while a final gate is running and skips, with a 
 **What never touches a held Automaton.** Nothing auto-starts it. Lane fill skips it, the executor does not run it (a hold that lands mid-task stops the next step), the supervisor loop does not push it, housekeeping repairs never change it, no retry budget applies, and answering a question does not resume it. The only write paths are the five routes above — no loop, housekeeping step, lane fill or boot pass places, extends or releases a hold.
 
 The full how-to — what a hold records, operations, expiry, the held group, what stays away, and the hold migration's three rules — is [howto/automaton-hold.md](howto/automaton-hold.md).
+
+## Automation parallelism, decision waits and stage gating
+
+Four optional Automation features shape how branches run. All are off or unlimited by default and need no restart; an update that omits a field keeps its stored value.
+
+| Feature | Field | Status shows | Operator action |
+|---|---|---|---|
+| Branch chain | members between a fork and join, `on_complete` only | `branch_chains` | A failed chain member fails its branch; the join's `on_branch_failure` decides |
+| Max parallel | `max_parallel` on the Automation or a fork (0 = no limit) | `waiting_for_slot` | None; waiting members start in member order as slots free |
+| Decision wait | member `kind` `decision_wait` with a `question` | `waiting_for_operator` | Answer the question in the Inbox or with `datawatch question answer` |
+| Stage gate | `stage_gate` on the Automation | `waiting_for_stage` | Finish or skip the earlier stage's members |
+
+Set the Automation limit and the gate on create or update (`max_parallel`, `stage_gate`), or change either on a running Automation with its own call, which changes only that field and takes effect at once (raising the limit or turning the gate off starts waiting members; lowering the limit never stops a running one):
+
+| Action | REST | MCP | CLI | Chat |
+|---|---|---|---|---|
+| Limit members running at once | `POST /api/automations/{id}/set_max_parallel` | `automation_set_max_parallel` | `datawatch automation set-max-parallel <id> --max-parallel <n>` | `automation set-max-parallel <id> <n>` |
+| Stage gate on or off | `POST /api/automations/{id}/set_stage_gate` | `automation_set_stage_gate` | `datawatch automation set-stage-gate <id> --stage-gate=<true\|false>` | `automation set-stage-gate <id> on\|off` |
+| Add a decision wait | `POST /api/automations/{id}/insert_member` with `member.question` | `automation_insert_member` with `question` | `datawatch automation insert <id> --kind decision-wait --question <text> --reason <why>` | `automation insert <id> decision-wait <question> \| <reason>` |
+
+A daemon restart keeps waiting, held and decision-wait members in place and re-links the one open question to its member. A decision wait needs `autonomous.questions.enabled`; without it the question cannot be raised. A blocked member of an earlier stage keeps holding the later stage until it is resumed or skipped. See [howto/automation-chains.md](howto/automation-chains.md) and the glossary entries in [datawatch-definitions.md](datawatch-definitions.md).
+
+Reading the status: `waiting_for_slot`, `waiting_for_stage` and `waiting_for_operator` are waits, not failures, and raise no failure alert; only a decision wait raises the "Automation waiting for you" alert. Setting `max_parallel` to 0 or omitting it removes the limit; turning `stage_gate` off releases held members at once.
 
 ## Merge-pending check (finished Automata whose branch is not on main)
 
