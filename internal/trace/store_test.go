@@ -184,12 +184,113 @@ func TestPruneRetention(t *testing.T) {
 }
 
 func TestPruneDefaultRetention(t *testing.T) {
-	st, _ := newTestStore(t, Settings{})
-	if _, err := st.Append(sev("a", KindToolCall, "x", storeNow.Add(-15*24*time.Hour)), sev("a", KindToolCall, "y", storeNow.Add(-13*24*time.Hour))); err != nil {
+	// The new default is 0 = keep forever: prune removes nothing, even for
+	// 30-day-old events, and touches neither file nor index.
+	st, dir := newTestStore(t, Settings{})
+	if DefaultRetentionDays != 0 {
+		t.Fatalf("DefaultRetentionDays = %d, want 0", DefaultRetentionDays)
+	}
+	if n, err := st.Append(
+		sev("a", KindToolCall, "x", storeNow.Add(-30*24*time.Hour)),
+		sev("a", KindToolCall, "y", storeNow.Add(-13*24*time.Hour)),
+	); err != nil || n != 2 {
+		t.Fatalf("append: %d %v", n, err)
+	}
+	if n, err := st.Prune(); err != nil || n != 0 {
+		t.Fatalf("prune with default retention: %d %v, want 0 nil", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "trace", "a.jsonl")); err != nil {
+		t.Fatalf("session file must stay: %v", err)
+	}
+	if got := st.Index(); len(got) != 1 || got[0].Total != 2 {
+		t.Fatalf("index after no-op prune: %+v", got)
+	}
+	if got, _ := st.Read("a", Filter{}); len(got) != 2 {
+		t.Fatalf("events after no-op prune: %d", len(got))
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	st, dir := newTestStore(t, Settings{})
+	if _, err := st.Append(
+		sev("a", KindToolCall, "bash", storeNow),
+		sev("a", KindToolResult, "bash", storeNow.Add(time.Second)),
+		sev("b", KindToolCall, "read", storeNow.Add(2*time.Second)),
+	); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := st.Prune(); n != 1 {
-		t.Fatalf("default retention pruned %d", n)
+	if err := st.SetCoverage("a", CoveragePartial); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(st.Index()); got != 2 {
+		t.Fatalf("index: %d entries, want 2", got)
+	}
+
+	if err := st.DeleteSession("a"); err != nil {
+		t.Fatal(err)
+	}
+	// File gone, index entry gone, b untouched.
+	if _, err := os.Stat(filepath.Join(dir, "trace", "a.jsonl")); !os.IsNotExist(err) {
+		t.Errorf("a.jsonl should be gone, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "trace", "b.jsonl")); err != nil {
+		t.Errorf("b.jsonl must stay: %v", err)
+	}
+	idx := st.Index()
+	if len(idx) != 1 || idx[0].Session != "b" || idx[0].Coverage != "" {
+		t.Fatalf("index after delete: %+v", idx)
+	}
+	if evs, err := st.Read("b", Filter{}); err != nil || len(evs) != 1 {
+		t.Fatalf("read b: %d %v, want 1", len(evs), err)
+	}
+	if evs, err := st.Read("a", Filter{}); err != nil || len(evs) != 0 {
+		t.Fatalf("read a: %v %v, want none", evs, err)
+	}
+	// Re-appending to the deleted id starts a fresh trace.
+	if n, err := st.Append(sev("a", KindToolCall, "bash", storeNow.Add(time.Hour))); err != nil || n != 1 {
+		t.Fatalf("re-append a: %d %v, want 1", n, err)
+	}
+	// A duplicate of that freshly stored event is still deduped (the
+	// replaced seen-set is keyed to the new file).
+	if n, _ := st.Append(sev("a", KindToolCall, "bash", storeNow.Add(time.Hour))); n != 0 {
+		t.Fatalf("dup re-append wrote %d", n)
+	}
+	// The persisted index on disk agrees with the in-memory one.
+	st2, err := NewStore(dir, Settings{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st2.Index(); len(got) != 2 || got[0].Session != "a" || got[1].Session != "b" {
+		t.Fatalf("reopened index: %+v", got)
+	}
+}
+
+func TestDeleteSessionUnknownAndInvalid(t *testing.T) {
+	st, dir := newTestStore(t, Settings{})
+	if _, err := st.Append(sev("known", KindToolCall, "bash", storeNow)); err != nil {
+		t.Fatal(err)
+	}
+	// Unknown id: nil error, no file, index or seen-set change.
+	if err := st.DeleteSession("no-such-session"); err != nil {
+		t.Fatalf("unknown id: %v", err)
+	}
+	if got := len(st.Index()); got != 1 {
+		t.Errorf("index: %d entries, want 1", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "trace", "known.jsonl")); err != nil {
+		t.Errorf("known.jsonl must stay: %v", err)
+	}
+	// Invalid ids are refused without touching the store.
+	for _, bad := range []string{"", "  ", ".", "..", "../evil", "a/b", "a\\b"} {
+		if err := st.DeleteSession(bad); err == nil {
+			t.Errorf("DeleteSession(%q) should be refused", bad)
+		}
+	}
+	if got := len(st.Index()); got != 1 {
+		t.Errorf("index: %d entries after refused deletes, want 1", got)
+	}
+	if evs, _ := st.Read("known", Filter{}); len(evs) != 1 {
+		t.Fatalf("known session lost: %d events", len(evs))
 	}
 }
 

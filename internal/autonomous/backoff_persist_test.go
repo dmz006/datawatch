@@ -3,6 +3,7 @@ package autonomous
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -41,7 +42,7 @@ func TestBackoffPersist_RoundTripAllKinds(t *testing.T) {
 	want := b.Active()
 	have := b2.Active()
 	for i := range want {
-		if want[i] != have[i] {
+		if !reflect.DeepEqual(want[i], have[i]) {
 			t.Errorf("entry %d: want %+v got %+v", i, want[i], have[i])
 		}
 	}
@@ -123,5 +124,37 @@ func TestBackoffPersist_CorruptAndMissing(t *testing.T) {
 	b2, _ := mk()
 	if got, err := b2.Load(clk.Now()); err != nil || len(got) != 1 {
 		t.Fatalf("recover: %v %v", got, err)
+	}
+}
+
+// The restart file round-trips a model list, and a file written before the
+// list existed loads as a whole-backend flag.
+func TestBackoffPersist_ModelsRoundTrip(t *testing.T) {
+	path, mk := persistedPair(t)
+	b, clk := mk()
+	b.SetWithModels("claude-code", clk.Now().Add(time.Hour), "hold", BackoffSourceOperator, true, "", []string{"Opus", "haiku", "opus "})
+	b2, clk2 := mk()
+	got, err := b2.Load(clk2.Now())
+	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[0].Models, []string{"haiku", "opus"}) {
+		t.Fatalf("load = %+v, %v; want models [haiku opus]", got, err)
+	}
+	if ok, _ := b2.BlockedModel("claude-code", "sonnet"); ok {
+		t.Error("unlisted model must be admitted after restart")
+	}
+	if ok, _ := b2.BlockedModel("claude-code", "opus"); !ok {
+		t.Error("listed model must stay held after restart")
+	}
+
+	old := `{"entries":[{"backend":"pi","until":"` + clk.Now().Add(time.Hour).Format(time.RFC3339) + `","reason":"r","source":"operator","reset_known":true}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b3, clk3 := mk()
+	got, err = b3.Load(clk3.Now())
+	if err != nil || len(got) != 1 || len(got[0].Models) != 0 {
+		t.Fatalf("old file load = %+v, %v", got, err)
+	}
+	if ok, _ := b3.BlockedModel("pi", "any-model"); !ok {
+		t.Error("an old file's flag must hold the whole backend")
 	}
 }

@@ -211,3 +211,51 @@ func TestBackoff_RungSerialisesOnHoldSetOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBackoff_ModelListHoldsOnlyListedModels(t *testing.T) {
+	b, clk := newTestBackoff()
+	b.SetWithModels("claude-code", clk.Now().Add(time.Hour), "hold", BackoffSourceOperator, true, "", []string{" Opus", "opus", "", "Haiku"})
+	e := b.Active()[0]
+	if strings.Join(e.Models, ",") != "haiku,opus" {
+		t.Fatalf("models not normalised: %v", e.Models)
+	}
+	if ok, _ := b.BlockedModel("claude-code", "sonnet"); ok {
+		t.Error("an unlisted model must be admitted")
+	}
+	if ok, _ := b.BlockedModel("claude-code", ""); ok {
+		t.Error("work naming no model must be admitted on a model-scoped flag")
+	}
+	ok, why := b.BlockedModel("claude-code", "OPUS")
+	if !ok {
+		t.Fatal("a listed model must be held")
+	}
+	if !strings.Contains(why, "for models haiku, opus") || ClassifyWaitReason(why) != WaitCauseBackoff {
+		t.Errorf("wait reason %q should name the held models and stay a back-off wait", why)
+	}
+	b.Set("pi", clk.Now().Add(time.Hour), "r", BackoffSourceRateLimit)
+	if ok, _ := b.BlockedModel("pi", "anything"); !ok {
+		t.Error("a flag without models holds the whole backend")
+	}
+}
+
+func TestBackoff_StatusNamesHeldAndOpenModels(t *testing.T) {
+	b, clk := newTestBackoff()
+	b.KnownModels = func(backend string) []string { return []string{"opus", "sonnet", "Haiku"} }
+	b.SetWithModels("claude-code", clk.Now().Add(time.Hour), "hold", BackoffSourceOperator, true, "", []string{"opus"})
+	b.Set("pi", clk.Now().Add(time.Hour), "r", BackoffSourceRateLimit)
+	st := BuildUsageBackoffStatus(b, UsageBackoffConfig{Mode: "auto", MaxWaitMinutes: 60})
+	if len(st.Holds) != 2 {
+		t.Fatalf("holds = %+v", st.Holds)
+	}
+	cc, pi := st.Holds[0], st.Holds[1]
+	if cc.WholeBackend || strings.Join(cc.HeldModels, ",") != "opus" || strings.Join(cc.OpenModels, ",") != "haiku,sonnet" || !cc.OtherModelsOpen {
+		t.Errorf("claude-code hold = %+v", cc)
+	}
+	if !pi.WholeBackend || len(pi.HeldModels) != 0 || len(pi.OpenModels) != 0 || pi.OtherModelsOpen {
+		t.Errorf("pi hold = %+v", pi)
+	}
+	data, _ := json.Marshal(st)
+	if !strings.Contains(string(data), `"held_models":["opus"]`) || !strings.Contains(string(data), `"open_models":["haiku","sonnet"]`) {
+		t.Errorf("status JSON missing held/open models: %s", data)
+	}
+}

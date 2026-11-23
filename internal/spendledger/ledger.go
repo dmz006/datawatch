@@ -27,12 +27,17 @@ const (
 
 // Entry is one spend record.
 type Entry struct {
-	SessionID     string    `json:"session_id"`
-	AutomatonID   string    `json:"automaton_id,omitempty"`
-	TaskID        string    `json:"task_id,omitempty"`
-	Project       string    `json:"project,omitempty"`
-	Role          string    `json:"role"`
-	Backend       string    `json:"backend,omitempty"`
+	SessionID   string `json:"session_id"`
+	AutomatonID string `json:"automaton_id,omitempty"`
+	TaskID      string `json:"task_id,omitempty"`
+	Project     string `json:"project,omitempty"`
+	Role        string `json:"role"`
+	Backend     string `json:"backend,omitempty"`
+	// Model — the model the session ran with (its own model selection,
+	// or the LLM registry entry name when the session predates that),
+	// feeding the cost report's by-model section. Empty for legacy
+	// entries written before the field existed.
+	Model         string    `json:"model,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
 	EndedAt       time.Time `json:"ended_at,omitempty"`
 	TokensIn      int64     `json:"tokens_in"`

@@ -13,7 +13,7 @@ func TestBurnGuardDefaults(t *testing.T) {
 	got := DefaultConfig().Usage.BurnGuard
 	want := BurnGuardConfig{
 		Enabled: true, IntervalMinutes: 60, MarginPoints: 2.0, MaxProjectionGapPoints: 25,
-		Ladder:   []string{"lower_inflight", "route_pi_prompt", "hold_claude"},
+		Ladder:   []string{"lower_inflight", "route_entry", "hold_entry"},
 		StepBack: true, CacheWritePointsPerMillion: 0.373, CacheReadPointsPerMillion: 0.0069,
 		RefitOnReading:   true,
 		EffortCeiling:    map[string]string{"docs": "low", "parity": "low", "live_check": "low", "final_gate": "low"},
@@ -88,13 +88,19 @@ func TestBurnGuardNormalize(t *testing.T) {
 			func(t *testing.T, c BurnGuardConfig) { eqF(t, c.CacheReadPointsPerMillion, 0.01) }, ""},
 		{"ladder unknown rung dropped", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "bogus", "Lower_Inflight"} },
 			func(t *testing.T, c BurnGuardConfig) {
-				if !reflect.DeepEqual(c.Ladder, []string{"hold_claude", "lower_inflight"}) {
+				if !reflect.DeepEqual(c.Ladder, []string{"hold_entry", "lower_inflight"}) {
 					t.Errorf("ladder = %v", c.Ladder)
 				}
 			}, "bogus"},
-		{"ladder duplicate dropped", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "hold_claude"} },
+		{"ladder legacy names normalize to the entry-generic names", func(c *BurnGuardConfig) { c.Ladder = []string{"route_pi_prompt", "hold_claude"} },
 			func(t *testing.T, c BurnGuardConfig) {
-				if !reflect.DeepEqual(c.Ladder, []string{"hold_claude"}) {
+				if !reflect.DeepEqual(c.Ladder, []string{"route_entry", "hold_entry"}) {
+					t.Errorf("ladder = %v", c.Ladder)
+				}
+			}, ""},
+		{"ladder legacy and generic duplicates collapse", func(c *BurnGuardConfig) { c.Ladder = []string{"hold_claude", "hold_entry"} },
+			func(t *testing.T, c BurnGuardConfig) {
+				if !reflect.DeepEqual(c.Ladder, []string{"hold_entry"}) {
 					t.Errorf("ladder = %v", c.Ladder)
 				}
 			}, "repeated"},
@@ -167,6 +173,9 @@ func TestBurnGuardYAMLRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := normalizeBurnGuard(back.BurnGuard, nil)
+	// A legacy rung name in a saved config normalises to the entry-generic name;
+	// the rest of the block round-trips as given.
+	in.Ladder = []string{"hold_entry"}
 	if !reflect.DeepEqual(got, in) {
 		t.Errorf("round trip = %+v, want %+v", got, in)
 	}
@@ -257,5 +266,88 @@ func TestBurnGuardProjectionGapSurfaceValues(t *testing.T) {
 				t.Errorf("unexpected warning: %q", joined)
 			}
 		})
+	}
+}
+
+// TestPickCheaperModel: the route_cheaper_model rung's target is the cheapest-priced
+// other model (input+output per 1K, each model at its own rate); a Claude entry prefers
+// the haiku-named model on an exact price tie, and a haiku model only loses to another
+// model if that model is strictly cheaper; an entry with no other model routes to
+// nothing. The entry's own model is always excluded.
+func TestPickCheaperModel(t *testing.T) {
+	// Non-Claude: the cheapest other model by price wins.
+	got := PickCheaperModel("claude-sonnet-4-5", false, []EntryModelCost{
+		{Model: "claude-sonnet-4-5", InPerK: 3, OutPerK: 15},
+		{Model: "claude-opus-4-1", InPerK: 15, OutPerK: 75},
+		{Model: "claude-haiku-4-5", InPerK: 1, OutPerK: 5},
+		{Model: "claude-3-5-haiku", InPerK: 0.8, OutPerK: 4},
+	})
+	if want := "claude-3-5-haiku"; got != want {
+		t.Fatalf("cheapest-other = %q, want %q", got, want)
+	}
+
+	// Claude entry (preferHaiku): the haiku model is the cheapest other model.
+	got = PickCheaperModel("claude-opus-4-1", true, []EntryModelCost{
+		{Model: "claude-opus-4-1", InPerK: 15, OutPerK: 75},
+		{Model: "claude-sonnet-4-5", InPerK: 3, OutPerK: 15},
+		{Model: "claude-haiku-4-5", InPerK: 1, OutPerK: 5},
+	})
+	if want := "claude-haiku-4-5"; got != want {
+		t.Fatalf("claude cheap = %q, want %q", got, want)
+	}
+
+	// Claude entry, another model strictly cheaper than the haiku: the cheaper model
+	// wins (a haiku model never loses on price alone, but it can be more expensive).
+	got = PickCheaperModel("claude-sonnet-4-5", true, []EntryModelCost{
+		{Model: "claude-sonnet-4-5", InPerK: 3, OutPerK: 15},
+		{Model: "claude-haiku-4-5", InPerK: 1, OutPerK: 5},
+		{Model: "flash-lite-ultra", InPerK: 0.1, OutPerK: 0.2},
+	})
+	if want := "flash-lite-ultra"; got != want {
+		t.Fatalf("strictly cheaper wins = %q, want %q", got, want)
+	}
+
+	// Exact price tie, Claude entry: the haiku-named model is preferred.
+	got = PickCheaperModel("x-1", true, []EntryModelCost{
+		{Model: "model-haiku-1", InPerK: 1, OutPerK: 4},
+		{Model: "model-sonnet-1", InPerK: 5, OutPerK: 0},
+		{Model: "x-1", InPerK: 9, OutPerK: 9}, // own: excluded
+	})
+	if want := "model-haiku-1"; got != want {
+		t.Fatalf("tie prefers haiku = %q, want %q", got, want)
+	}
+
+	// Own model only: nothing to route to.
+	if got := PickCheaperModel("m-1", false, []EntryModelCost{{Model: "m-1", InPerK: 1, OutPerK: 1}}); got != "" {
+		t.Fatalf("own-only should return empty, got %q", got)
+	}
+	// No models at all.
+	if got := PickCheaperModel("m-1", true, nil); got != "" {
+		t.Fatalf("no models should return empty, got %q", got)
+	}
+}
+
+// TestPickCheaperModelPerEntry: two entries with different model lists and rates each
+// pick their own cheaper model independently (per-model rates, per-entry own model).
+func TestPickCheaperModelPerEntry(t *testing.T) {
+	entryA := []EntryModelCost{ // a Claude entry: Haiku is its cheaper model.
+		{Model: "claude-sonnet-4-5", InPerK: 3, OutPerK: 15},
+		{Model: "claude-haiku-4-5", InPerK: 1, OutPerK: 5},
+	}
+	entryB := []EntryModelCost{ // a Gemini entry: the cheap flash-lite is its cheaper model.
+		{Model: "gemini-2.5-pro", InPerK: 1.25, OutPerK: 10},
+		{Model: "gemini-2-flash-lite", InPerK: 0.1, OutPerK: 0.4},
+		{Model: "gemini-2.0-flash", InPerK: 0.18, OutPerK: 0.59},
+	}
+	gotA := PickCheaperModel("claude-sonnet-4-5", true, entryA)
+	gotB := PickCheaperModel("gemini-2.5-pro", false, entryB)
+	if want := "claude-haiku-4-5"; gotA != want {
+		t.Fatalf("entry A = %q, want %q", gotA, want)
+	}
+	if want := "gemini-2-flash-lite"; gotB != want {
+		t.Fatalf("entry B = %q, want %q", gotB, want)
+	}
+	if gotA == gotB {
+		t.Fatalf("entries picked the same cheaper model %q; each must pick its own", gotA)
 	}
 }
