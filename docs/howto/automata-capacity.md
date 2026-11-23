@@ -489,6 +489,15 @@ gets the usual plain `autonomous_capacity_admitted` entry with
 `audit_query` for `autonomous_capacity_admitted` and look for
 `fall_through`.
 
+The Automaton's decision log gets a `capacity_fallthrough` entry too. It names
+the backend and model the task was admitted on, the pool it now holds, the
+backend, model and pool it asked for, and the reason (`requested pool full,
+alternate pool free`). The lane is chosen at the moment of each admission from
+the task's effective backend (task, then story, then Automaton), so a relaunch
+is judged afresh. A task that stays on its own pool, or keeps waiting, writes
+no entry. The capacity page lists the pool the task actually holds, so a task
+that fell through shows the alternate's pool.
+
 Set it on any surface:
 
 ```bash
@@ -566,6 +575,16 @@ live lease is left entirely alone, along with every running or finished
 task, each reported as *left alone* with its reason. The response names
 each affected task as *changed* or *left alone* and says, for the ones that
 moved, that their capacity request was retargeted (`capacity_moved`).
+
+The move does not depend on the task's stored backend changing. A task whose
+stored pair already equals the one you set can still be queued on a different
+pool, because it inherited its worker from its story or Automaton, or because
+an earlier fall-through placed it elsewhere. So a waiting task is always
+checked against the pool its resolved pair names, and moved if it is queued
+somewhere else. When the request already sits on that pool nothing changes.
+Whenever the request moves, or the task is reset, the `capacity_fallthrough`
+note recorded for its old request is dropped, since it no longer says where the
+task waits; the next admission records its own.
 
 ## Park on an external condition
 
@@ -715,6 +734,12 @@ arguments:
   `datawatch usage-backoff clear [backend|all]`.
 - Comm channels: `usage_backoff status`,
   `usage_backoff set <backend> <minutes|until> [reason]`, `usage_backoff clear`.
+
+A set and a clear can carry an optional `models` list (an array on MCP and
+REST, `--models a,b` on the CLI, `models=a,b` on the comm channel): a set with
+it holds only those models of the backend, and a clear with it removes only
+those models from the flag. A clear-all is never model-scoped. See
+[Usage back-off](usage-backoff.md) (`### Holding only certain models`).
 
 Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
@@ -1272,7 +1297,9 @@ always included). The card is left out when there is nothing to show.
   activity is listed as *no cap configured*, so real hardware is not hidden.
 - **Usage back-off.** One row per active flag: the backend, `Resets: <time>`
   when the reset time is known or *reset time unknown* when it is only the
-  maximum back-off, and the reason underneath.
+  maximum back-off, the held and open models when the flag is limited to some
+  models (see [Holding only certain models](usage-backoff.md#holding-only-certain-models)),
+  and the reason underneath.
 - **LLM budgets.** One block per LLM that has a budget: a spend bar
   (`$spend of $ceiling`, with peer spend added), a *budget window full* badge
   when it is full, when the window ends, and when it rolls over. The bar is

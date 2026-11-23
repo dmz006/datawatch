@@ -958,6 +958,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationSetBudget(), tracked(s.handleAutomationSetBudget))
 	mcpSrv.AddTool(s.toolAutomationSetEffortCeiling(), tracked(s.handleAutomationSetEffortCeiling))
 	mcpSrv.AddTool(s.toolAutomationSetDecisionAssistant(), tracked(s.handleAutomationSetDecisionAssistant))
+	mcpSrv.AddTool(s.toolAutomationSetMaxParallel(), tracked(s.handleAutomationSetMaxParallel))
+	mcpSrv.AddTool(s.toolAutomationSetStageGate(), tracked(s.handleAutomationSetStageGate))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1700,6 +1702,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationSetBudget, "automation_set_budget"},
 		{s.toolAutomationSetEffortCeiling, "automation_set_effort_ceiling"},
 		{s.toolAutomationSetDecisionAssistant, "automation_set_decision_assistant"},
+		{s.toolAutomationSetMaxParallel, "automation_set_max_parallel"},
+		{s.toolAutomationSetStageGate, "automation_set_stage_gate"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		{s.toolGetMyScope, "get_my_scope"},

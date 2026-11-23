@@ -53,6 +53,8 @@ automation_set_budget
 automation_set_decision_assistant
 automation_set_effort_ceiling
 automation_set_llm
+automation_set_max_parallel
+automation_set_stage_gate
 automation_set_verification_llm
 automation_skip_member
 automation_update

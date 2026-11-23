@@ -30,7 +30,8 @@ const llmUsage = `Usage:
   llm enable <name> [pretest=true]                 enable (optionally probe first)
   llm disable <name>                               disable — dispatcher refuses to route until re-enabled
   llm models list <name>                           list enabled models for an LLM
-  llm models add <name> model=<m> [node=<n>]       add an enabled model
+  llm models add <name> model=<m> [node=<n>] [in_per_k=<usd> out_per_k=<usd> cache_read_per_k=<usd> cache_write_per_k=<usd>]
+                                                   add an enabled model (rates optional)
   llm models remove <name> model=<m> [node=<n>]    remove an enabled model
   llm in-use <name> [filter=<text>]                list sessions/automata bound to this LLM
   llm refresh-models <name>                        trigger model-list refresh from ComputeNodes
@@ -251,7 +252,15 @@ func (r *Router) handleLLMCmd(cmd Command) {
 				return
 			}
 			if subverb == "add" {
-				models = append(models, map[string]any{"node": node, "model": model})
+				entry := map[string]any{"node": node, "model": model}
+				for _, k := range []string{"in_per_k", "out_per_k", "cache_read_per_k", "cache_write_per_k"} {
+					if v, ok := kv[k].(string); ok && v != "" {
+						if f, err := strconv.ParseFloat(v, 64); err == nil {
+							entry[k] = f
+						}
+					}
+				}
+				models = append(models, entry)
 			} else {
 				var kept []any
 				for _, m := range models {

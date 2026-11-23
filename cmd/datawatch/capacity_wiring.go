@@ -508,6 +508,37 @@ func syncLLMRates(cfg *config.Config, reg *inference.Registry, led *capacity.Led
 	}
 }
 
+// backoffBackpressure reports an "llm:<backend>" pool as blocked while the
+// shared autonomous back-off registry holds an active flag for that backend,
+// so task, verifier and decompose admission wait in the capacity queue with
+// the back-off as their wait reason. Only llm: pools are gated — host, node:
+// and external pools are never blocked here. It is installed as the ledger's
+// AutonomousBackpressure, which requests marked Interactive skip, so operator
+// session starts are never held back by a back-off. It runs under the capacity
+// ledger lock (rule on capacity.Options): Backoff.Blocked only reads an
+// in-memory map under its own short mutex. It gets the request's model: a
+// flag limited to a model list holds only those models, so verifiers, judges
+// and first attempts on a model that is not held start as usual. A flag on
+// the whole backend is left to backoffReserveBackpressure.
+func backoffBackpressure(bo *autonomous.Backoff) func(pool, model string) (bool, string) {
+	return func(pool, model string) (bool, string) {
+		backend, ok := strings.CutPrefix(pool, "llm:")
+		if !ok || bo == nil {
+			return false, ""
+		}
+		// A whole-backend flag is the role-aware gate's to decide (it may
+		// admit a review role through the reserve), so this hook only holds
+		// work on the models of a model-scoped flag.
+		if whole, _ := bo.Blocked(backend); whole {
+			return false, ""
+		}
+		if blocked, why := bo.BlockedModel(backend, model); blocked {
+			return true, "backoff: " + why
+		}
+		return false, ""
+	}
+}
+
 // budgetBackpressure reports an "llm:<name>" pool as blocked while that LLM's
 // dollar budget window is full, with the ledger's "budget window full: ..."
 // reason as the wait reason. Like the other back-pressure gates it gates only
@@ -1056,15 +1087,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// live and queues its verdicts for the sync tick's audit drain.
 	backoffReserve := backoffReserveGate(cfg)
 	opts := capacity.Options{
-		External:               external,
-		Backpressure:           backpressure,
-		NodeHealthy:            nodeHealth.healthy,
-		NodeGate:               nodeHealth.gate,
-		NodeState:              nodeHealth.state,
-		RoleBackpressure:       backoffReserveBackpressure(autonomousBackoff, backoffReserve),
-		AutonomousBackpressure: budgetBackpressure(autonomousBudget),
-		HeldBackpressure:       sharedNodeBackpressure(),
-		VerifierHeadroom:       verifierHeadroom.blocked,
+		External:                    external,
+		Backpressure:                backpressure,
+		NodeHealthy:                 nodeHealth.healthy,
+		NodeGate:                    nodeHealth.gate,
+		NodeState:                   nodeHealth.state,
+		RoleBackpressure:            backoffReserveBackpressure(autonomousBackoff, backoffReserve),
+		AutonomousBackpressure:      budgetBackpressure(autonomousBudget),
+		AutonomousModelBackpressure: backoffBackpressure(autonomousBackoff),
+		HeldBackpressure:            sharedNodeBackpressure(),
+		VerifierHeadroom:            verifierHeadroom.blocked,
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)
@@ -1967,6 +1999,25 @@ func nodeServesModel(n *compute.Node, model string) bool {
 	for _, m := range models {
 		if strings.EqualFold(m, model) || strings.EqualFold(m, model+":latest") {
 			return true
+		}
+	}
+	return false
+}
+
+// nodeInPooledEntry reports whether a compute node belongs to an LLM entry
+// that lists more than one compute node.
+func nodeInPooledEntry(reg *inference.Registry, node string) bool {
+	if reg == nil || node == "" {
+		return false
+	}
+	for _, l := range reg.List() {
+		if len(l.ComputeNodes) < 2 {
+			continue
+		}
+		for _, n := range l.ComputeNodes {
+			if n == node {
+				return true
+			}
 		}
 	}
 	return false
