@@ -136,6 +136,9 @@ func (b *Backoff) Load(now time.Time) ([]Entry, error) {
 			dropped = true
 			continue
 		}
+		// Files written before the model list existed have no models field
+		// and load as whole-backend flags.
+		e.Models = NormalizeModels(e.Models)
 		restored = append(restored, e)
 	}
 	if b.entries == nil {

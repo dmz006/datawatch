@@ -30,10 +30,25 @@ type costRow struct {
 	EstimatedUsagePoints *float64 `json:"estimated_usage_points"`
 }
 
+// costModelRow mirrors the wire shape of a costreport.ModelRow — one row
+// of the by-model breakdown (see costreport.Report.ModelRows).
+type costModelRow struct {
+	Model            string   `json:"model"`
+	Sessions         int      `json:"sessions"`
+	TokensIn         int      `json:"tokens_in"`
+	TokensOut        int      `json:"tokens_out"`
+	CacheRead        int      `json:"cache_read"`
+	CacheCreation    int      `json:"cache_creation"`
+	ToolCalls        int      `json:"tool_calls"`
+	APIEquivalentUSD *float64 `json:"api_equivalent_usd"`
+	USDLabel         string   `json:"usd_label"`
+}
+
 type costReportReply struct {
-	GroupBy     string    `json:"group_by"`
-	Rows        []costRow `json:"rows"`
-	WindowNote  string    `json:"window_note"`
+	GroupBy     string         `json:"group_by"`
+	Rows        []costRow      `json:"rows"`
+	ModelRows   []costModelRow `json:"model_rows"`
+	WindowNote  string         `json:"window_note"`
 	Attribution *struct {
 		AutomatonLaunched int    `json:"automaton_launched"`
 		Unattributed      int    `json:"unattributed"`
@@ -90,6 +105,21 @@ func formatCostReportText(body string) string {
 	}
 	if len(rep.Rows) == 0 {
 		lines = append(lines, "no cost rows")
+	}
+	if len(rep.ModelRows) > 0 {
+		lines = append(lines, "by model:")
+		anyModelUSD := false
+		for _, r := range rep.ModelRows {
+			if r.APIEquivalentUSD != nil {
+				anyModelUSD = true
+			}
+			lines = append(lines, fmt.Sprintf("model %s: %d sessions, in/out/cache %d/%d/%d+%d, %d tools, %s",
+				r.Model, r.Sessions, r.TokensIn, r.TokensOut, r.CacheRead, r.CacheCreation,
+				r.ToolCalls, costUSD(costRow{APIEquivalentUSD: r.APIEquivalentUSD})))
+		}
+		if anyModelUSD {
+			lines = append(lines, "model dollars are API-equivalent (each model's own rate), not a bill")
+		}
 	}
 	for _, r := range rep.Rows {
 		if r.WindowNote != "" {

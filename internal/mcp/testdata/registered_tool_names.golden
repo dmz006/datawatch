@@ -53,6 +53,8 @@ automation_set_budget
 automation_set_decision_assistant
 automation_set_effort_ceiling
 automation_set_llm
+automation_set_max_parallel
+automation_set_stage_gate
 automation_set_verification_llm
 automation_skip_member
 automation_update
@@ -453,6 +455,14 @@ orchestrator_graph_list
 orchestrator_graph_plan
 orchestrator_graph_run
 orchestrator_verdicts
+packs_accept
+packs_inputs_get
+packs_inputs_set
+packs_install
+packs_list
+packs_remove
+packs_setting_get
+packs_setting_set
 per_automaton_guardrails_set
 per_automaton_retry_policy_set
 pipeline_cancel
@@ -464,6 +474,7 @@ plan_attach
 plan_attach_bulk
 plan_create
 plan_detach
+plan_edit
 plan_migrate
 plan_record_create
 plan_record_get
@@ -471,9 +482,11 @@ plan_record_import
 plan_record_list
 plan_record_search
 plan_record_update
+plan_rename
 plan_reorder
 plan_reorder_automata
 plan_restore
+plan_rollup
 plan_row_plan_convert
 plan_row_plan_list
 plan_theme_list

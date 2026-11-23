@@ -175,7 +175,7 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	if strings.Contains(capturedPrompt, seeded) {
 		t.Fatalf("prompt must NOT inline the 50KB file content — that's the exact B122 bug")
 	}
-	if len(capturedPrompt) > 16500 { // far below the 50KB file; room for the planner rules (incl. the full-file-path rule bullet) and the twenty-two-rule decompose-guidance block (decompose_guidance.go)
+	if len(capturedPrompt) > 20000 { // far below the 50KB file; room for the planner rules (incl. the full-file-path and project-path rule bullets) and the decompose-guidance block (decompose_guidance.go), which lists every active lint rule — 30 rules in the default pack, one guidance line each. 20000 (raised from 16500 when the script-content and spec-line rules and the project-path planner rule were added) is deliberately above that block and far below the 50KB inline guard this test exists for (B122).
 		t.Errorf("prompt should stay small even with a large AGENT.md present, got %d bytes", len(capturedPrompt))
 	}
 }

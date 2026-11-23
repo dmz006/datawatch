@@ -1,0 +1,81 @@
+package autonomous
+
+import (
+	"encoding/json"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestNormalizePacks(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"nil input", nil, nil},
+		{"empty input", []string{}, nil},
+		{"only blanks", []string{"", "   ", "\t"}, nil},
+		{"trims whitespace", []string{"  alpha ", "beta"}, []string{"alpha", "beta"}},
+		{"keeps configured order", []string{"zeta", "alpha", "mid"}, []string{"zeta", "alpha", "mid"}},
+		{"dedupes after trim keeping first", []string{"beta", "alpha", " beta ", "alpha"}, []string{"beta", "alpha"}},
+		{"drops blanks among names", []string{"", "beta", " ", "alpha"}, []string{"beta", "alpha"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizePacks(tc.in)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("normalizePacks(%q) = %#v, want %#v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizePacksDoesNotMutateInput(t *testing.T) {
+	in := []string{"zeta", " alpha "}
+	before := append([]string(nil), in...)
+	_ = normalizePacks(in)
+	if !reflect.DeepEqual(in, before) {
+		t.Fatalf("input mutated: got %#v, want %#v", in, before)
+	}
+}
+
+func TestAutomationPacksPersistAsJSON(t *testing.T) {
+	a := Automation{ID: "abcd1234", Name: "packs", Packs: normalizePacks([]string{"zeta", " alpha "})}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"packs":["zeta","alpha"]`) {
+		t.Fatalf("packs not persisted in JSON: %s", raw)
+	}
+	var back Automation
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(back.Packs, []string{"zeta", "alpha"}) {
+		t.Fatalf("round-trip Packs = %#v, want [zeta alpha]", back.Packs)
+	}
+}
+
+func TestAutomationPacksOmittedWhenEmpty(t *testing.T) {
+	raw, err := json.Marshal(Automation{ID: "abcd1234", Name: "none"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), `"packs"`) {
+		t.Fatalf("empty packs should be omitted, got %s", raw)
+	}
+}
+
+func TestAutomationSetPacksNormalizes(t *testing.T) {
+	a := &Automation{}
+	a.SetPacks([]string{" b ", "a", "b", ""})
+	if len(a.Packs) != 2 || a.Packs[0] != "b" || a.Packs[1] != "a" {
+		t.Fatalf("Packs = %v, want [b a]", a.Packs)
+	}
+	a.SetPacks([]string{" ", ""})
+	if a.Packs != nil {
+		t.Fatalf("Packs = %v, want nil", a.Packs)
+	}
+}

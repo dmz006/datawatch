@@ -60,6 +60,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_task_effort_ceiling":       CapAutonomousWrite,
 	"autonomous_prd_set_branch_refresh":            CapAutonomousWrite,
 	"automation_set_decision_assistant":            CapAutonomousWrite,
+	"automation_set_max_parallel":                  CapAutonomousWrite,
+	"automation_set_stage_gate":                    CapAutonomousWrite,
 	"automation_create":                            CapAutonomousWrite,
 	"automation_delete":                            CapAutonomousWrite,
 	"automation_get":                               CapAutonomousRead,
@@ -308,6 +310,14 @@ var MCPToolCap = map[string]string{
 	"autonomous_protected_paths":           CapAutonomousRead,
 	"autonomous_standard_tasks":            CapAutonomousRead,
 	"autonomous_pending_items":             CapAutonomousRead,
+	"packs_list":                           CapConfigRead,
+	"packs_setting_get":                    CapConfigRead,
+	"packs_inputs_get":                     CapConfigRead,
+	"packs_setting_set":                    CapConfigWrite,
+	"packs_inputs_set":                     CapConfigWrite,
+	"packs_install":                        CapConfigWrite,
+	"packs_accept":                         CapConfigWrite,
+	"packs_remove":                         CapConfigWrite,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.
@@ -606,6 +616,9 @@ var MCPToolCap = map[string]string{
 	"plan_record_import":    CapAutonomousWrite,
 	"plan_migrate":          CapAutonomousWrite,
 	"plan_create":           CapAutonomousWrite,
+	"plan_rename":           CapAutonomousWrite,
+	"plan_edit":             CapAutonomousWrite,
+	"plan_rollup":           CapAutonomousWrite,
 	"plan_reorder":          CapAutonomousWrite,
 	"plan_reorder_automata": CapAutonomousWrite,
 	"plan_attach":           CapAutonomousWrite,
@@ -787,6 +800,7 @@ func RequiredCapForMCPTool(tool string) (string, bool) {
 // device/plugin/skill/dashboard/filter/alert-rule surfaces, plus all
 // read-only tools.
 var configWriteTools = map[string]bool{
+	"packs_setting_set": true, "packs_inputs_set": true, "packs_install": true, "packs_accept": true, "packs_remove": true,
 	"autonomous_config_set": true, "autonomous_scan_config_set": true, "burn_guard_config_set": true, "channel_routing_config_set": true,
 	"compute_node_add": true, "compute_node_attach_observer": true, "compute_node_delete": true, "compute_node_detach_observer": true,
 	"compute_node_pull_model": true, "compute_node_remove_model": true, "compute_node_update": true, "compute_pin_settings": true,
@@ -822,6 +836,7 @@ var sensitiveWriteTools = map[string]bool{
 }
 
 var nonConfigWriteTools = map[string]bool{
+	"packs_list": true, "packs_setting_get": true, "packs_inputs_get": true,
 	"acme_issuer_log": true, "acme_status": true, "agent_audit": true,
 	"agent_get": true, "agent_list": true, "agent_logs": true, "agent_spawn": true,
 	"agent_terminate": true, "alert_rule_create": true, "alert_rule_delete": true, "alert_rule_disable": true,
@@ -834,6 +849,7 @@ var nonConfigWriteTools = map[string]bool{
 	"automation_import_graph": true, "automation_insert_member": true, "automation_list": true, "automation_merged_members": true,
 	"automation_pause": true, "automation_remove_member": true, "automation_reorder_edges": true, "automation_resume": true,
 	"automation_set_budget": true, "automation_set_decision_assistant": true, "automation_set_effort_ceiling": true, "automation_set_llm": true,
+	"automation_set_max_parallel": true, "automation_set_stage_gate": true,
 	"automation_set_verification_llm": true, "automation_skip_member": true, "automation_update": true, "autonomous_attention_list": true,
 	"autonomous_cleanup_status": true, "autonomous_config_get": true, "autonomous_decisions": true, "autonomous_events_pending": true,
 	"autonomous_held_questions": true, "autonomous_infra_retries": true, "autonomous_lane_fill_status": true, "autonomous_landing_drop": true, "autonomous_landing_keep": true, "autonomous_lane_utilization": true, "autonomous_learnings": true,
@@ -953,8 +969,8 @@ var nonConfigWriteTools = map[string]bool{
 	"autonomous_prd_generated_artefact": true, "autonomous_prd_regenerate_artefact": true, "autonomous_prd_set_authorized_paths": true, "autonomous_prd_set_breaking_change": true,
 	"autonomous_prd_set_release_size": true, "autonomous_prd_set_story_node": true, "autonomous_prd_set_task_node": true, "autonomous_prd_set_worker_profile": true,
 	"autonomous_protected_paths": true, "autonomous_release_readiness": true, "autonomous_standard_tasks": true, "autonomous_tag_sweep": true,
-	"plan_create": true, "plan_reorder": true, "plan_reorder_automata": true, "plan_attach": true, "plan_detach": true,
-	"plan_migrate": true, "plan_record_create": true, "plan_record_get": true, "plan_record_import": true, "plan_record_list": true,
+	"plan_create": true, "plan_rename": true, "plan_edit": true, "plan_reorder": true, "plan_reorder_automata": true, "plan_attach": true, "plan_detach": true,
+	"plan_migrate": true, "plan_rollup": true, "plan_record_create": true, "plan_record_get": true, "plan_record_import": true, "plan_record_list": true,
 	"plan_record_search": true, "plan_record_update": true,
 	"plan_theme_list": true, "plan_theme_set": true, "plan_archive": true, "plan_restore": true,
 	"plan_unattributed_list": true, "plan_attach_bulk": true, "plan_row_plan_list": true, "plan_row_plan_convert": true,
