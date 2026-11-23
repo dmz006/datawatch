@@ -376,6 +376,7 @@ Subcommands:
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
 		newAutonomousHousekeepingRepairsCmd(),
+		newAutonomousDormantFeaturesCmd(),
 		newAutonomousDecisionsCmd(),
 		// Decision records: the structured operator decisions on the Automaton.
 		newDecisionRecordsCmd(),
