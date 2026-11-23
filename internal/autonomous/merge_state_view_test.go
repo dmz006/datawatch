@@ -151,7 +151,9 @@ func TestMergeStateViewCacheDoesNotStaleAcrossStatus(t *testing.T) {
 	// A status change must not serve the cached completed value.
 	p2, _ := m.store.GetPRD(p.ID)
 	p2.Status = PRDCancelled
-	m.store.SavePRD(p2)
+	if err := m.store.SavePRD(p2); err != nil {
+		t.Fatal(err)
+	}
 	if got := m.AutomatonMergeState(p2); got != "" {
 		t.Errorf("cached value leaked across a status change: %q, want empty", got)
 	}

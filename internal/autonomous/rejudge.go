@@ -505,17 +505,6 @@ func lastRulesReviewVerdict(prd *PRD) *GuardrailVerdict {
 	return nil
 }
 
-// rulesReviewVerdictPendingOrBlocked reports whether, as far as the
-// Automaton-level verdict log shows, the completion review is pending
-// (no rules-review verdict recorded on the Automaton yet) or blocked
-// (the newest rules-review verdict is a block). A newest verdict that
-// passed (pass or warn) means the review is settled and a re-judgment
-// has nothing left to clear.
-func rulesReviewVerdictPendingOrBlocked(prd *PRD) bool {
-	v := lastRulesReviewVerdict(prd)
-	return v == nil || v.Outcome == "block"
-}
-
 // rejudgeWarrantForFinished reports whether a finished_not_merged record's
 // (completed or archived) completion review is still worth re-running for the
 // record's current head (head, from currentReviewHead):

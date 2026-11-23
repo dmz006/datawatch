@@ -351,13 +351,13 @@ func (o ManagerUnarchiveOps) Restore(ctx context.Context, c UnarchiveCandidate) 
 	}
 	p, ok := m.store.GetPRD(c.ID)
 	if !ok {
-		return fmt.Errorf("Automaton %s no longer exists", c.ID)
+		return fmt.Errorf("automaton %s no longer exists", c.ID)
 	}
 	if p.Status == c.RestoreTo {
 		return nil // already restored: the repair is one-time and idempotent
 	}
 	if p.Status != PRDArchived {
-		return fmt.Errorf("Automaton %s is at %s now, not archived; the repair changes nothing", c.ID, p.Status)
+		return fmt.Errorf("automaton %s is at %s now, not archived; the repair changes nothing", c.ID, p.Status)
 	}
 	now := time.Now()
 	old := p.Status
