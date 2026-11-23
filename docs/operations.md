@@ -1038,6 +1038,8 @@ Every part of this is live now: the Automaton's own launches (worker, verifier a
 
 ### Infrastructure retry
 
+**Stalled pi worker (pi-prompt sessions).** A `DATAWATCH_PI_FAILED` line in a session's output log fails the attempt at once, without waiting for the silence limit, and raises a "Task session failed" error alert with the runner evidence on the task. If the line also says `Request timed out`, the failure is classed `model_unresponsive`: the task is requeued after the back-off without using an attempt, at most 3 times in a row (`model_unresponsive_retries` on the task; `infra_retry_count` is untouched; `autonomous.infra_retry.categories` and `exhausted_action` do not apply). Three consecutive such failures on one compute node raise one error alert, "Compute node model unresponsive", naming the node and model; a success on the node resets the count, and a daemon restart clears it. Before a pi worker starts on a compute node, the daemon probes the node's model with a one-token chat request (20-second limit); a failed probe means no session is started, the node is marked unhealthy with the probe error (shown as `unhealthy` / `unhealthy_reason` on its pool in `GET /api/capacity`, and skipped by placement), and the launch is deferred through the same `model_unresponsive` requeue. A passing probe clears the mark; a daemon restart also clears it. The threshold, the cap and the probe are fixed, not settings. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
+
 A task that fails because the machinery around it failed, not because of its own work, is retried on a back-off schedule and the failure is not counted against the task. Four failure classes qualify: `spawn_error` (the worker could not be started), `storage_write` (the device is full, the quota is used up or the file system is read-only), `session_killed_before_delivery` (the worker session ended before the task reached it) and `daemon_restart` (the daemon restarted while the task ran). A session that never started keeps its own start budget and is never classified here, and a throttle from the model provider is never retried by this feature. By default a task gets 3 tries with delays of 1, 5 and 9 minutes (15 minutes in all). While it waits, the task shows `infrastructure retry n of max at <time> (<class>)`, and the retry is recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton.
 
 When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked with the chain's root and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`); the general rule is wider — any dependent that failed only behind its dependency is requeued by the executor in the same step that the dependency reaches `completed`, whether that failure was an infrastructure one or a content or scope one, so dependents are never reset by hand when a retried dependency completes. A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
@@ -5382,6 +5384,16 @@ log-mtime part of this check by design: `pi --print` writes its log only
 when it finishes, so the mtime gate would report false stalls; the other
 signals still apply. `autonomous.session_idle_timeout_seconds` (above)
 covers a different case — a session that went idle instead of dying.
+
+**Stall evidence.** When a stalled pi worker is stopped, the stop is
+recorded with the runner's evidence and the task error carries a summary
+tail, for example `(pi exited with status 1; node gpu-box; model qwen3.8:27b;
+last: ...)`, capped at 300 characters. The evidence is taken from the pane;
+when the pane is empty (a one-shot `pi` run's pane is gone once it exits) it
+is taken from the session `output.log` (last 40 non-empty lines, control
+sequences removed). The task still matches the stalled error, so retries use
+the same budget. See
+[howto/autonomous-recovery.md](howto/autonomous-recovery.md#reading-why-a-worker-stalled).
 
 **Loop detection and rescue.** A worker that repeats one action over and
 over is caught at two levels, both from the same log:
