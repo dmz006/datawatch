@@ -281,14 +281,21 @@ YAML
     # No binary in the tree: build the daemon from this tree rather than
     # fall back to whatever stale datawatch is on PATH (an older binary
     # lacks the checked behaviour and the CLI's sandbox-cert trust).
-    echo "Building datawatch from this tree for the smoke daemon..."
-    if ! (cd "$REPO_DIR" && go build -o "$TEST_WORK_DIR/datawatch" ./cmd/datawatch/); then
-      echo "ERROR: go build failed and no datawatch binary exists in the tree;" >&2
+    #
+    # Build through `make build`, not a bare `go build`: its sync-docs +
+    # docs-index prerequisites generate the embedded BM25 docs index
+    # (internal/docsindex/assets/docs-bm25-index.json, gitignored). A bare
+    # `go build` embeds the placeholder `{}` index, so the smoke daemon
+    # answers docs_list_howtos with null and docs_search finds nothing.
+    echo "Building datawatch from this tree for the smoke daemon (make build)..."
+    if ! (cd "$REPO_DIR" && make build); then
+      echo "ERROR: make build failed and no datawatch binary exists in the tree;" >&2
       echo "       refusing to fall back to a stale binary on PATH (it reproduces" >&2
       echo "       TLS/profile-tier failures against the smoke daemon). Set DATAWATCH_BIN=<path> to override." >&2
       exit 1
     fi
-    _DW_BIN="$TEST_WORK_DIR/datawatch"
+    [[ -x "$REPO_DIR/bin/datawatch" ]] || { echo "ERROR: make build produced no bin/datawatch" >&2; exit 1; }
+    _DW_BIN="$REPO_DIR/bin/datawatch"
   fi
   if [[ -z "$_DW_BIN" ]]; then
     [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"

@@ -550,6 +550,16 @@ export async function cleanupSeed() {
 // Pass { autonomousEnabled: false } to leave the daemon's own answer alone.
 export async function coldPage(browser, { viewport = { width: 1280, height: 800 }, autonomousEnabled = true } = {}) {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport });
+  // Block the service worker for the whole context (same recipe as
+  // mobile-fit-seeds.mjs ensureNoServiceWorker): the SW's activate handler
+  // force-navigates every controlled client (Client.navigate), and its
+  // 60s reg.update() cycle can install-activate-navigate again mid-test.
+  // Those in-flight navigations destroy the page's execution context and
+  // make page.evaluate throw "Execution context was destroyed", which is
+  // what hung the load scenarios (TS-802..TS-812) until the group timeout.
+  // These perf stories never assert on navigator.serviceWorker, and the
+  // app degrades cleanly to a plain online PWA when /sw.js is unavailable.
+  await context.route('**/sw.js', (route) => route.abort());
   if (autonomousEnabled) {
     await context.route('**/api/autonomous/config', async (route) => {
       if (route.request().method() !== 'GET') return route.fallback();

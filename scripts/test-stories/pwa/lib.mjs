@@ -172,6 +172,17 @@ async function runStoryOnce(fn) {
       ignoreHTTPSErrors: true,
       viewport: { width: 1280, height: 800 },
     });
+    // Block the service worker for the whole context (same recipe as
+    // mobile-fit-seeds.mjs ensureNoServiceWorker and perf-lib coldPage):
+    // the SW's activate handler force-navigates every controlled client
+    // (Client.navigate) and the 60s reg.update() cycle can trigger
+    // install-activate-navigate again mid-test. Those navigations race
+    // page.click/page.evaluate ("waiting for navigation to finish" /
+    // "Execution context was destroyed") — the TS-841 settings-row story
+    // hung on exactly that. The app degrades cleanly to a plain online PWA
+    // when /sw.js is unavailable; stories that assert on the SW (TS-797)
+    // build their own context and are unaffected.
+    await context.route('**/sw.js', (route) => route.abort());
     const page = await context.newPage();
 
     const consoleErrors = [];
