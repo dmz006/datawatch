@@ -768,20 +768,28 @@ Nothing in this review changes a setting.
 ### Burn guard
 
 The burn guard compares the projected weekly burn with the usage calculator's
-pace line every `interval_minutes` and, while the projection runs over by more
-than `margin_points`, applies a ladder of responses (`lower_inflight`,
-`route_pi_prompt`, `hold_claude`) and steps back when the projection is under
-the line. Keys live under `usage.burn_guard.`: `enabled` (default true),
-`interval_minutes` (60), `margin_points` (2), `ladder`, `step_back` (true),
+pace line every `interval_minutes` (or the entry's own plan and target) and,
+while the projection runs over by more than `margin_points`, applies a ladder of
+responses (`lower_inflight`, `route_entry`, `route_cheaper_model`,
+`hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude`
+are still accepted and normalize to the entry names) and steps back when the
+projection is under the line. By default it guards one entry, `claude-code`;
+`usage.burn_guard.entries` guards any number of paid LLM entries, each with its
+own `usage_source`, `plan` (`flat` or `metered`), `period_target`, `model`,
+`ladder`, `held_models`, `route_to`, `route_cheaper_model` and `points_per_usd`.
+Keys live under `usage.burn_guard.`: `enabled` (default true),
+`interval_minutes` (60), `margin_points` (2), `ladder` (default
+`lower_inflight`, `route_entry`, `hold_entry`), `step_back` (true),
 `max_projection_gap_points` (25; 0 never compares the guard and advice
 projections, 0 to 100),
 `ask_on_change` (false: the guard alerts once per change and raises no question;
 true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`
 (0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
-(2). Settings apply without a restart. The effort ceiling is set per Automation,
-not through the config keys. The guard acts on the `claude-code` backend only when
-that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
+(2), and `entries` (unset: the single `claude-code` entry above). Settings
+apply without a restart. The effort ceiling is set per Automation,
+not through the config keys. The guard acts on an entry when its [billing
+mode](#llm-billing-mode) is `allowance` (the default for `claude-code`) or the
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
@@ -1942,23 +1950,57 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded; a later row or `session_state` push that omits
-`system_tags` keeps the chip, and only an explicit empty `system_tags`
-removes it:
+tag registry has loaded. The summary rows and the legacy session list records
+always carry the `system_tags` key, as an empty array (`"system_tags": []`)
+when the session holds no placement tag, never as a missing key or null
+(pinned for the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An explicit
+empty array removes the placement chip from the Sessions tile. A row or push
+that omits the key keeps the chip the page already holds (older servers). A
+page reload always agrees with the server. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
 ```
 
-**Operator review still owed:** the two datawatch-app parity drafts for this
-fix — the server row shape
+**Operator review still owed:** the datawatch-app parity drafts for this
+family are tracked in this repo, and their filing states differ — the row
+shape at first load
 ([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md))
-and the PWA drawing discipline
+is **filed as datawatch-app issue
+#401** (https://github.com/dmz006/datawatch-app/issues/401), the PWA
+drawing discipline
 ([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md))
-— are tracked in this repo but **not filed yet**; the operator opens the
-issue on the app tracker when ready. Nothing else is owed on this daemon:
-no setting, no migration.
+is **filed as datawatch-app issue
+#402** (https://github.com/dmz006/datawatch-app/issues/402), while the
+removal half
+([plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md))
+and the settled empty-list contract for every row shape
+([plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md](plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md))
+remain **drafts, not filed** — the operator opens those two on the app
+tracker when ready (a new issue or a follow-up comment on #401/#402, the
+operator's call). Since the summary-row change that made `system_tags`
+always-present, with an empty array meaning "no placement tags now", one
+draft still carries the pre-change wire description: the first-load draft
+behind issue #401 still describes the summary-row field as optional (a
+session without placement tags "serializes exactly as before", and its
+REST surface row still says `omitempty`) — correct that sentence and that
+surface row to the settled rule before the operator comments on or
+revisits #401. The drawing-discipline draft (issue #402) already states
+the settled rule: a row that omits the key keeps the chips already held,
+and an explicit empty array removes them. The removal draft was rewritten
+to the settled rule in favour of the earlier draft that asserted the
+per-shape split (summary rows omitting the key; full records alone sending
+`[]`), and the empty-list contract draft restates the settled rule and
+records what this work leaves on the app side. What remains on the app
+side is one re-statement, not new functionality: the acceptance criteria
+of #401 and #402 should be re-stated against the settled rule — chips
+present at first draw, an empty `system_tags` on any row shape clears
+them, and a key-less row (older server) never adds chips — including the
+case of a tile that loses its last placement tag. Nothing on this daemon
+is open: no setting and no migration, the behavior is implemented and
+pinned, and the CHANGELOG already records it.
 
 ### Allowed project roots
 
@@ -7235,6 +7277,8 @@ The per-Automaton pin has no CLI subcommand (the related `datawatch session prio
 
 Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks at the lanes and the queue and decides what each idle lane should start. It is in **shadow** mode by default: it records every decision it would make and starts nothing. Switch `autonomous.lane_fill.mode` to `on` only after the shadow comparison in [howto/automation-lane-fill.md](howto/automation-lane-fill.md) has passed.
 
+**Finished or stalled Automaton.** A lane is held only by a running Automaton with live work: a live worker, test, verifier or judge session, a capacity lease still held, a task starting, or a verified task's merge still inside its window. One that has finished its tasks (waiting on the completion review), has no startable task, or whose task-branch merge has been pending past `autonomous.lane_fill.stalled_merge_minutes` with no progress does not occupy its lane and is shown as waiting with its reason; it is listed in the status `waiting` list with `wait_reason` and `reason_code` (`waiting_review_merge`, `merge_stalled`, `no_task_startable`), and its lane is left idle for the next eligible work. Lane fill never starts a second run of a waiting Automaton. A stalled merge follows the mode: `shadow` records it as a decision only; `on` raises one "Task merge stalled" warning alert and retries the merge (a merge held for the operator is alerted, never retried). See [howto/automation-lane-fill.md](howto/automation-lane-fill.md#a-running-automaton-with-no-live-work).
+
 **Verifier-wait lane.** A lane whose occupant is running but all of its work is stalled waiting on a verification slot is not idle: the status shows it as `state: "waiting_verifier"` with `waiting_on_verifier: true` and the `wait_reason` from the wait queue, the lane line reads "waiting on verifier: <reason>", and the idle-lane alert names the wait and its reason before it fires. With `autonomous.lane_fill.count_verifier_wait` on (the default) such a Claude lane counts available, because the waiting occupant is not spending Claude usage; `false` keeps it busy. In shadow mode this counts nothing as a start and records a would-start, as with every other lane fill decision. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 | Key | Default | Meaning |
@@ -7243,6 +7287,7 @@ Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks a
 | `autonomous.lane_fill.gpu_mode`, `autonomous.lane_fill.claude_mode` | empty | The mode for one lane kind. Empty inherits `mode`, so both kinds read shadow by default. Only the decisions of a kind whose mode is `on` are carried out; a kind set to `off` plans and records nothing for its lanes; the other kind is unaffected. Set it back to `shadow` and execution stops on the next poll, with no restart and without touching anything already started. Each change of a kind's effective mode writes a `lane_fill_mode` audit entry (kind, old mode, new mode). The status `modes` object (`{"gpu": ..., "claude": ...}`) shows the mode in effect per kind, and `mode` stays the base mode. Automata lane fill refuses are never started in any mode. |
 | `autonomous.lane_fill.stale_after_hours` | `72` | Hours an Automaton may go without a change before lane fill calls it stale and does not start it. `0` turns the rule off. |
 | `autonomous.lane_fill.host_down_after_minutes` | `10` | Minutes a pool host may stay unreachable before lane fill treats it as down and judges the lanes from the readable hosts; it is then listed under `evidence.degraded`, not as a blocker. `0` never treats an unreachable host as down. A host that holds work or has a lane placed on it always blocks. |
+| `autonomous.lane_fill.stalled_merge_minutes` | `30` | Minutes a verified task's merge into the Automaton branch may stay pending without progress before the Automaton stops holding its lane; with mode `on` the stalled merge is alerted once and retried. `0` turns the rule off (a pending merge keeps the lane). |
 | `autonomous.lane_fill.require_confirmed_proposal` | `true` | An implementation Automaton is taken only when its proposal file carries a `Confirmed: yes` line. The proposal is the `docs/plans/<name>.md` path that its title or spec names on an explicit proposal field or line — a path that is merely mentioned names no proposal, and the plan folder's README is never one. Research, operational, personal and defect Automata, and an Automaton whose title or spec states that its own job is to write the proposal, are exempt; an Automaton that writes a proposal is never gated on the `Confirmed: yes` line of the proposal it is producing. `false` turns the rule off. |
 | `autonomous.lane_fill.check_main_carries` | `true` | An Automaton whose work the default branch already has is skipped. |
 | `autonomous.lane_fill.require_worktree` | `true` | An Automaton with a recorded worktree is taken only when the worktree is real and registered. |
@@ -7280,7 +7325,7 @@ eligible Automaton still starts it on the next poll. A check that cannot be made
 
 **Turning it on, GPU first.** Both lane kinds ship in shadow. Compare lane fill's decisions with the supervisor's own checks for a full day, then set `autonomous.lane_fill.gpu_mode` to `on`, watch, and only then set `claude_mode` to `on`. To go back, set the kind to `shadow`; it takes effect on the next poll and leaves started work alone. The full procedure is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
-**What the status shows.** Each lane with its occupant or its blocker, the queued eligible counts for GPU and Claude work, the pool evidence (active GPU sessions and loaded models, or the error when a pool host could not be read), the newest decisions with whether each was executed, and the idle-lane alerts. In shadow mode a decision with `executed: false` is a would-start and must not be read as a start.
+**What the status shows.** Each lane with its occupant or its blocker, the queued eligible counts for GPU and Claude work, the pool evidence (active GPU sessions and loaded models, or the error when a pool host could not be read), the newest decisions with whether each was executed, the idle-lane alerts, and the `waiting` list: every running Automaton that holds no live work, with its reason code (`waiting_review_merge`, `merge_stalled`, `no_task_startable`). A waiting Automaton's lane shows idle. In shadow mode a decision with `executed: false` is a would-start and must not be read as a start.
 
 **Restart.** The decision history (up to 1000 decisions) is kept in a file in the autonomous data directory and reloads after a restart. Nothing is decided until boot recovery has finished, so Automata that were running are not read as idle lanes. A started Automaton is never started a second time. Idle timers start again after a restart, so an idle lane alerts only after a full threshold from the restart.
 

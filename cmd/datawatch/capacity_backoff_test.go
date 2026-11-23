@@ -141,3 +141,20 @@ func TestBackoffBackpressure_InteractiveStartNeverBlocked(t *testing.T) {
 		t.Fatal("autonomous request not admitted after the back-off expired")
 	}
 }
+
+// A flag holding a model list blocks autonomous work on a listed model and
+// admits work on any other model of the same backend.
+func TestBackoffBackpressure_ModelListAdmitsUnlistedModel(t *testing.T) {
+	clk := &backoffTestClock{now: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
+	bo := autonomous.NewBackoff()
+	bo.Clock = clk.Now
+	bo.SetWithModels("claude-code", clk.Now().Add(time.Hour), "hold", autonomous.BackoffSourceOperator, true, "", []string{" Opus "})
+	led := capacity.New(capacity.Options{PollInterval: time.Second, Clock: clk, AutonomousModelBackpressure: backoffBackpressure(bo)})
+	pools := []string{"llm:claude-code"}
+	if err := led.Acquire(context.Background(), capacity.Request{Holder: "verifier-1", Pools: pools, Model: "sonnet"}, time.Second, nil, nil); err != nil {
+		t.Fatalf("work on an unlisted model must start: %v", err)
+	}
+	if blocked, why := backoffBackpressure(bo)("llm:claude-code", "opus"); !blocked || !strings.Contains(why, "opus") {
+		t.Fatalf("listed model must be held with its name in the reason, got %v %q", blocked, why)
+	}
+}

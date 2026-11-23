@@ -72,6 +72,14 @@ names as well (names, not registry IDs — that is what lets the PWA draw
 the placement chips on the Sessions page at first load, before the tag
 registry has loaded; see
 [automata-tags](../howto/automata-tags.md#placement-tags-the-system-tags)).
+The summary rows and the legacy session list records always carry the
+`system_tags` key: a session with no placement tags is sent as
+`"system_tags": []`, never as a missing key and never as null (pinned for
+the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An
+explicit empty array removes the placement chip from the Sessions tile. A
+row or push that omits the key keeps the chip the page already holds (older
+servers).
 No existing field changed. Deleting a tag is refused with 409
 while an Automaton or a session still carries it; the `count` in the 409
 body covers both.

@@ -166,6 +166,8 @@ var usageMoveCases = []struct {
 	{"usage.burn_guard.refit_on_reading", false, false},
 	{"usage.burn_guard.retry_limit_claude", 3, float64(3)},
 	{"usage.burn_guard.ask_on_change", true, true},
+	{"usage.burn_guard.entries", []any{map[string]any{"llm": "paid-a", "usage_source": "readings", "plan": "flat"}},
+		[]any{map[string]any{"llm": "paid-a", "usage_source": "readings", "plan": "flat", "period_target": float64(0)}}},
 	{"usage.burn_guard.max_projection_gap_points", 10, float64(10)},
 	{"usage.burn_guard.mode", "on", "on"},
 	{"usage.burn_guard.week_tolerance", 3, float64(3)},

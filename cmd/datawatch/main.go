@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.79"
+var Version = "9.182.83"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -12696,6 +12696,17 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	}
 	if key == verifierRunCapConfigKey {
 		n, err := parseVerifierRunCapValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
+	}
+	if key == laneFillStalledMergeConfigKey {
+		n, err := parseStalledMergeMinutesValue(value)
 		if err != nil {
 			return fmt.Errorf("config set: %w", err)
 		}

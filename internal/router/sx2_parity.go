@@ -261,7 +261,7 @@ func (r *Router) handleCooldown(cmd Command) {
 // live reserve array (one {backend, tokens_used} per backed-off backend)
 // reach the chat surface without any local parsing or key list.
 func (r *Router) handleUsageBackoff(cmd Command) {
-	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all] | recheck]"
+	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason …] [models=a,b] | clear [backend|all] [models=a,b] | recheck]"
 	switch cmd.UsageBackoffVerb {
 	case "status", "":
 		body, err := r.commGet("/api/usage-backoff", nil)
@@ -276,6 +276,9 @@ func (r *Router) handleUsageBackoff(cmd Command) {
 			return
 		}
 		req := map[string]any{"backend": cmd.UsageBackoffBackend}
+		if len(cmd.UsageBackoffModels) > 0 {
+			req["models"] = cmd.UsageBackoffModels
+		}
 		if cmd.UsageBackoffUntil != "" {
 			req["until"] = cmd.UsageBackoffUntil
 		} else {
@@ -292,12 +295,20 @@ func (r *Router) handleUsageBackoff(cmd Command) {
 		}
 		r.reply("usage_backoff set", out)
 	case "clear":
-		payload := "{}"
-		if cmd.UsageBackoffBackend != "" {
-			b, _ := json.Marshal(map[string]any{"backend": cmd.UsageBackoffBackend})
-			payload = string(b)
+		models := cmd.UsageBackoffModels
+		if len(models) > 0 && (cmd.UsageBackoffBackend == "" || strings.EqualFold(cmd.UsageBackoffBackend, "all")) {
+			r.reply("usage_backoff clear failed", "models: name a backend to narrow the clear; a clear-all is not model-scoped")
+			return
 		}
-		out, err := r.commJSON(http.MethodDelete, "/api/usage-backoff", payload)
+		req := map[string]any{}
+		if cmd.UsageBackoffBackend != "" {
+			req["backend"] = cmd.UsageBackoffBackend
+		}
+		if len(models) > 0 {
+			req["models"] = models
+		}
+		b, _ := json.Marshal(req)
+		out, err := r.commJSON(http.MethodDelete, "/api/usage-backoff", string(b))
 		if err != nil {
 			r.reply("usage_backoff clear failed", err.Error())
 			return
