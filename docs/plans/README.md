@@ -471,7 +471,6 @@ Internal research — does not block Stage A/B/C, can run alongside it.
 
 | Item | Status |
 |---|---|
-| BL453 Can open models decompose PRDs? (research) | not started (PRD `19f9a693`, draft; covers decompose reliability, execution-scope, and a positive data point — 3 research PRDs fully open-model decomposed+executed successfully) |
 | [BL465](2026-10-16-deterministic-git-commit-design.md) Move the primary git commit out of the worker's own tool loop | **shipped v9.2.0** — built via pi-prompt (PRD `137ed868`), merged to main; live smoke run against a sandbox daemon… |
 | [BL466](2026-10-16-pi-opencode-evaluation.md) pi LLM backend for open-model PRD execution | **shipped v9.1.21** — full backend + config/CLI/PWA/comm parity built tonight (reprioritized from v11.0.0 research to… |
 | [BL467](2026-10-16-mcp-bridge-registration-race.md) MCP channel bridge registration is first-come, not owner-bound (design) | needs_review (design only, no PRD yet); not urgent, nothing currently broken |
@@ -521,6 +520,7 @@ nothing here blocks anything in the active order above.
 | Item | Status |
 |---|---|
 | BL446 Federation as a sibling-agent mail transport (external feature request, not a bug) | not started; design pass record (documents only, nothing decided): [2026-11-07-agent-mail-design-pass.md](2026-11-07-agent-mail-design-pass.md) |
+| BL453 Can open models decompose PRDs? (research); moved here from the non-blocking research list 2026-11-23 (operator: 11.0, not 10.0) | not started (earlier PRD `19f9a693` archived; evals stay parked until after 10.0, see the exclusions above) |
 | BL438 Research: Hermes Agent | cancelled, not started (PRD `6952fceb`) |
 | BL439 Research: datawatch as infrastructure for Hermes Agent | planning, not started (recreated as draft PRD `79890001` with no project directory; original `2712d303` cancelled because its project directory was the main checkout) |
 | [BL400](2026-10-09-alerts-conditions-and-filtering.md) Alerts: conditions, filtering, SIEM parity | deferred, open questions |
