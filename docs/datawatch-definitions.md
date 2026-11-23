@@ -345,6 +345,32 @@ Detects when Claude has exited but the shell is still running inside the tmux pa
 
 ---
 
+### Gone session records
+
+**Live session** — a session that something still drives: a terminal session or process exists for it, or the daemon holds a runner for it. A record in `running`, `waiting_input`, `stalled` or `rate_limited` that is not live is not really running, and the finaliser settles it. Sessions recorded by another host are never judged by this daemon. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#sessions-that-are-really-running).
+
+**Finalised session** — a session record the finaliser set to its final state because its terminal session and process were gone. It becomes `complete` when its output ends with the completion marker, otherwise `killed`, and carries an end time (`ended_at`) and the note `process gone, finalised` (`end_note`). The record and its output are kept. Sessions that ended on their own, or were never finalised, have neither field. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#sessions-that-are-really-running) and [api/sessions.md](api/sessions.md).
+
+**Live (judged liveness)** — the one shared answer to "is this session record still live?". It replaces re-deriving the answer from a single signal. A record is judged `ended` (already `complete`, `failed` or `killed`), `foreign` (belongs to another host, so this daemon never finalises or re-labels it), `live` (something still drives it: its terminal pane exists, its backend launch is still running, the daemon holds a runner for it, its recorded subprocess still runs the session's task, or the daemon's own report path ends it, as for a virtual backend or a session bound to an agent) or `gone` (not in a final state and none of those signs is present). Any one sign is enough to be `live`. A terminal-pane listing that fails for a reason other than "no server running" is never read as every pane being gone. This is a different thing from the zombie check above: the zombie check asks whether the model process still runs inside a pane that exists, while this judgement asks whether anything at all still drives a record that is not in a final state.
+
+**Runner registry** — the daemon's in-memory list of the sessions it drives itself with a goroutine or process because they have no terminal pane. A subprocess session is added when it starts and removed when its process returns; a subprocess re-attached after a daemon restart is added again until its watcher finishes. It is not persisted, so after a restart it holds only what this daemon is driving now. Today only subprocess sessions are registered; chat-mode and other non-pane sessions are not yet.
+
+**Gone final state** — what a `gone` record is finalised as. The tail of its output log is read and terminal escape sequences are stripped. If the last non-empty line begins with `DATAWATCH_COMPLETE:` the record becomes `complete`; otherwise (no marker, a marker followed by more output, or an empty or missing log) it becomes `killed`. The record also gets `ended_at` and `end_note`.
+
+**`ended_at` / `end_note`** — the only two session fields about how a record ended: the time the record was finalised because its process was gone, and the short note `process gone, finalised`. Both are left out of the session JSON for every session that was not finalised this way, and a record already in a final state keeps its state and gets neither. Who or what ended a session is still recorded in the daemon journal and the session's `timeline.md`, not in a session field.
+
+**Finaliser** — the pass that applies the live judgement and the gone final state. One run finalises the records the daemon holds that are still `running`, `waiting_input`, `stalled` or `rate_limited` and are `gone`, then the saved session folders (`<data_dir>/sessions/<id>/session.json`) in the same four states. A folder whose record the daemon holds follows that record; a folder with no record is judged by its own saved fields and finalised from the tail of its own output log. Records are saved as copies with the terminal re-checked just before writing; folders get only `session.json` rewritten (temporary file, then rename), and a `session.json` that cannot be parsed is skipped and counted. Nothing is ever deleted: the record, the output log and the project folder are kept. A failed terminal listing makes the pass finalise nothing.
+
+**Finalise summary** — what the last finaliser run left in memory: the run time, the records finalised, the folders finalised, the number left as they were over both parts, and whether the terminal listing worked for both parts. Each run replaces it, and a run that finalises something also writes one counts-only line to the daemon journal. It is not saved to disk.
+
+**Finaliser loop** — the background loop that runs the finaliser once at start-up and then after every interval. The daemon starts it right after it resumes its sessions. The interval is read again each cycle, so a change applies without a restart; zero means no scheduled runs (the start-up run still happens). It ends with the daemon.
+
+**Finalise interval** — the setting `session.finalise_interval_minutes`: whole minutes between finaliser runs, default 10, 0 turns scheduled runs off. A negative value in the config file falls back to 10 and a negative value sent to the config API is ignored. Change it on the Settings page (General, Sessions), with `datawatch config set`, the `config_set` MCP tool, the `configure` chat command or `PUT /api/config`; no restart is needed.
+
+**Status today:** the daemon starts the finaliser loop, so gone records and folders are finalised on the interval above and carry `ended_at` and `end_note`. The restart check still runs first and still marks a missing pane `failed`; the finaliser never changes a record already in a final state. Nothing shows the finalise summary yet (no REST, MCP, CLI, chat or PWA surface, and the PWA does not show `end_note`), and only subprocess sessions are registered as runners. Detail: [operations.md — Gone session records and the shared live judgement](operations.md#restart-safety) and [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#gone-session-records).
+
+---
+
 ### Session exit hooks
 
 Automatically restart or notify when a session goes zombie or terminates abnormally.
