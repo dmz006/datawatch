@@ -4,7 +4,8 @@
 // "automation list" and "automation get <id>" read them;
 // pause, resume, cancel, skip, insert, remove, edges and approve are the
 // operator controls on a running one, and set-llm and set-verification-llm
-// set its LLMs. Sibling of cmd/datawatch/cli_automation.go
+// set its LLMs, and set-max-parallel and set-stage-gate set its run-shape
+// limits. Sibling of cmd/datawatch/cli_automation.go
 // and the automation_* MCP tools; activate calls
 // POST /api/automations/{id}/activate, list and get call GET /api/automations
 // and GET /api/automations/{id}, and each control calls its own
@@ -30,12 +31,15 @@ import (
 const (
 	automationUsage = "usage: automation activate <id> | return-to-draft <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
 		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <automaton-id|pending_item=<item-id>> [urgent] [stage=<stage>] <reason> | " +
+		"insert <id> decision-wait [urgent] [stage=<stage>] <question> | <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"rename-stage <id> <from-stage> <to-stage> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
 		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] | " +
 		"set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] [hooks=<a,b>] [threshold.<hook>=<n>] [member=<id>] | " +
 		"set-decision-assistant <id> clear=true [member=<id>] | " +
+		"set-max-parallel <id> <n> [member=<fork-id>] (most members that run at once, 0 = no limit) | " +
+		"set-stage-gate <id> on|off (hold a staged member until every earlier stage has finished) | " +
 		"set-budget <id> key=value... (ceiling_type, ceiling_value, window, pacing, on_breach, ...; clear=true removes the policy) | " +
 		"set-effort-ceiling <id> kind=low|medium|high|cheaper_backend ... | set-effort-ceiling <id> clear=true | " +
 		"import-graph <graph-id> [dry-run] (turn an orchestrator graph into a draft Automation; dry-run previews it)"
@@ -44,10 +48,11 @@ const (
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
 	automationSkipUsage        = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
 	automationRenameStageUsage = "usage: automation rename-stage <id> <from-stage> <to-stage>"
-	automationInsertUsage      = "usage: automation insert <id> <automaton-id|pending_item=<item-id>> [urgent] [stage=<stage>] <reason...>. A reason is required. pending_item=<id> inserts a pending item (work with no Automaton yet) that holds the Automation until one is attached."
-	automationRemoveUsage      = "usage: automation remove <id> <member-id>"
-	automationApproveUsage     = "usage: automation approve <id> <member-id>"
-	automationSetLLMUsage      = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
+	automationInsertUsage      = "usage: automation insert <id> <automaton-id|pending_item=<item-id>> [urgent] [stage=<stage>] <reason...>. A reason is required. pending_item=<id> inserts a pending item (work with no Automaton yet) that holds the Automation until one is attached. " +
+		"automation insert <id> decision-wait [urgent] [stage=<stage>] <question...> | <reason...> inserts a member that asks the operator the question and holds only its own branch until it is answered; the question and the reason are both required, split by |."
+	automationRemoveUsage  = "usage: automation remove <id> <member-id>"
+	automationApproveUsage = "usage: automation approve <id> <member-id>"
+	automationSetLLMUsage  = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
 		"(name at least one; an empty value such as model= clears the field)"
 	automationSetVerificationLLMUsage = "usage: automation set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] " +
 		"(name at least one; an empty value such as model= clears the field)"
@@ -59,6 +64,10 @@ const (
 	automationSetDecisionAssistantUsage = "usage: automation set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] " +
 		"[hooks=empty_edge,skip_member,insert_member,budget_breach] [threshold.<hook>=<0..1>] [member=<id>] [expected_version=<n>] | " +
 		"automation set-decision-assistant <id> clear=true [member=<id>]. Off by default; backend= (empty) or clear=true turns it off."
+	automationSetMaxParallelUsage = "usage: automation set-max-parallel <id> <n> [member=<fork-id>] [expected_version=<n>]. " +
+		"n is the most members that run at once; 0 clears the limit. member=<fork-id> limits that fork's branches instead of the whole Automation."
+	automationSetStageGateUsage = "usage: automation set-stage-gate <id> on|off [expected_version=<n>]. " +
+		"on holds a staged member until every earlier stage has finished; off makes a stage only a label."
 	automationImportGraphUsage = "usage: automation import-graph <graph-id> [dry-run]. Turns an orchestrator graph into a draft " +
 		"Automation; dry-run shows what would be created and stores nothing."
 	automationEdgesUsage = "usage: automation edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> " +
@@ -69,7 +78,7 @@ const (
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
 	return []string{"activate", "return-to-draft", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
-		"skip", "insert", "remove", "edges", "approve", "rename-stage", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
+		"skip", "insert", "remove", "edges", "approve", "rename-stage", "set-llm", "set-verification-llm", "set-decision-assistant", "set-max-parallel", "set-stage-gate", "import-graph"}
 }
 
 func (r *Router) handleAutomationCmd(cmd Command) {
@@ -207,6 +216,15 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			}
 			member = map[string]any{"pending_item_id": item}
 		}
+		if args[2] == "decision-wait" || args[2] == "decision_wait" {
+			question, why, ok := strings.Cut(reason, "|")
+			question, reason = strings.TrimSpace(question), strings.TrimSpace(why)
+			if !ok || question == "" || reason == "" {
+				r.send(automationInsertUsage)
+				return
+			}
+			member = map[string]any{"kind": "decision_wait", "question": question}
+		}
 		if stage != "" {
 			member["stage"] = stage
 		}
@@ -255,11 +273,15 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 				"planning_backend": "planning_backend", "planning_model": "planning_model"})
 	case "set-decision-assistant":
 		r.automationSetDecisionAssistant(args)
+	case "set-max-parallel":
+		r.automationSetMaxParallel(args)
+	case "set-stage-gate":
+		r.automationSetStageGate(args)
 	case "set-verification-llm":
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, return-to-draft, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, rename-stage, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, return-to-draft, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, rename-stage, set-llm, set-verification-llm, set-decision-assistant, set-max-parallel, set-stage-gate, set-budget, import-graph", args[0]))
 	}
 }
 
@@ -444,6 +466,108 @@ func (r *Router) automationSetDecisionAssistant(args []string) {
 	r.automationControl("set-decision-assistant", args[1], "set_decision_assistant", "decision assistant updated", body)
 }
 
+// controlOptions splits the trailing tokens of a set-* verb into the value
+// (a bare token, or the one named by valueKeys) and the other key=value
+// options (member, expected_version). ok is false for a token that is neither,
+// for a repeated value and for an unknown key.
+func controlOptions(tokens []string, valueKeys ...string) (value string, opts map[string]string, ok bool) {
+	opts = map[string]string{}
+	have := false
+	for _, tok := range tokens {
+		k, v, isPair := strings.Cut(tok, "=")
+		switch {
+		case !isPair:
+			if have {
+				return "", nil, false
+			}
+			value, have = tok, true
+		case containsString(valueKeys, k):
+			if have {
+				return "", nil, false
+			}
+			value, have = v, true
+		case k == "member" || k == "member_id":
+			opts["member_id"] = v
+		case k == "expected_version" || k == "expected-version":
+			opts["expected_version"] = v
+		default:
+			return "", nil, false
+		}
+	}
+	return value, opts, have
+}
+
+// withControlOptions copies the member and expected_version options into body;
+// a non-numeric expected_version is an error.
+func withControlOptions(body map[string]any, opts map[string]string) error {
+	if m := opts["member_id"]; m != "" {
+		body["member_id"] = m
+	}
+	if v, present := opts["expected_version"]; present {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			return fmt.Errorf("expected_version must be a whole number, got %q", v)
+		}
+		body["expected_version"] = n
+	}
+	return nil
+}
+
+// automationSetMaxParallel serves "set-max-parallel <id> <n> [member=<fork>]":
+// the most members that run at once (0 clears the limit), for the Automation or
+// for one fork's branches, through POST /api/automations/{id}/set_max_parallel.
+func (r *Router) automationSetMaxParallel(args []string) {
+	if len(args) < 3 {
+		r.send(automationSetMaxParallelUsage)
+		return
+	}
+	value, opts, ok := controlOptions(args[2:], "max_parallel", "max-parallel")
+	n, err := strconv.Atoi(value)
+	if !ok || err != nil || n < 0 {
+		r.send(automationSetMaxParallelUsage)
+		return
+	}
+	body := map[string]any{"max_parallel": n}
+	if err := withControlOptions(body, opts); err != nil {
+		r.send(err.Error() + "\n" + automationSetMaxParallelUsage)
+		return
+	}
+	did := fmt.Sprintf("max parallel set to %d", n)
+	if n == 0 {
+		did = "max parallel cleared (no limit)"
+	}
+	if m := opts["member_id"]; m != "" {
+		did = "fork " + m + " " + did
+	}
+	r.automationControl("set-max-parallel", args[1], "set_max_parallel", did, body)
+}
+
+// automationSetStageGate serves "set-stage-gate <id> on|off": whether a staged
+// member waits for every earlier stage, through
+// POST /api/automations/{id}/set_stage_gate.
+func (r *Router) automationSetStageGate(args []string) {
+	if len(args) < 3 {
+		r.send(automationSetStageGateUsage)
+		return
+	}
+	value, opts, ok := controlOptions(args[2:], "stage_gate", "stage-gate")
+	on, known := map[string]bool{"on": true, "true": true, "off": false, "false": false}[strings.ToLower(value)]
+	if !ok || !known || opts["member_id"] != "" {
+		r.send(automationSetStageGateUsage)
+		return
+	}
+	body := map[string]any{"stage_gate": on}
+	if err := withControlOptions(body, opts); err != nil {
+		r.send(err.Error() + "\n" + automationSetStageGateUsage)
+		return
+	}
+	did := "stage gate turned off"
+	if on {
+		did = "stage gate turned on"
+	}
+	r.automationControl("set-stage-gate", args[1], "set_stage_gate", did, body)
+}
+
 // automationPauseResume serves "pause <id> [reason...]" and "resume <id>
 // [reason...]"; the words after the ID are the reason.
 func (r *Router) automationPauseResume(args []string, verb, did string) {
@@ -582,12 +706,74 @@ func (r *Router) automationShipped(args []string) {
 // automationBudgetReply is the part of an Automation REST record that the
 // status and set-budget replies print.
 type automationBudgetReply struct {
-	ID      string                 `json:"id"`
-	Name    string                 `json:"name"`
-	Status  string                 `json:"status"`
-	Version int64                  `json:"version"`
-	Members []json.RawMessage      `json:"members"`
-	Budget  *autonomous.BudgetView `json:"budget"`
+	ID      string                  `json:"id"`
+	Name    string                  `json:"name"`
+	Status  string                  `json:"status"`
+	Version int64                   `json:"version"`
+	Members []automationReplyMember `json:"members"`
+	Budget  *autonomous.BudgetView  `json:"budget"`
+	// MaxParallel is the Automation's limit on members running at once (0 or
+	// absent: none) and StageGate whether a member's stage holds it back.
+	MaxParallel int  `json:"max_parallel"`
+	StageGate   bool `json:"stage_gate"`
+}
+
+// automationReplyMember is the part of a member the status reply reads: the
+// flags a member sets while it holds its cursor without running.
+type automationReplyMember struct {
+	ID                 string `json:"id"`
+	Kind               string `json:"kind"`
+	MaxParallel        int    `json:"max_parallel"`
+	WaitingForSlot     bool   `json:"waiting_for_slot"`
+	WaitingForStage    string `json:"waiting_for_stage"`
+	WaitingForOperator bool   `json:"waiting_for_operator"`
+}
+
+// automationRunShapeLine is the "run shape" line of a status reply: the limit,
+// the gate and the members waiting under them. It is empty when the Automation
+// sets none of them and nothing waits, so a plain chain reads as before.
+func automationRunShapeLine(a automationBudgetReply) string {
+	var parts []string
+	if a.MaxParallel > 0 {
+		parts = append(parts, fmt.Sprintf("max %d at once", a.MaxParallel))
+	}
+	var forks []string
+	var slot, stage, operator int
+	for _, m := range a.Members {
+		if m.Kind == autonomous.MemberKindFork && m.MaxParallel > 0 {
+			forks = append(forks, fmt.Sprintf("fork %s max %d", m.ID, m.MaxParallel))
+		}
+		if m.WaitingForSlot {
+			slot++
+		}
+		if m.WaitingForStage != "" {
+			stage++
+		}
+		if m.WaitingForOperator {
+			operator++
+		}
+	}
+	parts = append(parts, forks...)
+	if a.StageGate {
+		parts = append(parts, "stage gate on")
+	}
+	var waiting []string
+	if slot > 0 {
+		waiting = append(waiting, fmt.Sprintf("%d for a free slot", slot))
+	}
+	if stage > 0 {
+		waiting = append(waiting, fmt.Sprintf("%d for an earlier stage", stage))
+	}
+	if operator > 0 {
+		waiting = append(waiting, fmt.Sprintf("%d for you", operator))
+	}
+	if len(waiting) > 0 {
+		parts = append(parts, "waiting: "+strings.Join(waiting, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "run shape: " + strings.Join(parts, "; ")
 }
 
 // automationSummary is the first line of a status or set-budget reply and,
@@ -599,6 +785,9 @@ func automationSummary(a automationBudgetReply) string {
 		fmt.Fprintf(&b, " (%s)", a.Name)
 	}
 	fmt.Fprintf(&b, ": status %s, version %d, %d members\n", a.Status, a.Version, len(a.Members))
+	if line := automationRunShapeLine(a); line != "" {
+		b.WriteString(line + "\n")
+	}
 	if a.Budget != nil {
 		b.WriteString(autonomous.FormatAutomationBudgetText(*a.Budget))
 	} else {
