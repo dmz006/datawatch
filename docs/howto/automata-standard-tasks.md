@@ -98,6 +98,26 @@ autonomous:
 Your own entries in `autonomous.task_templates.templates` overlay the built-in pack. A
 new id appends a standard task, and the same id replaces the built-in one.
 
+### When `docs_set` is skipped: merge-only Automata
+
+A **merge-only** Automaton is one whose spec only lands work that is already finished
+in an existing branch: merging, rebasing, resolving conflicts on, or landing a finished
+branch, with no new work. Such an Automaton changes no behavior the docs describe, so
+the `docs_set` standard task is **not** appended to any of its stories. Every other
+standard task, including `final_gate`, is applied as usual. The decomposer's guidance
+states the same rule, so a plan from the planner does not carry a docs task either.
+
+The check is conservative. The spec must carry a merge signal (merge, rebase, land,
+conflict, or a finished-branch phrase) and none of the work verbs (add, implement,
+create, write, fix, build, in any inflected form). Any doubt keeps the spec as not
+merge-only, so the `docs_set` task stays. An extra docs task is the safe failure.
+When a merge-only Automaton skips it, the decompose log records
+`docs set task skipped: merge-only Automaton`.
+
+Before the change, a merge-only Automaton still received a `docs_set` task. That task
+could never produce a change, so the Automaton was blocked. A spec that adds any work
+keeps its `docs_set` task as before.
+
 ## Mode: who runs each task
 
 Each standard task has a **mode**, set per template in `autonomous.task_templates.mode`
