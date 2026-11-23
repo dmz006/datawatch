@@ -20504,6 +20504,7 @@ window._renderLLMEditPanel = function(existing) {
     `<tr data-node="${escHtml(em.node||'')}" data-model="${escHtml(em.model||'')}">
       <td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(em.node||'—')}</code></td>
       <td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(em.model||'')}</code></td>
+      ${_llmModelRateCell(em)}
       <td style="padding:4px 0;text-align:right;">
         <button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button>
       </td>
@@ -20784,6 +20785,7 @@ window._llmAddModelRow = function() {
   tr.dataset.model = model;
   tr.innerHTML = `<td style="padding:4px 8px 4px 0;"><code style="font-size:11px;">${escHtml(node||'—')}</code></td>` +
     `<td style="padding:4px 8px;"><code style="font-size:11px;">${escHtml(model)}</code></td>` +
+    _llmModelRateCell({}) +
     `<td style="padding:4px 0;text-align:right;"><button type="button" class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="_llmRemoveModelRow(this)" title="Remove">&#x2715;</button></td>`;
   tbody.appendChild(tr);
   modelEl.value = '';
@@ -20811,11 +20813,29 @@ window._llmRefreshTestModelSel = function() {
 window._llmCollectModels = function() {
   const tbody = document.getElementById('llmModelsBody');
   if (!tbody) return [];
-  return Array.from(tbody.querySelectorAll('tr')).map(tr => ({
-    node: tr.dataset.node || '',
-    model: tr.dataset.model || '',
-  })).filter(em => em.model);
+  return Array.from(tbody.querySelectorAll('tr')).map(tr => {
+    const em = { node: tr.dataset.node || '', model: tr.dataset.model || '' };
+    // Optional per-model rates (USD per 1K tokens); blank = per-backend cost_rates.
+    tr.querySelectorAll('input.llm-model-rate').forEach(inp => {
+      const v = String(inp.value || '').trim();
+      if (v !== '' && !isNaN(parseFloat(v))) em[inp.dataset.rate] = parseFloat(v);
+    });
+    return em;
+  }).filter(em => em.model);
 };
+
+// Per-model cost-rate inputs (configuration only, provider-dependent).
+// Blank fields fall back to the per-backend cost_rates entry.
+const _LLM_MODEL_RATE_KEYS = ['in_per_k', 'out_per_k', 'cache_read_per_k', 'cache_write_per_k'];
+function _llmModelRateCell(em) {
+  em = em || {};
+  const inputs = _LLM_MODEL_RATE_KEYS.map(k => {
+    const v = (em[k] === undefined || em[k] === null) ? '' : String(em[k]);
+    const label = t('llm_model_rate_' + k) || k;
+    return `<input type="number" step="any" min="0" class="llm-model-rate" data-rate="${k}" value="${escHtml(v)}" placeholder="${escHtml(label)}" title="${escHtml(label)}" style="width:72px;font-size:11px;" />`;
+  }).join(' ');
+  return `<td style="padding:4px 8px;" title="${escHtml(t('llm_model_rate_hint') || '')}">${inputs}</td>`;
+}
 
 window._llmProbeNodeModels = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || 'ollama';
@@ -38080,7 +38100,7 @@ function capacityBackoffHtml(backoff) {
     // any pool prefix the ledger added. Every other reason shows as sent.
     const reasonText = String(b.reason || '').replace(/back-off, review reserve in use/g, t('capacity_backoff_reason_review_reserve') || 'back-off, review reserve in use');
     const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(reasonText)}</div>` : '';
-    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
+    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${typeof usageBackoffModelsHtml === 'function' ? usageBackoffModelsHtml(b) : ''}${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
 }
@@ -38376,6 +38396,9 @@ function usageCalcReadingBody(input) {
     if (!isFinite(s) || s < 0 || s > 100) return { error: t('usage_calc_session_range') };
     body.session_percent = s;
   }
+  // The paid LLM entry the reading measures; blank is the first entry.
+  const llm = String(input.llm === undefined || input.llm === null ? '' : input.llm).trim();
+  if (llm !== '') body.llm = llm;
   let at = input.readAt ? new Date(input.readAt) : null;
   if (!at || isNaN(at.getTime())) at = new Date(input.now === undefined ? Date.now() : input.now);
   body.at = at.toISOString();
@@ -38530,6 +38553,7 @@ window.usageCalcFrameHtml = function (body, opts) {
     if (row) parts.push(row);
   }
   parts.push(`<div class="usage-settings-link" style="font-size:12px;"><a href="#" onclick="event.preventDefault();navigate('settings');return false;" style="color:var(--accent2,#60a5fa);">${escHtml(t('usage_page_settings_link'))}</a></div>`);
+  parts.push(`<div id="usageBackoffCard">${window.usageBackoffCardHtml()}</div>`);
   return `<div class="card usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
 
@@ -38592,6 +38616,7 @@ function _usageCalcReadingForm(res, opts) {
     `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
+    `<label style="font-size:12px;">${escHtml(t('usage_calc_llm_label'))} <input id="usageCalcLLM" type="text" value="" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
     `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
     `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
@@ -38647,6 +38672,7 @@ window.usageCalcSubmitReading = function () {
   const built = usageCalcReadingBody({
     percent: val('usageCalcPercent'),
     session: val('usageCalcSession'),
+    llm: val('usageCalcLLM'),
     readAt: val('usageCalcReadAt'),
     now: Date.now(),
   });
@@ -39210,6 +39236,178 @@ function usageCalcRerender() {
   if (ctl) ctl.paint();
 }
 
+// Usage back-off card on the usage page: the live holds from GET /api/usage/backoff
+// (each with its held and open models) and a set/clear control. The optional
+// models field limits a set or clear to those models of the backend; empty holds
+// or clears the whole backend. Only the status block repaints on refresh, so
+// typed values in the form survive a poll.
+const USAGE_BACKOFF_REFRESH_MS = 30000;
+window._usageBackoff = window._usageBackoff || { status: null, error: '', message: '' };
+
+// Splits the models field on commas and whitespace, trims, drops blanks and
+// repeats. Returns [] for an empty field (= whole backend).
+window.usageBackoffParseModels = function (text) {
+  const out = [];
+  String(text == null ? '' : text).split(/[\s,]+/).forEach(m => {
+    const v = m.trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+};
+
+// Builds the POST body for a set from the form values. Returns {error} when a
+// value is not acceptable, otherwise {body}.
+window.usageBackoffBuildSetBody = function (vals) {
+  vals = vals || {};
+  const backend = String(vals.backend || '').trim();
+  if (!backend) return { error: t('usage_backoff_backend_required') || 'Backend is required' };
+  const body = { backend };
+  const minRaw = String(vals.minutes == null ? '' : vals.minutes).trim();
+  if (minRaw !== '') {
+    const n = Number(minRaw);
+    if (!Number.isInteger(n) || n < 1 || n > 525600) return { error: t('usage_backoff_minutes_invalid') || 'Minutes must be a whole number from 1 to 525600' };
+    body.minutes = n;
+  }
+  const reason = String(vals.reason || '').trim();
+  if (reason) body.reason = reason;
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) body.models = models;
+  return { body };
+};
+
+// The held/open models line shared by the capacity card and the back-off card.
+// Field names follow both bodies: whole_backend/held_models/open_models.
+function usageBackoffModelsHtml(h) {
+  if (!h) return '';
+  const held = Array.isArray(h.held_models) ? h.held_models : [];
+  const open = Array.isArray(h.open_models) ? h.open_models : [];
+  const parts = [];
+  if (h.whole_backend || held.length === 0) {
+    if (h.whole_backend) parts.push(`<span class="backoff-held-all">${escHtml(t('usage_backoff_whole_backend') || 'All models held')}</span>`);
+  } else {
+    parts.push(`<span class="backoff-held-models">${escHtml(t('usage_backoff_held_models') || 'Held models')}: ${escHtml(held.join(', '))}</span>`);
+  }
+  if (open.length) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_open_models') || 'Open models')}: ${escHtml(open.join(', '))}</span>`);
+  } else if (!h.whole_backend && held.length && h.other_models_open) {
+    parts.push(`<span class="backoff-open-models">${escHtml(t('usage_backoff_other_models_open') || 'Other models stay open')}</span>`);
+  }
+  if (!parts.length) return '';
+  return `<div class="backoff-models" style="font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px;">${parts.join('')}</div>`;
+}
+window.usageBackoffModelsHtml = usageBackoffModelsHtml;
+
+window.usageBackoffStatusHtml = function (status) {
+  const holds = status && Array.isArray(status.holds) ? status.holds : [];
+  const active = status && Array.isArray(status.active) ? status.active : [];
+  if (!holds.length && !active.length) return `<div style="color:var(--text2);font-size:12px;">${escHtml(t('usage_backoff_none') || 'No back-off is active')}</div>`;
+  const byBackend = {};
+  active.forEach(e => { if (e && e.backend) byBackend[e.backend] = e; });
+  const list = holds.length ? holds : active.map(e => ({ backend: e.backend, whole_backend: !(e.models && e.models.length), held_models: e.models || [], open_models: [] }));
+  return list.map(h => {
+    const e = byBackend[h.backend] || {};
+    const until = e.until ? `${escHtml(t('capacity_card_backoff_resets') || 'Resets')}: ${escHtml(typeof budgetTime === 'function' ? budgetTime(e.until) : e.until)}` : '';
+    const reason = e.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(e.reason)}</div>` : '';
+    return `<div class="usage-backoff-hold" data-backend="${escHtml(h.backend || '')}" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(h.backend || '')}</span><span>${until}</span></div>${window.usageBackoffModelsHtml(h)}${reason}</div>`;
+  }).join('');
+};
+
+window.usageBackoffCardHtml = function () {
+  const st = window._usageBackoff || {};
+  const lbl = (k, d) => escHtml(t(k) || d);
+  const inp = 'style="min-width:0;max-width:100%;padding:4px 6px;"';
+  const msg = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  return `<div class="usage-backoff-card" style="border:1px solid var(--border,#333);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0;">`
+    + `<div style="font-weight:600;">${lbl('usage_backoff_card_title', 'Usage back-off')}</div>`
+    + `<div id="usageBackoffStatus">${window.usageBackoffStatusHtml(st.status)}</div>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;">`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_backend', 'Backend')}<input id="usageBackoffBackend" type="text" placeholder="claude-code" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_minutes', 'Minutes')}<input id="usageBackoffMinutes" type="number" min="1" step="1" placeholder="60" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_models', 'Models (optional, comma separated)')}<input id="usageBackoffModels" type="text" placeholder="${lbl('usage_backoff_models_placeholder', 'empty = whole backend')}" ${inp}></label>`
+    + `<label style="display:flex;flex-direction:column;font-size:12px;">${lbl('usage_backoff_reason', 'Reason')}<input id="usageBackoffReason" type="text" ${inp}></label>`
+    + `<button class="btn-secondary" onclick="usageBackoffSet()">${lbl('usage_backoff_set', 'Set back-off')}</button>`
+    + `<button class="btn-secondary" onclick="usageBackoffClear()">${lbl('usage_backoff_clear', 'Clear')}</button>`
+    + `</div>`
+    + `<div style="font-size:11px;color:var(--text2);">${lbl('usage_backoff_models_hint', 'Name models to hold or clear only those models of the backend; leave empty for the whole backend.')}</div>`
+    + `<div id="usageBackoffMsg">${msg}</div>`
+    + `</div>`;
+};
+
+function _usageBackoffPaint(full) {
+  const st = window._usageBackoff;
+  const s = document.getElementById('usageBackoffStatus');
+  if (s) s.innerHTML = window.usageBackoffStatusHtml(st.status);
+  const m = document.getElementById('usageBackoffMsg');
+  if (m) m.innerHTML = st.error
+    ? `<div class="usage-backoff-error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(st.error)}</div>`
+    : (st.message ? `<div class="usage-backoff-message" style="color:var(--success,#22c55e);font-size:12px;">${escHtml(st.message)}</div>` : '');
+  if (full) {
+    const c = document.getElementById('usageBackoffCard');
+    if (c && !s) c.innerHTML = window.usageBackoffCardHtml();
+  }
+}
+
+function _usageBackoffFormValues() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  return { backend: v('usageBackoffBackend'), minutes: v('usageBackoffMinutes'), models: v('usageBackoffModels'), reason: v('usageBackoffReason') };
+}
+
+window.usageBackoffRefresh = function () {
+  return Promise.resolve(apiFetch('/api/usage/backoff')).then(body => {
+    window._usageBackoff.status = body; window._usageBackoff.error = '';
+    _usageBackoffPaint(true);
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err);
+    _usageBackoffPaint(true);
+  });
+};
+
+window.usageBackoffSet = function () {
+  const built = window.usageBackoffBuildSetBody(_usageBackoffFormValues());
+  if (built.error) { window._usageBackoff.error = built.error; window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve(); }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'POST', body: JSON.stringify(built.body) })).then(body => {
+    window._usageBackoff.status = body || window._usageBackoff.status;
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_saved') || 'Back-off set';
+    _usageBackoffPaint();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffClear = function () {
+  const vals = _usageBackoffFormValues();
+  const body = { backend: String(vals.backend || '').trim() };
+  const models = window.usageBackoffParseModels(vals.models);
+  if (models.length) {
+    if (!body.backend || body.backend.toLowerCase() === 'all') {
+      window._usageBackoff.error = t('usage_backoff_models_need_backend') || 'Name a backend to clear only some models';
+      window._usageBackoff.message = ''; _usageBackoffPaint(); return Promise.resolve();
+    }
+    body.models = models;
+  }
+  return Promise.resolve(apiFetch('/api/usage/backoff', { method: 'DELETE', body: JSON.stringify(body) })).then(() => {
+    window._usageBackoff.error = ''; window._usageBackoff.message = t('usage_backoff_cleared') || 'Back-off cleared';
+    return window.usageBackoffRefresh();
+  }).catch(err => {
+    window._usageBackoff.error = err && err.message ? err.message : String(err); window._usageBackoff.message = '';
+    _usageBackoffPaint();
+  });
+};
+
+window.usageBackoffStartPolling = function () {
+  if (window._usageBackoffInterval) return;
+  window._usageBackoffInterval = setInterval(() => {
+    if (!document.getElementById('usageBackoffCard')) { window.usageBackoffStopPolling(); return; }
+    window.usageBackoffRefresh();
+  }, USAGE_BACKOFF_REFRESH_MS);
+};
+window.usageBackoffStopPolling = function () {
+  if (window._usageBackoffInterval) { clearInterval(window._usageBackoffInterval); window._usageBackoffInterval = null; }
+};
+
 // ── Burn guard card ─────────────────────────────────────────────────────────
 // The burn guard (GET /api/usage/burn-guard, POST /api/usage/burn-guard/run) watches
 // the weekly burn against the pace line and climbs or steps back a ladder of rungs.
@@ -39217,7 +39415,7 @@ function usageCalcRerender() {
 // burn guard section of the Settings page (Automata tab) where config is edited.
 // It computes nothing itself. The effort ceiling is still read from the status body.
 // Auto-refresh uses a window-level interval variable, never a DOM-held timer.
-const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
+const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude', route_entry: 'burn_guard_rung_route_entry', route_cheaper_model: 'burn_guard_rung_route_cheaper_model', hold_entry: 'burn_guard_rung_hold_entry' };
 const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
 const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
 const BURN_GUARD_REFRESH_MS = 60000;
@@ -39364,6 +39562,7 @@ window.burnGuardStopPolling = function () {
   if (window._burnGuardInterval) { clearInterval(window._burnGuardInterval); window._burnGuardInterval = null; }
 };
 
+
 // The usage card's loader, registered like the capacity card's: a skeleton on
 // the first load, the daemon's error plainly with Retry, and the last good body
 // kept beneath it. It does not poll; the card refreshes when the operator asks
@@ -39380,6 +39579,8 @@ function _automationUsageLoader() {
       _usageCalc.error = '';
       if (typeof window.burnGuardRefresh === 'function') window.burnGuardRefresh();
       if (typeof window.burnGuardStartPolling === 'function') window.burnGuardStartPolling();
+      if (typeof window.usageBackoffRefresh === 'function') window.usageBackoffRefresh();
+      if (typeof window.usageBackoffStartPolling === 'function') window.usageBackoffStartPolling();
       return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
     },
     failedText: msg => t('usage_calc_error', [msg]),
@@ -43219,6 +43420,43 @@ window.costReportReconcileHtml = function(rc) {
   return out + '</div>';
 };
 
+// costReportModelRowsHtml renders the report's by-model section
+// (model_rows): one row per model name with its in / out / cached tokens
+// and its API-equivalent dollars, priced at the model's own rate (the
+// per-model cost entry when one is configured, else the backend's rate).
+// The section is an equivalence — the plan is flat — never a bill. It
+// returns '' when the report carries no model_rows (older daemon).
+window.costReportModelRowsHtml = function(report) {
+  const rep = (report && typeof report === 'object' && !Array.isArray(report)) ? report : {};
+  const rows = Array.isArray(rep.model_rows) ? rep.model_rows : [];
+  if (!rows.length) return '';
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const anyUsd = rows.some(r => r && typeof r === 'object' &&
+    r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd)));
+  let out = `<div style="margin-top:8px;font-size:10px;">
+    <div style="font-weight:600;color:var(--text);margin-bottom:2px;">${escHtml(t('cost_report_by_model_title') || 'By model')} <span style="font-weight:400;color:var(--text2);">${escHtml(t('cost_report_by_model_note') || 'API-equivalent at each model’s own rate — an equivalence, not a bill')}</span></div>`;
+  for (const r of rows.slice(0, COST_REPORT_MAX_ROWS)) {
+    if (!r || typeof r !== 'object') continue;
+    const name = (r.model === undefined || r.model === null || String(r.model).trim() === '')
+      ? (t('cost_report_key_unknown') || '—') : r.model;
+    const tok = t('cost_report_by_model_tokens', [num(r.tokens_in), num(r.tokens_out), num(r.cache_read), num(r.cache_creation)])
+      || (num(r.tokens_in) + ' in / ' + num(r.tokens_out) + ' out');
+    let usd = '';
+    if (anyUsd) {
+      const has = r.api_equivalent_usd !== undefined && r.api_equivalent_usd !== null && Number.isFinite(Number(r.api_equivalent_usd));
+      usd = has
+        ? escHtml(t('cost_report_usd_api_value', [num(r.api_equivalent_usd).toFixed(2)]) || ('$' + num(r.api_equivalent_usd).toFixed(2) + ' API-equivalent'))
+        : escHtml(t('cost_report_usd_none') || '—');
+    }
+    out += `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;padding:1px 0;" title="${escHtml(String(name))}">
+      <span style="overflow:hidden;text-overflow:ellipsis;"><span style="font-weight:600;">${escHtml(String(name))}</span> <span style="color:var(--text2);font-family:monospace;">${escHtml(tok)}</span></span>
+      ${usd ? `<span style="color:var(--text2);font-family:monospace;">${usd}</span>` : ''}
+    </div>`;
+  }
+  out += '</div>';
+  return out;
+};
+
 // costReportCardHtml renders the whole card body from a decoded
 // GET /api/cost/report body: title + help link, the retention line
 // (retention_days), the lifetime-fallback note, the group table (tokens
@@ -43273,7 +43511,8 @@ window.costReportCardHtml = function(report, opts) {
   if (hidden > 0) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
-  return head + window.costReportTotalsHtml(rep.totals) + notes + body + window.costReportReconcileHtml(rep.reconciliation);
+  const modelSection = window.costReportModelRowsHtml(rep);
+  return head + window.costReportTotalsHtml(rep.totals) + notes + body + modelSection + window.costReportReconcileHtml(rep.reconciliation);
 };
 
 // ── BL412 — self-config card ────────────────────────────────────────────

@@ -254,7 +254,7 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 		reset = applied
 	}
 	in := Input{
-		Readings:          nonNilReadings(snap.Record.Readings),
+		Readings:          DefaultEntryReadings(snap.Record.Readings),
 		Reset:             reset,
 		ResetFromProfile:  cfg.Schedule != (Schedule{}) && cfg.Schedule.Valid(),
 		Now:               s.now(),

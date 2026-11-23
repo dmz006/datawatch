@@ -716,6 +716,12 @@ arguments:
 - Comm channels: `usage_backoff status`,
   `usage_backoff set <backend> <minutes|until> [reason]`, `usage_backoff clear`.
 
+A set and a clear can carry an optional `models` list (an array on MCP and
+REST, `--models a,b` on the CLI, `models=a,b` on the comm channel): a set with
+it holds only those models of the backend, and a clear with it removes only
+those models from the flag. A clear-all is never model-scoped. See
+[Usage back-off](usage-backoff.md) (`### Holding only certain models`).
+
 Status lists each active flag (backend, until, reason, and whether it was
 set by a rate limit or by an operator) together with the effective mode and
 maximum wait. The capacity status (`datawatch capacity`, the PWA Capacity
@@ -1272,7 +1278,9 @@ always included). The card is left out when there is nothing to show.
   activity is listed as *no cap configured*, so real hardware is not hidden.
 - **Usage back-off.** One row per active flag: the backend, `Resets: <time>`
   when the reset time is known or *reset time unknown* when it is only the
-  maximum back-off, and the reason underneath.
+  maximum back-off, the held and open models when the flag is limited to some
+  models (see [Holding only certain models](usage-backoff.md#holding-only-certain-models)),
+  and the reason underneath.
 - **LLM budgets.** One block per LLM that has a budget: a spend bar
   (`$spend of $ceiling`, with peer spend added), a *budget window full* badge
   when it is full, when the window ends, and when it rolls over. The bar is

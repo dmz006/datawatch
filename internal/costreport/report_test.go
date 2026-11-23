@@ -1095,3 +1095,75 @@ func TestCostReportSupervisorAndUnknownGrouping(t *testing.T) {
 		t.Fatalf("rows = %v", got)
 	}
 }
+
+// TestBuildModelRowsPerModelRates — the by-model section prices each
+// model at its own rate when the table carries a model-named entry,
+// falls back to the record's backend rate when it does not, and leaves
+// a row without USD when neither path has a rate. Two records at
+// different rates must not share a dollar figure.
+func TestBuildModelRowsPerModelRates(t *testing.T) {
+	records := []Record{
+		makeRecord("m1", "", "auto1", "claude-code", fixedDay(time.October, 6, 10), 1000, 1000, false),
+		makeRecord("m2", "", "auto1", "gpt", fixedDay(time.October, 6, 11), 2000, 0, false),
+		makeRecord("m3", "", "auto1", "claude-code", fixedDay(time.October, 7, 9), 500, 500, false),
+		makeRecord("m4", "", "auto1", "ollama", fixedDay(time.October, 7, 10), 400, 400, false),
+	}
+	records[0].Model = "claude-sonnet-4"
+	records[1].Model = "gpt-5"
+	// records[2] has no model: the row groups under its backend family
+	records[3].Model = "llama3" // a model with no rate anywhere: unpriced row
+	src := &fakeSource{result: &SourceResult{Records: records}}
+	rate := func(key string) (session.CostRate, bool) {
+		switch key {
+		case "claude-sonnet-4": // the model's own rate, finer than its backend's
+			return session.CostRate{InPerK: 0.003, OutPerK: 0.015}, true
+		case "gpt-5":
+			return session.CostRate{InPerK: 0.005, OutPerK: 0.02}, true
+		case "claude-code": // backend fallback for the model-less record
+			return session.CostRate{InPerK: 0.01, OutPerK: 0.02}, true
+		}
+		return session.CostRate{}, false
+	}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, rate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ModelRows) != 4 {
+		t.Fatalf("want 4 model rows, got %d: %+v", len(rep.ModelRows), rep.ModelRows)
+	}
+	// Sorted by model name: claude-code, claude-sonnet-4, gpt-5, llama3.
+	want := []struct {
+		model  string
+		usd    float64
+		hasUSD bool
+	}{
+		{"claude-code", 0.5*0.01 + 0.5*0.02, true},   // priced at the backend fallback
+		{"claude-sonnet-4", 1*0.003 + 1*0.015, true}, // priced at the model's own rate
+		{"gpt-5", 2 * 0.005, true},
+		{"llama3", 0, false}, // no rate for the model or its backend
+	}
+	for i, w := range want {
+		row := rep.ModelRows[i]
+		if row.Model != w.model {
+			t.Fatalf("row %d: want model %q, got %q", i, w.model, row.Model)
+		}
+		if w.hasUSD {
+			if row.APIEquivalentUSD == nil {
+				t.Fatalf("%s: want USD, got none (%+v)", w.model, row)
+			}
+			if math.Abs(*row.APIEquivalentUSD-w.usd) > tokFuzz {
+				t.Fatalf("%s: want usd %v, got %v", w.model, w.usd, *row.APIEquivalentUSD)
+			}
+			if row.USDLabel == "" {
+				t.Fatalf("%s: want an API-equivalent label, got none", w.model)
+			}
+		} else if row.APIEquivalentUSD != nil {
+			t.Fatalf("%s: want no USD, got %v", w.model, *row.APIEquivalentUSD)
+		}
+	}
+	// The two priced models must not share a dollar figure: each record
+	// was priced at its own rate, not the group's.
+	if *rep.ModelRows[1].APIEquivalentUSD == *rep.ModelRows[2].APIEquivalentUSD {
+		t.Fatal("per-model rows share a USD figure; the rates were not applied per model")
+	}
+}

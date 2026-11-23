@@ -768,20 +768,28 @@ Nothing in this review changes a setting.
 ### Burn guard
 
 The burn guard compares the projected weekly burn with the usage calculator's
-pace line every `interval_minutes` and, while the projection runs over by more
-than `margin_points`, applies a ladder of responses (`lower_inflight`,
-`route_pi_prompt`, `hold_claude`) and steps back when the projection is under
-the line. Keys live under `usage.burn_guard.`: `enabled` (default true),
-`interval_minutes` (60), `margin_points` (2), `ladder`, `step_back` (true),
+pace line every `interval_minutes` (or the entry's own plan and target) and,
+while the projection runs over by more than `margin_points`, applies a ladder of
+responses (`lower_inflight`, `route_entry`, `route_cheaper_model`,
+`hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude`
+are still accepted and normalize to the entry names) and steps back when the
+projection is under the line. By default it guards one entry, `claude-code`;
+`usage.burn_guard.entries` guards any number of paid LLM entries, each with its
+own `usage_source`, `plan` (`flat` or `metered`), `period_target`, `model`,
+`ladder`, `held_models`, `route_to`, `route_cheaper_model` and `points_per_usd`.
+Keys live under `usage.burn_guard.`: `enabled` (default true),
+`interval_minutes` (60), `margin_points` (2), `ladder` (default
+`lower_inflight`, `route_entry`, `hold_entry`), `step_back` (true),
 `max_projection_gap_points` (25; 0 never compares the guard and advice
 projections, 0 to 100),
 `ask_on_change` (false: the guard alerts once per change and raises no question;
 true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`
 (0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
-(2). Settings apply without a restart. The effort ceiling is set per Automation,
-not through the config keys. The guard acts on the `claude-code` backend only when
-that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
+(2), and `entries` (unset: the single `claude-code` entry above). Settings
+apply without a restart. The effort ceiling is set per Automation,
+not through the config keys. The guard acts on an entry when its [billing
+mode](#llm-billing-mode) is `allowance` (the default for `claude-code`) or the
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 

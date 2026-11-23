@@ -210,7 +210,11 @@ session:
   rate_limit_global_pause: false
   # BL6 (v3.7.1): per-backend USD rates (per 1K tokens). Empty entries
   # fall through to built-in defaults. Override here when your account
-  # plan differs from the public price card.
+  # plan differs from the public price card. Any model in an LLM entry's
+  # models list may carry its own per-model rates (in_per_k, out_per_k,
+  # cache_read_per_k, cache_write_per_k) that win for that model — see the
+  # LLM registry note below this block; this block is the per-model
+  # fallback and the only place in/out rates are set per backend.
   cost_rates:
     claude-code:
       in_per_k:  0.003
@@ -1243,6 +1247,17 @@ profiles:
 #   llm_update, PUT on the LLM entry, or the Verification mode selector in
 #   the web app LLM settings. (The `llms:` block above is a documentation
 #   example, kept commented so this file is not a live registry entry.)
+#
+# Per-model cost rates (LLM registry entry, not a config.yaml key): any
+# model in an entry's models list may carry in_per_k, out_per_k,
+# cache_read_per_k and cache_write_per_k (USD per 1K tokens, any subset).
+# They price that model's tokens in the cost report's by-model rows and the
+# burn guard's per-entry projection, and they are what the guard's
+# route_cheaper_model rung compares when it picks the entry's cheapest other
+# model. A field left unset falls back to the entry's per-backend
+# cost_rates (cache read/write prices have no per-backend value and resolve
+# to 0 when unset). Set them with `datawatch llm update <name>`'s rate flags,
+# MCP llm_update, PUT /api/llms/{name}, or the web app LLM edit.
 
 classifier:
   # Publishers a classify-mode judge model may come from. Default empty: no
@@ -5330,8 +5345,14 @@ usage:
     # 0 means never compare. 0 to 100, default 25.
     max_projection_gap_points: 25
     # Ordered rungs applied while over the line. Allowed: lower_inflight,
-    # route_pi_prompt, hold_claude. Default is all three in that order.
-    ladder: [lower_inflight, route_pi_prompt, hold_claude]
+    # route_entry, route_cheaper_model, hold_entry (the legacy first-version
+    # names route_pi_prompt and hold_claude are still accepted and normalize
+    # to route_entry and hold_claude). Default: lower_inflight, route_entry,
+    # hold_entry. route_cheaper_model is the fourth, opt-in rung: it keeps
+    # the backend and sends the entry's new work to its cheaper model
+    # (Haiku for a Claude entry) — a no-op for an entry that resolves no
+    # cheaper model.
+    ladder: [lower_inflight, route_entry, hold_entry]
     # Undo rungs in reverse once the projection is back under the line.
     # Default true.
     step_back: true
@@ -5377,6 +5398,35 @@ usage:
     # A reading older than this is stale and the guard asks for a fresh one.
     # Whole number 1 to 1440, default 60.
     reading_freshness_minutes: 60
+    # Per-LLM entries the guard evaluates. Unset guards one entry,
+    # claude-code (the behaviour above); set it to guard any number of paid
+    # LLM entries, each with its own readings, plan and ladder:
+    #   entries:
+    #     # LLM entry name (required, unique).
+    #     - llm: claude-code
+    #       # readings (the readings that name this entry) | none; none is never held.
+    #       usage_source: readings
+    #       # flat (a weekly percentage) | metered (a spend figure in dollars).
+    #       plan: flat
+    #       # flat: a percent (0 means 100); metered: dollars (required).
+    #       period_target: 100
+    #       # Model whose own per-model cost rate prices this entry's tokens;
+    #       # empty is the entry's first model.
+    #       model: ""
+    #       # This entry's rungs; empty uses the guard-wide ladder above.
+    #       ladder: []
+    #       # Limit the hold rung to these models of the entry; empty holds the
+    #       # whole entry.
+    #       held_models: []
+    #       # Where the route rung sends new work; empty makes it a no-op.
+    #       route_to: ""
+    #       # Model the route_cheaper_model rung sends new work to, on the
+    #       # same backend (Haiku for a Claude entry); empty auto-resolves the
+    #       # entry's own cheapest other priced model.
+    #       route_cheaper_model: ""
+    #       # flat entries only: converts dollar-priced tokens to points of the
+    #       # weekly allowance; 0 keeps the fitted cache coefficients.
+    #       points_per_usd: 0
   # Billing profiles: per-provider pricing model. Open map keyed by provider
   # (claude-code, openai, gemini, or any other operator-chosen key). A
   # provider with no profile reads the assumed default (api_metered, unit

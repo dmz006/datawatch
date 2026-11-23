@@ -3539,8 +3539,16 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 	if to, ok := routeBackend(backend); ok {
 		// The burn guard routes new work meant for this backend elsewhere. The
 		// model belongs to the backend it was set for, so it is dropped (empty =
-		// the target backend's default).
+		// the target backend's default). A backend route takes precedence over a
+		// model route: once the backend changes the original model is meaningless
+		// anyway.
 		backend, model, source = to, "", ExecutorSourceBurnGuard
+		return backend, model, source
+	}
+	if m, ok := routeModelFor(backend); ok {
+		// The route_cheaper_model rung keeps this backend but sends new work to a
+		// cheaper model on it: the model is replaced, the backend is unchanged.
+		model, source = m, ExecutorSourceBurnGuard
 	}
 	// Explicit-model policy (model_policy.go): a claude-code worker session is
 	// started with an explicit model. After the precedence above (task ->
@@ -3584,6 +3592,32 @@ func routeBackend(backend string) (string, bool) {
 		return "", false
 	}
 	return to, true
+}
+
+var backendModelRoute atomic.Pointer[func(backend string) (string, bool)]
+
+// SetBackendModelRoute wires the lookup consulted when a task's backend is resolved:
+// it returns the model new work meant for backend runs with, if the burn guard routes
+// it. Nil clears it. It changes only the model of new work on the same backend; it
+// never changes the backend and never touches a running session.
+func SetBackendModelRoute(fn func(backend string) (string, bool)) {
+	if fn == nil {
+		backendModelRoute.Store(nil)
+		return
+	}
+	backendModelRoute.Store(&fn)
+}
+
+func routeModelFor(backend string) (string, bool) {
+	fn := backendModelRoute.Load()
+	if fn == nil || backend == "" {
+		return "", false
+	}
+	model, ok := (*fn)(backend)
+	if !ok || model == "" {
+		return "", false
+	}
+	return model, true
 }
 
 // resolveTaskEffort resolves a task's execution effort: task → story → PRD →

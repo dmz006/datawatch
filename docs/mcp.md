@@ -1156,6 +1156,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   ```
 
 - **`usage_backoff_status` / `usage_backoff_recheck` — pattern staleness fields.** The status response carries `patterns_version` (a fingerprint of the effective rate-limit patterns), `patterns_stale` (true when the effective patterns or the claude tool's version text changed since the last operator recheck) and `claude_cli_version` (the claude tool's version text, `unknown` when the tool is absent or its version command fails — which on its own never raises the flag). `usage_backoff_recheck` stores both the pattern fingerprint and the current version text as rechecked, clearing `patterns_stale`. `capacity_status` and `autonomous_status` carry the same three fields. See [howto/automata-capacity.md](howto/automata-capacity.md) (`### Pattern staleness and manual recheck`).
+- **`usage_backoff_set` / `usage_backoff_clear` — optional `models` list.** An array of model names (compared lower-cased). A set with it holds only the named models of the backend and the others keep running; a set without it holds the whole backend. A clear with it removes only the named models from the flag's list (dropping the flag when that empties the list) and requires a named backend; a clear-all is never model-scoped, and whole-backend flags are never narrowed. A `models` list with no usable names is an operator error on every surface. See [howto/usage-backoff.md](howto/usage-backoff.md) (`### Holding only certain models`).
 - **Automation model-tier tools: `automation_set_llm` and `automation_set_verification_llm`.** An Automation carries default model settings for the member Automata it runs. These two tools set them; each proxies to `POST /api/automations/{id}/set_llm` or `/set_verification_llm` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Resolution order for the execution backend, model and effort, and for the verification LLM: task → story → Automaton → Automation → global. Backend and model come from the same level; effort resolves independently. Each task run records `executor_source` (`task` | `story` | `prd` | `automation` | `global`) beside `verifier_source`. Planning has its own optional pair, `planning_backend` and `planning_model` (unset means the global planning backend); it is used only when a member is decomposed and never changes the run or verify default. Both tools are allowed while the Automation is `draft`, `active`, `paused` or `blocked`.
 
   | Argument | Required | Tools | Description |
@@ -3083,7 +3084,7 @@ argument overrides the stored setting for this one call only.
 
 ### Burn guard tools
 
-The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_pi_prompt`, `hold_claude`) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
+The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude` are accepted and normalize to the entry-generic names) when the projection runs over the line plus the margin. `route_cheaper_model` keeps the backend and sends the entry's new work to its cheaper model (the entry's `route_cheaper_model` field, or its cheapest other priced model). It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
 
 | Tool | Arguments | Result |
 |---|---|---|
@@ -3095,7 +3096,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 ```
 burn_guard_status()
 burn_guard_run()
-burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_claude"])
+burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_entry"])
 ```
 
 ### `usage_advice`
