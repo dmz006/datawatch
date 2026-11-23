@@ -347,8 +347,10 @@ judge run gets more time than the base `autonomous.judge_timeout_seconds`:
   [One attempt per backend](#one-attempt-per-backend)).
 
 Example: with the defaults (`judge_timeout_seconds` 1800, 600 per 1000 lines),
-a 2,000-line change split in two groups of 1,000 lines gives each group
-1800 + 600 = 2400 seconds.
+a single 1,000-line file that is a group of its own gets 1800 + 600 = 2400
+seconds. The groups of a 2,000-line change that each hold 400 lines or fewer
+get the base 1800 seconds, because at or below the threshold the limit is the
+base limit.
 
 If the judge still times out on every backend, the Automaton is held and the
 review state reads `timed_out`. Run the review again as described in

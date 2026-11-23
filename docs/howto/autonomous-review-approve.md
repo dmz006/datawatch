@@ -288,12 +288,13 @@ verdict was made, so nothing about the work is judged good or bad.
 |---|---|---|
 | REST | `POST /api/autonomous/prds/{id}/rejudge` | Send `{"backend": "<name>"}` to pin one judge backend, or an empty body for the configured judge backends |
 | MCP | `autonomous_prd_rejudge` | `autonomous_prd_rejudge(id="a1b2c3d4")` |
-| CLI | `datawatch autonomous prd-approve <id>`, then `datawatch autonomous prd-run <id>` | Approve the held Automaton, then run it; the judge runs again on the same head |
-| Comm channel | `autonomous approve <id>`, then `autonomous run <id>` | Same two steps as the CLI |
-| Run | `autonomous_prd_run`, `POST /api/autonomous/prds/{id}/run` | Run the held Automaton to start the judge again |
+| CLI | `datawatch autonomous prd-run <id>` | Run the held Automaton; the completion review runs again on the same head. No approve step is needed for this hold |
+| Comm channel | `autonomous run <id>` | Same as the CLI |
+| Run | `autonomous_prd_run`, `POST /api/autonomous/prds/{id}/run` | Run the held Automaton to start the judge again (the MCP and REST forms of the same run) |
 
 The rejudge has no CLI command or comm verb of its own, so the CLI and comm rows
-use approve and then run, which judge the same head again.
+use run instead. A run of an Automaton held by a judge timeout replays only the
+completion review on the same head; nothing is approved by it.
 
 What happens next:
 
