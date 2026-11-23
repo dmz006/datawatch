@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ type ResultStore struct {
 	mu      sync.Mutex
 	path    string
 	entries map[string]*ResultEntry
+	fs      resultFS // nil means the real filesystem
 }
 
 // NewResultStore creates or loads a result store from path.
@@ -76,11 +78,83 @@ func (s *ResultStore) save() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	fsys := s.fs
+	if fsys == nil {
+		fsys = osResultFS{}
+	}
+	return atomicWriteFile(fsys, s.path, data, 0600)
+}
+
+// resultFile is the subset of an open file the atomic writer needs.
+type resultFile interface {
+	Write(p []byte) (int, error)
+	Sync() error
+	Close() error
+	Name() string
+}
+
+// resultFS is the injectable filesystem used by the result store save path.
+type resultFS interface {
+	CreateTemp(dir, pattern string) (resultFile, error)
+	Chmod(name string, mode os.FileMode) error
+	Rename(oldpath, newpath string) error
+	Remove(name string) error
+	SyncDir(dir string) error
+}
+
+type osResultFS struct{}
+
+func (osResultFS) CreateTemp(dir, pattern string) (resultFile, error) {
+	return os.CreateTemp(dir, pattern)
+}
+func (osResultFS) Chmod(name string, mode os.FileMode) error { return os.Chmod(name, mode) }
+func (osResultFS) Rename(o, n string) error                  { return os.Rename(o, n) }
+func (osResultFS) Remove(name string) error                  { return os.Remove(name) }
+func (osResultFS) SyncDir(dir string) error {
+	d, err := os.Open(dir) // #nosec G304 -- directory of the store file
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return err
+	}
+	return d.Close()
+}
+
+// atomicWriteFile writes data to a temp file in path's directory, fsyncs it,
+// renames it over path and fsyncs the directory. On any failure before the
+// rename the old file is untouched and the temp file is removed.
+func atomicWriteFile(fsys resultFS, path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := fsys.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	fail := func(err error) error {
+		_ = f.Close()
+		_ = fsys.Remove(tmp)
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := fsys.Chmod(tmp, mode); err != nil {
+		return fail(err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		_ = fsys.Remove(tmp)
+		return err
+	}
+	if err := fsys.Rename(tmp, path); err != nil {
+		_ = fsys.Remove(tmp)
+		return err
+	}
+	return fsys.SyncDir(dir)
 }
 
 // lockAndRefresh takes the cross-process file lock (sidecar <path>.lock) and
