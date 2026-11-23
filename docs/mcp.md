@@ -280,7 +280,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable`, `plugin_service_status`, `plugin_widget_list`, `plugin_widget_get`, `plugin_token_list` |
 | Plugin service lifecycle + rotation (MCP-only) | `plugin_service_start`, `plugin_service_stop`, `plugin_service_restart`, `plugin_token_rotate` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete`, `project_set_arcs` (deprecated; plans replace it), `project_rollup`, `project_history`, `project_timeline`, `project_policy_effective` |
-| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
+| Plans + plan records | `plan_record_create/list/get/update/search/import`, `plan_migrate`, `plan_rollup`, `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`, and the release plan tools `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert` (see [Plan record tools](#plan-record-tools)) |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
@@ -292,6 +292,15 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
 | Automata events (the Events tab) | (no MCP tools — REST `GET /api/autonomous/event-log`, CLI `datawatch autonomous event-log`, comm `autonomous event-log`) |
 
+- **Packs tools** (installable task and Automaton template packs; same data as `/api/packs`):
+  - **`packs_list`** — lists installed packs with name, version, digest, whether the operator accepted them, and a summary. No parameters.
+  - **`packs_setting_get`** — reads the packs setting `{enabled, active[]}`. No parameters.
+  - **`packs_setting_set`** — changes the packs setting. Parameters: `enabled` (bool, optional), `active` (string list, optional); a field left out is unchanged. Every active name must be `builtin` or an installed pack.
+  - **`packs_inputs_get`** — reads the input values a pack has at one level. Secret inputs come back redacted.
+  - **`packs_inputs_set`** — replaces the input values a pack has at one level; every name must be an input the pack declares.
+  - **`packs_install`** — installs a pack from a folder on the daemon host; it is not usable until accepted.
+  - **`packs_accept`** — accepts an installed pack version so it may run; records the digest in the trust store.
+  - **`packs_remove`** — removes one installed version of a pack.
 - **`autonomous_standard_tasks`** — lists the built-in standard tasks the decomposer adds to each story, with whether each is on for the project and its `mode`. Parameters: `project` (optional string; a project directory or alias, selects the per-project override; empty reports the global `enabled`). Returns the same object as `GET /api/autonomous/standard-tasks`: `{enabled, tasks[]}`, where each row has `id`, `title`, `kind`, `summary`, `offered_when`, `enabled`, `project_override`, `mode` (`llm`, `daemon` or `off`, from `autonomous.task_templates.mode`) and `runner` (`session`, `script gate`, `daemon` or `none`). Example: `autonomous_standard_tasks {"project": "/home/<user>/app"}`. The comm channel has the same list as `standard tasks` (or `autonomous standard-tasks`): one line per task, `id | title | on|off | mode | runner`, using the global setting.
 
 Compute node tools:
@@ -629,6 +638,12 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   An unknown project is a not-found answer; a project with no release yet answers with `last_release` null and defaults for unset settings.
+- **`autonomous_deploy_get`**, **`autonomous_deploy_run`** — the deploy after a ship. `_get` reads the effective `autonomous.deploy` settings, whether a merge or deploy is running, the last deploy phase and outcome, any deferral and its reason, and the snapshot's time and SHA-256 (never its contents). `_run` starts the deploy sequence for the current build now; it is refused with a conflict while a merge or deploy is running. Neither takes arguments. Change the settings with `config_set` (for example `config_set(key="autonomous.deploy.health_timeout", value="3m")`); an empty value means that step does nothing. `_get` needs the autonomous read capability and `_run` the write capability when called by a federated peer. See [howto/deploy-after-ship.md](howto/deploy-after-ship.md).
+
+  ```
+  autonomous_deploy_get()
+  autonomous_deploy_run()
+  ```
 
   ```
   autonomous_merge_pipeline_get(project="demo")
@@ -819,6 +834,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_config_set(host_load_alert_mode="reap", host_load_alert_multiple=2, host_load_alert_minutes=15)
   ```
 - **`housekeeping_repairs`** — read the housekeeping repairs: per group (`task_chain`, `advance_judge`, `lane_fill`, `leftovers`, `planning`) the mode in effect (`off`, `report` or `on`), what a report-mode pass would do (`would`), what an on-mode pass did (`did`), and the cases that `failed` or were `skipped_unsafe`; each entry says what was found, what was done and how to undo it. Takes no arguments (one is refused). Read-only: reading never repairs anything, raises an alert or changes a mode. Change a mode with `config_set` and the key `autonomous.housekeeping_repairs.<group>` (`off`, `report` or `on`; default `report`); `autonomous.housekeeping_repairs.grace_seconds` sets the grace (default 300). Returns the same object as `GET /api/autonomous/housekeeping-repairs`.
+- **`autonomous_gate_repair_status`** — read the gate repair engine: the `mode` in effect (`off`, `report` or `on`; default `report`), `records` (newest first; each with the failure class — `later_story_script`, `docs_mirror_stale`, `allowed_list_rejects`, `tracker_id_css_hex`, `pipe_sigpipe`, `restart_killed` or `unknown` — the `would` repair, the applied `did` repair and its undo, the `before`/`after` text pair when a script was changed, and the held question it raised if any — options `retry` (retry the gate now, the question's default) and `cancel` (the task stays failed and its dependents do not run)), `budget` (one entry per spent task/class; spent budgets persist across restarts) and `held_questions`. Takes no arguments (any argument is refused). Read-only: reading never repairs anything, raises an alert or changes a mode. The earlier plural tool `gate_repairs` reads the `gate-repairs` route and answers the same object. Change the mode with `config_set` and the key `autonomous.gate_repair.mode` (`off`, `report` or `on`; default `report`). Returns the same object as `GET /api/autonomous/gate-repair` (or, for the alias, `GET /api/autonomous/gate-repairs`). See [howto/automaton-gate-repair.md](howto/automaton-gate-repair.md).
+- **`autonomous_gate_repair_run`** — run the gate repair engine now: no arguments is one pass over every failed gate, both `automaton_id` and `task_id` repair one failed gate, exactly one id is refused. A run honors the live mode (in `report` it only records what it would do and changes nothing; in `on` it applies the safe repair for the class and re-runs the gate once), spends the same per-class repair budget, writes the same records and decision lines and is bound by the same hard limits — it never changes the gate's verdict, never changes the mode, and its script edits stay inside the Automaton's own verify folder. Returns the run outcome(s) plus a fresh status read. Proxies `POST /api/autonomous/gate-repair/run`.
 - **`autonomous_unlanded_work`** — read the list of archived Automaton branches whose commits are not on the project's default branch: `branches[]`, one entry per branch with the Automaton, title, branch, commits not on the default branch, last activity and a recommendation (`landed`, `superseded` or `needs_decision`), plus `counts` (`total`, `by_state`, `by_age`, `oldest_pending`). Read-only: keeping, archiving a branch and deleting a worktree (which writes a backup bundle first) are REST, CLI, comm channel and PWA actions, not MCP tools. Returns the same object as `GET /api/autonomous/unlanded-work`. See [howto/automaton-worktree-cleanup.md](howto/automaton-worktree-cleanup.md).
 - **`autonomous_pending_items`**, **`autonomous_pending_item_add`**, **`autonomous_pending_item_attach`**, **`autonomous_pending_items_refresh`** — pending items: named pieces of work that have no Automaton yet. An Automation carries one as a member (`automation_insert_member` with `pending_item_id`) and holds at it until an Automaton is attached. `autonomous_pending_items` is read-only and returns `policy` and `auto_resume` in effect, `source` (the file registry settings), `last_refresh`, `items` and `held`; it takes optional `state` (`waiting`, `attached` or `done`) and `automation_id`. `autonomous_pending_item_add` takes `title` (**required**) and `ref` and returns the new item. `autonomous_pending_item_attach` takes `item_id` and `automaton_id` (both **required**) and converts the waiting members in place; it is refused with `409` when the item is not waiting and `404` for an unknown item or Automaton. `autonomous_pending_items_refresh` reads the file registry now and returns the counts of rows added, updated, done, dropped, kept and skipped, or the error. They return the same objects as `GET` and `POST /api/autonomous/pending-items`, `.../{id}/attach` and `.../refresh`. The nine `autonomous.automation.pending_item_*` settings are set through `config_set` or `autonomous_config_set` (`automation_pending_item_policy`, `automation_pending_item_auto_resume` and `automation_pending_item_source_path`, `_id_pattern`, `_id_column`, `_title_column`, `_state_column`, `_done_values`, `_on_missing_row`). See [howto/automaton-pending-items.md](howto/automaton-pending-items.md).
 
@@ -1160,6 +1177,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   ```
 
 - **`usage_backoff_status` / `usage_backoff_recheck` — pattern staleness fields.** The status response carries `patterns_version` (a fingerprint of the effective rate-limit patterns), `patterns_stale` (true when the effective patterns or the claude tool's version text changed since the last operator recheck) and `claude_cli_version` (the claude tool's version text, `unknown` when the tool is absent or its version command fails — which on its own never raises the flag). `usage_backoff_recheck` stores both the pattern fingerprint and the current version text as rechecked, clearing `patterns_stale`. `capacity_status` and `autonomous_status` carry the same three fields. See [howto/automata-capacity.md](howto/automata-capacity.md) (`### Pattern staleness and manual recheck`).
+- **`usage_backoff_set` / `usage_backoff_clear` — optional `models` list.** An array of model names (compared lower-cased). A set with it holds only the named models of the backend and the others keep running; a set without it holds the whole backend. A clear with it removes only the named models from the flag's list (dropping the flag when that empties the list) and requires a named backend; a clear-all is never model-scoped, and whole-backend flags are never narrowed. A `models` list with no usable names is an operator error on every surface. See [howto/usage-backoff.md](howto/usage-backoff.md) (`### Holding only certain models`).
 - **Automation model-tier tools: `automation_set_llm` and `automation_set_verification_llm`.** An Automation carries default model settings for the member Automata it runs. These two tools set them; each proxies to `POST /api/automations/{id}/set_llm` or `/set_verification_llm` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Resolution order for the execution backend, model and effort, and for the verification LLM: task → story → Automaton → Automation → global. Backend and model come from the same level; effort resolves independently. Each task run records `executor_source` (`task` | `story` | `prd` | `automation` | `global`) beside `verifier_source`. Planning has its own optional pair, `planning_backend` and `planning_model` (unset means the global planning backend); it is used only when a member is decomposed and never changes the run or verify default. Both tools are allowed while the Automation is `draft`, `active`, `paused` or `blocked`.
 
   | Argument | Required | Tools | Description |
@@ -1831,7 +1849,10 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_record_search` | Search titles, older titles and notes (read-only) | `GET /api/plan-records/search` |
 | `plan_record_import` | Import a project's registry rows and findings files; previews unless `dry_run` is `false` | `POST /api/plan-records/import` |
 | `plan_migrate` | Build plans from the older project plan lists (arcs) and registry rows (mode `arcs`, the default), or file a project's Automata under release plans and themes (mode `release`: `project`, optional `current_release`, `next_release`, `marks`); previews unless `apply` is `true`, and a release write needs the `preview_id` of the preview | `POST /api/plans/migrate` |
+| `plan_rollup` | Roll plan statuses up from their linked Automata and Automations (optional `project`, `dry_run`); `dry_run` true previews and writes nothing, otherwise the changes are written; a status set by hand is kept and reported (`set_by_hand_kept`) | `GET /api/plans/rollup?dry_run=true` (preview) or `POST /api/plans/rollup` (apply) |
 | `plan_create` | Create a plan in a registered project (`project`, `title`, optional `goal`; `plan_kind` `release` with a `release` label makes a release plan) | `POST /api/plans` |
+| `plan_rename` | Rename a plan (`plan`, `title`: one line, at most 100 characters, unique in the project); a taken title is refused and names the plan that has it; the old title stays as an older title | `PATCH /api/plans/{ref}` |
+| `plan_edit` | Set a plan's goal (`plan`, `goal`, at most 2000 characters; an empty goal clears it) | `PATCH /api/plans/{ref}` |
 | `plan_reorder` | Set the plan priority order (`plans`: ids or titles, first plan first) | `PUT /api/plans/order` |
 | `plan_reorder_automata` | Set the order of a plan's Automata (`plan`, `automata`: every Automaton once); the answer shows what runs next, skipping blocked and held | `PUT /api/plans/{ref}/automata/order` |
 | `plan_attach` | Attach an Automaton, Automation or finding to a plan (`plan`, `kind`, `id`); a link held elsewhere is refused and named | `POST /api/plans/{ref}/attach` |
@@ -1845,7 +1866,7 @@ call answers not found. Walkthrough: [plan-records.md](howto/plan-records.md).
 | `plan_row_plan_list` | The plans the plans migration made from registry rows (read-only) | `GET /api/plans/migrate/row-plans` |
 | `plan_row_plan_convert` | Convert them into release plan items; previews unless `apply` is `true`, and a write needs the `preview_id` of the preview | `POST /api/plans/migrate/row-plans` |
 
-`plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
+`plan_create`, `plan_rename`, `plan_edit`, `plan_rollup`, `plan_reorder`, `plan_reorder_automata`, `plan_attach` and
 `plan_detach` need `autonomous:write` when called by a federated peer. Of the
 release plan tools, `plan_theme_list`, `plan_unattributed_list` and
 `plan_row_plan_list` need `autonomous:read` and the others `autonomous:write`.
@@ -1854,6 +1875,9 @@ The release migration (`plan_migrate` with `mode` `release`) and
 `preview_id` the preview returned; a stale id is refused by the daemon. Each
 tool's description links the how-to
 [plan-records.md](howto/plan-records.md#release-plans-and-themes).
+`plan_record_get` and `plan_record_list` show each record's `state` (the status)
+and `set_by_hand`, which is true when the status was written by hand so the plan
+roll-up keeps it.
 `project_set_arcs` stays as a deprecated alias for the older plan list (arcs).
 
 **Release plan tools: every surface side by side.** Each release plan tool
@@ -3087,7 +3111,7 @@ argument overrides the stored setting for this one call only.
 
 ### Burn guard tools
 
-The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_pi_prompt`, `hold_claude`) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
+The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_entry`, `route_cheaper_model`, `hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude` are accepted and normalize to the entry-generic names) when the projection runs over the line plus the margin. `route_cheaper_model` keeps the backend and sends the entry's new work to its cheaper model (the entry's `route_cheaper_model` field, or its cheapest other priced model). It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
 
 | Tool | Arguments | Result |
 |---|---|---|
@@ -3099,7 +3123,7 @@ The burn guard compares the projected weekly burn with the pace line and steps d
 ```
 burn_guard_status()
 burn_guard_run()
-burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_claude"])
+burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_entry"])
 ```
 
 ### `usage_advice`

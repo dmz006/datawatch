@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +104,133 @@ func TestUsageBackoff_PostMinutesThenClearOne(t *testing.T) {
 	}
 	if del.Cleared != 1 || len(del.Active) != 0 {
 		t.Errorf("delete result = %+v", del)
+	}
+}
+
+func TestUsageBackoff_PostModelsThenClearModels(t *testing.T) {
+	s := usageBackoffServer(t)
+	rr := ubDo(s, http.MethodPost, `{"backend":"claude-code","minutes":45,"reason":"opus cap","models":["Sonnet","opus"]}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("post: %d %s", rr.Code, rr.Body.String())
+	}
+	st := ubStatus(t, rr)
+	if len(st.Active) != 1 {
+		t.Fatalf("active = %+v", st.Active)
+	}
+	if !reflect.DeepEqual(st.Active[0].Models, []string{"opus", "sonnet"}) {
+		t.Errorf("models = %v, want [opus sonnet] normalised and sorted", st.Active[0].Models)
+	}
+	// A model-scoped flag holds only the named models: naming the backend
+	// with no model (Blocked) is admitted, the listed models are held.
+	if blocked, _ := s.usageBackoff.Blocked("claude-code"); blocked {
+		t.Error("a model-scoped flag must not block the backend unnamed")
+	}
+	if blocked, _ := s.usageBackoff.BlockedModel("claude-code", "opus"); !blocked {
+		t.Error("opus must be held")
+	}
+	if blocked, _ := s.usageBackoff.BlockedModel("claude-code", "haiku"); blocked {
+		t.Error("haiku is not in the list; it must be admitted")
+	}
+
+	// Clearing one model leaves the rest of the flag in place.
+	var del struct {
+		Cleared int `json:"cleared"`
+		autonomous.UsageBackoffStatus
+	}
+	if rr = ubDo(s, http.MethodDelete, `{"backend":"claude-code","models":["opus"]}`); rr.Code != http.StatusOK {
+		t.Fatalf("delete one model: %d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &del); err != nil {
+		t.Fatal(err)
+	}
+	if del.Cleared != 1 || len(del.Active) != 1 || !reflect.DeepEqual(del.Active[0].Models, []string{"sonnet"}) {
+		t.Errorf("after partial clear = %+v, want flag left holding only sonnet", del.Active)
+	}
+	if blocked, _ := s.usageBackoff.BlockedModel("claude-code", "opus"); blocked {
+		t.Error("opus must be admitted after its clear")
+	}
+	if blocked, _ := s.usageBackoff.BlockedModel("claude-code", "sonnet"); !blocked {
+		t.Error("sonnet must still be held")
+	}
+
+	// Clearing the last model drops the flag.
+	if rr = ubDo(s, http.MethodDelete, `{"backend":"claude-code","models":["sonnet"]}`); rr.Code != http.StatusOK {
+		t.Fatalf("delete last model: %d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &del); err != nil {
+		t.Fatal(err)
+	}
+	if del.Cleared != 1 || len(del.Active) != 0 {
+		t.Errorf("after final clear = %+v, want no flags", del.Active)
+	}
+
+	// Clearing models that are not held changes nothing.
+	if rr = ubDo(s, http.MethodDelete, `{"backend":"claude-code","models":["opus"]}`); rr.Code != http.StatusOK {
+		t.Fatalf("delete unheld model: %d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &del); err != nil {
+		t.Fatal(err)
+	}
+	if del.Cleared != 0 {
+		t.Errorf("clear of unheld models = cleared %d, want 0", del.Cleared)
+	}
+}
+
+func TestUsageBackoff_ModelsBadRequests(t *testing.T) {
+	cases := []struct {
+		name, method, body, want string
+	}{
+		{"models with no usable names", http.MethodPost, `{"backend":"a","minutes":5,"models":[" ",""]}`, "models: at least one model name"},
+		{"clear models without a backend", http.MethodDelete, `{"models":["opus"]}`, "name a backend"},
+		{"clear-all with models", http.MethodDelete, `{"backend":"all","models":["opus"]}`, "name a backend"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := usageBackoffServer(t)
+			rr := ubDo(s, c.method, c.body)
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d %s, want 400", rr.Code, rr.Body.String())
+			}
+			if !strings.Contains(rr.Body.String(), c.want) {
+				t.Errorf("body %q, want it to contain %q", rr.Body.String(), c.want)
+			}
+			if got := len(s.usageBackoff.Active()); got != 0 {
+				t.Errorf("a rejected request must not set a flag, have %d", got)
+			}
+		})
+	}
+}
+
+func TestUsageBackoff_ModelsAudit(t *testing.T) {
+	dir := t.TempDir()
+	log, err := audit.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := usageBackoffServer(t)
+	s.auditLog = log
+
+	_ = ubDo(s, http.MethodPost, `{"backend":"claude-code","minutes":10,"models":["opus","sonnet"]}`)
+	_ = ubDo(s, http.MethodDelete, `{"backend":"claude-code","models":["opus"]}`)
+	_ = log.Close()
+
+	got := readAuditLines(t, dir)
+	if len(got) != 2 {
+		t.Fatalf("want 2 audit entries, got %d: %+v", len(got), got)
+	}
+	if got[0].Action != audit.ActionUsageBackoffSet || got[0].Subject != "claude-code" {
+		t.Errorf("entry 0 = %+v", got[0])
+	}
+	models, _ := got[0].Details["models"].([]any)
+	if !reflect.DeepEqual(models, []any{"opus", "sonnet"}) {
+		t.Errorf("set details models = %v, want [opus sonnet]", got[0].Details["models"])
+	}
+	if got[1].Action != audit.ActionUsageBackoffCleared || got[1].Details["backend"] != "claude-code" {
+		t.Errorf("entry 1 = %+v", got[1])
+	}
+	models, _ = got[1].Details["models"].([]any)
+	if !reflect.DeepEqual(models, []any{"opus"}) {
+		t.Errorf("clear details models = %v, want [opus]", got[1].Details["models"])
 	}
 }
 

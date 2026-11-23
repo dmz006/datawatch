@@ -94,6 +94,28 @@ fix.
    phrase — verbatim or in equivalent wording, the same words in any order: a
    "gates section" in the spec anchors a grep of
    `## Gates`, and a spec naming `## Gates` anchors a grep of `Gates`.
+10. **Write bash, and run it with bash.** Start every script with
+   `#!/usr/bin/env bash`. The daemon and the planner run the script with
+   `bash`, so `[[ ]]`, arrays, process substitution and `set -o pipefail` are
+   fine there; under an `sh` shebang, or when a spec line runs the script with
+   `sh`, they break (`verify_script_sh_for_bash`).
+11. **Keep one shared allowed-file list.** Build the allowed list once, from
+   the task's own files plus the standard set (changelog, README, docs,
+   locales, tests), cumulative across stories, or source the shared helper.
+   A short literal list that leaves out the task's own files or the standard
+   set rejects correct work (`verify_script_rejects_own_files`).
+12. **No hex-colour patterns, and no pipe into `grep -q`.** A tracker-id
+   pattern made of digits alone (`#[0-9]{3,}`) also matches CSS hex colours
+   such as `#123456`, so put a tracker word before the `#` or require the
+   match not to follow a `#` (`verify_script_hex_pattern`). `grep -q` exits
+   at the first match and the producer gets SIGPIPE, which fails the pipeline
+   under `pipefail`; capture the output first, then run `grep -q` on the
+   variable or file (`verify_script_pipe_grep_q`).
+13. **A story's gate script covers that story only.** A script that closes a
+   story runs only that story's own scripts, never another story's. Only the
+   single final gate runs the checks of the whole Automaton, and a script
+   must not require output that only a task it does not depend on creates
+   (`verify_script_needs_later_task_output`).
 
 ## 2. The cumulative allowed-file helper
 
@@ -139,7 +161,8 @@ the **last** task of the **last** story, depending on every other task. The
 standard-task pack appends it once there, and a planner-written `final_gate`
 on any earlier story is rejected by the plan check at decompose time (and any
 that remains is dropped when the standard tasks are applied). A story-level
-check is plain task verification, not a gate.
+check is plain task verification, not a gate, and a script that closes a story
+runs only that story's own scripts.
 
 The final gate **always carries a verification script or an explicit
 exemption reason**: a **final gate exemption reason** is the stated reason a
@@ -175,6 +198,11 @@ skipped by the rules below that read a script; the warn rule
 | `verify_script_final_gate_rerun` | block | A script asserts the changed-file set against a finite allow-list with no guard the lint recognizes for the final gate rerunning it on the cumulative tree. | Guard it with an env var (`DATAWATCH_*`, `SKIP_*`, `FINAL*`), a `--final` argument, or a check limited to files the task adds. |
 | `verify_script_unknown_flag` | block | The script passes a long flag to a command (or one of its subcommands) the script invokes that the command's own `--help` output does not list — a flag the installed binary does not have cannot be asserted. | Use only flags the command actually accepts (check with `<command> --help`), or rephrase the check so it does not depend on that option. Commands the environment cannot find are not checked. |
 | `verify_script_text_not_in_spec` | block | The script greps or compares against a markdown heading (a `# …` line) or a multi-word output phrase the task spec does not state, verbatim or in equivalent wording. | State the heading or the format being checked in the task spec — the same words are enough, in any order. |
+| `verify_script_rejects_own_files` | block | The allowed-file list is built only from literals that omit a file the task itself plans, or the standard allowed set (changelog, README, docs, locales, tests), so the script rejects the task's correct work. | List the task's own files and the standard set, or source the shared allowed list instead of a literal one. |
+| `verify_script_needs_later_task_output` | block | The script requires a file or a phrase (a path test, a grep target) that only a task it does not depend on creates. | Add the `depends_on` edge to the creating task, or move the check into that task's own script. |
+| `verify_script_sh_for_bash` | block | The script uses `[[ ]]`, arrays, process substitution or `pipefail` under an sh shebang, or a spec or script line runs a bash script with `sh`. | Use `#!/usr/bin/env bash` and run the script with `bash`. |
+| `verify_script_pipe_grep_q` | block | The script pipes into `grep -q`; grep exits at the first match and the producer gets SIGPIPE, which fails the pipeline under `pipefail`. | Capture the output first (`out=$(cmd)`, then `grep -q pat <<<"$out"`), or drop `-q` and send the output to `/dev/null`. |
+| `verify_script_hex_pattern` | block | A grep pattern matches a bare `#<digits>` run, which also matches CSS hex colours (`#123456`) as tracker ids. | Put a tracker word before the `#` (`(issue\|fixes\|closes)\s+#[0-9]{3,}`), require the match not to follow a `#`, or use the BL/GH-prefixed id forms. |
 | `final_gate_without_script` | block | A `final_gate` task has no verification script, no `verification_script_reason` and no usable report path. | Give the gate a script under `.datawatch/verify/`, or a report path under `.datawatch/reports/`, or state why it has none in `verification_script_reason`. |
 | `verify_script_syntax` | block | `<shell> -n` reports a syntax error in the script. | Fix the syntax at the reported line. |
 | `verify_script_shell_mismatch` | block | A helper is called with a shell other than the one its shebang names. | Call the helper with the shell its shebang names, or run it directly. |
@@ -194,6 +222,10 @@ skipped by the rules below that read a script; the warn rule
   retry with the findings as guidance; in `shadow` mode they are recorded on
   the Automaton and nothing is retried. An operator rule with the same id can
   replace or disable them.
+- The five script-content rules `verify_script_rejects_own_files`,
+  `verify_script_needs_later_task_output`, `verify_script_sh_for_bash`,
+  `verify_script_pipe_grep_q` and `verify_script_hex_pattern` are also rule-pack
+  rules at `block`, and quote the offending line.
 - The next four (`verify_script_syntax`, `verify_script_shell_mismatch`,
   `verify_script_pipefail_grep_q`, `verify_script_allowed_files`) are the
   preflight, not rule-pack rules (details in
@@ -369,7 +401,7 @@ in tests. See **Verification lint gate** in [the definitions](../datawatch-defin
 
 These points are decisions or checks the docs cannot settle for you:
 
-- **Block severity is the shipped default.** All eleven verification-script
+- **Block severity is the shipped default.** All the verification-script
   stability rules are `block` (`verify_script_task_files_only`,
   `verify_script_docs_without_sync`, `artefact_files_allowed`,
   `final_gate_artefact_allowed`, `script_invokes_known_flag`,

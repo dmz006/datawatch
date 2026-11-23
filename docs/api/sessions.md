@@ -25,6 +25,29 @@ filter) needs to send something to the running backend. The PWA's
 yellow "Input Required" banner + the chat-channel notification fan
 out from this transition.
 
+`state` is the true state of the session. A record is not left in `running`
+(or another non-final state) once its terminal session and process are gone.
+
+Two optional fields in the session JSON say a record was finalised:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ended_at` | RFC 3339 time | When the record was finalised because its process was gone. |
+| `end_note` | string | Always `process gone, finalised`. |
+
+Both fields are omitted on every session that was not finalised this way.
+
+A record whose process is gone is finalised as `complete` (its output
+ends with a `DATAWATCH_COMPLETE:` line) or `killed` (anything else).
+Only such a record carries `ended_at` (RFC 3339 time it was finalised)
+and `end_note` (`process gone, finalised`) in the session JSON; both
+are omitted on every other session. The finaliser applies the rule to
+both the records the daemon holds and the saved `session.json` files. The
+daemon starts it at boot and runs it every `session.finalise_interval_minutes`
+(default 10; 0 = no scheduled runs; set it through `PUT /api/config`, and
+`GET /api/config` returns it). No endpoint reports the last run yet. See
+[Gone session records](../howto/sessions-deep-dive.md#gone-session-records).
+
 ## Surface
 
 ### REST
@@ -72,6 +95,14 @@ names as well (names, not registry IDs — that is what lets the PWA draw
 the placement chips on the Sessions page at first load, before the tag
 registry has loaded; see
 [automata-tags](../howto/automata-tags.md#placement-tags-the-system-tags)).
+The summary rows and the legacy session list records always carry the
+`system_tags` key: a session with no placement tags is sent as
+`"system_tags": []`, never as a missing key and never as null (pinned for
+the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An
+explicit empty array removes the placement chip from the Sessions tile. A
+row or push that omits the key keeps the chip the page already holds (older
+servers).
 No existing field changed. Deleting a tag is refused with 409
 while an Automaton or a session still carries it; the `count` in the 409
 body covers both.
@@ -316,6 +347,7 @@ session:
   auto_git_commit: false
   kill_sessions_on_exit: false
   stale_timeout_seconds: 1800
+  finalise_interval_minutes: 10 # minutes between runs that finalise gone session records; 0 = scheduled runs off
   task_delivery_window_seconds: 60 # max wait per attempt for the Claude prompt before redelivery
   task_delivery_attempts: 3    # redelivery attempts before the task fails
   schedule_settle_ms: 1500     # pause between typing the text and Enter; the paste wait and Enter retry after it use fixed timings

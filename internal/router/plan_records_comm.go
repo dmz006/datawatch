@@ -35,6 +35,14 @@
 //		link or unlink one; a link held elsewhere is refused and named.
 //	The release plan verbs (themes, archive, restore, unattributed, migrate
 //	release, attach with several ids) are in plans_release_comm.go.
+//	autonomous plan rename <plan> <new title…>
+//		give a plan a new title: one line, at most 100 characters, not used by
+//		another record in the project (the refusal names the plan that has it).
+//	autonomous plan edit <plan> goal <text…>
+//		set a plan's goal. Name the plan by its id or a one-word title.
+//	autonomous plan rollup [dry-run] [project=P]
+//		derive each plan's status from the work linked to it and write it. With
+//		dry-run it only reports what would change. A status set by hand is kept.
 //	"arcs" is accepted in place of "plan" (autonomous arcs list <project> …).
 //	Each verb calls the loopback REST route, so chat runs the same code as REST.
 
@@ -56,7 +64,7 @@ const (
 	planRecordsUsage = "usage: autonomous plan-records [registry-row|finding] [project=P] [state=S[,S...]] | plan-record get <ref> | plan-record create <json> | plan-record update <ref> <json> | plan-record search <text> | plan-record import [dry-run] [project=P] [source=registry|findings|all] [policy=suffix|rename|skip]"
 
 	// planVerbUsage is the usage line for the plan verbs.
-	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id>  (arcs works in place of plan)"
+	planVerbUsage = "usage: autonomous plan list <project> | plan new <project> <title...> | plan move <project> <plan> <position> | plan move <plan> automaton <id> <position> | plan attach <plan> automaton|automation|finding <id> | plan detach <plan> automaton|automation|finding <id> | plan rename <plan> <new title...> | plan edit <plan> goal <text...> | plan rollup [dry-run] [project=P]  (arcs works in place of plan)"
 
 	// planRecordsMaxLines is the most lines one list or search reply carries.
 	planRecordsMaxLines = 10
@@ -557,11 +565,12 @@ func planRecordImportText(body string) string {
 
 // planWireRow is one plan of the plans list answer.
 type planWireRow struct {
-	Title    string `json:"title"`
-	ID       string `json:"id"`
-	State    string `json:"state"`
-	Order    int    `json:"order"`
-	Progress struct {
+	Title     string `json:"title"`
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	SetByHand bool   `json:"set_by_hand"`
+	Order     int    `json:"order"`
+	Progress  struct {
 		Done  int `json:"done"`
 		Total int `json:"total"`
 	} `json:"progress"`
@@ -627,9 +636,86 @@ func (r *Router) handlePlanVerb(args []string) {
 		r.planUnattributed(rest)
 	case "migrate":
 		r.planMigrate(rest)
+	case "rename":
+		r.planRename(rest)
+	case "edit":
+		r.planEdit(rest)
+	case "rollup", "roll-up":
+		r.planRollup(rest)
 	default:
 		r.reply("autonomous plan failed", planVerbUsage+" | "+planReleaseVerbUsage)
 	}
+}
+
+// planEditFailure turns the loopback's "HTTP 409: {"error":"…"}" into the
+// message alone, so a refused rename reads as a sentence that names the plan
+// holding the title.
+func planEditFailure(err error) string {
+	msg := err.Error()
+	if i := strings.Index(msg, "{"); i >= 0 {
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(msg[i:]), &body) == nil && strings.TrimSpace(body.Error) != "" {
+			return body.Error
+		}
+	}
+	return msg
+}
+
+// planEditWire is the answer of PATCH /api/plans/{ref}.
+type planEditWire struct {
+	Plan struct {
+		Title string `json:"title"`
+		ID    string `json:"id"`
+	} `json:"plan"`
+	Goal string `json:"goal"`
+}
+
+// planRename answers "autonomous plan rename <plan> <new title…>".
+func (r *Router) planRename(args []string) {
+	if len(args) < 2 {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"title": strings.Join(args[1:], " ")})
+	out, err := r.commJSON(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), string(raw))
+	if err != nil {
+		r.reply("autonomous plan rename failed", planEditFailure(err))
+		return
+	}
+	var res planEditWire
+	if json.Unmarshal([]byte(out), &res) != nil || res.Plan.ID == "" {
+		r.reply("autonomous plan rename", "renamed")
+		return
+	}
+	r.reply("autonomous plan rename", fmt.Sprintf("Renamed plan %s to %s", res.Plan.ID, strings.Join(strings.Fields(res.Plan.Title), " ")))
+}
+
+// planEdit answers "autonomous plan edit <plan> goal <text…>". The goal is the
+// only field a plan edit sets; clearing it is a REST, CLI, MCP or PWA action
+// (an empty chat goal is refused so a stray message cannot wipe one).
+func (r *Router) planEdit(args []string) {
+	if len(args) < 2 || !strings.EqualFold(args[1], "goal") {
+		r.reply("autonomous plan failed", planVerbUsage)
+		return
+	}
+	if len(args) < 3 {
+		r.reply("autonomous plan edit failed", "give the goal text after the word goal; to clear a goal use the PWA, the CLI (--goal \"\"), REST or MCP")
+		return
+	}
+	raw, _ := json.Marshal(map[string]any{"goal": strings.Join(args[2:], " ")})
+	out, err := r.commJSON(http.MethodPatch, "/api/plans/"+url.PathEscape(args[0]), string(raw))
+	if err != nil {
+		r.reply("autonomous plan edit failed", planEditFailure(err))
+		return
+	}
+	var res planEditWire
+	if json.Unmarshal([]byte(out), &res) != nil || res.Plan.ID == "" {
+		r.reply("autonomous plan edit", "goal updated")
+		return
+	}
+	r.reply("autonomous plan edit", fmt.Sprintf("Set the goal of plan %s [%s]: %s", strings.Join(strings.Fields(res.Plan.Title), " "), res.Plan.ID, strings.Join(strings.Fields(res.Goal), " ")))
 }
 
 func (r *Router) planFetchList(project string) (planWireList, error) {
@@ -661,7 +747,11 @@ func (r *Router) planList(args []string) {
 			if len(lines) >= planRecordsMaxLines {
 				return
 			}
-			l := fmt.Sprintf("%s%d. %s [%s] %s %d/%d done", prefix, i+1, strings.Join(strings.Fields(p.Title), " "), p.ID, p.State, p.Progress.Done, p.Progress.Total)
+			status := p.State
+			if p.SetByHand {
+				status += " (by hand)"
+			}
+			l := fmt.Sprintf("%s%d. %s [%s] %s %d/%d done", prefix, i+1, strings.Join(strings.Fields(p.Title), " "), p.ID, status, p.Progress.Done, p.Progress.Total)
 			if p.Next != nil {
 				l += " next: " + strings.Join(strings.Fields(p.Next.Title), " ")
 			}
@@ -856,4 +946,86 @@ func (r *Router) planLink(verb string, args []string) {
 		past, prep = "Detached", "from"
 	}
 	r.reply("autonomous plan "+verb, fmt.Sprintf("%s %s %s %s plan %s", past, kind, args[2], prep, args[0]))
+}
+
+// planRollupWire is the roll-up answer the chat reply is built from.
+type planRollupWire struct {
+	Project string `json:"project"`
+	DryRun  bool   `json:"dry_run"`
+	Changes []struct {
+		Title         string `json:"title"`
+		Plan          string `json:"plan"`
+		From          string `json:"from"`
+		To            string `json:"to"`
+		Reason        string `json:"reason"`
+		SetByHandKept bool   `json:"set_by_hand_kept"`
+	} `json:"changes"`
+	Changed int `json:"changed"`
+	Kept    int `json:"kept"`
+}
+
+// planRollup answers "autonomous plan rollup [dry-run] [project=P]". A dry run
+// calls the read route; without it the roll-up is applied through POST.
+func (r *Router) planRollup(args []string) {
+	dry := false
+	project := ""
+	for _, a := range args {
+		switch low := strings.ToLower(a); {
+		case low == "dry-run" || low == "dry_run" || low == "dryrun":
+			dry = true
+		case strings.HasPrefix(low, "project="):
+			project = strings.TrimSpace(a[len("project="):])
+		default:
+			r.reply("autonomous plan failed", planVerbUsage)
+			return
+		}
+	}
+	var out string
+	var err error
+	if dry {
+		q := url.Values{"dry_run": {"true"}}
+		if project != "" {
+			q.Set("project", project)
+		}
+		out, err = r.commGet("/api/plans/rollup", q)
+	} else {
+		body := map[string]any{"dry_run": false}
+		if project != "" {
+			body["project"] = project
+		}
+		raw, _ := json.Marshal(body)
+		out, err = r.commJSON(http.MethodPost, "/api/plans/rollup", string(raw))
+	}
+	if err != nil {
+		r.reply("autonomous plan rollup failed", err.Error())
+		return
+	}
+	var res planRollupWire
+	if json.Unmarshal([]byte(out), &res) != nil {
+		r.reply("autonomous plan rollup failed", "the daemon sent a roll-up result I cannot read")
+		return
+	}
+	verb := "Changed"
+	if res.DryRun {
+		verb = "Would change"
+	}
+	lines := []string{fmt.Sprintf("%s %d plan(s); %d kept because the status was set by hand.", verb, res.Changed, res.Kept)}
+	for i, c := range res.Changes {
+		if i >= planRecordsMaxLines {
+			lines = append(lines, fmt.Sprintf("… and %d more (use plans rollup --json on the CLI for all of them)", len(res.Changes)-i))
+			break
+		}
+		l := fmt.Sprintf("%s [%s]: %s -> %s", strings.Join(strings.Fields(c.Title), " "), c.Plan, c.From, c.To)
+		if c.SetByHandKept {
+			l += " (kept: set by hand)"
+		}
+		if c.Reason != "" {
+			l += " - " + c.Reason
+		}
+		lines = append(lines, l)
+	}
+	if len(res.Changes) == 0 {
+		lines = append(lines, "Every plan already has the status its linked work gives it.")
+	}
+	r.reply("autonomous plan rollup", strings.Join(lines, "\n"))
 }

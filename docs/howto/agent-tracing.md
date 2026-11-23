@@ -44,7 +44,7 @@ Settings → Tracing, or over the API.
 tracing:
   mode: summary        # off | summary | full
   arg_cap_bytes: 512   # 0 = default
-  retention_days: 14   # 0 = default
+  retention_days: 0   # 0 = keep while the session exists
   backends:            # a backend not listed is on
     aider: false
 ```
@@ -63,7 +63,7 @@ tracing:
 |---------|---------|---------|
 | `tracing.mode` | `summary` | Detail level, above. |
 | `tracing.arg_cap_bytes` | `512` | Upper bound, in bytes, of a stored argument or outcome text. Range 0 to 1048576. A longer value ends with `...[truncated]`. |
-| `tracing.retention_days` | `14` | How long events are kept. Range 0 to 3650. |
+| `tracing.retention_days` | `0` | Age-based pruning, in days. A trace is kept as long as its session exists; `0` (the default) never prunes by age. A value above 0 prunes traces older than that many days even while the session exists, applied at the next daily prune. A negative value or one above 3650 is refused. |
 | `tracing.backends` | all on | Map of backend name to `true` or `false`. Turning one off stops tracing for that backend only. Mode `off` overrides it. |
 
 A value outside its range, an unknown mode or an empty backend name is rejected
@@ -133,7 +133,10 @@ task, story, Automaton, agent and backend.
 | `error` | A failure, with the redacted message as the outcome. |
 
 The **roll-up** groups events along one dimension: `session` (default), `task`,
-`story`, `automaton`, `agent` or `backend`. It shows event, tool-call, error and
+`story`, `automaton`, `agent`, `backend`, `pack_name` or `pack_version` (the
+installable pack that produced the event; events with none group under a blank key).
+Nothing stamps the pack name on events yet, so until a writer ships every event groups
+under the blank key. It shows event, tool-call, error and
 model-request counts, tokens in and out, and per tool the calls, errors and
 average and maximum milliseconds. A **loop warning** is raised when one tool is
 called with the same argument summary five times or more; change the threshold
@@ -175,11 +178,20 @@ sensitive text.
 
 ## 8. Retention
 
-Events older than `tracing.retention_days` (default 14) are pruned. A session
-whose events have all expired is removed; a session with newer events is
-rewritten without the old ones. Lowering the value applies at the next prune;
-raising it never brings back what was pruned. Trace files are plain files, one per
-session, under the data directory's `trace/` folder.
+A trace is kept as long as its session exists. This is the rule for the
+default, `tracing.retention_days: 0`: it never prunes by age, so a trace lives
+and dies with its session. Deleting a session deletes its trace file and its
+index entries too — including when the session is removed by Automaton cleanup
+of sessions.
+
+A value above 0 adds age-based pruning: traces older than that many days are
+removed even while the session still exists, applied at the next daily prune
+(every 24 hours while the daemon runs). Lowering the value applies at the next
+prune; raising it never brings back what was pruned. A negative value or one
+above 3650 is refused when the config loads or when you set it.
+
+An archived or ended session that is not deleted keeps its trace. Trace files
+are plain files, one per session, under the data directory's `trace/` folder.
 
 ## 9. Troubleshooting
 

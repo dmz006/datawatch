@@ -1,0 +1,24 @@
+# gate-repair fixture — grounded in the cumulative allowed-file habit (docs/
+# howto/automaton-verification-scripts.md, section 2): a scope check that
+# compares the changed files against an allowed-files list rejects a docs
+# file the task itself changed.
+# expect: allowed_list_rejects
+# exit-code: 1
+# signal-killed: no
+# script: .datawatch/verify/story1-scope.sh
+# own-verify-folder: yes
+# script-story: 0
+# gate-story: 0
+# changed: internal/autonomous/gate_repair_classify.go docs/howto/gate-repair.md
+# script text:
+#   set -e
+#   allowed_files="internal/autonomous/gate_repair_classify.go internal/autonomous/gate_repair_classify_test.go"
+#   changed="$( { git diff --name-only "$(git merge-base HEAD main)"; git ls-files --others --exclude-standard; } | sort -u )"
+#   for f in $changed; do
+#     case " $allowed_files " in
+#       *" $f "*) ;;
+#       *) echo "SCOPE FAIL: $f is not in the allowed file list" >&2; exit 1;;
+#     esac
+#   done
+---
+SCOPE FAIL: docs/howto/gate-repair.md is not in the allowed file list

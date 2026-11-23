@@ -39,6 +39,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"automation_join_rule_":            true, // + join rule name
 		"chat_quick_reply_":                true, // + lowercased quick-reply label
 		"repo_ci_watch_mode_":              true, // + off/shadow/on mode string
+		"gate_repair_mode_":                true, // + off/report/on mode label
 		"supervisor_watch_mode_":           true, // + off/shadow/on mode string
 		"priority_source_":                 true, // + explicit/kind/default source string
 		"project_policy_":                  true, // + policy field key (project policy panel row/label)
@@ -46,6 +47,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"supervisor_loop_job_":             true, // + supervisor-loop job name
 		"supervisor_loop_outcome_":         true, // + supervisor-loop run outcome
 		"federation_observer_pull_source_": true, // + push/pull/shadow source string
+		"llm_model_rate_":                  true, // + per-model rate field (in/out/cache read/cache write per 1K)
 	}
 
 	seen := map[string]bool{}

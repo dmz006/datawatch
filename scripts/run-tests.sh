@@ -47,6 +47,16 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
+# tmux sandbox helpers (scripts/lib/sandbox.sh) — public functions that run
+# every tmux call as `env -u TMUX tmux -S '<scratch>/tmux-$(id -u)/default'`
+# and refuse production scratch dirs. This script sources them and follows the
+# same socket layout + refusal rules for its own scoped cleanup below
+# (stop_test_daemon) so production tmux sockets are never touched.
+if [[ -f "$SCRIPT_DIR/lib/sandbox.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/lib/sandbox.sh"
+fi
+
 # --- working directory -------------------------------------------------------
 # Each run gets a unique 6-char hex ID so parallel runs on the same filesystem
 # don't collide. Set DATAWATCH_TEST_ID to reuse a specific prior run's dir
@@ -91,6 +101,36 @@ LEFTOVER_BASELINE="$TEST_DIR/leftover-daemon-baseline"
 rm -f "$LEFTOVER_BASELINE" "$TEST_DIR/leftover-daemons-FAIL" "$TEST_DIR/.leftover-check-done" 2>/dev/null || true
 bash "$GUARD_SH" snapshot "$LEFTOVER_BASELINE" || \
   echo "  [cleanup] warning: could not take the leftover-daemon snapshot -- the end-of-run check will report every live test daemon" >&2
+
+# --- refuse to run on the production data dir --------------------------------
+# A misconfigured run whose scratch/test-data dir resolves to the production
+# data dir (e.g. $HOME/.datawatch, or contains it) must abort immediately
+# instead of starting a daemon that could adopt production tmux sockets or
+# touch production data.
+refuse_production_data_dir() {
+  local d="${1:-}" prod norm
+  [[ -n "$d" ]] || return 0
+  if [[ -z "${HOME:-}" ]]; then
+    echo "run-tests.sh: REFUSING TO RUN: HOME unset; cannot verify '$d' against the production data dir" >&2
+    exit 1
+  fi
+  prod="${HOME%/}/.datawatch"
+  norm=$(cd -- "$d" 2>/dev/null && pwd -P) || norm="$d"
+  case "$norm" in
+    "$prod"|"$prod"/*)
+      echo "run-tests.sh: REFUSING TO RUN: '$d' is the production data dir ($prod) or under it" >&2
+      exit 1
+      ;;
+  esac
+  case "$d" in
+    *"$prod"*)
+      echo "run-tests.sh: REFUSING TO RUN: scratch dir '$d' points at the production data dir ($prod)" >&2
+      exit 1
+      ;;
+  esac
+  return 0
+}
+refuse_production_data_dir "$TEST_DIR"
 
 FAILED=0
 DAEMON_PID=""
@@ -282,9 +322,32 @@ PY2
     return 1
   fi
 
+  # Unsafe-tmux-call gate — must pass (or be explicitly skipped) BEFORE the daemon
+  # is spawned a few lines below: a fail-closed static audit of the repo's shell
+  # code for tmux calls that would wipe sessions beyond a dedicated socket
+  # (server-wide kills without an explicit -S/--socket, kill-session -a,
+  # pkill/killall of the tmux server — see scripts/check-unsafe-tmux-calls.sh's
+  # own header for the exact rules). Catching a bad call here means it can't
+  # reach any live machine's tmux via a later spawned test run either. The
+  # executable-bit is verified before invoking: a missing/non-executable gate
+  # must fail this run, not silently skip the audit (mirrors the other gate
+  # checks). Skip knob for local iteration only: DW_SKIP_UNSAFE_TMUX_CALLS_CHECK=1.
+  if [ "${DW_SKIP_UNSAFE_TMUX_CALLS_CHECK:-0}" != "1" ]; then
+    if [ ! -x "$SCRIPT_DIR/check-unsafe-tmux-calls.sh" ]; then
+      echo "Error: scripts/check-unsafe-tmux-calls.sh is missing or not executable (gate must run before the test daemon starts); set DW_SKIP_UNSAFE_TMUX_CALLS_CHECK=1 to skip deliberately" >&2
+      return 1
+    fi
+    "$SCRIPT_DIR/check-unsafe-tmux-calls.sh" >&2 || return 1
+  fi
+
   start_ntfy_server
 
-  echo "Starting test daemon ($binary)..."
+  # Dedicated tmux socket scratch dir, under the e2e scratch area: the daemon
+  # is started with TMUX_TMPDIR pointing here so its tmux sessions
+  # (cs-dw-e2e-test-*) land on a dedicated socket — never the production or
+  # default tmux server. stop_test_daemon cleans up the exact same socket
+  # layout (tmux-$(id -u)/default under $TEST_TMUX_DIR), matching the sandbox
+  # helper's convention (scripts/lib/sandbox.sh).
   mkdir -p "$TEST_DATA"
   # td_start records the daemon (PID + config-path marker) in TD_STATE_DIR;
   # the shared EXIT/INT/TERM/HUP traps end it -- sessions first, via the API
@@ -295,6 +358,7 @@ PY2
   # PID + config path (the reaper's marker): a later run finds this daemon
   # through the record alone.
   printf '%s\n%s\n' "$DAEMON_PID" "$test_cfg" > "$TEST_DIR/daemon.pid"
+  refuse_production_data_dir "$TEST_DATA"
 
   # Poll /api/health up to 30s (use HTTPS since HTTP port redirects when TLS enabled)
   local deadline=$(( $(date +%s) + 30 ))

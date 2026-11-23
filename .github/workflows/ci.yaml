@@ -63,6 +63,14 @@ jobs:
       - name: unscoped tmux kill check
         run: bash scripts/check-no-unscoped-tmux.sh
 
+      # 2026-10-18 — unsafe tmux call audit, promoted from release/time-
+      # bounded runs to every push/PR like the internal-ref leak check
+      # above: a server-wide tmux kill without a dedicated socket (kill -a,
+      # pkill/killall of the tmux server) would wipe the operator's live
+      # sessions, so it's caught on every push/PR, not just at release.
+      - name: unsafe tmux call check
+        run: bash scripts/check-unsafe-tmux-calls.sh
+
       # 2026-10-09 — a Dockerfile's exact-pinned ARG GO_VERSION can fall
       # behind go.mod's `go` directive without anything catching it until
       # the actual release workflow runs a container build against a

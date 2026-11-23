@@ -85,7 +85,8 @@ candidates so you can repeat the call with an id.
 | CLI | `datawatch plan-record list\|get\|create\|update\|search\|import` (alias `plan-records`). `import` previews by default; add `--dry-run=false` to write. The `list` and `search` `--state` filter takes one state, or a comma-separated list of them. |
 | Chat | `autonomous plan-records [registry-row\|finding] [project=P] [state=S[,S...]]`, `autonomous plan-record get <ref>`, `create <json>`, `update <ref> <json>`, `search <text>`, `import [dry-run] [project=P] [source=S] [policy=P]`. Lists and searches reply with the ten best lines, title first. |
 | Plans read API | `GET /api/projects/{name}/plans`, `GET /api/projects/{name}/overview-summary`, `GET /api/plans/{ref}/automata`, `GET /api/plans/{ref}/tasks`, `GET /api/plan-records/browse`. See *Reading plans* below. |
-| Plans write API | `POST /api/plans` (create), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Plans write API | `POST /api/plans` (create), `PATCH /api/plans/{ref}` (rename, edit goal), `PUT /api/plans/order`, `PUT /api/plans/{ref}/automata/order`, `POST /api/plans/{ref}/attach` and `POST /api/plans/{ref}/detach` (kind `automaton`, `automation` or `finding`). MCP `plan_create`, `plan_rename`, `plan_edit`, `plan_reorder`, `plan_reorder_automata`, `plan_attach`, `plan_detach`. CLI `datawatch plans list\|create\|rename\|edit\|reorder\|reorder-automata\|attach\|detach`. Chat `autonomous plan list\|new\|rename\|edit\|move\|attach\|detach`. See *Ordering and linking plans* below. |
+| Plans roll-up | `GET /api/plans/rollup?project=&dry_run=true` (preview) and `POST /api/plans/rollup` (apply), MCP `plan_rollup`, CLI `datawatch plans rollup [--project P] [--dry-run] [--json]`, chat `autonomous plan rollup [dry-run] [project=P]`. See *Rolling plan status up from the work* below. |
 | Release plans | `GET`, `PUT` and `POST /api/plans/{ref}/themes`, `POST /api/plans/{ref}/archive` and `/restore`, `GET /api/plans/unattributed`, `POST /api/plans/{ref}/attach` with `ids`, `POST /api/plans/migrate` with `mode` `release`, `GET` and `POST /api/plans/migrate/row-plans`, and `GET /api/projects/{name}/plans?archived=`. MCP `plan_theme_list`, `plan_theme_set`, `plan_archive`, `plan_restore`, `plan_unattributed_list`, `plan_attach_bulk`, `plan_row_plan_list`, `plan_row_plan_convert`, and `plan_create` and `plan_migrate` with their release forms. CLI `datawatch plan theme list\|add\|rename\|remove\|place\|unplace\|reorder\|reorder-items`, `archive`, `restore`, `unattributed`, `attach` (several ids), `migrate --release`, `row-plans list\|convert`. Chat `autonomous plan themes\|theme\|archive\|restore\|unattributed\|attach\|migrate release`. Web: the release controls of the Plans sub-tab. See *Release plans and themes* and the sections after it. |
 | Plans migration | `POST /api/plans/migrate` with `{"apply": bool}`, MCP `plan_migrate`, CLI `datawatch plans migrate [--apply]`, chat `autonomous plan-migrate [apply]`. See *Building plans from arcs and rows* below. |
 | PWA | On the project page of the Projects sub-tab: the **Plans** page sub-tab (the Plans browser, see *The Plans browser* below), the **Records** page sub-tab (a search box, a kind filter, a multi-select state chip set and **Load more** over every registry row and finding, each with its plan and Automata as links) and, under Records, the **Registry and findings** section: Registry rows and Findings views, a multi-select state chip set (no chip picked means all states, several picked match *any* of them, **All** clears the set), a detail panel to change the title, state, notes and the linked Automaton, **New record**, and **Import archive…** with a preview before anything is written. The state picks are remembered in this browser, separately for the Records sub-tab and the Registry and findings section. The sections hide themselves when plan records are off. |
@@ -208,6 +209,9 @@ attaches to a plan or to an Automaton. Rules that are easy to trip over:
   `plan_record_reordered` audit event; attaching and detaching write
   `plan_record_linked` and `plan_record_unlinked`.
 - A plan can exist with no Automaton yet. It then shows in the *backlog*.
+- **Each link remembers a title and a state.** Attaching stores the Automaton's
+  or Automation's title and state at that moment; the plan status roll-up is
+  derived from those stored states (see *Rolling plan status up from the work*).
 - Older records have none of these fields and load unchanged.
 
 ## Release plans and themes
@@ -603,7 +607,10 @@ files are plain JSON. See [encryption](../encryption.md).
 ## Turning it off, and rollback
 
 Set `autonomous.plan_records.enabled` to `false` (or leave `write_through` off
-to keep the registry file as the hook's target). Records are kept on disk.
+to keep the registry file as the hook's target). Records are kept on disk. The
+switch hides the routes and the section but does not stop the once-a-day plan
+status roll-up (see *Rolling plan status up from the work*); each status it
+wrote is in the audit log as `plan_record_rolled_up` with the old status.
 Removing the `plan-records` directory under the data dir discards every
 record; the original files are never changed by an import, so re-importing
 rebuilds them. One caveat: rows shipped by write-through while it was on exist
@@ -666,6 +673,28 @@ Nothing here turns on by itself. These are yours to settle:
 - **Mobile apps.** Android and iPhone do not show plan records, release plans,
   themes, the migrations or the archive yet; that is tracked in the
   datawatch-app repository.
+- **Editing a plan's status.** A plan's title and goal can be changed (see
+  *Renaming a plan and editing its goal*), but no surface writes a plan's
+  status after it is created. Decide where a status edit belongs.
+- **Older titles pile up.** Every rename keeps the previous title as an older
+  title so old references still resolve, and no surface removes one. Decide
+  whether an older title should be removable, and whether another plan in the
+  project may take a title an earlier plan used to have.
+- **A rename does not rewrite text.** Notes, Automaton specs and chat history
+  that quote the old title stay as written; they still resolve only through the
+  older title. Decide whether a rename should offer to update them.
+- **Handing a status back to the roll-up.** Nothing clears `set_by_hand`, so a
+  plan marked by hand would stay out of the roll-up for good. Decide how an
+  operator hands it back, for example a clear option next to the status edit.
+- **The roll-up sees recorded state, not live state.** See *Rolling plan status
+  up from the work*. Decide whether the daily run should first refresh each
+  link's state from the live Automata, and whether it should also run at daemon
+  start.
+- **Turning plan records off does not stop the daily roll-up.** The switch
+  hides the routes and the section (404), but the daily run still rolls plan
+  statuses up in the background. Decide whether the switch should stop it.
+- **Ship-time roll-up needs write-through.** With `write_through` off, only the
+  daily run and your own calls move a plan to `shipped`.
 
 ## If something looks wrong
 
@@ -813,7 +842,9 @@ blocked and held Automata), its tasks (read only when the plan is opened, with
 **Load more**), and the findings and registry rows linked to it with their old
 row numbers. The up and down buttons reorder plans and a plan's Automata;
 **Create plan** adds one, and the attach controls link an Automaton, an
-Automation or a finding by id. The search box covers plan, Automaton, registry
+Automation or a finding by id. A plan's status shows beside its title with a
+**set by hand** badge when the status was written by hand, and an open plan has
+**Rename** and **Edit goal** (see *Renaming a plan and editing its goal*). The search box covers plan, Automaton, registry
 row and finding titles and the state filter narrows by plan state — the state filter
 is a multi-select chip set: no chip picked means all states, several picked mean a plan
 matches *any* of the picked states, a second tap on a picked chip removes exactly that
@@ -845,6 +876,8 @@ records are off.
 |---|---|---|---|---|---|
 | See a project's plans | Plans sub-tab | `GET /api/projects/{name}/plans` | `datawatch plans list <project>` | not in MCP; `plan_record_list` lists the plan records | `autonomous plan list <project>` |
 | Create a plan | **Create plan** | `POST /api/plans` `{project, title, goal}` | `datawatch plans create <project> <title> [--goal TEXT]` | `plan_create` | `autonomous plan new <project> <title...>` |
+| Rename a plan | **Rename** on an open plan | `PATCH /api/plans/{ref}` `{title}` | `datawatch plans rename <plan> <new title>` | `plan_rename` | `autonomous plan rename <plan> <new title...>` |
+| Edit a plan's goal | **Edit goal** on an open plan | `PATCH /api/plans/{ref}` `{goal}` | `datawatch plans edit <plan> --goal TEXT` | `plan_edit` | `autonomous plan edit <plan> goal <text...>` |
 | Reorder plans | up and down buttons | `PUT /api/plans/order` `{plans: [...]}` | `datawatch plans reorder <plan>...` | `plan_reorder` | `autonomous plan move <project> <plan> <position>` |
 | Reorder a plan's Automata | up and down buttons on an open plan | `PUT /api/plans/{ref}/automata/order` `{automata: [...]}` | `datawatch plans reorder-automata <plan> <automaton>...` | `plan_reorder_automata` | `autonomous plan move <plan> automaton <id> <position>` |
 | Attach | **Attach** controls | `POST /api/plans/{ref}/attach` `{kind, id}` | `datawatch plans attach <plan> --automaton\|--automation\|--finding ID` | `plan_attach` | `autonomous plan attach <plan> <kind> <id>` |
@@ -865,6 +898,109 @@ is; detach it first, then attach it. Attaching the same item to the same plan
 again changes nothing. A detach must name the plan the item is in, so it can
 never reach into a different plan.
 
+### Renaming a plan and editing its goal
+
+A plan can be renamed and its goal edited from every surface in the table above.
+Both go through one route, `PATCH /api/plans/{ref}`, whose body holds `title`,
+`goal` or both; a field left out is left alone, and a request with neither is
+400.
+
+- **A title** is trimmed, must not be empty, is one line and is at most 100
+  characters (characters, not bytes). A title that breaks that is 400. A title
+  another record in the same project already uses is 409, and the message names
+  the record that has it (`the title "Alpha" is already used in project acme by
+  "Alpha" (alpha-1)`), the same as when a plan is created. Giving a plan the
+  title it already has changes nothing.
+- **The old title is kept as an older title**, so an old reference, a link in a
+  note or `plan attach <old title>` still finds the plan. A change of letter case
+  alone adds no older title.
+- **A renamed plan keeps its name.** The plan is marked as titled by hand, so a
+  rename survives a second `datawatch plans migrate --apply`: the migration
+  leaves the title you chose and does not put the old one back.
+- **A goal** is trimmed and is at most 2000 characters. An empty goal clears it
+  (REST, CLI `--goal ""`, MCP and the web app; chat refuses an empty goal so a
+  stray message cannot wipe one).
+- The whole request is checked before anything is written: a bad goal does not
+  leave a rename behind.
+- Each change is written to the audit log (`plan_renamed`, `plan_goal_edited`)
+  with the old and new value and who made it. A federated peer needs
+  `autonomous:write`.
+
+In the web app, open a plan on the Plans sub-tab. Its detail shows the status
+and, when the status was written by hand, a **set by hand** badge (the same badge
+is on the plan's row in the list). **Rename** and **Edit goal** open one inline
+editor each. The editor shows a character counter (100 for a title, 2000 for a
+goal), refuses an empty, multi-line or over-long title as you type, and shows the
+daemon's own message in place when it refuses, for example the plan that already
+has the title. What you typed stays until you save or cancel; Enter saves a title
+and Escape cancels.
+
 `datawatch projects arcs <name>` and the `project_set_arcs` tool stay as
 deprecated aliases. The CLI prints a note and runs the plans list; in chat,
 `arcs` is accepted in place of `plan` (`autonomous arcs list <project>`).
+
+## Rolling plan status up from the work
+
+A plan's status follows the work linked to it. The roll-up looks at the state
+last reported for each linked Automaton and Automation and derives the status:
+
+| Linked work | Plan status |
+|---|---|
+| none linked | left alone |
+| any item failed or blocked | `blocked` (it wins over running) |
+| any item running | `open` |
+| every item shipped | `shipped` |
+| every item finished | `done` |
+| anything else (some waiting or held) | `open` |
+
+A status that someone set by hand is never changed. A plan list marks it:
+`datawatch plans list` and chat `plan list` print `(by hand)` after the status,
+and REST and MCP carry `set_by_hand: true` next to `state` on the plan list, on
+the plan header of the Automata and tasks reads, and on `plan_record_get` and
+`plan_record_list`. A plan whose status was written by hand keeps it: the
+roll-up reports what it would have written (`set_by_hand_kept`) and changes
+nothing. Plans the daemon makes (a create, a migration) are not by hand, so
+they roll up. The web app marks it too: the plan's row and its detail show a **set by
+hand** badge beside the status. Today no REST, MCP, CLI, chat or web screen
+writes a plan's status or clears the marker, so `set_by_hand` is only ever true
+on a plan that was marked in the store directly; see *Still for the operator to
+review*.
+
+| To | REST | CLI | MCP | Chat |
+|---|---|---|---|---|
+| Preview what would change | `GET /api/plans/rollup?project=&dry_run=true` | `datawatch plans rollup --dry-run [--project P]` | `plan_rollup` with `dry_run` true | `autonomous plan rollup dry-run [project=P]` |
+| Apply it | `POST /api/plans/rollup` `{project?, dry_run?}` | `datawatch plans rollup [--project P]` | `plan_rollup` | `autonomous plan rollup [project=P]` |
+
+A preview never writes: the GET route refuses `dry_run=false` with 400, and a
+`POST` with `{"dry_run": true}` (or `?dry_run=true`) previews too. Without a
+project every project is rolled up; a project must be a registered alias. Each
+change in the answer names the plan (title first, then id), the status it has,
+the status it gets and the reason; `changed` counts the plans written (or that
+would be) and `kept` the hand-set plans left alone. A plan that becomes closed
+gets its closed time, and one that becomes open again loses it. Each write goes
+to the audit log as `plan_record_rolled_up` with the actor `rollup`, carrying the
+old status, the new one and the reason.
+
+**What it reads.** The roll-up does not ask the running Automata. It reads the
+state each link last had on the plan: the state seen when the Automaton or
+Automation was attached, and `shipped` when the merge pipeline records the
+Automaton as shipped. A link whose Automaton has since failed, blocked or
+started running still counts with its old state until it is attached again or
+ships. Run a preview before you trust a `blocked` or `open` answer, and attach
+the item to the same plan again to refresh the state the plan holds about it.
+
+**When it runs by itself.** Three triggers, and only these:
+
+- The daemon rolls every plan up once a day. The 24 hours count from daemon
+  start; there is no run at start, so a daemon restarted more than once a day
+  never reaches it. The log line `[plans] daily reconcile changed N plan
+  status(es)` appears only when something changed.
+- When an Automaton is recorded as shipped, the plan it is linked to rolls up.
+  This runs from the write-through registry hook, so it needs
+  `autonomous.plan_records.write_through` on (see *What happens when an
+  Automaton ships*). An Automaton that is not linked to a plan changes nothing.
+- When you call the roll-up yourself, as in the table above.
+
+A plan with no linked work is left alone on every trigger. The roll-up needs
+`autonomous:write` for a federated peer to apply and `autonomous:read` to
+preview, and answers 404 while plan records are off.

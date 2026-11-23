@@ -15,19 +15,30 @@ import (
 // Registry is one place skills come from. Today only kind="git" is wired;
 // the schema leaves room for kind="local" / kind="http" in v6.7.x.
 type Registry struct {
-	Name          string    `json:"name"`
-	Kind          string    `json:"kind"` // git
-	URL           string    `json:"url"`
-	Branch        string    `json:"branch,omitempty"`
-	AuthSecretRef string    `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
-	Enabled       bool      `json:"enabled"`
-	Description   string    `json:"description,omitempty"`
-	IsBuiltin     bool      `json:"is_builtin,omitempty"` // marks PAI default registry
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	LastSyncedAt  time.Time `json:"last_synced_at,omitempty"`
-	LastSyncError string    `json:"last_sync_error,omitempty"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"` // git
+	URL           string `json:"url"`
+	Branch        string `json:"branch,omitempty"`
+	AuthSecretRef string `json:"auth_secret_ref,omitempty"` // ${secret:...} per Secrets-Store Rule
+	Enabled       bool   `json:"enabled"`
+	Description   string `json:"description,omitempty"`
+	IsBuiltin     bool   `json:"is_builtin,omitempty"`  // marks PAI default registry
+	FirstParty    bool   `json:"first_party,omitempty"` // official datawatch-maintained source; see IsFirstPartyPackSource
+	// AutoAcceptPacks lets a new pack version from this source be accepted
+	// without review when it adds no tools, scripts or file scopes. Off by default.
+	AutoAcceptPacks bool      `json:"auto_accept_packs,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	LastSyncedAt    time.Time `json:"last_synced_at,omitempty"`
+	LastSyncError   string    `json:"last_sync_error,omitempty"`
 }
+
+// Entry types for AvailableSkill.Type and Synced.Type. A "pack" is a
+// folder that holds a pack.yaml; everything else is a "skill".
+const (
+	SkillTypeSkill = "skill"
+	SkillTypePack  = "pack"
+)
 
 // AvailableSkill is what `connect+browse` discovers in a registry's
 // shallow clone — present in the registry but not yet copied into the
@@ -36,6 +47,7 @@ type AvailableSkill struct {
 	Registry string    `json:"registry"`
 	Name     string    `json:"name"`
 	Path     string    `json:"path"` // path relative to registry root
+	Type     string    `json:"type"` // "skill" | "pack"; empty loads as "skill"
 	Manifest *Manifest `json:"manifest,omitempty"`
 	Synced   bool      `json:"synced"`
 }
@@ -46,6 +58,7 @@ type Synced struct {
 	Registry string    `json:"registry"`
 	Name     string    `json:"name"`
 	Path     string    `json:"path"`
+	Type     string    `json:"type"` // "skill" | "pack"; empty loads as "skill"
 	Manifest *Manifest `json:"manifest,omitempty"`
 	SyncedAt time.Time `json:"synced_at"`
 	Version  string    `json:"version,omitempty"`
@@ -113,6 +126,20 @@ func (s *Store) load() error {
 	}
 	if idx.AvailableCache == nil {
 		idx.AvailableCache = map[string][]*AvailableSkill{}
+	}
+	// Store files written before the type field existed carry no type;
+	// they all describe plain skills.
+	for _, sk := range idx.Synced {
+		if sk.Type == "" {
+			sk.Type = SkillTypeSkill
+		}
+	}
+	for _, list := range idx.AvailableCache {
+		for _, a := range list {
+			if a.Type == "" {
+				a.Type = SkillTypeSkill
+			}
+		}
 	}
 	s.idx = idx
 	return nil

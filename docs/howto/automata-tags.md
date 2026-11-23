@@ -150,10 +150,12 @@ it with two controls. The tag tree and drill-down views do not show it.
   are kept in the browser's local storage for each list, so they are not shared
   between devices or with other operators. Clearing site data resets them.
 
-The Sessions list uses the same group header, collapse and show-more when you
-group by a placement axis; its tag filter lives in the Filters sheet (see
-[The Tags filter](sessions-tiles-and-grouping.md#the-tags-filter)). The Sessions list itself has no mode toggle or group-by select from
-this change.
+The Sessions list shares the same group header, collapse and show-more when it is
+grouped by a placement axis; its tag filter lives in the Filters sheet (see
+[The Tags filter](sessions-tiles-and-grouping.md#the-tags-filter)). Its mode and
+group-by controls are its own: the List / Tiles / Compact view mode buttons in
+the one-line toolbar and the **Group by** select in the Filters sheet — see
+[sessions-tiles-and-grouping.md](sessions-tiles-and-grouping.md).
 
 #### Selecting tags and the match mode
 
@@ -281,9 +283,13 @@ started it.
   the chips never wait for the full record to load. The placement chip in
   particular is drawn on the very first frame, before the tag registry
   even arrives — it renders from the tag name itself, not from a registry
-  entry — and once it is shown it stays through later list refreshes and
-  session updates; it drops out of the tile only when the server
-  explicitly reports the session's `system_tags` as empty.
+  entry. The summary rows and the legacy session list records always carry
+  the `system_tags` key: a session with no placement tags is sent as
+  `system_tags: []`, never as a missing key or null. An explicit empty array
+  removes the placement chip from the tile, so when a session loses its last
+  placement tag the update that reports it removes the chip. A row or push
+  that omits the key keeps the chip (older servers). A page reload always
+  agrees with the server.
 - **Inherited tags are read-only.** They change when you change the
   Automaton's tags, not on the session. The session editor never sends them.
 - **Edit a session's own tags.** Open the session and choose **Tags → This
@@ -586,7 +592,10 @@ tree:
   when the registry does arrive, the own and inherited operator chips join
   the tile without dropping it. A later list row or session update that
   simply omits `system_tags` keeps the chip; only an explicit empty
-  `system_tags` removes it.
+  `system_tags` removes it. The summary rows and the legacy session
+  list records always carry the `system_tags` key, with an empty list sent
+  as `system_tags: []` (never a missing key and never null), so a session
+  that loses its last placement tag drops the chip on that update.
 - **No card shows a raw id.** An axis whose value is a bare identifier — the
   per-record axes `automaton:`, `stage:`, `task:` and `story:`, whose value
   is the record's id instead of a name — is drawn as the axis word alone

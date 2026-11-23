@@ -133,6 +133,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automaton_project_save",
 		"projects_page_without_project",
 		"projects_page_without_project_hint",
+		"settings_finalise_interval",
 		// b4220001 — PWA splash dwell settings and the previous-version line.
 		"splash_version_previous",
 		"settings_splash_min_seconds",
@@ -178,6 +179,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"server_header_all",
 		"safe_delete_stale",
 		"safe_delete_computed_at",
+		"deploy_card_title",
+		"deploy_run_now",
+		"settings_deploy_group",
+		"settings_deploy_build_command",
 		"burn_guard_run_now",
 		"burn_guard_settings_title",
 		"settings_usage_burn_guard_ask_on_change",

@@ -1,0 +1,15 @@
+# Fixture pack that adds one task to the "feature" kind — test data only.
+#
+# This pack exercises the resolution path for a pack that targets exactly
+# one Automaton kind and contributes a single additional task.
+name: fixture-one-kind
+version: 0.1.0
+description: Fixture pack that adds one task to the feature kind, for tests only.
+kinds:
+  - feature
+tasks:
+  - title: Extra check
+    prompt: prompts/extra-check.md
+    verification_script: verify/extra-check.sh
+    default_tier: small
+    read_only: false

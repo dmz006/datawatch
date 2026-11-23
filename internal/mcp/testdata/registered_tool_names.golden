@@ -82,9 +82,13 @@ autonomous_defect_batch_split
 autonomous_defect_batches
 autonomous_defect_intake
 autonomous_defect_tinyfix_check
+autonomous_deploy_get
+autonomous_deploy_run
 autonomous_event_kinds
 autonomous_event_log
 autonomous_events_pending
+autonomous_gate_repair_run
+autonomous_gate_repair_status
 autonomous_held
 autonomous_held_migrate
 autonomous_held_questions
@@ -363,6 +367,7 @@ filter_add
 filter_delete
 filter_list
 filter_toggle
+gate_repairs
 generated_artefacts_get
 get_alerts
 get_config
@@ -455,6 +460,14 @@ orchestrator_graph_list
 orchestrator_graph_plan
 orchestrator_graph_run
 orchestrator_verdicts
+packs_accept
+packs_inputs_get
+packs_inputs_set
+packs_install
+packs_list
+packs_remove
+packs_setting_get
+packs_setting_set
 per_automaton_guardrails_set
 per_automaton_retry_policy_set
 pipeline_cancel
@@ -466,6 +479,7 @@ plan_attach
 plan_attach_bulk
 plan_create
 plan_detach
+plan_edit
 plan_migrate
 plan_record_create
 plan_record_get
@@ -473,9 +487,11 @@ plan_record_import
 plan_record_list
 plan_record_search
 plan_record_update
+plan_rename
 plan_reorder
 plan_reorder_automata
 plan_restore
+plan_rollup
 plan_row_plan_convert
 plan_row_plan_list
 plan_theme_list
