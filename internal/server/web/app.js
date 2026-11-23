@@ -27421,7 +27421,7 @@ const GENERAL_CONFIG_FIELDS = [
     { label: 'Tracing', labelKey: 'settings_tracing_group', type: 'group' },
     { key: 'tracing.mode', label: 'Trace detail (off, summary or full; default summary)', labelKey: 'settings_tracing_mode', type: 'select', options: ['off', 'summary', 'full'], default: 'summary' },
     { key: 'tracing.arg_cap_bytes', label: 'Trace argument size limit (bytes, whole number, 0 = default)', labelKey: 'settings_tracing_arg_cap_bytes', type: 'number', placeholder: '0' },
-    { key: 'tracing.retention_days', label: 'Trace retention (days, whole number, 0 = default)', labelKey: 'settings_tracing_retention_days', type: 'number', placeholder: '0' },
+    { key: 'tracing.retention_days', label: 'Trace retention (days, whole number 0 to 3650; 0 = default = never pruned by age)', labelKey: 'settings_tracing_retention_days', hintKey: 'settings_tracing_retention_days_hint', type: 'number', placeholder: '0', min: 0, max: 3650, step: 1 },
     { key: 'tracing.backends', label: 'Trace per backend (JSON object of backend to true or false; a backend not listed is on)', labelKey: 'settings_tracing_backends', hintKey: 'settings_tracing_backends_hint', type: 'json_map', saveFn: 'saveTracingBackendsSetting', placeholder: '{"pi": false}' },
     { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
     { key: 'onboarding_report.enabled', label: 'Onboarding report (on by default)', labelKey: 'settings_onboarding_report_enabled', hintKey: 'settings_onboarding_report_enabled_hint', docsKey: 'onboarding_report.enabled', type: 'toggle' },
@@ -27661,6 +27661,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'rtk.auto_update', label: 'Auto-update RTK binary', type: 'toggle' },
     { key: 'rtk.update_check_interval', label: 'Update check interval (sec, 0=off)', type: 'number', placeholder: '86400' },
     { key: 'rtk.discover_interval', label: 'Discover interval (sec, 0=off)', type: 'number', placeholder: '0' },
+    { key: 'rtk.write_rules_files', label: 'Write session instructions into AGENT.md and CLAUDE.md', labelKey: 'settings_rtk_write_rules_files', helpKey: 'settings_rtk_write_rules_files_help', helpDocs: 'rtk-integration.md#where-the-rtk-instructions-go', type: 'toggle' },
   ]},
   { id: 'vision', section: 'Vision (Image Descriptions)', docs: 'config-reference.yaml', fields: [
     { key: 'vision.enabled', label: 'Enable vision backend (image attachment descriptions)', type: 'toggle' },
@@ -44535,6 +44536,30 @@ window._loadPRDSessionResources = function(prd) {
 
 const TL_ACTIVE_KINDS = ['automaton', 'automation'];
 
+// _tlWaitKind classifies a waiting interval by the plain-language reason the
+// daemon records: "waiting for you" (a decision wait member waits for the
+// operator, not blocked), "waiting for a free slot" (max parallel) and
+// "waiting for stage <name>" (stage gate). Any other reason is ''.
+function _tlWaitKind(iv) {
+  if (!iv || iv.kind !== 'waiting') return '';
+  const r = String(iv.reason || '');
+  if (r === 'waiting for you') return 'operator';
+  if (r === 'waiting for a free slot') return 'slot';
+  return r.indexOf('waiting for stage ') === 0 ? 'stage' : '';
+}
+function _tlWaitAttr(iv) {
+  const k = _tlWaitKind(iv);
+  return k ? ` data-timeline-wait="${k}"` : '';
+}
+// _tlWaitReasonText is the interval's reason in the operator's language.
+function _tlWaitReasonText(iv) {
+  const k = _tlWaitKind(iv);
+  if (k === 'operator') return t('automation_member_status_waiting_for_operator');
+  if (k === 'slot') return t('automation_member_status_waiting_for_slot');
+  if (k === 'stage') return t('automation_member_status_waiting_for_stage', [String(iv.reason).slice('waiting for stage '.length)]);
+  return String(iv.reason || '');
+}
+
 // A timestamp is any JS Date, epoch ms, or RFC3339/ISO string; anything
 // else is "not recorded" (null). Mirrors the Go side, which leaves End
 // null for an interval that is still open.
@@ -44656,7 +44681,7 @@ window.timelineGanttSvg = function(automaton, opts) {
         const patName = iv.kind === 'blocked' ? 'blocked' : 'waiting';
         const base = iv.kind === 'blocked' ? 'var(--danger,#ef4444)' : 'var(--accent2,#60a5fa)';
         bars += `<rect x="${ix0.toFixed(1)}" y="${my.toFixed(1)}" width="${(ix1 - ix0).toFixed(1)}" height="${BAR_H}" rx="2" fill="${base}" fill-opacity="0.25"/>`
-          + `<rect x="${ix0.toFixed(1)}" y="${my.toFixed(1)}" width="${(ix1 - ix0).toFixed(1)}" height="${BAR_H}" rx="2" fill="url(#tlh-${uid}-${patName})" data-timeline-interval="${escHtml(iv.kind)}"><title>${escHtml((iv.kind === 'blocked' ? t('timeline_gantt_blocked') : t('timeline_gantt_waiting')) + (iv.reason ? ' — ' + iv.reason : ''))}</title></rect>`;
+          + `<rect x="${ix0.toFixed(1)}" y="${my.toFixed(1)}" width="${(ix1 - ix0).toFixed(1)}" height="${BAR_H}" rx="2" fill="url(#tlh-${uid}-${patName})" data-timeline-interval="${escHtml(iv.kind)}"${_tlWaitAttr(iv)}><title>${escHtml((iv.kind === 'blocked' ? t('timeline_gantt_blocked') : t('timeline_gantt_waiting')) + (iv.reason ? ' — ' + _tlWaitReasonText(iv) : ''))}</title></rect>`;
       });
       my += BAR_H + BAR_GAP;
     });
@@ -49305,13 +49330,24 @@ function _automationQuestionsRowHtml(q) {
       `<button type="button" class="btn-secondary questions-option-btn" data-question-id="${escHtml(id)}" data-option-id="${escHtml(String(o.id))}" title="${escHtml(String(o.tradeoffs || ''))}" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.answerQuestionOption === 'function') window.answerQuestionOption(this)">${escHtml(String(o.label || o.id))}</button>`
     ).join('') + `</div>`
     : '';
-  return `<div class="questions-queue-row" data-question-id="${escHtml(id)}" style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
+  // A question a decision wait member of an Automation asks: the member waits
+  // for the operator (not blocked) and only its branch is held.
+  const waitsForYou = q.asked_by === 'decision-wait';
+  const waitBadge = waitsForYou
+    ? `<span class="questions-waiting-badge" data-waiting-for-you="true" style="font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--warning,#f59e0b);border:1px solid var(--warning,#f59e0b);border-radius:4px;padding:1px 6px;">${escHtml(t('automation_member_status_waiting_for_operator'))}</span>`
+    : '';
+  const waitNote = waitsForYou
+    ? `<div class="questions-waiting-note" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_decision_wait_inbox_note'))}</div>`
+    : '';
+  return `<div class="questions-queue-row" data-question-id="${escHtml(id)}"${waitsForYou ? ' data-decision-wait="true"' : ''} style="border-top:1px solid var(--border);padding:8px 2px;display:flex;flex-direction:column;gap:4px;">` +
     `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">` +
       (q.label ? `<span class="questions-label" style="font-weight:600;font-size:12px;color:var(--text);">${escHtml(q.label)}</span>` : '') +
+      waitBadge +
       `<span class="questions-id" style="${idStyle}">${escHtml(id)}</span>` +
       high +
     `</div>` +
     textHtml +
+    waitNote +
     optsHtml +
     `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">` +
       `<span class="questions-meta" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_questions_by'))} ${escHtml(q.asked_by || '')}${ageHtml ? ' · ' + ageHtml : ''}</span>` +
@@ -50363,6 +50399,17 @@ function _automationActiveMembers(a) {
   return running.length === 1 ? running : [];
 }
 
+// _automationCardWaitLines is one line on the Automation tile for a member
+// that waits for the operator: it says "waiting for you", never blocked, and
+// links to the question. Waits for a slot or a stage are on the strip.
+function _automationCardWaitLines(a, meta) {
+  return (Array.isArray(a.members) ? a.members : []).map(m => {
+    const w = _automationMemberWait(m);
+    if (!w || w.kind !== 'operator') return '';
+    return `<div class="automation-card-wait" data-wait="operator" style="${meta}color:var(--warning,#f59e0b);">${escHtml(_automationWaitLabel(w))}${_automationAnswerButtonHTML(w.questionId)}</div>`;
+  }).join('');
+}
+
 function _automationBudgetValue(b) {
   const n = Number(b.ceilingValue);
   const text = Number.isInteger(n) ? String(n) : n.toFixed(2);
@@ -50398,7 +50445,7 @@ function buildAutomationCardHTML(automation, ctx) {
     const ref = String(m.prd_id || m.automation_id || m.id || '');
     const title = titles[m.prd_id] || ref.slice(0, 8);
     return `<div class="automation-card-member" style="${meta}">${escHtml(t('automation_current_member', [title]))}</div>`;
-  }).join('');
+  }).join('') + _automationCardWaitLines(a, meta);
 
   let idle = '';
   const idleAt = a.idle_since ? Date.parse(a.idle_since) : NaN;
@@ -50515,15 +50562,82 @@ function _automationJoinRule(m) {
   return _AUTOMATION_JOIN_RULES.includes(rule) ? rule : 'all_must_succeed';
 }
 
-// _automationPairedJoin returns the join member whose join_members set equals
-// the fork's fork_members set, or null.
+// _automationChainIds walks on_complete from headId and returns the member ids
+// in order: one fork branch. A member that is unknown or already on the chain
+// ends the walk, so a loop or a dangling edge never repeats a member. A branch
+// of one member is the chain [headId].
+function _automationChainIds(byId, headId) {
+  const out = [];
+  const seen = new Set();
+  for (let id = headId; id; ) {
+    if (seen.has(id)) break;
+    const m = byId.get(id);
+    if (!m) break;
+    seen.add(id);
+    out.push(id);
+    id = m.on_complete;
+  }
+  return out;
+}
+
+// _automationForkChains returns one id list per branch of a fork, in the order
+// fork_members lists the heads: a branch is a chain of members, not one member.
+// A head that is not a member of the Automation gives no chain.
+function _automationForkChains(fork, members) {
+  const byId = new Map();
+  (Array.isArray(members) ? members : []).forEach(m => { if (m && m.id && !byId.has(m.id)) byId.set(m.id, m); });
+  return _automationIdList(fork && fork.fork_members).map(h => _automationChainIds(byId, h)).filter(c => c.length);
+}
+
+// _automationSetsEqual reports whether two id lists hold the same ids.
+function _automationSetsEqual(a, b) {
+  const x = new Set(a), y = new Set(b);
+  return x.size === y.size && [...x].every(id => y.has(id));
+}
+
+// _automationPairedJoin returns the join member that pairs with the fork: its
+// join_members are the tails of the fork's branch chains (the heads, for a
+// fork whose branches are single members), or null.
 function _automationPairedJoin(fork, members) {
-  const want = new Set(_automationIdList(fork.fork_members));
-  return members.find(j => {
-    if (j.kind !== 'join') return false;
-    const have = new Set(_automationIdList(j.join_members));
-    return have.size === want.size && [...want].every(id => have.has(id));
-  }) || null;
+  const tails = _automationForkChains(fork, members).map(c => c[c.length - 1]);
+  const heads = _automationIdList(fork.fork_members);
+  return members.find(j => j && j.kind === 'join' && _automationSetsEqual(_automationIdList(j.join_members), tails)) ||
+    members.find(j => j && j.kind === 'join' && _automationSetsEqual(_automationIdList(j.join_members), heads)) || null;
+}
+
+// _automationMemberWait reports the wait a member is in, or null. A decision_wait
+// member that holds its cursor for an operator answer is waiting for the operator
+// (never blocked); a member that has not started is waiting for an earlier stage
+// (stage gate) or for a free slot (max_parallel). The stage wait wins over the
+// slot wait, as the status views report it.
+function _automationMemberWait(m) {
+  if (!m) return null;
+  const kind = String(m.kind || 'prd');
+  const status = String(m.status || '');
+  if (kind === 'decision_wait' && m.waiting_for_operator && status === 'running') {
+    return { kind: 'operator', questionId: String(m.question_id || '') };
+  }
+  const unstarted = status === '' || status === 'pending';
+  if (unstarted && kind !== 'join' && m.waiting_for_stage) return { kind: 'stage', stage: String(m.waiting_for_stage) };
+  if (unstarted && kind !== 'join' && m.waiting_for_slot) return { kind: 'slot' };
+  return null;
+}
+window.automationMemberWait = _automationMemberWait;
+
+// _automationWaitLabel is the plain-language text of a wait.
+function _automationWaitLabel(w) {
+  if (!w) return '';
+  if (w.kind === 'operator') return t('automation_member_status_waiting_for_operator');
+  if (w.kind === 'stage') return t('automation_member_status_waiting_for_stage', [w.stage]);
+  return t('automation_member_status_waiting_for_slot');
+}
+window.automationWaitLabel = _automationWaitLabel;
+
+// _automationAnswerButtonHTML is the link that opens the operator question a
+// decision_wait member waits on, or '' while the question is not linked yet.
+function _automationAnswerButtonHTML(questionId) {
+  if (!questionId) return '';
+  return `<button type="button" class="automation-wait-answer-btn" data-answer-question="${escHtml(questionId)}" onclick="event.stopPropagation(); if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(questionId)}')">${escHtml(t('automation_decision_wait_answer'))}</button>`;
 }
 
 // _automationFollowChain walks on_complete from startId. A member already in
@@ -50543,11 +50657,19 @@ function _automationFollowChain(startId, byId, drawn, members) {
     if (m.kind === 'fork') {
       const join = _automationPairedJoin(m, members || []);
       const lanes = [];
-      _automationIdList(m.fork_members).forEach(bid => {
-        const b = byId.get(bid);
-        if (!b || lanes.some(l => l.member.id === bid)) return;
-        lanes.push({ member: b, ref: drawn.has(bid) });
-        drawn.add(bid);
+      // A lane is one branch: its head and, behind it, the rest of its chain.
+      _automationForkChains(m, members || []).forEach(ids => {
+        const b = byId.get(ids[0]);
+        if (!b || lanes.some(l => l.member.id === b.id)) return;
+        const lane = { member: b, ref: drawn.has(b.id), chain: [] };
+        drawn.add(b.id);
+        ids.slice(1).forEach(cid => {
+          const cm = byId.get(cid);
+          if (!cm) return;
+          lane.chain.push({ member: cm, ref: drawn.has(cid) });
+          drawn.add(cid);
+        });
+        lanes.push(lane);
       });
       if (lanes.length) items.push({ group: { fork: m, join, lanes } });
       if (!join) break;
@@ -50599,6 +50721,7 @@ function _automationMemberTitle(m, c, chip) {
   const kind = m.kind || 'prd';
   if (kind === 'fork') return t('automation_fork_label');
   if (kind === 'join') return t('automation_join_label');
+  if (kind === 'decision_wait') return t('automation_decision_wait_label');
   if (kind === 'prd') return _automationLookup(c.prdTitles, m.prd_id) || chip;
   if (kind === 'automation') {
     const child = _automationChild(m, c);
@@ -50729,6 +50852,28 @@ function _automationMemberCardHTML(m, c, active, actions) {
     const childLabel = child && child.status ? 'automation_status_' + child.status : '';
     if (childLabel && t(childLabel) !== childLabel) shownLabel = t(childLabel);
     extra = `<button type="button" class="automation-nested-toggle" data-member-id="${escHtml(m.id)}" aria-expanded="${expanded}" onclick="toggleAutomationNested('${escJsAttr(m.id)}')">${escHtml(t(expanded ? 'automation_nested_collapse' : 'automation_nested_expand'))}</button>`;
+  } else if (kind === 'fork') {
+    const limit = Number(m.max_parallel) || 0;
+    if (limit > 0) {
+      attrs = ` data-max-parallel="${limit}"`;
+      extra = `<span class="automation-limit-chip">${escHtml(t('automation_max_parallel_chip', [limit]))}</span>`;
+    }
+  } else if (kind === 'decision_wait') {
+    attrs = ' data-decision-wait="true"';
+    const question = String(m.question || '');
+    if (question) extra = `<span class="automation-decision-question" title="${escHtml(question)}">${escHtml(question)}</span>`;
+  }
+  // A wait is not a status of its own: the member keeps its status (data-status)
+  // and carries data-wait, a plain label and, for an operator wait, a link that
+  // opens the question. It is drawn as waiting, never as blocked.
+  const wait = _automationMemberWait(m);
+  if (wait) {
+    cls += ' automation-member-waiting automation-member-waiting-' + wait.kind;
+    attrs += ` data-wait="${wait.kind}"`;
+    shownLabel = _automationWaitLabel(wait);
+    if (wait.kind === 'operator') {
+      extra += `<span class="automation-wait-note">${escHtml(t('automation_decision_wait_branch_note'))}</span>` + _automationAnswerButtonHTML(wait.questionId);
+    }
   }
   const details = `<button type="button" class="automation-member-details-btn" data-details-for="${escHtml(m.id)}" onclick="event.stopPropagation(); if (typeof openAutomationMemberDrawer === 'function') openAutomationMemberDrawer('${escJsAttr(m.id)}')">${escHtml(t('automation_member_details'))}</button>`;
   return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${attrs}${open}>`
@@ -50769,9 +50914,22 @@ function _automationBlockHTML(it, env) {
 }
 
 function _automationGroupHTML(g, env) {
+  // A lane is a branch: its head, then each later member of the chain joined by
+  // an on_complete connector. The last member of the chain is the tail the
+  // group's join collects.
   const lanes = g.lanes.map(l => {
     const id = escHtml(l.member.id);
-    return `<div class="automation-lane" data-lane="${id}" title="${escHtml(t('automation_branch_label', [l.member.id]))}">${_automationBlockHTML(l, env)}</div>`;
+    const chain = Array.isArray(l.chain) ? l.chain : [];
+    let inner = _automationBlockHTML(l, env);
+    let prev = l.member;
+    chain.forEach(it => {
+      inner += _automationConnectorHTML(prev, 'on_complete', it.member.id) + _automationBlockHTML(it, env);
+      prev = it.member;
+    });
+    const chainAttrs = chain.length
+      ? ` data-chain="true" data-chain-length="${chain.length + 1}" data-tail="${escHtml(prev.id)}"`
+      : '';
+    return `<div class="automation-lane" data-lane="${id}"${chainAttrs} title="${escHtml(t('automation_branch_label', [l.member.id]))}">${inner}</div>`;
   }).join('');
   return `<div class="automation-fork-group" data-fork-id="${escHtml(g.fork.id)}" data-join-id="${escHtml(g.join ? g.join.id : '')}">${lanes}</div>`;
 }
@@ -50846,7 +51004,25 @@ function _automationStripBody(a, c, seen, depth) {
   const heldStrip = heldTotal
     ? `<div class="automation-held-strip">&#9873; ${heldTotal} ${escHtml(t('review_held_badge'))}</div>`
     : '';
-  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${heldStrip}${body}</div>`;
+  const waitStrip = depth === 0 ? _automationWaitStripHTML(a, members) : '';
+  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${heldStrip}${waitStrip}${body}</div>`;
+}
+
+// _automationWaitStripHTML is the header line of the strip: how many members
+// wait for the operator, for a free slot and for an earlier stage, and the two
+// run-shape settings when they are on (max parallel, stage gate). It draws
+// nothing for an Automation with no wait and neither setting.
+function _automationWaitStripHTML(a, members) {
+  const counts = { operator: 0, slot: 0, stage: 0 };
+  members.forEach(m => { const w = _automationMemberWait(m); if (w) counts[w.kind]++; });
+  const chip = (kind, key) => counts[kind]
+    ? `<span class="automation-wait-chip automation-wait-chip-${kind}" data-wait-count="${kind}">${escHtml(t(key, [counts[kind]]))}</span>`
+    : '';
+  const limit = Number(a.max_parallel) || 0;
+  const limits = (limit > 0 ? `<span class="automation-limit-chip" data-max-parallel="${limit}">${escHtml(t('automation_max_parallel_chip', [limit]))}</span>` : '')
+    + (a.stage_gate ? `<span class="automation-limit-chip" data-stage-gate="true">${escHtml(t('automation_stage_gate_chip'))}</span>` : '');
+  const inner = chip('operator', 'automation_wait_strip_operator') + chip('slot', 'automation_wait_strip_slot') + chip('stage', 'automation_wait_strip_stage') + limits;
+  return inner ? `<div class="automation-wait-strip" data-wait-strip="true">${inner}</div>` : '';
 }
 
 // buildAutomationStripHTML returns the strip markup for one Automation.
@@ -50929,10 +51105,14 @@ function _automationJoinWait(a) {
   members.forEach(m => { if (m && m.id) byId.set(m.id, m); });
   for (const j of members) {
     if (!j || j.kind !== 'join' || _AUTOMATION_FINISHED_STATUSES.includes(j.status)) continue;
-    const branches = _automationIdList(j.join_members).map(id => byId.get(id)).filter(Boolean);
+    // A branch is a chain: it is done when its tail (the member the join names)
+    // is done, and started when any member of the chain has started.
+    const fork = members.find(f => f && f.kind === 'fork' && _automationPairedJoin(f, members) === j);
+    const chains = fork ? _automationForkChains(fork, members) : _automationIdList(j.join_members).map(id => [id]);
+    const branches = chains.map(ids => ids.map(id => byId.get(id)).filter(Boolean)).filter(c => c.length);
     if (!branches.length) continue;
-    const done = branches.filter(b => _AUTOMATION_FINISHED_STATUSES.includes(b.status)).length;
-    const started = branches.some(b => b.status === 'running' || _AUTOMATION_FINISHED_STATUSES.includes(b.status));
+    const done = branches.filter(c => _AUTOMATION_FINISHED_STATUSES.includes(c[c.length - 1].status)).length;
+    const started = branches.some(c => c.some(b => b.status === 'running' || _AUTOMATION_FINISHED_STATUSES.includes(b.status)));
     if (started && done < branches.length) return { done, total: branches.length };
   }
   return null;
@@ -51853,6 +52033,7 @@ function openAutomationInsertDialog(anchorMemberId, position) {
       title: _automationActingTitle(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after', anchorMemberId),
       body: `<input type="search" id="automationInsertSearch" class="automation-dialog-input" style="width:100%;" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" oninput="automationFilterInsertPicker()">`
         + `<div id="automationInsertPicker" class="automation-picker" style="max-height:180px;overflow:auto;margin:6px 0;">${_automationInsertPickerHTML('')}</div>`
+        + field('automation_insert_question_label', `<textarea id="automationInsertQuestion" class="automation-dialog-input" rows="2" maxlength="${_AUTOMATION_FORM_QUESTION_MAX}" style="width:100%;" placeholder="${escHtml(t('automation_form_decision_wait_placeholder'))}"></textarea>`)
         + `<label class="automation-dialog-field" style="display:flex;gap:6px;align-items:center;margin:8px 0;"><input type="checkbox" id="automationInsertUrgent"${placement.urgent ? ' checked disabled' : ''}> ${escHtml(t('automation_insert_urgent'))}</label>`
         + field('automation_insert_reason_label', '<textarea id="automationInsertReason" class="automation-dialog-input" rows="3" style="width:100%;" required></textarea>')
         + '<div id="automationInsertError" class="automation-insert-error" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
@@ -51865,12 +52046,18 @@ function openAutomationInsertDialog(anchorMemberId, position) {
         };
         const reason = _automationFieldValue('automationInsertReason').trim();
         if (!reason) return fail('automation_insert_reason_required');
-        if (!_automationInsert.picked && !_automationInsert.pickedItem) return fail('automation_picker_required');
+        // A question inserts a decision wait member instead of an Automaton.
+        const question = _automationFieldValue('automationInsertQuestion').trim();
+        const picked = !!(_automationInsert.picked || _automationInsert.pickedItem);
+        if (question && picked) return fail('automation_insert_one_only');
+        if (!question && !picked) return fail('automation_picker_required');
+        if (question.length > _AUTOMATION_FORM_QUESTION_MAX) return fail('automation_form_decision_wait_too_long');
         const box = document.getElementById('automationInsertUrgent');
         // An urgent insert takes the next slot, so the server needs `after` empty.
         const urgent = placement.urgent || !!(box && box.checked);
         automationControl(id, 'insert_member', {
-          member: _automationInsert.pickedItem ? { pending_item_id: _automationInsert.pickedItem } : { prd_id: _automationInsert.picked },
+          member: question ? { kind: 'decision_wait', question }
+            : (_automationInsert.pickedItem ? { pending_item_id: _automationInsert.pickedItem } : { prd_id: _automationInsert.picked }),
           after: urgent ? '' : placement.after,
           urgent,
           reason,
@@ -51922,15 +52109,18 @@ function buildAutomationMemberDrawerHTML(member, ctx) {
   const statusKey = 'automation_member_status_' + status;
   const edge = String(m.edge_taken || '');
   const edgeKey = 'automation_edge_' + edge;
+  const wait = _automationMemberWait(m);
   const rows = [
     ['automation_field_id', m.id],
     ['automation_field_kind', _automationKindLabel(kind)],
-    ['automation_field_status', t(statusKey) !== statusKey ? t(statusKey) : status],
+    ['automation_field_status', wait ? _automationWaitLabel(wait) : (t(statusKey) !== statusKey ? t(statusKey) : status)],
     ['automation_field_outcome', m.outcome],
     ['automation_field_edge_taken', edge && t(edgeKey) !== edgeKey ? t(edgeKey) : edge],
     ['automation_field_started', _automationTimeText(m.started_at)],
     ['automation_field_finished', _automationTimeText(m.finished_at)],
   ];
+  if (kind === 'decision_wait') rows.push(['automation_form_decision_wait_question', m.question]);
+  if (kind === 'fork' && Number(m.max_parallel) > 0) rows.push(['automation_form_fork_max_parallel', String(m.max_parallel)]);
   if (_automationMemberInserted(m)) {
     rows.push(['automation_field_added_by', m.added_by], ['automation_field_added_reason', m.added_reason],
       ['automation_field_added_at', _automationTimeText(m.added_at)]);
@@ -52007,15 +52197,19 @@ const _automationForm = {
   forkBranches: [],
   forkRule: 'all_must_succeed',
   nestedChild: '',
+  decisionQuestion: '',
   defaultsEdited: false,
   autoTagsEdited: false,
+  runShapeEdited: false,
 };
 
-const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason', 'stage'];
+const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'max_parallel', 'question', 'budget_policy', 'added_reason', 'stage'];
 // The member kinds that carry no stage: the graph's own fork and join nodes.
 const _AUTOMATION_FORM_NO_STAGE_KINDS = ['fork', 'join'];
 // The member fields only one kind may carry.
-const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join' };
+const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join', max_parallel: 'fork', question: 'decision_wait' };
+// The most characters a decision wait question may carry (the daemon caps it in bytes).
+const _AUTOMATION_FORM_QUESTION_MAX = 4096;
 const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
 // The default model keys of the create and update body. The planning pair is
 // not one of them: it goes through the set_llm request.
@@ -52076,16 +52270,25 @@ function _automationSameIds(a, b) {
   return x.size === y.size && [...x].every(id => y.has(id));
 }
 
+// _automationFormBranchSet is every member that sits on a fork branch: each
+// branch is a chain (its head, listed in fork_members, and the members behind
+// it along on_complete), so a branch of one member is the trivial chain.
 function _automationFormBranchSet(members) {
   const out = new Set();
   members.forEach(m => {
-    if (m && m.kind === 'fork') (Array.isArray(m.fork_members) ? m.fork_members : []).forEach(id => out.add(id));
+    if (m && m.kind === 'fork') _automationForkChains(m, members).forEach(ids => ids.forEach(id => out.add(id)));
   });
   return out;
 }
 
+// _automationFormForkOf returns the fork whose branch chains hold member id.
+function _automationFormForkOf(members, id) {
+  return members.find(f => f && f.kind === 'fork' && _automationForkChains(f, members).some(ids => ids.includes(id))) || null;
+}
+
+// The join pairs with a fork when it names the tails of the fork's chains.
 function _automationFormPairedJoin(members, fork) {
-  return members.find(j => j && j.kind === 'join' && _automationSameIds(j.join_members, fork.fork_members)) || null;
+  return _automationPairedJoin(fork, members);
 }
 
 function _automationFormPairedJoinIds(members) {
@@ -52152,7 +52355,7 @@ function _automationFormSpliceIn(state, group, exit, afterId) {
     prev = members.find(m => m.id === tail) || null;
   }
   if (prev && _automationFormBranchSet(members).has(prev.id)) {
-    prev = members.find(m => m.kind === 'fork' && (m.fork_members || []).includes(prev.id)) || prev;
+    prev = _automationFormForkOf(members, prev.id) || prev;
   }
   if (prev && prev.kind === 'fork') prev = _automationFormPairedJoin(members, prev) || prev;
   let index = 0;
@@ -52168,13 +52371,26 @@ function _automationFormSpliceIn(state, group, exit, afterId) {
   return state;
 }
 
-// automationAddForkJoin returns a new form state with a fork, one branch
-// member per picked Automaton and the paired join, linked after the member
-// named insertAfterMemberId (the front when empty). The branches carry no
-// edges. The rule defaults to all_must_succeed.
-function automationAddForkJoin(formState, branchPrdIds, joinRule, insertAfterMemberId) {
-  const prdIds = [...new Set((Array.isArray(branchPrdIds) ? branchPrdIds : []).map(String).filter(Boolean))];
-  if (prdIds.length < 2) throw new Error(t('automation_fork_min_branches'));
+// automationAddForkJoin returns a new form state with a fork, its branches and
+// the paired join, linked after the member named insertAfterMemberId (the front
+// when empty). Each entry of branchPrdIds is one branch: an Automaton id (a
+// branch of one member) or a list of Automaton ids (a chain of members run one
+// after the other, each joined to the next through on_complete). The fork lists
+// the chain heads, the join the chain tails, and the rest of the chain carries
+// on_complete only. The rule defaults to all_must_succeed. options.maxParallel
+// caps how many branches of the fork run at once (0 or unset = no fork limit).
+function automationAddForkJoin(formState, branchPrdIds, joinRule, insertAfterMemberId, options) {
+  const seen = new Set();
+  const chains = [];
+  (Array.isArray(branchPrdIds) ? branchPrdIds : []).forEach(entry => {
+    const ids = (Array.isArray(entry) ? entry : [entry]).map(String).filter(Boolean).filter(id => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    if (ids.length) chains.push(ids);
+  });
+  if (chains.length < 2) throw new Error(t('automation_fork_min_branches'));
   const rule = _AUTOMATION_JOIN_RULES.includes(joinRule) ? joinRule : _AUTOMATION_JOIN_RULES[0];
   const state = _automationCloneFormState(formState);
   const taken = state.members.map(m => m.id);
@@ -52183,10 +52399,20 @@ function automationAddForkJoin(formState, branchPrdIds, joinRule, insertAfterMem
     taken.push(id);
     return id;
   };
-  const branches = prdIds.map(prdId => ({ id: newId(), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' }));
-  const forkMembers = branches.map(b => b.id);
-  const fork = { id: newId(), kind: 'fork', fork_members: forkMembers, on_complete: '', on_blocked: '', on_failed: '' };
-  const join = { id: newId(), kind: 'join', join_members: forkMembers.slice(), on_branch_failure: rule, on_complete: '', on_blocked: '', on_failed: '' };
+  const branches = [];
+  const heads = [];
+  const tails = [];
+  chains.forEach(ids => {
+    const made = ids.map(prdId => ({ id: newId(), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' }));
+    made.forEach((b, i) => { if (i + 1 < made.length) b.on_complete = made[i + 1].id; });
+    heads.push(made[0].id);
+    tails.push(made[made.length - 1].id);
+    branches.push(...made);
+  });
+  const fork = { id: newId(), kind: 'fork', fork_members: heads, on_complete: '', on_blocked: '', on_failed: '' };
+  const limit = Number(options && options.maxParallel) || 0;
+  if (limit > 0) fork.max_parallel = Math.floor(limit);
+  const join = { id: newId(), kind: 'join', join_members: tails, on_branch_failure: rule, on_complete: '', on_blocked: '', on_failed: '' };
   return _automationFormSpliceIn(state, [fork].concat(branches, [join]), join, insertAfterMemberId);
 }
 window.automationAddForkJoin = automationAddForkJoin;
@@ -52213,6 +52439,21 @@ function automationAddNestedMember(formState, childAutomationId, insertAfterMemb
 }
 window.automationAddNestedMember = automationAddNestedMember;
 
+// automationAddDecisionWait returns a new form state with a decision wait
+// member, linked after the member named insertAfterMemberId. It asks the
+// operator the question and holds only its own branch (or, outside a fork, the
+// single path) until it is answered; it carries on_complete only. The question
+// is required.
+function automationAddDecisionWait(formState, question, insertAfterMemberId) {
+  const text = String(question == null ? '' : question).trim();
+  if (!text) throw new Error(t('automation_form_decision_wait_need_question'));
+  if (text.length > _AUTOMATION_FORM_QUESTION_MAX) throw new Error(t('automation_form_decision_wait_too_long'));
+  const state = _automationCloneFormState(formState);
+  const member = { id: _automationNewMemberId(state.members.map(m => m.id)), kind: 'decision_wait', question: text, on_complete: '' };
+  return _automationFormSpliceIn(state, [member], member, insertAfterMemberId);
+}
+window.automationAddDecisionWait = automationAddDecisionWait;
+
 // automationRemoveForkGroup returns a new form state without the fork, its
 // branches and its paired join. Edges that led to the fork lead on to what the
 // join led to, and a removed entry hands over to that member.
@@ -52221,7 +52462,8 @@ function automationRemoveForkGroup(formState, forkId) {
   const fork = state.members.find(m => m.id === forkId && m.kind === 'fork');
   if (!fork) return state;
   const join = _automationFormPairedJoin(state.members, fork);
-  const drop = new Set([fork.id].concat(fork.fork_members || [], join ? [join.id] : []));
+  const chainIds = [].concat(...(_automationForkChains(fork, state.members)), fork.fork_members || []);
+  const drop = new Set([fork.id].concat(chainIds, join ? [join.id] : []));
   const after = join ? (join.on_complete || '') : '';
   const entry = state.entryMemberId || (state.members[0] ? state.members[0].id : '');
   state.members = state.members.filter(m => !drop.has(m.id));
@@ -52257,11 +52499,14 @@ function buildAutomationFormPayload(formState) {
       _AUTOMATION_FORM_MEMBER_KEEP.forEach(k => {
         if (k in _AUTOMATION_FORM_KIND_FIELDS && _AUTOMATION_FORM_KIND_FIELDS[k] !== kind) return;
         if (k === 'stage' && _AUTOMATION_FORM_NO_STAGE_KINDS.includes(kind)) return;
-        const v = k === 'stage' ? String(m[k] || '').trim() : m[k];
+        if (k === 'max_parallel' && !(Number(m[k]) > 0)) return;
+        const v = k === 'stage' || k === 'question' ? String(m[k] || '').trim() : (k === 'max_parallel' ? Number(m[k]) : m[k]);
         if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
       });
       if (kind === 'join' && !out.on_branch_failure) out.on_branch_failure = _AUTOMATION_JOIN_RULES[0];
-      const edges = kind === 'fork' || branches.has(m.id) ? [] : (kind === 'join' ? ['on_complete'] : _AUTOMATION_OUTCOME_EDGES);
+      // A fork carries no edge; a member on a branch chain, a decision wait and
+      // a join carry on_complete only.
+      const edges = kind === 'fork' ? [] : (branches.has(m.id) || kind === 'join' || kind === 'decision_wait' ? ['on_complete'] : _AUTOMATION_OUTCOME_EDGES);
       edges.forEach(k => { if (m[k]) out[k] = m[k]; });
       return out;
     });
@@ -52280,6 +52525,10 @@ function buildAutomationFormPayload(formState) {
     if (f.budgetPolicy) body.budget_policy = f.budgetPolicy;
     else delete body.budget_policy;
   }
+  // The run shape (max parallel, stage gate) goes only once the operator touched
+  // it; left out, the Automation keeps the settings it has.
+  if (f.maxParallel !== undefined && f.maxParallel !== null) body.max_parallel = Math.max(0, Math.floor(Number(f.maxParallel) || 0));
+  if (f.stageGate !== undefined && f.stageGate !== null) body.stage_gate = !!f.stageGate;
   // The auto-tags override goes only once the operator touched it; left out,
   // the Automation keeps the setting it has.
   if (f.autoTags && typeof f.autoTags === 'object') body.auto_tags = f.autoTags;
@@ -52360,6 +52609,47 @@ function _automationBudgetSectionHTML(policy) {
     <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('prd_new_backend_label'))}</span>${renderBackendSelect('automationBudgetBackend', p.backend || '', '')}</label>
   </details>`;
 }
+
+// ── Run shape: max parallel and stage gate ──────────────────────────────────
+// Two settings of the whole Automation: the most members that run at once
+// (0 = no limit; a member that would start past the limit waits for a free slot)
+// and the stage gate (a staged member waits while an earlier stage still has
+// unfinished members). Nothing is sent until a field is touched; an untouched
+// form keeps what the Automation has.
+
+function _automationRunShapeSectionHTML(src) {
+  const s = src || {};
+  const limit = Number(s.max_parallel) || 0;
+  const open = limit > 0 || !!s.stage_gate;
+  return `<details id="automationFormRunShape" class="automation-form-collapsible"${open ? ' open' : ''} onchange="automationFormRunShapeChanged()" oninput="automationFormRunShapeChanged()">`
+    + `<summary class="automation-form-section">${escHtml(t('automation_form_run_shape_section'))}</summary>`
+    + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_form_max_parallel'))}</span>`
+    + `<input type="number" min="0" step="1" id="automationFormMaxParallel" class="form-input" value="${limit}"></label>`
+    + `<div class="automation-form-hint" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_form_max_parallel_hint'))}</div>`
+    + `<label class="automation-form-field automation-form-check"><input type="checkbox" id="automationFormStageGate"${s.stage_gate ? ' checked' : ''}> <span class="automation-form-label">${escHtml(t('automation_form_stage_gate'))}</span></label>`
+    + `<div class="automation-form-hint" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_form_stage_gate_hint'))}</div>`
+    + `</details>`;
+}
+
+function automationFormRunShapeChanged() {
+  _automationForm.runShapeEdited = true;
+}
+window.automationFormRunShapeChanged = automationFormRunShapeChanged;
+
+// automationReadRunShape collects {maxParallel, stageGate}, or {error: <locale
+// key>} when the limit is not a whole number of at least 0. An empty field is 0.
+function automationReadRunShape() {
+  const raw = _automationFieldValue('automationFormMaxParallel').trim();
+  let maxParallel = 0;
+  if (raw !== '') {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) return { error: 'automation_form_max_parallel_invalid' };
+    maxParallel = n;
+  }
+  const box = document.getElementById('automationFormStageGate');
+  return { maxParallel, stageGate: !!(box && box.checked) };
+}
+window.automationReadRunShape = automationReadRunShape;
 
 // ── Auto-tags override ──────────────────────────────────────────────────────
 // An Automation may override the daemon's autonomous.auto_tags block: an
@@ -52572,7 +52862,7 @@ function _automationFormEdgeSelectHTML(m, edge) {
   // An edge never names a join or a branch, and a join never leads back to its own fork.
   const all = _automationForm.members;
   const branches = _automationFormBranchSet(all);
-  const own = m.kind === 'join' ? all.find(x => x.kind === 'fork' && _automationSameIds(x.fork_members, m.join_members)) : null;
+  const own = m.kind === 'join' ? all.find(x => x && x.kind === 'fork' && _automationPairedJoin(x, all) === m) : null;
   const others = all.filter(x => x.id !== m.id && x.kind !== 'join' && !branches.has(x.id) && !(own && x.id === own.id));
   const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationFormMemberTitle(x)]));
   const current = String(m[edge] || '');
@@ -52622,8 +52912,49 @@ function automationFormSetStage(memberId, value) {
 }
 window.automationFormSetStage = automationFormSetStage;
 
+// _automationFormForkLimitHTML draws the max parallel field of a fork: the most
+// of its branches that run at once, 0 for no fork limit. A fork that can no
+// longer be edited shows the limit as a label, or nothing when there is none.
+function _automationFormForkLimitHTML(m, editable) {
+  const limit = Number(m.max_parallel) || 0;
+  const label = escHtml(t('automation_form_fork_max_parallel'));
+  if (!editable) {
+    return limit > 0 ? `<div class="automation-form-member-limit"><span class="automation-form-label">${label}</span> <span class="automation-chip">${limit}</span></div>` : '';
+  }
+  return `<label class="automation-form-field automation-form-member-limit"><span class="automation-form-label">${label}</span>`
+    + `<input type="number" min="0" step="1" class="form-input automation-form-fork-limit" data-max-parallel-for="${escHtml(m.id)}" value="${limit}" oninput="automationFormSetForkMaxParallel('${escJsAttr(m.id)}',this.value)"></label>`;
+}
+
+// automationFormSetForkMaxParallel records the max parallel typed on a fork row.
+// Anything that is not a whole number of at least 1 means no limit (0).
+function automationFormSetForkMaxParallel(forkId, value) {
+  const m = _automationForm.members.find(x => x.id === forkId);
+  if (!m || m.kind !== 'fork') return;
+  const n = Math.floor(Number(value));
+  m.max_parallel = isFinite(n) && n > 0 ? n : 0;
+}
+window.automationFormSetForkMaxParallel = automationFormSetForkMaxParallel;
+
+// _automationFormQuestionHTML draws the question of a decision wait member: a
+// text box while it can be edited, the text alone once it cannot.
+function _automationFormQuestionHTML(m, editable) {
+  const label = escHtml(t('automation_form_decision_wait_question'));
+  const text = String(m.question || '');
+  if (!editable) return `<div class="automation-form-member-question"><span class="automation-form-label">${label}</span> <span class="automation-decision-question">${escHtml(text)}</span></div>`;
+  return `<label class="automation-form-field automation-form-member-question"><span class="automation-form-label">${label}</span>`
+    + `<textarea class="form-input automation-form-question-input" rows="2" maxlength="${_AUTOMATION_FORM_QUESTION_MAX}" data-question-for="${escHtml(m.id)}" oninput="automationFormSetQuestion('${escJsAttr(m.id)}',this.value)">${escHtml(text)}</textarea></label>`;
+}
+
+// automationFormSetQuestion records the question typed on a decision wait row.
+function automationFormSetQuestion(memberId, value) {
+  const m = _automationForm.members.find(x => x.id === memberId);
+  if (m && m.kind === 'decision_wait') m.question = String(value == null ? '' : value);
+}
+window.automationFormSetQuestion = automationFormSetQuestion;
+
 // _automationFormMemberRowHTML draws one member. opts.branch marks a branch
-// row: it sits under its fork and has no edges and no buttons of its own.
+// row: it sits under its fork; opts.chain says it is on a branch chain (it
+// carries no edge editor of its own, the chain is edited with its buttons).
 function _automationFormMemberRowHTML(m, opts) {
   const f = _automationForm;
   const branch = !!(opts && opts.branch);
@@ -52634,11 +52965,16 @@ function _automationFormMemberRowHTML(m, opts) {
   const editsMembers = _automationFormEditsMembers();
   const editable = editsMembers && pending;
   const actionable = pending && !branch && (kind === 'prd' || kind === 'automation');
+  // A decision wait carries on_complete only; a member on a branch chain too.
+  const chainEdge = kind === 'decision_wait' || (branch && !!opts.chain);
   const button = (op, key, call) =>
     `<button type="button" class="automation-member-action-btn" data-op="${op}" onclick="${call}">${escHtml(t(key))}</button>`;
   let edges = '';
-  if (branch || kind === 'fork') edges = '';
-  else if (kind === 'join') {
+  if (kind === 'fork') edges = '';
+  else if (branch && !chainEdge) edges = '';
+  else if (chainEdge) {
+    edges = editable && !branch ? _automationFormEdgeSelectHTML(m, 'on_complete') : (branch ? '' : _automationFormEdgeTextHTML(m, 'on_complete'));
+  } else if (kind === 'join') {
     edges = _automationFormJoinRuleHTML(m, editable)
       + (editable ? _automationFormEdgeSelectHTML(m, 'on_complete') : _automationFormEdgeTextHTML(m, 'on_complete'));
   } else if (editable) {
@@ -52661,16 +52997,27 @@ function _automationFormMemberRowHTML(m, opts) {
     ops.push(button('insert_before', 'automation_insert_before', `automationFormInsert('${idArg}','before')`));
     ops.push(button('insert_after', 'automation_insert_after', `automationFormInsert('${idArg}','after')`));
     ops.push(button('remove_group', 'automation_remove_member', `automationFormRemoveGroup('${idArg}')`));
+  } else if (kind === 'decision_wait' && editable && !branch) {
+    ops.push(button('remove_member', 'automation_remove_member', `automationFormRemove('${idArg}')`));
+  }
+  // A branch member extends its branch with the picked Automaton, and leaves
+  // the branch when the branch has another member.
+  if (branch && editable) {
+    ops.push(button('extend_branch', 'automation_form_branch_add', `automationFormExtendBranch('${idArg}')`));
+    if (opts.chainLength > 1) ops.push(button('remove_branch_member', 'automation_remove_member', `automationFormRemoveBranchMember('${idArg}')`));
   }
   const statusBadge = status === 'pending' ? ''
     : `<span class="automation-chip automation-form-member-status">${escHtml(_automationFormMemberStatusText(status))}</span>`;
   const kindChip = kind === 'automation'
     ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_kind_automation'))}</span>`
     : (branch ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_branch_label', [opts.index]))}</span>` : '');
+  const forkLimit = kind === 'fork' ? _automationFormForkLimitHTML(m, editable) : '';
+  const question = kind === 'decision_wait' ? _automationFormQuestionHTML(m, editable) : '';
   const cls = 'automation-form-member' + (pending ? '' : ' readonly') + (branch ? ' automation-form-branch-row' : '');
   return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-readonly="${!editable}">`
     + `<div class="automation-form-member-head"><span class="automation-member-title">${escHtml(_automationFormMemberTitle(m))}</span>`
     + `${kindChip}<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
+    + question + forkLimit
     + _automationFormStageHTML(m, editable)
     + (edges ? `<div class="automation-form-member-edges">${edges}</div>` : '')
     + (ops.length ? `<div class="automation-member-actions">${ops.join('')}</div>` : '')
@@ -52681,9 +53028,13 @@ function _automationFormMemberRowHTML(m, opts) {
 // it and its paired join after them.
 function _automationFormForkGroupHTML(fork) {
   const members = _automationForm.members;
-  const branches = (fork.fork_members || []).map((id, i) => {
-    const b = members.find(x => x.id === id);
-    return b ? `<div class="automation-form-branch" style="margin-left:24px;">${_automationFormMemberRowHTML(b, { branch: true, index: i + 1 })}</div>` : '';
+  // Each branch is a chain: its head and the members behind it, drawn in order.
+  const branches = _automationForkChains(fork, members).map((ids, i) => {
+    const rows = ids.map(id => {
+      const b = members.find(x => x.id === id);
+      return b ? _automationFormMemberRowHTML(b, { branch: true, index: i + 1, chain: true, chainLength: ids.length }) : '';
+    }).join('');
+    return `<div class="automation-form-branch" style="margin-left:24px;">${rows}</div>`;
   }).join('');
   const join = _automationFormPairedJoin(members, fork);
   return `<div class="automation-form-group" data-fork-id="${escHtml(fork.id)}">${_automationFormMemberRowHTML(fork)}`
@@ -52720,6 +53071,13 @@ function _automationFormPanelHTML() {
       + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_join_failure_label'))}</span>`
       + `<select id="automationForkRule" class="form-input" onchange="automationFormSetForkRule(this.value)">${rules}</select></label>`
       + buttons(['apply_fork', 'automationFormApplyFork()']) + '</div>';
+  }
+  if (f.panel === 'decision') {
+    return `<div class="automation-form-panel" data-panel="decision">`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_form_decision_wait_question'))}</span>`
+      + `<textarea id="automationDecisionQuestion" class="form-input" rows="3" maxlength="${_AUTOMATION_FORM_QUESTION_MAX}" placeholder="${escHtml(t('automation_form_decision_wait_placeholder'))}" oninput="automationFormSetDecisionQuestion(this.value)">${escHtml(f.decisionQuestion)}</textarea></label>`
+      + `<div class="automation-form-hint" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_form_decision_wait_hint'))}</div>`
+      + buttons(['apply_decision', 'automationFormApplyDecisionWait()']) + '</div>';
   }
   if (f.panel === 'nested') {
     const selfId = f.source ? f.source.id : '';
@@ -52787,11 +53145,13 @@ function _automationFormHTML() {
     ${editsMembers ? `<div id="automationFormPanel" class="automation-form-panel-host">${_automationFormPanelHTML()}</div>` : ''}
     ${_automationModelsSectionHTML(f.source)}
     ${_automationBudgetSectionHTML(f.source && f.source.budget_policy)}
+    ${_automationRunShapeSectionHTML(f.source)}
     ${_automationAutoTagsSectionHTML(f.source && f.source.auto_tags)}
     <div class="automation-form-buttons">
       <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
       ${editsMembers ? `<button type="button" class="btn-secondary" data-op="add_fork" onclick="automationFormOpenPanel('fork')">${escHtml(t('automation_add_fork'))}</button>
-      <button type="button" class="btn-secondary" data-op="add_nested" onclick="automationFormOpenPanel('nested')">${escHtml(t('automation_add_nested'))}</button>` : ''}
+      <button type="button" class="btn-secondary" data-op="add_nested" onclick="automationFormOpenPanel('nested')">${escHtml(t('automation_add_nested'))}</button>
+      <button type="button" class="btn-secondary" data-op="add_decision_wait" onclick="automationFormOpenPanel('decision')">${escHtml(t('automation_form_decision_wait_add'))}</button>` : ''}
       <span style="flex:1;"></span>
       <button type="button" class="btn-secondary" data-op="cancel" onclick="automationFormCancel()">${escHtml(t('btn_cancel'))}</button>
       <button type="button" id="automationFormSaveBtn" class="btn-primary" data-op="save" onclick="saveAutomationForm()">${escHtml(t('automation_form_save'))}</button>
@@ -52833,8 +53193,10 @@ function openAutomationForm(automation) {
   f.forkBranches = [];
   f.forkRule = _AUTOMATION_JOIN_RULES[0];
   f.nestedChild = '';
+  f.decisionQuestion = '';
   f.defaultsEdited = false;
   f.autoTagsEdited = false;
+  f.runShapeEdited = false;
   // The detail dialogs (insert, remove, edges) and the stale prompt act on
   // the open Automation.
   if (src && src.id) {
@@ -52994,7 +53356,7 @@ window.automationFormRemoveGroup = automationFormRemoveGroup;
 function automationFormOpenPanel(panel) {
   const f = _automationForm;
   if (!_automationFormEditsMembers()) return;
-  f.panel = panel === 'nested' ? 'nested' : 'fork';
+  f.panel = panel === 'nested' || panel === 'decision' ? panel : 'fork';
   _automationFormShowError('');
   _automationFormRedrawMembers();
 }
@@ -53044,6 +53406,7 @@ function _automationFormApplyAdd(add) {
   f.panel = '';
   f.forkBranches = [];
   f.nestedChild = '';
+  f.decisionQuestion = '';
   _automationFormShowError('');
   _automationFormRedrawMembers();
   return true;
@@ -53062,6 +53425,72 @@ function automationFormApplyNested() {
   return _automationFormApplyAdd(tail => automationAddNestedMember(f, f.nestedChild, tail));
 }
 window.automationFormApplyNested = automationFormApplyNested;
+
+function automationFormSetDecisionQuestion(value) {
+  _automationForm.decisionQuestion = String(value == null ? '' : value);
+}
+window.automationFormSetDecisionQuestion = automationFormSetDecisionQuestion;
+
+// automationFormApplyDecisionWait adds a decision wait member with the typed
+// question at the end of the chain.
+function automationFormApplyDecisionWait() {
+  const f = _automationForm;
+  return _automationFormApplyAdd(tail => automationAddDecisionWait(f, f.decisionQuestion, tail));
+}
+window.automationFormApplyDecisionWait = automationFormApplyDecisionWait;
+
+// automationFormExtendBranch adds the picked Automaton to a branch, behind the
+// member whose button was pressed: that member's on_complete leads to the new
+// member and the new member takes over what it led to. When the member was the
+// branch tail, the paired join names the new member as the tail.
+function automationFormExtendBranch(memberId) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) return false;
+  const prev = f.members.find(m => m.id === memberId);
+  const fork = prev ? _automationFormForkOf(f.members, memberId) : null;
+  if (!prev || !fork) return false;
+  const prdId = f.picked;
+  const row = prdId ? automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').find(r => r.id === prdId) : null;
+  if (!row || !row.available || f.members.some(m => m.prd_id === prdId)) {
+    _automationFormShowError(t('automation_picker_required'));
+    return false;
+  }
+  const join = _automationFormPairedJoin(f.members, fork);
+  const member = { id: _automationNewMemberId(f.members.map(m => m.id)), prd_id: prdId, on_complete: prev.on_complete || '', on_blocked: '', on_failed: '' };
+  prev.on_complete = member.id;
+  if (join && Array.isArray(join.join_members)) join.join_members = join.join_members.map(id => (id === prev.id ? member.id : id));
+  f.members.splice(f.members.indexOf(prev) + 1, 0, member);
+  f.picked = '';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+  return true;
+}
+window.automationFormExtendBranch = automationFormExtendBranch;
+
+// automationFormRemoveBranchMember takes a member off its branch chain; a
+// branch always keeps at least one member. The member before it leads on to the
+// member after it, a removed head hands the head role to the next member, and a
+// removed tail hands the join's entry to the member before it.
+function automationFormRemoveBranchMember(memberId) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) return false;
+  const fork = _automationFormForkOf(f.members, memberId);
+  if (!fork) return false;
+  const join = _automationFormPairedJoin(f.members, fork);
+  const chain = _automationForkChains(fork, f.members).find(ids => ids.includes(memberId));
+  if (!chain || chain.length < 2) return false;
+  const at = chain.indexOf(memberId);
+  const removed = f.members.find(m => m.id === memberId);
+  const before = at > 0 ? chain[at - 1] : '';
+  const after = at + 1 < chain.length ? chain[at + 1] : '';
+  if (before) f.members.find(m => m.id === before).on_complete = after;
+  if (!before) fork.fork_members = fork.fork_members.map(id => (id === memberId ? after : id));
+  if (!after && join) join.join_members = join.join_members.map(id => (id === memberId ? before : id));
+  f.members.splice(f.members.indexOf(removed), 1);
+  _automationFormRedrawMembers();
+  return true;
+}
+window.automationFormRemoveBranchMember = automationFormRemoveBranchMember;
 
 // automationFormCancel goes back to the Automation's page when the form was
 // opened from it, otherwise to the list.
@@ -53111,6 +53540,15 @@ function saveAutomationForm() {
     }
     formState.modelDefaults = automationReadModelDefaults();
     formState.budgetPolicy = budget;
+  }
+  if (f.runShapeEdited) {
+    const shape = automationReadRunShape();
+    if (shape.error) {
+      _automationFormShowError(t(shape.error));
+      return Promise.resolve(null);
+    }
+    formState.maxParallel = shape.maxParallel;
+    formState.stageGate = shape.stageGate;
   }
   if (f.autoTagsEdited) formState.autoTags = automationReadAutoTags();
   const payload = buildAutomationFormPayload(formState);
@@ -53264,6 +53702,16 @@ function _alertsCounts(entries, system) {
   return counts;
 }
 
+// _alertDecisionWaitQuestionId returns the id of the operator question named by
+// the "Automation waiting for you" alert a decision wait member raises (its body
+// reads "... waiting for your answer to question <id>: <text>"), or ''.
+function _alertDecisionWaitQuestionId(a) {
+  if (!a || !/waiting for you/i.test(String(a.title || ''))) return '';
+  const m = /answer to question ([^\s:]+):/.exec(String(a.body || ''));
+  return m ? m[1] : '';
+}
+window._alertDecisionWaitQuestionId = _alertDecisionWaitQuestionId;
+
 function renderAlertCard(a, sessState, isFirst, cmds) {
   const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
   const isWaiting = sessState === 'waiting_input';
@@ -53288,7 +53736,13 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
   const serverBadge = (a.server && a.server !== 'local')
     ? `<span class="server-badge" style="font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(a.server)}">${escHtml(a.server)}</span>`
     : '';
-  return `<div class="card alert-card" id="alert-${escHtml(a.id)}" style="margin-bottom:6px;border-left:3px solid ${levelColor};min-width:0;">
+  // A decision wait alert says the Automation is waiting for the operator (not
+  // blocked) and links to the question that answers it.
+  const waitQid = _alertDecisionWaitQuestionId(a);
+  const waitLink = waitQid
+    ? `<div class="alert-decision-wait" style="margin-top:6px;">${_automationAnswerButtonHTML(waitQid)}</div>`
+    : '';
+  return `<div class="card alert-card" id="alert-${escHtml(a.id)}"${waitQid ? ' data-decision-wait="true"' : ''} style="margin-bottom:6px;border-left:3px solid ${levelColor};min-width:0;">
     <div class="alert-session-head" style="justify-content:space-between;margin-bottom:4px;">
       <span style="display:inline-flex;align-items:center;gap:6px;">
         <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
@@ -53298,7 +53752,7 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
     </div>
     <div class="alert-row-title" style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
     <div class="alert-row-body" style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
-    ${sessNavBtn}${replyBtns}
+    ${waitLink}${sessNavBtn}${replyBtns}
   </div>`;
   el.classList.add('alert-deep-link-highlight');
   setTimeout(() => el.classList.remove('alert-deep-link-highlight'), 2000);
