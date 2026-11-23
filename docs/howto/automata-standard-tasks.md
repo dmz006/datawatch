@@ -109,7 +109,7 @@ states the same rule, so a plan from the planner does not carry a docs task eith
 
 The check is conservative. The spec must carry a merge signal (merge, rebase, land,
 conflict, or a finished-branch phrase) and none of the work verbs (add, implement,
-create, write, fix, build, in any inflected form). Any doubt keeps the spec as not
+create, write, fix, build, in the inflected forms the check lists). Any doubt keeps the spec as not
 merge-only, so the `docs_set` task stays. An extra docs task is the safe failure.
 When a merge-only Automaton skips it, the decompose log records
 `docs set task skipped: merge-only Automaton`.
@@ -297,6 +297,11 @@ yet:
   per-project resolved read (the `?project=` parameter) is on REST, MCP and CLI. The
   comm channel reads the global setting only. If you rely on a project override, read
   the list with `--project` (CLI) or `project` (MCP or REST) to see the resolved state.
+- **Merge-only detection is text-based and needs operator review.** It reads only the
+  spec words, so a merge spec that names a work verb (for example "fix conflicts") keeps
+  its `docs_set` task, and a spec that merges and also adds work is never skipped. Check
+  the decompose log for `docs set task skipped: merge-only Automaton` on a merge-only
+  Automaton, and reword the spec if it should skip the task and does not.
 - **The datawatch app does not show this tab yet, and does not yet use the new
   wording.** Two parity drafts are tracked under `docs/plans/parity-issues/`
   (the Templates-tab surface, and the standard-tasks rename on Android/iPhone).
