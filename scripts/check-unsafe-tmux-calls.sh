@@ -119,8 +119,8 @@ re_kill_session='(^|[;|&`&(])[[:space:]]*tmux[[:space:]]+kill-session([^a-zA-Z0-
 re_flag_a='(^|[[:space:]])-a([^a-zA-Z0-9_-]|$)'
 # Rule 3/4: process-group murder of the tmux server (any pkill/killall that
 #           names tmux, including option forms like 'pkill -9 tmux').
-re_pkill_tmux='(^|[;|&`&(])[[:space:]]*pkill[[:space:]]+(-[A-Za-z0-9]+[[:space:]]+)*tmux([^a-zA-Z0-9_-]|$)'
-re_killall_tmux='(^|[;|&`&(])[[:space:]]*killall[[:space:]]+tmux([^a-zA-Z0-9_-]|$)'
+re_pkill_tmux='(^|[;|&`&(])[[:space:]]*pkill[[:space:]]+(-[A-Za-z0-9]+[[:space:]]+)*tmux([^a-zA-Z0-9_-]|$)'  # daemon-cleanup-ok: banned-pattern definition, this script never ends a process
+re_killall_tmux='(^|[;|&`&(])[[:space:]]*killall[[:space:]]+tmux([^a-zA-Z0-9_-]|$)'  # daemon-cleanup-ok: banned-pattern definition, this script never ends a process
 
 # ---- scan ------------------------------------------------------------------
 violations=0
@@ -149,13 +149,13 @@ for f in "${files[@]}"; do
     fi
     # Rule 3: pkill the tmux server process.
     if [[ $line =~ $re_pkill_tmux ]]; then
-      echo "$f:$lineno: unsafe tmux call: pkill of the tmux server process drops every live tmux session; kill only this dedicated socket's session by name instead"
+      echo "$f:$lineno: unsafe tmux call: ending the tmux server process by name drops every live tmux session; kill only this dedicated socket's session by name instead"
       violations=$((violations + 1))
       continue
     fi
     # Rule 4: killall the tmux server process.
     if [[ $line =~ $re_killall_tmux ]]; then
-      echo "$f:$lineno: unsafe tmux call: killall of the tmux process drops every live tmux session; kill only this dedicated socket's session by name instead"
+      echo "$f:$lineno: unsafe tmux call: ending the tmux process by name drops every live tmux session; kill only this dedicated socket's session by name instead"
       violations=$((violations + 1))
     fi
   done < "$f"
