@@ -124,6 +124,38 @@ func TestFailureEscalationToolsResolveNotHeldIsAnError(t *testing.T) {
 	}
 }
 
+// TestFailureEscalationToolsResolveAcceptProxiesAction: accept is a third
+// accepted action of the resolve tool. The tool description and the action
+// parameter name it together with the completion-marker condition, and the
+// handler sends action=accept to the daemon (which decides whether the held
+// task may be accepted and answers 409 when its last worker session has no
+// marker).
+func TestFailureEscalationToolsResolveAcceptProxiesAction(t *testing.T) {
+	s := &Server{}
+	if d := s.toolAutonomousPRDResolveTaskReview().Description; !strings.Contains(d, "action=accept") || !strings.Contains(d, "completion marker") {
+		t.Errorf("tool description does not name accept and its condition: %s", d)
+	}
+	actionProp, _ := s.toolAutonomousPRDResolveTaskReview().InputSchema.Properties["action"].(map[string]any)
+	actionDesc, _ := actionProp["description"].(string)
+	if !strings.Contains(actionDesc, "accept") {
+		t.Errorf("action parameter description does not name accept: %q", actionDesc)
+	}
+	var c subUpdateCapture
+	s = subUpdateServer(t, &c, http.StatusOK, `{"id":"p1"}`)
+	req := subUpdateReq("autonomous_prd_resolve_task_review", map[string]any{
+		"id": "p1", "task_id": "t1", "action": "accept", "note": "done it",
+	})
+	if _, err := s.handleAutonomousPRDResolveTaskReview(context.Background(), req); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if c.path != "/api/autonomous/prds/p1/resolve_task_review" {
+		t.Fatalf("path = %s", c.path)
+	}
+	if c.body["action"] != "accept" || c.body["task_id"] != "t1" || c.body["note"] != "done it" || c.body["actor"] != "operator" {
+		t.Errorf("body = %v", c.body)
+	}
+}
+
 // TestFailureEscalationToolsResolveWhileAutomatonRunning: a retry on a held
 // task goes through when another task of the Automaton is running, and the
 // updated Automaton the daemon answers with reaches the caller as it is.

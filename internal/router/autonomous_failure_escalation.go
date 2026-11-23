@@ -2,7 +2,7 @@
 //
 //	autonomous set-failure-escalation <automaton> [task] clear
 //	autonomous set-failure-escalation <automaton> [task] [enabled=true|false] [max_failures=N] [steps=backend:model[@attempts],...]
-//	autonomous review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]
+//	autonomous review-task <automaton> <task> retry|cancel|accept [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]
 //
 // Both verbs proxy to the REST routes under /api/autonomous/prds/{id}/ through
 // the loopback, the same way the other autonomous verbs do. The daily global
@@ -21,7 +21,7 @@ import (
 
 const (
 	setFailureEscalationUsage = "usage: autonomous set-failure-escalation <automaton> [task] clear | [enabled=true|false] [max_failures=N] [steps=backend:model[@attempts],...]"
-	reviewTaskUsage           = "usage: autonomous review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [read_only=true|false] [report_path=<path>] [spec=...] [note=...]"
+	reviewTaskUsage           = "usage: autonomous review-task <automaton> <task> retry|cancel|accept [backend=X] [model=Y] [effort=Z] [files=a,b] [read_only=true|false] [report_path=<path>] [spec=...] [note=...]"
 )
 
 // handleAutonomousSetFailureEscalation serves set-failure-escalation. args
@@ -108,8 +108,8 @@ func (r *Router) handleAutonomousReviewTask(args []string) {
 		return
 	}
 	action := strings.ToLower(args[2])
-	if action != "retry" && action != "cancel" {
-		r.reply(label+" failed", "action must be retry or cancel (got "+strconv.Quote(args[2])+")\n"+reviewTaskUsage)
+	if action != "retry" && action != "cancel" && action != "accept" {
+		r.reply(label+" failed", "action must be retry, cancel or accept (got "+strconv.Quote(args[2])+")\n"+reviewTaskUsage)
 		return
 	}
 	body := map[string]any{"task_id": args[1], "action": action, "actor": "operator"}
@@ -195,7 +195,7 @@ func (r *Router) replyHeldForReview(status []byte) {
 		}
 		lines = append(lines, line)
 	}
-	r.reply("autonomous held for review", strings.Join(lines, "\n")+"\nDecide with: autonomous review-task <automaton> <task> retry|cancel")
+	r.reply("autonomous held for review", strings.Join(lines, "\n")+"\nDecide with: autonomous review-task <automaton> <task> retry|cancel|accept")
 }
 
 // splitReviewWords splits a comma-separated file list, dropping blanks.

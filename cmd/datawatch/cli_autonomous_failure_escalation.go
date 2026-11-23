@@ -4,7 +4,7 @@
 // failure-escalation show|set|clear read and change the override on one
 // Automaton or on one of its tasks (--task). failure-escalation global writes
 // the daemon-wide default through PUT /api/config, which persists it and
-// applies it live. resolve-review is the operator's retry or cancel of a task
+// applies it live. resolve-review is the operator's retry, cancel or accept of a task
 // held for review.
 package main
 
@@ -281,20 +281,21 @@ func newAutonomousResolveReviewCmd() *cobra.Command {
 	var taskID, action, spec, backend, model, effort, files, note, reportPath string
 	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "resolve-review <automaton-id> --task <task-id> --action retry|cancel [--spec ...] [--backend B --model M --effort E] [--files a,b] [--read-only[=false]] [--report-path <path>] [--note ...]",
-		Short: "Retry or cancel a task held for operator review",
+		Use:   "resolve-review <automaton-id> --task <task-id> --action retry|cancel|accept [--spec ...] [--backend B --model M --effort E] [--files a,b] [--read-only[=false]] [--report-path <path>] [--note ...]",
+		Short: "Retry, cancel or accept a task held for operator review",
 		Long: `The operator's decision on a task held for review (status review_needed).
 retry requeues the task. It may carry a replaced spec, a worker (backend,
 model, effort) for the task, a narrowed file scope (--files), a read-only mark
 (--read-only, or --read-only=false to clear it) and a report path (--report-path,
 under .datawatch/reports/; the task must be read-only). A refused change leaves
-the task held. cancel
-cancels the task. It works while the Automaton is running and other tasks are
+the task held. cancel cancels the task. accept completes the held task; it is
+only allowed when the task's last worker session left a completion marker (a held
+task without a marker answers 409). It works while the Automaton is running and other tasks are
 live. A task that is not held answers 409.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if action != "retry" && action != "cancel" {
-				return fmt.Errorf("--action must be retry or cancel (got %q)", action)
+			if action != "retry" && action != "cancel" && action != "accept" {
+				return fmt.Errorf("--action must be retry, cancel or accept (got %q)", action)
 			}
 			body := map[string]any{
 				"task_id": taskID,
@@ -317,7 +318,7 @@ live. A task that is not held answers 409.`,
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID held for review (required)")
-	cmd.Flags().StringVar(&action, "action", "", "retry or cancel (required)")
+	cmd.Flags().StringVar(&action, "action", "", "retry, cancel or accept (required; accept completes the held task and needs a completion marker from its last worker session)")
 	cmd.Flags().StringVar(&spec, "spec", "", "retry only: replacement task spec")
 	cmd.Flags().StringVar(&backend, "backend", "", "retry only: worker backend for the task")
 	cmd.Flags().StringVar(&model, "model", "", "retry only: worker model for the task")

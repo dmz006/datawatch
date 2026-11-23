@@ -132,10 +132,28 @@ func TestFailureEscalationCommReviewTaskCancel(t *testing.T) {
 	}
 }
 
+// TestFailureEscalationCommReviewTaskAccept: review-task accept is a third
+// accepted action; it is proxied to the daemon as action=accept, and a note
+// rides along. The daemon decides whether the held task has a completion marker
+// (409 when it does not).
+func TestFailureEscalationCommReviewTaskAccept(t *testing.T) {
+	r, rec := newFailureEscalationRouter(t)
+	out := strings.Join(r.HandleTestMessage("autonomous review-task p1 t1 accept note=done it"), "\n")
+	if strings.Contains(out, "failed") {
+		t.Fatalf("reply = %s", out)
+	}
+	if rec.path != "/api/autonomous/prds/p1/resolve_task_review" {
+		t.Fatalf("path = %s", rec.path)
+	}
+	if rec.body["action"] != "accept" || rec.body["task_id"] != "t1" || rec.body["note"] != "done it" {
+		t.Fatalf("body = %v", rec.body)
+	}
+}
+
 func TestFailureEscalationCommReviewTaskRefusals(t *testing.T) {
 	r, rec := newFailureEscalationRouter(t)
 	cases := map[string]string{
-		"autonomous review-task p1 t1 explode":          "action must be retry or cancel",
+		"autonomous review-task p1 t1 explode":          "action must be retry, cancel or accept",
 		"autonomous review-task p1 t1 retry colour=red": "unknown key",
 		"autonomous review-task p1 t1 retry stray":      "needs the form key=value",
 		"autonomous review-task p1":                     "usage: autonomous review-task",
