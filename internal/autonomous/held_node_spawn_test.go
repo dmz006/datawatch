@@ -93,24 +93,30 @@ func runUnnoded(t *testing.T, m *Manager, backend, model string) (int, Task) {
 
 // TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn verifies a pi-family worker
 // that holds capacity but was leased no node is not started when its entry
-// lists compute nodes: it would run on pi's own default endpoint. The failure
-// names the backend and the model and says no node was leased.
+// lists compute nodes: it would run on pi's own default endpoint. The task is
+// not failed for it: the lease is released and the task waits for a node until
+// the capacity wait budget ends the admission, as for any admission.
 func TestPiFamilyWorkerWithoutLeasedNodeDoesNotSpawn(t *testing.T) {
 	listed := []capacity.NodeChoice{{Name: "gpu-a", Priority: 50}}
 	for _, backend := range []string{"pi-prompt", "pi"} {
 		t.Run(backend, func(t *testing.T) {
-			m, _ := unnodedLeaseRig(t, listed)
+			m, led := unnodedLeaseRig(t, listed)
+			m.cfg.CapacityWaitTimeoutSeconds = 1
+			shortenNoNodePoll(t)
 			spawns, task := runUnnoded(t, m, backend, "ollama/qwen3.8:27b")
 			if spawns != 0 {
 				t.Fatalf("worker spawned %d times with no leased node, want 0", spawns)
 			}
-			if task.Status != TaskFailed {
-				t.Fatalf("task status = %q, want %q", task.Status, TaskFailed)
+			// The task waited out the capacity budget; it never carries the old
+			// no-node failure, and it holds no lease.
+			if strings.Contains(task.Error, "holds capacity but no compute node") {
+				t.Fatalf("task error %q carries the old no-node failure text", task.Error)
 			}
-			for _, want := range []string{backend, "ollama/qwen3.8:27b", "no compute node was leased"} {
-				if !strings.Contains(task.Error, want) {
-					t.Fatalf("task error %q does not contain %q", task.Error, want)
-				}
+			if task.Status == TaskFailed && !strings.Contains(task.Error, "capacity wait timed out") {
+				t.Fatalf("task failed with %q, want only the capacity wait bound to end the wait", task.Error)
+			}
+			if led.LeaseOf(task.ID) != nil {
+				t.Fatalf("task still holds a lease after waiting for a node")
 			}
 		})
 	}

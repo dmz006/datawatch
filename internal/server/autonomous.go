@@ -4273,6 +4273,12 @@ type automationReq struct {
 	// Milestone marks the Automation as a milestone arc; omitted on an update
 	// keeps the stored value.
 	Milestone *bool `json:"milestone,omitempty"`
+	// MaxParallel caps how many members run at once (0 = no limit); omitted on
+	// an update keeps the stored value.
+	MaxParallel *int `json:"max_parallel,omitempty"`
+	// StageGate makes a staged member wait while an earlier stage has unfinished
+	// members; omitted on an update keeps the stored value.
+	StageGate *bool `json:"stage_gate,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -4293,6 +4299,8 @@ func automationInput(req automationReq) autonomous.AutomationInput {
 		VerificationEffort:  req.VerificationEffort,
 		AutoTags:            req.AutoTags,
 		Milestone:           req.Milestone,
+		MaxParallel:         req.MaxParallel,
+		StageGate:           req.StageGate,
 	}
 }
 
@@ -4325,7 +4333,8 @@ func automationErrStatus(err error) (int, string) {
 //	POST   /api/automations/{id}/return_to_draft — return a blocked Automation to draft
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
 //	       remove_member|reorder_edges|approve_insert|set_llm|
-//	       set_verification_llm|set_budget|set_decision_assistant} — operator control
+//	       set_verification_llm|set_budget|set_decision_assistant|
+//	       set_max_parallel|set_stage_gate} — operator control
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
@@ -4997,8 +5006,13 @@ type automationControlReq struct {
 	Member     struct {
 		PRDID         string `json:"prd_id"`
 		PendingItemID string `json:"pending_item_id"`
-		Name          string `json:"name"`
-		Stage         string `json:"stage"` // optional stage label recorded on the inserted member
+		// Kind is optional and only ever decision_wait: it states that the
+		// member is a decision wait, so a body that sets it also needs question.
+		Kind string `json:"kind"`
+		// Question inserts a decision_wait member that asks the operator this.
+		Question string `json:"question"`
+		Name     string `json:"name"`
+		Stage    string `json:"stage"` // optional stage label recorded on the inserted member
 	} `json:"member"`
 	// PendingItemID is the top-level form of member.pending_item_id (insert_member).
 	PendingItemID string `json:"pending_item_id"`
@@ -5019,6 +5033,15 @@ type automationControlReq struct {
 	Mode       string             `json:"mode"`
 	Hooks      []string           `json:"hooks"`
 	Thresholds map[string]float64 `json:"thresholds"`
+
+	// set_max_parallel: the most members that run at once (0 clears the limit);
+	// member_id names a fork to set that fork's limit instead of the Automation's.
+	// A pointer, so a body that omits it is told apart from an explicit 0.
+	MaxParallel *int `json:"max_parallel"`
+	// set_stage_gate: true holds a staged member until every earlier stage has
+	// finished, false makes a stage only a label. A pointer so a missing key is
+	// told apart from an explicit false.
+	StageGate *bool `json:"stage_gate"`
 
 	// set_budget: the budget policy fields (see autonomous.BudgetSetRequest).
 	CeilingType        string   `json:"ceiling_type"`
@@ -5092,6 +5115,8 @@ type automationController interface {
 	SetAutomationVerificationLLM(id string, backend, model, effort *string, actor string, expectedVersion int64) (any, error)
 	SetAutomationBudgetPolicy(id string, req autonomous.BudgetSetRequest, actor string, expectedVersion int64) (any, error)
 	SetAutomationDecisionAssistant(id, memberID, actor string, da *autonomous.DecisionAssistant, expectedVersion int64) (any, error)
+	SetAutomationMaxParallel(id, memberID string, limit int, actor string, expectedVersion int64) (any, error)
+	SetAutomationStageGate(id string, on bool, actor string, expectedVersion int64) (any, error)
 }
 
 // handleAutomationControl serves POST /api/automations/{id}/{op} for the ops in
@@ -5112,6 +5137,14 @@ type automationController interface {
 // fields replace the whole setting; clear=true or an empty backend turns the
 // assistant off. An unknown hook, mode or threshold is a 400 and an unknown
 // member a 404.
+//
+// set_max_parallel takes max_parallel (required; 0 clears the limit) and, to
+// limit one fork's branches instead of the whole Automation, member_id naming
+// that fork; a negative limit, or a member that is not a fork, is a 400.
+// set_stage_gate takes stage_gate (required): true holds a staged member until
+// every earlier stage has finished, false makes a stage only a label again.
+// Both change only their own field and, on an active Automation, release or
+// hold members at once.
 func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request, id, op string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -5181,15 +5214,16 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		prdID, itemID := insertMemberTarget(req.Member.PRDID, req.Member.PendingItemID, req.PendingItemID)
-		if prdID != "" && itemID != "" {
-			http.Error(w, "400: an insert takes either prd_id or pending_item_id, not both", http.StatusBadRequest)
+		question := strings.TrimSpace(req.Member.Question)
+		if msg := insertMemberKindError(req.Member.Kind, question, prdID, itemID); msg != "" {
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
-		details["prd_id"], details["pending_item_id"], details["name"] = prdID, itemID, req.Member.Name
 		details["prd_id"], details["pending_item_id"], details["name"], details["stage"] = prdID, itemID, req.Member.Name, req.Member.Stage
+		details["question"] = truncateAuditText(question)
 		details["urgent"], details["after"] = req.Urgent, req.After
 		a, err = ctl.InsertMember(id, autonomous.InsertMemberInput{
-			PRDID: prdID, PendingItemID: itemID, Name: req.Member.Name, AfterMemberID: req.After,
+			PRDID: prdID, PendingItemID: itemID, Question: question, Name: req.Member.Name, AfterMemberID: req.After,
 			Stage: strings.TrimSpace(req.Member.Stage), Urgent: req.Urgent, Actor: req.Actor,
 			Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
 		})
@@ -5265,6 +5299,26 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			details["estimated_cost_usd"] = *bs.EstimatedCostUSD
 		}
 		a, err = ctl.SetAutomationBudgetPolicy(id, bs, req.Actor, req.ExpectedVersion)
+	case "set_max_parallel":
+		action = "automation_set_max_parallel"
+		if req.MaxParallel == nil {
+			http.Error(w, "max_parallel is required: the most members that run at once, 0 for no limit", http.StatusBadRequest)
+			return
+		}
+		if *req.MaxParallel < 0 {
+			http.Error(w, "max_parallel must not be negative (0 means no limit)", http.StatusBadRequest)
+			return
+		}
+		details["member_id"], details["max_parallel"] = req.MemberID, *req.MaxParallel
+		a, err = ctl.SetAutomationMaxParallel(id, req.MemberID, *req.MaxParallel, req.Actor, req.ExpectedVersion)
+	case "set_stage_gate":
+		action = "automation_set_stage_gate"
+		if req.StageGate == nil {
+			http.Error(w, "stage_gate is required: true to hold a staged member until every earlier stage has finished, false to make a stage only a label", http.StatusBadRequest)
+			return
+		}
+		details["stage_gate"] = *req.StageGate
+		a, err = ctl.SetAutomationStageGate(id, *req.StageGate, req.Actor, req.ExpectedVersion)
 	case "set_effort_ceiling":
 		action = "automation_set_effort_ceiling"
 		ec, ok := s.autonomousMgr.(effortCeilingAPI)

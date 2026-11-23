@@ -54,13 +54,56 @@ stronger model, so it goes to `claude-code` with Sonnet. Verification follows
 the **global verifier policy** unless a row names its own verifier. Without a
 table you pick this by hand, task by task.
 
+**The planner never writes a worker backend or model onto a task.** A task has
+a backend of its own only when you or its spec name one: a `backend` key in the
+decomposed task JSON, or a line in the spec that is exactly `backend: <name>`.
+Every other task keeps an empty backend and model and runs on its story's
+setting, then the Automaton's, then the global default. What the table still
+writes is the row's **effort** and its **verification** choice. The row's worker
+backend and model are checked (an unknown LLM is still refused) and recorded as
+the row that decided the task, but they are not copied onto the task. A row
+that names only a worker backend and model therefore changes nothing, and the
+task records that it inherits.
+
 Task routing is **off by default**. Nothing changes for you until you turn it
 on. The backends and models in the shipped table are one operator's starting
 choice, not a rule; other users change them freely.
 
 Out of scope: task routing decides the LLM when a task is created. It does not
 move a task that is already waiting to a different backend while the Automaton
-runs.
+runs. Where a task actually runs is decided later, when it is admitted; see
+"Which lane a task takes" below.
+
+## Which lane a task takes
+
+The routing table never picks a lane. The lane is chosen when a task is
+**admitted**, from the task's **effective backend**.
+
+- **A task inherits the Automaton's backend unless its spec names one.** With no
+  backend of its own, a task runs on its story's setting, then the Automaton's,
+  then the global default. A row that names only a worker backend and model
+  changes nothing here, as described above.
+- **The lane is chosen at admission, not at planning.** When the task is
+  admitted, its effective backend is read at that moment and the task asks for a
+  slot in that backend's pool.
+- **A full pool can send the task to another allowed pool.** When the task's own
+  pool is full and another allowed pool is free, the other pool is used
+  according to the retry-other-backend rule (pool fall-through, set with
+  `autonomous.capacity_fallthrough`, off by default; see
+  [Automata capacity](automata-capacity.md#pool-fall-through)). The choice and
+  the reason are written to the Automaton's decision log as a
+  `capacity_fallthrough` entry, next to the `task_routing` entries described
+  under "Seeing what was decided".
+- **Changing a task's backend while it waits moves its request at once.** The
+  queued capacity request goes to the new pool straight away, and a reset
+  re-queues the task on the new pool. A task that already holds a slot, is
+  running or has finished is left alone.
+- **A pi task with no compute node waits or moves pools.** If a pi-family task
+  is granted capacity but no node is leased, it waits for a node, or moves to
+  another pool as above, and it is not counted against the content retry budget.
+
+Nothing here adds a setting, an endpoint or a command, so the surfaces in
+"Access from every surface" do not change.
 
 ## The 14 task types
 
@@ -262,7 +305,7 @@ The same outcome is written to the Automaton's decision log as one
 `task_routing` entry by the `task-router` actor. The note is one line:
 
 ```
-task=<id> type=<type> profile=<profile> row=<row> worker=<backend>/<model> effort=<effort> verification=<backend>/<model> second_choice=<true|false>
+task=<id> type=<type> profile=<profile> row=<row> effort=<effort> verification=<backend>/<model> second_choice=<true|false>
 ```
 
 Two reads are available per Automaton:
