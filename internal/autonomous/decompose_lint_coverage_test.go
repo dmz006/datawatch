@@ -62,3 +62,19 @@ func TestSmokeTaskRequired(t *testing.T) {
 		check(t, RunPlanCoverageChecks(nil, plan(code), []string{"smoke_task_required"}), 0, "", "", "")
 	})
 }
+
+// TestSmokeTaskRequiredParsesExemption checks that the decompose JSON
+// parser keeps a task's coverage_exemption_reason, so the check sees it.
+func TestSmokeTaskRequiredParsesExemption(t *testing.T) {
+	raw := `{"title":"t","stories":[{"title":"s","tasks":[{"title":"Refactor","spec":"x","files":["internal/foo/a.go"],"coverage_exemption_reason":"internal refactor"}]}]}`
+	_, stories, err := ParsePlanning(raw)
+	if err != nil {
+		t.Fatalf("ParsePlanning: %v", err)
+	}
+	if len(stories) != 1 || len(stories[0].Tasks) != 1 {
+		t.Fatalf("unexpected shape: %+v", stories)
+	}
+	if got := stories[0].Tasks[0].CoverageExemptionReason; got != "internal refactor" {
+		t.Fatalf("CoverageExemptionReason = %q, want %q", got, "internal refactor")
+	}
+}
