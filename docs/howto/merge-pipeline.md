@@ -924,5 +924,6 @@ in the same file.
 
 These keys are the *pipeline* settings. The shadow merge plan above has its own
 block — `autonomous.merge_shadow.enabled`, `autonomous.merge_shadow.gate_timeout`
-and `autonomous.merge_shadow.plan_keep` — set the same ways and never overridden
-per project; its defaults and rules are in [howto/merge-shadow.md](merge-shadow.md).
+`autonomous.merge_shadow.plan_keep` and `autonomous.merge_shadow.agreement_streak` — set
+the same ways and never overridden per project; its defaults and rules are in
+[howto/merge-shadow.md](merge-shadow.md).

@@ -24,7 +24,7 @@ The merge shadow settings control the **finish-time shadow merge plan**: when th
 supervisor runs an Automaton's release, the daemon writes a *plan* describing what the
 merge would do (release size, version, changelog heading, README line, registry row,
 conflicts, gates, parity-issue flag) with `applied` stuck at `false`, and keeps the
-plan in the shadow store. The three keys live in one settings block, are on by
+plan in the shadow store. The four keys live in one settings block, are on by
 default, and can be set from YAML, the API, MCP, the command line, the comm channel
 or the web UI. The plan, and (once they are stored) the comparisons — and the
 agreement streak read from them — are read — never acted on — from the REST
@@ -201,8 +201,10 @@ to its defaults are indistinguishable.
   difference (wrong or missing version, a planned heading, README line, registry
   row or parity issue that did not land, a planned gate missing from or different
   in the manual gate record — a planned `load_sensitive` against a landed `pass`
-  (or the reverse) is not a difference, since both count as passing). A comparison
-  that differs only in **minor** detail does not break it.
+  (or the reverse) is not a difference, since both count as passing; a planned
+  `load_sensitive` against a landed `fail` still is). A comparison that differs only
+  in **minor** detail does not break it. The rule is pinned by
+  `TestCompareLoadSensitiveCountsAsPass` in `internal/mergeshadow/compare_test.go`.
 - `length` counts the most recent consecutive zero-major-difference comparisons
   of a project, newest first; `total` is the number of stored comparisons
   counted. `met` is `length >= threshold`, with `threshold` the configured value

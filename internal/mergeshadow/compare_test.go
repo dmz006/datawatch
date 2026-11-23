@@ -657,3 +657,37 @@ func TestAgreementStreakShuffledInput(t *testing.T) {
 		t.Fatalf("shuffled: streak = %+v, want {1 3}", forward)
 	}
 }
+
+// TestCompareLoadSensitiveCountsAsPass pins the gate comparison rule: a
+// planned load_sensitive gate and a landed pass (or the reverse) are the same
+// result, because both count as passing. A pass against a fail still differs.
+func TestCompareLoadSensitiveCountsAsPass(t *testing.T) {
+	cases := []struct {
+		name     string
+		planned  string
+		landed   string
+		wantDiff bool
+	}{
+		{"planned load_sensitive, landed pass", string(GateLoadSensitive), string(GatePass), false},
+		{"planned pass, landed load_sensitive", string(GatePass), string(GateLoadSensitive), false},
+		{"planned load_sensitive, landed fail", string(GateLoadSensitive), string(GateFail), true},
+		{"planned fail, landed pass", string(GateFail), string(GatePass), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := compareSamplePlan()
+			p.Gates = []Gate{{Name: "test", Status: tc.planned}}
+			gates := []GateOutcome{{Name: "test", Status: tc.landed}}
+			c, err := Compare(p, matchingLanded(), true, gates)
+			if err != nil {
+				t.Fatalf("Compare: %v", err)
+			}
+			if got := len(c.Differences) > 0; got != tc.wantDiff {
+				t.Fatalf("differs = %v, want %v (differences %v)", got, tc.wantDiff, c.Differences)
+			}
+			if tc.wantDiff && c.Differences[0].Severity != SeverityMajor {
+				t.Fatalf("severity = %s, want major", c.Differences[0].Severity)
+			}
+		})
+	}
+}
