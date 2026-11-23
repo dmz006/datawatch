@@ -1012,6 +1012,7 @@ func (m *Manager) markCapacityAdoptionComplete() {
 	m.mu.Unlock()
 	if led != nil {
 		led.MarkAdoptionComplete()
+		m.capacityAudit().OverLimitFinding(led.OverLimitPools())
 	}
 }
 
