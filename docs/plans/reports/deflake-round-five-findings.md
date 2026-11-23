@@ -135,7 +135,7 @@ through a Manager rooted in the test's `t.TempDir()`
 `idleDone` signal exists in `internal/autonomous` (state at investigation time; it is resolved on this branch — see the next bullet). The round-5
 `WaitQuestionNotifies` therefore **cannot** cover it; it is a distinct
 incident of "unjoined writer races cleanup" (detailed in
-`docs/plans/reports/idle-stop-shared-cause-investigation.md`). The other
+`docs/plans/reports/archive/2026-11/idle-stop-shared-cause-investigation.md`). The other
 unjoined launch sites on the question/idle paths
 (`question_return_path.go:133`, `question_tick.go:233`, the
 `automation_idle.go:24` ctx-cancel bridge) write no test TempDir files
@@ -189,7 +189,7 @@ Notes for the record:
   The 12% flake rate for `TestAutomationIdleStartStop` (and the
   before-fail / after-0 split) was seen on the sibling host's runs,
   recorded in
-  `docs/plans/reports/idle-stop-shared-cause-investigation.md`.
+  `docs/plans/reports/archive/2026-11/idle-stop-shared-cause-investigation.md`.
 - **The post-fix autonomous run is slower than the pre-fix one by
   design, not by regression:** because `Stop` now joins the idle loop,
   each of the 300 iterations waits for the in-flight pass to finish —

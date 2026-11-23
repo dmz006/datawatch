@@ -7932,6 +7932,15 @@ type RTKConfig struct {
 	DiscoverInterval    int    `yaml:"discover_interval"`     // seconds between discover checks (0 = disabled)
 	AutoUpdate          bool   `yaml:"auto_update"`           // auto-update RTK binary when new version available
 	UpdateCheckInterval int    `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
+	// WriteRulesFiles is the one gate for every write the session tracker makes
+	// into the project's tracked AGENT.md / CLAUDE.md at session start: it
+	// creates the file when missing, refreshes its "# Session Guardrails"
+	// header, and appends the RTK, memory and cross-session sections. Default
+	// false: the tracker never touches those files and the RTK, memory and
+	// cross-session text goes to the untracked CLAUDE.local.md instead, so a
+	// session start never dirties a tracked file. The key lives under rtk for
+	// compatibility with the setting that first shipped it.
+	WriteRulesFiles bool `yaml:"write_rules_files"`
 }
 
 // ProjectConfigEntry (BL27) — registered project directory alias.
