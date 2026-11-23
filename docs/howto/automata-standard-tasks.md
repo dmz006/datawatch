@@ -304,7 +304,10 @@ yet:
   the list with `--project` (CLI) or `project` (MCP or REST) to see the resolved state.
 - **Merge-only detection is text-based and needs operator review.** It reads only the
   spec words, so a merge spec that names a work verb (for example "fix conflicts") keeps
-  its `docs_set` task, and a spec that merges and also adds work is never skipped. Check
+  its `docs_set` task, and a spec that merges and also adds work is never skipped. The
+  match is on words, not meaning, so one known false skip is possible: a spec that says
+  `landing` (for example "update the landing page") and names no work verb is treated as
+  merge-only and loses its `docs_set` task. Read such a spec before trusting the skip. Check
   the decompose log for `docs set task skipped: merge-only Automaton` on a merge-only
   Automaton (this needs decompose lint `shadow` or `enforce`; with `off` the line is never
   written), and reword the spec if it should skip the task and does not. A `docs_set`
