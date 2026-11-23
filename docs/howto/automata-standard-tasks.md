@@ -113,8 +113,10 @@ conflict, or a finished-branch phrase) and none of the work verbs (add, implemen
 create, write, fix, build, in the inflected forms the check lists). Any doubt keeps the spec as not
 merge-only, so the `docs_set` task stays. An extra docs task is the safe failure.
 When a merge-only Automaton is decomposed, the daemon log gets the line
-`docs set task skipped: merge-only Automaton` for it. The line is written whenever the
-spec is merge-only, so it appears even when the `docs_set` task was already switched off.
+`docs set task skipped: merge-only Automaton` for it. The line is written at each decompose
+of a merge-only spec while decompose lint is `shadow` or `enforce`. It appears even when the
+`docs_set` task was already switched off. With decompose lint `off` no standard task is
+applied at all, so no line is written.
 
 Why the rule exists: a `docs_set` task on a merge-only spec has no feature behavior to
 document, so it could never produce a change and the Automaton stalled waiting on it.
@@ -304,7 +306,8 @@ yet:
   spec words, so a merge spec that names a work verb (for example "fix conflicts") keeps
   its `docs_set` task, and a spec that merges and also adds work is never skipped. Check
   the decompose log for `docs set task skipped: merge-only Automaton` on a merge-only
-  Automaton, and reword the spec if it should skip the task and does not. A `docs_set`
+  Automaton (this needs decompose lint `shadow` or `enforce`; with `off` the line is never
+  written), and reword the spec if it should skip the task and does not. A `docs_set`
   task the planner wrote into the plan itself is not removed by this rule; check the
   plan for one.
 - **The datawatch app does not show this tab yet, and does not yet use the new
