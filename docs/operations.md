@@ -768,20 +768,28 @@ Nothing in this review changes a setting.
 ### Burn guard
 
 The burn guard compares the projected weekly burn with the usage calculator's
-pace line every `interval_minutes` and, while the projection runs over by more
-than `margin_points`, applies a ladder of responses (`lower_inflight`,
-`route_pi_prompt`, `hold_claude`) and steps back when the projection is under
-the line. Keys live under `usage.burn_guard.`: `enabled` (default true),
-`interval_minutes` (60), `margin_points` (2), `ladder`, `step_back` (true),
+pace line every `interval_minutes` (or the entry's own plan and target) and,
+while the projection runs over by more than `margin_points`, applies a ladder of
+responses (`lower_inflight`, `route_entry`, `route_cheaper_model`,
+`hold_entry`; the legacy first-version names `route_pi_prompt` and `hold_claude`
+are still accepted and normalize to the entry names) and steps back when the
+projection is under the line. By default it guards one entry, `claude-code`;
+`usage.burn_guard.entries` guards any number of paid LLM entries, each with its
+own `usage_source`, `plan` (`flat` or `metered`), `period_target`, `model`,
+`ladder`, `held_models`, `route_to`, `route_cheaper_model` and `points_per_usd`.
+Keys live under `usage.burn_guard.`: `enabled` (default true),
+`interval_minutes` (60), `margin_points` (2), `ladder` (default
+`lower_inflight`, `route_entry`, `hold_entry`), `step_back` (true),
 `max_projection_gap_points` (25; 0 never compares the guard and advice
 projections, 0 to 100),
 `ask_on_change` (false: the guard alerts once per change and raises no question;
 true: it also keeps at most one open question),
 `cache_write_points_per_million` (0.373), `cache_read_points_per_million`
 (0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
-(2). Settings apply without a restart. The effort ceiling is set per Automation,
-not through the config keys. The guard acts on the `claude-code` backend only when
-that entry's [billing mode](#llm-billing-mode) is `allowance` (the default) or the
+(2), and `entries` (unset: the single `claude-code` entry above). Settings
+apply without a restart. The effort ceiling is set per Automation,
+not through the config keys. The guard acts on an entry when its [billing
+mode](#llm-billing-mode) is `allowance` (the default for `claude-code`) or the
 entry has a dollar budget; for an `api` or `local` entry without one it releases
 its rungs and reports `off`. See [howto/burn-guard.md](howto/burn-guard.md#which-llms-it-guards).
 
@@ -1942,23 +1950,57 @@ inherited `inherited_tags` and the placement `system_tags` (see
 — which is what lets the PWA draw the placement chips on the session cards
 at first load of the Sessions page, without a fetch of each full record.
 The placement chip paints from the tag name, so it shows even before the
-tag registry has loaded; a later row or `session_state` push that omits
-`system_tags` keeps the chip, and only an explicit empty `system_tags`
-removes it:
+tag registry has loaded. The summary rows and the legacy session list records
+always carry the `system_tags` key, as an empty array (`"system_tags": []`)
+when the session holds no placement tag, never as a missing key or null
+(pinned for the summary row and the list record by
+`internal/server/session_summary_row_empty_system_tags_test.go`). An explicit
+empty array removes the placement chip from the Sessions tile. A row or push
+that omits the key keeps the chip the page already holds (older servers). A
+page reload always agrees with the server. Example query:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
 ```
 
-**Operator review still owed:** the two datawatch-app parity drafts for this
-fix — the server row shape
+**Operator review still owed:** the datawatch-app parity drafts for this
+family are tracked in this repo, and their filing states differ — the row
+shape at first load
 ([plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md](plans/parity-issues/2026-11-08-sessions-system-tags-chips-first-load-parity.md))
-and the PWA drawing discipline
+is **filed as datawatch-app issue
+#401** (https://github.com/dmz006/datawatch-app/issues/401), the PWA
+drawing discipline
 ([plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md](plans/parity-issues/2026-11-08-sessions-tag-chips-drawing-discipline-parity.md))
-— are tracked in this repo but **not filed yet**; the operator opens the
-issue on the app tracker when ready. Nothing else is owed on this daemon:
-no setting, no migration.
+is **filed as datawatch-app issue
+#402** (https://github.com/dmz006/datawatch-app/issues/402), while the
+removal half
+([plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md](plans/parity-issues/2026-11-08-sessions-empty-system-tags-removal-parity.md))
+and the settled empty-list contract for every row shape
+([plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md](plans/parity-issues/2026-11-08-summary-row-empty-system-tags-parity.md))
+remain **drafts, not filed** — the operator opens those two on the app
+tracker when ready (a new issue or a follow-up comment on #401/#402, the
+operator's call). Since the summary-row change that made `system_tags`
+always-present, with an empty array meaning "no placement tags now", one
+draft still carries the pre-change wire description: the first-load draft
+behind issue #401 still describes the summary-row field as optional (a
+session without placement tags "serializes exactly as before", and its
+REST surface row still says `omitempty`) — correct that sentence and that
+surface row to the settled rule before the operator comments on or
+revisits #401. The drawing-discipline draft (issue #402) already states
+the settled rule: a row that omits the key keeps the chips already held,
+and an explicit empty array removes them. The removal draft was rewritten
+to the settled rule in favour of the earlier draft that asserted the
+per-shape split (summary rows omitting the key; full records alone sending
+`[]`), and the empty-list contract draft restates the settled rule and
+records what this work leaves on the app side. What remains on the app
+side is one re-statement, not new functionality: the acceptance criteria
+of #401 and #402 should be re-stated against the settled rule — chips
+present at first draw, an empty `system_tags` on any row shape clears
+them, and a key-less row (older server) never adds chips — including the
+case of a tile that loses its last placement tag. Nothing on this daemon
+is open: no setting and no migration, the behavior is implemented and
+pinned, and the CHANGELOG already records it.
 
 ### Allowed project roots
 

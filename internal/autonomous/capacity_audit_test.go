@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -161,33 +162,47 @@ func TestCapacityAudit_BackoffSetAndClear(t *testing.T) {
 	rec := ac.recorder()
 	until := time.Date(2026, 10, 22, 15, 30, 0, 0, time.UTC)
 
-	rec.BackoffSet(AuditActorAutonomous, "claude-code", until, BackoffSourceRateLimit)
+	rec.BackoffSet(AuditActorAutonomous, "claude-code", until, BackoffSourceRateLimit, nil)
 	es := ac.all()
 	wantEntry(t, es[0], "autonomous", audit.ActionUsageBackoffSet, "claude-code", ac.Now())
 	if es[0].Details["backend"] != "claude-code" || es[0].Details["until"] != "2026-10-22T15:30:00Z" || es[0].Details["source"] != BackoffSourceRateLimit {
 		t.Errorf("rate-limit set details = %v", es[0].Details)
 	}
+	if _, ok := es[0].Details["models"]; ok {
+		t.Errorf("whole-backend set carried models: %v", es[0].Details)
+	}
 
 	ac.Advance(time.Minute)
-	rec.BackoffSet(AuditActorOperator, "opencode", until, BackoffSourceOperator)
+	rec.BackoffSet(AuditActorOperator, "opencode", until, BackoffSourceOperator, []string{"Model-B", "model-a", " model-b "})
 	es = ac.all()
 	wantEntry(t, es[1], "operator", audit.ActionUsageBackoffSet, "opencode", ac.Now())
 	if es[1].Details["source"] != BackoffSourceOperator {
 		t.Errorf("operator set source = %v", es[1].Details["source"])
 	}
+	// Normalised: trimmed, lower-cased, de-duplicated, sorted.
+	if got, _ := es[1].Details["models"]; !reflect.DeepEqual(got, []string{"model-a", "model-b"}) {
+		t.Errorf("model-scoped set models = %v, want normalised [model-a model-b]", got)
+	}
 
-	rec.BackoffCleared(AuditActorOperator, "all")
+	rec.BackoffCleared(AuditActorOperator, "all", nil)
 	es = ac.all()
 	wantEntry(t, es[2], "operator", audit.ActionUsageBackoffCleared, "all", ac.Now())
 	if es[2].Details["backend"] != "all" {
 		t.Errorf("cleared details = %v", es[2].Details)
 	}
 
+	rec.BackoffCleared(AuditActorOperator, "opencode", []string{"model-b"})
+	es = ac.all()
+	wantEntry(t, es[3], "operator", audit.ActionUsageBackoffCleared, "opencode", ac.Now())
+	if got, _ := es[3].Details["models"]; !reflect.DeepEqual(got, []string{"model-b"}) {
+		t.Errorf("model-scoped cleared models = %v", got)
+	}
+
 	rec.BackoffAutoCleared("claude-code", until)
 	es = ac.all()
-	wantEntry(t, es[3], "autonomous", audit.ActionUsageBackoffAutoCleared, "claude-code", ac.Now())
-	if es[3].Details["backend"] != "claude-code" || es[3].Details["until"] != "2026-10-22T15:30:00Z" {
-		t.Errorf("auto-cleared details = %v", es[3].Details)
+	wantEntry(t, es[4], "autonomous", audit.ActionUsageBackoffAutoCleared, "claude-code", ac.Now())
+	if es[4].Details["backend"] != "claude-code" || es[4].Details["until"] != "2026-10-22T15:30:00Z" {
+		t.Errorf("auto-cleared details = %v", es[4].Details)
 	}
 }
 
@@ -259,7 +274,7 @@ func TestCapacityAudit_BudgetWindowRollover(t *testing.T) {
 
 func TestCapacityAudit_NilRecorderAndSinkDropEvents(t *testing.T) {
 	var nilRec *CapacityAudit
-	nilRec.BackoffCleared("operator", "x") // must not panic
+	nilRec.BackoffCleared("operator", "x", nil) // must not panic
 	(&CapacityAudit{}).AdmissionWait("t", "p", WaitCauseNodeBusy, "r", nil)
 }
 

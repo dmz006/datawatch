@@ -324,7 +324,7 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// RoleBackpressure, AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
+// RoleBackpressure, AutonomousBackpressure, AutonomousModelBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
 // VerifierHeadroom)
 // is invoked while the ledger lock is held. Each must therefore be a fast
 // in-memory read: it must never call back
@@ -356,6 +356,11 @@ type Options struct {
 	// Requests marked Interactive skip it. Called under the lock: in-memory
 	// state only.
 	RoleBackpressure func(pool string, role Role, heldByRole map[Role]int) (blocked bool, reason string)
+	// AutonomousModelBackpressure is AutonomousBackpressure that also gets the
+	// request's Model, for blocks limited to some models of a pool (a usage
+	// back-off holding a model list). Interactive requests skip it. Called
+	// under the lock: in-memory state only.
+	AutonomousModelBackpressure func(pool, model string) (blocked bool, reason string)
 	// HeldBackpressure is a soft block for autonomous requests that needs the
 	// pool's current usage. Both numbers come from the ledger itself: held is
 	// the count of leases naming the pool (l.leases) and limit is the value set
@@ -763,6 +768,11 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		}
 		if l.opt.RoleBackpressure != nil && !req.Interactive {
 			if blocked, why := l.opt.RoleBackpressure(p, req.Role, l.heldByRoleLocked(p)); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
+		if l.opt.AutonomousModelBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.AutonomousModelBackpressure(p, req.Model); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}

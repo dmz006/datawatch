@@ -3131,6 +3131,49 @@ type CostRateConfig struct {
 	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
 }
 
+// ModelCostRate is the resolved USD-per-1K-token rate for one model of one
+// LLM entry. Each field comes from the model's own rate when set on the
+// LLM entry's models list, otherwise from the per-backend cost_rates entry
+// (cache read/write have no per-backend value and resolve to 0 when unset).
+// Source is "model" when any field came from the model, else "backend",
+// or "" when neither supplied a rate.
+type ModelCostRate struct {
+	InPerK         float64 `json:"in_per_k"`
+	OutPerK        float64 `json:"out_per_k"`
+	CacheReadPerK  float64 `json:"cache_read_per_k"`
+	CacheWritePerK float64 `json:"cache_write_per_k"`
+	Source         string  `json:"source"`
+}
+
+// ResolveModelCostRate returns the rate for model on LLM entry l, falling
+// back field by field to backendRates[backend] (the cost_rates map, merged
+// with built-in defaults by the caller). An empty model matches the entry's
+// first model. No provider-specific code: rates are configuration only.
+func ResolveModelCostRate(l inference.LLM, model, backend string, backendRates map[string]CostRateConfig) ModelCostRate {
+	var out ModelCostRate
+	if br, ok := backendRates[backend]; ok {
+		out.InPerK, out.OutPerK, out.Source = br.InPerK, br.OutPerK, "backend"
+	}
+	for i := range l.Models {
+		em := l.Models[i]
+		if model != "" && em.Model != model {
+			continue
+		}
+		set := func(dst *float64, v *float64) {
+			if v != nil {
+				*dst = *v
+				out.Source = "model"
+			}
+		}
+		set(&out.InPerK, em.InPerK)
+		set(&out.OutPerK, em.OutPerK)
+		set(&out.CacheReadPerK, em.CacheReadPerK)
+		set(&out.CacheWritePerK, em.CacheWritePerK)
+		break
+	}
+	return out
+}
+
 // DefaultSnapshotNeverStage — the path patterns the autonomous snapshot
 // and automatic-staging paths must never stage by default (applied when
 // snapshot_never_stage is unset): scratch and temp directories plus local

@@ -422,8 +422,8 @@ All rows are gated on `autonomous.questions.enabled` (off by default; `503` nami
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
 | `GET /api/usage-backoff` | `usage_backoff_status` | Complete | Active per-backend flags, effective config, pattern staleness (`patterns_version`, `patterns_stale`) and `claude_cli_version` |
-| `POST /api/usage-backoff` | `usage_backoff_set` | Complete | Set a flag (`backend` + `minutes` or `until`, optional `reason`) |
-| `DELETE /api/usage-backoff` | `usage_backoff_clear` | Complete | Clear one backend, or all |
+| `POST /api/usage-backoff` | `usage_backoff_set` | Complete | Set a flag (`backend` + `minutes` or `until`, optional `reason`, optional `models` array holding only those models of the backend) |
+| `DELETE /api/usage-backoff` | `usage_backoff_clear` | Complete | Clear one backend, or all (optional `models` array narrows the clear to those models of the named backend; a clear-all is never model-scoped) |
 | `POST /api/usage-backoff/recheck` | `usage_backoff_recheck` | Complete | Record rate-limit patterns and the current `claude_cli_version` as rechecked (clears `patterns_stale`) |
 
 ### Usage calculator

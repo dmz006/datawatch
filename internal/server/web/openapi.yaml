@@ -11230,7 +11230,7 @@ paths:
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
-      summary: Set a back-off flag for a backend (minutes or until, optional reason)
+      summary: Set a back-off flag for a backend (minutes or until, optional reason, optional models array holding only those models of the backend)
       operationId: usageBackoffSet
       tags: [Singletons]
       requestBody:
@@ -11245,9 +11245,13 @@ paths:
                 minutes: {type: integer, minimum: 1}
                 until: {type: string, format: date-time}
                 reason: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Hold only these models of the backend; omit to hold the whole backend
       responses: {"200": {description: OK}, "400": {description: Invalid request}}
     delete:
-      summary: Clear one backend's back-off flag, or all flags when no backend is given
+      summary: Clear one backend's back-off flag, or all flags when no backend is given (optional models array narrows the clear to those models of the named backend; a clear-all is never model-scoped)
       operationId: usageBackoffClear
       tags: [Singletons]
       requestBody:
@@ -11258,6 +11262,10 @@ paths:
               type: object
               properties:
                 backend: {type: string}
+                models:
+                  type: array
+                  items: {type: string}
+                  description: Optional. Remove only these models from the flag; requires a named backend
       responses: {"200": {description: OK}}
   /api/usage-backoff/recheck:
     post:
@@ -16773,8 +16781,8 @@ components:
         margin_points: {type: number, description: "Points the projection may run over the pace line before the guard acts, 0 to 50. Default 2"}
         ladder:
           type: array
-          items: {type: string, enum: [lower_inflight, route_pi_prompt, hold_claude]}
-          description: "Ordered rungs applied while over the line. Default: all three in that order"
+          items: {type: string, enum: [lower_inflight, route_entry, hold_entry, route_pi_prompt, hold_claude]}
+          description: "Ordered rungs applied while over the pace line. Default: lower_inflight, route_entry, hold_entry. The rung acts on the ladder's entry; route_pi_prompt and hold_claude are legacy first-version names that normalize to route_entry and hold_entry"
         step_back: {type: boolean, description: "Undo rungs in reverse once the projection is back under the line. Default true"}
         ask_on_change:
           type: boolean
