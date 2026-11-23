@@ -403,9 +403,14 @@ fix the cause, then pick the route that matches the hold.
      new commit is needed, and nothing is approved. Another timeout keeps the
      Automaton held in `needs_review`; a pass or warn completes it. See
      [The review state](#the-review-state).
+   - **A rules-review hold on the Automaton** (retries spent, or auto-fix off):
+     commit the fix on the branch, then re-judge it. It needs new commits
+     first; the rejudge is refused on an unchanged head. See
+     [The review state](#the-review-state).
    - **Any other guardrail hold on an Automaton or on one of its tasks or stories:** the
      Automaton is in `needs_review`, and the rejudge action does not apply to
-     it, because rejudge only runs on a blocked Automaton. The reset action
+     it, because rejudge only runs on a blocked Automaton, a judge timeout hold
+     or a rules-review hold. The reset action
      `reset_task` does not accept a `needs_review` Automaton either, so cancel
      the Automaton first. Then reset the held task with `reset_task` (use
      `force` when the task shows as completed) and run the Automaton again, so
