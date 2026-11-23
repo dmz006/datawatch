@@ -69,6 +69,20 @@ There are three kinds of flag, told apart by `source` and the reason:
 The automatic path is switched by `autonomous.usage_backoff` (`pause_backend`,
 the default, or `off`). A manual set always works, even with the mode `off`.
 
+## What a flag does to a failure-escalation step
+
+The [failure escalation](failure-escalation.md) ladder consults the same flag
+when it selects the step for the next attempt. While a flag holds the step's
+backend, that step is **skipped for the attempt**: the escalation never starts
+a new session on the held backend (the start would only wait in the capacity
+queue), and the attempt runs on the task's normally resolved worker instead —
+whose own start is admitted like any other, and is held in the queue only if
+that backend is held too. A later attempt re-selects the step and re-consults
+the flag, so a skipped step comes back on its own once the flag clears. The
+step, the model and every skip are recorded on the attempt record and in the
+decision log as a `failure_escalation` entry naming the step's backend and
+model.
+
 ## What a flag does not hold: the review reserve
 
 New worker sessions are refused for the whole flag, exactly as before. The
@@ -315,4 +329,6 @@ same on every surface, because every surface writes to the same registry.
 
 - [Automata capacity](automata-capacity.md#reactive-usage-backoff)
 - [Burn guard](burn-guard.md)
+- [Failure escalation](failure-escalation.md) — the ladder whose step a flag
+  skips for the attempt
 - [Restart with work running](restart-with-work-running.md)

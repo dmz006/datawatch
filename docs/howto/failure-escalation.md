@@ -80,6 +80,8 @@ Each step has these fields:
 | `effort` | Effort level for this step only (JSON form only). Empty means the task's effort. |
 | `attempts` | How many consecutive failed attempts this step covers. Default 1. |
 
+A model-less `claude-code` step is accepted: it runs on the daemon's default model (`sonnet`; `haiku` for a mechanical task kind) rather than the backend's built-in or the account's default — the same rule the normally resolved worker follows (see [explicit model policy](explicit-model-policy.md)).
+
 ### How the ladder is walked
 
 Attempts are counted as failed attempts since the last operator action. Step 1
@@ -101,6 +103,17 @@ Raise `max_failures` to 4 and the Claude step gets two attempts instead of one.
 
 Every time an attempt moves the task to a different worker, the Automaton's
 decision log gets a `failure_escalation` entry naming the worker.
+
+While the [usage back-off](usage-backoff.md) guard has a step's backend backed
+off, that step is **skipped for the attempt**: the escalation never launches a
+new session onto a backed-off backend (the start would only wait in the
+capacity queue), so the attempt runs on the task's normally resolved worker
+instead — whose own start is admitted like any other, and is held in the queue
+only if that backend is backed off too. A later attempt re-selects the step and
+re-consults the flag, so a step skipped for one attempt comes back on its own
+once the window ends. The step, the model and every skip are recorded on the
+attempt record and in the decision log as a `failure_escalation` entry naming
+the step's backend and model.
 
 ### Model names must fit the backend
 
@@ -199,7 +212,7 @@ refuses an unknown kind, a `first_attempt` entry for `pi`, `pi-prompt` or
 the key. A model-less `claude-code` entry is accepted: at launch, a
 claude-code attempt that resolved to no model starts on the daemon default
 model (`sonnet`, or `haiku` for a mechanical task type) instead of the
-backend's built-in default. See
+backend's built-in or the account's default. See
 [Explicit model policy](explicit-model-policy.md).
 
 The pair is daemon-wide; there is no per-Automaton or per-task map. For one
@@ -548,6 +561,8 @@ retry count is still `autonomous.auto_fix_retries`.
   the first-attempt worker, resuming a retry and every attempt-cost setting
 - [retry-policy.md](retry-policy.md): failure categories and the retry budgets
   that apply before and after this policy
+- [usage-backoff.md](usage-backoff.md): the usage guard whose back-off skips a
+  ladder step for the attempt
 - [autonomous-review-approve.md](autonomous-review-approve.md): the review gate
   before an Automaton runs
 - [automata-orchestrator.md](automata-orchestrator.md): chaining Automata into an

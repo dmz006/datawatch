@@ -1748,13 +1748,39 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// from another level), and t.Backend/t.Model are not written. A
 			// worker the operator chose in a review retry is kept instead.
 			escalated, stepIdx := false, -1
+			var escalationSkipped string
 			if esc.Enabled && !t.OperatorWorkerSet {
 				if step, idx, ok := selectEscalationStep(esc, m.escalationFailureCount(t)); ok {
-					backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
-					if step.Effort != "" {
-						effort = step.Effort
+					if blocked, why := m.stepBackendBackedOff(step.Backend); blocked {
+						// The usage guard has the step's backend backed off, so a
+						// new session start for it would only wait in the capacity
+						// queue: the escalation never launches onto it. Skip the
+						// step for this attempt and keep the task's normally
+						// resolved worker (admission re-consults the flag for that
+						// backend too); a later attempt re-selects the step and
+						// re-consults it.
+						escalationSkipped = fmt.Sprintf("escalation step %d on %s is skipped for this attempt: the usage guard has %s backed off (%s), so the attempt runs on the task's normally resolved worker",
+							idx+1, step.Backend, step.Backend, why)
+						m.recordFailureEscalationDecision(prd.ID, t.ID, escalationSkipped, step.Backend, step.Model)
+						log.Printf("[autonomous] prd=%s task=%s %s", prd.ID, t.ID, escalationSkipped)
+					} else {
+						backend, model, execSource = step.Backend, step.Model, ExecutorSourceEscalation
+						// A Claude step with no model of its own takes the
+						// package's explicit-model policy at the same time the
+						// normally resolved worker does (resolveTaskExecutionLLM):
+						// sonnet for a regular task, haiku for a mechanical kind —
+						// so the attempt never launches on no model and lets the
+						// account's own default apply. A model the step named (like
+						// one any other level named) passes through unchanged.
+						if IsClaudeBackend(backend) && strings.TrimSpace(model) == "" {
+							taskType, _ := ClassifyTask(t, story)
+							model, _ = ResolveClaudeModel(model, taskType)
+						}
+						if step.Effort != "" {
+							effort = step.Effort
+						}
+						escalated, stepIdx = true, idx
 					}
-					escalated, stepIdx = true, idx
 				}
 				if note := m.escalationWorkerChangeNote(t, backend, model, stepIdx); note != "" {
 					m.recordFailureEscalationDecision(prd.ID, t.ID, note, backend, model)
@@ -1822,6 +1848,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
 			run.Escalated = escalated
 			run.BackendReason = describeAttemptBackendReason(execSource, taskAttemptKind(t), m.escalationFailureCount(t))
+			if escalationSkipped != "" {
+				run.BackendReason += "; " + escalationSkipped
+			}
 			// Launch record: the worker profile the launch names (most-specific
 			// task-level name first) and the starting context it generates. The
 			// attempt record estimates the worker's startup token size from it
