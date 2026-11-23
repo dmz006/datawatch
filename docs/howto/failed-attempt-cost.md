@@ -170,8 +170,9 @@ escalation is on.
 | **Same failure summary failed twice** (case and surrounding whitespace ignored) | A third identical failure means the retry is not fixing anything. | Replace the spec, or change the worker, the files or the scope. An unchanged retry re-enters the same hold. |
 
 Each hold raises one error-level alert titled *Automaton task needs review (no
-retry)*, which names the reason. The actions are the same five as any review hold
-(retry, edit spec and retry, change worker, narrow scope, cancel). For these
+retry)*, which names the reason. The actions are the same six as any review hold
+(retry, edit spec and retry, change worker, narrow scope, cancel, and accept
+when the task's last worker session left a completion marker). For these
 holds, use the change that alters the basis: the files, the verification script or
 the spec.
 
@@ -388,7 +389,7 @@ config set: autonomous.first_attempt_escalate_after_failures: 25 is invalid; use
 ## See also
 
 - [Failure escalation](failure-escalation.md): the worker ladder, the failure count,
-  the review hold, the five operator actions and the override order
+  the review hold, the six operator actions and the override order
 - [Retry policy](retry-policy.md): the failure categories and the retry budgets
   that apply before and after this policy
 - [../api/autonomous.md](../api/autonomous.md): REST reference for the autonomous

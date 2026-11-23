@@ -134,8 +134,12 @@ class, what happens depends on `autonomous.infra_retry.exhausted_action`.
 - Other tasks that do not depend on the held one keep running. Tasks that depend
   on it wait.
 
-**You answer in one of two ways: retry or cancel.** Answer the operator question,
-or resolve the held task the way you resolve any held task:
+**You decide in one of three ways: retry, cancel, or accept.** Accept works
+when the held task's last worker session left a completion marker in its
+recorded output — it completes the task with its result instead of retrying it
+(see [failure-escalation.md](failure-escalation.md#the-six-operator-actions)
+for the full action table). Otherwise answer the operator question, or resolve
+the held task the way you resolve any held task:
 
 ```sh
 datawatch autonomous resolve-review <automaton-id> --task <task-id> --action retry
@@ -145,11 +149,11 @@ datawatch autonomous resolve-review <automaton-id> --task <task-id> --action can
 Retry starts the task again with a **fresh set of infrastructure retries**, so
 if the cause is still there the task is held again after another round. Cancel
 cancels the task. An answered question and a direct resolve do the same thing,
-and resolving the task directly withdraws the open question so no stale
-question is left waiting.
+and resolving the task directly — retry, accept or cancel — withdraws the open
+question so no stale question is left waiting.
 
 The full set of review actions (edit spec, change worker, narrow scope) is in
-[failure-escalation.md](failure-escalation.md#the-five-operator-actions).
+[failure-escalation.md](failure-escalation.md#the-six-operator-actions).
 
 **`count`.** The failure is booked as one ordinary failed attempt, labelled with
 its class, and the task takes the usual failure path (the ladder moves, and the

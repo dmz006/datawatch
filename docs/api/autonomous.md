@@ -52,7 +52,7 @@ POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verif
 POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verifier policy; body: {[mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_failure_escalation     failure escalation override; body: {[task_id], policy|null, actor} (null clears; see "Failure escalation")
-POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel, [spec], [backend], [model], [effort], [files[]], [note], actor}
+POST   /api/autonomous/prds/{id}/resolve_task_review        operator decision on a task held for review; body: {task_id, action: retry|cancel|accept, [spec], [backend], [model], [effort], [files[]], [note], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {[tag_ids[]], [primary_tag_id]}; tag_ids may be omitted when primary_tag_id is sent, which keeps the current tags ([] clears; primary_tag_id must be one of the tags or empty, else 400)
 POST   /api/autonomous/prds/{id}/set_kind  Automaton kind; body: {kind} (feature|bug|other; "" derives it again); 400 on an unknown kind, 404 on an unknown id
@@ -719,13 +719,16 @@ POST /api/autonomous/prds/{id}/resolve_task_review
  "model": "claude-opus-5-5", "effort": "high", "files": ["internal/parser/parse.go"],
  "note": "the failure is in the parser only", "actor": "operator"}
 
+{"task_id": "t1", "action": "accept", "note": "the session finished the work", "actor": "operator"}
+
 {"task_id": "t1", "action": "cancel", "note": "out of scope for this release", "actor": "operator"}
 ```
 
-- `action` is `retry` or `cancel`. The other fields apply to `retry` only.
+- `action` is `retry`, `accept` or `cancel`. The other fields apply to `retry` only.
+- `accept` completes the held task with its result. It is allowed only when the task's last worker session left a completion marker in its recorded output; a refused accept is a 400 that names the marker and says to retry or cancel instead, and nothing changes. On success the task is completed (an existing `post_verify_sha` is kept), the hold, its review summary and the infrastructure-retry count are cleared, and the Automaton is reopened so it can roll up.
 - Each change in a retry is checked before anything is written, so a refused change leaves the task held.
-- `note` is recorded on the Automaton's decision log and given to the next attempt.
-- The call works while the Automaton is running and other tasks are live. It answers at once, does not wait for the executor, and starts no second executor: a running executor is woken to read the Automaton again and launch the retried task (or fail the dependents of a cancelled one). An Automaton with no running executor is relaunched, as Resume does.
+- `note` is recorded on the Automaton's decision log and given to the next attempt; on accept and cancel it is appended to the decision that is recorded.
+- The call works while the Automaton is running and other tasks are live. It answers at once, does not wait for the executor, and starts no second executor: a running executor is woken to read the Automaton again and launch the retried task, complete the accepted task (or fail the dependents of a cancelled one). An Automaton with no running executor is relaunched, as Resume does.
 - The response is the updated Automaton.
 
 Status codes for both routes:
@@ -733,7 +736,7 @@ Status codes for both routes:
 | Code | When |
 |---|---|
 | 200 | Applied. The response is the updated Automaton. |
-| 400 | Bad JSON, an invalid policy or action, an unknown effort or model/backend pair, or a missing `policy` key. The message names the field. |
+| 400 | Bad JSON, an invalid policy or action, an unknown effort or model/backend pair, a missing `policy` key, or an `accept` on a task whose last worker session has no completion marker. The message names the field (or the marker). |
 | 403 | The session token lacks the autonomous-write capability (federation peers). |
 | 404 | Unknown Automaton or task. |
 | 405 | Method other than POST. |

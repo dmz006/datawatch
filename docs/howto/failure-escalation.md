@@ -39,8 +39,8 @@ and it should not quietly fail either. Failure escalation does three things:
 2. **Counts the failures.** After a set number of failed attempts (3 by
    default, 4 or more if you want) the task stops.
 3. **Asks you.** The task is held with the status `review_needed` and a report of
-   every attempt. Nothing else is spent on it until you retry it, change it, or
-   cancel it.
+   every attempt. Nothing else is spent on it until you retry it, change it,
+   accept its result, or cancel it.
 4. **Stops early when another attempt cannot help.** A failure with no route to a
    fix through another attempt is held for review at once, with the reason,
    instead of burning the rest of the budget
@@ -348,9 +348,9 @@ A task reaching `max_failures` is **held**, not failed. What you see:
   per failed attempt.
 - **The Automaton.** Other tasks that do not depend on the held one keep running.
   Tasks that depend on it wait. The Automaton shows as blocked until you act.
-  You do not have to wait for the Automaton to go idle before you act. Retry
-  and cancel work while it keeps running other tasks, and no second executor is
-  started: the one that is running picks up your decision.
+  You do not have to wait for the Automaton to go idle before you act. Retry,
+  cancel and accept work while it keeps running other tasks, and no second
+  executor is started: the one that is running picks up your decision.
 - **The report.** The task keeps every attempt, and its review report is a plain
   text summary of each one, with the total time spent.
 
@@ -388,8 +388,9 @@ with one difference: the reason is the point.
   the task row, next to the badge.
 - **The report.** It leads with the reason and then lists the recorded
   attempt, whose last one is marked with the no-retry line.
-- **The actions.** The same five as the retry-limit hold: retry, edit spec and
-  retry, change worker, narrow scope, cancel, on every surface. For a no-retry
+- **The actions.** The same six as the retry-limit hold: retry, edit spec and
+  retry, change worker, narrow scope, cancel, and accept (when the task's last
+  worker session left a completion marker), on every surface. For a no-retry
   hold the useful moves are the ones that change the basis: give the task
   files to write, put its verification script in the worktree, or replace the
   spec — an unchanged retry re-enters the hold on the same basis, since the
@@ -399,9 +400,9 @@ Every other failure keeps the ladder, the counts and the hold exactly as
 described above: the no-retry check runs on each verifier rejection, and only
 fires on those three conditions.
 
-## The five operator actions
+## The six operator actions
 
-Every action is available on every surface. The table gives the way in on each.
+Every action is available on every surface, except **Accept**, which has no Web UI button yet — CLI, REST, MCP and the comm channel only. The table gives the way in on each.
 
 | Action | What it does | Web UI | CLI | REST (`resolve_task_review`) | MCP (`autonomous_prd_resolve_task_review`) | Comm channel |
 |---|---|---|---|---|---|---|
@@ -410,6 +411,7 @@ Every action is available on every surface. The table gives the way in on each.
 | **Change worker** | Retries with a different backend, model and effort for this task. | **Change worker** (opens a form) | add `--backend`, `--model`, `--effort` | add `"backend"`, `"model"`, `"effort"` | `backend`, `model`, `effort` | add `backend=… model=… effort=…` |
 | **Narrow scope** | Retries with the list of files the task may change cut down. | **Narrow scope** (opens a form) | add `--files a.go,b.go` | add `"files":["a.go","b.go"]` | `files` | add `files=a.go,b.go` |
 | **Cancel** | Cancels the task. The Automaton can roll up without it. | **Cancel task** button on the task | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel` | `{"task_id":"…","action":"cancel"}` | `action=cancel` | `autonomous review-task <automaton> <task> cancel` |
+| **Accept** | Completes the held task with its result instead of retrying it. Allowed only when the task's last worker session left a completion marker in its recorded output; the task is marked completed, the hold, its review summary and the infrastructure-retry count are cleared, and the Automaton rolls up. | No button yet — use CLI, REST, MCP or comm | `datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept` | `{"task_id":"…","action":"accept"}` | `action=accept` | `autonomous review-task <automaton> <task> accept` |
 
 Notes on the actions:
 
@@ -425,8 +427,19 @@ Notes on the actions:
   before.
 - A retry can carry a spec, a worker and a file list in one go. Each change is
   checked before anything is written, so a refused change leaves the task held.
+- Accept is the third action, beside retry and cancel. It is refused when the
+  task's last worker session has no completion marker in its recorded output:
+  the answer names the marker and says to retry or cancel instead, and nothing
+  changes (REST answers 400). A refused accept leaves the task held. When it
+  succeeds, the held task is completed with its stored result or commit (an
+  existing `post_verify_sha` is kept), the review hold, its failure reason and
+  the infrastructure-retry count are cleared, an open infrastructure hold
+  question is withdrawn, a decision and an `autonomous_review_accept` audit
+  record name the actor, and a blocked Automaton is reopened so the next Run
+  rolls it up.
 - A `--note` (REST and MCP `note`, comm `note=…`) is recorded on the decision log
-  and given to the next attempt.
+  and given to the next attempt; on accept and cancel it is appended to the
+  decision that is recorded.
 - Asking to act on a task that is not held answers **409** on REST and an error
   on the other surfaces. Nothing changes.
 
@@ -440,6 +453,9 @@ datawatch autonomous resolve-review <automaton-id> --task <task-id> --action ret
 
 # Cancel
 datawatch autonomous resolve-review <automaton-id> --task <task-id> --action cancel
+
+# Accept the held task's result (only when its last worker session left a completion marker)
+datawatch autonomous resolve-review <automaton-id> --task <task-id> --action accept --note "the session finished the work"
 ```
 
 ```
