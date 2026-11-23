@@ -101,8 +101,9 @@ with no reason on it. Now:
   the mark is set, placement skips the node and the waiting reason reads
   `waiting for node <node>: unhealthy: <probe error>` (or `<node>: <probe
   error>` among several candidates). A probe that passes clears the mark. The
-  probe runs only for a launch that has a node and a model, so a launch with no
-  compute node is not probed. See
+  probe runs only for a launch that has a node and a model and whose node
+  belongs to a pooled LLM entry, so a launch with no compute node, or on a
+  single-node entry, is not probed. See
   [How a pi-family worker picks its node](compute-nodes.md#how-a-pi-family-worker-picks-its-node).
 - **Repeats on one node raise an alert.** The daemon counts consecutive
   unresponsive failures per compute node. At 3 in a row it raises one error
