@@ -23,6 +23,14 @@ func taskRoutingFixture(t *testing.T) (*Server, *autonomous.Manager, http.Handle
 	cfg := autonomous.DefaultConfig()
 	cfg.TaskRouting = config.DefaultTaskRouting()
 	cfg.TaskRouting.Enabled = true
+	// The router writes a row's effort and verification choice, never its
+	// worker backend, so the rows carry an effort for a dry run to apply.
+	for typ, row := range cfg.TaskRouting.Profiles["default"] {
+		if row.WorkerBackend != "" {
+			row.Effort = "medium"
+			cfg.TaskRouting.Profiles["default"][typ] = row
+		}
+	}
 	mgr, err := autonomous.NewManager(t.TempDir(), cfg,
 		func(autonomous.DecomposeRequest) (string, error) { return "", nil })
 	if err != nil {

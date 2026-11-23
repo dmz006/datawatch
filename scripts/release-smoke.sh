@@ -173,6 +173,19 @@ fi
 if [ "${DW_SKIP_DOCKERFILE_GO_VERSION_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-dockerfile-go-versions.sh" ]; then
   "$SMOKE_DIR/check-dockerfile-go-versions.sh" >&2 || exit 1
 fi
+# 2026-10-18 — unsafe-tmux-call audit (fail-closed): server-wide kills
+# without a dedicated socket, kill-session -a, pkill/killall of the tmux
+# server. Static scan, no daemon required, so it sits with the other lints
+# and blocks the release before any daemon is even started. Verify the
+# executable-bit first (a missing/non-executable gate must fail this run,
+# not silently skip the audit).
+if [ "${DW_SKIP_UNSAFE_TMUX_CALLS_CHECK:-0}" != "1" ]; then
+  if [ ! -x "$SMOKE_DIR/check-unsafe-tmux-calls.sh" ]; then
+    echo "Error: scripts/check-unsafe-tmux-calls.sh is missing or not executable (release gate must run)" >&2
+    exit 1
+  fi
+  "$SMOKE_DIR/check-unsafe-tmux-calls.sh" >&2 || exit 1
+fi
 # v6.21.0 — Docs-as-MCP currency lints.
 if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do
@@ -197,6 +210,7 @@ mkdir -p "$TEST_DATA_DIR" # scratch dir for this script's own fixtures either wa
 EXTERNAL_DAEMON=0
 PLUGINS_SMOKE_DIR=""
 DEMO_SERVICE_PORT=""
+SMOKE_TMUX_DIR=""
 
 if [[ -n "${DW_BASE:-}" ]]; then
   EXTERNAL_DAEMON=1
@@ -281,8 +295,18 @@ YAML
   echo "Binary       : $_DW_BIN"
   echo ""
 
+  # Dedicated tmux socket scratch dir, under the smoke scratch area: the daemon
+  # is started with TMUX_TMPDIR pointing here so its tmux sessions
+  # (cs-dw-smoke-test-*) land on a dedicated socket — never the production or
+  # default tmux server. cleanup_all cleans up the exact same socket
+  # layout (tmux-$(id -u)/default under $SMOKE_TMUX_DIR), matching the sandbox
+  # helper's convention (scripts/lib/sandbox.sh).
+  SMOKE_TMUX_DIR="${TEST_DATA_DIR}/dw-tmux-scratch"
+  mkdir -p "$SMOKE_TMUX_DIR"
+
   # Start the test daemon in the background.
-  "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
+  env TMUX_TMPDIR="${TEST_DATA_DIR}/dw-tmux-scratch" \
+    "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
   # Record it with the shared daemon-lifecycle library so every exit path

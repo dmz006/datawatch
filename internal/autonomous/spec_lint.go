@@ -68,9 +68,10 @@ func LintSpecText(text string) []SpecFinding {
 	// Fixed release number: only release-flavoured text is held to it,
 	// exactly as validateNoFixedReleaseVersion does.
 	if looksLikeReleaseText(text) {
-		if v := firstFixedReleaseVersion(text); v != "" {
+		if locs := releaseVersionLocs(text); len(locs) > 0 {
+			v := text[locs[0][0]:locs[0][1]]
 			phrase := v
-			start := strings.Index(text, v)
+			start := locs[0][0]
 			// Include a leading "version " / "release " word so the
 			// suggestion reads naturally.
 			if i := lastWordBefore(text, start); i >= 0 {

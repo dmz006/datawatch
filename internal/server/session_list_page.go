@@ -59,8 +59,9 @@ type sessionSummaryRow struct {
 	InheritedTags []string `json:"inherited_tags"`
 	// SystemTags carries the machine-derived placement tags
 	// (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
-	// project:<name>) that the Sessions tiles draw as chips.
-	SystemTags []string `json:"system_tags,omitempty"`
+	// project:<name>) that the Sessions tiles draw as chips. Always sent:
+	// an empty list is an empty array, never null and never absent.
+	SystemTags []string `json:"system_tags"`
 	// Project is the resolved project the Sessions project grouping uses
 	// (owning Automaton's project, project tag, registered folder match,
 	// Automaton title, folder) — the same value group_by=project returns.
@@ -279,7 +280,7 @@ func (s *Server) sessionSummaryRowWith(sess *session.Session, textChars int, res
 		StatusLine: sessionStatusLine(sess, textChars),
 		PRDID:      sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
 		Tags: sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
-		SystemTags: sess.SystemTags,
+		SystemTags: append([]string{}, sess.SystemTags...),
 		Project:    res.sessionProjectKey(sess),
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {

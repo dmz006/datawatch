@@ -154,3 +154,63 @@ func TestDecomposeGuidance_ListsEachForbiddenPattern(t *testing.T) {
 		t.Errorf("lint emits %d rules, prompt lists %d", len(emitted), len(forbiddenPatterns))
 	}
 }
+
+// The real garbled specs: a Python version and a library version in a
+// release task's title and spec must stay exactly as written, while the
+// release number in the same text is still reworded.
+func TestCorrect_PythonAndLibraryVersionsUntouched(t *testing.T) {
+	in := []Story{{Title: "S", Tasks: []Task{{
+		Title: "Version bump to " + fakeVer + " on Python 3.11.4 with requests 2.31.0",
+		Spec: "Bump version " + fakeVer + " in the changelog. Keep Python 3.11.4 and Go 1.22.5; " +
+			"pin requests>=2.31.0 and numpy == 1.26.4; library version 2.31.0; " +
+			"use python:3.11.4-slim and github.com/x/y@v1.2.3 from docs/1.2.3/readme.",
+	}}}}
+	out, reps := CorrectFixedReleaseVersions(in)
+	task := out[0].Tasks[0]
+	wantTitle := "Version bump to the next patch above main on Python 3.11.4 with requests 2.31.0"
+	if task.Title != wantTitle {
+		t.Fatalf("title = %q, want %q", task.Title, wantTitle)
+	}
+	wantSpec := "Bump the release in the changelog. Keep Python 3.11.4 and Go 1.22.5; " +
+		"pin requests>=2.31.0 and numpy == 1.26.4; library version 2.31.0; " +
+		"use python:3.11.4-slim and github.com/x/y@v1.2.3 from docs/1.2.3/readme."
+	if task.Spec != wantSpec {
+		t.Fatalf("spec = %q, want %q", task.Spec, wantSpec)
+	}
+	if len(reps) != 2 {
+		t.Fatalf("want 2 replacements (title + spec), got %+v", reps)
+	}
+	if validateNoFixedReleaseVersion(out) != nil {
+		t.Fatal("corrected plan still fails the gate")
+	}
+}
+
+func TestCorrect_OnlyForeignVersionsNoReplacement(t *testing.T) {
+	in := []Story{{Title: "S", Tasks: []Task{{
+		Title: "Version bump prep for Python 3.11.4",
+		Spec:  "Before the version bump install Python version 3.11.4, Node 20.11.1 and library foo 1.2.3.",
+	}}}}
+	out, reps := CorrectFixedReleaseVersions(in)
+	if len(reps) != 0 || out[0].Tasks[0].Title != in[0].Tasks[0].Title || out[0].Tasks[0].Spec != in[0].Tasks[0].Spec {
+		t.Fatalf("foreign versions rewritten: %+v %+v", reps, out[0].Tasks[0])
+	}
+}
+
+func TestCorrect_ReleaseCasesStillRewritten(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Bump the patch version from 9.5.26 to 9.5.27 in release.go", "Bump the patch version from the next patch above main to the next patch above main in release.go"},
+		{"Version bump to v" + fakeVer, "Version bump to the next patch above main"},
+		{"Set version " + fakeVer + " in the changelog.", "Set the release in the changelog."},
+		{"Add a CHANGELOG heading for version v" + fakeVer + ".", "Add a CHANGELOG heading for the release."},
+		{"Cut a release version " + fakeVer + " and update CHANGELOG.", "Cut a release the release and update CHANGELOG."},
+		{"CHANGELOG entry ## [" + fakeVer + "]", "CHANGELOG entry ## [the next patch above main]"},
+		{`var Version = "` + fakeVer + `"`, `var Version = "the next patch above main"`},
+		{"Release " + fakeVer, "the release"},
+	}
+	for _, c := range cases {
+		got, reps := correctReleaseText(c.in)
+		if got != c.want || len(reps) == 0 {
+			t.Errorf("%q: got %q want %q (%+v)", c.in, got, c.want, reps)
+		}
+	}
+}

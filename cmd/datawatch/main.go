@@ -124,7 +124,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.182.75"
+var Version = "9.182.87"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1181,6 +1181,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Timeline: func(id, line string) { _ = mgr.AppendTimeline(id, line) },
 			})
 			mgr.SetTraceIngestor(traceIngestor)
+			// A deleted session's trace goes with it: Delete drops the
+			// exact FullID from the trace store (best effort — a trace
+			// failure never fails the delete).
+			mgr.SetTraceDeleter(ts)
 			traceCtx, traceCancel := context.WithCancel(context.Background())
 			go traceIngestor.Run(traceCtx)
 			defer func() { traceCancel(); traceIngestor.Close() }()
@@ -2074,6 +2078,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Trace retention: with tracing.retention_days above 0 (0 = keep
+	// forever) drop expired trace events once at startup and then once a
+	// day. A prune error is logged and never stops the loop; it stops when
+	// the daemon context ends.
+	if traceStore != nil && cfg.Tracing.WithDefaults().RetentionDays > 0 {
+		go func() {
+			store := traceStore
+			tick := time.NewTicker(24 * time.Hour)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+				}
+				removed, err := store.Prune()
+				if err != nil {
+					fmt.Printf("[warn] trace prune: %v\n", err)
+					continue
+				}
+				if removed > 0 {
+					fmt.Printf("[trace] pruned %d expired trace event(s)\n", removed)
+				}
+			}
+		}()
+	}
 
 	// shutdownAudit holds the operator audit log once it is wired up below
 	// (auditpkg.New, the same log the REST/MCP handlers write to). The signal
@@ -4242,6 +4273,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				} else {
 					httpServer.SetPlanRecords(prStore)
 					supervisorPlanRecords = prStore
+					// Daily plan-status reconcile: roll every plan up from its
+					// linked work; a status set by hand is kept.
+					go func() {
+						ticker := time.NewTicker(24 * time.Hour)
+						defer ticker.Stop()
+						for range ticker.C {
+							if ch, err := prStore.ReconcilePlans("", false); err != nil {
+								fmt.Printf("[warn] plan reconcile: %v\n", err)
+							} else if len(ch) > 0 {
+								fmt.Printf("[plans] daily reconcile changed %d plan status(es)\n", len(ch))
+							}
+						}
+					}()
 				}
 			}
 		}
@@ -5855,7 +5899,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if paneErr != nil {
 											pane = ""
 										}
-										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 									}
 									_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerIdleDetector, Reason: idleDetectorEndReason(idleObs)})
 									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
@@ -5874,6 +5918,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// waiting_input. Only the pi-prompt family runs it (nil tracker
 						// otherwise), and mgr.Kill below is the only kill path — no
 						// tmux kill commands.
+						if exitSilenceTracker != nil && family == "pi-prompt" {
+							// A pi failure line already in the output log is the real
+							// failure: fail the attempt now instead of waiting out the
+							// silence limit.
+							if ev, failed := autonomouspkg.PiFailedLineEvidence(staleLogPath, sessionEvidenceNode(s), s.Model); failed {
+								procs := runnerProcessLines(s.TmuxSession)
+								ev.Processes = procs
+								task.RunnerEvidence = &ev
+								reason := "pi reported a failure line in the output log"
+								log.Printf("[autonomous] pi failure line found for session %s task %s/%s; failing the attempt at once",
+									task.SessionID, task.PRDID, task.ID)
+								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task session failed",
+									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+								stallErr = withRunnerExitStatus(autonomouspkg.ExitSilenceError(reason), task.RunnerEvidence)
+								break waitLoop
+							}
+						}
 						if exitSilenceTracker != nil {
 							// Runner liveness, not work children, feeds the tracker: the question is
 							// whether the runner has exited. A generating pi run may have no child
@@ -5893,7 +5955,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									if paneErr != nil {
 										pane = ""
 									}
-									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+									task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 								}
 								_ = mgr.EndSession(task.SessionID, session.EndReason{Caller: endCallerExitSilence, Reason: exitSilenceEndReason(reason)})
 								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
@@ -5945,7 +6007,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if paneErr != nil {
 											pane = ""
 										}
-										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession)
+										task.RunnerEvidence = newRunnerEvidence(pane, s.TmuxSession, staleLogPath, sessionEvidenceNode(s), s.Model)
 										appendDescendantEvidence(task.RunnerEvidence, recordedDescendants)
 										killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID,
 											session.EndReason{Caller: endCallerDescendantStall, Reason: descendantStallEndReason(reason)})
@@ -7817,6 +7879,32 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// served-models cache it reads through is wired.
 			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
+			// Preflight a pi launch on a compute node: a node that fails it is
+			// marked unhealthy in the ledger and the launch is deferred.
+			pibackend.SetLaunchGate(capLedger, func(addr string) string {
+				if computeReg == nil {
+					return ""
+				}
+				for _, n := range computeReg.List() {
+					if n.Address == addr || strings.TrimPrefix(strings.TrimPrefix(n.Address, "http://"), "https://") == strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://") {
+						return n.Name
+					}
+				}
+				return ""
+			}, func(addr string) bool {
+				// Only a node that belongs to a multi-node LLM entry is probed;
+				// a single-node entry makes no node call at launch.
+				if computeReg == nil {
+					return false
+				}
+				want := strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+				for _, n := range computeReg.List() {
+					if n.Address == addr || strings.TrimPrefix(strings.TrimPrefix(n.Address, "http://"), "https://") == want {
+						return nodeInPooledEntry(autonomousInferenceReg, n.Name)
+					}
+				}
+				return false
+			})
 			// placement-tags — restart backfill: the ledger now holds the leases that
 			// survived the restart (adoption hold still on, so the session manager
 			// accepts no new work yet). Restore each running lease-bound session's
@@ -12665,6 +12753,17 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 	}
 	if key == verifierRunCapConfigKey {
 		n, err := parseVerifierRunCapValue(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		if err := putConfig(url, cfg.Server.Token, fmt.Sprintf(`{"%s": %d}`, key, n)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %d\n", key, n)
+		return nil
+	}
+	if key == laneFillStalledMergeConfigKey {
+		n, err := parseStalledMergeMinutesValue(value)
 		if err != nil {
 			return fmt.Errorf("config set: %w", err)
 		}

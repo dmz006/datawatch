@@ -37,6 +37,13 @@ func (w planRecordsWriter) UpsertShipped(ctx context.Context, row mergepipeline.
 	}
 	cur, found := w.find(row)
 	shipped := planrecords.StateShipped
+	// The Automaton that shipped just changed state: let the plan it is
+	// linked to roll up. Not being linked to a plan is normal.
+	defer func() {
+		if row.ShippedBy != "" {
+			_, _ = w.store.NoteLinkState(planrecords.LinkKindAutomaton, row.ShippedBy, planrecords.LinkInfo{State: "shipped"})
+		}
+	}()
 	if found {
 		p := planrecords.Patch{State: &shipped, Actor: "merge-pipeline"}
 		if row.ShippedBy != "" {
