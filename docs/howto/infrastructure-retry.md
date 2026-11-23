@@ -67,6 +67,19 @@ looks only at what kind of error it is, never at what the task was doing.
 A session that never started is not on this list either. It has its own start
 budget (see [Limits](#limits)).
 
+A session that ended in the complete state, printed the completion marker and
+left output (a commit or a stored result) is **not** retried as a launch failure,
+even when the task text was never confirmed as delivered. The Automaton judges
+it by its output, the same as any finished attempt. A session with no marker, no
+output, or any other end state keeps the launch-failure path. If a task like
+this is still held, **accept** it from review when its marker is present (see
+[failure-escalation.md](failure-escalation.md#the-operator-actions)).
+
+The delivery check records which screen it waited for: when the wait for the
+worker's main prompt ends, the record names the choice dialog that was on screen
+or the first lines the pane showed, so a launch failure says what the worker was
+looking at.
+
 ## What happens
 
 When an attempt ends with one of the four classes, and infrastructure retry is
