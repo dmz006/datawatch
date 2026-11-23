@@ -66,6 +66,9 @@ func NewRefusalLedger(path string) *RefusalLedger {
 // Record stores a refusal; it returns true when the refusal is new or changed
 // and false for an unchanged repeat (which bumps the repeat counter).
 func (l *RefusalLedger) Record(automatonID, step, reason, fingerprint string, at time.Time) bool {
+	if l == nil {
+		return false
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	k := refusalKey{automatonID, step}
@@ -84,6 +87,9 @@ func (l *RefusalLedger) Record(automatonID, step, reason, fingerprint string, at
 
 // Suppressed reports whether the stored refusal matches reason and fingerprint.
 func (l *RefusalLedger) Suppressed(automatonID, step, reason, fingerprint string) bool {
+	if l == nil {
+		return false
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	e, ok := l.entries[refusalKey{automatonID, step}]
@@ -92,6 +98,9 @@ func (l *RefusalLedger) Suppressed(automatonID, step, reason, fingerprint string
 
 // Clear drops the entry for an Automaton at a step.
 func (l *RefusalLedger) Clear(automatonID, step string) {
+	if l == nil {
+		return
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, ok := l.entries[refusalKey{automatonID, step}]; ok {
@@ -102,6 +111,9 @@ func (l *RefusalLedger) Clear(automatonID, step string) {
 
 // List returns all entries, newest (last seen) first.
 func (l *RefusalLedger) List() []Refusal {
+	if l == nil {
+		return nil
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.sortedLocked()
@@ -109,6 +121,9 @@ func (l *RefusalLedger) List() []Refusal {
 
 // Prune drops entries for Automata that are no longer live.
 func (l *RefusalLedger) Prune(liveIDs []string) {
+	if l == nil {
+		return
+	}
 	live := make(map[string]struct{}, len(liveIDs))
 	for _, id := range liveIDs {
 		live[id] = struct{}{}
