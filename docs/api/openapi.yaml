@@ -6508,6 +6508,9 @@ paths:
         changes nothing. The policy applies to the next verification with no restart.
         `judge_policy` is an ordered list of backend names (an empty list clears it);
         `judge_timeout_seconds` is a whole number of seconds (0 or negative = 1800).
+        `judge_timeout_per_thousand_lines_seconds` is a whole number from 0 to 3600
+        (default 600) added to that limit for every 1,000 changed lines above the size
+        threshold, capped at four times the base; 0 adds nothing.
         `judge_size_threshold_lines` is a whole number of changed lines of 0 or more
         (0 = size-aware judge routing off, default 400). `PUT /api/config` with the
         key `autonomous.judge_size_threshold_lines` rejects anything else with 400.
